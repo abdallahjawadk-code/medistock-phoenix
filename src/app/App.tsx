@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
+import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PublicQrScreen } from '@/features/qr/PublicQrScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -21,13 +22,18 @@ function publicQrId(): string | null {
 }
 
 function AppInner() {
-  const { authReady, session, signOut } = useApp();
+  const { authReady, session, signOut, passwordRecovery } = useApp();
   const [screen, setScreen] = useState(2);
 
   // ── Anon public QR scan view — bypasses auth entirely ──
   const qid = publicQrId();
   if (qid) {
     return <PublicQrScreen publicId={qid} />;
+  }
+
+  // ── Password recovery (from reset email) — takes priority over the app ──
+  if (passwordRecovery) {
+    return <ResetPasswordScreen />;
   }
 
   // ── Wait for the session check before deciding login vs app ──

@@ -404,3 +404,29 @@ describe('Services: QR lifecycle is RPC-only', () => {
     expect(qr).not.toMatch(/\.from\([^)]+\)\s*\.\s*delete\s*\(/);
   });
 });
+
+// ============================================================================
+// 15. PASSWORD RESET: dynamic redirect, no hardcoded legacy URL
+// ============================================================================
+
+describe('Password reset: dynamic redirect + no legacy URL', () => {
+  const auth = readSrc('shared/supabase/services/auth.service.ts');
+
+  it('uses Supabase resetPasswordForEmail + updateUser only', () => {
+    expect(auth).toContain('resetPasswordForEmail');
+    expect(auth).toContain('updateUser');
+    expect(auth).not.toContain('service_role');
+  });
+
+  it('redirect target is built from the current origin', () => {
+    expect(auth).toContain('window.location.origin');
+    expect(auth).toContain('/auth/callback');
+  });
+
+  it('no src file hardcodes the legacy production URL', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      expect(readFile(path)).not.toContain('medistock-qr-network');
+    });
+  });
+});

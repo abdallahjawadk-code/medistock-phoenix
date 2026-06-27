@@ -1,6 +1,14 @@
 import { supabase, supabaseConfigured } from '../client';
-import type { Session } from '@supabase/supabase-js';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import type { Role } from '../../lib/types';
+
+/** SPA path that handles the Supabase recovery/confirmation redirect. */
+export const AUTH_CALLBACK_PATH = '/auth/callback';
+
+/** Absolute redirect target for auth emails — always the current origin. */
+export function authCallbackUrl(): string {
+  return `${window.location.origin}${AUTH_CALLBACK_PATH}`;
+}
 
 /** Profile row as stored in public.profiles (frontend-safe subset). */
 export interface Profile {
@@ -47,10 +55,42 @@ export async function getSession(): Promise<Session | null> {
 }
 
 /** Subscribe to auth changes. Returns an unsubscribe function. */
-export function onAuthChange(cb: (session: Session | null) => void): () => void {
+export function onAuthChange(
+  cb: (event: AuthChangeEvent, session: Session | null) => void,
+): () => void {
   if (!supabaseConfigured) return () => undefined;
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => cb(session));
+  const { data } = supabase.auth.onAuthStateChange((event, session) => cb(event, session));
   return () => data.subscription.unsubscribe();
+}
+
+/**
+ * Sends a password-reset email. The link returns the user to this app's
+ * /auth/callback on the CURRENT origin — never a hardcoded legacy URL.
+ */
+export async function requestPasswordReset(email: string): Promise<SignInResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: authCallbackUrl(),
+  });
+  if (error) {
+    console.error('[phoenix] reset request failed:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+/**
+ * Sets a new password for the user. Only valid while a recovery session is
+ * active (i.e. the user arrived via the reset email). Supabase Auth only.
+ */
+export async function updatePassword(newPassword: string): Promise<SignInResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) {
+    console.error('[phoenix] password update failed:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
 
 /**

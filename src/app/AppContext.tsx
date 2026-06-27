@@ -8,6 +8,8 @@ import {
   getMyProfile,
   signIn as authSignIn,
   signOut as authSignOut,
+  requestPasswordReset as authRequestReset,
+  updatePassword as authUpdatePassword,
   type Profile,
   type SignInResult,
 } from '@/shared/supabase/services/auth.service';
@@ -33,6 +35,13 @@ interface AppState {
   setActiveOrgId: (id: string | null) => void;
   signIn: (email: string, password: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
+
+  // ── Password recovery ──
+  /** True when the user arrived via a reset-password email (recovery session). */
+  passwordRecovery: boolean;
+  requestPasswordReset: (email: string) => Promise<SignInResult>;
+  updatePassword: (newPassword: string) => Promise<SignInResult>;
+  clearRecovery: () => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -45,6 +54,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  // Seed recovery mode from the URL so the reset screen shows even before the
+  // Supabase PASSWORD_RECOVERY event fires (e.g. on the /auth/callback landing).
+  const [passwordRecovery, setPasswordRecovery] = useState<boolean>(
+    () => typeof window !== 'undefined' &&
+      (window.location.pathname.startsWith('/auth/callback') ||
+       window.location.hash.includes('type=recovery')),
+  );
 
   const setLang  = (l: Lang)  => setLangState(l);
   const setTheme = (t: Theme) => setThemeState(t);
@@ -87,7 +103,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (active) setAuthReady(true);
     });
 
-    const unsub = onAuthChange(async (s) => {
+    const unsub = onAuthChange(async (event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setSession(s);
       await loadProfile(s);
     });
@@ -105,6 +122,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     setActiveOrgId(null);
+    setPasswordRecovery(false);
+  }, []);
+
+  const requestPasswordReset = useCallback(
+    (email: string) => authRequestReset(email),
+    [],
+  );
+
+  const updatePassword = useCallback(
+    (newPassword: string) => authUpdatePassword(newPassword),
+    [],
+  );
+
+  // After a successful reset, drop the recovery session and return to login.
+  const clearRecovery = useCallback(async () => {
+    setPasswordRecovery(false);
+    await authSignOut();
+    setSession(null);
+    setProfile(null);
+    // Strip the recovery hash/path so a refresh doesn't re-enter recovery.
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/');
+    }
   }, []);
 
   const role: Role = profile?.role ?? 'viewer';
@@ -117,6 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       authReady, session, profile, role,
       activeOrgId, setActiveOrgId,
       signIn, signOut,
+      passwordRecovery, requestPasswordReset, updatePassword, clearRecovery,
     }}>
       {children}
     </AppContext.Provider>

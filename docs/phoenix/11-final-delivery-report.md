@@ -140,10 +140,48 @@ Re-evaluate the Vite 6/7/8 upgrade as a dedicated, tested follow-up.
 
 ---
 
-## 8. Status
+## 8. Deployment & password reset (added 2026-06-27)
+
+### Password reset flow (code — done)
+- `auth.service.ts`: `requestPasswordReset(email)` →
+  `resetPasswordForEmail(email, { redirectTo: ${origin}/auth/callback })`;
+  `updatePassword(newPassword)` → `updateUser({ password })`. Anon key only, no
+  hardcoded legacy URL.
+- `AppContext`: tracks `PASSWORD_RECOVERY` (and `/auth/callback` / `type=recovery`
+  in the URL) → `passwordRecovery` flag; `clearRecovery()` returns to login.
+- `App.tsx`: routes to the new **Set New Password** screen on recovery, before the
+  session gate.
+- `LoginScreen`: added **Forgot password?** → request-reset sub-form with a generic
+  "check your email" confirmation (no account enumeration).
+- New `ResetPasswordScreen.tsx`: set-new-password with validation (min 8, match).
+- `vercel.json`: SPA rewrites so `/auth/callback` + `/login` serve the app.
+
+Guardrails extended to **474 tests** (reset uses dynamic origin redirect; no `src`
+file hardcodes `medistock-qr-network`).
+
+### Deployment (manual — agent has no Vercel/Supabase access)
+- **Vercel:** no CLI/token here → cannot deploy/repoint/archive/delete. Runbook:
+  [`12-vercel-replace-legacy.md`](12-vercel-replace-legacy.md).
+- **Supabase Auth URLs:** no admin API here → cannot set Site/Redirect URLs.
+  Runbook: [`13-supabase-auth-redirects.md`](13-supabase-auth-redirects.md).
+- **Final production URL:** TBD by operator (reuse `medistock-qr-network.vercel.app`
+  or a new Phoenix URL).
+- **Legacy Vercel project:** not touched — archive/disable after Phoenix verified;
+  delete only with explicit approval.
+
+### Rollback
+- Frontend: re-promote the previous Vercel deployment / re-attach the domain to the
+  legacy project (legacy source untouched at the old project dir).
+- Auth: revert Supabase Site/Redirect URLs to the legacy URL.
+- DB: not involved — never re-run the wipe.
+
+---
+
+## 9. Status
 
 ```
-LIVE_WIRING_COMPLETE — code/tests/build green.
-Live-DB-dependent steps (super_admin, .env, smoke test) remain manual (see §7).
-Destructive wipe was NOT re-run in this pass.
+LIVE_WIRING_COMPLETE + RESET_FLOW_COMPLETE — code/tests/build green (474 tests).
+Manual (operator): deploy to Vercel, set Supabase Auth URLs, create super_admin,
+fill .env, live smoke test  →  USER_SMOKE_TEST_PENDING.
+Destructive wipe was NOT re-run.
 ```

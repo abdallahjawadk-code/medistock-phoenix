@@ -178,6 +178,26 @@ export const T: Dict = {
   signed_in_as:   { ar: 'جلسة نشطة',                          en: 'Active session' },
   email_required: { ar: 'البريد وكلمة المرور مطلوبان',        en: 'Email and password are required' },
 
+  /* ── Password reset ── */
+  forgot_password:  { ar: 'نسيت كلمة المرور؟',                en: 'Forgot password?' },
+  reset_title:      { ar: 'إعادة تعيين كلمة المرور',          en: 'Reset Password' },
+  reset_sub:        { ar: 'سنرسل رابط إعادة التعيين إلى بريدك', en: 'We will email you a reset link' },
+  send_reset:       { ar: 'إرسال رابط الإعادة',               en: 'Send Reset Link' },
+  sending:          { ar: 'جاري الإرسال...',                  en: 'Sending...' },
+  reset_sent:       { ar: 'تحقق من بريدك',                    en: 'Check your email' },
+  reset_sent_msg:   { ar: 'إذا كان البريد مسجلاً، ستصلك رسالة بها رابط لإعادة التعيين.', en: 'If the email is registered, a reset link has been sent.' },
+  back_to_login:    { ar: 'العودة لتسجيل الدخول',             en: 'Back to sign in' },
+  recovery_title:   { ar: 'اختر كلمة مرور جديدة',             en: 'Set a New Password' },
+  recovery_sub:     { ar: 'أدخل كلمة المرور الجديدة لحسابك',  en: 'Enter a new password for your account' },
+  new_password:     { ar: 'كلمة المرور الجديدة',             en: 'New password' },
+  confirm_password: { ar: 'تأكيد كلمة المرور',               en: 'Confirm password' },
+  set_password:     { ar: 'حفظ كلمة المرور',                 en: 'Save Password' },
+  saving:           { ar: 'جاري الحفظ...',                    en: 'Saving...' },
+  password_short:   { ar: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل', en: 'Password must be at least 8 characters' },
+  password_mismatch:{ ar: 'كلمتا المرور غير متطابقتين',       en: 'Passwords do not match' },
+  reset_success:    { ar: 'تم تحديث كلمة المرور',             en: 'Password updated' },
+  reset_success_msg:{ ar: 'يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.', en: 'You can now sign in with your new password.' },
+
   /* ── Config / connection ── */
   config_missing: { ar: 'الاتصال بقاعدة البيانات غير مهيأ',    en: 'Database connection is not configured' },
   config_msg:     { ar: 'لم يتم ضبط متغيرات VITE_PHOENIX_SUPABASE_*. الوضع غير المتصل نشط.', en: 'VITE_PHOENIX_SUPABASE_* env vars are not set. Offline mode is active.' },
