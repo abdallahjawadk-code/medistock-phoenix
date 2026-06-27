@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { AppProvider } from './AppContext';
+import { AppProvider, useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
+import { PublicQrScreen } from '@/features/qr/PublicQrScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
+import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 import { EditorScreen } from '@/features/editor/EditorScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
@@ -12,8 +14,34 @@ import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen';
 import { ReportsScreen } from '@/features/reports/ReportsScreen';
 import { MobileCommandScreen } from '@/features/mesh/MobileCommandScreen';
 
+/** Read a public QR handle from the URL (?qid=… or ?token=…). Anon, no auth. */
+function publicQrId(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('qid') ?? params.get('token');
+}
+
 function AppInner() {
-  const [screen, setScreen] = useState(1);
+  const { authReady, session, signOut } = useApp();
+  const [screen, setScreen] = useState(2);
+
+  // ── Anon public QR scan view — bypasses auth entirely ──
+  const qid = publicQrId();
+  if (qid) {
+    return <PublicQrScreen publicId={qid} />;
+  }
+
+  // ── Wait for the session check before deciding login vs app ──
+  if (!authReady) {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <PhoenixLoadingState />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen />;
+  }
 
   const screenContent = () => {
     switch (screen) {
@@ -30,15 +58,11 @@ function AppInner() {
     }
   };
 
-  if (screen === 1) {
-    return <LoginScreen onLogin={() => setScreen(2)} />;
-  }
-
   return (
     <PhoenixAppShell
       currentScreen={screen}
       onNavigate={setScreen}
-      onLogout={() => setScreen(1)}
+      onLogout={() => { void signOut(); setScreen(2); }}
     >
       {screenContent()}
     </PhoenixAppShell>

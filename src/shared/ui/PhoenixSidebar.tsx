@@ -24,10 +24,11 @@ const SECONDARY_ITEMS: NavItem[] = [
 ];
 
 const ROLE_MAP: Record<string, { emoji: string }> = {
-  super_admin:    { emoji: '🔑' },
-  hospital_admin: { emoji: '🏥' },
-  pharmacist:     { emoji: '💊' },
-  viewer:         { emoji: '👁' },
+  super_admin:       { emoji: '🔑' },
+  hospital_admin:    { emoji: '🏥' },
+  warehouse_manager: { emoji: '🏬' },
+  point_operator:    { emoji: '💊' },
+  viewer:            { emoji: '👁' },
 };
 
 interface Props {
@@ -37,8 +38,8 @@ interface Props {
 }
 
 export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
-  const { lang, role } = useApp();
-  const ri = ROLE_MAP[role] ?? ROLE_MAP.super_admin;
+  const { lang, role, profile } = useApp();
+  const ri = ROLE_MAP[role] ?? ROLE_MAP.viewer;
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',
@@ -145,8 +146,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
             {ri.emoji}
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role}</div>
-            <div style={{ fontSize: '10px', color: 'var(--t2)' }}>{t('demoSession', lang)}</div>
+            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.full_name ?? role}</div>
+            <div style={{ fontSize: '10px', color: 'var(--t2)' }}>{role}</div>
           </div>
           <button
             onClick={onLogout}

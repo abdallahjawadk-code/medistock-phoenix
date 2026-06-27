@@ -244,3 +244,24 @@ To proceed:
   5. Apply SQL files in order via Supabase SQL Editor
   6. Run verify_phoenix_after_full_wipe.sql → expect OK_FULL_WIPE_PHOENIX_READY
 ```
+
+---
+
+## ADDENDUM — Post-Wipe Finalization (2026-06-27)
+
+Sections 1–16 above describe the **pre-wipe plan** and remain accurate for that
+phase. Since then:
+
+- **Wipe + rebuild:** reported completed by the operator —
+  `verify_phoenix_after_full_wipe.sql` → `OK_FULL_WIPE_PHOENIX_READY`. (Not
+  re-verified by the build agent, which has no live DB access. The wipe was **not**
+  re-run in the finalization pass.)
+- **Frontend:** now **fully wired to live Supabase** — real email/password auth,
+  session/profile context, and all screens consuming the services (replacing the
+  earlier "hardcoded demo data" note in §8). See
+  [`docs/phoenix/11-final-delivery-report.md`](../11-final-delivery-report.md).
+- **Tests/build:** 462 tests pass, typecheck clean, lint clean (0 warnings), build OK.
+- **Audit:** dev-only Vite/Vitest/esbuild chain remains; not force-fixed (breaking).
+  Production bundle is unaffected — details in report 11 §6.
+- **super_admin:** create/confirm via
+  [`03-create-super-admin-final.md`](03-create-super-admin-final.md) (manual SQL).

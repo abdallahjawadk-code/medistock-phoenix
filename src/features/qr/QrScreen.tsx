@@ -1,24 +1,66 @@
+import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { useAsync } from '@/shared/lib/useAsync';
+import { getQrTokensByOrg, disableQrToken } from '@/shared/supabase/services/qr.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
+import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
-const PUBLIC_ITEMS = [
-  { name: 'Amoxicillin 500mg',  statusKey: 'avail', variant: 'ok'   as const },
-  { name: 'Paracetamol 500mg',  statusKey: 'avail', variant: 'ok'   as const },
-  { name: 'Ceftriaxone 1g',     statusKey: 'low',   variant: 'warn' as const },
-  { name: 'Insulin Glargine',   statusKey: 'miss',  variant: 'err'  as const },
-];
+interface TargetRef { target_type: string; target_id: string; label: string | null; status: string; }
+interface TokenRow {
+  id: string;
+  public_id: string;
+  status: string;
+  last_scanned_at: string | null;
+  scan_count: number;
+  created_at: string;
+  qr_targets: TargetRef | TargetRef[] | null;
+}
+
+function target(row: TokenRow): TargetRef | null {
+  const tg = row.qr_targets;
+  if (!tg) return null;
+  return Array.isArray(tg) ? tg[0] ?? null : tg;
+}
 
 export function QrScreen() {
-  const { lang } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const { lang, activeOrgId, role } = useApp();
+  const canManage = role === 'super_admin' || role === 'hospital_admin' || role === 'warehouse_manager';
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const { data, loading, error, reload } = useAsync(
+    () => activeOrgId ? getQrTokensByOrg(activeOrgId) : Promise.resolve([]),
+    [activeOrgId],
+  );
+  const rows = (data ?? []) as unknown as TokenRow[];
+
+  async function onDisable(id: string) {
+    setBusyId(id);
+    try {
+      await disableQrToken(id);
+      reload();
+    } catch (e) {
+      console.error('[phoenix] disable QR failed:', e);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const publicUrl = (publicId: string) => `${window.location.origin}/?qid=${publicId}`;
 
   return (
     <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_qr', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('qr_sub', lang)}</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+        <div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_qr', lang)}</h2>
+          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('qr_sub', lang)}</p>
+        </div>
+        <PhoenixOrgScope />
       </div>
 
       {/* Privacy notice */}
@@ -30,67 +72,49 @@ export function QrScreen() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '220px 1fr', gap: '20px', alignItems: 'start' }}>
-        {/* QR preview */}
-        <PhoenixCard shadow="md" padding="22px" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>{t('marjan', lang)}</div>
-          <div style={{ fontSize: '11px', color: 'var(--t2)', marginBottom: '16px' }}>{t('qr_public_label', lang)}</div>
-          <div style={{ display: 'inline-block', padding: '10px', background: '#fff', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', marginBottom: '14px' }}>
-            <svg width="120" height="120" viewBox="0 0 25 25" style={{ display: 'block' }} aria-label="QR Code (demo)">
-              <rect width="25" height="25" fill="white" />
-              <rect x="1" y="1" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9" />
-              <rect x="2" y="2" width="5" height="5" rx="0.3" fill="white" />
-              <rect x="3" y="3" width="3" height="3" rx="0.2" fill="#0D9488" />
-              <rect x="17" y="1" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9" />
-              <rect x="18" y="2" width="5" height="5" rx="0.3" fill="white" />
-              <rect x="19" y="3" width="3" height="3" rx="0.2" fill="#0D9488" />
-              <rect x="1" y="17" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9" />
-              <rect x="2" y="18" width="5" height="5" rx="0.3" fill="white" />
-              <rect x="3" y="19" width="3" height="3" rx="0.2" fill="#0D9488" />
-              <rect x="10" y="1" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="12" y="1" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="14" y="1" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="10" y="3" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="13" y="3" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="10" y="5" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="12" y="5" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="14" y="5" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="10" y="10" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="13" y="10" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="10" y="12" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="12" y="12" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="17" y="10" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="20" y="10" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="17" y="17" width="1.5" height="1.5" fill="#0F2B4F" />
-              <rect x="20" y="20" width="1.5" height="1.5" fill="#0F2B4F" />
-            </svg>
-          </div>
-          <div style={{ fontSize: '10px', color: 'var(--t3)', fontFamily: 'monospace', marginBottom: '10px' }} dir="ltr">QR-BBL-MRJ-2026</div>
-          <PhoenixStatusBadge variant="ok" label={`● ${t('qr_active', lang)}`} dot={false} />
-        </PhoenixCard>
+      {!activeOrgId && (
+        <PhoenixEmptyState icon="📱" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+      )}
+      {activeOrgId && loading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {activeOrgId && !loading && error && (
+        <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />
+      )}
+      {activeOrgId && !loading && !error && rows.length === 0 && (
+        <PhoenixEmptyState icon="📱" title={t('empty_qr', lang)} description={t('empty_hint', lang)} />
+      )}
 
-        {/* Public availability list */}
-        <div>
-          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '12px' }}>{t('qr_public_avail', lang)}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-            {PUBLIC_ITEMS.map(item => (
-              <div key={item.name} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', boxShadow: 'var(--sh-xs)', border: '1px solid var(--brd)', opacity: item.variant === 'err' ? 0.6 : 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <span style={{ fontSize: '12.5px', fontWeight: 600 }}>{item.name}</span>
-                  <PhoenixStatusBadge variant={item.variant} label={t(item.statusKey, lang)} />
-                </div>
-                {item.variant !== 'err' && (
-                  <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '3px' }}>
-                    {t('last_upd', lang)}: {t('today', lang)}
+      {activeOrgId && !loading && !error && rows.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {rows.map(row => {
+            const tg = target(row);
+            const active = row.status === 'active';
+            return (
+              <PhoenixCard key={row.id} padding="14px 16px">
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700 }}>{tg?.label ?? tg?.target_type ?? '—'}</span>
+                      <PhoenixStatusBadge variant={active ? 'ok' : 'neutral'} label={active ? t('qr_active', lang) : t('inactive', lang)} />
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--t3)', fontFamily: 'monospace' }} dir="ltr">{publicUrl(row.public_id)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '3px' }}>
+                      {tg?.target_type} · {t('last_upd', lang)}: {row.last_scanned_at ? new Date(row.last_scanned_at).toLocaleString(lang === 'ar' ? 'ar' : 'en') : '—'} · {row.scan_count} scans
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)' }}>
-            🔒 {t('qr_no_expose', lang)}
-          </div>
+                  {canManage && active && (
+                    <PhoenixButton variant="warn" size="sm" loading={busyId === row.id} onClick={() => onDisable(row.id)}>
+                      🚫 {t('blocked', lang)}
+                    </PhoenixButton>
+                  )}
+                </div>
+              </PhoenixCard>
+            );
+          })}
         </div>
+      )}
+
+      <div style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)' }}>
+        🔒 {t('qr_no_expose', lang)}
       </div>
     </div>
   );

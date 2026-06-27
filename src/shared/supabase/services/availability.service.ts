@@ -1,12 +1,12 @@
 import { supabase, supabaseConfigured } from '../client';
-import type { AvailabilityRecord, AvailabilityStatus } from '../../lib/types';
+import type { AvailabilityRecord, AvailabilityCondition } from '../../lib/types';
 
 export interface UpsertAvailabilityInput {
   localItemId: string;
   distributionPointId: string;
   organizationId: string;
   quantity: number;
-  condition: AvailabilityStatus;
+  condition: AvailabilityCondition;
   batchNumber?: string;
   expiryDate?: string;
   notes?: string;

@@ -2,9 +2,23 @@
 
 export type Lang = 'ar' | 'en';
 export type Theme = 'light' | 'dark';
-export type Role = 'super_admin' | 'hospital_admin' | 'pharmacist' | 'viewer';
+// Mirrors the DB CHECK constraint on public.profiles.role (migration 001).
+export type Role =
+  | 'super_admin'
+  | 'hospital_admin'
+  | 'warehouse_manager'
+  | 'point_operator'
+  | 'viewer';
 
 export type AvailabilityStatus = 'available' | 'low' | 'missing' | 'near_expiry';
+// Exact values accepted by the item_availability.condition CHECK (migration 001).
+export type AvailabilityCondition =
+  | 'available'
+  | 'low_stock'
+  | 'missing'
+  | 'surplus'
+  | 'near_expiry'
+  | 'expired';
 export type InstitutionStatus  = 'healthy' | 'safemode' | 'quarantine' | 'frozen';
 export type ModuleStatus       = 'healthy' | 'safemode' | 'frozen';
 export type EntityStatus       = 'active' | 'archived' | 'deleted';

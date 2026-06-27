@@ -167,6 +167,42 @@ export const T: Dict = {
   view_health:    { ar: 'عرض صحة النظام',                     en: 'View System Health' },
   view:           { ar: 'عرض',                                en: 'View' },
 
+  /* ── Live auth ── */
+  login_title:    { ar: 'تسجيل الدخول',                       en: 'Sign In' },
+  login_sub:      { ar: 'ادخل بريدك وكلمة المرور للوصول إلى الشبكة', en: 'Enter your email and password to access the network' },
+  email:          { ar: 'البريد الإلكتروني',                  en: 'Email' },
+  password:       { ar: 'كلمة المرور',                        en: 'Password' },
+  sign_in:        { ar: 'دخول',                               en: 'Sign In' },
+  signing_in:     { ar: 'جاري الدخول...',                     en: 'Signing in...' },
+  invalid_creds:  { ar: 'بيانات الدخول غير صحيحة',            en: 'Invalid email or password' },
+  signed_in_as:   { ar: 'جلسة نشطة',                          en: 'Active session' },
+  email_required: { ar: 'البريد وكلمة المرور مطلوبان',        en: 'Email and password are required' },
+
+  /* ── Config / connection ── */
+  config_missing: { ar: 'الاتصال بقاعدة البيانات غير مهيأ',    en: 'Database connection is not configured' },
+  config_msg:     { ar: 'لم يتم ضبط متغيرات VITE_PHOENIX_SUPABASE_*. الوضع غير المتصل نشط.', en: 'VITE_PHOENIX_SUPABASE_* env vars are not set. Offline mode is active.' },
+  offline_badge:  { ar: 'غير متصل · عرض فارغ',                en: 'Offline · empty view' },
+
+  /* ── Live data states ── */
+  loading:        { ar: 'جاري التحميل...',                    en: 'Loading...' },
+  retry:          { ar: 'إعادة المحاولة',                     en: 'Retry' },
+  load_error:     { ar: 'تعذر تحميل البيانات',                en: 'Could not load data' },
+  empty_orgs:     { ar: 'لا توجد مؤسسات بعد',                 en: 'No organizations yet' },
+  empty_items:    { ar: 'لا توجد أصناف',                      en: 'No items' },
+  empty_avail:    { ar: 'لا توجد سجلات توفر',                 en: 'No availability records' },
+  empty_qr:       { ar: 'لا توجد رموز QR',                    en: 'No QR codes' },
+  empty_audit:    { ar: 'لا توجد سجلات تدقيق',                en: 'No audit entries' },
+  empty_hint:     { ar: 'ستظهر البيانات هنا بعد إضافتها',     en: 'Data will appear here once added' },
+  all_orgs:       { ar: 'كل المؤسسات',                        en: 'All organizations' },
+  select_org:     { ar: 'اختر المؤسسة',                       en: 'Select organization' },
+  no_org_scope:   { ar: 'اختر مؤسسة لعرض البيانات',           en: 'Select an organization to view data' },
+
+  /* ── Public QR view ── */
+  public_title:   { ar: 'توفر الأدوية العام',                 en: 'Public Drug Availability' },
+  public_sub:     { ar: 'بيانات آمنة للعرض العام فقط',        en: 'Safe public-display data only' },
+  qr_invalid:     { ar: 'الرمز غير صالح أو معطل',             en: 'QR code is invalid or disabled' },
+  qr_scan_again:  { ar: 'يرجى مسح رمز صالح',                  en: 'Please scan a valid code' },
+
   /* ── Confirmation dialog ── */
   confirm_apply:  { ar: 'تأكيد التطبيق',                      en: 'Confirm Apply' },
   confirm_msg:    { ar: 'أنت على وشك تطبيق تغييرات التوفر. هذا الإجراء لا يمكن التراجع عنه تلقائياً.', en: 'You are about to apply availability changes. This action cannot be automatically undone.' },

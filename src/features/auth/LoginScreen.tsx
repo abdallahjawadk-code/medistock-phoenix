@@ -1,24 +1,30 @@
-import { CSSProperties } from 'react';
+import { useState, FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
-import type { Role } from '@/shared/lib/types';
 
-interface Props { onLogin: () => void; }
+export function LoginScreen() {
+  const { lang, theme, toggleLang, toggleTheme, signIn, configured } = useApp();
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState<string | null>(null);
+  const [busy, setBusy]         = useState(false);
 
-const ROLES: Array<{ id: Role; icon: string }> = [
-  { id: 'super_admin',    icon: '🔑' },
-  { id: 'hospital_admin', icon: '🏥' },
-  { id: 'pharmacist',     icon: '💊' },
-  { id: 'viewer',         icon: '👁' },
-];
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
 
-export function LoginScreen({ onLogin }: Props) {
-  const { lang, theme, role, setRole, toggleLang, toggleTheme } = useApp();
-
-  const rc = (r: Role): CSSProperties => ({
-    borderColor: role === r ? 'var(--p)' : 'var(--brd)',
-    background:  role === r ? 'var(--p2)' : 'var(--s2)',
-  });
+    if (!email.trim() || !password) {
+      setError(t('email_required', lang));
+      return;
+    }
+    setBusy(true);
+    const res = await signIn(email, password);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('invalid_creds', lang));
+    }
+    // On success, AppContext's auth subscription swaps to the app shell.
+  }
 
   return (
     <div style={{
@@ -39,7 +45,7 @@ export function LoginScreen({ onLogin }: Props) {
         <button onClick={toggleLang} style={{ padding: '5px 13px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
           {lang === 'ar' ? 'EN' : 'عربي'}
         </button>
-        <button onClick={toggleTheme} style={{ width: '34px', height: '34px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={toggleTheme} aria-label="Toggle theme" style={{ width: '34px', height: '34px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>
       </div>
@@ -52,66 +58,59 @@ export function LoginScreen({ onLogin }: Props) {
       </div>
 
       {/* Card */}
-      <div style={{ width: '100%', maxWidth: '375px', background: 'var(--s)', borderRadius: 'var(--r5)', boxShadow: 'var(--sh-xl)', padding: '26px', border: '1px solid var(--brd)', animation: 'fs .6s ease .12s both' }}>
+      <form onSubmit={onSubmit} style={{ width: '100%', maxWidth: '375px', background: 'var(--s)', borderRadius: 'var(--r5)', boxShadow: 'var(--sh-xl)', padding: '26px', border: '1px solid var(--brd)', animation: 'fs .6s ease .12s both' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>{t('login_title', lang)}</h2>
+        <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '18px' }}>{t('login_sub', lang)}</p>
 
-        {/* Role chips */}
-        <p style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: '10px' }}>
-          {t('selectRole', lang)}
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '18px' }}>
-          {ROLES.map(r => (
-            <button
-              key={r.id}
-              onClick={() => setRole(r.id)}
-              style={{
-                padding: '9px 6px', borderRadius: 'var(--r2)',
-                border: `2px solid ${role === r.id ? 'var(--p)' : 'var(--brd)'}`,
-                background: role === r.id ? 'var(--p2)' : 'var(--s2)',
-                color: 'var(--t)', fontSize: '11px', fontWeight: 600,
-                transition: 'all 120ms', lineHeight: 1.4, textAlign: 'center', cursor: 'pointer',
-                ...rc(r.id),
-              }}
-            >
-              {r.icon}<br />{r.id}
-            </button>
-          ))}
-        </div>
+        {!configured && (
+          <div role="alert" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--warn2)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: '11.5px', fontWeight: 600 }}>
+            ⚠ {t('config_missing', lang)}
+          </div>
+        )}
 
-        {/* Trust badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--ok2)', color: 'var(--ok)', fontSize: '10.5px', fontWeight: 600 }}>🛡 RLS Protected</span>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '10.5px', fontWeight: 600 }}>📱 QR Public Safe</span>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 600 }}>🔒 Intake Frozen</span>
-        </div>
+        <label htmlFor="login-email" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '6px' }}>
+          {t('email', lang)}
+        </label>
+        <input
+          id="login-email" type="email" dir="ltr" autoComplete="username"
+          value={email} onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '14px' }}
+        />
 
-        {/* CTA */}
+        <label htmlFor="login-password" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '6px' }}>
+          {t('password', lang)}
+        </label>
+        <input
+          id="login-password" type="password" dir="ltr" autoComplete="current-password"
+          value={password} onChange={e => setPassword(e.target.value)}
+          style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: error ? '12px' : '18px' }}
+        />
+
+        {error && (
+          <div role="alert" style={{ marginBottom: '16px', padding: '9px 12px', borderRadius: 'var(--r2)', background: 'var(--err2)', border: '1px solid var(--err)', color: 'var(--err)', fontSize: '12px', fontWeight: 600 }}>
+            {error}
+          </div>
+        )}
+
         <button
-          onClick={onLogin}
+          type="submit" disabled={busy}
           style={{
             width: '100%', padding: '14px', borderRadius: 'var(--r3)',
             border: 'none', background: 'var(--p)', color: '#fff',
-            fontSize: '15px', fontWeight: 700, cursor: 'pointer',
-            transition: 'all 150ms', boxShadow: '0 4px 16px rgba(13,148,136,.3)',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--pd)';
-            (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--p)';
-            (e.currentTarget as HTMLButtonElement).style.transform = '';
+            fontSize: '15px', fontWeight: 700, cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.7 : 1, transition: 'all 150ms', boxShadow: '0 4px 16px rgba(13,148,136,.3)',
           }}
         >
-          {t('demoLogin', lang)}
+          {busy ? t('signing_in', lang) : t('sign_in', lang)}
         </button>
-        <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--t3)', marginTop: '11px' }}>
-          {t('demoOnly', lang)}
-        </p>
-      </div>
 
-      <div style={{ marginTop: '18px', padding: '5px 13px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: '11px', fontWeight: 700 }}>
-        ⚠ {t('demoData', lang)}
-      </div>
+        {/* Trust badges */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '18px', justifyContent: 'center' }}>
+          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--ok2)', color: 'var(--ok)', fontSize: '10.5px', fontWeight: 600 }}>🛡 RLS</span>
+          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '10.5px', fontWeight: 600 }}>📱 QR Public Safe</span>
+          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 600 }}>🔒 Intake Frozen</span>
+        </div>
+      </form>
     </div>
   );
 }

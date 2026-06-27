@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'DM Sans', 'Noto Sans Arabic', system-ui, sans-serif; }
+  :focus-visible { outline: 2px solid var(--p); outline-offset: 2px; border-radius: 4px; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--brd); border-radius: 99px; }
+  input, select, textarea, button { font-family: inherit; }
+  button { cursor: pointer; }
+  :root {
+    --bg:#F8F9FA; --s:#FFFFFF; --s2:#F2F6FB; --sh:#EBF2FA;
+    --t:#0F2B4F; --t2:#4A6580; --t3:#8FA5BC;
+    --p:#0D9488; --p2:#CCFBF1; --pd:#0A7468;
+    --sec:#3B82F6; --sec2:#DBEAFE;
+    --ok:#059669; --ok2:#D1FAE5;
+    --warn:#D97706; --warn2:#FEF3C7;
+    --err:#DC2626; --err2:#FEE2E2;
+    --info:#0284C7; --info2:#E0F2FE;
+    --brd:#DDE5EF; --skel:#E6EEF7;
+    --sh-xs:0 1px 2px rgba(15,43,79,.04);
+    --sh-sm:0 1px 4px rgba(15,43,79,.07),0 1px 2px rgba(15,43,79,.03);
+    --sh-md:0 4px 16px rgba(15,43,79,.08),0 2px 6px rgba(15,43,79,.04);
+    --sh-lg:0 8px 32px rgba(15,43,79,.10),0 4px 12px rgba(15,43,79,.05);
+    --sh-xl:0 20px 60px rgba(15,43,79,.14),0 8px 24px rgba(15,43,79,.07);
+    --r1:6px; --r2:10px; --r3:14px; --r4:18px; --r5:24px; --rpill:9999px;
+    --sw:248px; --tbh:58px; --bnh:68px;
+  }
+  [data-theme="dark"] {
+    --bg:#06101E; --s:#0D1D30; --s2:#112438; --sh:#162C44;
+    --t:#DCE9F5; --t2:#6E90AE; --t3:#3E5F7A;
+    --brd:#192E46; --skel:#112438;
+    --sh-xs:0 1px 2px rgba(0,0,0,.35); --sh-sm:0 1px 4px rgba(0,0,0,.35);
+    --sh-md:0 4px 16px rgba(0,0,0,.45); --sh-lg:0 8px 32px rgba(0,0,0,.5);
+    --sh-xl:0 20px 60px rgba(0,0,0,.6);
+  }
+  @keyframes fs { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes su { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes si { from{opacity:0;transform:translateX(-20px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes bp { 0%,100%{opacity:.4} 50%{opacity:1} }
+  @keyframes fl { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  @keyframes ti { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation-duration:.01ms!important; transition-duration:.01ms!important; animation-iteration-count:1!important; }
+  }
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" dir="{{ dir }}" style="min-height:100dvh; background:var(--bg); color:var(--t); font-size:14px; line-height:1.55;">
+
+  <!-- ══════════════════════════ SCREEN 1: LOGIN ══════════════════════════ -->
+  <sc-if value="{{ isLogin }}">
+    <div style="min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; position:relative; overflow:hidden;">
+
+      <!-- Animated background -->
+      <div aria-hidden="true" style="position:absolute; inset:0; pointer-events:none; overflow:hidden;">
+        <div style="position:absolute; top:7%; inset-inline-start:9%; width:150px; height:150px; border-radius:50%; background:var(--p2); opacity:.45; animation:fl 7s ease-in-out infinite;"></div>
+        <div style="position:absolute; top:16%; inset-inline-end:7%; width:95px; height:95px; border-radius:50%; background:var(--sec2); opacity:.4; animation:fl 9s ease-in-out infinite 2s;"></div>
+        <div style="position:absolute; bottom:13%; inset-inline-start:6%; width:72px; height:72px; border-radius:50%; background:var(--p2); opacity:.35; animation:fl 8s ease-in-out infinite 1s;"></div>
+        <div style="position:absolute; bottom:17%; inset-inline-end:10%; width:115px; height:115px; border-radius:50%; background:var(--ok2); opacity:.3; animation:fl 10s ease-in-out infinite 3s;"></div>
+        <div style="position:absolute; top:40%; inset-inline-start:0; inset-inline-end:0; height:1px; background:linear-gradient(to right,transparent,var(--p),transparent); opacity:.18; animation:bp 4s ease-in-out infinite;"></div>
+        <div style="position:absolute; top:63%; inset-inline-start:0; inset-inline-end:0; height:1px; background:linear-gradient(to right,transparent,var(--sec),transparent); opacity:.13; animation:bp 5.5s ease-in-out infinite 1.5s;"></div>
+      </div>
+
+      <!-- Lang / Theme controls -->
+      <div style="position:absolute; top:18px; inset-inline-end:18px; display:flex; gap:8px; z-index:10;">
+        <button onClick="{{ toggleLang }}" style="padding:5px 13px; border-radius:var(--rpill); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:12px; font-weight:600; transition:all 120ms;" style-hover="background:var(--s2);">{{ langLabel }}</button>
+        <button onClick="{{ toggleTheme }}" style="width:34px; height:34px; border-radius:var(--rpill); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:15px; display:flex; align-items:center; justify-content:center; transition:all 120ms;" style-hover="background:var(--s2);">{{ themeIcon }}</button>
+      </div>
+
+      <!-- Brand -->
+      <div style="text-align:center; margin-bottom:26px; animation:fs .5s ease;">
+        <div style="width:74px; height:74px; border-radius:var(--r4); background:var(--p); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; box-shadow:0 8px 28px rgba(13,148,136,.35); font-size:36px;">⚕</div>
+        <h1 style="font-size:25px; font-weight:700; color:var(--t); letter-spacing:-.4px; margin-bottom:5px;">MediStock-Babil</h1>
+        <p style="font-size:12.5px; color:var(--t2);">{{ t_tagline }}</p>
+      </div>
+
+      <!-- Card -->
+      <div style="width:100%; max-width:375px; background:var(--s); border-radius:var(--r5); box-shadow:var(--sh-xl); padding:26px; border:1px solid var(--brd); animation:fs .6s ease .12s both;">
+
+        <!-- Role chips -->
+        <p style="font-size:10.5px; font-weight:700; color:var(--t2); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px;">{{ t_selectRole }}</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:18px;">
+          <button onClick="{{ setRoleSA }}" style="padding:9px 6px; border-radius:var(--r2); border:2px solid {{ roleIs_sa }}; background:{{ roleBg_sa }}; color:var(--t); font-size:11px; font-weight:600; transition:all 120ms; line-height:1.4; text-align:center;">🔑<br>super_admin</button>
+          <button onClick="{{ setRoleHA }}" style="padding:9px 6px; border-radius:var(--r2); border:2px solid {{ roleIs_ha }}; background:{{ roleBg_ha }}; color:var(--t); font-size:11px; font-weight:600; transition:all 120ms; line-height:1.4; text-align:center;">🏥<br>hospital_admin</button>
+          <button onClick="{{ setRolePh }}" style="padding:9px 6px; border-radius:var(--r2); border:2px solid {{ roleIs_ph }}; background:{{ roleBg_ph }}; color:var(--t); font-size:11px; font-weight:600; transition:all 120ms; line-height:1.4; text-align:center;">💊<br>pharmacist</button>
+          <button onClick="{{ setRoleVw }}" style="padding:9px 6px; border-radius:var(--r2); border:2px solid {{ roleIs_vw }}; background:{{ roleBg_vw }}; color:var(--t); font-size:11px; font-weight:600; transition:all 120ms; line-height:1.4; text-align:center;">👁<br>viewer</button>
+        </div>
+
+        <!-- Trust badges -->
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px;">
+          <span style="padding:3px 9px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10.5px; font-weight:600;">🛡 RLS Protected</span>
+          <span style="padding:3px 9px; border-radius:var(--rpill); background:var(--p2); color:var(--pd); font-size:10.5px; font-weight:600;">📱 QR Public Safe</span>
+          <span style="padding:3px 9px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10.5px; font-weight:600;">🔒 Intake Frozen</span>
+        </div>
+
+        <!-- Login CTA -->
+        <button onClick="{{ doLogin }}" style="width:100%; padding:14px; border-radius:var(--r3); border:none; background:var(--p); color:#fff; font-size:15px; font-weight:700; transition:all 150ms; box-shadow:0 4px 16px rgba(13,148,136,.3);" style-hover="background:var(--pd); transform:translateY(-1px); box-shadow:0 6px 20px rgba(13,148,136,.4);" style-active="transform:translateY(0);">{{ t_demoLogin }}</button>
+        <p style="text-align:center; font-size:11px; color:var(--t3); margin-top:11px;">{{ t_demoOnly }}</p>
+      </div>
+
+      <div style="margin-top:18px; padding:5px 13px; border-radius:var(--rpill); background:var(--warn2); border:1px solid var(--warn); color:var(--warn); font-size:11px; font-weight:700;">⚠ {{ t_demoData }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ══════════════════════════ APP SHELL ══════════════════════════ -->
+  <sc-if value="{{ isApp }}">
+    <div style="display:flex; flex-direction:{{ shellDir }}; min-height:100dvh; position:relative;">
+
+      <!-- Desktop Sidebar -->
+      <sc-if value="{{ showDesktopSidebar }}">
+        <aside style="width:var(--sw); flex-shrink:0; background:var(--s); border-inline-end:1px solid var(--brd); display:flex; flex-direction:column; position:sticky; top:0; height:100dvh; overflow-y:auto; z-index:50;">
+          <!-- Brand row -->
+          <div style="padding:18px 14px 14px; border-bottom:1px solid var(--brd);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div style="width:36px; height:36px; border-radius:var(--r2); background:var(--p); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">⚕</div>
+              <div style="min-width:0;">
+                <div style="font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">MediStock-Babil</div>
+                <div style="font-size:10px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">MASAR Health Network</div>
+              </div>
+            </div>
+          </div>
+          <!-- Nav -->
+          <nav style="flex:1; padding:10px 8px; display:flex; flex-direction:column; gap:2px;" aria-label="Navigation">
+            <button onClick="{{ goS2 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb2 }}; color:{{ nc2 }}; font-size:13px; font-weight:{{ nw2 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">📊</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_dash }}</span>
+            </button>
+            <button onClick="{{ goS3 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb3 }}; color:{{ nc3 }}; font-size:13px; font-weight:{{ nw3 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">✏️</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_editor }}</span>
+            </button>
+            <button onClick="{{ goS4 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb4 }}; color:{{ nc4 }}; font-size:13px; font-weight:{{ nw4 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">📋</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_reg }}</span>
+            </button>
+            <button onClick="{{ goS5 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb5 }}; color:{{ nc5 }}; font-size:13px; font-weight:{{ nw5 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">🌐</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_mesh }}</span>
+            </button>
+            <button onClick="{{ goS6 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb6 }}; color:{{ nc6 }}; font-size:13px; font-weight:{{ nw6 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">📱</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_qr }}</span>
+            </button>
+            <button onClick="{{ goS7 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb7 }}; color:{{ nc7 }}; font-size:13px; font-weight:{{ nw7 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">🏥</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_health }}</span>
+            </button>
+            <button onClick="{{ goS9 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb9 }}; color:{{ nc9 }}; font-size:13px; font-weight:{{ nw9 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">📈</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_reports }}</span>
+            </button>
+            <div style="height:1px; background:var(--brd); margin:6px 4px;"></div>
+            <button onClick="{{ goS8 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb8 }}; color:{{ nc8 }}; font-size:13px; font-weight:{{ nw8 }}; width:100%; text-align:start; transition:all 100ms; opacity:.7;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">🔒</span>
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ t_nav_intake }}</span>
+              <span style="padding:2px 6px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:9px; font-weight:700; flex-shrink:0;">{{ t_frozen }}</span>
+            </button>
+            <button onClick="{{ goS10 }}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r2); border:none; background:{{ nb10 }}; color:{{ nc10 }}; font-size:13px; font-weight:{{ nw10 }}; width:100%; text-align:start; transition:all 100ms;" style-hover="background:var(--s2);">
+              <span style="font-size:15px; flex-shrink:0;">📲</span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_nav_mobile }}</span>
+            </button>
+          </nav>
+          <!-- User row -->
+          <div style="padding:12px 14px; border-top:1px solid var(--brd);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="width:30px; height:30px; border-radius:var(--rpill); background:var(--p2); display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;">{{ roleEmoji }}</div>
+              <div style="min-width:0; flex:1;">
+                <div style="font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ roleName }}</div>
+                <div style="font-size:10px; color:var(--t2);">{{ t_demoSession }}</div>
+              </div>
+              <button onClick="{{ doLogout }}" style="padding:4px 8px; border-radius:var(--r1); border:1px solid var(--brd); background:transparent; color:var(--t2); font-size:10.5px; flex-shrink:0; transition:all 120ms;" style-hover="background:var(--s2);">{{ t_logout }}</button>
+            </div>
+          </div>
+        </aside>
+      </sc-if>
+
+      <!-- Mobile sidebar drawer -->
+      <sc-if value="{{ showMobileSidebar }}">
+        <div style="position:fixed; inset:0; z-index:200; display:flex;" role="dialog" aria-modal="true">
+          <div onClick="{{ closeSidebar }}" style="position:absolute; inset:0; background:rgba(0,0,0,.5);"></div>
+          <aside style="position:relative; width:min(var(--sw),88vw); background:var(--s); height:100%; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding:16px 8px; box-shadow:var(--sh-xl); animation:si .2s ease;">
+            <div style="padding:0 8px 14px; border-bottom:1px solid var(--brd); margin-bottom:6px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:var(--r2); background:var(--p); display:flex; align-items:center; justify-content:center; font-size:18px;">⚕</div>
+                <div><div style="font-size:13px; font-weight:700;">MediStock-Babil</div><div style="font-size:10px; color:var(--t2);">MASAR Health Network</div></div>
+              </div>
+            </div>
+            <button onClick="{{ goS2M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb2 }}; color:{{ nc2 }}; font-size:14px; font-weight:{{ nw2 }}; width:100%; text-align:start;">📊 {{ t_nav_dash }}</button>
+            <button onClick="{{ goS3M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb3 }}; color:{{ nc3 }}; font-size:14px; font-weight:{{ nw3 }}; width:100%; text-align:start;">✏️ {{ t_nav_editor }}</button>
+            <button onClick="{{ goS4M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb4 }}; color:{{ nc4 }}; font-size:14px; font-weight:{{ nw4 }}; width:100%; text-align:start;">📋 {{ t_nav_reg }}</button>
+            <button onClick="{{ goS5M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb5 }}; color:{{ nc5 }}; font-size:14px; font-weight:{{ nw5 }}; width:100%; text-align:start;">🌐 {{ t_nav_mesh }}</button>
+            <button onClick="{{ goS6M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb6 }}; color:{{ nc6 }}; font-size:14px; font-weight:{{ nw6 }}; width:100%; text-align:start;">📱 {{ t_nav_qr }}</button>
+            <button onClick="{{ goS7M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb7 }}; color:{{ nc7 }}; font-size:14px; font-weight:{{ nw7 }}; width:100%; text-align:start;">🏥 {{ t_nav_health }}</button>
+            <button onClick="{{ goS9M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb9 }}; color:{{ nc9 }}; font-size:14px; font-weight:{{ nw9 }}; width:100%; text-align:start;">📈 {{ t_nav_reports }}</button>
+            <button onClick="{{ goS8M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb8 }}; color:{{ nc8 }}; font-size:14px; font-weight:{{ nw8 }}; width:100%; text-align:start; opacity:.7;">🔒 {{ t_nav_intake }}</button>
+            <button onClick="{{ goS10M }}" style="display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--r2); border:none; background:{{ nb10 }}; color:{{ nc10 }}; font-size:14px; font-weight:{{ nw10 }}; width:100%; text-align:start;">📲 {{ t_nav_mobile }}</button>
+          </aside>
+        </div>
+      </sc-if>
+
+      <!-- Content column -->
+      <div style="flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden;">
+
+        <!-- Top Bar -->
+        <header style="height:var(--tbh); background:var(--s); border-bottom:1px solid var(--brd); display:flex; align-items:center; padding:0 18px; gap:12px; position:sticky; top:0; z-index:60; flex-shrink:0;">
+          <sc-if value="{{ isMobile }}">
+            <button onClick="{{ toggleSidebar }}" style="width:38px; height:38px; border-radius:var(--r2); border:1px solid var(--brd); background:transparent; color:var(--t); font-size:17px; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 120ms;" style-hover="background:var(--s2);" aria-label="Menu">☰</button>
+          </sc-if>
+          <h1 style="flex:1; font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ screenTitle }}</h1>
+          <div style="display:flex; align-items:center; gap:7px; flex-shrink:0;">
+            <span style="padding:3px 8px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10px; font-weight:700; white-space:nowrap;">⚠ {{ t_demoData }}</span>
+            <button onClick="{{ toggleLang }}" style="padding:4px 10px; border-radius:var(--rpill); border:1px solid var(--brd); background:var(--s2); color:var(--t); font-size:11.5px; font-weight:600; transition:all 120ms; white-space:nowrap;" style-hover="background:var(--sh);">{{ langLabel }}</button>
+            <button onClick="{{ toggleTheme }}" style="width:32px; height:32px; border-radius:var(--rpill); border:1px solid var(--brd); background:var(--s2); color:var(--t); font-size:14px; display:flex; align-items:center; justify-content:center; transition:all 120ms;" style-hover="background:var(--sh);">{{ themeIcon }}</button>
+          </div>
+        </header>
+
+        <!-- Main scrollable area -->
+        <main style="flex:1; overflow-y:auto; overflow-x:hidden; padding:{{ mainPad }}; padding-bottom:{{ mainPadB }};">
+
+          <!-- ═══ S2: DASHBOARD ═══ -->
+          <sc-if value="{{ isS2 }}">
+            <div style="max-width:1200px; animation:fs .3s ease;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:22px;">
+                <div>
+                  <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_dash }}</h2>
+                  <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_dash_sub }}</p>
+                </div>
+                <button onClick="{{ goS3 }}" style="padding:10px 16px; border-radius:var(--r3); border:none; background:var(--p); color:#fff; font-size:13px; font-weight:600; transition:all 120ms; white-space:nowrap;" style-hover="background:var(--pd);">✏️ {{ t_nav_editor }}</button>
+              </div>
+
+              <!-- 8 Metric cards -->
+              <div style="display:grid; grid-template-columns:{{ metricGrid }}; gap:{{ gapSz }}; margin-bottom:{{ gapXl }};">
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--p2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">🏥</div>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">+1</span>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; line-height:1;">4</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_inst }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--ok2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">💊</div>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">↑12%</span>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; line-height:1;">1,248</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_avail }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--warn2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">⚠️</div>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10px; font-weight:700;">↑3</span>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; color:var(--warn); line-height:1;">42</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_low }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--err2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">❌</div>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; color:var(--err); line-height:1;">8</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_miss }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--warn2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">⏱️</div>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; color:var(--warn); line-height:1;">15</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_exp }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--p2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">🌐</div>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">98%</span>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; color:var(--p); line-height:1;">7/7</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_bridge }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--warn2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">🛡️</div>
+                  </div>
+                  <div style="font-size:26px; font-weight:700; color:var(--warn); line-height:1;">2</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_safe }}</div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:12px;">
+                    <div style="width:38px; height:38px; border-radius:var(--r2); background:var(--info2); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;">🕐</div>
+                  </div>
+                  <div style="font-size:20px; font-weight:700; line-height:1;">14:32</div>
+                  <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_upd }}</div>
+                </div>
+              </div>
+
+              <!-- Institution status -->
+              <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_inst_status }}</h3>
+              <div style="display:grid; grid-template-columns:{{ cardGrid }}; gap:12px; margin-bottom:{{ gapXl }};">
+                <!-- Marjan -->
+                <div onClick="{{ goS5 }}" style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:11px;">
+                    <div style="width:7px; height:7px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                    <span style="font-size:12.5px; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_marjan }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_healthy }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; text-align:center; margin-bottom:10px;">
+                    <div><div style="font-size:15px; font-weight:700;">342</div><div style="font-size:10px; color:var(--t2);">{{ t_avail }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--warn);">8</div><div style="font-size:10px; color:var(--t2);">{{ t_low }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--err);">1</div><div style="font-size:10px; color:var(--t2);">{{ t_miss }}</div></div>
+                  </div>
+                  <div style="height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 4s ease-in-out infinite;"><div style="height:100%; width:94%; background:var(--p); border-radius:var(--rpill);"></div></div>
+                </div>
+                <!-- Hilla -->
+                <div onClick="{{ goS5 }}" style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--warn); cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:11px;">
+                    <div style="width:7px; height:7px; border-radius:50%; background:var(--warn); flex-shrink:0;"></div>
+                    <span style="font-size:12.5px; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_hilla }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_safemode }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; text-align:center; margin-bottom:10px;">
+                    <div><div style="font-size:15px; font-weight:700;">291</div><div style="font-size:10px; color:var(--t2);">{{ t_avail }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--warn);">18</div><div style="font-size:10px; color:var(--t2);">{{ t_low }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--err);">4</div><div style="font-size:10px; color:var(--t2);">{{ t_miss }}</div></div>
+                  </div>
+                  <div style="height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:71%; background:var(--warn); border-radius:var(--rpill);"></div></div>
+                </div>
+                <!-- Babil -->
+                <div onClick="{{ goS5 }}" style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:11px;">
+                    <div style="width:7px; height:7px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                    <span style="font-size:12.5px; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_babil }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_healthy }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; text-align:center; margin-bottom:10px;">
+                    <div><div style="font-size:15px; font-weight:700;">412</div><div style="font-size:10px; color:var(--t2);">{{ t_avail }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--warn);">7</div><div style="font-size:10px; color:var(--t2);">{{ t_low }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--err);">2</div><div style="font-size:10px; color:var(--t2);">{{ t_miss }}</div></div>
+                  </div>
+                  <div style="height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 5s ease-in-out infinite 1s;"><div style="height:100%; width:97%; background:var(--p); border-radius:var(--rpill);"></div></div>
+                </div>
+                <!-- Mahawil -->
+                <div onClick="{{ goS5 }}" style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:11px;">
+                    <div style="width:7px; height:7px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                    <span style="font-size:12.5px; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t_mahawil }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_healthy }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; text-align:center; margin-bottom:10px;">
+                    <div><div style="font-size:15px; font-weight:700;">203</div><div style="font-size:10px; color:var(--t2);">{{ t_avail }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--warn);">9</div><div style="font-size:10px; color:var(--t2);">{{ t_low }}</div></div>
+                    <div><div style="font-size:15px; font-weight:700; color:var(--err);">1</div><div style="font-size:10px; color:var(--t2);">{{ t_miss }}</div></div>
+                  </div>
+                  <div style="height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 6s ease-in-out infinite 2s;"><div style="height:100%; width:88%; background:var(--p); border-radius:var(--rpill);"></div></div>
+                </div>
+              </div>
+
+              <!-- Alerts + Quick Actions -->
+              <div style="display:grid; grid-template-columns:{{ alertGrid }}; gap:16px;">
+                <div>
+                  <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_alerts }}</h3>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="background:var(--s); border-radius:var(--r3); padding:13px; border:1px solid var(--brd); border-inline-start:3px solid var(--warn);">
+                      <div style="font-size:12.5px; font-weight:600; margin-bottom:3px;">⚠️ Amoxicillin 500mg — {{ t_m_low }}</div>
+                      <div style="font-size:11px; color:var(--t2);">{{ t_hilla }} · 12 {{ t_units }}</div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:13px; border:1px solid var(--brd); border-inline-start:3px solid var(--err);">
+                      <div style="font-size:12.5px; font-weight:600; margin-bottom:3px;">❌ Insulin Glargine — {{ t_miss }}</div>
+                      <div style="font-size:11px; color:var(--t2);">{{ t_hilla }} · {{ t_mahawil }}</div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:13px; border:1px solid var(--brd); border-inline-start:3px solid var(--warn);">
+                      <div style="font-size:12.5px; font-weight:600; margin-bottom:3px;">⏱️ Ceftriaxone 1g — {{ t_m_exp }}</div>
+                      <div style="font-size:11px; color:var(--t2);">{{ t_marjan }} · {{ t_expires30 }}</div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:13px; border:1px solid var(--brd); border-inline-start:3px solid var(--info);">
+                      <div style="font-size:12.5px; font-weight:600; margin-bottom:3px;">🛡️ {{ t_hilla }} — {{ t_safemode }}</div>
+                      <div style="font-size:11px; color:var(--t2);">{{ t_safemode_desc }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_quick }}</h3>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <button onClick="{{ goS3 }}" style="display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:var(--r3); border:1px solid var(--brd); background:var(--s); color:var(--t); text-align:start; width:100%; transition:all 120ms;" style-hover="background:var(--s2); border-color:var(--p);">
+                      <span style="font-size:20px; flex-shrink:0;">✏️</span><div><div style="font-size:12.5px; font-weight:600;">{{ t_nav_editor }}</div><div style="font-size:11px; color:var(--t2); margin-top:2px;">{{ t_editor_desc }}</div></div>
+                    </button>
+                    <button onClick="{{ goS7 }}" style="display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:var(--r3); border:1px solid var(--brd); background:var(--s); color:var(--t); text-align:start; width:100%; transition:all 120ms;" style-hover="background:var(--s2); border-color:var(--p);">
+                      <span style="font-size:20px; flex-shrink:0;">🏥</span><div><div style="font-size:12.5px; font-weight:600;">{{ t_nav_health }}</div><div style="font-size:11px; color:var(--t2); margin-top:2px;">{{ t_health_desc }}</div></div>
+                    </button>
+                    <button onClick="{{ goS9 }}" style="display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:var(--r3); border:1px solid var(--brd); background:var(--s); color:var(--t); text-align:start; width:100%; transition:all 120ms;" style-hover="background:var(--s2); border-color:var(--p);">
+                      <span style="font-size:20px; flex-shrink:0;">📈</span><div><div style="font-size:12.5px; font-weight:600;">{{ t_nav_reports }}</div><div style="font-size:11px; color:var(--t2); margin-top:2px;">{{ t_reports_desc }}</div></div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S3: MANUAL AVAILABILITY EDITOR ═══ -->
+          <sc-if value="{{ isS3 }}">
+            <div style="max-width:900px; animation:fs .3s ease;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+                <div>
+                  <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_editor }}</h2>
+                  <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_editor_sub }}</p>
+                </div>
+                <span style="padding:4px 10px; border-radius:var(--rpill); background:var(--p2); color:var(--pd); font-size:11px; font-weight:700;">🏥 {{ t_scope }}</span>
+              </div>
+
+              <!-- Institution selector -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:16px;">
+                <label style="display:block; font-size:11.5px; font-weight:700; color:var(--t2); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;">{{ t_select_inst }}</label>
+                <div style="display:grid; grid-template-columns:{{ instGrid }}; gap:8px;">
+                  <button onClick="{{ setInstMarjan }}" style="padding:9px 12px; border-radius:var(--r2); border:2px solid {{ instIs_m }}; background:{{ instBg_m }}; color:var(--t); font-size:12px; font-weight:600; transition:all 120ms; text-align:start;" style-hover="border-color:var(--p);">🏥 {{ t_marjan }}</button>
+                  <button onClick="{{ setInstHilla }}" style="padding:9px 12px; border-radius:var(--r2); border:2px solid {{ instIs_h }}; background:{{ instBg_h }}; color:var(--t); font-size:12px; font-weight:600; transition:all 120ms; text-align:start;" style-hover="border-color:var(--warn);">⚠️ {{ t_hilla }}</button>
+                  <button onClick="{{ setInstBabil }}" style="padding:9px 12px; border-radius:var(--r2); border:2px solid {{ instIs_b }}; background:{{ instBg_b }}; color:var(--t); font-size:12px; font-weight:600; transition:all 120ms; text-align:start;" style-hover="border-color:var(--p);">🏥 {{ t_babil }}</button>
+                  <button onClick="{{ setInstMahawil }}" style="padding:9px 12px; border-radius:var(--r2); border:2px solid {{ instIs_mh }}; background:{{ instBg_mh }}; color:var(--t); font-size:12px; font-weight:600; transition:all 120ms; text-align:start;" style-hover="border-color:var(--p);">🏥 {{ t_mahawil }}</button>
+                </div>
+              </div>
+
+              <!-- Tab bar -->
+              <div style="display:flex; gap:6px; margin-bottom:16px; background:var(--s2); border-radius:var(--r3); padding:4px; border:1px solid var(--brd);">
+                <button onClick="{{ setTabSingle }}" style="flex:1; padding:9px 12px; border-radius:var(--r2); border:none; background:{{ tabBgS }}; color:{{ tabColS }}; font-size:13px; font-weight:600; transition:all 150ms; box-shadow:{{ tabShS }};">{{ t_single }}</button>
+                <button onClick="{{ setTabBatch }}" style="flex:1; padding:9px 12px; border-radius:var(--r2); border:none; background:{{ tabBgB }}; color:{{ tabColB }}; font-size:13px; font-weight:600; transition:all 150ms; box-shadow:{{ tabShB }};">{{ t_batch }}</button>
+              </div>
+
+              <!-- Single entry form -->
+              <sc-if value="{{ isTabSingle }}">
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:16px; animation:fs .25s ease;">
+                  <div style="display:grid; grid-template-columns:{{ formGrid }}; gap:14px;">
+                    <div style="grid-column:{{ formSpan }};">
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_item }} *</label>
+                      <select style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; transition:all 120ms; appearance:none; cursor:pointer;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);">
+                        <option>Amoxicillin 500mg Capsule</option>
+                        <option>Paracetamol 500mg Tab</option>
+                        <option>Metformin 850mg Tab</option>
+                        <option>Omeprazole 20mg Cap</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_qty }} *</label>
+                      <input type="number" value="50" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; transition:all 120ms;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);" aria-label="{{ t_qty }}">
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_unit }}</label>
+                      <select style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; transition:all 120ms; appearance:none; cursor:pointer;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);">
+                        <option>Capsule / كبسولة</option>
+                        <option>Tablet / قرص</option>
+                        <option>Vial / أمبول</option>
+                        <option>Bottle / زجاجة</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_batch }} <span dir="ltr" style="font-family:monospace; font-size:10px; font-weight:400; color:var(--t3);">(LTR ID)</span></label>
+                      <input type="text" placeholder="BCH-2024-001" dir="ltr" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; font-family:monospace; transition:all 120ms;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);" aria-label="{{ t_batch }}">
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_expiry }}</label>
+                      <input type="date" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; transition:all 120ms;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);" aria-label="{{ t_expiry }}">
+                    </div>
+                    <div style="grid-column:{{ formSpan }};">
+                      <label style="display:block; font-size:11.5px; font-weight:600; color:var(--t2); margin-bottom:6px;">{{ t_notes }}</label>
+                      <textarea rows="2" placeholder="{{ t_notes_ph }}" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; resize:vertical; transition:all 120ms;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);" aria-label="{{ t_notes }}"></textarea>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Batch entry -->
+              <sc-if value="{{ isTabBatch }}">
+                <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:16px; animation:fs .25s ease;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;">
+                    <p style="font-size:13px; font-weight:600;">{{ t_batch_items }}</p>
+                    <button style="padding:7px 12px; border-radius:var(--r2); border:1px solid var(--p); background:var(--p2); color:var(--pd); font-size:12px; font-weight:600; transition:all 120ms;" style-hover="background:var(--p); color:#fff;">+ {{ t_add_row }}</button>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:10px;">
+                    <div style="background:var(--s2); border-radius:var(--r3); padding:13px; border:1px solid var(--brd);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:12.5px; font-weight:600;">Amoxicillin 500mg</span>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                          <span style="font-size:12px; color:var(--t2);">Qty:</span>
+                          <input type="number" value="120" style="width:70px; padding:5px 8px; border-radius:var(--r1); border:1px solid var(--brd); background:var(--s); font-size:12px; color:var(--t);" aria-label="Quantity">
+                          <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">✓ {{ t_valid }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style="background:var(--s2); border-radius:var(--r3); padding:13px; border:1px solid var(--err);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:12.5px; font-weight:600;">Metformin 850mg</span>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                          <span style="font-size:12px; color:var(--t2);">Qty:</span>
+                          <input type="number" value="-5" style="width:70px; padding:5px 8px; border-radius:var(--r1); border:1px solid var(--err); background:var(--err2); font-size:12px; color:var(--t);" aria-label="Quantity">
+                          <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--err2); color:var(--err); font-size:10px; font-weight:700;">✗ {{ t_invalid }}</span>
+                        </div>
+                      </div>
+                      <p style="font-size:11px; color:var(--err); margin-top:6px;">⚠ {{ t_qty_err }}</p>
+                    </div>
+                    <div style="background:var(--s2); border-radius:var(--r3); padding:13px; border:1px solid var(--brd);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:12.5px; font-weight:600;">Omeprazole 20mg</span>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                          <span style="font-size:12px; color:var(--t2);">Qty:</span>
+                          <input type="number" value="80" style="width:70px; padding:5px 8px; border-radius:var(--r1); border:1px solid var(--brd); background:var(--s); font-size:12px; color:var(--t);" aria-label="Quantity">
+                          <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">✓ {{ t_valid }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Review summary -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:16px;">
+                <h3 style="font-size:13px; font-weight:700; margin-bottom:12px;">{{ t_review }}</h3>
+                <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="width:10px; height:10px; border-radius:50%; background:var(--ok); display:inline-block;"></span>
+                    <span style="font-size:12.5px;"><strong>2</strong> {{ t_safe_count }}</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="width:10px; height:10px; border-radius:50%; background:var(--err); display:inline-block;"></span>
+                    <span style="font-size:12.5px;"><strong>1</strong> {{ t_blocker }}</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="width:10px; height:10px; border-radius:50%; background:var(--warn); display:inline-block;"></span>
+                    <span style="font-size:12.5px;"><strong>0</strong> {{ t_warnings }}</span>
+                  </div>
+                </div>
+                <div style="padding:10px 12px; border-radius:var(--r2); background:var(--err2); border:1px solid var(--err); font-size:12px; color:var(--err);">⚠ {{ t_blocker_msg }}</div>
+              </div>
+
+              <!-- Apply button -->
+              <button onClick="{{ showApply }}" style="width:100%; padding:15px; border-radius:var(--r3); border:none; background:var(--p); color:#fff; font-size:15px; font-weight:700; transition:all 150ms; box-shadow:0 4px 16px rgba(13,148,136,.28); display:flex; align-items:center; justify-content:center; gap:8px;" style-hover="background:var(--pd); box-shadow:0 6px 20px rgba(13,148,136,.38); transform:translateY(-1px);" style-active="transform:translateY(0);">
+                ✅ {{ t_apply }}
+              </button>
+              <p style="text-align:center; font-size:11px; color:var(--t3); margin-top:8px;">{{ t_apply_note }}</p>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S4: LOCAL ITEM REGISTRY ═══ -->
+          <sc-if value="{{ isS4 }}">
+            <div style="max-width:1000px; animation:fs .3s ease;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+                <div>
+                  <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_reg }}</h2>
+                  <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_reg_sub }}</p>
+                </div>
+                <button style="padding:10px 16px; border-radius:var(--r3); border:none; background:var(--p); color:#fff; font-size:13px; font-weight:600; transition:all 120ms; white-space:nowrap;" style-hover="background:var(--pd);">+ {{ t_add_item }}</button>
+              </div>
+
+              <!-- Scope notice -->
+              <div style="background:var(--info2); border:1px solid var(--info); border-radius:var(--r3); padding:12px 14px; margin-bottom:16px; font-size:12.5px; color:var(--info); display:flex; align-items:center; gap:8px;">
+                <span>ℹ️</span>{{ t_scope_note }}
+              </div>
+
+              <!-- Search bar -->
+              <div style="position:relative; margin-bottom:18px;">
+                <span style="position:absolute; inset-inline-start:12px; top:50%; transform:translateY(-50%); font-size:15px; pointer-events:none;">🔍</span>
+                <input type="search" placeholder="{{ t_search }}" style="width:100%; padding:10px 12px; padding-inline-start:38px; border-radius:var(--r3); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px; transition:all 120ms;" style-focus="border-color:var(--p); box-shadow:0 0 0 3px var(--p2);" aria-label="{{ t_search }}">
+              </div>
+
+              <!-- Item cards grid -->
+              <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap:12px;">
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Amoxicillin</div><div style="font-size:11px; color:var(--t2);">أموكسيسيلين</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_active }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-001</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Capsule</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> Alkan Pharma</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Antibiotics</div>
+                  </div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Paracetamol</div><div style="font-size:11px; color:var(--t2);">باراسيتامول</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_active }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-002</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Tablet</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> SDI Pharma</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Analgesics</div>
+                  </div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Metformin</div><div style="font-size:11px; color:var(--t2);">ميتفورمين</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_active }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-003</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Tablet</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> Julphar</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Antidiabetics</div>
+                  </div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms; opacity:.65;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Insulin Glargine</div><div style="font-size:11px; color:var(--t2);">إنسولين جلارجين</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--skel); color:var(--t2); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_inactive }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-010</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Vial</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> Sanofi</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Insulins</div>
+                  </div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Omeprazole</div><div style="font-size:11px; color:var(--t2);">أوميبرازول</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_active }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-004</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Capsule</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> AstraZeneca</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Gastro</div>
+                  </div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--warn); transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div><div style="font-size:13px; font-weight:700;">Ceftriaxone 1g</div><div style="font-size:11px; color:var(--t2);">سيفترياكسون</div></div>
+                    <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700; flex-shrink:0;">{{ t_active }}</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div><span style="color:var(--t2);">{{ t_lcode }}:</span> <span dir="ltr" style="font-family:monospace; font-weight:600;">BBL-005</span></div>
+                    <div><span style="color:var(--t2);">{{ t_unit }}:</span> Vial</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_mfr }}:</span> Roche</div>
+                    <div style="grid-column:1/-1;"><span style="color:var(--t2);">{{ t_cat }}:</span> Antibiotics</div>
+                  </div>
+                  <div style="margin-top:8px; padding:6px 9px; border-radius:var(--r1); background:var(--warn2); font-size:10.5px; color:var(--warn); font-weight:600;">⚠ {{ t_similar_warn }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S5: AVAILABILITY MESH VIEW ═══ -->
+          <sc-if value="{{ isS5 }}">
+            <div style="max-width:1100px; animation:fs .3s ease;">
+              <div style="margin-bottom:20px;">
+                <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_mesh }}</h2>
+                <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_mesh_sub }}</p>
+              </div>
+
+              <!-- Legend -->
+              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:20px;">
+                <span style="display:flex; align-items:center; gap:5px; font-size:11.5px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--ok); display:inline-block;"></span>{{ t_healthy }}</span>
+                <span style="display:flex; align-items:center; gap:5px; font-size:11.5px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--warn); display:inline-block;"></span>{{ t_safemode }}</span>
+                <span style="display:flex; align-items:center; gap:5px; font-size:11.5px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--err); display:inline-block;"></span>{{ t_quarantine }}</span>
+                <span style="display:flex; align-items:center; gap:5px; font-size:11.5px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--t3); display:inline-block;"></span>{{ t_frozen }}</span>
+              </div>
+
+              <div style="display:grid; grid-template-columns:{{ meshGrid }}; gap:16px; align-items:start;">
+                <!-- Mesh canvas -->
+                <div>
+                  <!-- Row 1: Marjan + Hilla -->
+                  <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; margin-bottom:8px;">
+                    <!-- Marjan capsule -->
+                    <div onClick="{{ selectMeshMarjan }}" style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:{{ meshBrdMarjan }}; cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:scale(1.02);">
+                      <div style="display:flex; align-items:center; gap:7px; margin-bottom:8px;">
+                        <div style="width:8px; height:8px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                        <span style="font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ t_marjan }}</span>
+                      </div>
+                      <div style="font-size:10.5px; color:var(--t2);">342 {{ t_avail }} · 8 {{ t_low }}</div>
+                      <div style="margin-top:7px; height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 4s ease-in-out infinite;"><div style="height:100%; width:94%; background:var(--p);"></div></div>
+                    </div>
+                    <!-- Bridge line H -->
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                      <div style="height:2px; width:40px; background:linear-gradient(to right, var(--p), var(--p2), var(--p)); border-radius:var(--rpill); animation:bp 3s ease-in-out infinite;"></div>
+                      <span style="font-size:9px; color:var(--t3); white-space:nowrap;">bridge</span>
+                    </div>
+                    <!-- Hilla capsule -->
+                    <div onClick="{{ selectMeshHilla }}" style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:{{ meshBrdHilla }}; cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:scale(1.02);">
+                      <div style="display:flex; align-items:center; gap:7px; margin-bottom:8px;">
+                        <div style="width:8px; height:8px; border-radius:50%; background:var(--warn); flex-shrink:0;"></div>
+                        <span style="font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ t_hilla }}</span>
+                        <span style="padding:2px 6px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:9px; font-weight:700; flex-shrink:0;">{{ t_safemode }}</span>
+                      </div>
+                      <div style="font-size:10.5px; color:var(--t2);">291 {{ t_avail }} · 18 {{ t_low }}</div>
+                      <div style="margin-top:7px; height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:71%; background:var(--warn);"></div></div>
+                    </div>
+                  </div>
+                  <!-- Vertical bridge connectors -->
+                  <div style="display:grid; grid-template-columns:1fr auto 1fr; margin-bottom:8px; gap:8px;">
+                    <div style="display:flex; justify-content:center;"><div style="width:2px; height:28px; background:linear-gradient(to bottom, var(--p), var(--p2)); border-radius:var(--rpill); animation:bp 4.5s ease-in-out infinite 0.5s;"></div></div>
+                    <div></div>
+                    <div style="display:flex; justify-content:center;"><div style="width:2px; height:28px; background:linear-gradient(to bottom, var(--warn), var(--warn2)); border-radius:var(--rpill); animation:bp 4.5s ease-in-out infinite 1s;"></div></div>
+                  </div>
+                  <!-- Row 2: Babil + Mahawil -->
+                  <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center;">
+                    <div onClick="{{ selectMeshBabil }}" style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:{{ meshBrdBabil }}; cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:scale(1.02);">
+                      <div style="display:flex; align-items:center; gap:7px; margin-bottom:8px;">
+                        <div style="width:8px; height:8px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                        <span style="font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ t_babil }}</span>
+                      </div>
+                      <div style="font-size:10.5px; color:var(--t2);">412 {{ t_avail }} · 7 {{ t_low }}</div>
+                      <div style="margin-top:7px; height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 5s ease-in-out infinite 1s;"><div style="height:100%; width:97%; background:var(--p);"></div></div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                      <div style="height:2px; width:40px; background:linear-gradient(to right, var(--p), var(--p2), var(--p)); border-radius:var(--rpill); animation:bp 3.5s ease-in-out infinite 0.7s;"></div>
+                      <span style="font-size:9px; color:var(--t3); white-space:nowrap;">bridge</span>
+                    </div>
+                    <div onClick="{{ selectMeshMahawil }}" style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:{{ meshBrdMahawil }}; cursor:pointer; transition:all 180ms;" style-hover="box-shadow:var(--sh-md); transform:scale(1.02);">
+                      <div style="display:flex; align-items:center; gap:7px; margin-bottom:8px;">
+                        <div style="width:8px; height:8px; border-radius:50%; background:var(--ok); flex-shrink:0;"></div>
+                        <span style="font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ t_mahawil }}</span>
+                      </div>
+                      <div style="font-size:10.5px; color:var(--t2);">203 {{ t_avail }} · 9 {{ t_low }}</div>
+                      <div style="margin-top:7px; height:3px; background:var(--brd); border-radius:var(--rpill); overflow:hidden; animation:bp 6s ease-in-out infinite 2s;"><div style="height:100%; width:88%; background:var(--p);"></div></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Detail panel -->
+                <sc-if value="{{ hasMeshDetail }}">
+                  <div style="background:var(--s); border-radius:var(--r4); padding:18px; box-shadow:var(--sh-md); border:1px solid var(--brd); animation:fs .25s ease;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                      <div style="width:10px; height:10px; border-radius:50%; background:{{ meshDetailDot }}; flex-shrink:0;"></div>
+                      <h3 style="font-size:14px; font-weight:700; flex:1;">{{ meshDetailName }}</h3>
+                      <span style="padding:3px 8px; border-radius:var(--rpill); background:{{ meshDetailBadgeBg }}; color:{{ meshDetailBadgeCol }}; font-size:10px; font-weight:700;">{{ meshDetailStatus }}</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
+                      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brd);">
+                        <span style="color:var(--t2);">{{ t_avail }}</span><strong>{{ meshDetailAvail }}</strong>
+                      </div>
+                      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brd);">
+                        <span style="color:var(--t2);">{{ t_low }}</span><strong style="color:var(--warn);">{{ meshDetailLow }}</strong>
+                      </div>
+                      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brd);">
+                        <span style="color:var(--t2);">{{ t_miss }}</span><strong style="color:var(--err);">{{ meshDetailMiss }}</strong>
+                      </div>
+                      <div style="display:flex; justify-content:space-between; padding:8px 0;">
+                        <span style="color:var(--t2);">{{ t_m_bridge }}</span><strong style="color:var(--p);">{{ meshDetailBridge }}</strong>
+                      </div>
+                    </div>
+                    <button onClick="{{ goS3 }}" style="margin-top:14px; width:100%; padding:9px; border-radius:var(--r2); border:none; background:var(--p); color:#fff; font-size:12.5px; font-weight:600; transition:all 120ms;" style-hover="background:var(--pd);">✏️ {{ t_nav_editor }}</button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S6: QR CENTER ═══ -->
+          <sc-if value="{{ isS6 }}">
+            <div style="max-width:900px; animation:fs .3s ease;">
+              <div style="margin-bottom:20px;">
+                <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_qr }}</h2>
+                <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_qr_sub }}</p>
+              </div>
+
+              <!-- Privacy notice (prominent) -->
+              <div style="background:var(--p2); border:1px solid var(--p); border-radius:var(--r3); padding:14px 16px; margin-bottom:20px; display:flex; gap:10px; align-items:flex-start;">
+                <span style="font-size:18px; flex-shrink:0; margin-top:1px;">🔐</span>
+                <div>
+                  <div style="font-size:12.5px; font-weight:700; color:var(--pd); margin-bottom:3px;">{{ t_privacy_title }}</div>
+                  <p style="font-size:12px; color:var(--pd); line-height:1.55;">{{ t_qr_privacy }}</p>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:{{ qrGrid }}; gap:20px; align-items:start;">
+                <!-- QR Preview card -->
+                <div style="background:var(--s); border-radius:var(--r4); padding:22px; box-shadow:var(--sh-md); border:1px solid var(--brd); text-align:center;">
+                  <div style="font-size:13px; font-weight:700; margin-bottom:4px;">{{ t_marjan }}</div>
+                  <div style="font-size:11px; color:var(--t2); margin-bottom:16px;">{{ t_qr_public_label }}</div>
+                  <!-- Fake QR code SVG -->
+                  <div style="display:inline-block; padding:10px; background:#fff; border-radius:var(--r2); border:1px solid var(--brd); margin-bottom:14px;">
+                    <svg width="120" height="120" viewBox="0 0 25 25" style="display:block;" aria-label="QR Code (demo)">
+                      <rect width="25" height="25" fill="white"></rect>
+                      <rect x="1" y="1" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9"></rect>
+                      <rect x="2" y="2" width="5" height="5" rx="0.3" fill="white"></rect>
+                      <rect x="3" y="3" width="3" height="3" rx="0.2" fill="#0D9488"></rect>
+                      <rect x="17" y="1" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9"></rect>
+                      <rect x="18" y="2" width="5" height="5" rx="0.3" fill="white"></rect>
+                      <rect x="19" y="3" width="3" height="3" rx="0.2" fill="#0D9488"></rect>
+                      <rect x="1" y="17" width="7" height="7" rx="0.5" fill="#0D9488" opacity=".9"></rect>
+                      <rect x="2" y="18" width="5" height="5" rx="0.3" fill="white"></rect>
+                      <rect x="3" y="19" width="3" height="3" rx="0.2" fill="#0D9488"></rect>
+                      <rect x="10" y="1" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="12" y="1" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="14" y="1" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="3" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="13" y="3" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="5" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="12" y="5" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="14" y="5" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="1" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="3" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="5" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="1" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="4" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="13" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="15" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="17" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="20" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="22" y="10" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="12" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="19" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="22" y="12" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="14" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="14" y="14" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="17" y="14" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="20" y="14" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="17" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="13" y="17" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="17" y="17" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="19" y="17" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="20" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="12" y="20" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="15" y="20" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="20" y="20" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="22" y="20" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="10" y="22" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="14" y="22" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="18" y="22" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                      <rect x="21" y="22" width="1.5" height="1.5" fill="#0F2B4F"></rect>
+                    </svg>
+                  </div>
+                  <div style="font-size:10px; color:var(--t3); font-family:monospace; margin-bottom:10px;" dir="ltr">QR-BBL-MRJ-2026</div>
+                  <span style="padding:4px 12px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:11px; font-weight:700;">● {{ t_qr_active }}</span>
+                </div>
+
+                <!-- Public availability list -->
+                <div>
+                  <h3 style="font-size:13px; font-weight:700; margin-bottom:12px;">{{ t_qr_public_avail }}</h3>
+                  <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+                    <div style="background:var(--s); border-radius:var(--r3); padding:12px 14px; box-shadow:var(--sh-xs); border:1px solid var(--brd);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                        <span style="font-size:12.5px; font-weight:600;">Amoxicillin 500mg</span>
+                        <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10.5px; font-weight:700;">{{ t_avail }}</span>
+                      </div>
+                      <div style="font-size:11px; color:var(--t2); margin-top:3px; display:flex; gap:12px;">
+                        <span>{{ t_last_upd }}: {{ t_today }}</span>
+                      </div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:12px 14px; box-shadow:var(--sh-xs); border:1px solid var(--brd);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                        <span style="font-size:12.5px; font-weight:600;">Paracetamol 500mg</span>
+                        <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10.5px; font-weight:700;">{{ t_avail }}</span>
+                      </div>
+                      <div style="font-size:11px; color:var(--t2); margin-top:3px;">{{ t_last_upd }}: {{ t_today }}</div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:12px 14px; box-shadow:var(--sh-xs); border:1px solid var(--brd);">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                        <span style="font-size:12.5px; font-weight:600;">Ceftriaxone 1g</span>
+                        <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10.5px; font-weight:700;">{{ t_low }}</span>
+                      </div>
+                      <div style="font-size:11px; color:var(--t2); margin-top:3px;">{{ t_last_upd }}: {{ t_today }}</div>
+                    </div>
+                    <div style="background:var(--s); border-radius:var(--r3); padding:12px 14px; box-shadow:var(--sh-xs); border:1px solid var(--brd); opacity:.6;">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                        <span style="font-size:12.5px; font-weight:600;">Insulin Glargine</span>
+                        <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--err2); color:var(--err); font-size:10.5px; font-weight:700;">{{ t_miss }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="padding:10px 12px; border-radius:var(--r2); background:var(--s2); border:1px solid var(--brd); font-size:11px; color:var(--t3);">🔒 {{ t_qr_no_expose }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S7: SYSTEM HEALTH CENTER ═══ -->
+          <sc-if value="{{ isS7 }}">
+            <div style="max-width:1000px; animation:fs .3s ease;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+                <div>
+                  <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_health }}</h2>
+                  <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_health_sub }}</p>
+                </div>
+                <span style="padding:4px 12px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:12px; font-weight:700;">● {{ t_operational }}</span>
+              </div>
+
+              <!-- Global status bar -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:16px 20px; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:16px; display:flex; flex-wrap:wrap; gap:16px; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:160px;">
+                  <div style="width:40px; height:40px; border-radius:50%; border:3px solid var(--ok); display:flex; align-items:center; justify-content:center; font-size:18px;">⚕</div>
+                  <div><div style="font-size:13px; font-weight:700;">{{ t_global_status }}</div><div style="font-size:11.5px; color:var(--ok);">{{ t_operational }}</div></div>
+                </div>
+                <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                  <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:var(--p);">12</div><div style="font-size:10.5px; color:var(--t2);">{{ t_modules }}</div></div>
+                  <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:var(--ok);">9</div><div style="font-size:10.5px; color:var(--t2);">{{ t_healthy }}</div></div>
+                  <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:var(--warn);">2</div><div style="font-size:10.5px; color:var(--t2);">{{ t_safemode }}</div></div>
+                  <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:var(--t3);">1</div><div style="font-size:10.5px; color:var(--t2);">{{ t_frozen }}</div></div>
+                </div>
+              </div>
+
+              <!-- Module health (expandable) -->
+              <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_module_health }}</h3>
+              <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px;">
+                <!-- Module 1 -->
+                <div style="background:var(--s); border-radius:var(--r3); box-shadow:var(--sh-xs); border:1px solid var(--brd); overflow:hidden;">
+                  <button onClick="{{ toggleH1 }}" style="width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px; border:none; background:transparent; color:var(--t); text-align:start; transition:all 120ms;" style-hover="background:var(--s2);" aria-expanded="{{ hExp1 }}">
+                    <span style="width:9px; height:9px; border-radius:50%; background:var(--ok); flex-shrink:0;"></span>
+                    <span style="flex:1; font-size:13px; font-weight:600;">{{ t_mod_avail_read }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">{{ t_healthy }}</span>
+                    <span style="font-size:14px; color:var(--t2); transition:transform 200ms; transform:{{ rotH1 }};">▼</span>
+                  </button>
+                  <sc-if value="{{ hExp1 }}">
+                    <div style="padding:0 16px 14px; border-top:1px solid var(--brd); animation:fs .2s ease;">
+                      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-top:12px; font-size:12px;">
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Uptime</div><div style="font-weight:700; color:var(--ok);">99.8%</div></div>
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Latency</div><div style="font-weight:700;" dir="ltr">42ms</div></div>
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">{{ t_last_upd }}</div><div style="font-weight:700;">14:32</div></div>
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Bridge</div><div style="font-weight:700; color:var(--p);">{{ t_connected }}</div></div>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+                <!-- Module 2 -->
+                <div style="background:var(--s); border-radius:var(--r3); box-shadow:var(--sh-xs); border:1px solid var(--warn); overflow:hidden;">
+                  <button onClick="{{ toggleH2 }}" style="width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px; border:none; background:transparent; color:var(--t); text-align:start; transition:all 120ms;" style-hover="background:var(--s2);" aria-expanded="{{ hExp2 }}">
+                    <span style="width:9px; height:9px; border-radius:50%; background:var(--warn); flex-shrink:0;"></span>
+                    <span style="flex:1; font-size:13px; font-weight:600;">{{ t_mod_editor }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10px; font-weight:700;">{{ t_safemode }}</span>
+                    <span style="font-size:14px; color:var(--t2); transition:transform 200ms; transform:{{ rotH2 }};">▼</span>
+                  </button>
+                  <sc-if value="{{ hExp2 }}">
+                    <div style="padding:0 16px 14px; border-top:1px solid var(--brd); animation:fs .2s ease;">
+                      <div style="padding:10px 12px; border-radius:var(--r2); background:var(--warn2); margin-top:12px; font-size:12px; color:var(--warn);">🛡 {{ t_safemode_desc }} · {{ t_hilla }}</div>
+                      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-top:10px; font-size:12px;">
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Uptime</div><div style="font-weight:700; color:var(--warn);">96.2%</div></div>
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Pending</div><div style="font-weight:700;">0 {{ t_actions }}</div></div>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+                <!-- Module 3 -->
+                <div style="background:var(--s); border-radius:var(--r3); box-shadow:var(--sh-xs); border:1px solid var(--brd); overflow:hidden;">
+                  <button onClick="{{ toggleH3 }}" style="width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px; border:none; background:transparent; color:var(--t); text-align:start; transition:all 120ms;" style-hover="background:var(--s2);" aria-expanded="{{ hExp3 }}">
+                    <span style="width:9px; height:9px; border-radius:50%; background:var(--ok); flex-shrink:0;"></span>
+                    <span style="flex:1; font-size:13px; font-weight:600;">{{ t_mod_qr }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-size:10px; font-weight:700;">{{ t_healthy }}</span>
+                    <span style="font-size:14px; color:var(--t2); transition:transform 200ms; transform:{{ rotH3 }};">▼</span>
+                  </button>
+                  <sc-if value="{{ hExp3 }}">
+                    <div style="padding:0 16px 14px; border-top:1px solid var(--brd); animation:fs .2s ease;">
+                      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-top:12px; font-size:12px;">
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">QR Active</div><div style="font-weight:700; color:var(--ok);">4/4</div></div>
+                        <div style="padding:10px; border-radius:var(--r2); background:var(--s2);"><div style="color:var(--t2); margin-bottom:4px;">Scans/day</div><div style="font-weight:700;" dir="ltr">~127</div></div>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+                <!-- Module 4: Frozen Intake -->
+                <div style="background:var(--s); border-radius:var(--r3); box-shadow:var(--sh-xs); border:1px solid var(--brd); overflow:hidden; opacity:.7;">
+                  <button onClick="{{ toggleH4 }}" style="width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px; border:none; background:transparent; color:var(--t); text-align:start; transition:all 120ms;" aria-expanded="{{ hExp4 }}">
+                    <span style="width:9px; height:9px; border-radius:50%; background:var(--t3); flex-shrink:0;"></span>
+                    <span style="flex:1; font-size:13px; font-weight:600;">{{ t_mod_intake }}</span>
+                    <span style="padding:2px 7px; border-radius:var(--rpill); background:var(--skel); color:var(--t2); font-size:10px; font-weight:700;">{{ t_frozen }}</span>
+                    <span style="font-size:14px; color:var(--t2); transition:transform 200ms; transform:{{ rotH4 }};">▼</span>
+                  </button>
+                  <sc-if value="{{ hExp4 }}">
+                    <div style="padding:0 16px 14px; border-top:1px solid var(--brd); animation:fs .2s ease;">
+                      <div style="padding:10px 12px; border-radius:var(--r2); background:var(--skel); margin-top:12px; font-size:12px; color:var(--t2);">🔒 {{ t_intake_frozen_note }}</div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+
+              <!-- Bridge governance + recovery queue -->
+              <div style="display:grid; grid-template-columns:{{ bridgeGrid }}; gap:16px;">
+                <div>
+                  <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_bridge_gov }}</h3>
+                  <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
+                      <div style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--brd);">
+                        <span style="width:7px; height:7px; border-radius:50%; background:var(--ok); flex-shrink:0;"></span>
+                        <span style="flex:1;">{{ t_marjan }} → {{ t_babil }}</span>
+                        <span style="color:var(--ok); font-weight:600;">98%</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--brd);">
+                        <span style="width:7px; height:7px; border-radius:50%; background:var(--warn); flex-shrink:0;"></span>
+                        <span style="flex:1;">{{ t_hilla }} → {{ t_mahawil }}</span>
+                        <span style="color:var(--warn); font-weight:600;">74%</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:8px; padding:8px 0;">
+                        <span style="width:7px; height:7px; border-radius:50%; background:var(--ok); flex-shrink:0;"></span>
+                        <span style="flex:1;">{{ t_babil }} → {{ t_mahawil }}</span>
+                        <span style="color:var(--ok); font-weight:600;">100%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_recovery_q }}</h3>
+                  <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="text-align:center; padding:16px 0; color:var(--t2);">
+                      <div style="font-size:24px; margin-bottom:6px;">✅</div>
+                      <div style="font-size:12.5px; font-weight:600;">{{ t_recovery_clear }}</div>
+                      <div style="font-size:11px; color:var(--t3); margin-top:4px;">{{ t_demoData }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Event log -->
+              <h3 style="font-size:14px; font-weight:700; margin:20px 0 12px;">{{ t_event_log }}</h3>
+              <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                <div style="display:flex; flex-direction:column; gap:0;">
+                  <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--brd);">
+                    <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace;" dir="ltr">14:32</div>
+                    <div><div style="font-size:12px; font-weight:600;">{{ t_ev1 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_marjan }}</div></div>
+                  </div>
+                  <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--brd);">
+                    <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace;" dir="ltr">13:15</div>
+                    <div><div style="font-size:12px; font-weight:600; color:var(--warn);">{{ t_ev2 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_hilla }}</div></div>
+                  </div>
+                  <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--brd);">
+                    <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace;" dir="ltr">11:04</div>
+                    <div><div style="font-size:12px; font-weight:600;">{{ t_ev3 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_babil }}</div></div>
+                  </div>
+                  <div style="display:flex; gap:12px; padding:10px 0;">
+                    <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace;" dir="ltr">09:30</div>
+                    <div><div style="font-size:12px; font-weight:600;">{{ t_ev4 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_system }}</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S8: DISABLED INTAKE CAPSULE ═══ -->
+          <sc-if value="{{ isS8 }}">
+            <div style="max-width:800px; animation:fs .3s ease;">
+              <div style="margin-bottom:20px;">
+                <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_intake }}</h2>
+                <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_intake_sub }}</p>
+              </div>
+
+              <!-- Frozen capsule visual -->
+              <div style="background:var(--s2); border:2px dashed var(--t3); border-radius:var(--r5); padding:32px 24px; text-align:center; margin-bottom:20px; position:relative; overflow:hidden;">
+                <div aria-hidden="true" style="position:absolute; inset:0; background:repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(143,165,188,.06) 8px, rgba(143,165,188,.06) 9px);"></div>
+                <div style="position:relative;">
+                  <div style="width:80px; height:80px; border-radius:var(--r4); background:var(--skel); border:2px solid var(--brd); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; font-size:36px; opacity:.6;">🔒</div>
+                  <h3 style="font-size:20px; font-weight:700; color:var(--t2); margin-bottom:6px;">{{ t_intake_frozen }}</h3>
+                  <span style="display:inline-block; padding:4px 14px; border-radius:var(--rpill); background:var(--skel); color:var(--t2); font-size:11px; font-weight:700; margin-bottom:16px; border:1px solid var(--brd);">🔒 {{ t_safe_frozen }}</span>
+                  <p style="font-size:13px; color:var(--t2); max-width:500px; margin:0 auto; line-height:1.65;">{{ t_intake_disabled_msg }}</p>
+                </div>
+              </div>
+
+              <!-- Blocked workflows -->
+              <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">{{ t_blocked_workflows }}</h3>
+              <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap:10px; margin-bottom:20px;">
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">📊</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">Excel Import</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">📸</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">OCR Scan</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">📄</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">CSV Upload</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">🧠</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">Doc Intelligence</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">⚡</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">Smart Intake</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+                <div style="background:var(--s); border-radius:var(--r3); padding:14px; border:1px solid var(--brd); opacity:.55; display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:20px; flex-shrink:0;">✏️</span>
+                  <div><div style="font-size:12.5px; font-weight:600;">Smart Manual</div><div style="font-size:10.5px; color:var(--t2);">{{ t_blocked }}</div></div>
+                </div>
+              </div>
+
+              <!-- Safety notice (AR + EN) -->
+              <div style="background:var(--warn2); border:1px solid var(--warn); border-radius:var(--r3); padding:16px 18px; margin-bottom:16px;">
+                <div style="font-size:12.5px; font-weight:700; color:var(--warn); margin-bottom:6px;" dir="rtl">هذه الوحدة معطلة عمدًا ولا يجوز إعادة تفعيلها دون تصميم مضبوط جديد.</div>
+                <div style="font-size:12px; color:var(--warn); margin-top:6px; border-top:1px solid rgba(217,119,6,.2); padding-top:10px;" dir="ltr">This module is intentionally disabled and must not be reactivated without a new controlled design.</div>
+              </div>
+
+              <!-- Redirect to controlled path -->
+              <div style="background:var(--p2); border:1px solid var(--p); border-radius:var(--r3); padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div style="font-size:12.5px; color:var(--pd);">✅ {{ t_use_editor_instead }}</div>
+                <button onClick="{{ goS3 }}" style="padding:9px 16px; border-radius:var(--r2); border:none; background:var(--p); color:#fff; font-size:12.5px; font-weight:600; transition:all 120ms; white-space:nowrap;" style-hover="background:var(--pd);">{{ t_nav_editor }}</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S9: REPORTS AND AUDIT ═══ -->
+          <sc-if value="{{ isS9 }}">
+            <div style="max-width:1100px; animation:fs .3s ease;">
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+                <div>
+                  <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_reports }}</h2>
+                  <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_reports_sub }}</p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button style="padding:8px 14px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t2); font-size:12px; font-weight:600; transition:all 120ms; display:flex; align-items:center; gap:6px;" style-hover="background:var(--s2);">🔍 {{ t_filter }}</button>
+                  <button style="padding:8px 14px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t2); font-size:12px; font-weight:600; transition:all 120ms; display:flex; align-items:center; gap:6px;" style-hover="background:var(--s2);">📥 {{ t_export_csv }}</button>
+                </div>
+              </div>
+
+              <!-- Tab bar -->
+              <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:20px; background:var(--s2); border-radius:var(--r3); padding:4px; border:1px solid var(--brd);">
+                <button onClick="{{ setRTabSummary }}" style="flex:1; min-width:80px; padding:8px 10px; border-radius:var(--r2); border:none; background:{{ rtabBgSum }}; color:{{ rtabColSum }}; font-size:12px; font-weight:600; transition:all 150ms; white-space:nowrap;">{{ t_tab_summary }}</button>
+                <button onClick="{{ setRTabLow }}" style="flex:1; min-width:80px; padding:8px 10px; border-radius:var(--r2); border:none; background:{{ rtabBgLow }}; color:{{ rtabColLow }}; font-size:12px; font-weight:600; transition:all 150ms; white-space:nowrap;">{{ t_tab_low }}</button>
+                <button onClick="{{ setRTabMissing }}" style="flex:1; min-width:80px; padding:8px 10px; border-radius:var(--r2); border:none; background:{{ rtabBgMiss }}; color:{{ rtabColMiss }}; font-size:12px; font-weight:600; transition:all 150ms; white-space:nowrap;">{{ t_tab_miss }}</button>
+                <button onClick="{{ setRTabComparison }}" style="flex:1; min-width:80px; padding:8px 10px; border-radius:var(--r2); border:none; background:{{ rtabBgComp }}; color:{{ rtabColComp }}; font-size:12px; font-weight:600; transition:all 150ms; white-space:nowrap;">{{ t_tab_comp }}</button>
+                <button onClick="{{ setRTabAudit }}" style="flex:1; min-width:80px; padding:8px 10px; border-radius:var(--r2); border:none; background:{{ rtabBgAudit }}; color:{{ rtabColAudit }}; font-size:12px; font-weight:600; transition:all 150ms; white-space:nowrap;">{{ t_tab_audit }}</button>
+              </div>
+
+              <!-- Summary tab -->
+              <sc-if value="{{ isRTabSummary }}">
+                <div style="display:grid; grid-template-columns:{{ metricGrid }}; gap:{{ gapSz }}; animation:fs .25s ease;">
+                  <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="font-size:26px; font-weight:700; color:var(--ok);">1,248</div>
+                    <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_avail }}</div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="font-size:26px; font-weight:700; color:var(--warn);">42</div>
+                    <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_low }}</div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="font-size:26px; font-weight:700; color:var(--err);">8</div>
+                    <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_miss }}</div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="font-size:26px; font-weight:700; color:var(--warn);">15</div>
+                    <div style="font-size:11.5px; color:var(--t2); margin-top:3px;">{{ t_m_exp }}</div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Low stock tab -->
+              <sc-if value="{{ isRTabLow }}">
+                <div style="display:flex; flex-direction:column; gap:8px; animation:fs .25s ease;">
+                  <div style="background:var(--s); border-radius:var(--r3); padding:14px; box-shadow:var(--sh-xs); border:1px solid var(--brd); border-inline-start:3px solid var(--warn);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                      <span style="font-size:13px; font-weight:600;">Amoxicillin 500mg</span>
+                      <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10.5px; font-weight:700;">12 units</span>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--t2);">
+                      <span>🏥 {{ t_hilla }}</span><span dir="ltr">BBL-001</span><span>{{ t_expires30 }}</span>
+                    </div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r3); padding:14px; box-shadow:var(--sh-xs); border:1px solid var(--brd); border-inline-start:3px solid var(--warn);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                      <span style="font-size:13px; font-weight:600;">Metformin 850mg</span>
+                      <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10.5px; font-weight:700;">6 units</span>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--t2);">
+                      <span>🏥 {{ t_mahawil }}</span><span dir="ltr">BBL-003</span>
+                    </div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r3); padding:14px; box-shadow:var(--sh-xs); border:1px solid var(--brd); border-inline-start:3px solid var(--warn);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                      <span style="font-size:13px; font-weight:600;">Ceftriaxone 1g</span>
+                      <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-size:10.5px; font-weight:700;">9 vials</span>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--t2);">
+                      <span>🏥 {{ t_marjan }}</span><span dir="ltr">BBL-005</span>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Missing tab -->
+              <sc-if value="{{ isRTabMissing }}">
+                <div style="display:flex; flex-direction:column; gap:8px; animation:fs .25s ease;">
+                  <div style="background:var(--s); border-radius:var(--r3); padding:14px; box-shadow:var(--sh-xs); border:1px solid var(--err); border-inline-start:3px solid var(--err);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                      <span style="font-size:13px; font-weight:600;">Insulin Glargine</span>
+                      <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--err2); color:var(--err); font-size:10.5px; font-weight:700;">{{ t_miss }}</span>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--t2);">
+                      <span>🏥 {{ t_hilla }}</span><span>🏥 {{ t_mahawil }}</span>
+                    </div>
+                  </div>
+                  <div style="background:var(--s); border-radius:var(--r3); padding:14px; box-shadow:var(--sh-xs); border:1px solid var(--err); border-inline-start:3px solid var(--err);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                      <span style="font-size:13px; font-weight:600;">Epinephrine 1mg/mL</span>
+                      <span style="padding:2px 8px; border-radius:var(--rpill); background:var(--err2); color:var(--err); font-size:10.5px; font-weight:700;">{{ t_miss }}</span>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--t2);">
+                      <span>🏥 {{ t_babil }}</span>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Comparison tab -->
+              <sc-if value="{{ isRTabComparison }}">
+                <div style="animation:fs .25s ease;">
+                  <div style="background:var(--s); border-radius:var(--r4); padding:{{ cardPad }}; box-shadow:var(--sh-sm); border:1px solid var(--brd);">
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                      <div style="font-size:12.5px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                          <span style="font-weight:600;">{{ t_marjan }}</span><span style="font-size:11px; color:var(--ok);">94%</span>
+                        </div>
+                        <div style="height:8px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:94%; background:var(--p); border-radius:var(--rpill);"></div></div>
+                      </div>
+                      <div style="font-size:12.5px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                          <span style="font-weight:600;">{{ t_babil }}</span><span style="font-size:11px; color:var(--ok);">97%</span>
+                        </div>
+                        <div style="height:8px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:97%; background:var(--p); border-radius:var(--rpill);"></div></div>
+                      </div>
+                      <div style="font-size:12.5px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                          <span style="font-weight:600;">{{ t_mahawil }}</span><span style="font-size:11px; color:var(--ok);">88%</span>
+                        </div>
+                        <div style="height:8px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:88%; background:var(--ok); border-radius:var(--rpill);"></div></div>
+                      </div>
+                      <div style="font-size:12.5px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                          <span style="font-weight:600;">{{ t_hilla }}</span><span style="font-size:11px; color:var(--warn);">71%</span>
+                        </div>
+                        <div style="height:8px; background:var(--brd); border-radius:var(--rpill); overflow:hidden;"><div style="height:100%; width:71%; background:var(--warn); border-radius:var(--rpill);"></div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- Audit log tab -->
+              <sc-if value="{{ isRTabAudit }}">
+                <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); animation:fs .25s ease;">
+                  <div style="display:flex; flex-direction:column; gap:0;">
+                    <div style="display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--brd);">
+                      <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace; margin-top:2px;" dir="ltr">2026-06-27 14:32</div>
+                      <div><div style="font-size:12.5px; font-weight:600;">{{ t_ev1 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_marjan }} · super_admin</div></div>
+                    </div>
+                    <div style="display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--brd);">
+                      <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace; margin-top:2px;" dir="ltr">2026-06-27 13:15</div>
+                      <div><div style="font-size:12.5px; font-weight:600; color:var(--warn);">{{ t_ev2 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_hilla }} · system</div></div>
+                    </div>
+                    <div style="display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--brd);">
+                      <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace; margin-top:2px;" dir="ltr">2026-06-27 11:04</div>
+                      <div><div style="font-size:12.5px; font-weight:600;">{{ t_ev3 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_babil }} · hospital_admin</div></div>
+                    </div>
+                    <div style="display:flex; gap:12px; padding:12px 0;">
+                      <div style="font-size:10px; color:var(--t3); white-space:nowrap; font-family:monospace; margin-top:2px;" dir="ltr">2026-06-27 09:30</div>
+                      <div><div style="font-size:12.5px; font-weight:600;">{{ t_ev4 }}</div><div style="font-size:11px; color:var(--t2);">{{ t_system }}</div></div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- ═══ S10: MOBILE COMMAND VIEW ═══ -->
+          <sc-if value="{{ isS10 }}">
+            <div style="max-width:420px; margin:0 auto; animation:fs .3s ease;">
+              <div style="margin-bottom:18px;">
+                <h2 style="font-size:{{ titleSz }}; font-weight:700; letter-spacing:-.3px;">{{ t_nav_mobile }}</h2>
+                <p style="font-size:12.5px; color:var(--t2); margin-top:3px;">{{ t_mobile_sub }}</p>
+              </div>
+
+              <!-- Compact health ring + metrics -->
+              <div style="background:var(--s); border-radius:var(--r5); padding:20px; box-shadow:var(--sh-md); border:1px solid var(--brd); margin-bottom:14px; display:flex; align-items:center; gap:16px;">
+                <svg width="72" height="72" viewBox="0 0 72 72" style="flex-shrink:0;" aria-label="Health Score">
+                  <circle cx="36" cy="36" r="30" fill="none" stroke="var(--brd)" stroke-width="6"></circle>
+                  <circle cx="36" cy="36" r="30" fill="none" stroke="var(--p)" stroke-width="6" stroke-dasharray="188.5" stroke-dashoffset="28" stroke-linecap="round" transform="rotate(-90 36 36)" style="animation:spin 0s;"></circle>
+                  <text x="36" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="var(--t)">85%</text>
+                </svg>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-size:13px; font-weight:700; margin-bottom:8px;">{{ t_m_bridge }}</div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px;">
+                    <div style="padding:6px 8px; background:var(--ok2); border-radius:var(--r1); color:var(--ok); font-weight:600; text-align:center;">1248 {{ t_avail }}</div>
+                    <div style="padding:6px 8px; background:var(--warn2); border-radius:var(--r1); color:var(--warn); font-weight:600; text-align:center;">42 {{ t_low }}</div>
+                    <div style="padding:6px 8px; background:var(--err2); border-radius:var(--r1); color:var(--err); font-weight:600; text-align:center;">8 {{ t_miss }}</div>
+                    <div style="padding:6px 8px; background:var(--s2); border-radius:var(--r1); color:var(--t2); font-weight:600; text-align:center;">4 {{ t_m_inst }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Alert card -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:1px solid var(--warn); border-inline-start:4px solid var(--warn); margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                  <span style="font-size:16px;">⚠️</span>
+                  <span style="font-size:13px; font-weight:700;">{{ t_safemode }}: {{ t_hilla }}</span>
+                </div>
+                <p style="font-size:12px; color:var(--t2);">{{ t_safemode_desc }}</p>
+                <button onClick="{{ goS7 }}" style="margin-top:10px; padding:7px 14px; border-radius:var(--r2); border:none; background:var(--warn2); color:var(--warn); font-size:12px; font-weight:600; transition:all 120ms;" style-hover="background:var(--warn); color:#fff;">{{ t_view_health }}</button>
+              </div>
+
+              <!-- Quick entry form -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:16px; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:14px;">
+                <h3 style="font-size:13px; font-weight:700; margin-bottom:12px;">{{ t_quick_entry }}</h3>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <select style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px;" aria-label="{{ t_m_inst }}">
+                    <option>{{ t_marjan }}</option><option>{{ t_babil }}</option><option>{{ t_mahawil }}</option>
+                  </select>
+                  <input type="text" placeholder="{{ t_search }}" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px;" aria-label="{{ t_item }}">
+                  <input type="number" placeholder="{{ t_qty }}" style="width:100%; padding:10px 12px; border-radius:var(--r2); border:1px solid var(--brd); background:var(--s); color:var(--t); font-size:13px;" aria-label="{{ t_qty }}">
+                </div>
+              </div>
+
+              <!-- QR status quick view -->
+              <div style="background:var(--s); border-radius:var(--r4); padding:14px; box-shadow:var(--sh-sm); border:1px solid var(--brd); margin-bottom:70px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                  <h3 style="font-size:13px; font-weight:700;">{{ t_nav_qr }}</h3>
+                  <button onClick="{{ goS6 }}" style="padding:5px 10px; border-radius:var(--r1); border:1px solid var(--brd); background:transparent; color:var(--t2); font-size:11px; transition:all 120ms;" style-hover="background:var(--s2);">{{ t_view }}</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; font-size:12px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;"><span>{{ t_marjan }}</span><span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-weight:600; font-size:10.5px;">● Active</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between;"><span>{{ t_hilla }}</span><span style="padding:2px 7px; border-radius:var(--rpill); background:var(--warn2); color:var(--warn); font-weight:600; font-size:10.5px;">⚠ Limited</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between;"><span>{{ t_babil }}</span><span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-weight:600; font-size:10.5px;">● Active</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between;"><span>{{ t_mahawil }}</span><span style="padding:2px 7px; border-radius:var(--rpill); background:var(--ok2); color:var(--ok); font-weight:600; font-size:10.5px;">● Active</span></div>
+                </div>
+              </div>
+
+              <!-- Sticky CTA -->
+              <button onClick="{{ goS3 }}" style="position:fixed; bottom:{{ stickyBottom }}; inset-inline-start:50%; transform:translateX(-50%); padding:13px 28px; border-radius:var(--rpill); border:none; background:var(--p); color:#fff; font-size:14px; font-weight:700; white-space:nowrap; box-shadow:0 4px 16px rgba(13,148,136,.4); transition:all 150ms; z-index:80;" style-hover="background:var(--pd); box-shadow:0 6px 20px rgba(13,148,136,.5);">✏️ {{ t_nav_editor }}</button>
+            </div>
+          </sc-if>
+
+        </main>
+      </div>
+
+      <!-- Mobile Bottom Nav -->
+      <sc-if value="{{ isMobile }}">
+        <nav style="position:fixed; bottom:0; inset-inline-start:0; inset-inline-end:0; height:var(--bnh); background:var(--s); border-top:1px solid var(--brd); display:flex; align-items:stretch; z-index:70; box-shadow:0 -4px 16px rgba(15,43,79,.07);" aria-label="Bottom Navigation">
+          <button onClick="{{ goS2 }}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:none; background:transparent; color:{{ bnc2 }}; padding:8px 4px; transition:all 120ms; min-width:44px; min-height:44px;" aria-label="{{ t_nav_dash }}">
+            <span style="font-size:20px;">📊</span>
+            <span style="font-size:9.5px; font-weight:{{ bnw2 }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">{{ t_nav_dash }}</span>
+          </button>
+          <button onClick="{{ goS3 }}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:none; background:transparent; color:{{ bnc3 }}; padding:8px 4px; transition:all 120ms; min-width:44px; min-height:44px;" aria-label="{{ t_nav_editor }}">
+            <span style="font-size:20px;">✏️</span>
+            <span style="font-size:9.5px; font-weight:{{ bnw3 }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">{{ t_nav_editor }}</span>
+          </button>
+          <button onClick="{{ goS5 }}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:none; background:transparent; color:{{ bnc5 }}; padding:8px 4px; transition:all 120ms; min-width:44px; min-height:44px;" aria-label="{{ t_nav_mesh }}">
+            <span style="font-size:20px;">🌐</span>
+            <span style="font-size:9.5px; font-weight:{{ bnw5 }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">{{ t_nav_mesh }}</span>
+          </button>
+          <button onClick="{{ goS7 }}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:none; background:transparent; color:{{ bnc7 }}; padding:8px 4px; transition:all 120ms; min-width:44px; min-height:44px;" aria-label="{{ t_nav_health }}">
+            <span style="font-size:20px;">🏥</span>
+            <span style="font-size:9.5px; font-weight:{{ bnw7 }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60px;">{{ t_nav_health }}</span>
+          </button>
+          <button onClick="{{ toggleSidebar }}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:none; background:transparent; color:var(--t2); padding:8px 4px; transition:all 120ms; min-width:44px; min-height:44px;" aria-label="More">
+            <span style="font-size:20px;">☰</span>
+            <span style="font-size:9.5px; font-weight:500; white-space:nowrap;">{{ t_more }}</span>
+          </button>
+        </nav>
+      </sc-if>
+
+    </div>
+
+    <!-- ══ Apply Confirm Modal ══ -->
+    <sc-if value="{{ showApplyModal }}">
+      <div style="position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center; padding:24px;" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div onClick="{{ hideApply }}" style="position:absolute; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(2px);"></div>
+        <div style="position:relative; background:var(--s); border-radius:var(--r5); box-shadow:var(--sh-xl); padding:28px; width:100%; max-width:420px; border:1px solid var(--brd); animation:su .25s ease;">
+          <div style="text-align:center; margin-bottom:20px;">
+            <div style="width:56px; height:56px; border-radius:50%; background:var(--warn2); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:26px;">⚠️</div>
+            <h2 id="modal-title" style="font-size:18px; font-weight:700; margin-bottom:8px;">{{ t_confirm_apply }}</h2>
+            <p style="font-size:13px; color:var(--t2); line-height:1.65;">{{ t_confirm_msg }}</p>
+          </div>
+          <div style="background:var(--s2); border-radius:var(--r3); padding:12px 14px; margin-bottom:20px; font-size:12px; color:var(--t2); border:1px solid var(--brd);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>{{ t_m_inst }}:</span><strong>{{ t_marjan }}</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>{{ t_mode }}:</span><strong>{{ t_tab_summary }}</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+              <span>{{ t_safe_count }}:</span><strong style="color:var(--ok);">2</strong>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button onClick="{{ hideApply }}" style="flex:1; padding:12px; border-radius:var(--r3); border:1px solid var(--brd); background:transparent; color:var(--t); font-size:13px; font-weight:600; transition:all 120ms;" style-hover="background:var(--s2);">{{ t_cancel }}</button>
+            <button onClick="{{ confirmApply }}" style="flex:2; padding:12px; border-radius:var(--r3); border:none; background:var(--p); color:#fff; font-size:13px; font-weight:700; transition:all 120ms; box-shadow:0 3px 10px rgba(13,148,136,.3);" style-hover="background:var(--pd);">✅ {{ t_confirm_btn }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ══ Toast ══ -->
+    <sc-if value="{{ hasToast }}">
+      <div style="position:fixed; bottom:calc(var(--bnh) + 12px); inset-inline-start:50%; transform:translateX(-50%); padding:12px 20px; border-radius:var(--rpill); background:var(--t); color:var(--bg); font-size:13px; font-weight:600; white-space:nowrap; box-shadow:var(--sh-lg); z-index:400; animation:ti .3s ease;" role="status" aria-live="polite">
+        ✅ {{ toastMsg }}
+      </div>
+    </sc-if>
+
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = {
+    screen: 1,
+    lang: 'ar',
+    theme: 'light',
+    role: 'super_admin',
+    institution: 'marjan',
+    showApplyModal: false,
+    meshSelected: null,
+    expandedHealth: {},
+    editorTab: 'single',
+    reportsTab: 'summary',
+    toastMsg: null,
+    sidebarOpen: false,
+    isMobile: window.innerWidth < 768,
+  };
+
+  componentDidMount() {
+    const onResize = () => this.setState({ isMobile: window.innerWidth < 768 });
+    window.addEventListener('resize', onResize);
+    this._cleanupResize = () => window.removeEventListener('resize', onResize);
+  }
+
+  componentWillUnmount() {
+    this._cleanupResize?.();
+    clearTimeout(this._toastTimer);
+  }
+
+  // ── Translations ──
+  T = {
+    tagline:{ ar:'شبكة توفر الصحة · MASAR', en:'MASAR Health Availability Network' },
+    selectRole:{ ar:'اختر الدور التجريبي', en:'Select Demo Role' },
+    demoLogin:{ ar:'دخول تجريبي', en:'Demo Login' },
+    demoData:{ ar:'بيانات تجريبية', en:'Demo Data' },
+    demoOnly:{ ar:'للأغراض التجريبية فقط', en:'Demo purposes only — no real connection' },
+    demoSession:{ ar:'جلسة تجريبية', en:'Demo Session' },
+    logout:{ ar:'خروج', en:'Exit Demo' },
+    frozen:{ ar:'مجمد', en:'Frozen' },
+    safe_frozen:{ ar:'مجمد بأمان', en:'Safe Frozen' },
+    healthy:{ ar:'سليم', en:'Healthy' },
+    safemode:{ ar:'الوضع الآمن', en:'Safe Mode' },
+    quarantine:{ ar:'عزل', en:'Quarantine' },
+    operational:{ ar:'تشغيلي', en:'Operational' },
+    nav_dash:{ ar:'لوحة التحكم', en:'Dashboard' },
+    nav_editor:{ ar:'محرر التوفر', en:'Availability Editor' },
+    nav_reg:{ ar:'سجل العناصر', en:'Item Registry' },
+    nav_mesh:{ ar:'عرض الشبكة', en:'Mesh View' },
+    nav_qr:{ ar:'مركز QR', en:'QR Center' },
+    nav_health:{ ar:'صحة النظام', en:'System Health' },
+    nav_intake:{ ar:'الإدخال', en:'Intake' },
+    nav_reports:{ ar:'التقارير', en:'Reports' },
+    nav_mobile:{ ar:'العرض المحمول', en:'Mobile View' },
+    more:{ ar:'المزيد', en:'More' },
+    marjan:{ ar:'مستشفى مرجان التعليمي', en:'Marjan Teaching Hospital' },
+    hilla:{ ar:'مستشفى الحلة العام', en:'Al-Hilla General Hospital' },
+    babil:{ ar:'مجمع بابل الطبي', en:'Babil Medical Complex' },
+    mahawil:{ ar:'مستشفى المحاويل', en:'Al-Mahawil Hospital' },
+    avail:{ ar:'متوفر', en:'Available' },
+    low:{ ar:'منخفض', en:'Low' },
+    miss:{ ar:'مفقود', en:'Missing' },
+    units:{ ar:'وحدة', en:'units' },
+    expires30:{ ar:'تنتهي خلال ٣٠ يوم', en:'Expires in 30 days' },
+    safemode_desc:{ ar:'وضع القراءة فقط نشط', en:'Read-only mode active' },
+    dash_sub:{ ar:'نظرة عامة · بيانات تجريبية', en:'System overview · Demo data' },
+    m_inst:{ ar:'مؤسسات نشطة', en:'Active Institutions' },
+    m_avail:{ ar:'أصناف متوفرة', en:'Available Items' },
+    m_low:{ ar:'مخزون منخفض', en:'Low Stock' },
+    m_miss:{ ar:'أصناف مفقودة', en:'Missing Items' },
+    m_exp:{ ar:'قرب انتهاء الصلاحية', en:'Near Expiry' },
+    m_bridge:{ ar:'صحة الجسور', en:'Bridge Health' },
+    m_safe:{ ar:'وحدات الوضع الآمن', en:'Safe Mode Modules' },
+    m_upd:{ ar:'آخر تحديث', en:'Last Update' },
+    inst_status:{ ar:'حالة المؤسسات', en:'Institution Status' },
+    alerts:{ ar:'التنبيهات الأخيرة', en:'Recent Alerts' },
+    quick:{ ar:'الإجراءات السريعة', en:'Quick Actions' },
+    editor_desc:{ ar:'تحديث توفر الأدوية والمستلزمات', en:'Update drug & supply availability' },
+    health_desc:{ ar:'مراقبة حالة النظام والجسور', en:'Monitor system & bridge health' },
+    reports_desc:{ ar:'تقارير وسجلات التدقيق', en:'Reports and audit logs' },
+    editor_sub:{ ar:'تعديل بيانات التوفر يدوياً', en:'Manually edit availability records' },
+    scope:{ ar:'نطاق مؤسسي', en:'Institution scope' },
+    select_inst:{ ar:'اختر المؤسسة', en:'Select Institution' },
+    single:{ ar:'إدخال مفرد', en:'Single Entry' },
+    batch:{ ar:'إدخال جماعي', en:'Batch Entry' },
+    item:{ ar:'الصنف', en:'Item' },
+    qty:{ ar:'الكمية', en:'Quantity' },
+    unit:{ ar:'الوحدة', en:'Unit' },
+    batch_no:{ ar:'رقم الدفعة', en:'Batch No.' },
+    expiry:{ ar:'تاريخ الانتهاء', en:'Expiry Date' },
+    notes:{ ar:'ملاحظات', en:'Notes' },
+    notes_ph:{ ar:'أي ملاحظات إضافية...', en:'Any additional notes...' },
+    batch_items:{ ar:'الأصناف الجماعية', en:'Batch Items' },
+    add_row:{ ar:'إضافة صف', en:'Add Row' },
+    valid:{ ar:'صالح', en:'Valid' },
+    invalid:{ ar:'غير صالح', en:'Invalid' },
+    qty_err:{ ar:'الكمية يجب أن تكون أكبر من صفر', en:'Quantity must be greater than zero' },
+    review:{ ar:'مراجعة الملخص', en:'Review Summary' },
+    safe_count:{ ar:'آمن', en:'safe' },
+    blocker:{ ar:'مانع', en:'blocker' },
+    warnings:{ ar:'تحذيرات', en:'warnings' },
+    blocker_msg:{ ar:'⚠ يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en:'⚠ Blocker found — review negative quantity before applying' },
+    apply:{ ar:'تطبيق التغييرات', en:'Apply Changes' },
+    apply_note:{ ar:'سيُطلب التأكيد قبل التطبيق · لا تطبيق تلقائي', en:'Confirmation required before applying · No auto-apply' },
+    reg_sub:{ ar:'إدارة الأصناف المحلية للمؤسسة', en:'Manage institution-local items' },
+    add_item:{ ar:'إضافة صنف', en:'Add Item' },
+    scope_note:{ ar:'النطاق: الأصناف المحلية فقط · لا قاموس دواء مركزي', en:'Scope: Local institution items only · No central drug dictionary' },
+    search:{ ar:'بحث...', en:'Search...' },
+    lcode:{ ar:'الرمز المحلي', en:'Local Code' },
+    mfr:{ ar:'الشركة المصنعة', en:'Manufacturer' },
+    cat:{ ar:'الفئة', en:'Category' },
+    active:{ ar:'نشط', en:'Active' },
+    inactive:{ ar:'غير نشط', en:'Inactive' },
+    similar_warn:{ ar:'تحذير: صنف مشابه موجود', en:'Warning: Similar item exists' },
+    mesh_sub:{ ar:'المؤسسات والجسور والوحدات المحمية', en:'Institutions, bridges & protected modules' },
+    qr_sub:{ ar:'واجهة QR العامة والإدارية', en:'Public QR interface and admin center' },
+    privacy_title:{ ar:'إشعار الخصوصية', en:'Privacy Notice' },
+    qr_privacy:{ ar:'يعرض QR العام معلومات التوفر الآمنة فقط ولا يكشف بيانات الدُفعات الحساسة أو سجلات التدقيق الداخلية أو القيم الديناميكية الخام.', en:'Public QR shows safe availability only and does not expose sensitive batch, internal audit, or raw dynamic values.' },
+    qr_public_label:{ ar:'بيانات التوفر العامة', en:'Public Availability Data' },
+    qr_public_avail:{ ar:'قائمة التوفر العام', en:'Public Availability List' },
+    qr_active:{ ar:'نشط', en:'Active' },
+    qr_no_expose:{ ar:'لا كشف لبيانات الدُفعات أو التدقيق الداخلي', en:'No batch or internal audit data exposed' },
+    last_upd:{ ar:'آخر تحديث', en:'Last updated' },
+    today:{ ar:'اليوم', en:'Today' },
+    health_sub:{ ar:'للقراءة فقط · بيانات تجريبية', en:'Read-only · Demo data' },
+    global_status:{ ar:'الحالة العامة', en:'Global Status' },
+    modules:{ ar:'وحدات', en:'Modules' },
+    module_health:{ ar:'صحة الوحدات', en:'Module Health' },
+    mod_avail_read:{ ar:'Availability Read Bridge', en:'Availability Read Bridge' },
+    mod_editor:{ ar:'Manual Availability Editor', en:'Manual Availability Editor' },
+    mod_qr:{ ar:'QR Public Access', en:'QR Public Access' },
+    mod_intake:{ ar:'Intake Capsule (Frozen)', en:'Intake Capsule (Frozen)' },
+    connected:{ ar:'متصل', en:'Connected' },
+    actions:{ ar:'إجراءات', en:'actions' },
+    bridge_gov:{ ar:'حوكمة الجسور', en:'Bridge Governance' },
+    recovery_q:{ ar:'قائمة الاسترداد', en:'Recovery Queue' },
+    recovery_clear:{ ar:'قائمة الاسترداد فارغة', en:'Recovery queue is clear' },
+    event_log:{ ar:'سجل الأحداث', en:'Event Log' },
+    system:{ ar:'النظام', en:'System' },
+    ev1:{ ar:'تحديث التوفر — مرجان', en:'Availability update — Marjan' },
+    ev2:{ ar:'تفعيل الوضع الآمن — الحلة', en:'Safe mode activated — Hilla' },
+    ev3:{ ar:'إضافة صنف جديد — بابل', en:'New item added — Babil' },
+    ev4:{ ar:'بدء تشغيل النظام', en:'System startup' },
+    intake_sub:{ ar:'وحدة معطلة عمداً', en:'Intentionally disabled module' },
+    intake_frozen:{ ar:'الإدخال مجمد', en:'Intake Frozen' },
+    intake_frozen_note:{ ar:'معطل عمداً ولا يجوز إعادة تفعيله', en:'Intentionally disabled, must not be reactivated' },
+    intake_disabled_msg:{ ar:'هذه الوحدة معطلة عمدًا ولا يجوز إعادة تفعيلها دون تصميم مضبوط جديد.', en:'This module is intentionally disabled and must not be reactivated without a new controlled design.' },
+    blocked_workflows:{ ar:'سير العمل المحظورة', en:'Blocked Workflows' },
+    blocked:{ ar:'محظور', en:'Blocked' },
+    use_editor_instead:{ ar:'استخدم محرر التوفر المضبوط بدلاً من ذلك', en:'Use the controlled Availability Editor instead' },
+    reports_sub:{ ar:'بيانات تجريبية للقراءة فقط', en:'Demo data · Read only' },
+    filter:{ ar:'تصفية', en:'Filter' },
+    export_csv:{ ar:'تصدير CSV', en:'Export CSV' },
+    tab_summary:{ ar:'الملخص', en:'Summary' },
+    tab_low:{ ar:'مخزون منخفض', en:'Low Stock' },
+    tab_miss:{ ar:'مفقود', en:'Missing' },
+    tab_comp:{ ar:'مقارنة', en:'Comparison' },
+    tab_audit:{ ar:'سجل التدقيق', en:'Audit Log' },
+    mobile_sub:{ ar:'عرض مخصص للهاتف المحمول', en:'Optimized mobile command view' },
+    quick_entry:{ ar:'إدخال سريع', en:'Quick Entry' },
+    view_health:{ ar:'عرض صحة النظام', en:'View System Health' },
+    view:{ ar:'عرض', en:'View' },
+    confirm_apply:{ ar:'تأكيد التطبيق', en:'Confirm Apply' },
+    confirm_msg:{ ar:'أنت على وشك تطبيق تغييرات التوفر. هذا الإجراء لا يمكن التراجع عنه تلقائياً.', en:'You are about to apply availability changes. This action cannot be automatically undone.' },
+    mode:{ ar:'الوضع', en:'Mode' },
+    cancel:{ ar:'إلغاء', en:'Cancel' },
+    confirm_btn:{ ar:'تأكيد وتطبيق', en:'Confirm & Apply' },
+    apply_success:{ ar:'تم التطبيق بنجاح (تجريبي)', en:'Applied successfully (demo)' },
+  };
+
+  t(k) { return this.T[k]?.[this.state.lang] ?? k; }
+
+  go(n) { this.setState({ screen: n, sidebarOpen: false }); }
+
+  toast(msg) {
+    this.setState({ toastMsg: msg });
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.setState({ toastMsg: null }), 3000);
+  }
+
+  ns(n) {
+    const a = this.state.screen === n;
+    return { bg: a ? 'var(--p2)' : 'transparent', col: a ? 'var(--pd)' : 'var(--t2)', w: a ? '700' : '500' };
+  }
+
+  bns(n) {
+    const a = this.state.screen === n;
+    return { col: a ? 'var(--p)' : 'var(--t2)', w: a ? '700' : '500' };
+  }
+
+  tab(t, active) {
+    const a = this.state[t] === active;
+    return { bg: a ? 'var(--p)' : 'transparent', col: a ? '#fff' : 'var(--t2)', sh: a ? 'var(--sh-sm)' : 'none' };
+  }
+
+  rtab(active) {
+    const a = this.state.reportsTab === active;
+    return { bg: a ? 'var(--p)' : 'transparent', col: a ? '#fff' : 'var(--t2)' };
+  }
+
+  renderVals() {
+    const { screen, lang, theme, role, institution, showApplyModal,
+      meshSelected, expandedHealth, editorTab, reportsTab, toastMsg,
+      sidebarOpen, isMobile } = this.state;
+
+    const dir = lang === 'ar' ? 'rtl' : 'ltr';
+    const isLogin = screen === 1;
+    const isApp = !isLogin;
+    const m = isMobile;
+
+    // Nav styles
+    const n2=this.ns(2),n3=this.ns(3),n4=this.ns(4),n5=this.ns(5),n6=this.ns(6),n7=this.ns(7),n8=this.ns(8),n9=this.ns(9),n10=this.ns(10);
+    const bn2=this.bns(2),bn3=this.bns(3),bn5=this.bns(5),bn7=this.bns(7);
+
+    // Tabs
+    const ts = this.tab('editorTab','single'), tb = this.tab('editorTab','batch');
+    const rtSum=this.rtab('summary'),rtLow=this.rtab('low'),rtMiss=this.rtab('missing'),rtComp=this.rtab('comparison'),rtAudit=this.rtab('audit');
+
+    // Role
+    const roleMap = { super_admin:{emoji:'🔑',name:'super_admin'}, hospital_admin:{emoji:'🏥',name:'hospital_admin'}, pharmacist:{emoji:'💊',name:'pharmacist'}, viewer:{emoji:'👁',name:'viewer'} };
+    const ri = roleMap[role] || roleMap.super_admin;
+
+    // Role chip selection
+    const rc = (r) => ({ is: role===r?'var(--p)':'var(--brd)', bg: role===r?'var(--p2)':'var(--s2)' });
+    const rsa=rc('super_admin'), rha=rc('hospital_admin'), rph=rc('pharmacist'), rvw=rc('viewer');
+
+    // Institution selection in editor
+    const ic = (id) => ({ is: institution===id?'var(--p)':'var(--brd)', bg: institution===id?'var(--p2)':'var(--s2)' });
+    const im=ic('marjan'), ih=ic('hilla'), ib=ic('babil'), imh=ic('mahawil');
+
+    // Mesh
+    const mesh_data = { marjan:{name:this.t('marjan'),dot:'var(--ok)',badge:this.t('healthy'),badgeBg:'var(--ok2)',badgeCol:'var(--ok)',avail:342,low:8,miss:1,bridge:'98%'}, hilla:{name:this.t('hilla'),dot:'var(--warn)',badge:this.t('safemode'),badgeBg:'var(--warn2)',badgeCol:'var(--warn)',avail:291,low:18,miss:4,bridge:'74%'}, babil:{name:this.t('babil'),dot:'var(--ok)',badge:this.t('healthy'),badgeBg:'var(--ok2)',badgeCol:'var(--ok)',avail:412,low:7,miss:2,bridge:'100%'}, mahawil:{name:this.t('mahawil'),dot:'var(--ok)',badge:this.t('healthy'),badgeBg:'var(--ok2)',badgeCol:'var(--ok)',avail:203,low:9,miss:1,bridge:'88%'} };
+    const md = meshSelected ? mesh_data[meshSelected] : null;
+
+    // Screen titles
+    const titles = { 2:this.t('nav_dash'), 3:this.t('nav_editor'), 4:this.t('nav_reg'), 5:this.t('nav_mesh'), 6:this.t('nav_qr'), 7:this.t('nav_health'), 8:this.t('nav_intake'), 9:this.t('nav_reports'), 10:this.t('nav_mobile') };
+
+    // Responsive layout tokens
+    const mainPad = m ? '16px 14px' : '24px 28px';
+    const mainPadB = m ? 'calc(var(--bnh) + 14px)' : '28px';
+    const gapSz = m ? '10px' : '14px';
+    const gapXl = m ? '20px' : '28px';
+    const cardPad = m ? '14px' : '18px';
+    const titleSz = m ? '18px' : '22px';
+    const metricGrid = m ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)';
+    const cardGrid = m ? '1fr' : 'repeat(2, 1fr)';
+    const alertGrid = m ? '1fr' : '1fr 1fr';
+    const meshGrid = m ? '1fr' : '1fr 280px';
+    const qrGrid = m ? '1fr' : '220px 1fr';
+    const formGrid = m ? '1fr 1fr' : '1fr 1fr 1fr';
+    const formSpan = m ? '1/-1' : '1/-1';
+    const instGrid = m ? '1fr' : 'repeat(2, 1fr)';
+    const bridgeGrid = m ? '1fr' : '1fr 1fr';
+    const stickyBottom = m ? 'calc(var(--bnh) + 12px)' : '20px';
+
+    const go = (n) => () => this.go(n);
+
+    return {
+      // Core
+      dir, theme, lang, isLogin, isApp,
+      isMobile: m,
+      showDesktopSidebar: !m,
+      showMobileSidebar: m && sidebarOpen,
+      shellDir: lang==='ar' ? 'row-reverse' : 'row',
+      langLabel: lang==='ar' ? 'EN' : 'عربي',
+      themeIcon: theme==='dark' ? '☀️' : '🌙',
+      screenTitle: titles[screen] || '',
+
+      // Screens
+      isS2: screen===2, isS3: screen===3, isS4: screen===4, isS5: screen===5,
+      isS6: screen===6, isS7: screen===7, isS8: screen===8, isS9: screen===9, isS10: screen===10,
+
+      // Sidebar nav
+      nb2:n2.bg, nc2:n2.col, nw2:n2.w,
+      nb3:n3.bg, nc3:n3.col, nw3:n3.w,
+      nb4:n4.bg, nc4:n4.col, nw4:n4.w,
+      nb5:n5.bg, nc5:n5.col, nw5:n5.w,
+      nb6:n6.bg, nc6:n6.col, nw6:n6.w,
+      nb7:n7.bg, nc7:n7.col, nw7:n7.w,
+      nb8:n8.bg, nc8:n8.col, nw8:n8.w,
+      nb9:n9.bg, nc9:n9.col, nw9:n9.w,
+      nb10:n10.bg, nc10:n10.col, nw10:n10.w,
+
+      // Bottom nav
+      bnc2:bn2.col, bnw2:bn2.w,
+      bnc3:bn3.col, bnw3:bn3.w,
+      bnc5:bn5.col, bnw5:bn5.w,
+      bnc7:bn7.col, bnw7:bn7.w,
+
+      // Role
+      roleEmoji: ri.emoji, roleName: ri.name,
+      roleIs_sa:rsa.is, roleBg_sa:rsa.bg,
+      roleIs_ha:rha.is, roleBg_ha:rha.bg,
+      roleIs_ph:rph.is, roleBg_ph:rph.bg,
+      roleIs_vw:rvw.is, roleBg_vw:rvw.bg,
+
+      // Institution editor selection
+      instIs_m:im.is, instBg_m:im.bg,
+      instIs_h:ih.is, instBg_h:ih.bg,
+      instIs_b:ib.is, instBg_b:ib.bg,
+      instIs_mh:imh.is, instBg_mh:imh.bg,
+
+      // Editor tabs
+      isTabSingle: editorTab==='single',
+      isTabBatch: editorTab==='batch',
+      tabBgS:ts.bg, tabColS:ts.col, tabShS:ts.sh,
+      tabBgB:tb.bg, tabColB:tb.col, tabShB:tb.sh,
+
+      // Reports tabs
+      isRTabSummary: reportsTab==='summary',
+      isRTabLow: reportsTab==='low',
+      isRTabMissing: reportsTab==='missing',
+      isRTabComparison: reportsTab==='comparison',
+      isRTabAudit: reportsTab==='audit',
+      rtabBgSum:rtSum.bg, rtabColSum:rtSum.col,
+      rtabBgLow:rtLow.bg, rtabColLow:rtLow.col,
+      rtabBgMiss:rtMiss.bg, rtabColMiss:rtMiss.col,
+      rtabBgComp:rtComp.bg, rtabColComp:rtComp.col,
+      rtabBgAudit:rtAudit.bg, rtabColAudit:rtAudit.col,
+
+      // Mesh
+      meshBrdMarjan: meshSelected==='marjan' ? '2px solid var(--p)' : '1px solid var(--brd)',
+      meshBrdHilla: meshSelected==='hilla' ? '2px solid var(--warn)' : '1px solid var(--warn)',
+      meshBrdBabil: meshSelected==='babil' ? '2px solid var(--p)' : '1px solid var(--brd)',
+      meshBrdMahawil: meshSelected==='mahawil' ? '2px solid var(--p)' : '1px solid var(--brd)',
+      hasMeshDetail: !!md,
+      meshDetailName: md?.name || '',
+      meshDetailDot: md?.dot || 'var(--ok)',
+      meshDetailStatus: md?.badge || '',
+      meshDetailBadgeBg: md?.badgeBg || 'var(--ok2)',
+      meshDetailBadgeCol: md?.badgeCol || 'var(--ok)',
+      meshDetailAvail: md?.avail || 0,
+      meshDetailLow: md?.low || 0,
+      meshDetailMiss: md?.miss || 0,
+      meshDetailBridge: md?.bridge || '',
+
+      // Health card expansion
+      hExp1: !!expandedHealth.h1, hExp2: !!expandedHealth.h2, hExp3: !!expandedHealth.h3, hExp4: !!expandedHealth.h4,
+      rotH1: expandedHealth.h1 ? 'rotate(180deg)' : 'rotate(0deg)',
+      rotH2: expandedHealth.h2 ? 'rotate(180deg)' : 'rotate(0deg)',
+      rotH3: expandedHealth.h3 ? 'rotate(180deg)' : 'rotate(0deg)',
+      rotH4: expandedHealth.h4 ? 'rotate(180deg)' : 'rotate(0deg)',
+
+      // Modal / Toast
+      showApplyModal, toastMsg, hasToast: !!toastMsg,
+
+      // Layout
+      mainPad, mainPadB, gapSz, gapXl, cardPad, titleSz,
+      metricGrid, cardGrid, alertGrid, meshGrid, qrGrid, formGrid, formSpan, instGrid, bridgeGrid, stickyBottom,
+
+      // Translations
+      t_tagline: this.t('tagline'),
+      t_selectRole: this.t('selectRole'),
+      t_demoLogin: this.t('demoLogin'),
+      t_demoData: this.t('demoData'),
+      t_demoOnly: this.t('demoOnly'),
+      t_demoSession: this.t('demoSession'),
+      t_logout: this.t('logout'),
+      t_frozen: this.t('frozen'),
+      t_safe_frozen: this.t('safe_frozen'),
+      t_healthy: this.t('healthy'),
+      t_safemode: this.t('safemode'),
+      t_quarantine: this.t('quarantine'),
+      t_operational: this.t('operational'),
+      t_nav_dash: this.t('nav_dash'),
+      t_nav_editor: this.t('nav_editor'),
+      t_nav_reg: this.t('nav_reg'),
+      t_nav_mesh: this.t('nav_mesh'),
+      t_nav_qr: this.t('nav_qr'),
+      t_nav_health: this.t('nav_health'),
+      t_nav_intake: this.t('nav_intake'),
+      t_nav_reports: this.t('nav_reports'),
+      t_nav_mobile: this.t('nav_mobile'),
+      t_more: this.t('more'),
+      t_marjan: this.t('marjan'),
+      t_hilla: this.t('hilla'),
+      t_babil: this.t('babil'),
+      t_mahawil: this.t('mahawil'),
+      t_avail: this.t('avail'),
+      t_low: this.t('low'),
+      t_miss: this.t('miss'),
+      t_units: this.t('units'),
+      t_expires30: this.t('expires30'),
+      t_safemode_desc: this.t('safemode_desc'),
+      t_dash_sub: this.t('dash_sub'),
+      t_m_inst: this.t('m_inst'),
+      t_m_avail: this.t('m_avail'),
+      t_m_low: this.t('m_low'),
+      t_m_miss: this.t('m_miss'),
+      t_m_exp: this.t('m_exp'),
+      t_m_bridge: this.t('m_bridge'),
+      t_m_safe: this.t('m_safe'),
+      t_m_upd: this.t('m_upd'),
+      t_inst_status: this.t('inst_status'),
+      t_alerts: this.t('alerts'),
+      t_quick: this.t('quick'),
+      t_editor_desc: this.t('editor_desc'),
+      t_health_desc: this.t('health_desc'),
+      t_reports_desc: this.t('reports_desc'),
+      t_editor_sub: this.t('editor_sub'),
+      t_scope: this.t('scope'),
+      t_select_inst: this.t('select_inst'),
+      t_single: this.t('single'),
+      t_batch: this.t('batch'),
+      t_item: this.t('item'),
+      t_qty: this.t('qty'),
+      t_unit: this.t('unit'),
+      t_batch: this.t('batch_no'),
+      t_expiry: this.t('expiry'),
+      t_notes: this.t('notes'),
+      t_notes_ph: this.t('notes_ph'),
+      t_batch_items: this.t('batch_items'),
+      t_add_row: this.t('add_row'),
+      t_valid: this.t('valid'),
+      t_invalid: this.t('invalid'),
+      t_qty_err: this.t('qty_err'),
+      t_review: this.t('review'),
+      t_safe_count: this.t('safe_count'),
+      t_blocker: this.t('blocker'),
+      t_warnings: this.t('warnings'),
+      t_blocker_msg: this.t('blocker_msg'),
+      t_apply: this.t('apply'),
+      t_apply_note: this.t('apply_note'),
+      t_reg_sub: this.t('reg_sub'),
+      t_add_item: this.t('add_item'),
+      t_scope_note: this.t('scope_note'),
+      t_search: this.t('search'),
+      t_lcode: this.t('lcode'),
+      t_mfr: this.t('mfr'),
+      t_cat: this.t('cat'),
+      t_active: this.t('active'),
+      t_inactive: this.t('inactive'),
+      t_similar_warn: this.t('similar_warn'),
+      t_mesh_sub: this.t('mesh_sub'),
+      t_qr_sub: this.t('qr_sub'),
+      t_privacy_title: this.t('privacy_title'),
+      t_qr_privacy: this.t('qr_privacy'),
+      t_qr_public_label: this.t('qr_public_label'),
+      t_qr_public_avail: this.t('qr_public_avail'),
+      t_qr_active: this.t('qr_active'),
+      t_qr_no_expose: this.t('qr_no_expose'),
+      t_last_upd: this.t('last_upd'),
+      t_today: this.t('today'),
+      t_health_sub: this.t('health_sub'),
+      t_global_status: this.t('global_status'),
+      t_modules: this.t('modules'),
+      t_module_health: this.t('module_health'),
+      t_mod_avail_read: this.t('mod_avail_read'),
+      t_mod_editor: this.t('mod_editor'),
+      t_mod_qr: this.t('mod_qr'),
+      t_mod_intake: this.t('mod_intake'),
+      t_connected: this.t('connected'),
+      t_actions: this.t('actions'),
+      t_bridge_gov: this.t('bridge_gov'),
+      t_recovery_q: this.t('recovery_q'),
+      t_recovery_clear: this.t('recovery_clear'),
+      t_event_log: this.t('event_log'),
+      t_system: this.t('system'),
+      t_ev1: this.t('ev1'),
+      t_ev2: this.t('ev2'),
+      t_ev3: this.t('ev3'),
+      t_ev4: this.t('ev4'),
+      t_intake_sub: this.t('intake_sub'),
+      t_intake_frozen: this.t('intake_frozen'),
+      t_intake_frozen_note: this.t('intake_frozen_note'),
+      t_intake_disabled_msg: this.t('intake_disabled_msg'),
+      t_blocked_workflows: this.t('blocked_workflows'),
+      t_blocked: this.t('blocked'),
+      t_use_editor_instead: this.t('use_editor_instead'),
+      t_reports_sub: this.t('reports_sub'),
+      t_filter: this.t('filter'),
+      t_export_csv: this.t('export_csv'),
+      t_tab_summary: this.t('tab_summary'),
+      t_tab_low: this.t('tab_low'),
+      t_tab_miss: this.t('tab_miss'),
+      t_tab_comp: this.t('tab_comp'),
+      t_tab_audit: this.t('tab_audit'),
+      t_mobile_sub: this.t('mobile_sub'),
+      t_quick_entry: this.t('quick_entry'),
+      t_view_health: this.t('view_health'),
+      t_view: this.t('view'),
+      t_confirm_apply: this.t('confirm_apply'),
+      t_confirm_msg: this.t('confirm_msg'),
+      t_mode: this.t('mode'),
+      t_cancel: this.t('cancel'),
+      t_confirm_btn: this.t('confirm_btn'),
+
+      // Actions
+      toggleLang: () => this.setState({ lang: lang==='ar'?'en':'ar' }),
+      toggleTheme: () => this.setState({ theme: theme==='dark'?'light':'dark' }),
+      toggleSidebar: () => this.setState({ sidebarOpen: !sidebarOpen }),
+      closeSidebar: () => this.setState({ sidebarOpen: false }),
+      doLogin: () => this.go(2),
+      doLogout: () => this.go(1),
+      setRoleSA: () => this.setState({ role:'super_admin' }),
+      setRoleHA: () => this.setState({ role:'hospital_admin' }),
+      setRolePh: () => this.setState({ role:'pharmacist' }),
+      setRoleVw: () => this.setState({ role:'viewer' }),
+      goS2: go(2), goS3: go(3), goS4: go(4), goS5: go(5),
+      goS6: go(6), goS7: go(7), goS8: go(8), goS9: go(9), goS10: go(10),
+      goS2M: go(2), goS3M: go(3), goS4M: go(4), goS5M: go(5),
+      goS6M: go(6), goS7M: go(7), goS8M: go(8), goS9M: go(9), goS10M: go(10),
+      setInstMarjan: () => this.setState({ institution:'marjan' }),
+      setInstHilla: () => this.setState({ institution:'hilla' }),
+      setInstBabil: () => this.setState({ institution:'babil' }),
+      setInstMahawil: () => this.setState({ institution:'mahawil' }),
+      setTabSingle: () => this.setState({ editorTab:'single' }),
+      setTabBatch: () => this.setState({ editorTab:'batch' }),
+      setRTabSummary: () => this.setState({ reportsTab:'summary' }),
+      setRTabLow: () => this.setState({ reportsTab:'low' }),
+      setRTabMissing: () => this.setState({ reportsTab:'missing' }),
+      setRTabComparison: () => this.setState({ reportsTab:'comparison' }),
+      setRTabAudit: () => this.setState({ reportsTab:'audit' }),
+      selectMeshMarjan: () => this.setState({ meshSelected: meshSelected==='marjan'?null:'marjan' }),
+      selectMeshHilla: () => this.setState({ meshSelected: meshSelected==='hilla'?null:'hilla' }),
+      selectMeshBabil: () => this.setState({ meshSelected: meshSelected==='babil'?null:'babil' }),
+      selectMeshMahawil: () => this.setState({ meshSelected: meshSelected==='mahawil'?null:'mahawil' }),
+      toggleH1: () => this.setState({ expandedHealth: {...expandedHealth, h1:!expandedHealth.h1} }),
+      toggleH2: () => this.setState({ expandedHealth: {...expandedHealth, h2:!expandedHealth.h2} }),
+      toggleH3: () => this.setState({ expandedHealth: {...expandedHealth, h3:!expandedHealth.h3} }),
+      toggleH4: () => this.setState({ expandedHealth: {...expandedHealth, h4:!expandedHealth.h4} }),
+      showApply: () => this.setState({ showApplyModal: true }),
+      hideApply: () => this.setState({ showApplyModal: false }),
+      confirmApply: () => {
+        this.setState({ showApplyModal: false });
+        this.toast(this.t('apply_success'));
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

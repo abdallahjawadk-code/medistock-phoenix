@@ -104,8 +104,9 @@ http://localhost:5174/**
 ## Post-Deploy Checklist
 
 - [ ] Login screen renders (RTL Arabic by default)
-- [ ] Role chips respond (super_admin selected by default)
-- [ ] Dashboard loads real Supabase data
+- [ ] Real email/password sign-in succeeds for the `super_admin` user
+- [ ] Invalid credentials show a safe error (no stack trace leak)
+- [ ] Dashboard loads real Supabase data (metric cards + institution cards)
 - [ ] QR scan URL works: `{host}/?qid=demo-qr-emergency-01`
 - [ ] Dark mode toggle works
 - [ ] Language toggle (AR/EN) works

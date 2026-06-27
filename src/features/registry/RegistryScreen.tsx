@@ -1,27 +1,48 @@
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { useAsync } from '@/shared/lib/useAsync';
+import { getLocalItems } from '@/shared/supabase/services/registry.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
+import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
-const ITEMS = [
-  { id: '1', nameEn: 'Amoxicillin',       nameAr: 'أموكسيسيلين',   code: 'BBL-001', unit: 'Capsule', mfr: 'Alkan Pharma',  cat: 'Antibiotics',   status: 'active', warn: false },
-  { id: '2', nameEn: 'Paracetamol',        nameAr: 'باراسيتامول',   code: 'BBL-002', unit: 'Tablet',  mfr: 'SDI Pharma',    cat: 'Analgesics',    status: 'active', warn: false },
-  { id: '3', nameEn: 'Metformin',          nameAr: 'ميتفورمين',     code: 'BBL-003', unit: 'Tablet',  mfr: 'Julphar',       cat: 'Antidiabetics', status: 'active', warn: false },
-  { id: '4', nameEn: 'Insulin Glargine',   nameAr: 'إنسولين جلارجين', code: 'BBL-010', unit: 'Vial', mfr: 'Sanofi',        cat: 'Insulins',      status: 'inactive', warn: false },
-  { id: '5', nameEn: 'Omeprazole',         nameAr: 'أوميبرازول',    code: 'BBL-004', unit: 'Capsule', mfr: 'AstraZeneca',   cat: 'Gastro',        status: 'active', warn: false },
-  { id: '6', nameEn: 'Ceftriaxone 1g',     nameAr: 'سيفترياكسون',   code: 'BBL-005', unit: 'Vial',    mfr: 'Roche',         cat: 'Antibiotics',   status: 'active', warn: true },
-];
+interface CentralRef { name: string; name_ar: string; unit: string; barcode?: string; category?: string; }
+interface LocalRow {
+  id: string;
+  local_code: string | null;
+  local_name: string | null;
+  status: string;
+  central_items: CentralRef | CentralRef[] | null;
+}
+
+function central(row: LocalRow): CentralRef | null {
+  const c = row.central_items;
+  if (!c) return null;
+  return Array.isArray(c) ? c[0] ?? null : c;
+}
 
 export function RegistryScreen() {
-  const { lang } = useApp();
+  const { lang, activeOrgId } = useApp();
   const [search, setSearch] = useState('');
 
-  const filtered = ITEMS.filter(item =>
-    item.nameEn.toLowerCase().includes(search.toLowerCase()) ||
-    item.nameAr.includes(search) ||
-    item.code.toLowerCase().includes(search.toLowerCase())
+  const { data, loading, error, reload } = useAsync(
+    () => activeOrgId ? getLocalItems(activeOrgId) : Promise.resolve([]),
+    [activeOrgId],
   );
+
+  const rows = (data ?? []) as unknown as LocalRow[];
+  const filtered = rows.filter(row => {
+    const c = central(row);
+    const q = search.toLowerCase();
+    return !search ||
+      (c?.name ?? '').toLowerCase().includes(q) ||
+      (c?.name_ar ?? '').includes(search) ||
+      (row.local_code ?? '').toLowerCase().includes(q);
+  });
 
   return (
     <div style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
@@ -30,9 +51,7 @@ export function RegistryScreen() {
           <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_reg', lang)}</h2>
           <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('reg_sub', lang)}</p>
         </div>
-        <button style={{ padding: '10px 16px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-          + {t('add_item', lang)}
-        </button>
+        <PhoenixOrgScope />
       </div>
 
       {/* Scope notice */}
@@ -53,34 +72,42 @@ export function RegistryScreen() {
         />
       </div>
 
-      {/* Items grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '12px' }}>
-        {filtered.map(item => (
-          <PhoenixCard key={item.id} hover padding="16px" border={item.warn ? '1px solid var(--warn)' : undefined} style={{ opacity: item.status === 'inactive' ? 0.65 : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 700 }}>{item.nameEn}</div>
-                <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{item.nameAr}</div>
-              </div>
-              <PhoenixStatusBadge
-                variant={item.status === 'active' ? 'ok' : 'neutral'}
-                label={t(item.status === 'active' ? 'active' : 'inactive', lang)}
-              />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11.5px' }}>
-              <div><span style={{ color: 'var(--t2)' }}>{t('lcode', lang)}:</span> <span dir="ltr" style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.code}</span></div>
-              <div><span style={{ color: 'var(--t2)' }}>{t('unit', lang)}:</span> {item.unit}</div>
-              <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t2)' }}>{t('mfr', lang)}:</span> {item.mfr}</div>
-              <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t2)' }}>{t('cat', lang)}:</span> {item.cat}</div>
-            </div>
-            {item.warn && (
-              <div style={{ marginTop: '8px', padding: '6px 9px', borderRadius: 'var(--r1)', background: 'var(--warn2)', fontSize: '10.5px', color: 'var(--warn)', fontWeight: 600 }}>
-                ⚠ {t('similar_warn', lang)}
-              </div>
-            )}
-          </PhoenixCard>
-        ))}
-      </div>
+      {!activeOrgId && (
+        <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+      )}
+      {activeOrgId && loading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {activeOrgId && !loading && error && (
+        <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />
+      )}
+      {activeOrgId && !loading && !error && filtered.length === 0 && (
+        <PhoenixEmptyState icon="📋" title={t('empty_items', lang)} description={t('empty_hint', lang)} />
+      )}
+
+      {activeOrgId && !loading && !error && filtered.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '12px' }}>
+          {filtered.map(row => {
+            const c = central(row);
+            const isActive = row.status === 'active';
+            return (
+              <PhoenixCard key={row.id} hover padding="16px" style={{ opacity: isActive ? 1 : 0.65 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700 }}>{c?.name ?? row.local_name ?? '—'}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{c?.name_ar ?? ''}</div>
+                  </div>
+                  <PhoenixStatusBadge variant={isActive ? 'ok' : 'neutral'} label={t(isActive ? 'active' : 'inactive', lang)} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11.5px' }}>
+                  <div><span style={{ color: 'var(--t2)' }}>{t('lcode', lang)}:</span> <span dir="ltr" style={{ fontFamily: 'monospace', fontWeight: 600 }}>{row.local_code ?? '—'}</span></div>
+                  <div><span style={{ color: 'var(--t2)' }}>{t('unit', lang)}:</span> {c?.unit ?? '—'}</div>
+                  {c?.category && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t2)' }}>{t('cat', lang)}:</span> {c.category}</div>}
+                  {c?.barcode && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t2)' }}>Barcode:</span> <span dir="ltr">{c.barcode}</span></div>}
+                </div>
+              </PhoenixCard>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -336,3 +336,71 @@ describe('IntakeFrozenScreen: frozen state', () => {
     expect(frozen).not.toMatch(/import.*[Dd]oc[Ii]ntel/);
   });
 });
+
+// ============================================================================
+// 12. LIVE AUTH WIRING
+// ============================================================================
+
+describe('Live auth: client + auth service', () => {
+  const auth   = readSrc('shared/supabase/services/auth.service.ts');
+  const ctx    = readSrc('app/AppContext.tsx');
+  const login  = readSrc('features/auth/LoginScreen.tsx');
+
+  it('auth service uses signInWithPassword (no admin API)', () => {
+    expect(auth).toContain('signInWithPassword');
+    expect(auth).not.toContain('admin.');
+    expect(auth).not.toContain('service_role');
+  });
+
+  it('auth service reads the profile from public.profiles', () => {
+    expect(auth).toContain("from('profiles')");
+  });
+
+  it('AppContext exposes real session + authReady gating', () => {
+    expect(ctx).toContain('authReady');
+    expect(ctx).toContain('session');
+    expect(ctx).toContain('getMyProfile');
+  });
+
+  it('LoginScreen performs real sign-in (no demo bypass)', () => {
+    expect(login).toContain('signIn');
+    expect(login).not.toContain('Demo Login');
+    expect(login).not.toContain('onLogin');
+  });
+});
+
+// ============================================================================
+// 13. APP ROUTING: auth gate + anon public QR
+// ============================================================================
+
+describe('App routing: auth gate + public QR', () => {
+  const app = readSrc('app/App.tsx');
+
+  it('gates the app behind a session', () => {
+    expect(app).toContain('session');
+    expect(app).toContain('LoginScreen');
+  });
+
+  it('exposes an anon public QR route via ?qid=', () => {
+    expect(app).toContain('qid');
+    expect(app).toContain('PublicQrScreen');
+  });
+});
+
+// ============================================================================
+// 14. SERVICES: QR lifecycle uses RPCs, no raw deletes
+// ============================================================================
+
+describe('Services: QR lifecycle is RPC-only', () => {
+  const qr = readSrc('shared/supabase/services/qr.service.ts');
+
+  it('uses the three Phoenix QR RPCs', () => {
+    expect(qr).toContain('get_public_qr_payload');
+    expect(qr).toContain('create_qr_for_target');
+    expect(qr).toContain('disable_qr_token');
+  });
+
+  it('never calls .delete() on a table', () => {
+    expect(qr).not.toMatch(/\.from\([^)]+\)\s*\.\s*delete\s*\(/);
+  });
+});
