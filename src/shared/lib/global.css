@@ -1,0 +1,57 @@
+/* ─── MEDISTOCK PHOENIX — Global Styles ─────────────────────────────────────
+   Base reset + typography. Import tokens.css first.
+   ─────────────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+@import './tokens.css';
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body { height: 100%; }
+
+body {
+  font-family: 'DM Sans', 'Noto Sans Arabic', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--t);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--p);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--brd); border-radius: 99px; }
+
+input, select, textarea, button { font-family: inherit; }
+button { cursor: pointer; }
+
+/* Animations */
+@keyframes fs   { from { opacity: 0; transform: translateY(8px); }  to { opacity: 1; transform: translateY(0); } }
+@keyframes su   { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes si   { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes bp   { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+@keyframes fl   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes ti   { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.anim-fs  { animation: fs .3s ease; }
+.anim-su  { animation: su .25s ease; }
+.anim-si  { animation: si .2s ease; }
+.anim-bp  { animation: bp 4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
