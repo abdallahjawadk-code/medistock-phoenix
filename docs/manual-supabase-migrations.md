@@ -31,15 +31,16 @@ Apply strictly in order. Each builds on the previous schema.
 | **007** | `007_phoenix_clear_port_availability.sql` | Safe clear-port-availability RPC |
 | **008** | `008_phoenix_org_status_contacts.sql` | Org Monthly Status Officer / contact table + RLS (no anon) |
 | **009** | `009_phoenix_inter_institution_alerts.sql` | `get_scoped_inter_institution_alerts` RPC for secure inter-institution alerts |
+| **010** | `010_phoenix_user_permission_matrix.sql` | Official role model + permission matrix (seeds **32** permission keys) + RPCs |
 
-Migrations 005, 006, 007, 008 and 009 are the ones still pending. Apply each
-one **manually**, in this order:
+Apply each one **manually**, in this order:
 
 1. **Apply 005 manually** — `005_phoenix_assign_profile_role.sql`
 2. **Apply 006 manually** — `006_phoenix_status_reports.sql`
 3. **Apply 007 manually** — `007_phoenix_clear_port_availability.sql`
 4. **Apply 008 manually** — `008_phoenix_org_status_contacts.sql`
 5. **Apply 009 manually** — `009_phoenix_inter_institution_alerts.sql` (requires 008)
+6. **Apply 010 manually** — `010_phoenix_user_permission_matrix.sql` (requires 005–009)
 
 ## How to apply (each migration)
 
@@ -167,13 +168,53 @@ Functional checks:
 - **No phone/contact data on public QR**: scan a public QR (`?qid=…`) while
   logged out and confirm no officer name/phone or contact field is shown.
 
+### After 010 — user permission matrix
+
+Purpose: the official role model + the two-layer permission matrix
+(`permission_keys`, `role_permission_defaults`, `profile_permission_overrides`)
+and the scoped RPCs `get_effective_permissions`, `assign_profile_permissions`,
+`reset_profile_permissions`. It also re-creates `assign_profile_role` with the
+expanded official+legacy role allowlist.
+
+Manual action: apply via Supabase SQL Editor **after a backup** and after 005–009.
+
+Read-only verification checks:
+
+```sql
+-- Expect EXACTLY 32 permission keys (canonical count).
+select count(*) from public.permission_keys;            -- expect 32
+
+-- Per-role default counts (super_admin should equal 32).
+select role, count(*) from public.role_permission_defaults group by role order by role;
+
+-- All four permission/role RPCs must exist.
+select proname from pg_proc
+where proname in ('assign_profile_permissions','get_effective_permissions',
+                  'reset_profile_permissions','assign_profile_role')
+order by proname;
+```
+
+> **Canonical permission count is 32.** A live `permission_keys` count of 32 is
+> correct and expected — it matches `PERMISSION_KEYS` in
+> `src/shared/lib/permissions.ts` and the seed in migration 010. No permission
+> key is missing; do not add a 33rd key to "reach" 33.
+
+Functional checks:
+- `super_admin` default count = 32; `viewer` is read-only (no `*.create` /
+  `*.manage` / `users.*`).
+- A non-super actor cannot grant a permission they do not hold, cannot edit
+  their own permissions, and cannot act outside their organization
+  (`assign_profile_permissions` returns `INSUFFICIENT_PERMISSION` /
+  `CANNOT_EDIT_OWN_PERMISSIONS` / `OUT_OF_SCOPE`).
+
 ## Prohibitions
 
 - ❌ Do **not** run `npx supabase db push`.
 - ❌ Do **not** apply out of order.
 - ❌ Do **not** apply without a backup.
 - ❌ Do **not** edit `auth.*` schema or delete `auth.users` from these migrations.
-- ❌ No `DROP` / `TRUNCATE` / `CASCADE` shortcuts are used in 005–009; do not add any.
+- ❌ No `DROP` / `TRUNCATE` / `CASCADE` shortcuts are used in 005–010; do not add any.
+- ❌ Do **not** add a 33rd permission key to migration 010 — the canonical count is **32**.
 
 ## Rollback
 
@@ -186,5 +227,9 @@ Each migration is small and reversible:
 - **006 / 008** — the table can be dropped only if intentionally rolling back
   the feature and no data must be preserved. Back up the table first. Note 009
   depends on 008, so roll back 009 (the RPC) before 008 (the contacts table).
+- **010** — drop the permission RPCs and matrix tables if rolling back the
+  feature (back up `profile_permission_overrides` first). The expanded
+  `profiles_role_check` is additive; reverting it would require no rows to use
+  the new official role keys.
 
 When in doubt, restore from the backup taken before applying.

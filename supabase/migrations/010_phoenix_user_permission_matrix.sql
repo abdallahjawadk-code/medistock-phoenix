@@ -521,7 +521,7 @@ grant execute on function reset_profile_permissions(uuid) to authenticated;
 -- =============================================================================
 -- END OF MIGRATION 010
 -- Verify:
---   select count(*) from permission_keys;            -- expect 33
+--   select count(*) from permission_keys;            -- expect 32
 --   select role, count(*) from role_permission_defaults group by role;
 --   select routine_name from information_schema.routines
 --   where routine_schema = 'public'

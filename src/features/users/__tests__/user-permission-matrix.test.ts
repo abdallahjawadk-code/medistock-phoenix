@@ -114,6 +114,12 @@ describe('Permission catalog', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
+  it('canonical permission count is exactly 32 (matches migration 010 seed)', () => {
+    expect(REQUIRED).toHaveLength(32);
+    expect(PERMISSION_KEYS).toHaveLength(32);
+    expect(PERMISSION_KEY_SET.size).toBe(32);
+  });
+
   it('rejects unknown permission keys', () => {
     expect(isValidPermissionKey('fake.permission')).toBe(false);
     expect(isValidPermissionKey('users.create')).toBe(true);
