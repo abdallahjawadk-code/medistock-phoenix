@@ -642,3 +642,154 @@ describe('Deployment readiness: documentation', () => {
     expect(doc).toContain('git revert');
   });
 });
+
+// ============================================================================
+// 19. MIGRATION 013: identity snapshot foundation
+// ============================================================================
+
+describe('Migration 013: user identity snapshot foundation', () => {
+  const sql = readSql('migrations/013_phoenix_user_identity_snapshot_foundation.sql');
+
+  it('file exists and is non-empty', () => {
+    expect(sql.length).toBeGreaterThan(500);
+  });
+
+  it('is manual-apply-only (contains the DO NOT use supabase db push warning)', () => {
+    expect(sql).toContain('DO NOT use');
+    expect(sql).toContain('supabase db push');
+  });
+
+  it('has no DROP or TRUNCATE statements', () => {
+    expect(sql).not.toMatch(/^\s*(drop table|drop function|truncate)\b/im);
+  });
+
+  it('adds profiles.identity_version with default 1', () => {
+    expect(sql).toContain('identity_version');
+    expect(sql).toContain('default 1');
+  });
+
+  it('adds a check constraint: identity_version >= 1', () => {
+    expect(sql).toContain('identity_version >= 1');
+  });
+
+  it('creates the user_identity_history table', () => {
+    expect(sql).toMatch(/create table if not exists.*user_identity_history/i);
+  });
+
+  it('user_identity_history has profile_id, identity_version, valid_from, valid_until, change_reason', () => {
+    expect(sql).toContain('profile_id');
+    expect(sql).toContain('identity_version');
+    expect(sql).toContain('valid_from');
+    expect(sql).toContain('valid_until');
+    expect(sql).toContain('change_reason');
+  });
+
+  it('seeds initial identity history with ON CONFLICT DO NOTHING', () => {
+    expect(sql).toContain('initial_snapshot');
+    expect(sql).toContain('on conflict');
+    expect(sql).toContain('do nothing');
+  });
+
+  it('adds actor snapshot columns to audit_logs (4 columns)', () => {
+    const auditBlock = sql.indexOf('audit_logs');
+    expect(auditBlock).toBeGreaterThan(-1);
+    expect(sql).toContain('actor_name_snapshot');
+    expect(sql).toContain('actor_email_snapshot');
+    expect(sql).toContain('actor_org_snapshot');
+    expect(sql).toContain('actor_identity_version');
+  });
+
+  it('adds actor snapshot columns to institution_item_status_reports', () => {
+    expect(sql).toContain('institution_item_status_reports');
+    expect(sql).toContain('actor_role_snapshot');
+  });
+
+  it('adds actor snapshot columns to item_availability', () => {
+    expect(sql).toContain('item_availability');
+  });
+
+  it('adds actor snapshot columns to qr_tokens', () => {
+    expect(sql).toContain('qr_tokens');
+  });
+
+  it('adds actor snapshot columns to organization_status_contacts', () => {
+    expect(sql).toContain('organization_status_contacts');
+  });
+
+  it('adds actor snapshot columns to profile_permission_overrides', () => {
+    expect(sql).toContain('profile_permission_overrides');
+  });
+
+  it('covers 6 operational tables with snapshot columns', () => {
+    const tables = [
+      'audit_logs',
+      'institution_item_status_reports',
+      'item_availability',
+      'qr_tokens',
+      'organization_status_contacts',
+      'profile_permission_overrides',
+    ];
+    tables.forEach(t => expect(sql).toContain(t));
+  });
+
+  it('includes best-effort backfill for existing rows', () => {
+    expect(sql).toContain('actor_name_snapshot is null');
+  });
+
+  it('creates the get_profile_identity_snapshot helper function', () => {
+    expect(sql).toContain('get_profile_identity_snapshot');
+    expect(sql).toContain('security definer');
+  });
+
+  it('grants helper function to authenticated users only', () => {
+    expect(sql).toContain('grant execute on function');
+    expect(sql).toContain('to authenticated');
+    expect(sql).not.toContain('to anon');
+  });
+
+  it('includes a verification block', () => {
+    expect(sql.toLowerCase()).toContain('verify');
+    expect(sql).toContain('assert');
+  });
+
+  it('explicitly notes this migration does NOT implement recycling', () => {
+    expect(sql.toLowerCase()).toContain('does not implement');
+    expect(sql.toLowerCase()).toContain('recycl');
+  });
+
+  it('uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS patterns (idempotent)', () => {
+    expect(sql).toContain('if not exists');
+    expect(sql).toContain('add column if not exists');
+  });
+
+  it('does not reference service_role (must not leak to migration file)', () => {
+    expect(sql).not.toContain('service_role');
+  });
+
+  it('joins auth.users safely for email backfill (not via service_role)', () => {
+    expect(sql).toContain('auth.users');
+    expect(sql).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+});
+
+describe('Identity snapshot plan: foundation status updated', () => {
+  const snapshot = readPhoenix('docs/user-identity-snapshot-plan.md');
+
+  it('marks the foundation as authored (migration 013)', () => {
+    expect(snapshot).toContain('013');
+    expect(snapshot).toContain('Foundation authored');
+  });
+
+  it('identifies the next phase as ACTOR-SNAPSHOT-WRITE-PATHS-A', () => {
+    expect(snapshot).toContain('ACTOR-SNAPSHOT-WRITE-PATHS-A');
+  });
+
+  it('documents which tables were covered and which were excluded', () => {
+    expect(snapshot).toContain('audit_logs');
+    expect(snapshot).toContain('NOT covered');
+  });
+
+  it('documents initial_snapshot seed behavior', () => {
+    expect(snapshot).toContain('initial_snapshot');
+  });
+});

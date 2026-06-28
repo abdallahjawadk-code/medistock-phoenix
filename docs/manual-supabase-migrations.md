@@ -32,6 +32,9 @@ Apply strictly in order. Each builds on the previous schema.
 | **008** | `008_phoenix_org_status_contacts.sql` | Org Monthly Status Officer / contact table + RLS (no anon) |
 | **009** | `009_phoenix_inter_institution_alerts.sql` | `get_scoped_inter_institution_alerts` RPC for secure inter-institution alerts |
 | **010** | `010_phoenix_user_permission_matrix.sql` | Official role model + permission matrix (seeds **32** permission keys) + RPCs |
+| **011** | `011_phoenix_user_lifecycle_controls.sql` | Adds `users.disable` + `users.delete` keys (→ 34 total); `profiles.disabled_at/disabled_by` audit columns |
+| **012** | `012_phoenix_institution_admin_role.sql` | Expands `profiles.role` CHECK to allow `institution_admin`; seeds 13 default permissions |
+| **013** | `013_phoenix_user_identity_snapshot_foundation.sql` | Identity snapshot foundation: `profiles.identity_version`, `user_identity_history`, actor snapshot columns on 6 operational tables, initial backfill, helper RPC |
 
 Apply each one **manually**, in this order:
 
@@ -41,6 +44,9 @@ Apply each one **manually**, in this order:
 4. **Apply 008 manually** — `008_phoenix_org_status_contacts.sql`
 5. **Apply 009 manually** — `009_phoenix_inter_institution_alerts.sql` (requires 008)
 6. **Apply 010 manually** — `010_phoenix_user_permission_matrix.sql` (requires 005–009)
+7. **Apply 011 manually** — `011_phoenix_user_lifecycle_controls.sql` (requires 010)
+8. **Apply 012 manually** — `012_phoenix_institution_admin_role.sql` (requires 010; 011 recommended)
+9. **Apply 013 manually** — `013_phoenix_user_identity_snapshot_foundation.sql` (requires 001–010; 011+012 recommended)
 
 ## How to apply (each migration)
 
@@ -207,14 +213,92 @@ Functional checks:
   (`assign_profile_permissions` returns `INSUFFICIENT_PERMISSION` /
   `CANNOT_EDIT_OWN_PERMISSIONS` / `OUT_OF_SCOPE`).
 
+### After 011 — user lifecycle controls
+
+Purpose: adds `users.disable` and `users.delete` permission keys (total: 34); adds `profiles.disabled_at` and `profiles.disabled_by` audit columns for disable/enable tracking.
+
+```sql
+-- Expect 34 permission keys (32 from 010 + 2 from 011).
+select count(*) from public.permission_keys;  -- expect 34
+
+-- Audit columns must exist.
+select column_name from information_schema.columns
+where table_schema = 'public' and table_name = 'profiles'
+  and column_name in ('disabled_at', 'disabled_by');
+-- expect: 2 rows
+```
+
+### After 012 — institution_admin role
+
+Purpose: expands `profiles.role` CHECK to include `institution_admin`; seeds 13 default permissions for the new role.
+
+```sql
+-- institution_admin rows must exist.
+select count(*) from public.role_permission_defaults
+where role = 'institution_admin';
+-- expect: 13 (or 14 if migration 011 was also applied — users.disable included)
+
+-- role CHECK must include institution_admin.
+select pg_get_constraintdef(oid) from pg_constraint
+where conname = 'profiles_role_check';
+-- expect: 'institution_admin' in the list
+```
+
+### After 013 — user identity snapshot foundation
+
+Purpose: foundational schema for safe account recycling in a future phase.
+**Does NOT implement recycling.** Adds `profiles.identity_version`, the
+`user_identity_history` table, actor snapshot columns on 6 operational tables,
+and initial backfill from existing profile data.
+
+```sql
+-- profiles.identity_version must exist, all rows = 1.
+select identity_version, count(*)
+from public.profiles group by 1;
+-- expect: all rows have identity_version = 1
+
+-- One history row per profile.
+select count(*) from public.user_identity_history;
+-- expect: equals count(*) from public.profiles
+
+-- audit_logs snapshot columns (4 added, no actor_role_snapshot — already exists as actor_role).
+select count(*) from information_schema.columns
+where table_schema = 'public' and table_name = 'audit_logs'
+  and column_name in (
+    'actor_name_snapshot', 'actor_email_snapshot',
+    'actor_org_snapshot',  'actor_identity_version'
+  );
+-- expect: 4
+
+-- item_availability snapshot columns (5 added).
+select count(*) from information_schema.columns
+where table_schema = 'public' and table_name = 'item_availability'
+  and column_name in (
+    'actor_name_snapshot', 'actor_email_snapshot', 'actor_role_snapshot',
+    'actor_org_snapshot',  'actor_identity_version'
+  );
+-- expect: 5
+
+-- Helper function exists.
+select proname from pg_proc where proname = 'get_profile_identity_snapshot';
+-- expect: 1 row
+```
+
+> **Important:** Migration 013 does NOT implement account recycling. The recycling
+> workflow (ACCOUNT-RECYCLE-WORKFLOW-A) is a separate future phase. Do not attempt
+> to recycle accounts before that workflow is implemented.
+
 ## Prohibitions
 
 - ❌ Do **not** run `npx supabase db push`.
 - ❌ Do **not** apply out of order.
 - ❌ Do **not** apply without a backup.
 - ❌ Do **not** edit `auth.*` schema or delete `auth.users` from these migrations.
-- ❌ No `DROP` / `TRUNCATE` / `CASCADE` shortcuts are used in 005–010; do not add any.
-- ❌ Do **not** add a 33rd permission key to migration 010 — the canonical count is **32**.
+- ❌ No `DROP` / `TRUNCATE` / `CASCADE` shortcuts are used in 005–013; do not add any.
+- ❌ Do **not** add a 33rd permission key to migration 010 — the canonical count is **32**
+  (migrations 011/012 add to different tables; the base 010 count stays 32).
+- ❌ Do **not** use migration 013 as a trigger to implement account recycling — that
+  is a separate, future, atomic workflow.
 
 ## Rollback
 
@@ -231,5 +315,13 @@ Each migration is small and reversible:
   feature (back up `profile_permission_overrides` first). The expanded
   `profiles_role_check` is additive; reverting it would require no rows to use
   the new official role keys.
+- **011** — drop columns `disabled_at` / `disabled_by` from `profiles`;
+  delete the `users.disable` and `users.delete` rows from `permission_keys`.
+- **012** — revert `profiles_role_check` to exclude `institution_admin`;
+  delete `institution_admin` rows from `role_permission_defaults`.
+- **013** — drop `user_identity_history` table; drop `identity_version` from
+  `profiles`; drop actor snapshot columns from the 6 operational tables;
+  drop function `get_profile_identity_snapshot`. This is the most involved
+  rollback — take a backup and do it only if truly necessary.
 
 When in doubt, restore from the backup taken before applying.
