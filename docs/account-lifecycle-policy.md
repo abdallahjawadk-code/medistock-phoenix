@@ -129,6 +129,8 @@ Recycling is the process of reassigning a **suspended** account to a **different
 
 **Required permission:** `users.recycle` (dangerous; super_admin default true; all others false by default).
 
+**Password setup:** After recycling, the Edge Function calls `generateLink({ type: 'recovery' })` to create a password reset link for the new email. This generates the link server-side but does **not guarantee email delivery** — actual delivery depends on the Supabase project's SMTP configuration. The generated link is discarded (never returned to the admin). If the new user does not receive an email, the admin must send a password reset link manually from Supabase Auth settings. Admins never see or set the user's password.
+
 **Partial-failure behavior:** Auth email is updated before DB changes. If DB changes fail after auth email update, the account remains suspended (still banned), and the admin can retry. The safest failure mode — no partial identity change is visible to users.
 
 ### 3.5 Hard Delete

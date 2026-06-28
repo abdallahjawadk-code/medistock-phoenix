@@ -1251,10 +1251,25 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     expect(fn).toContain("ban_duration: 'none'");
   });
 
-  it('sends password setup via recovery link (best-effort)', () => {
+  it('generates recovery link (best-effort) and reports honest status', () => {
     expect(fn).toContain('generateLink');
     expect(fn).toContain('recovery');
-    expect(fn).toContain('passwordSetupSent');
+    expect(fn).toContain('passwordSetupStatus');
+    expect(fn).toContain("'link_generated'");
+    expect(fn).toContain("'link_failed'");
+  });
+
+  it('does not claim email was sent (no password_setup_sent: true)', () => {
+    expect(fn).not.toContain('password_setup_sent');
+  });
+
+  it('does not return the generated recovery link', () => {
+    const returnBlock = fn.slice(fn.lastIndexOf('return json('));
+    expect(returnBlock).not.toMatch(/action_link|link_url|recovery_link/);
+  });
+
+  it('does not log the generated recovery link', () => {
+    expect(fn).not.toMatch(/console\.(log|info|warn).*link/i);
   });
 
   it('writes audit log with old and new identity', () => {
@@ -1329,6 +1344,24 @@ describe('Recycling implementation: UI and i18n', () => {
   it('i18n has perm_users_recycle label', () => {
     expect(strings).toContain('perm_users_recycle');
     expect(strings).toContain('تدوير الحسابات');
+  });
+
+  it('UI uses honest passwordSetupStatus instead of passwordSetupSent', () => {
+    expect(screen).toContain('passwordSetupStatus');
+    expect(screen).not.toContain('passwordSetupSent');
+  });
+
+  it('i18n success message does not claim email was sent', () => {
+    expect(strings).not.toContain('um_recycle_password_sent');
+    expect(strings).toContain('um_recycle_link_failed');
+    expect(strings).toContain('إذا لم يصله بريد');
+    expect(strings).toContain('If no email arrives');
+  });
+
+  it('service result type uses passwordSetupStatus not passwordSetupSent', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    expect(svc).toContain('passwordSetupStatus');
+    expect(svc).not.toContain('passwordSetupSent');
   });
 });
 

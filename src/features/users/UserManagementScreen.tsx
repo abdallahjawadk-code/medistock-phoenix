@@ -707,9 +707,9 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
         return;
       }
 
-      const msg = res.passwordSetupSent
-        ? `${t('um_recycle_success', lang)} ${t('um_recycle_password_sent', lang)}`
-        : t('um_recycle_success', lang);
+      const msg = res.passwordSetupStatus === 'link_generated'
+        ? t('um_recycle_success', lang)
+        : t('um_recycle_link_failed', lang);
       onSuccess(msg);
     } catch {
       onError(t('um_recycle_failed', lang));

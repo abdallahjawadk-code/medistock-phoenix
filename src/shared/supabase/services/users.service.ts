@@ -219,7 +219,7 @@ export interface RecycleUserResult {
   targetProfileId?: string;
   newEmail?: string;
   newIdentityVersion?: number;
-  passwordSetupSent?: boolean;
+  passwordSetupStatus?: 'link_generated' | 'link_failed';
   error?: string;
   edgeMissing?: boolean;
 }
@@ -246,17 +246,17 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
       target_profile_id?: string;
       new_email?: string;
       new_identity_version?: number;
-      password_setup_sent?: boolean;
+      password_setup_status?: 'link_generated' | 'link_failed';
       error?: string;
     };
     if (!res) return { ok: false, error: 'UNKNOWN' };
     return {
-      ok:                 res.ok,
-      targetProfileId:    res.target_profile_id,
-      newEmail:           res.new_email,
-      newIdentityVersion: res.new_identity_version,
-      passwordSetupSent:  res.password_setup_sent,
-      error:              res.error,
+      ok:                  res.ok,
+      targetProfileId:     res.target_profile_id,
+      newEmail:            res.new_email,
+      newIdentityVersion:  res.new_identity_version,
+      passwordSetupStatus: res.password_setup_status,
+      error:               res.error,
     };
   } catch {
     return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };

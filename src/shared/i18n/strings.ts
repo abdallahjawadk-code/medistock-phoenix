@@ -505,8 +505,8 @@ export const T: Dict = {
   um_recycle_no_self:         { ar: 'لا يمكن تدوير حسابك الشخصي.',                      en: 'You cannot recycle your own account.' },
   um_recycle_no_super:        { ar: 'لا يمكن تدوير حساب مدير المنصة.',                   en: 'You cannot recycle a platform administrator.' },
   um_recycle_no_cross_org:    { ar: 'لا يمكن تدوير حساب خارج مؤسستك.',                   en: 'You cannot recycle an account outside your institution.' },
-  um_recycle_success:         { ar: 'تم تدوير الحساب بنجاح.',                            en: 'Account recycled successfully.' },
-  um_recycle_password_sent:   { ar: 'تم إرسال رابط إعداد كلمة المرور إلى البريد الجديد.', en: 'Password setup link sent to the new email.' },
+  um_recycle_success:         { ar: 'تم تدوير الحساب بنجاح. يحتاج المستخدم الجديد إلى إعداد كلمة المرور عبر البريد. إذا لم يصله بريد، أرسل رابط إعادة تعيين كلمة المرور من إعدادات المصادقة.', en: 'Account recycled successfully. The new user needs a password setup link. If no email arrives, send a password reset link from authentication settings.' },
+  um_recycle_link_failed:     { ar: 'تم تدوير الحساب بنجاح، لكن لم يتم إنشاء رابط كلمة المرور. أرسل رابط إعادة تعيين من إعدادات المصادقة.', en: 'Account recycled successfully, but password link generation failed. Send a password reset link from authentication settings.' },
   um_recycle_failed:          { ar: 'فشل تدوير الحساب. حاول مجدداً.',                    en: 'Account recycling failed. Please try again.' },
 
   /* Official role labels (the ONLY labels shown in the role dropdown) */

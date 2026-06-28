@@ -290,16 +290,20 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: 'UNBAN_FAILED' }, 500);
   }
 
-  // ── Step 4: Send password setup email (best-effort, non-fatal) ─────────────
-  let passwordSetupSent = false;
+  // ── Step 4: Generate password recovery link (best-effort, non-fatal) ───────
+  // IMPORTANT: generateLink creates a recovery link server-side but does NOT
+  // guarantee email delivery. Whether the email is actually sent depends on
+  // the Supabase project's email provider (SMTP) configuration. The generated
+  // link is intentionally discarded — never returned, logged, or stored.
+  let passwordSetupStatus: 'link_generated' | 'link_failed' = 'link_failed';
   try {
-    const { error: inviteErr } = await admin.auth.admin.generateLink({
+    const { error: linkErr } = await admin.auth.admin.generateLink({
       type: 'recovery',
       email: newEmail,
     });
-    passwordSetupSent = !inviteErr;
+    passwordSetupStatus = linkErr ? 'link_failed' : 'link_generated';
   } catch {
-    passwordSetupSent = false;
+    passwordSetupStatus = 'link_failed';
   }
 
   // ── Step 5: Audit log ──────────────────────────────────────────────────────
@@ -329,6 +333,6 @@ Deno.serve(async (req: Request) => {
     target_profile_id: targetProfileId,
     new_email: newEmail,
     new_identity_version: newVersion,
-    password_setup_sent: passwordSetupSent,
+    password_setup_status: passwordSetupStatus,
   });
 });
