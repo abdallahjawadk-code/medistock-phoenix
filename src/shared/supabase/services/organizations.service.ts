@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from '../client';
+import type { Role } from '../../lib/types';
 
 export interface OrgRow {
   id:      string;
@@ -7,6 +8,14 @@ export interface OrgRow {
   code:    string;
   status:  string;
   city:    string;
+  contact_email: string;
+}
+
+export interface OrgProfileRow {
+  id: string;
+  full_name: string;
+  role: Role;
+  status: string;
 }
 
 export async function getOrganizations(): Promise<OrgRow[]> {
@@ -14,7 +23,7 @@ export async function getOrganizations(): Promise<OrgRow[]> {
 
   const { data, error } = await supabase
     .from('organizations')
-    .select('id, name, name_ar, code, status, city')
+    .select('id, name, name_ar, code, status, city, contact_email')
     .order('name_ar');
 
   if (error) throw error;
@@ -25,6 +34,7 @@ export async function getOrganizations(): Promise<OrgRow[]> {
     code:    r.code,
     status:  r.status,
     city:    r.city ?? '',
+    contact_email: r.contact_email ?? '',
   }));
 }
 
@@ -33,7 +43,7 @@ export async function getOrganization(id: string): Promise<OrgRow | null> {
 
   const { data, error } = await supabase
     .from('organizations')
-    .select('id, name, name_ar, code, status, city')
+    .select('id, name, name_ar, code, status, city, contact_email')
     .eq('id', id)
     .single();
 
@@ -45,5 +55,84 @@ export async function getOrganization(id: string): Promise<OrgRow | null> {
     code:    data.code,
     status:  data.status,
     city:    data.city ?? '',
+    contact_email: data.contact_email ?? '',
   };
+}
+
+export async function createOrganization(input: {
+  name: string;
+  name_ar: string;
+  code: string;
+  city?: string;
+  contact_email?: string;
+}): Promise<OrgRow> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const { data, error } = await supabase
+    .from('organizations')
+    .insert({
+      name:          input.name,
+      name_ar:       input.name_ar,
+      code:          input.code,
+      city:          input.city ?? null,
+      contact_email: input.contact_email ?? null,
+    })
+    .select('id, name, name_ar, code, status, city, contact_email')
+    .single();
+
+  if (error) throw error;
+  return {
+    id: data.id, name: data.name, name_ar: data.name_ar,
+    code: data.code, status: data.status,
+    city: data.city ?? '', contact_email: data.contact_email ?? '',
+  };
+}
+
+export async function updateOrganization(
+  id: string,
+  input: { name?: string; name_ar?: string; city?: string; contact_email?: string; status?: string },
+): Promise<void> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const update: Record<string, unknown> = {};
+  if (input.name !== undefined) update.name = input.name;
+  if (input.name_ar !== undefined) update.name_ar = input.name_ar;
+  if (input.city !== undefined) update.city = input.city;
+  if (input.contact_email !== undefined) update.contact_email = input.contact_email;
+  if (input.status !== undefined) update.status = input.status;
+
+  const { error } = await supabase
+    .from('organizations')
+    .update(update)
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function getProfilesByOrg(orgId: string): Promise<OrgProfileRow[]> {
+  if (!supabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, status')
+    .eq('organization_id', orgId)
+    .order('role')
+    .order('full_name');
+
+  if (error) throw error;
+  return (data ?? []) as OrgProfileRow[];
+}
+
+export async function updateProfileRole(
+  profileId: string,
+  newRole: Role,
+): Promise<void> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ role: newRole })
+    .eq('id', profileId);
+
+  if (error) throw error;
 }

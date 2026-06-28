@@ -19,37 +19,32 @@ export type AvailabilityCondition =
   | 'surplus'
   | 'near_expiry'
   | 'expired';
-export type InstitutionStatus  = 'healthy' | 'safemode' | 'quarantine' | 'frozen';
+// Mirrors the DB CHECK constraint on public.organizations.status (migration 001).
+export type OrganizationStatus = 'active' | 'inactive' | 'suspended';
 export type ModuleStatus       = 'healthy' | 'safemode' | 'frozen';
 export type EntityStatus       = 'active' | 'archived' | 'deleted';
 
-export interface Institution {
+export interface Organization {
   id: string;
-  code: 'marjan' | 'hilla' | 'babil' | 'mahawil';
+  name: string;
   name_ar: string;
-  name_en: string;
-  status: InstitutionStatus;
-  available_count: number;
-  low_count: number;
-  missing_count: number;
-  bridge_health: number;
+  code: string;
+  status: OrganizationStatus;
+  city: string;
+  contact_email?: string;
 }
 
-export interface LocalItem {
+export interface ProfileRow {
   id: string;
-  institution_id: string;
-  local_code: string;
-  name_ar: string;
-  name_en: string;
-  unit: string;
-  manufacturer?: string;
-  category?: string;
-  status: 'active' | 'inactive';
+  organization_id: string | null;
+  full_name: string;
+  role: Role;
+  status: 'active' | 'suspended' | 'archived';
 }
 
 export interface AvailabilityRecord {
   id: string;
-  institution_id: string;
+  organization_id: string;
   item_id: string;
   quantity: number;
   status: AvailabilityStatus;
@@ -62,32 +57,27 @@ export interface AvailabilityRecord {
 
 export interface QrToken {
   id: string;
-  institution_id: string;
-  token: string;
+  organization_id: string;
   public_id: string;
-  is_active: boolean;
+  status: string;
+  last_scanned_at: string | null;
+  scan_count: number;
   created_at: string;
 }
 
 export interface AuditEntry {
   id: string;
-  institution_id?: string;
+  organization_id?: string;
   actor_role: Role;
   action: string;
   entity_type: string;
   entity_id?: string;
+  entity_label?: string;
   created_at: string;
 }
 
-export interface BridgeLink {
-  from_code: string;
-  to_code: string;
-  health_pct: number;
-  status: 'ok' | 'degraded' | 'down';
-}
-
 /* ── Purge / Archive contracts ── */
-export type AllowlistedEntityType = 'local_item' | 'qr_token';
+export type AllowlistedEntityType = 'warehouse' | 'distribution_point' | 'local_item';
 
 export interface PurgeImpact {
   entity_type: AllowlistedEntityType;
@@ -95,3 +85,35 @@ export interface PurgeImpact {
   counts: Record<string, number>;
   warnings: string[];
 }
+
+/* ── Role hierarchy helpers ── */
+
+const ROLE_RANK: Record<Role, number> = {
+  super_admin: 5,
+  hospital_admin: 4,
+  warehouse_manager: 3,
+  point_operator: 2,
+  viewer: 1,
+};
+
+export function canAssignRole(actorRole: Role, targetRole: Role): boolean {
+  if (actorRole === 'super_admin') return true;
+  if (actorRole === 'hospital_admin') return targetRole !== 'super_admin';
+  return false;
+}
+
+export function isAdminRole(role: Role): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK.hospital_admin;
+}
+
+export function canManageOrg(role: Role): boolean {
+  return role === 'super_admin';
+}
+
+export const ASSIGNABLE_ROLES_BY_ACTOR: Record<Role, readonly Role[]> = {
+  super_admin: ['super_admin', 'hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'],
+  hospital_admin: ['hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'],
+  warehouse_manager: [],
+  point_operator: [],
+  viewer: [],
+};
