@@ -751,3 +751,58 @@ describe('Disabled modules remain disabled', () => {
     expect(frozen).not.toMatch(/import.*[Dd]oc[Ii]ntel/);
   });
 });
+
+describe('Hardening: hard-purge stays unreachable from the UI', () => {
+  // purge_entity_with_all_data is super_admin-only + confirmation-gated in SQL,
+  // but the frontend should never wire it into a screen. The wizard uses
+  // archiveEntity / clearPortAvailability only. This guards against an
+  // accidental future import re-exposing a destructive path through the UI.
+  const screenFiles = [
+    'features/institutions/InstitutionScreen.tsx',
+    'features/dashboard/DashboardScreen.tsx',
+    'features/status/StatusCenterScreen.tsx',
+    'features/registry/RegistryScreen.tsx',
+    'features/qr/QrScreen.tsx',
+    'features/qr/PublicQrScreen.tsx',
+  ];
+
+  screenFiles.forEach(rel => {
+    it(`${rel} does not import or call purgeEntityWithAllData`, () => {
+      const content = readSrc(rel);
+      expect(content).not.toContain('purgeEntityWithAllData');
+      expect(content).not.toContain('purge_entity_with_all_data');
+    });
+  });
+
+  it('the deletion wizard screen uses only archive/clear, not purge', () => {
+    const screen = readSrc('features/institutions/InstitutionScreen.tsx');
+    expect(screen).toContain('archiveEntity');
+    expect(screen).not.toContain('purgeEntityWithAllData');
+  });
+});
+
+describe('Hardening: manual migration documentation exists', () => {
+  const doc = readPhoenix('docs/manual-supabase-migrations.md');
+
+  it('documents applying 005, 006 and 007 manually', () => {
+    expect(doc).toContain('005_phoenix_assign_profile_role.sql');
+    expect(doc).toContain('006_phoenix_status_reports.sql');
+    expect(doc).toContain('007_phoenix_clear_port_availability.sql');
+    expect(doc.toLowerCase()).toContain('apply 005 manually');
+    expect(doc.toLowerCase()).toContain('apply 006 manually');
+    expect(doc.toLowerCase()).toContain('apply 007 manually');
+  });
+
+  it('warns to take a backup first and forbids db push', () => {
+    expect(doc.toLowerCase()).toContain('backup');
+    expect(doc).toContain('supabase db push');
+    expect(doc.toLowerCase()).toContain('do not');
+  });
+
+  it('includes verification smoke tests after each migration', () => {
+    expect(doc.toLowerCase()).toContain('smoke test');
+    expect(doc).toContain('assign_profile_role');
+    expect(doc).toContain('institution_item_status_reports');
+    expect(doc).toContain('clear_port_availability');
+  });
+});
