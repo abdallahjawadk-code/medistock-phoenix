@@ -249,3 +249,50 @@ Summary:
 - No role may bypass the Edge Function and use `auth.admin` from frontend code.
 - No role may use `service_role` or `SUPABASE_SERVICE_ROLE_KEY` in any frontend code; this key must exist only in the Deno edge runtime.
 - No role may perform account recycling outside the dedicated workflow (once implemented).
+
+## 9. Permission Persistence (LOCAL-UX-PERMISSION-PERSISTENCE-FIX-A)
+
+**Root cause of the "permissions revert after logout/login" bug:** the database
+layer (`role_permission_defaults`, `profile_permission_overrides`, and the
+`get_effective_permissions` / `assign_profile_permissions` RPCs from migration
+010) was always correct — overrides were persisted and the admin-facing
+permission matrix correctly displayed them. The bug was that **no other part
+of the frontend ever consulted those DB overrides for the affected user's own
+session.** Every permission-gated UI check (e.g. whether the Recycle button
+appears) called `effectivePermissions(role)` from `src/shared/lib/permissions.ts`
+with no overrides argument — purely the hardcoded role-default table. So a
+super_admin's override was saved correctly and displayed correctly in their
+own matrix view, but the affected user's own UI never reflected it, in the
+same session or any later one. It only ever *looked* applied to the admin
+making the change.
+
+**Fix:** `AppContext` now loads the current user's effective permissions
+(`myPermissions`) from `get_effective_permissions(profile.id)` every time a
+session/profile loads (login, profile reload) and clears it on logout. This
+is the only source of truth for "can I do X" UI gating; the hardcoded
+`roleDefaults()` table is used strictly as a fallback while the RPC is
+loading or if the permission-matrix migration (010) is not yet applied.
+`UserManagementScreen` was updated to read `myPermissions` from `AppContext`
+instead of recomputing from the hardcoded role table.
+
+**Manual verification scenario** (requires a live Supabase project — not
+automatable in `vitest` without a real DB):
+
+1. Log in as `super_admin`.
+2. Open User Management, select a non-self test user, grant/revoke a
+   permission (e.g. `users.recycle` for an `institution_admin`), and save.
+3. Confirm the matrix reloads from the DB and shows the new state.
+4. Log out.
+5. Log back in as `super_admin`.
+6. Re-open the same test user's permission matrix — the change must still be
+   present (this already worked before the fix, since the matrix always read
+   from `get_effective_permissions`).
+7. Log in **as the test user** in a separate session.
+8. Confirm the corresponding UI element (e.g. the Recycle button in User
+   Management) now appears/disappears according to the saved override — this
+   is the step that was broken before the fix.
+9. Attempt the corresponding action and confirm server-side enforcement
+   (`admin-recycle-user` Edge Function's `phoenix_profile_has_permission`
+   check) matches what the UI now shows.
+10. Log out and back in again as the test user — the UI must show the same
+    state as step 8 (no reversion).

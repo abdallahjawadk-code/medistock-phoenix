@@ -389,19 +389,14 @@ describe('User management frontend security', () => {
     expect(screen).toContain('um_multi_officer');
   });
 
-  it('invite mode is the default (invite-first onboarding)', () => {
-    expect(screen).toContain("useState<'password' | 'invite'>('invite')");
-    expect(screen).not.toContain("useState<'password' | 'invite'>('password')");
+  it('local username + temporary password is the only normal create mode (LOCAL-UX-PERMISSION-PERSISTENCE-FIX-A)', () => {
+    expect(screen).toContain("loginMode: 'local'");
+    expect(screen).not.toContain("useState<'local' | 'email'>");
   });
 
-  it('password mode is hidden under Advanced — not a primary option', () => {
-    expect(screen).toContain('um_advanced_options');
-    expect(screen).toContain('showAdvanced');
-    expect(screen).not.toContain("(['password', 'invite']");
-  });
-
-  it('invite activation message is shown in the create form', () => {
-    expect(screen).toContain('um_invite_activation_msg');
+  it('local creation message is shown in the create form (no email/invite toggle)', () => {
+    expect(screen).toContain('um_local_creation_msg');
+    expect(screen).not.toContain('um_mode_email_secondary');
   });
 
   it('hard delete is not exposed in the UI (gated pending next phase)', () => {

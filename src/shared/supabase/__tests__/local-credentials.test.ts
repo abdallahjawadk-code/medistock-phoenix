@@ -412,29 +412,49 @@ describe('Edge Function admin-recycle-user: local credentials mode', () => {
 // 9. USER MANAGEMENT SCREEN: local mode is the default UI path
 // ============================================================================
 
-describe('UserManagementScreen: local credentials UI (default) + email secondary', () => {
+describe('UserManagementScreen: local credentials UI is the only normal UI (LOCAL-UX-PERMISSION-PERSISTENCE-FIX-A)', () => {
   const screen = readSrc('features/users/UserManagementScreen.tsx');
 
-  it('CreateUserForm defaults identityMode to local', () => {
-    expect(screen).toContain("useState<'local' | 'email'>('local')");
-  });
-
-  it('local create path validates username and sends loginMode: local', () => {
-    expect(screen).toContain('validateUsername(username)');
+  it('CreateUserForm always submits loginMode: local — no identity-mode toggle', () => {
     expect(screen).toContain("loginMode: 'local'");
+    expect(screen).not.toContain("useState<'local' | 'email'>");
   });
 
-  it('email mode remains available as a secondary/advanced path', () => {
-    expect(screen).toContain("loginMode: 'email'");
-    expect(screen).toContain('um_mode_email_secondary');
+  it('create form validates username + temporary password (no email/invite fields)', () => {
+    expect(screen).toContain('validateUsername(username)');
+    expect(screen).not.toContain('um_mode_email_secondary');
+    expect(screen).not.toContain('um_invite_activation_msg');
   });
 
-  it('RecycleConfirmModal defaults to local mode with username + temporary password fields', () => {
+  it('RecycleConfirmModal always submits loginMode: local with username + temporary password fields', () => {
+    expect(screen).toContain("loginMode: 'local'");
     expect(screen).toContain('newUsername');
     expect(screen).toContain('newTemporaryPassword');
   });
 
-  it('recycle modal still requires the exact RECYCLE_USER_<id> confirmation in both modes', () => {
+  it('recycle modal has no Email (advanced) tab in the normal UI', () => {
+    expect(screen).not.toContain('um_mode_email_secondary');
+    expect(screen).not.toContain('um_mode_local');
+  });
+
+  it('recycle modal does not require a real email for local recycling (no required new-email field)', () => {
+    const recycleBlock = screen.slice(screen.indexOf('function RecycleConfirmModal'), screen.indexOf('function RecycleConfirmModal') + 4000);
+    expect(recycleBlock).not.toContain('um_recycle_new_email');
+    expect(recycleBlock).not.toContain('setNewEmail');
+  });
+
+  it('recycle modal does not show reset-email/recovery-link wording', () => {
+    const recycleBlock = screen.slice(screen.indexOf('function RecycleConfirmModal'), screen.indexOf('function RecycleConfirmModal') + 4000);
+    expect(recycleBlock).not.toContain("t('um_recycle_success', lang)");
+    expect(recycleBlock).not.toContain('um_recycle_link_failed');
+    expect(recycleBlock).not.toContain('passwordSetupStatus');
+  });
+
+  it('contact email field is labeled as not used for login or operation attribution', () => {
+    expect(screen).toContain('um_contact_email_not_for_login');
+  });
+
+  it('recycle modal still requires the exact RECYCLE_USER_<id> confirmation', () => {
     expect(screen).toContain('expectedConfirm');
     expect(screen).toContain('RECYCLE_USER_');
   });
@@ -446,6 +466,31 @@ describe('UserManagementScreen: local credentials UI (default) + email secondary
   it('does not use service_role or auth.admin', () => {
     expect(screen).not.toContain('service_role');
     expect(screen).not.toMatch(/auth\.admin/);
+  });
+});
+
+describe('i18n: contact email wording (LOCAL-UX-PERMISSION-PERSISTENCE-FIX-A)', () => {
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('has the bilingual "not used for login or operation attribution" contact-email note', () => {
+    expect(strings).toContain('um_contact_email_not_for_login');
+    expect(strings).toContain('بريد تواصل اختياري — لا يُستخدم لتسجيل الدخول أو توثيق العمليات');
+    expect(strings).toContain('Optional contact email — not used for login or operation attribution');
+  });
+});
+
+describe('users.service.ts + Edge Functions: email mode retained as a hidden compatibility path only', () => {
+  const svc = readSrc('shared/supabase/services/users.service.ts');
+  const createFn = readPhoenix('supabase/functions/admin-create-user/index.ts');
+  const recycleFn = readPhoenix('supabase/functions/admin-recycle-user/index.ts');
+
+  it('CreateUserInput/RecycleUserInput still type loginMode as local | email (backend compatibility)', () => {
+    expect(svc).toContain("loginMode: 'local' | 'email'");
+  });
+
+  it('Edge Functions still accept login_mode: email for backend compatibility', () => {
+    expect(createFn).toContain("body.login_mode === 'email' ? 'email' : 'local'");
+    expect(recycleFn).toContain("body.login_mode === 'email' ? 'email' : 'local'");
   });
 });
 

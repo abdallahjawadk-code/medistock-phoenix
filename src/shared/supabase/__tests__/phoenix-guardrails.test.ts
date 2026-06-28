@@ -1346,8 +1346,8 @@ describe('Recycling implementation: UI and i18n', () => {
     expect(strings).toContain('تدوير الحسابات');
   });
 
-  it('UI uses honest passwordSetupStatus instead of passwordSetupSent', () => {
-    expect(screen).toContain('passwordSetupStatus');
+  it('UI never claims an email was sent for the (now local-only) recycle success message', () => {
+    expect(screen).toContain('um_recycle_success_local');
     expect(screen).not.toContain('passwordSetupSent');
   });
 

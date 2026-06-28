@@ -438,6 +438,7 @@ export const T: Dict = {
   um_username:        { ar: 'اسم المستخدم',                       en: 'Username' },
   um_username_invalid:{ ar: 'اسم المستخدم يجب أن يتكون من حروف لاتينية صغيرة وأرقام ونقطة أو شرطة فقط (3-32 حرفًا)', en: 'Username must be lowercase letters, numbers, dot, underscore or dash only (3-32 characters)' },
   um_contact_email_optional: { ar: 'البريد الإلكتروني للتواصل (اختياري)', en: 'Contact email (optional)' },
+  um_contact_email_not_for_login: { ar: 'بريد تواصل اختياري — لا يُستخدم لتسجيل الدخول أو توثيق العمليات', en: 'Optional contact email — not used for login or operation attribution' },
   um_organization:    { ar: 'المؤسسة',                           en: 'Organization' },
   um_role:            { ar: 'الدور',                             en: 'Role' },
   um_status:          { ar: 'الحالة',                            en: 'Status' },
