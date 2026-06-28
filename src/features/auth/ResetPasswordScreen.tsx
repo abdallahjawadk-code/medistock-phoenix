@@ -8,16 +8,19 @@ import { t } from '@/shared/i18n/strings';
  * no service key, no secrets, no password is logged or persisted by us.
  */
 export function ResetPasswordScreen() {
-  const { lang, theme, toggleLang, toggleTheme, updatePassword, clearRecovery } = useApp();
+  const { lang, theme, toggleLang, toggleTheme, session, authReady, updatePassword, clearRecovery } = useApp();
   const [pw, setPw]         = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError]   = useState<string | null>(null);
   const [busy, setBusy]     = useState(false);
   const [done, setDone]     = useState(false);
 
+  const sessionReady = authReady && !!session;
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!session) { setError(t('recovery_no_session', lang)); return; }
     if (pw.length < 8) { setError(t('password_short', lang)); return; }
     if (pw !== confirm) { setError(t('password_mismatch', lang)); return; }
 
@@ -25,7 +28,10 @@ export function ResetPasswordScreen() {
     const res = await updatePassword(pw);
     setBusy(false);
     if (!res.ok) {
-      setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('load_error', lang));
+      if (res.error === 'NOT_CONFIGURED') setError(t('config_missing', lang));
+      else if (res.error?.includes('expired') || res.error?.includes('invalid'))
+        setError(t('recovery_link_expired', lang));
+      else setError(t('recovery_failed', lang));
       return;
     }
     setDone(true);
@@ -56,6 +62,11 @@ export function ResetPasswordScreen() {
             <button onClick={() => { void clearRecovery(); }} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               {t('back_to_login', lang)}
             </button>
+          </div>
+        ) : !sessionReady ? (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: '28px', marginBottom: '12px', animation: 'fl 1.5s ease-in-out infinite' }}>🔐</div>
+            <p style={{ fontSize: '13px', color: 'var(--t2)' }}>{t('recovery_verifying', lang)}</p>
           </div>
         ) : (
           <form onSubmit={onSubmit}>

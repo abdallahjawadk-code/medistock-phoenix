@@ -1559,3 +1559,81 @@ describe('My Account: password management safety', () => {
     expect(strings).toContain("You cannot change another user\\'s password");
   });
 });
+
+// ============================================================================
+// 31. PASSWORD RECOVERY CALLBACK: session handling and error messages
+// ============================================================================
+
+describe('Password recovery callback fix', () => {
+  const ctx    = readSrc('app/AppContext.tsx');
+  const reset  = readSrc('features/auth/ResetPasswordScreen.tsx');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('AppContext waits for auth callback before setting authReady', () => {
+    expect(ctx).toContain('isCallbackLanding');
+    expect(ctx).toContain("'/auth/callback'");
+    expect(ctx).toContain('authReadyRef');
+  });
+
+  it('AppContext detects hash-based recovery tokens', () => {
+    expect(ctx).toContain("type=recovery");
+    expect(ctx).toContain("access_token");
+  });
+
+  it('AppContext has timeout fallback for callback landing', () => {
+    expect(ctx).toContain('5000');
+    expect(ctx).toContain('fallback');
+  });
+
+  it('AppContext cleans callback tokens from URL after session established', () => {
+    expect(ctx).toContain("window.history.replaceState(null, '', '/')");
+  });
+
+  it('ResetPasswordScreen waits for session before showing form', () => {
+    expect(reset).toContain('sessionReady');
+    expect(reset).toContain('recovery_verifying');
+  });
+
+  it('ResetPasswordScreen checks session before calling updatePassword', () => {
+    expect(reset).toContain("if (!session)");
+    expect(reset).toContain('recovery_no_session');
+  });
+
+  it('ResetPasswordScreen does not use generic load_error for recovery failures', () => {
+    expect(reset).not.toContain("t('load_error'");
+  });
+
+  it('ResetPasswordScreen uses specific recovery error messages', () => {
+    expect(reset).toContain('recovery_failed');
+    expect(reset).toContain('recovery_link_expired');
+    expect(reset).toContain('recovery_no_session');
+  });
+
+  it('i18n has bilingual recovery-specific error messages', () => {
+    expect(strings).toContain('recovery_verifying');
+    expect(strings).toContain('recovery_no_session');
+    expect(strings).toContain('recovery_link_expired');
+    expect(strings).toContain('recovery_failed');
+    expect(strings).toContain('تعذر تأكيد رابط إعادة التعيين');
+    expect(strings).toContain('Could not verify the reset link');
+    expect(strings).toContain('انتهت صلاحية رابط إعادة التعيين');
+    expect(strings).toContain('The reset link has expired');
+  });
+
+  it('i18n does not use generic error for recovery link issues', () => {
+    expect(reset).not.toContain("load_error");
+  });
+
+  it('ResetPasswordScreen does not log tokens or passwords', () => {
+    expect(reset).not.toMatch(/console\.(log|info|warn)/);
+  });
+
+  it('no service_role in recovery flow', () => {
+    expect(reset).not.toContain('service_role');
+    expect(ctx).not.toContain('service_role');
+  });
+
+  it('no auth.admin in recovery flow', () => {
+    expect(reset).not.toMatch(/auth\.admin/);
+  });
+});

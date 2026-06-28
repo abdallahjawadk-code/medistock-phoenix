@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useRef, ReactNode, useEffect, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Lang, Theme, Role } from '@/shared/lib/types';
 import { supabaseConfigured } from '@/shared/supabase/client';
@@ -51,6 +51,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('light');
 
   const [authReady, setAuthReady] = useState(false);
+  const authReadyRef = useRef(false);
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
@@ -92,24 +93,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Establish session on mount + subscribe to auth changes.
+  // When landing on /auth/callback, Supabase auto-detects the code/token and
+  // exchanges it. We must wait for that exchange to complete (via the
+  // onAuthStateChange callback) before marking authReady — otherwise the
+  // recovery form renders before the session exists and updateUser fails.
   useEffect(() => {
     let active = true;
     if (!supabaseConfigured) {
       setAuthReady(true);
       return;
     }
-    getSession().then(async (s) => {
-      if (!active) return;
-      setSession(s);
-      await loadProfile(s);
-      if (active) setAuthReady(true);
-    });
+
+    const isCallbackLanding =
+      typeof window !== 'undefined' &&
+      (window.location.pathname.startsWith('/auth/callback') ||
+       window.location.hash.includes('type=recovery') ||
+       window.location.hash.includes('access_token'));
 
     const unsub = onAuthChange(async (event, s) => {
+      if (!active) return;
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setSession(s);
       await loadProfile(s);
+      // Clean callback tokens from the URL bar after session is established.
+      if (isCallbackLanding && s && typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/');
+      }
+      if (!authReadyRef.current) {
+        authReadyRef.current = true;
+        setAuthReady(true);
+      }
     });
+
+    // For non-callback pages, also check getSession so we don't wait forever
+    // if there's no auth event pending (normal page load with existing session).
+    if (!isCallbackLanding) {
+      getSession().then(async (s) => {
+        if (!active) return;
+        setSession(s);
+        await loadProfile(s);
+        if (!authReadyRef.current) {
+          authReadyRef.current = true;
+          setAuthReady(true);
+        }
+      });
+    } else {
+      // On callback landing, set a timeout fallback so the user doesn't wait
+      // forever if the code exchange fails silently.
+      const fallback = setTimeout(() => {
+        if (active && !authReadyRef.current) {
+          authReadyRef.current = true;
+          setAuthReady(true);
+        }
+      }, 5000);
+      return () => { active = false; unsub(); clearTimeout(fallback); };
+    }
+
     return () => { active = false; unsub(); };
   }, [loadProfile]);
 
