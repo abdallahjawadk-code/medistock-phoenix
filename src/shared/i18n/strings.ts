@@ -278,6 +278,25 @@ export const T: Dict = {
   qr_copied:          { ar: 'تم نسخ الرابط',                     en: 'Link copied' },
   qr_no_token:        { ar: 'لا يوجد QR نشط',                    en: 'No active QR' },
 
+  /* ── Port Availability ── */
+  avail_manage:       { ar: 'إدارة التوفر',                      en: 'Manage Availability' },
+  avail_add:          { ar: 'إضافة صنف',                         en: 'Add Item' },
+  avail_select_item:  { ar: 'اختر الصنف',                        en: 'Select Item' },
+  avail_condition:    { ar: 'الحالة',                             en: 'Condition' },
+  avail_saved:        { ar: 'تم حفظ التوفر بنجاح',               en: 'Availability saved successfully' },
+  avail_count:        { ar: 'أصناف',                              en: 'items' },
+  cond_available:     { ar: 'متوفر',                              en: 'Available' },
+  cond_low_stock:     { ar: 'مخزون منخفض',                       en: 'Low Stock' },
+  cond_missing:       { ar: 'مفقود',                              en: 'Missing' },
+  cond_surplus:       { ar: 'فائض',                               en: 'Surplus' },
+  cond_near_expiry:   { ar: 'قريب الانتهاء',                     en: 'Near Expiry' },
+  cond_expired:       { ar: 'منتهي الصلاحية',                    en: 'Expired' },
+  public_empty_port:  { ar: 'لا توجد مواد مدخلة لهذا المنفذ حالياً', en: 'No items have been entered for this port yet.' },
+  public_expiry_warn: { ar: 'ينتهي بتاريخ',                      en: 'Expires' },
+  public_search:      { ar: 'بحث عن صنف...',                     en: 'Search items...' },
+  public_items_count: { ar: 'عدد الأصناف',                       en: 'Items count' },
+  public_last_update: { ar: 'آخر تحديث',                         en: 'Last update' },
+
   /* ── Port Safety Messages ── */
   port_revoke_safe:   { ar: 'حذف QR لا يحذف المنفذ',            en: 'Revoking QR does not delete the port.' },
   port_archive_warn:  { ar: 'أرشفة المنفذ تعطل QR المرتبط أولًا', en: 'Archiving the port revokes its linked QR first.' },

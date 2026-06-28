@@ -28,6 +28,9 @@ import {
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
 import { archiveEntity } from '@/shared/supabase/services/lifecycle.service';
+import { getAvailabilityByPoint, upsertAvailability } from '@/shared/supabase/services/availability.service';
+import { getLocalItems } from '@/shared/supabase/services/registry.service';
+import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -640,6 +643,17 @@ function pointDisplayName(p: DistributionPoint, lang: 'ar' | 'en'): string {
   return p.name || p.name_ar;
 }
 
+const CONDITION_LABEL_KEY: Record<string, string> = {
+  available: 'cond_available', low_stock: 'cond_low_stock', missing: 'cond_missing',
+  surplus: 'cond_surplus', near_expiry: 'cond_near_expiry', expired: 'cond_expired',
+};
+
+const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
+  available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
+};
+
+const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
+
 function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
@@ -954,6 +968,15 @@ function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onT
         </div>
       )}
 
+      {/* Availability section */}
+      <PortAvailabilitySection
+        pointId={point.id}
+        orgId={point.organizationId}
+        lang={lang}
+        canMutate={canMutate}
+        onToast={onToast}
+      />
+
       {/* Confirmation dialogs */}
       <PhoenixDialog
         open={confirmAction === 'regenerate'}
@@ -1007,5 +1030,184 @@ function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onT
         </div>
       </PhoenixDialog>
     </PhoenixCard>
+  );
+}
+
+/* ── Port Availability Section ── */
+
+interface AvailRow {
+  id: string;
+  quantity: number;
+  condition: string;
+  batch_number: string | null;
+  expiry_date: string | null;
+  notes: string | null;
+  updated_at: string;
+  local_items: {
+    id: string;
+    local_code: string | null;
+    central_items: { id: string; name: string; name_ar: string; unit: string; barcode?: string } |
+                   { id: string; name: string; name_ar: string; unit: string; barcode?: string }[] | null;
+  } | null;
+}
+
+interface LocalRow {
+  id: string;
+  local_code: string | null;
+  local_name: string | null;
+  central_items: { name: string; name_ar: string; unit: string } |
+                 { name: string; name_ar: string; unit: string }[] | null;
+}
+
+function centralOf(row: LocalRow | AvailRow['local_items']): { name: string; name_ar: string; unit: string } | null {
+  if (!row) return null;
+  const c = 'central_items' in row ? row.central_items : null;
+  if (!c) return null;
+  return Array.isArray(c) ? c[0] ?? null : c;
+}
+
+function PortAvailabilitySection({ pointId, orgId, lang, canMutate, onToast }: {
+  pointId: string;
+  orgId: string;
+  lang: 'ar' | 'en';
+  canMutate: boolean;
+  onToast: (msg: string) => void;
+}) {
+  const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId]);
+  const [showAdd, setShowAdd] = useState(false);
+  const rows = (avail.data ?? []) as unknown as AvailRow[];
+
+  return (
+    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)' }}>
+          💊 {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
+        </span>
+        {canMutate && !showAdd && (
+          <button
+            onClick={() => setShowAdd(true)}
+            style={{ fontSize: '11px', color: 'var(--p)', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', padding: '2px 6px' }}
+          >
+            + {t('avail_add', lang)}
+          </button>
+        )}
+      </div>
+
+      {showAdd && (
+        <QuickAvailForm
+          pointId={pointId}
+          orgId={orgId}
+          lang={lang}
+          onSaved={() => { setShowAdd(false); avail.reload(); onToast(t('avail_saved', lang)); }}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
+
+      {avail.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
+
+      {!avail.loading && rows.length === 0 && !showAdd && (
+        <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '8px' }}>
+          {t('empty_avail', lang)}
+        </div>
+      )}
+
+      {!avail.loading && rows.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {rows.map(r => {
+            const ci = centralOf(r.local_items);
+            const itemName = lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar);
+            const condKey = CONDITION_LABEL_KEY[r.condition];
+            const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
+            return (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
+                <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                  {itemName ?? '—'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
+                  <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
+                  {r.expiry_date && r.condition === 'near_expiry' && (
+                    <span style={{ fontSize: '9.5px', color: 'var(--warn)' }} dir="ltr">{r.expiry_date}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Quick Availability Add Form ── */
+
+function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
+  pointId: string;
+  orgId: string;
+  lang: 'ar' | 'en';
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const items = useAsync(() => getLocalItems(orgId), [orgId]);
+  const itemRows = (items.data ?? []) as unknown as LocalRow[];
+  const [itemId, setItemId] = useState('');
+  const [qty, setQty] = useState(0);
+  const [condition, setCondition] = useState<AvailabilityCondition>('available');
+  const [batch, setBatch] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit = itemId && qty >= 0;
+
+  async function onSubmit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await upsertAvailability({
+        localItemId: itemId,
+        distributionPointId: pointId,
+        organizationId: orgId,
+        quantity: qty,
+        condition,
+        batchNumber: batch || undefined,
+        expiryDate: expiry || undefined,
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('load_error', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <select value={itemId} onChange={e => setItemId(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }}>
+        <option value="">{items.loading ? t('loading', lang) : t('avail_select_item', lang)}</option>
+        {itemRows.map(row => {
+          const ci = centralOf(row);
+          return <option key={row.id} value={row.id}>{lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar)} ({row.local_code ?? ''})</option>;
+        })}
+      </select>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        <input type="number" min={0} value={qty} onChange={e => setQty(Number(e.target.value))} placeholder={t('qty', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
+        <select value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', appearance: 'none' }}>
+          {CONDITIONS.map(c => <option key={c} value={c}>{t(CONDITION_LABEL_KEY[c], lang)}</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        <input type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('batch_no', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', fontFamily: 'monospace' }} />
+        <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
+      </div>
+      {error && <p style={{ fontSize: '11px', color: 'var(--err)' }}>{error}</p>}
+      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        <button onClick={onCancel} style={{ fontSize: '11px', color: 'var(--t2)', border: 'none', background: 'none', cursor: 'pointer' }}>{t('cancel', lang)}</button>
+        <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
+          {t('inst_save', lang)}
+        </PhoenixButton>
+      </div>
+    </div>
   );
 }

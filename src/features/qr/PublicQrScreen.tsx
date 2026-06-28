@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -16,19 +17,34 @@ type PublicItem = {
   condition?: string;
   quantity?: number;
   unit?: string;
+  expiry_date?: string;
 };
 
 const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
-  available: 'ok',
-  surplus: 'ok',
-  low_stock: 'warn',
-  near_expiry: 'warn',
-  missing: 'err',
-  expired: 'err',
+  available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
 };
+
+const CONDITION_LABEL: Record<string, { ar: string; en: string }> = {
+  available:   { ar: 'متوفر',             en: 'Available' },
+  surplus:     { ar: 'فائض',              en: 'Surplus' },
+  low_stock:   { ar: 'مخزون منخفض',      en: 'Low Stock' },
+  near_expiry: { ar: 'قريب الانتهاء',    en: 'Near Expiry' },
+  missing:     { ar: 'مفقود',             en: 'Missing' },
+  expired:     { ar: 'منتهي الصلاحية',   en: 'Expired' },
+};
+
+function conditionLabel(cond: string, lang: 'ar' | 'en'): string {
+  return CONDITION_LABEL[cond]?.[lang] ?? cond;
+}
+
+function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {
+  if (lang === 'ar') return item.name_ar ?? item.name ?? item.point_name_ar ?? item.point_name ?? '—';
+  return item.name ?? item.name_ar ?? item.point_name ?? item.point_name_ar ?? '—';
+}
 
 export function PublicQrScreen({ publicId }: Props) {
   const { lang, toggleLang } = useApp();
+  const [search, setSearch] = useState('');
   const { data, loading, error, reload } = useAsync(
     () => getPublicQrPayload(publicId),
     [publicId],
@@ -40,12 +56,21 @@ export function PublicQrScreen({ publicId }: Props) {
     ? (payload?.org_name_ar as string) ?? (payload?.org_name as string)
     : (payload?.org_name as string) ?? (payload?.org_name_ar as string);
 
-  // Normalise the various payload shapes into one item list.
   const rawItems =
     (payload?.items as PublicItem[] | undefined) ??
     (payload?.availability as PublicItem[] | undefined) ??
     (payload?.points as PublicItem[] | undefined) ??
     [];
+
+  const filteredItems = search
+    ? rawItems.filter(item => {
+        const q = search.toLowerCase();
+        return (item.name ?? '').toLowerCase().includes(q) ||
+               (item.name_ar ?? '').includes(search) ||
+               (item.point_name ?? '').toLowerCase().includes(q) ||
+               (item.point_name_ar ?? '').includes(search);
+      })
+    : rawItems;
 
   return (
     <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
@@ -80,37 +105,71 @@ export function PublicQrScreen({ publicId }: Props) {
 
         {!loading && !error && ok && (
           <>
+            {/* Org/point header */}
             {orgName && (
               <div style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>{orgName}</div>
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
                 )}
+                {rawItems.length > 0 && (
+                  <div style={{ fontSize: '11px', color: 'var(--pd)', marginTop: '6px', opacity: 0.8 }}>
+                    {t('public_items_count', lang)}: {rawItems.length}
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Search */}
+            {rawItems.length > 3 && (
+              <div style={{ position: 'relative', marginBottom: '12px' }}>
+                <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+                <input
+                  type="search"
+                  placeholder={t('public_search', lang)}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{ width: '100%', padding: '9px 10px', paddingInlineStart: '34px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px' }}
+                  aria-label={t('public_search', lang)}
+                />
+              </div>
+            )}
+
+            {/* Items */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {rawItems.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>{t('empty_avail', lang)}</div>
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('public_empty_port', lang)}
+                </div>
               )}
-              {rawItems.map((item, i) => {
-                const label = lang === 'ar'
-                  ? item.name_ar ?? item.name ?? item.point_name_ar ?? item.point_name
-                  : item.name ?? item.name_ar ?? item.point_name ?? item.point_name_ar;
+              {filteredItems.length === 0 && rawItems.length > 0 && search && (
+                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('empty_items', lang)}
+                </div>
+              )}
+              {filteredItems.map((item, i) => {
+                const label = itemLabel(item, lang);
                 const variant = item.condition ? CONDITION_VARIANT[item.condition] ?? 'neutral' : 'neutral';
+                const condLabel = item.condition ? conditionLabel(item.condition, lang) : '';
+                const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
                 return (
                   <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: '1px solid var(--brd)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <span style={{ fontSize: '12.5px', fontWeight: 600 }}>{label}</span>
-                      {item.condition && (
-                        <PhoenixStatusBadge variant={variant} label={item.condition} />
+                      <span style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{label}</span>
+                      {condLabel && (
+                        <PhoenixStatusBadge variant={variant} label={condLabel} />
                       )}
                     </div>
-                    {typeof item.quantity === 'number' && variant !== 'err' && (
-                      <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '4px' }}>
-                        {item.quantity}{item.unit ? ` ${item.unit}` : ''}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>
+                      {typeof item.quantity === 'number' && variant !== 'err' && (
+                        <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+                      )}
+                      {item.expiry_date && isNearExpiry && (
+                        <span style={{ color: 'var(--warn)' }} dir="ltr">
+                          ⏱ {t('public_expiry_warn', lang)} {item.expiry_date}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}

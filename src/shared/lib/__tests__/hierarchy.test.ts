@@ -339,6 +339,113 @@ describe('Port QR lifecycle: safety checks', () => {
   });
 });
 
+describe('Port availability: management and display', () => {
+  const screen = readSrc('features/institutions/InstitutionScreen.tsx');
+  const strings = readSrc('shared/i18n/strings.ts');
+  const availService = readSrc('shared/supabase/services/availability.service.ts');
+
+  it('PortCard includes PortAvailabilitySection', () => {
+    expect(screen).toContain('PortAvailabilitySection');
+  });
+
+  it('availability section uses getAvailabilityByPoint scoped to point', () => {
+    expect(screen).toContain('getAvailabilityByPoint');
+  });
+
+  it('availability upsert uses upsertAvailability with port scope', () => {
+    expect(screen).toContain('upsertAvailability');
+  });
+
+  it('availability service queries by distribution_point_id', () => {
+    expect(availService).toContain('distribution_point_id');
+  });
+
+  it('bilingual condition labels exist', () => {
+    expect(strings).toContain('cond_available');
+    expect(strings).toContain('cond_low_stock');
+    expect(strings).toContain('cond_missing');
+    expect(strings).toContain('cond_surplus');
+    expect(strings).toContain('cond_near_expiry');
+    expect(strings).toContain('cond_expired');
+  });
+
+  it('bilingual availability management keys exist', () => {
+    expect(strings).toContain('avail_manage');
+    expect(strings).toContain('avail_add');
+    expect(strings).toContain('avail_saved');
+    expect(strings).toContain('avail_select_item');
+  });
+
+  it('condition labels use bilingual display in admin', () => {
+    expect(screen).toContain('CONDITION_LABEL_KEY');
+  });
+});
+
+describe('Public QR page: safety and bilingual', () => {
+  const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('shows bilingual condition labels (not raw DB values)', () => {
+    expect(publicQr).toContain('conditionLabel');
+    expect(publicQr).toContain('CONDITION_LABEL');
+  });
+
+  it('shows expiry warning for near_expiry items', () => {
+    expect(publicQr).toContain('public_expiry_warn');
+    expect(publicQr).toContain('near_expiry');
+  });
+
+  it('shows bilingual empty port message', () => {
+    expect(publicQr).toContain('public_empty_port');
+    expect(strings).toContain('public_empty_port');
+  });
+
+  it('does not expose private fields', () => {
+    expect(publicQr).not.toContain('audit_log');
+    expect(publicQr).not.toContain('actor_id');
+    expect(publicQr).not.toContain('service_role');
+    expect(publicQr).not.toContain('token_hash');
+    expect(publicQr).not.toContain('batch_number');
+  });
+
+  it('does not expose admin controls on public page', () => {
+    expect(publicQr).not.toContain('archiveEntity');
+    expect(publicQr).not.toContain('disableQrToken');
+    expect(publicQr).not.toContain('updateProfileRole');
+  });
+
+  it('uses dir="auto" for item names', () => {
+    expect(publicQr).toContain('dir="auto"');
+  });
+
+  it('uses dir="ltr" for expiry dates', () => {
+    expect(publicQr).toContain('dir="ltr"');
+  });
+
+  it('has search functionality for item names', () => {
+    expect(publicQr).toContain('public_search');
+    expect(publicQr).toContain('search');
+  });
+
+  it('search works with Arabic and English item names', () => {
+    expect(publicQr).toContain('name_ar');
+    expect(publicQr).toContain('.toLowerCase()');
+  });
+
+  it('shows privacy notice', () => {
+    expect(publicQr).toContain('qr_no_expose');
+  });
+
+  it('handles revoked QR gracefully', () => {
+    expect(publicQr).toContain('qr_invalid');
+    expect(publicQr).toContain('qr_scan_again');
+  });
+
+  it('displays item count', () => {
+    expect(publicQr).toContain('public_items_count');
+  });
+});
+
 describe('Disabled modules remain disabled', () => {
   const frozen = readSrc('features/health/IntakeFrozenScreen.tsx');
 
