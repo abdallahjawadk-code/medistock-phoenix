@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [
+  { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
   { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
   { screen: 10, icon: '📲', labelKey: 'nav_mobile' },
 ];

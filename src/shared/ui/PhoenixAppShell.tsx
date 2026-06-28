@@ -11,6 +11,7 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   6: 'nav_qr', 7: 'nav_health', 8: 'nav_intake', 9: 'nav_reports', 10: 'nav_mobile',
   11: 'nav_institutions', 12: 'nav_status_center', 13: 'nav_inter_alerts',
   14: 'nav_users',
+  15: 'nav_my_account',
 };
 
 interface Props {

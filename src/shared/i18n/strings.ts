@@ -589,6 +589,25 @@ export const T: Dict = {
   dw_org_archived:    { ar: 'تم أرشفة المؤسسة بنجاح',            en: 'Organization archived successfully' },
   dw_wh_archived:     { ar: 'تم أرشفة المذخر بنجاح',             en: 'Warehouse archived successfully' },
 
+  /* ── My Account (MY-ACCOUNT-PASSWORD-RESET-A) ── */
+  nav_my_account:      { ar: 'حسابي',                                en: 'My Account' },
+  ma_title:            { ar: 'حسابي',                                en: 'My Account' },
+  ma_info:             { ar: 'معلومات الحساب',                        en: 'Account information' },
+  ma_email:            { ar: 'البريد الإلكتروني',                     en: 'Email' },
+  ma_status:           { ar: 'حالة الحساب',                           en: 'Account status' },
+  ma_reset_title:      { ar: 'إعادة تعيين كلمة المرور عبر البريد',    en: 'Password reset by email' },
+  ma_reset_desc:       { ar: 'سيتم إرسال رابط إعادة تعيين إلى بريدك الإلكتروني المسجل. تحقق من بريدك إذا كانت إعدادات البريد مفعّلة.', en: 'A reset link will be sent to your registered email. Check your inbox if email delivery is configured.' },
+  ma_reset_btn:        { ar: 'إرسال رابط إعادة تعيين كلمة المرور',    en: 'Send password reset link' },
+  ma_reset_requested:  { ar: 'تم طلب رابط إعادة تعيين كلمة المرور لبريدك. تحقق من بريدك إذا كانت إعدادات البريد مفعّلة.', en: 'Password reset link requested for your email. Check your inbox if email delivery is configured.' },
+  ma_change_pw:        { ar: 'تغيير كلمة المرور',                     en: 'Change password' },
+  ma_change_pw_desc:   { ar: 'يمكنك تغيير كلمة المرور مباشرة أثناء تسجيل الدخول.', en: 'You can change your password directly while logged in.' },
+  ma_new_pw:           { ar: 'كلمة المرور الجديدة',                   en: 'New password' },
+  ma_confirm_pw:       { ar: 'تأكيد كلمة المرور',                     en: 'Confirm password' },
+  ma_pw_mismatch:      { ar: 'يجب أن تتطابق كلمتا المرور',            en: 'Passwords must match' },
+  ma_pw_min_length:    { ar: 'يجب أن تكون كلمة المرور 8 أحرف على الأقل', en: 'Password must be at least 8 characters' },
+  ma_password_updated: { ar: 'تم تحديث كلمة المرور بنجاح',            en: 'Password updated successfully' },
+  ma_security_note:    { ar: 'لا يمكن تغيير كلمة مرور مستخدم آخر. إدارة كلمات المرور تتم عبر بريدك فقط.', en: 'You cannot change another user\'s password. Password management is through your own email only.' },
+
   /* ── Confirmation dialog ── */
   confirm_apply:  { ar: 'تأكيد التطبيق',                      en: 'Confirm Apply' },
   confirm_msg:    { ar: 'أنت على وشك تطبيق تغييرات التوفر. هذا الإجراء لا يمكن التراجع عنه تلقائياً.', en: 'You are about to apply availability changes. This action cannot be automatically undone.' },

@@ -1462,3 +1462,100 @@ describe('Post-recycling guardrails', () => {
     });
   });
 });
+
+// ============================================================================
+// 30. MY ACCOUNT: route, labels, password management
+// ============================================================================
+
+describe('My Account: route and UI', () => {
+  const app = readSrc('app/App.tsx');
+  const shell = readSrc('shared/ui/PhoenixAppShell.tsx');
+  const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('MyAccountScreen is imported and wired to screen 15', () => {
+    expect(app).toContain('MyAccountScreen');
+    expect(app).toContain('case 15');
+  });
+
+  it('screen 15 title key is registered in PhoenixAppShell', () => {
+    expect(shell).toContain("15: 'nav_my_account'");
+  });
+
+  it('My Account appears in sidebar navigation', () => {
+    expect(sidebar).toContain("screen: 15");
+    expect(sidebar).toContain("'nav_my_account'");
+  });
+
+  it('i18n has Arabic and English labels for My Account', () => {
+    expect(strings).toContain('حسابي');
+    expect(strings).toContain('My Account');
+    expect(strings).toContain('ma_title');
+    expect(strings).toContain('ma_info');
+  });
+});
+
+describe('My Account: password management safety', () => {
+  const screen = readSrc('features/account/MyAccountScreen.tsx');
+  const auth   = readSrc('shared/supabase/services/auth.service.ts');
+
+  it('MyAccountScreen file exists', () => {
+    expect(screen.length).toBeGreaterThan(200);
+  });
+
+  it('uses requestPasswordReset for email-based reset (anon key only)', () => {
+    expect(auth).toContain('resetPasswordForEmail');
+    expect(auth).not.toContain('admin.');
+  });
+
+  it('uses updateUser for direct password change (session key only)', () => {
+    expect(auth).toContain("supabase.auth.updateUser({ password:");
+  });
+
+  it('reset uses current user email only — no email input field', () => {
+    expect(screen).not.toMatch(/type="email"/);
+    expect(screen).toContain("session?.user?.email");
+  });
+
+  it('password form validates minimum 8 characters', () => {
+    expect(screen).toContain('newPw.length >= 8');
+  });
+
+  it('password form validates matching confirmation', () => {
+    expect(screen).toContain('newPw === confirmPw');
+  });
+
+  it('no path to change another user password', () => {
+    expect(screen).not.toContain('targetUserId');
+    expect(screen).not.toContain('target_user_id');
+  });
+
+  it('does not use service_role or auth.admin', () => {
+    expect(screen).not.toContain('service_role');
+    expect(screen).not.toMatch(/auth\.admin/);
+  });
+
+  it('password is not stored in profiles', () => {
+    expect(screen).not.toMatch(/from\(['"]profiles['"]\).*password/);
+  });
+
+  it('has bilingual password labels', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('تغيير كلمة المرور');
+    expect(strings).toContain('Change password');
+    expect(strings).toContain('كلمة المرور الجديدة');
+    expect(strings).toContain('New password');
+  });
+
+  it('reset success message is honest about email delivery', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('إذا كانت إعدادات البريد مفعّلة');
+    expect(strings).toContain('if email delivery is configured');
+  });
+
+  it('security note warns against changing other users passwords', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('لا يمكن تغيير كلمة مرور مستخدم آخر');
+    expect(strings).toContain("You cannot change another user\\'s password");
+  });
+});
