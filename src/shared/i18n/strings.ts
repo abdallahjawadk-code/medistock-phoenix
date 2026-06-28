@@ -342,6 +342,22 @@ export const T: Dict = {
   st_near_expiry:     { ar: 'قريب النفاد',                       en: 'Near Expiry' },
   st_missing:         { ar: 'مفقود',                              en: 'Missing' },
 
+  /* ── Exchange Alerts ── */
+  ea_title:           { ar: 'تنبيهات التبادل',                   en: 'Exchange Alerts' },
+  ea_sub:             { ar: 'توصيات تبادل بين المؤسسات',         en: 'Exchange recommendations between institutions' },
+  ea_recommendation:  { ar: 'توصية تبادل',                       en: 'Exchange Recommendation' },
+  ea_source:          { ar: 'من المؤسسة',                        en: 'Source Institution' },
+  ea_target:          { ar: 'إلى المؤسسة',                       en: 'Target Institution' },
+  ea_priority_high:   { ar: 'أولوية عالية',                      en: 'High Priority' },
+  ea_priority_medium: { ar: 'أولوية متوسطة',                     en: 'Medium Priority' },
+  ea_priority_low:    { ar: 'أولوية منخفضة',                     en: 'Low Priority' },
+  ea_manual:          { ar: 'يتطلب إجراء يدوي',                  en: 'Manual action required' },
+  ea_empty:           { ar: 'لا توجد توصيات تبادل حالياً',       en: 'No exchange recommendations yet' },
+  ea_surplus_match:   { ar: 'فائض في مؤسسة يقابله شح أو فقدان في مؤسسة أخرى', en: 'Surplus in one institution matches scarcity or missing status in another' },
+  ea_expiry_match:    { ar: 'مادة قريبة النفاد قد تفيد مؤسسة لديها شح أو فقدان', en: 'Near-expiry item may help an institution with scarcity or missing status' },
+  ea_filter_priority: { ar: 'تصفية الأولوية',                    en: 'Filter Priority' },
+  ea_all_priorities:  { ar: 'كل الأولويات',                      en: 'All Priorities' },
+
   /* ── Confirmation dialog ── */
   confirm_apply:  { ar: 'تأكيد التطبيق',                      en: 'Confirm Apply' },
   confirm_msg:    { ar: 'أنت على وشك تطبيق تغييرات التوفر. هذا الإجراء لا يمكن التراجع عنه تلقائياً.', en: 'You are about to apply availability changes. This action cannot be automatically undone.' },

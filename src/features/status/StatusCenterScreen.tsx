@@ -12,6 +12,7 @@ import {
   type StatusType,
 } from '@/shared/supabase/services/status-reports.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { generateExchangeAlerts, type ExchangeAlert, type AlertPriority } from './exchange-alerts';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -231,6 +232,15 @@ export function StatusCenterScreen() {
         </div>
       )}
 
+      {/* Exchange Alerts Section */}
+      {!reports.loading && !reports.error && (reports.data ?? []).length > 0 && (
+        <ExchangeAlertsSection
+          reports={reports.data ?? []}
+          lang={lang}
+          isMobile={isMobile}
+        />
+      )}
+
       {toast && <PhoenixToast message={toast} />}
     </div>
   );
@@ -366,5 +376,136 @@ function ReportForm({ lang, orgId, isSuper, editReport, onSaved, onCancel }: {
         </div>
       </div>
     </PhoenixCard>
+  );
+}
+
+/* ── Exchange Alerts Section ── */
+
+const PRIORITY_VARIANT: Record<AlertPriority, 'err' | 'warn' | 'neutral'> = {
+  high: 'err', medium: 'warn', low: 'neutral',
+};
+const PRIORITY_LABEL_KEY: Record<AlertPriority, string> = {
+  high: 'ea_priority_high', medium: 'ea_priority_medium', low: 'ea_priority_low',
+};
+
+function alertItemName(a: ExchangeAlert, lang: 'ar' | 'en'): string {
+  if (lang === 'ar') return a.itemNameAr || a.itemName || '—';
+  return a.itemName || a.itemNameAr || '—';
+}
+function alertOrgName(name: string, nameAr: string, lang: 'ar' | 'en'): string {
+  if (lang === 'ar') return nameAr || name || '—';
+  return name || nameAr || '—';
+}
+
+function ExchangeAlertsSection({ reports, lang, isMobile }: {
+  reports: StatusReport[];
+  lang: 'ar' | 'en';
+  isMobile: boolean;
+}) {
+  const alerts = generateExchangeAlerts(reports);
+  const [filterPriority, setFilterPriority] = useState<AlertPriority | ''>('');
+  const [search, setSearch] = useState('');
+
+  const filtered = alerts.filter(a => {
+    if (filterPriority && a.priority !== filterPriority) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (a.itemName ?? '').toLowerCase().includes(q) ||
+             (a.itemNameAr ?? '').includes(search) ||
+             (a.sourceOrgName ?? '').toLowerCase().includes(q) ||
+             (a.sourceOrgNameAr ?? '').includes(search) ||
+             (a.targetOrgName ?? '').toLowerCase().includes(q) ||
+             (a.targetOrgNameAr ?? '').includes(search);
+    }
+    return true;
+  });
+
+  return (
+    <div style={{ marginTop: '28px' }}>
+      <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 700, marginBottom: '6px' }}>
+        {t('ea_title', lang)}
+      </h3>
+      <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '14px' }}>{t('ea_sub', lang)}</p>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+        <select
+          value={filterPriority}
+          onChange={e => setFilterPriority(e.target.value as AlertPriority | '')}
+          style={{ ...fieldStyle, width: 'auto', minWidth: '140px', appearance: 'none' as const, cursor: 'pointer' }}
+          aria-label={t('ea_filter_priority', lang)}
+        >
+          <option value="">{t('ea_all_priorities', lang)}</option>
+          <option value="high">{t('ea_priority_high', lang)}</option>
+          <option value="medium">{t('ea_priority_medium', lang)}</option>
+          <option value="low">{t('ea_priority_low', lang)}</option>
+        </select>
+        <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
+          <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+          <input
+            type="search"
+            placeholder={t('search', lang)}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ ...fieldStyle, paddingInlineStart: '34px' }}
+            aria-label={t('search', lang)}
+          />
+        </div>
+      </div>
+
+      {/* Empty state */}
+      {filtered.length === 0 && (
+        <PhoenixEmptyState icon="🔄" title={t('ea_empty', lang)} description={t('ea_surplus_match', lang)} />
+      )}
+
+      {/* Alert cards */}
+      {filtered.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {filtered.map(a => (
+            <PhoenixCard key={a.id} padding="14px 16px">
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700 }} dir="auto">
+                  {alertItemName(a, lang)}
+                </span>
+                <PhoenixStatusBadge
+                  variant={PRIORITY_VARIANT[a.priority]}
+                  label={t(PRIORITY_LABEL_KEY[a.priority], lang)}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', fontSize: '12px', marginBottom: '8px' }}>
+                <div>
+                  <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{t('ea_source', lang)}: </span>
+                  <span>{alertOrgName(a.sourceOrgName, a.sourceOrgNameAr, lang)}</span>
+                  <span style={{ marginInlineStart: '6px', fontSize: '11px' }}>
+                    <PhoenixStatusBadge variant={a.sourceStatus === 'surplus' ? 'ok' : 'warn'} label={t(a.sourceStatus === 'surplus' ? 'st_surplus' : 'st_near_expiry', lang)} />
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{t('ea_target', lang)}: </span>
+                  <span>{alertOrgName(a.targetOrgName, a.targetOrgNameAr, lang)}</span>
+                  <span style={{ marginInlineStart: '6px', fontSize: '11px' }}>
+                    <PhoenixStatusBadge variant={a.targetStatus === 'missing' ? 'err' : 'warn'} label={t(a.targetStatus === 'missing' ? 'st_missing' : 'st_scarce', lang)} />
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11px', color: 'var(--t2)' }}>
+                {a.quantity != null && <span>{a.quantity}{a.unit ? ` ${a.unit}` : ''}</span>}
+                {a.expiryDate && <span dir="ltr">⏱ {a.expiryDate}</span>}
+              </div>
+
+              <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--warn)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                ⚠ {t('ea_manual', lang)}
+              </div>
+
+              <div style={{ marginTop: '4px', fontSize: '10.5px', color: 'var(--t3)', fontStyle: 'italic' }}>
+                {a.sourceStatus === 'near_expiry' ? t('ea_expiry_match', lang) : t('ea_surplus_match', lang)}
+              </div>
+            </PhoenixCard>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
