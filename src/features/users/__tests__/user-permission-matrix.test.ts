@@ -152,16 +152,17 @@ describe('Permission catalog', () => {
     'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
     'exchange_alerts.view', 'inter_institution_alerts.view', 'status_contacts.view', 'status_contacts.manage',
     'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port', 'deletion_wizard.archive_organization',
+    'users.recycle',
   ];
 
   it('contains exactly the required permission keys', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 34 (32 from migration 010 + 2 from migration 011)', () => {
-    expect(REQUIRED).toHaveLength(34);
-    expect(PERMISSION_KEYS).toHaveLength(34);
-    expect(PERMISSION_KEY_SET.size).toBe(34);
+  it('canonical permission count is exactly 35 (32 from migration 010 + 2 from migration 011 + 1 from migration 015)', () => {
+    expect(REQUIRED).toHaveLength(35);
+    expect(PERMISSION_KEYS).toHaveLength(35);
+    expect(PERMISSION_KEY_SET.size).toBe(35);
   });
 
   it('rejects unknown permission keys', () => {

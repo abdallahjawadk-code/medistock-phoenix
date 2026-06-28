@@ -35,6 +35,8 @@ Apply strictly in order. Each builds on the previous schema.
 | **011** | `011_phoenix_user_lifecycle_controls.sql` | Adds `users.disable` + `users.delete` keys (→ 34 total); `profiles.disabled_at/disabled_by` audit columns |
 | **012** | `012_phoenix_institution_admin_role.sql` | Expands `profiles.role` CHECK to allow `institution_admin`; seeds 13 default permissions |
 | **013** | `013_phoenix_user_identity_snapshot_foundation.sql` | Identity snapshot foundation: `profiles.identity_version`, `user_identity_history`, actor snapshot columns on 6 operational tables, initial backfill, helper RPC |
+| **014** | `014_phoenix_actor_snapshot_write_path_triggers.sql` | Actor snapshot write-path triggers: BEFORE INSERT/UPDATE triggers on 6 operational tables to auto-populate actor snapshot fields |
+| **015** | `015_phoenix_user_account_recycling.sql` | Account recycling permission: `users.recycle` permission key + super_admin default |
 
 Apply each one **manually**, in this order:
 
@@ -47,6 +49,8 @@ Apply each one **manually**, in this order:
 7. **Apply 011 manually** — `011_phoenix_user_lifecycle_controls.sql` (requires 010)
 8. **Apply 012 manually** — `012_phoenix_institution_admin_role.sql` (requires 010; 011 recommended)
 9. **Apply 013 manually** — `013_phoenix_user_identity_snapshot_foundation.sql` (requires 001–010; 011+012 recommended)
+10. **Apply 014 manually** — `014_phoenix_actor_snapshot_write_path_triggers.sql` (requires 013)
+11. **Apply 015 manually** — `015_phoenix_user_account_recycling.sql` (requires 010; deploy `admin-recycle-user` Edge Function after applying)
 
 ## How to apply (each migration)
 

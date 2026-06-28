@@ -13,7 +13,7 @@ import {
 import {
   listUsers, getEffectivePermissions, assignProfilePermissions,
   resetProfilePermissions, createUserViaEdge, getOrgStatusContacts,
-  disableUserViaEdge, enableUserViaEdge,
+  disableUserViaEdge, enableUserViaEdge, recycleUserViaEdge,
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
@@ -55,6 +55,7 @@ export function UserManagementScreen() {
   const canViewUsers = isSuper || actorEff.has('users.view');
   const canCreate    = isSuper || actorEff.has('users.create');
   const canManagePerms = isSuper || actorEff.has('users.manage_permissions');
+  const canRecycle   = isSuper || actorEff.has('users.recycle');
 
   const [selectedId,   setSelectedId]   = useState<string | null>(null);
   const [search,       setSearch]       = useState('');
@@ -62,6 +63,7 @@ export function UserManagementScreen() {
   const [showCreate,   setShowCreate]   = useState(false);
   const [toast,        setToast]        = useState<string | null>(null);
   const [disableTarget, setDisableTarget] = useState<ManagedUser | null>(null);
+  const [recycleTarget, setRecycleTarget] = useState<ManagedUser | null>(null);
 
   const users = useAsync(() => listUsers(isSuper ? activeOrgId : undefined), [isSuper, activeOrgId]);
 
@@ -169,10 +171,18 @@ export function UserManagementScreen() {
                   <div style={{ display: 'flex', gap: '6px', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
                     onClick={e => e.stopPropagation()}>
                     {u.status === 'suspended' ? (
-                      <PhoenixButton variant="ghost" size="md"
-                        onClick={() => setDisableTarget(u)}>
-                        ✅ {t('um_enable_user', lang)}
-                      </PhoenixButton>
+                      <>
+                        <PhoenixButton variant="ghost" size="md"
+                          onClick={() => setDisableTarget(u)}>
+                          ✅ {t('um_enable_user', lang)}
+                        </PhoenixButton>
+                        {canRecycle && normalizeRole(u.role) !== 'super_admin' && (
+                          <PhoenixButton variant="ghost" size="md"
+                            onClick={() => setRecycleTarget(u)}>
+                            ♻ {t('um_recycle_account', lang)}
+                          </PhoenixButton>
+                        )}
+                      </>
                     ) : (
                       <PhoenixButton variant="ghost" size="md" onClick={() => setDisableTarget(u)}>
                         🔕 {t('um_disable_user', lang)}
@@ -226,6 +236,17 @@ export function UserManagementScreen() {
             }
           }}
           isEnable={((users.data ?? []).find(u => u.id === disableTarget.id)?.status === 'suspended')}
+        />
+      )}
+
+      {/* Recycle account modal */}
+      {recycleTarget && canRecycle && (
+        <RecycleConfirmModal
+          user={recycleTarget} lang={lang} isSuper={isSuper}
+          actorOrgId={activeOrgId}
+          onCancel={() => setRecycleTarget(null)}
+          onSuccess={(msg) => { setRecycleTarget(null); showToast(msg); afterLifecycle(); }}
+          onError={(msg) => showToast(msg)}
         />
       )}
 
@@ -634,6 +655,127 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
             onClick={async () => { setBusy(true); await onConfirm(); setBusy(false); }}>
             {isEnable ? t('um_enable_user', lang) : t('um_disable_user', lang)}
           </PhoenixButton>
+        </div>
+      </PhoenixCard>
+    </div>
+  );
+}
+
+/* ── Recycle account modal ── */
+
+function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSuccess, onError }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  isSuper: boolean;
+  actorOrgId: string | null;
+  onCancel: () => void;
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
+
+  const [newName,    setNewName]    = useState('');
+  const [newEmail,   setNewEmail]   = useState('');
+  const [newRole,    setNewRole]    = useState<OfficialRole>('viewer');
+  const [newOrgId,   setNewOrgId]   = useState(user.organization_id ?? actorOrgId ?? '');
+  const [confirm,    setConfirm]    = useState('');
+  const [busy,       setBusy]       = useState(false);
+
+  const roleOptions = OFFICIAL_ROLES.filter(r => canTargetRole(isSuper ? 'super_admin' : 'institution_admin', r));
+  const expectedConfirm = `RECYCLE_USER_${user.id}`;
+  const canSubmit = newName.trim() && newEmail.trim() && confirm === expectedConfirm;
+
+  async function onSubmit() {
+    setBusy(true);
+    try {
+      const res = await recycleUserViaEdge({
+        targetProfileId: user.id,
+        newFullName: newName.trim(),
+        newEmail: newEmail.trim(),
+        newRole,
+        ...(isSuper && newOrgId !== user.organization_id ? { newOrganizationId: newOrgId } : {}),
+        confirmation: confirm,
+      });
+
+      if (res.edgeMissing) { onError(t('um_edge_disabled', lang)); return; }
+      if (!res.ok) {
+        if (res.error === 'TARGET_NOT_SUSPENDED')      onError(t('um_recycle_must_suspend', lang));
+        else if (res.error === 'SELF_ACTION_FORBIDDEN') onError(t('um_recycle_no_self', lang));
+        else if (res.error === 'CANNOT_RECYCLE_SUPER_ADMIN') onError(t('um_recycle_no_super', lang));
+        else if (res.error === 'CROSS_ORG_FORBIDDEN')  onError(t('um_recycle_no_cross_org', lang));
+        else onError(t('um_recycle_failed', lang));
+        return;
+      }
+
+      const msg = res.passwordSetupSent
+        ? `${t('um_recycle_success', lang)} ${t('um_recycle_password_sent', lang)}`
+        : t('um_recycle_success', lang);
+      onSuccess(msg);
+    } catch {
+      onError(t('um_recycle_failed', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard padding="24px" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
+          ♻ {t('um_recycle_account', lang)}
+        </h3>
+        <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">
+          <strong>{userName(user)}</strong>
+        </p>
+
+        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)' }} dir="auto">
+          ⚠ {t('um_recycle_warning', lang)}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_name', lang)} *</label>
+              <input type="text" value={newName} onChange={e => setNewName(e.target.value)} style={fieldStyle} dir="auto" />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_email', lang)} *</label>
+              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={fieldStyle} dir="ltr" />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
+            {isSuper && (
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_org', lang)}</label>
+                <select value={newOrgId} onChange={e => setNewOrgId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+                  {(orgs.data ?? []).map(o => <option key={o.id} value={o.id}>{lang === 'ar' ? o.name_ar : o.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_role', lang)} *</label>
+              <select value={newRole} onChange={e => setNewRole(e.target.value as OfficialRole)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+                {roleOptions.map(r => <option key={r} value={r}>{t(OFFICIAL_ROLE_LABEL_KEY[r], lang)}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_confirm', lang)} *</label>
+            <input type="text" value={confirm} onChange={e => setConfirm(e.target.value)}
+              placeholder={expectedConfirm} style={fieldStyle} dir="ltr" />
+            <div style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="ltr">
+              {expectedConfirm}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+            <PhoenixButton variant="primary" size="md" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
+              {t('um_recycle_account', lang)}
+            </PhoenixButton>
+          </div>
         </div>
       </PhoenixCard>
     </div>

@@ -488,9 +488,26 @@ export const T: Dict = {
   um_cannot_create_institution_admin: { ar: 'لا يمكنك إنشاء مسؤول مؤسسة من هذا الحساب',    en: 'You cannot create an institution administrator from this account' },
   um_lifecycle_requires_enable:       { ar: 'يتطلب تفعيل صلاحيات دورة حياة المستخدمين',    en: 'Requires user lifecycle permissions to be enabled' },
 
-  /* New permission labels (migration 011) */
+  /* New permission labels (migration 011 + 015) */
   perm_users_disable:    { ar: 'تعطيل المستخدمين', en: 'Disable users' },
   perm_users_delete:     { ar: 'حذف المستخدمين',   en: 'Delete users' },
+  perm_users_recycle:    { ar: 'تدوير الحسابات',    en: 'Recycle accounts' },
+
+  /* Account recycling (USER-ACCOUNT-RECYCLING-A) */
+  um_recycle_account:         { ar: 'تدوير الحساب',                                    en: 'Recycle Account' },
+  um_recycle_new_name:        { ar: 'الاسم الجديد',                                     en: 'New full name' },
+  um_recycle_new_email:       { ar: 'البريد الإلكتروني الجديد',                          en: 'New email' },
+  um_recycle_new_role:        { ar: 'الدور الجديد',                                     en: 'New role' },
+  um_recycle_new_org:         { ar: 'المؤسسة الجديدة',                                  en: 'New institution' },
+  um_recycle_confirm:         { ar: 'تأكيد التدوير',                                    en: 'Confirm recycling' },
+  um_recycle_warning:         { ar: 'ستبقى العمليات القديمة محفوظة باسم المستخدم السابق، وستسجل العمليات الجديدة بالهوية الجديدة.', en: 'Old operations remain attributed to the previous identity; new operations will use the new identity.' },
+  um_recycle_must_suspend:    { ar: 'يجب تعطيل المستخدم قبل تدوير الحساب.',             en: 'The user must be disabled before recycling.' },
+  um_recycle_no_self:         { ar: 'لا يمكن تدوير حسابك الشخصي.',                      en: 'You cannot recycle your own account.' },
+  um_recycle_no_super:        { ar: 'لا يمكن تدوير حساب مدير المنصة.',                   en: 'You cannot recycle a platform administrator.' },
+  um_recycle_no_cross_org:    { ar: 'لا يمكن تدوير حساب خارج مؤسستك.',                   en: 'You cannot recycle an account outside your institution.' },
+  um_recycle_success:         { ar: 'تم تدوير الحساب بنجاح.',                            en: 'Account recycled successfully.' },
+  um_recycle_password_sent:   { ar: 'تم إرسال رابط إعداد كلمة المرور إلى البريد الجديد.', en: 'Password setup link sent to the new email.' },
+  um_recycle_failed:          { ar: 'فشل تدوير الحساب. حاول مجدداً.',                    en: 'Account recycling failed. Please try again.' },
 
   /* Official role labels (the ONLY labels shown in the role dropdown) */
   orole_super_admin:            { ar: 'مدير المنصة',             en: 'Platform Administrator' },

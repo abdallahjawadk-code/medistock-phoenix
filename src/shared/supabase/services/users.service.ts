@@ -203,6 +203,66 @@ export async function deleteUserViaEdge(targetUserId: string, confirmation: stri
   return invokeLifecycle({ action: 'delete', target_user_id: targetUserId, confirmation });
 }
 
+// ── Account recycling (USER-ACCOUNT-RECYCLING-A) ────────────────────────────
+
+export interface RecycleUserInput {
+  targetProfileId: string;
+  newFullName: string;
+  newEmail: string;
+  newRole: OfficialRole;
+  newOrganizationId?: string;
+  confirmation: string;
+}
+
+export interface RecycleUserResult {
+  ok: boolean;
+  targetProfileId?: string;
+  newEmail?: string;
+  newIdentityVersion?: number;
+  passwordSetupSent?: boolean;
+  error?: string;
+  edgeMissing?: boolean;
+}
+
+export async function recycleUserViaEdge(input: RecycleUserInput): Promise<RecycleUserResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+
+  try {
+    const body: Record<string, string> = {
+      target_profile_id: input.targetProfileId,
+      new_full_name:     input.newFullName,
+      new_email:         input.newEmail,
+      new_role:          input.newRole,
+      confirmation:      input.confirmation,
+    };
+    if (input.newOrganizationId) body.new_organization_id = input.newOrganizationId;
+
+    const { data, error } = await supabase.functions.invoke('admin-recycle-user', { body });
+
+    if (error) return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+
+    const res = data as {
+      ok: boolean;
+      target_profile_id?: string;
+      new_email?: string;
+      new_identity_version?: number;
+      password_setup_sent?: boolean;
+      error?: string;
+    };
+    if (!res) return { ok: false, error: 'UNKNOWN' };
+    return {
+      ok:                 res.ok,
+      targetProfileId:    res.target_profile_id,
+      newEmail:           res.new_email,
+      newIdentityVersion: res.new_identity_version,
+      passwordSetupSent:  res.password_setup_sent,
+      error:              res.error,
+    };
+  } catch {
+    return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+  }
+}
+
 // ── Monthly Status Officer contacts (organization_status_contacts, migration 008) ──
 
 export interface OrgContactRow {

@@ -561,18 +561,17 @@ describe('Identity snapshot plan: docs/user-identity-snapshot-plan.md', () => {
 // 18. RECYCLING + HARD DELETE: not yet in UI or services
 // ============================================================================
 
-describe('Account lifecycle guardrails: recycling not implemented', () => {
+describe('Account lifecycle guardrails: recycling properly guarded', () => {
   const screen  = readSrc('features/users/UserManagementScreen.tsx');
   const userSvc = readSrc('shared/supabase/services/users.service.ts');
 
-  it('no recycling UI element in UserManagementScreen', () => {
-    expect(screen).not.toContain('recycle');
-    expect(screen).not.toContain('recycled_candidate');
+  it('recycling is guarded by canRecycle permission check', () => {
+    expect(screen).toContain('canRecycle');
+    expect(screen).toContain("users.recycle");
   });
 
-  it('no recycling service function in users.service.ts', () => {
-    expect(userSvc).not.toContain('recycleUser');
-    expect(userSvc).not.toContain('recycleuserviaedge');
+  it('recycling only shown for suspended users', () => {
+    expect(screen).toContain("u.status === 'suspended'");
   });
 
   it('hard delete button is not rendered in the UI', () => {
@@ -589,7 +588,6 @@ describe('Account lifecycle guardrails: recycling not implemented', () => {
     const files = allTsxFiles('');
     files.forEach(path => {
       const content = readFile(path);
-      // Direct profile updates from frontend are prohibited; all lifecycle goes through Edge Functions
       const dangerousUpdate = content.match(/from\(['"]profiles['"]\)\s*\.\s*update\s*\(/g);
       expect(dangerousUpdate).toBeNull();
     });
@@ -995,17 +993,13 @@ describe('Actor snapshot coverage: all operational tables have triggers', () => 
 // 23. RECYCLING, HARD DELETE, DATA RESET: still not implemented
 // ============================================================================
 
-describe('Post-014 guardrails: recycling and hard delete still absent', () => {
+describe('Post-014 guardrails: hard delete still absent, recycling properly guarded', () => {
   const screen  = readSrc('features/users/UserManagementScreen.tsx');
   const userSvc = readSrc('shared/supabase/services/users.service.ts');
 
-  it('no recycling UI element in UserManagementScreen', () => {
-    expect(screen).not.toContain('recycle');
-    expect(screen).not.toContain('recycled_candidate');
-  });
-
-  it('no recycling service function', () => {
-    expect(userSvc).not.toContain('recycleUser');
+  it('recycling is properly guarded by permission and suspension check', () => {
+    expect(screen).toContain('canRecycle');
+    expect(screen).toContain("u.status === 'suspended'");
   });
 
   it('hard delete button is not rendered', () => {
@@ -1127,42 +1121,311 @@ describe('Recycling audit: snapshot plan updated for recycling readiness', () =>
 });
 
 // ============================================================================
-// 25. RECYCLING AUDIT: recycling still not implemented in code
+// 25. RECYCLING IMPLEMENTATION: users.recycle permission and service
 // ============================================================================
 
-describe('Recycling audit: no recycling implementation in codebase', () => {
-  it('no recycleUserViaEdge in users.service.ts', () => {
-    const svc = readSrc('shared/supabase/services/users.service.ts');
-    expect(svc).not.toContain('recycleUserViaEdge');
-    expect(svc).not.toContain('admin-recycle-user');
-  });
-
-  it('no recycle button or modal in UserManagementScreen', () => {
-    const screen = readSrc('features/users/UserManagementScreen.tsx');
-    expect(screen).not.toContain('recycle');
-    expect(screen).not.toContain('تدوير');
-  });
-
-  it('no admin-recycle-user Edge Function directory exists yet', () => {
-    let exists = true;
-    try { readPhoenix('supabase/functions/admin-recycle-user/index.ts'); } catch { exists = false; }
-    expect(exists).toBe(false);
-  });
-
-  it('no users.recycle permission in the permission catalog yet', () => {
+describe('Recycling implementation: permission catalog and service', () => {
+  it('users.recycle permission exists in the TypeScript catalog', () => {
     const perms = readSrc('shared/lib/permissions.ts');
-    expect(perms).not.toContain('users.recycle');
+    expect(perms).toContain("'users.recycle'");
+    expect(perms).toContain('perm_users_recycle');
   });
 
-  it('no recycle i18n strings yet', () => {
-    const strings = readSrc('shared/i18n/strings.ts');
-    expect(strings).not.toContain('recycle');
-    expect(strings).not.toContain('تدوير');
+  it('super_admin default includes users.recycle (ALL_KEYS)', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    expect(perms).toContain("super_admin:            ALL_KEYS");
   });
 
-  it('account lifecycle policy documents recycling as future', () => {
-    const policy = readPhoenix('docs/account-lifecycle-policy.md');
-    expect(policy).toContain('Future');
-    expect(policy).toContain('Not Yet Implemented');
+  it('institution_admin default does NOT include users.recycle', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    expect(perms).not.toMatch(/INSTITUTION_ADMIN_DEFAULTS[^]*users\.recycle/);
+  });
+
+  it('recycleUserViaEdge exists in users.service.ts', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    expect(svc).toContain('recycleUserViaEdge');
+    expect(svc).toContain("'admin-recycle-user'");
+  });
+
+  it('recycleUserViaEdge input type does not include password field', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    const inputType = svc.slice(svc.indexOf('RecycleUserInput'), svc.indexOf('RecycleUserResult'));
+    expect(inputType).not.toMatch(/\bpassword\b.*:/);
+  });
+
+  it('recycleUserViaEdge does not send actor snapshot fields', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    const recycleBlock = svc.slice(svc.indexOf('recycleUserViaEdge'));
+    expect(recycleBlock).not.toContain('actor_name_snapshot');
+    expect(recycleBlock).not.toContain('actor_email_snapshot');
+  });
+
+  it('recycleUserViaEdge does not call auth.admin', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    expect(svc).not.toContain('auth.admin');
+  });
+
+  it('recycleUserViaEdge does not update auth email directly', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    expect(svc).not.toContain('updateUserById');
+  });
+});
+
+// ============================================================================
+// 26. RECYCLING IMPLEMENTATION: Edge Function safety
+// ============================================================================
+
+describe('Recycling implementation: admin-recycle-user Edge Function', () => {
+  const fn = readPhoenix('supabase/functions/admin-recycle-user/index.ts');
+
+  it('Edge Function file exists', () => {
+    expect(fn.length).toBeGreaterThan(500);
+  });
+
+  it('reads service key only from Deno.env', () => {
+    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  });
+
+  it('service key value is never in a json response body', () => {
+    const lines = fn.split('\n');
+    const leaks = lines.filter(l => l.includes('json(') && l.includes('SUPABASE_SERVICE_ROLE_KEY'));
+    expect(leaks.length).toBe(0);
+  });
+
+  it('validates caller authentication', () => {
+    expect(fn).toContain('NOT_AUTHENTICATED');
+  });
+
+  it('checks users.recycle permission', () => {
+    expect(fn).toContain("'users.recycle'");
+    expect(fn).toContain('phoenix_profile_has_permission');
+  });
+
+  it('blocks self-recycling', () => {
+    expect(fn).toContain('SELF_ACTION_FORBIDDEN');
+  });
+
+  it('blocks recycling super_admin', () => {
+    expect(fn).toContain('CANNOT_RECYCLE_SUPER_ADMIN');
+  });
+
+  it('requires target to be suspended', () => {
+    expect(fn).toContain('TARGET_NOT_SUSPENDED');
+    expect(fn).toContain("'suspended'");
+  });
+
+  it('requires confirmation phrase RECYCLE_USER_<id>', () => {
+    expect(fn).toContain('RECYCLE_USER_');
+    expect(fn).toContain('INVALID_CONFIRMATION');
+  });
+
+  it('institution_admin cannot recycle outside own org', () => {
+    expect(fn).toContain('CROSS_ORG_FORBIDDEN');
+  });
+
+  it('institution_admin cannot assign elevated roles', () => {
+    expect(fn).toContain('CANNOT_ASSIGN_ELEVATED_ROLE');
+  });
+
+  it('increments identity_version', () => {
+    expect(fn).toContain('identity_version');
+    expect(fn).toContain('newVersion');
+  });
+
+  it('closes old identity in user_identity_history', () => {
+    expect(fn).toContain('user_identity_history');
+    expect(fn).toContain('valid_until');
+  });
+
+  it('inserts new identity history row with change_reason', () => {
+    expect(fn).toContain("'account_recycled'");
+    expect(fn).toContain('recycled_by');
+  });
+
+  it('updates auth email server-side only', () => {
+    expect(fn).toContain('updateUserById');
+    expect(fn).toContain('email_confirm');
+  });
+
+  it('unbans the auth user after DB changes', () => {
+    expect(fn).toContain("ban_duration: 'none'");
+  });
+
+  it('sends password setup via recovery link (best-effort)', () => {
+    expect(fn).toContain('generateLink');
+    expect(fn).toContain('recovery');
+    expect(fn).toContain('passwordSetupSent');
+  });
+
+  it('writes audit log with old and new identity', () => {
+    expect(fn).toContain("'user.account_recycled'");
+    expect(fn).toContain('old_full_name');
+    expect(fn).toContain('new_full_name');
+    expect(fn).toContain('old_identity_version');
+    expect(fn).toContain('new_identity_version');
+  });
+
+  it('never accepts password in request', () => {
+    expect(fn).not.toMatch(/body\.password|password.*body/);
+  });
+
+  it('never returns password', () => {
+    const responses = fn.split('\n').filter(l => l.includes('json({') || l.includes('json('));
+    responses.forEach(r => expect(r).not.toContain('password'));
+  });
+
+  it('documents partial-failure behavior', () => {
+    expect(fn).toContain('PARTIAL FAILURE');
+  });
+});
+
+// ============================================================================
+// 27. RECYCLING IMPLEMENTATION: UI and i18n
+// ============================================================================
+
+describe('Recycling implementation: UI and i18n', () => {
+  const screen = readSrc('features/users/UserManagementScreen.tsx');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('recycle button exists for suspended users', () => {
+    expect(screen).toContain('um_recycle_account');
+    expect(screen).toContain('recycleTarget');
+  });
+
+  it('recycle button is gated by canRecycle permission', () => {
+    expect(screen).toContain('canRecycle');
+    expect(screen).toContain("users.recycle");
+  });
+
+  it('recycle button hidden for super_admin targets', () => {
+    expect(screen).toContain("normalizeRole(u.role) !== 'super_admin'");
+  });
+
+  it('recycle modal requires confirmation phrase RECYCLE_USER_', () => {
+    expect(screen).toContain('RECYCLE_USER_');
+  });
+
+  it('recycle modal calls recycleUserViaEdge', () => {
+    expect(screen).toContain('recycleUserViaEdge');
+  });
+
+  it('i18n has Arabic recycle strings', () => {
+    expect(strings).toContain('تدوير الحساب');
+    expect(strings).toContain('الاسم الجديد');
+    expect(strings).toContain('البريد الإلكتروني الجديد');
+  });
+
+  it('i18n has English recycle strings', () => {
+    expect(strings).toContain('Recycle Account');
+    expect(strings).toContain('New full name');
+    expect(strings).toContain('New email');
+  });
+
+  it('i18n has recycle warning in Arabic and English', () => {
+    expect(strings).toContain('ستبقى العمليات القديمة');
+    expect(strings).toContain('Old operations remain attributed');
+  });
+
+  it('i18n has perm_users_recycle label', () => {
+    expect(strings).toContain('perm_users_recycle');
+    expect(strings).toContain('تدوير الحسابات');
+  });
+});
+
+// ============================================================================
+// 28. RECYCLING IMPLEMENTATION: migration 015
+// ============================================================================
+
+describe('Recycling implementation: migration 015', () => {
+  const sql = readSql('migrations/015_phoenix_user_account_recycling.sql');
+
+  it('file exists and is non-empty', () => {
+    expect(sql.length).toBeGreaterThan(100);
+  });
+
+  it('is manual-apply-only', () => {
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('DO NOT use');
+  });
+
+  it('has no DROP or TRUNCATE', () => {
+    expect(sql).not.toMatch(/^\s*(drop table|drop function|truncate)\b/im);
+  });
+
+  it('adds users.recycle permission key', () => {
+    expect(sql).toContain("'users.recycle'");
+    expect(sql).toContain('permission_keys');
+  });
+
+  it('seeds super_admin default as allowed', () => {
+    expect(sql).toContain("'super_admin'");
+    expect(sql).toContain('role_permission_defaults');
+  });
+
+  it('uses ON CONFLICT DO NOTHING for idempotency', () => {
+    expect(sql).toContain('ON CONFLICT');
+    expect(sql).toContain('DO NOTHING');
+  });
+
+  it('has a verification block', () => {
+    expect(sql).toContain('assert');
+    expect(sql).toContain("'users.recycle'");
+  });
+
+  it('does not implement recycling logic', () => {
+    expect(sql.toLowerCase()).toContain('does not implement');
+  });
+
+  it('does not reference elevated service keys', () => {
+    expect(sql).not.toContain('service_role');
+    expect(sql).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+});
+
+// ============================================================================
+// 29. POST-RECYCLING: hard delete still hidden, data reset absent
+// ============================================================================
+
+describe('Post-recycling guardrails', () => {
+  const screen = readSrc('features/users/UserManagementScreen.tsx');
+
+  it('hard delete button still not rendered', () => {
+    expect(screen).not.toContain('deleteTarget');
+    expect(screen).not.toContain('um_delete_user_action');
+  });
+
+  it('deleteUserViaEdge is NOT imported in the screen', () => {
+    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+  });
+
+  it('Data Reset absent', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      expect(readFile(path)).not.toMatch(/import.*DataReset/i);
+    });
+  });
+
+  it('Intake disabled (OCR/Excel/DocIntel)', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      const content = readFile(path);
+      expect(content).not.toMatch(/import.*OcrImport/i);
+      expect(content).not.toMatch(/import.*ExcelImport/i);
+      expect(content).not.toMatch(/import.*DocIntel/i);
+    });
+  });
+
+  it('no service_role in any frontend file', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      expect(readFile(path)).not.toContain('service_role');
+    });
+  });
+
+  it('no auth.admin in any frontend file', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      expect(readFile(path)).not.toMatch(/auth\.admin/);
+    });
   });
 });

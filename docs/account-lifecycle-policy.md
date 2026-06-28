@@ -36,7 +36,7 @@ A Phoenix user account may exist in one of the following states:
 | Correct name/email of existing user | ✅ | For same real person only; must not be used for recycling |
 | Trigger password reset | ✅ | Via Supabase Auth email flow; admin never sees the password |
 | Hard delete a user | ⚠ Deferred | Not a normal operational action; gated in UI; only for test/cleanup by platform operator |
-| Recycle a suspended account | 🔜 Future | Requires identity snapshot workflow (not yet implemented) |
+| Recycle a suspended account | ✅ | Via `admin-recycle-user` Edge Function; target must be suspended; requires `users.recycle` permission |
 | Assign/modify permissions | ✅ | Via permission matrix UI |
 
 ### institution_admin
@@ -48,7 +48,7 @@ A Phoenix user account may exist in one of the following states:
 | Disable/enable users in own organization | ✅ Only with `users.disable` | Not granted by default; super_admin must explicitly grant `users.disable`. Cannot disable super_admin or institution_admin. |
 | Act on users outside own organization | ❌ | `CROSS_ORG_FORBIDDEN` |
 | Hard delete | ❌ | Blocked at Edge Function level |
-| Recycle | ❌ | Not implemented |
+| Recycle accounts in own org | ⚠ Only with `users.recycle` | Not granted by default; super_admin must explicitly grant `users.recycle`. Cannot recycle super_admin or institution_admin. Target must be suspended. |
 | Correct name/email | ❌ | Must be done by super_admin |
 
 ### warehouse_officer / port_officer / monthly_status_officer / viewer
@@ -108,22 +108,28 @@ Users reset their own passwords through the standard Supabase Auth email flow:
 - The temporary password mode (available during user creation via the Advanced option) is a one-time setup convenience. The user is expected to reset their password afterward via the normal flow.
 - `SUPABASE_SERVICE_ROLE_KEY` never touches the frontend. Password operations use the anon key or the user's own session token.
 
-### 3.4 Recycling (Future — Not Yet Implemented)
+### 3.4 Recycling
 
-Recycling is the process of reassigning a **suspended** account to a **different real person**. It is **not yet implemented** and must not be approximated by editing a profile's name/email directly.
+Recycling is the process of reassigning a **suspended** account to a **different real person**. It must not be approximated by editing a profile's name/email directly.
 
 **Why a dedicated workflow is required:**
 - Old operations (status reports, QR scans, audit actions) reference the old person's identity.
 - Directly changing `full_name` or `email` on an existing profile retroactively changes the attribution of all past operations — the new person would appear to have performed the old person's actions.
 - A proper recycling workflow must first **snapshot the old identity**, then increment `profiles.identity_version`, then update the profile.
 
-**Future recycling workflow (to be implemented in USER-IDENTITY-SNAPSHOT-FOUNDATION-A):**
-1. Suspend the old account (if not already suspended).
-2. Write an identity snapshot to `user_identity_history`.
-3. Increment `profiles.identity_version`.
-4. Update `profiles.full_name`, `profiles.email` (and auth email) with the new person's details.
-5. Re-enable the account.
-6. All old operations reference the snapshot; all new operations reference the current profile row.
+**Recycling workflow (via `admin-recycle-user` Edge Function):**
+1. Target account must be suspended (disabled) before recycling.
+2. Old identity is closed in `user_identity_history` (valid_until = now()).
+3. `profiles.identity_version` is incremented.
+4. Profile is updated with new person's `full_name`, `role`, and optionally `organization_id`.
+5. Auth email is updated server-side via `admin.auth.admin.updateUserById`.
+6. Auth ban is removed (account re-enabled).
+7. Password setup link is sent to the new email.
+8. All old operations retain their snapshot from before recycling; all new operations use the new identity.
+
+**Required permission:** `users.recycle` (dangerous; super_admin default true; all others false by default).
+
+**Partial-failure behavior:** Auth email is updated before DB changes. If DB changes fail after auth email update, the account remains suspended (still banned), and the admin can retry. The safest failure mode — no partial identity change is visible to users.
 
 ### 3.5 Hard Delete
 
