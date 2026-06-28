@@ -67,11 +67,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleLang  = () => setLangState(l => l === 'ar' ? 'en' : 'ar');
   const toggleTheme = () => setThemeState(t => t === 'dark' ? 'light' : 'dark');
 
-  // Sync <html> attributes for RTL/LTR + theme + lang.
+  // Sync <html> and <body> attributes for RTL/LTR + theme + lang.
   useEffect(() => {
+    const dir = lang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    document.documentElement.setAttribute('dir', dir);
     document.documentElement.setAttribute('lang', lang);
+    document.body.setAttribute('dir', dir);
   }, [lang, theme]);
 
   // Load profile for a session, pinning org scope for non-super_admin roles.

@@ -37,7 +37,8 @@ button { cursor: pointer; }
 /* Animations */
 @keyframes fs   { from { opacity: 0; transform: translateY(8px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes su   { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes si   { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes si     { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes si-rtl { from { opacity: 0; transform: translateX(20px); }  to { opacity: 1; transform: translateX(0); } }
 @keyframes bp   { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
 @keyframes fl   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 @keyframes spin { to { transform: rotate(360deg); } }

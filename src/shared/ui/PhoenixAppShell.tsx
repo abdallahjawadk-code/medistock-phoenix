@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout }: Props) {
-  const { lang } = useApp();
+  const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -32,9 +32,9 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_dash', lang);
 
   return (
-    <div style={{
+    <div dir={dir} style={{
       display: 'flex',
-      flexDirection: lang === 'ar' ? 'row-reverse' : 'row',
+      flexDirection: 'row',
       minHeight: '100dvh',
       position: 'relative',
     }}>

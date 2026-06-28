@@ -20,7 +20,7 @@ interface Props {
 }
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Props) {
-  const { lang } = useApp();
+  const { lang, dir } = useApp();
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',
@@ -30,6 +30,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
 
   return (
     <div
+      dir={dir}
       style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex' }}
       role="dialog"
       aria-modal="true"
@@ -46,7 +47,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
         gap: '2px',
         padding: '16px 8px',
         boxShadow: 'var(--sh-xl)',
-        animation: 'si .2s ease',
+        animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
         <div style={{ padding: '0 8px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '6px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
