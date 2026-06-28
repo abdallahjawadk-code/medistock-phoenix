@@ -55,29 +55,108 @@ export async function listUsers(orgId?: string | null): Promise<ManagedUser[]> {
   });
 }
 
+// ── Permission matrix readiness (PERMISSION-MATRIX-010-GUARD-FIX-A) ──────────
+//
+// IMPORTANT: a Postgrest/RPC `error` can mean many things — a genuinely
+// missing table/RPC (migration 010 not applied), a transient network
+// failure, an RLS denial, or an unrelated runtime bug introduced by a later
+// migration. Earlier code collapsed ALL of these into "migration 010
+// missing", which falsely blocked editing even when the DB capability was
+// fully present (migrations 011-016 had already been applied on top of it).
+// These two classifiers narrow "migration missing" down to its true,
+// specific signatures only — every other failure surfaces as a distinct,
+// honest error instead.
+
+interface RpcErrorLike { code?: string; message?: string }
+
+/** True only for Postgrest "relation does not exist" (table truly missing). */
+function isMissingRelationError(error: RpcErrorLike): boolean {
+  return error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '');
+}
+
+/** True only for Postgrest "function not found" (RPC truly missing). */
+function isMissingFunctionError(error: RpcErrorLike): boolean {
+  return error.code === 'PGRST202' || error.code === '42883'
+    || /could not find the function|function .* does not exist/i.test(error.message ?? '');
+}
+
+export interface PermissionMatrixReadiness {
+  ready: boolean;
+  /** Only set when ready is false. */
+  reason?: 'NOT_CONFIGURED' | 'TABLES_MISSING' | 'RPC_MISSING' | 'UNKNOWN_ERROR';
+}
+
+/**
+ * Lightweight, read-only probe of whether the permission-matrix DB
+ * capability (permission_keys, role_permission_defaults,
+ * profile_permission_overrides, get_effective_permissions) actually exists.
+ * Never assumes "migration 010 missing" just because some other call
+ * failed — this is the one place that tests real DB capability directly.
+ * Never writes data. Safe to call at any time.
+ */
+export async function checkPermissionMatrixReady(profileId?: string): Promise<PermissionMatrixReadiness> {
+  if (!supabaseConfigured) return { ready: false, reason: 'NOT_CONFIGURED' };
+
+  try {
+    const [pk, rpd, ppo] = await Promise.all([
+      supabase.from('permission_keys').select('key').limit(1),
+      supabase.from('role_permission_defaults').select('role').limit(1),
+      supabase.from('profile_permission_overrides').select('profile_id').limit(1),
+    ]);
+    const tableError = pk.error ?? rpd.error ?? ppo.error;
+    if (tableError) {
+      return { ready: false, reason: isMissingRelationError(tableError) ? 'TABLES_MISSING' : 'UNKNOWN_ERROR' };
+    }
+
+    // A bogus (but well-formed) profile id is a safe, non-mutating probe:
+    // if the RPC exists, it returns { ok: false, error: 'TARGET_NOT_FOUND' }
+    // (a normal JSON response, no Postgrest error) rather than a real error.
+    const probeId = profileId ?? '00000000-0000-0000-0000-000000000000';
+    const { error: rpcError } = await supabase.rpc('get_effective_permissions', { p_profile_id: probeId });
+    if (rpcError) {
+      return { ready: false, reason: isMissingFunctionError(rpcError) ? 'RPC_MISSING' : 'UNKNOWN_ERROR' };
+    }
+
+    return { ready: true };
+  } catch {
+    return { ready: false, reason: 'UNKNOWN_ERROR' };
+  }
+}
+
 export interface EffectivePermissionsResult {
   permissions: Record<string, boolean> | null;
-  /** True when migration 010 / the RPC is not yet applied. */
+  /** True only when the permission-matrix RPC is genuinely missing (true migration gap). */
   migrationMissing: boolean;
+  /** Set when permissions could not be loaded for a reason OTHER than a missing migration. */
+  loadError?: 'NOT_CONFIGURED' | 'NETWORK_ERROR' | 'UNKNOWN_ERROR';
 }
 
 /** Read effective permissions for a profile via the scoped RPC (graceful). */
 export async function getEffectivePermissions(profileId: string): Promise<EffectivePermissionsResult> {
-  if (!supabaseConfigured) return { permissions: null, migrationMissing: false };
+  if (!supabaseConfigured) return { permissions: null, migrationMissing: false, loadError: 'NOT_CONFIGURED' };
 
-  const { data, error } = await supabase.rpc('get_effective_permissions', { p_profile_id: profileId });
-  if (error) return { permissions: null, migrationMissing: true };
+  try {
+    const { data, error } = await supabase.rpc('get_effective_permissions', { p_profile_id: profileId });
+    if (error) {
+      if (isMissingFunctionError(error)) return { permissions: null, migrationMissing: true };
+      return { permissions: null, migrationMissing: false, loadError: 'UNKNOWN_ERROR' };
+    }
 
-  const res = data as { ok: boolean; permissions?: Record<string, boolean>; error?: string };
-  if (!res?.ok) return { permissions: null, migrationMissing: false };
-  return { permissions: res.permissions ?? {}, migrationMissing: false };
+    const res = data as { ok: boolean; permissions?: Record<string, boolean>; error?: string };
+    if (!res?.ok) return { permissions: null, migrationMissing: false };
+    return { permissions: res.permissions ?? {}, migrationMissing: false };
+  } catch {
+    return { permissions: null, migrationMissing: false, loadError: 'NETWORK_ERROR' };
+  }
 }
 
 export interface AssignPermissionsResult {
   ok: boolean;
   applied?: number;
   rejected?: { key: string; error: string }[];
+  /** 'MIGRATION_MISSING' | 'SAVE_FAILED' | 'NETWORK_ERROR' | 'NOT_CONFIGURED' | an RPC business-logic error code. */
   error?: string;
+  /** True only when the permission-matrix RPC is genuinely missing (true migration gap). */
   migrationMissing?: boolean;
 }
 
@@ -86,24 +165,39 @@ export async function assignProfilePermissions(
   profileId: string,
   overrides: OverrideMap,
 ): Promise<AssignPermissionsResult> {
-  if (!supabaseConfigured) throw new Error('Supabase not configured');
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
 
-  const { data, error } = await supabase.rpc('assign_profile_permissions', {
-    p_profile_id: profileId,
-    p_permissions: overrides,
-  });
-  if (error) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
-
-  return data as AssignPermissionsResult;
+  try {
+    const { data, error } = await supabase.rpc('assign_profile_permissions', {
+      p_profile_id: profileId,
+      p_permissions: overrides,
+    });
+    if (error) {
+      if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
+      // A real RPC exists but failed for some other reason (RLS, bad args,
+      // an unrelated runtime bug) — never misreport this as "migration missing".
+      return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
+    }
+    return data as AssignPermissionsResult;
+  } catch {
+    return { ok: false, error: 'NETWORK_ERROR' };
+  }
 }
 
 /** Reset a profile's overrides back to its role defaults. */
 export async function resetProfilePermissions(profileId: string): Promise<{ ok: boolean; cleared?: number; error?: string; migrationMissing?: boolean }> {
-  if (!supabaseConfigured) throw new Error('Supabase not configured');
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
 
-  const { data, error } = await supabase.rpc('reset_profile_permissions', { p_profile_id: profileId });
-  if (error) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
-  return data as { ok: boolean; cleared?: number };
+  try {
+    const { data, error } = await supabase.rpc('reset_profile_permissions', { p_profile_id: profileId });
+    if (error) {
+      if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
+      return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
+    }
+    return data as { ok: boolean; cleared?: number };
+  } catch {
+    return { ok: false, error: 'NETWORK_ERROR' };
+  }
 }
 
 // ── User creation (secure Edge Function path only) ───────────────────────────

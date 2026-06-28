@@ -47,6 +47,23 @@ function statusLabel(status: string, lang: 'ar' | 'en'): string {
   return t('um_inactive', lang);
 }
 
+/**
+ * Maps an assign/reset permission RPC result to the correct toast message.
+ * PERMISSION-MATRIX-010-GUARD-FIX-A: only a genuinely missing RPC ever shows
+ * the migration-010 message; every other failure gets an honest, distinct
+ * message instead (save/RLS failure vs. network/config issue).
+ */
+function permissionResultMessage(
+  res: { ok: boolean; migrationMissing?: boolean; error?: string },
+  lang: 'ar' | 'en',
+  successKey: string,
+): string {
+  if (res.ok) return t(successKey, lang);
+  if (res.migrationMissing) return t('um_perm_unavailable', lang);
+  if (res.error === 'NOT_CONFIGURED' || res.error === 'NETWORK_ERROR') return t('um_perm_network_error', lang);
+  return t('um_perm_save_failed', lang);
+}
+
 export function UserManagementScreen() {
   const { lang, role, activeOrgId, profile, myPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
@@ -282,7 +299,12 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   const [busy, setBusy]         = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // migrationMissing means the permission-matrix RPC is genuinely absent
+  // (a true migration gap). loadError covers every other reason the read
+  // failed (network, RLS, an unrelated runtime error) — neither case may be
+  // misreported as the other (PERMISSION-MATRIX-010-GUARD-FIX-A).
   const migrationMissing = eff.data?.migrationMissing ?? false;
+  const loadError = eff.data?.loadError;
   const initialEff: Record<string, boolean> = (() => {
     if (eff.data?.permissions) return eff.data.permissions;
     const out: Record<string, boolean> = {};
@@ -291,7 +313,10 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   })();
 
   const current  = draft ?? initialEff;
-  const readOnly = !canManage || migrationMissing;
+  // Read-only whenever we don't have confirmed DB data to edit against —
+  // editing on top of a synthesized role-default fallback would silently
+  // discard any real overrides the read failed to fetch.
+  const readOnly = !canManage || migrationMissing || !!loadError;
 
   // Diff the actor's DB-backed effective permissions against their role
   // defaults so the client-side grant-authority pre-check (validateOverrides)
@@ -332,12 +357,12 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
     setBusy(true);
     try {
       const res = await assignProfilePermissions(user.id, overrides);
-      if (res.migrationMissing) { onToast(t('um_perm_unavailable', lang)); return; }
-      if (!res.ok) { onToast(t('um_cannot_grant', lang)); return; }
-      onToast(t('um_saved', lang));
-      setDraft(null);
-      eff.reload();
-    } catch { onToast(t('load_error', lang)); }
+      onToast(permissionResultMessage(res, lang, 'um_saved'));
+      if (res.ok) {
+        setDraft(null);
+        eff.reload();
+      }
+    } catch { onToast(t('um_perm_network_error', lang)); }
     finally { setBusy(false); }
   }
 
@@ -345,11 +370,12 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
     setBusy(true);
     try {
       const res = await resetProfilePermissions(user.id);
-      if (res.migrationMissing) { onToast(t('um_perm_unavailable', lang)); return; }
-      onToast(t('um_reset_done', lang));
-      setDraft(null);
-      eff.reload();
-    } catch { onToast(t('load_error', lang)); }
+      onToast(permissionResultMessage(res, lang, 'um_reset_done'));
+      if (res.ok) {
+        setDraft(null);
+        eff.reload();
+      }
+    } catch { onToast(t('um_perm_network_error', lang)); }
     finally { setBusy(false); }
   }
 
@@ -369,6 +395,11 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
       {migrationMissing && (
         <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
           ⚠ {t('um_perm_unavailable', lang)}
+        </div>
+      )}
+      {!migrationMissing && loadError && (
+        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
+          ⚠ {t(loadError === 'UNKNOWN_ERROR' ? 'load_error' : 'um_perm_network_error', lang)}
         </div>
       )}
 
