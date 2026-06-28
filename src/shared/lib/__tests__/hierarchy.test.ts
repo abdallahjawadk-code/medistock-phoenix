@@ -255,6 +255,90 @@ describe('Migration 005: assign_profile_role RPC security', () => {
   });
 });
 
+describe('Port QR lifecycle: safety checks', () => {
+  const screen = readSrc('features/institutions/InstitutionScreen.tsx');
+  const whService = readSrc('shared/supabase/services/warehouses.service.ts');
+  const qrService = readSrc('shared/supabase/services/qr.service.ts');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('create port calls createDistributionPoint then createQrForTarget', () => {
+    expect(screen).toContain('createDistributionPoint');
+    expect(screen).toContain('createQrForTarget');
+  });
+
+  it('create port handles QR failure gracefully without rollback', () => {
+    expect(screen).toContain('qr_gen_failed');
+  });
+
+  it('QR revoke does not archive or delete port', () => {
+    expect(screen).toContain('manual_revoke');
+    const revokeBlock = screen.slice(
+      screen.indexOf('async function onRevokeQr'),
+      screen.indexOf('}', screen.indexOf("setBusy(null)", screen.indexOf('async function onRevokeQr')) + 1) + 1,
+    );
+    expect(revokeBlock).not.toContain('archiveEntity');
+    expect(revokeBlock).not.toContain('distribution_points');
+  });
+
+  it('archive port revokes QR first, then archives', () => {
+    const archiveBlock = screen.slice(
+      screen.indexOf('async function onArchivePort'),
+      screen.indexOf('}', screen.indexOf("setArchiveReason('')") + 1) + 1,
+    );
+    const qrDisableIdx = archiveBlock.indexOf('disableQrToken');
+    const archiveIdx = archiveBlock.indexOf('archiveEntity');
+    expect(qrDisableIdx).toBeGreaterThan(-1);
+    expect(archiveIdx).toBeGreaterThan(qrDisableIdx);
+  });
+
+  it('regenerate QR does not modify port entity', () => {
+    expect(qrService).toContain('regenerateQrForPoint');
+    const regenFn = qrService.slice(
+      qrService.indexOf('async function regenerateQrForPoint'),
+      qrService.indexOf('}', qrService.indexOf('return { ok:', qrService.indexOf('regenerateQrForPoint')) + 1) + 1,
+    );
+    expect(regenFn).not.toContain('distribution_points');
+    expect(regenFn).toContain('disableQrToken');
+    expect(regenFn).toContain('createQrForTarget');
+  });
+
+  it('no raw .delete() on distribution_points in warehouses service', () => {
+    expect(whService).not.toMatch(/\.from\(['"]distribution_points['"]\)\s*\.\s*delete/);
+  });
+
+  it('no raw .delete() on distribution_points in InstitutionScreen', () => {
+    expect(screen).not.toMatch(/\.from\(['"]distribution_points['"]\)\s*\.\s*delete/);
+  });
+
+  it('uses archiveEntity RPC (not raw delete) for port archival', () => {
+    expect(screen).toContain('archiveEntity');
+    expect(screen).toContain("'distribution_point'");
+  });
+
+  it('bilingual QR safety messages exist', () => {
+    expect(strings).toContain('port_revoke_safe');
+    expect(strings).toContain('port_archive_warn');
+    expect(strings).toContain('port_archive_deps');
+    expect(strings).toContain('qr_confirm_regenerate');
+    expect(strings).toContain('qr_confirm_revoke');
+  });
+
+  it('QR URLs use dir="ltr"', () => {
+    expect(screen).toMatch(/dir="ltr"[\s\S]*?publicUrl/);
+  });
+
+  it('confirmation dialogs exist for regenerate, revoke, archive', () => {
+    expect(screen).toContain("confirmAction === 'regenerate'");
+    expect(screen).toContain("confirmAction === 'revoke'");
+    expect(screen).toContain("confirmAction === 'archive'");
+  });
+
+  it('viewer cannot mutate ports (canMutate requires admin or warehouse_manager)', () => {
+    expect(screen).toContain('isAdminRole(actorRole)');
+    expect(screen).toContain("actorRole === 'warehouse_manager'");
+  });
+});
+
 describe('Disabled modules remain disabled', () => {
   const frozen = readSrc('features/health/IntakeFrozenScreen.tsx');
 

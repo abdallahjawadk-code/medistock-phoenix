@@ -246,6 +246,45 @@ export const T: Dict = {
   suspended:        { ar: 'معلق',                               en: 'Suspended' },
   archived:         { ar: 'مؤرشف',                              en: 'Archived' },
 
+  /* ── Port / Distribution Point Management ── */
+  port_add:           { ar: 'إضافة منفذ',                        en: 'Add Port' },
+  port_edit:          { ar: 'تعديل المنفذ',                      en: 'Edit Port' },
+  port_name_en:       { ar: 'اسم المنفذ (إنجليزي)',              en: 'Port Name (English)' },
+  port_name_ar:       { ar: 'اسم المنفذ (عربي)',                 en: 'Port Name (Arabic)' },
+  port_type:          { ar: 'نوع المنفذ',                        en: 'Port Type' },
+  port_warehouse:     { ar: 'المستودع',                          en: 'Warehouse' },
+  port_created:       { ar: 'تم إنشاء المنفذ بنجاح',             en: 'Port created successfully' },
+  port_updated:       { ar: 'تم تحديث المنفذ بنجاح',             en: 'Port updated successfully' },
+  port_archived:      { ar: 'تم أرشفة المنفذ بنجاح',             en: 'Port archived successfully' },
+  port_type_dispensing: { ar: 'توزيع',                           en: 'Dispensing' },
+  port_type_storage:    { ar: 'تخزين',                           en: 'Storage' },
+  port_type_returns:    { ar: 'مرتجعات',                         en: 'Returns' },
+  port_type_emergency:  { ar: 'طوارئ',                           en: 'Emergency' },
+  port_select_wh:     { ar: 'اختر المستودع',                     en: 'Select Warehouse' },
+  port_no_wh:         { ar: 'لا توجد مستودعات — أنشئ مستودعاً أولاً', en: 'No warehouses — create one first' },
+
+  /* ── QR Lifecycle ── */
+  qr_generate:        { ar: 'إنشاء QR',                         en: 'Generate QR' },
+  qr_regenerate:      { ar: 'إعادة إنشاء QR',                   en: 'Regenerate QR' },
+  qr_revoke:          { ar: 'إلغاء QR',                         en: 'Revoke QR' },
+  qr_view:            { ar: 'عرض QR',                            en: 'View QR' },
+  qr_generated:       { ar: 'تم إنشاء QR بنجاح',                en: 'QR generated successfully' },
+  qr_regenerated:     { ar: 'تم إعادة إنشاء QR بنجاح',          en: 'QR regenerated successfully' },
+  qr_revoked:         { ar: 'تم إلغاء QR بنجاح',                en: 'QR revoked successfully' },
+  qr_gen_failed:      { ar: 'فشل إنشاء QR — يمكنك المحاولة يدوياً', en: 'QR generation failed — you can retry manually' },
+  qr_confirm_regenerate: { ar: 'هل تريد إعادة إنشاء QR؟ سيتم إلغاء الرمز الحالي.', en: 'Regenerate QR? The current code will be revoked.' },
+  qr_confirm_revoke:  { ar: 'هل تريد إلغاء QR؟ لن يتم حذف المنفذ.', en: 'Revoke QR? The port will not be deleted.' },
+  qr_url:             { ar: 'رابط QR',                           en: 'QR URL' },
+  qr_copied:          { ar: 'تم نسخ الرابط',                     en: 'Link copied' },
+  qr_no_token:        { ar: 'لا يوجد QR نشط',                    en: 'No active QR' },
+
+  /* ── Port Safety Messages ── */
+  port_revoke_safe:   { ar: 'حذف QR لا يحذف المنفذ',            en: 'Revoking QR does not delete the port.' },
+  port_archive_warn:  { ar: 'أرشفة المنفذ تعطل QR المرتبط أولًا', en: 'Archiving the port revokes its linked QR first.' },
+  port_archive_deps:  { ar: 'لا يمكن حذف منفذ مرتبط بسجلات تشغيلية؛ سيتم استخدام الأرشفة الآمنة إن أمكن', en: 'A port with operational records cannot be hard-deleted; safe archiving will be used when available.' },
+  port_confirm_archive: { ar: 'هل تريد أرشفة هذا المنفذ؟', en: 'Archive this port?' },
+  port_archive_reason:  { ar: 'سبب الأرشفة',                    en: 'Archive Reason' },
+
   /* ── Roles ── */
   role_super_admin:       { ar: 'مدير عام',                     en: 'Super Admin' },
   role_hospital_admin:    { ar: 'مدير مؤسسة',                   en: 'Institution Admin' },

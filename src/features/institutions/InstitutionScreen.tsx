@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
-import { canManageOrg, canAssignRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
+import { canManageOrg, canAssignRole, isAdminRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
 import type { Role } from '@/shared/lib/types';
 import {
   getOrganizations,
@@ -14,13 +14,27 @@ import {
   type OrgRow,
   type OrgProfileRow,
 } from '@/shared/supabase/services/organizations.service';
-import { getWarehouses, getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
+import {
+  getWarehouses,
+  getPointsByOrg,
+  createDistributionPoint,
+  type DistributionPoint,
+  type PointType,
+} from '@/shared/supabase/services/warehouses.service';
+import {
+  createQrForTarget,
+  disableQrToken,
+  getQrForPoint,
+  regenerateQrForPoint,
+} from '@/shared/supabase/services/qr.service';
+import { archiveEntity } from '@/shared/supabase/services/lifecycle.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 
 const ROLE_LABEL_KEY: Record<Role, string> = {
@@ -420,6 +434,20 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
           </div>
         )}
       </div>
+
+      {/* Ports section */}
+      <PortSection
+        lang={lang}
+        isMobile={isMobile}
+        orgId={orgId}
+        actorRole={actorRole}
+        warehouses={warehouses.data ?? []}
+        points={points.data ?? []}
+        pointsLoading={points.loading}
+        pointsError={points.error}
+        onReload={() => { points.reload(); warehouses.reload(); }}
+        onToast={onToast}
+      />
     </div>
   );
 }
@@ -594,6 +622,390 @@ function UserRow({ user, lang, actorRole, canEditRoles, onRoleChanged }: {
           </div>
         )}
       </div>
+    </PhoenixCard>
+  );
+}
+
+/* ── Port / Distribution Point Section ── */
+
+const POINT_TYPES: { value: PointType; labelKey: string }[] = [
+  { value: 'dispensing', labelKey: 'port_type_dispensing' },
+  { value: 'storage',   labelKey: 'port_type_storage' },
+  { value: 'returns',   labelKey: 'port_type_returns' },
+  { value: 'emergency', labelKey: 'port_type_emergency' },
+];
+
+function pointDisplayName(p: DistributionPoint, lang: 'ar' | 'en'): string {
+  if (lang === 'ar') return p.name_ar || p.name;
+  return p.name || p.name_ar;
+}
+
+function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, pointsLoading, pointsError, onReload, onToast }: {
+  lang: 'ar' | 'en';
+  isMobile: boolean;
+  orgId: string;
+  actorRole: Role;
+  warehouses: { id: string; name: string; name_ar: string }[];
+  points: DistributionPoint[];
+  pointsLoading: boolean;
+  pointsError: string | null;
+  onReload: () => void;
+  onToast: (msg: string) => void;
+}) {
+  const canMutate = isAdminRole(actorRole) || actorRole === 'warehouse_manager';
+  const [showAdd, setShowAdd] = useState(false);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
+        {canMutate && warehouses.length > 0 && (
+          <PhoenixButton variant="primary" size="sm" onClick={() => setShowAdd(true)}>
+            + {t('port_add', lang)}
+          </PhoenixButton>
+        )}
+      </div>
+
+      {warehouses.length === 0 && (
+        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--warn)' }}>
+          ⚠ {t('port_no_wh', lang)}
+        </div>
+      )}
+
+      {/* Safety notice */}
+      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <span>🔒 {t('port_revoke_safe', lang)}</span>
+        <span>📋 {t('port_archive_warn', lang)}</span>
+        <span>⚠ {t('port_archive_deps', lang)}</span>
+      </div>
+
+      {showAdd && (
+        <AddPortForm
+          lang={lang}
+          orgId={orgId}
+          warehouses={warehouses}
+          onCreated={() => { setShowAdd(false); onReload(); }}
+          onCancel={() => setShowAdd(false)}
+          onToast={onToast}
+        />
+      )}
+
+      {pointsLoading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {!pointsLoading && pointsError && <PhoenixErrorState title={t('load_error', lang)} message={pointsError} onRetry={onReload} />}
+      {!pointsLoading && !pointsError && points.length === 0 && !showAdd && (
+        <PhoenixEmptyState icon="📍" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
+      )}
+
+      {!pointsLoading && !pointsError && points.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '10px' }}>
+          {points.map(pt => (
+            <PortCard
+              key={pt.id}
+              point={pt}
+              lang={lang}
+              actorRole={actorRole}
+              canMutate={canMutate}
+              warehouses={warehouses}
+              onReload={onReload}
+              onToast={onToast}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Add Port Form ── */
+
+function AddPortForm({ lang, orgId, warehouses, onCreated, onCancel, onToast }: {
+  lang: 'ar' | 'en';
+  orgId: string;
+  warehouses: { id: string; name: string; name_ar: string }[];
+  onCreated: () => void;
+  onCancel: () => void;
+  onToast: (msg: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [nameAr, setNameAr] = useState('');
+  const [whId, setWhId] = useState(warehouses[0]?.id ?? '');
+  const [ptType, setPtType] = useState<PointType>('dispensing');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit = name.trim() && nameAr.trim() && whId;
+
+  async function onSubmit() {
+    if (!canSubmit) { setError(t('inst_required', lang)); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const pt = await createDistributionPoint({
+        warehouseId: whId, organizationId: orgId,
+        name: name.trim(), name_ar: nameAr.trim(), pointType: ptType,
+      });
+      try {
+        await createQrForTarget('distribution_point', pt.id, pt.name);
+        onToast(t('port_created', lang) + ' + ' + t('qr_generated', lang));
+      } catch {
+        onToast(t('port_created', lang) + ' — ' + t('qr_gen_failed', lang));
+      }
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('load_error', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <PhoenixCard padding="18px" style={{ marginBottom: '14px' }}>
+      <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px' }}>{t('port_add', lang)}</h4>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_name_en', lang)} *</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)} style={fieldStyle} dir="ltr" />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_name_ar', lang)} *</label>
+          <input type="text" value={nameAr} onChange={e => setNameAr(e.target.value)} style={fieldStyle} dir="rtl" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_warehouse', lang)} *</label>
+            <select value={whId} onChange={e => setWhId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{lang === 'ar' ? w.name_ar : w.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_type', lang)}</label>
+            <select value={ptType} onChange={e => setPtType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+              {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+            </select>
+          </div>
+        </div>
+        {error && <p style={{ fontSize: '12px', color: 'var(--err)' }}>{error}</p>}
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <PhoenixButton variant="ghost" size="sm" onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
+            {t('inst_save', lang)}
+          </PhoenixButton>
+        </div>
+      </div>
+    </PhoenixCard>
+  );
+}
+
+/* ── Port Card with QR Actions ── */
+
+function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onToast }: {
+  point: DistributionPoint;
+  lang: 'ar' | 'en';
+  actorRole: Role;
+  canMutate: boolean;
+  warehouses: { id: string; name: string; name_ar: string }[];
+  onReload: () => void;
+  onToast: (msg: string) => void;
+}) {
+  const [qr, setQr] = useState<{ tokenId: string; publicId: string } | null | undefined>(undefined);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'regenerate' | 'revoke' | 'archive' | null>(null);
+  const [archiveReason, setArchiveReason] = useState('');
+
+  const wh = warehouses.find(w => w.id === point.warehouseId);
+  const whName = wh ? (lang === 'ar' ? wh.name_ar : wh.name) : '—';
+  const ptTypeKey = POINT_TYPES.find(p => p.value === point.pointType)?.labelKey;
+
+  useState(() => {
+    getQrForPoint(point.id).then(r => setQr(r)).catch(() => setQr(null));
+  });
+
+  const publicUrl = qr?.publicId ? `${window.location.origin}/?qid=${qr.publicId}` : null;
+
+  async function onGenerateQr() {
+    setBusy('generate');
+    try {
+      const res = await createQrForTarget('distribution_point', point.id, point.name);
+      setQr({ tokenId: res.token_id, publicId: res.public_id });
+      onToast(t('qr_generated', lang));
+    } catch {
+      onToast(t('qr_gen_failed', lang));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onRegenerateQr() {
+    setConfirmAction(null);
+    setBusy('regenerate');
+    try {
+      const res = await regenerateQrForPoint(point.id, point.name);
+      setQr({ tokenId: '', publicId: res.public_id });
+      onToast(t('qr_regenerated', lang));
+      onReload();
+    } catch {
+      onToast(t('load_error', lang));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onRevokeQr() {
+    setConfirmAction(null);
+    if (!qr?.tokenId) return;
+    setBusy('revoke');
+    try {
+      await disableQrToken(qr.tokenId, 'manual_revoke');
+      setQr(null);
+      onToast(t('qr_revoked', lang));
+      onReload();
+    } catch {
+      onToast(t('load_error', lang));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onArchivePort() {
+    setConfirmAction(null);
+    setBusy('archive');
+    try {
+      if (qr?.tokenId) {
+        await disableQrToken(qr.tokenId, 'port_archived');
+      }
+      await archiveEntity('distribution_point', point.id, archiveReason || 'archived_via_ui');
+      setQr(null);
+      onToast(t('port_archived', lang));
+      onReload();
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : t('load_error', lang));
+    } finally {
+      setBusy(null);
+      setArchiveReason('');
+    }
+  }
+
+  async function onCopyUrl() {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      onToast(t('qr_copied', lang));
+    } catch { /* clipboard not available */ }
+  }
+
+  return (
+    <PhoenixCard padding="14px">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {pointDisplayName(point, lang)}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>
+            {whName} · {ptTypeKey ? t(ptTypeKey, lang) : point.pointType}
+          </div>
+        </div>
+        <PhoenixStatusBadge variant={point.status === 'active' ? 'ok' : 'neutral'} label={statusLabel(point.status, lang)} />
+      </div>
+
+      {/* QR status */}
+      {qr === undefined && (
+        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>{t('loading', lang)}</div>
+      )}
+      {qr === null && (
+        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>📱 {t('qr_no_token', lang)}</div>
+      )}
+      {qr && publicUrl && (
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginBottom: '3px' }}>{t('qr_url', lang)}:</div>
+          <div
+            onClick={onCopyUrl}
+            style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--p)', cursor: 'pointer', wordBreak: 'break-all', lineHeight: 1.4 }}
+            dir="ltr"
+            title={t('qr_copied', lang)}
+          >
+            {publicUrl}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      {canMutate && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+          {!qr && qr !== undefined && (
+            <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
+              📱 {t('qr_generate', lang)}
+            </PhoenixButton>
+          )}
+          {qr && (
+            <>
+              <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
+                🔄 {t('qr_regenerate', lang)}
+              </PhoenixButton>
+              <PhoenixButton variant="warn" size="sm" loading={busy === 'revoke'} onClick={() => setConfirmAction('revoke')}>
+                🚫 {t('qr_revoke', lang)}
+              </PhoenixButton>
+            </>
+          )}
+          {isAdminRole(actorRole) && (
+            <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
+              📦 {t('archived', lang)}
+            </PhoenixButton>
+          )}
+        </div>
+      )}
+
+      {/* Confirmation dialogs */}
+      <PhoenixDialog
+        open={confirmAction === 'regenerate'}
+        onClose={() => setConfirmAction(null)}
+        title={t('qr_regenerate', lang)}
+      >
+        <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '16px', lineHeight: 1.6 }}>
+          {t('qr_confirm_regenerate', lang)}
+        </p>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} onClick={onRegenerateQr}>{t('qr_regenerate', lang)}</PhoenixButton>
+        </div>
+      </PhoenixDialog>
+
+      <PhoenixDialog
+        open={confirmAction === 'revoke'}
+        onClose={() => setConfirmAction(null)}
+        title={t('qr_revoke', lang)}
+      >
+        <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '8px', lineHeight: 1.6 }}>
+          {t('qr_confirm_revoke', lang)}
+        </p>
+        <p style={{ fontSize: '12px', color: 'var(--ok)', fontWeight: 600, marginBottom: '16px' }}>
+          🔒 {t('port_revoke_safe', lang)}
+        </p>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onRevokeQr}>🚫 {t('qr_revoke', lang)}</PhoenixButton>
+        </div>
+      </PhoenixDialog>
+
+      <PhoenixDialog
+        open={confirmAction === 'archive'}
+        onClose={() => setConfirmAction(null)}
+        title={t('port_confirm_archive', lang)}
+      >
+        <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '8px', lineHeight: 1.6 }}>
+          {t('port_confirm_archive', lang)}
+        </p>
+        <p style={{ fontSize: '12px', color: 'var(--warn)', fontWeight: 600, marginBottom: '12px' }}>
+          ⚠ {t('port_archive_warn', lang)}
+        </p>
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_archive_reason', lang)}</label>
+          <input type="text" value={archiveReason} onChange={e => setArchiveReason(e.target.value)} style={fieldStyle} dir="auto" />
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onArchivePort}>📦 {t('port_archived', lang)}</PhoenixButton>
+        </div>
+      </PhoenixDialog>
     </PhoenixCard>
   );
 }

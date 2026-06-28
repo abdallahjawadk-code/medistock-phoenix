@@ -41,6 +41,39 @@ export async function disableQrToken(tokenId: string, reason = 'manual_disable')
   return data as { ok: boolean };
 }
 
+export async function getQrForPoint(pointId: string): Promise<{
+  tokenId: string; publicId: string; status: string;
+} | null> {
+  if (!supabaseConfigured) return null;
+
+  const { data, error } = await supabase
+    .from('qr_tokens')
+    .select('id, public_id, status, qr_targets!inner( target_type, target_id )')
+    .eq('qr_targets.target_type', 'distribution_point')
+    .eq('qr_targets.target_id', pointId)
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return { tokenId: data.id, publicId: data.public_id, status: data.status };
+}
+
+export async function regenerateQrForPoint(pointId: string, label?: string): Promise<{
+  ok: boolean; public_id: string;
+}> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const existing = await getQrForPoint(pointId);
+  if (existing) {
+    await disableQrToken(existing.tokenId, 'regenerated');
+  }
+
+  const result = await createQrForTarget('distribution_point', pointId, label);
+  return { ok: result.ok, public_id: result.public_id };
+}
+
 export async function getQrTokensByOrg(orgId: string): Promise<QrToken[]> {
   if (!supabaseConfigured) return [];
 
