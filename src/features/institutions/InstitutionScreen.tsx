@@ -27,7 +27,13 @@ import {
   getQrForPoint,
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
-import { archiveEntity } from '@/shared/supabase/services/lifecycle.service';
+import {
+  archiveEntity,
+  getEntityPurgeImpact,
+  getOrgDeleteImpact,
+  clearPortAvailability,
+  archiveOrganization,
+} from '@/shared/supabase/services/lifecycle.service';
 import { getAvailabilityByPoint, upsertAvailability } from '@/shared/supabase/services/availability.service';
 import { getLocalItems } from '@/shared/supabase/services/registry.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
@@ -449,6 +455,15 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
         pointsLoading={points.loading}
         pointsError={points.error}
         onReload={() => { points.reload(); warehouses.reload(); }}
+        onToast={onToast}
+      />
+
+      {/* Organization cleanup wizard */}
+      <OrgCleanupWizard
+        orgId={orgId}
+        lang={lang}
+        actorRole={actorRole}
+        onDone={() => { org.reload(); warehouses.reload(); points.reload(); }}
         onToast={onToast}
       />
     </div>
@@ -977,6 +992,11 @@ function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onT
         onToast={onToast}
       />
 
+      {/* Port cleanup wizard */}
+      {canMutate && isAdminRole(actorRole) && (
+        <PortCleanupWizard pointId={point.id} lang={lang} onDone={onReload} onToast={onToast} />
+      )}
+
       {/* Confirmation dialogs */}
       <PhoenixDialog
         open={confirmAction === 'regenerate'}
@@ -1208,6 +1228,215 @@ function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
           {t('inst_save', lang)}
         </PhoenixButton>
       </div>
+    </div>
+  );
+}
+
+/* ── Port Cleanup Wizard ── */
+
+function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
+  pointId: string;
+  lang: 'ar' | 'en';
+  onDone: () => void;
+  onToast: (msg: string) => void;
+}) {
+  const impact = useAsync(() => getEntityPurgeImpact('distribution_point', pointId), [pointId]);
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const d = impact.data as { ok?: boolean; item_availability?: number; qr_tokens?: number } | null;
+  const itemCount = d?.item_availability ?? 0;
+  const qrCount = d?.qr_tokens ?? 0;
+  const hasItems = itemCount > 0;
+  const phrase = 'CLEAR PORT ITEMS';
+
+  async function onClearItems() {
+    if (confirm !== phrase) return;
+    setBusy(true);
+    try {
+      await clearPortAvailability(pointId);
+      onToast(t('dw_cleared', lang));
+      setConfirm('');
+      impact.reload();
+      onDone();
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : t('load_error', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
+      <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)', marginBottom: '8px' }}>
+        🗑️ {t('dw_title', lang)}
+      </div>
+
+      {impact.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
+
+      {!impact.loading && d && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {/* Impact counts */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11px' }}>
+            <span style={{ color: itemCount > 0 ? 'var(--err)' : 'var(--ok)' }}>
+              📋 {itemCount} {t('dw_items_count', lang)}
+            </span>
+            <span style={{ color: qrCount > 0 ? 'var(--warn)' : 'var(--ok)' }}>
+              📱 {qrCount} {t('dw_qr_count', lang)}
+            </span>
+          </div>
+
+          {/* Safety warnings */}
+          <div style={{ fontSize: '10.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {hasItems && <span>⚠ {t('dw_clear_items_warn', lang)}</span>}
+            {qrCount > 0 && <span>📱 {t('dw_revoke_qr_warn', lang)}</span>}
+            <span>🔒 {t('dw_revoke_qr_safe', lang)}</span>
+            <span>📦 {t('dw_archive_safe', lang)}</span>
+          </div>
+
+          {/* Clear items action */}
+          {hasItems && (
+            <div style={{ marginTop: '4px' }}>
+              <label style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>
+                {t('dw_confirm_label', lang)}: <code dir="ltr" style={{ fontWeight: 700 }}>{phrase}</code>
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text" dir="ltr" value={confirm} onChange={e => setConfirm(e.target.value)}
+                  placeholder={phrase}
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '11px', fontFamily: 'monospace' }}
+                />
+                <PhoenixButton variant="warn" size="sm" loading={busy} disabled={confirm !== phrase} onClick={onClearItems}>
+                  {t('dw_clear_items', lang)}
+                </PhoenixButton>
+              </div>
+            </div>
+          )}
+
+          {!hasItems && (
+            <div style={{ fontSize: '10.5px', color: 'var(--ok)', fontWeight: 600 }}>
+              ✅ {t('dw_ready', lang)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Organization Cleanup Wizard ── */
+
+function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
+  orgId: string;
+  lang: 'ar' | 'en';
+  actorRole: string;
+  onDone: () => void;
+  onToast: (msg: string) => void;
+}) {
+  const impact = useAsync(() => getOrgDeleteImpact(orgId), [orgId]);
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const d = impact.data;
+  const phrase = 'ARCHIVE ORGANIZATION';
+  const isSuper = actorRole === 'super_admin';
+
+  async function onArchiveOrg() {
+    if (confirm !== phrase || !d?.canArchive) return;
+    setBusy(true);
+    try {
+      await archiveOrganization(orgId);
+      onToast(t('dw_org_archived', lang));
+      onDone();
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : t('load_error', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!isSuper) return null;
+
+  return (
+    <div style={{ marginTop: '16px' }}>
+      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>🗑️ {t('dw_title', lang)}</h3>
+
+      {impact.loading && <PhoenixLoadingState label={t('loading', lang)} />}
+
+      {!impact.loading && impact.error && (
+        <PhoenixErrorState title={t('load_error', lang)} message={impact.error} onRetry={impact.reload} />
+      )}
+
+      {!impact.loading && d && (
+        <PhoenixCard padding="16px">
+          <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '10px' }}>{t('dw_impact', lang)}</div>
+
+          {/* Impact grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px', fontSize: '11.5px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: d.activeWarehouses > 0 ? 'var(--err)' : 'var(--ok)' }}>{d.activeWarehouses}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_wh_count', lang)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: d.activePorts > 0 ? 'var(--err)' : 'var(--ok)' }}>{d.activePorts}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_ports_count', lang)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: d.activeQrTokens > 0 ? 'var(--warn)' : 'var(--ok)' }}>{d.activeQrTokens}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_qr_count', lang)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: d.availabilityRows > 0 ? 'var(--warn)' : 'var(--ok)' }}>{d.availabilityRows}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_items_count', lang)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700 }}>{d.activeStatusReports}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_reports_count', lang)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700 }}>{d.profiles}</div>
+              <div style={{ color: 'var(--t2)', fontSize: '10px' }}>{t('dw_users_count', lang)}</div>
+            </div>
+          </div>
+
+          {/* Warnings */}
+          <div style={{ fontSize: '11px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '12px', padding: '10px', background: 'var(--info2)', borderRadius: 'var(--r2)' }}>
+            {!d.canArchive && <span>🚫 {t('dw_org_blocked', lang)}</span>}
+            {d.profiles > 0 && <span>👥 {t('dw_users_safe', lang)}</span>}
+            <span>📦 {t('dw_archive_safe', lang)}</span>
+          </div>
+
+          {/* Status */}
+          {d.canArchive ? (
+            <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--ok)', fontWeight: 600 }}>
+              ✅ {t('dw_ready', lang)}
+            </div>
+          ) : (
+            <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--err)', fontWeight: 600 }}>
+              🚫 {t('dw_blocked', lang)}
+            </div>
+          )}
+
+          {/* Archive action */}
+          {d.canArchive && (
+            <div>
+              <label style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>
+                {t('dw_confirm_label', lang)}: <code dir="ltr" style={{ fontWeight: 700 }}>{phrase}</code>
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text" dir="ltr" value={confirm} onChange={e => setConfirm(e.target.value)}
+                  placeholder={phrase}
+                  style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontFamily: 'monospace' }}
+                />
+                <PhoenixButton variant="warn" size="md" loading={busy} disabled={confirm !== phrase} onClick={onArchiveOrg}>
+                  📦 {t('dw_org_archived', lang)}
+                </PhoenixButton>
+              </div>
+            </div>
+          )}
+        </PhoenixCard>
+      )}
     </div>
   );
 }

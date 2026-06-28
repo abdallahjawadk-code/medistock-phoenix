@@ -624,6 +624,120 @@ describe('Central Dashboard integration', () => {
   });
 });
 
+describe('Hierarchical deletion wizard: safety', () => {
+  const screen = readSrc('features/institutions/InstitutionScreen.tsx');
+  const lifecycle = readSrc('shared/supabase/services/lifecycle.service.ts');
+  const strings = readSrc('shared/i18n/strings.ts');
+  const sql = readPhoenix('supabase/migrations/007_phoenix_clear_port_availability.sql');
+
+  it('clear_port_availability RPC requires confirmation phrase', () => {
+    expect(sql).toContain('CLEAR_PORT_ITEMS_');
+    expect(sql).toContain('CONFIRMATION_MISMATCH');
+  });
+
+  it('clear_port_availability RPC checks auth.uid()', () => {
+    expect(sql).toContain('auth.uid()');
+    expect(sql).toContain('NOT_AUTHENTICATED');
+  });
+
+  it('clear_port_availability RPC enforces role', () => {
+    expect(sql).toContain('INSUFFICIENT_ROLE');
+    expect(sql).toContain("'super_admin', 'hospital_admin', 'warehouse_manager'");
+  });
+
+  it('clear_port_availability RPC enforces org scope', () => {
+    expect(sql).toContain('FORBIDDEN_ORG');
+  });
+
+  it('clear_port_availability RPC writes audit log', () => {
+    expect(sql).toContain('port_items_cleared');
+    expect(sql).toContain('audit_logs');
+  });
+
+  it('clear_port_availability RPC does NOT delete distribution_points', () => {
+    expect(sql).not.toMatch(/delete from distribution_points/i);
+  });
+
+  it('clear_port_availability RPC does NOT delete qr_tokens', () => {
+    expect(sql).not.toMatch(/delete from qr_tokens/i);
+  });
+
+  it('screen has PortCleanupWizard component', () => {
+    expect(screen).toContain('PortCleanupWizard');
+  });
+
+  it('screen has OrgCleanupWizard component', () => {
+    expect(screen).toContain('OrgCleanupWizard');
+  });
+
+  it('OrgCleanupWizard only renders for super_admin', () => {
+    expect(screen).toContain("if (!isSuper) return null");
+  });
+
+  it('PortCleanupWizard requires isAdminRole', () => {
+    expect(screen).toContain('isAdminRole(actorRole)');
+  });
+
+  it('org impact checks child dependencies', () => {
+    expect(lifecycle).toContain('activeWarehouses');
+    expect(lifecycle).toContain('activePorts');
+    expect(lifecycle).toContain('activeQrTokens');
+    expect(lifecycle).toContain('availabilityRows');
+  });
+
+  it('org canArchive requires all dependencies zero', () => {
+    expect(lifecycle).toContain('canArchive');
+    expect(lifecycle).toContain('wh === 0 && dp === 0 && qr === 0 && avail === 0');
+  });
+
+  it('org canPurge also requires profiles zero', () => {
+    expect(lifecycle).toContain('canPurge');
+    expect(lifecycle).toContain('profiles === 0');
+  });
+
+  it('archive org uses status=inactive (not raw delete)', () => {
+    expect(lifecycle).toContain("status: 'inactive'");
+    expect(lifecycle).not.toMatch(/\.from\(['"]organizations['"]\)\s*\.\s*delete/);
+  });
+
+  it('confirmation phrases required in wizard UI', () => {
+    expect(screen).toContain('CLEAR PORT ITEMS');
+    expect(screen).toContain('ARCHIVE ORGANIZATION');
+  });
+
+  it('bilingual deletion wizard keys exist', () => {
+    expect(strings).toContain('dw_title');
+    expect(strings).toContain('dw_clear_items');
+    expect(strings).toContain('dw_clear_items_warn');
+    expect(strings).toContain('dw_org_blocked');
+    expect(strings).toContain('dw_users_safe');
+    expect(strings).toContain('dw_archive_safe');
+    expect(strings).toContain('dw_ready');
+    expect(strings).toContain('dw_blocked');
+  });
+
+  it('no CASCADE in migration', () => {
+    expect(sql).not.toContain('CASCADE');
+  });
+
+  it('no DROP in migration', () => {
+    expect(sql).not.toContain('DROP');
+  });
+
+  it('no TRUNCATE in migration', () => {
+    expect(sql).not.toContain('TRUNCATE');
+  });
+
+  it('no service_role in lifecycle service', () => {
+    expect(lifecycle).not.toContain('service_role');
+  });
+
+  it('no DataReset restored', () => {
+    expect(screen).not.toContain('DataReset');
+    expect(lifecycle).not.toContain('DataReset');
+  });
+});
+
 describe('Disabled modules remain disabled', () => {
   const frozen = readSrc('features/health/IntakeFrozenScreen.tsx');
 
