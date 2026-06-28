@@ -446,6 +446,103 @@ describe('Public QR page: safety and bilingual', () => {
   });
 });
 
+describe('Central Status Center: structure and safety', () => {
+  const screen = readSrc('features/status/StatusCenterScreen.tsx');
+  const service = readSrc('shared/supabase/services/status-reports.service.ts');
+  const strings = readSrc('shared/i18n/strings.ts');
+  const sql = readPhoenix('supabase/migrations/006_phoenix_status_reports.sql');
+
+  it('status_type constrained to scarce/surplus/near_expiry/missing', () => {
+    expect(sql).toContain("'scarce', 'surplus', 'near_expiry', 'missing'");
+  });
+
+  it('table has RLS enabled', () => {
+    expect(sql).toContain('enable row level security');
+  });
+
+  it('super_admin has full access', () => {
+    expect(sql).toContain('isr_all_superadmin');
+  });
+
+  it('hospital_admin scoped to own org', () => {
+    expect(sql).toContain('isr_all_hospitaladmin');
+    expect(sql).toContain('organization_id = phoenix_my_org()');
+  });
+
+  it('viewer is read-only', () => {
+    expect(sql).toContain('isr_select_viewer');
+    expect(sql).not.toMatch(/isr_insert_viewer|isr_update_viewer/);
+  });
+
+  it('bilingual status labels exist', () => {
+    expect(strings).toContain('st_scarce');
+    expect(strings).toContain('st_surplus');
+    expect(strings).toContain('st_near_expiry');
+    expect(strings).toContain('st_missing');
+  });
+
+  it('bilingual resolved label exists', () => {
+    expect(strings).toContain('sc_resolved');
+  });
+
+  it('screen uses org scope for filtering', () => {
+    expect(screen).toContain('activeOrgId');
+    expect(screen).toContain('PhoenixOrgScope');
+  });
+
+  it('screen uses isAdminRole for mutation gating', () => {
+    expect(screen).toContain('isAdminRole');
+  });
+
+  it('no exchange alert logic beyond the disclaimer notice', () => {
+    expect(screen).not.toContain('exchangeAlert');
+    expect(screen).not.toContain('autoTransfer');
+    expect(screen).not.toContain('auto_approve');
+    expect(screen).not.toContain('suggestTransfer');
+  });
+
+  it('no auto-transfer in service', () => {
+    expect(service).not.toContain('transfer');
+    expect(service).not.toContain('exchange');
+  });
+
+  it('no service_role in screen', () => {
+    expect(screen).not.toContain('service_role');
+  });
+
+  it('no service_role in service', () => {
+    expect(service).not.toContain('service_role');
+  });
+
+  it('notes field uses dir="auto"', () => {
+    expect(screen).toContain('dir="auto"');
+  });
+
+  it('item names use bilingual fallback', () => {
+    expect(screen).toContain('item_name_ar');
+    expect(screen).toContain('item_name');
+  });
+
+  it('service filters by org, statusType, and activeOnly', () => {
+    expect(service).toContain('organization_id');
+    expect(service).toContain('status_type');
+    expect(service).toContain('is_active');
+  });
+
+  it('resolve sets is_active to false', () => {
+    expect(service).toContain('is_active: false');
+    expect(service).toContain('resolved_at');
+  });
+
+  it('navigation item exists', () => {
+    expect(strings).toContain('nav_status_center');
+  });
+
+  it('no-exchange notice is shown', () => {
+    expect(screen).toContain('sc_no_exchange');
+  });
+});
+
 describe('Disabled modules remain disabled', () => {
   const frozen = readSrc('features/health/IntakeFrozenScreen.tsx');
 

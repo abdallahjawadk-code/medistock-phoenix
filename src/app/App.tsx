@@ -15,6 +15,7 @@ import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen';
 import { ReportsScreen } from '@/features/reports/ReportsScreen';
 import { MobileCommandScreen } from '@/features/mesh/MobileCommandScreen';
 import { InstitutionScreen } from '@/features/institutions/InstitutionScreen';
+import { StatusCenterScreen } from '@/features/status/StatusCenterScreen';
 
 /** Read a public QR handle from the URL (?qid=… or ?token=…). Anon, no auth. */
 function publicQrId(): string | null {
@@ -62,6 +63,7 @@ function AppInner() {
       case 9:  return <ReportsScreen />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
       case 11: return <InstitutionScreen />;
+      case 12: return <StatusCenterScreen />;
       default: return <DashboardScreen onNavigate={setScreen} />;
     }
   };

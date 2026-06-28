@@ -11,6 +11,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
+  { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
   { screen: 5,  icon: '🌐', labelKey: 'nav_mesh' },
