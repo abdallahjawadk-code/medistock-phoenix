@@ -103,6 +103,7 @@ describe('Permission catalog', () => {
   const REQUIRED = [
     'dashboard.view', 'organizations.view', 'organizations.create', 'organizations.edit', 'organizations.archive',
     'users.view', 'users.create', 'users.assign_role', 'users.manage_permissions',
+    'users.disable', 'users.delete',  // migration 011
     'warehouses.view', 'warehouses.manage', 'ports.view', 'ports.create', 'ports.edit', 'ports.archive',
     'qr.view', 'qr.generate', 'qr.revoke', 'availability.view', 'availability.manage',
     'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
@@ -114,10 +115,10 @@ describe('Permission catalog', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 32 (matches migration 010 seed)', () => {
-    expect(REQUIRED).toHaveLength(32);
-    expect(PERMISSION_KEYS).toHaveLength(32);
-    expect(PERMISSION_KEY_SET.size).toBe(32);
+  it('canonical permission count is exactly 34 (32 from migration 010 + 2 from migration 011)', () => {
+    expect(REQUIRED).toHaveLength(34);
+    expect(PERMISSION_KEYS).toHaveLength(34);
+    expect(PERMISSION_KEY_SET.size).toBe(34);
   });
 
   it('rejects unknown permission keys', () => {
@@ -129,7 +130,16 @@ describe('Permission catalog', () => {
     expect(isDangerousPermission('users.create')).toBe(true);
     expect(isDangerousPermission('organizations.archive')).toBe(true);
     expect(isDangerousPermission('qr.revoke')).toBe(true);
+    expect(isDangerousPermission('users.disable')).toBe(true);
+    expect(isDangerousPermission('users.delete')).toBe(true);
     expect(isDangerousPermission('dashboard.view')).toBe(false);
+  });
+
+  it('users.disable and users.delete are in the users module', () => {
+    const mods = permissionsByModule();
+    const userKeys = mods.users.map(p => p.key);
+    expect(userKeys).toContain('users.disable');
+    expect(userKeys).toContain('users.delete');
   });
 
   it('groups by module', () => {
@@ -143,15 +153,19 @@ describe('Permission catalog', () => {
 // 4. Role defaults
 // ============================================================================
 describe('Role default permissions', () => {
-  it('super_admin has every permission', () => {
+  it('super_admin has every permission (auto-includes migration 011 keys)', () => {
     const d = roleDefaults('super_admin');
     expect(d.size).toBe(PERMISSION_KEYS.length);
+    expect(d.has('users.disable')).toBe(true);
+    expect(d.has('users.delete')).toBe(true);
   });
 
-  it('viewer is read-only (no create/manage/users)', () => {
+  it('viewer is read-only (no create/manage/users/lifecycle)', () => {
     const d = roleDefaults('viewer');
     expect(d.has('dashboard.view')).toBe(true);
     expect(d.has('users.create')).toBe(false);
+    expect(d.has('users.disable')).toBe(false);
+    expect(d.has('users.delete')).toBe(false);
     expect(d.has('availability.manage')).toBe(false);
     expect(d.has('status_center.create')).toBe(false);
   });
@@ -336,10 +350,72 @@ describe('admin-create-user Edge Function', () => {
     expect(fn).toContain('OFFICIAL_ROLES');
     expect(fn).toContain('INVALID_ROLE');
   });
+
+  // Password mode support (Part A of USER-CREATION-PASSWORD-DELETE-A)
+  it('supports optional password field (Mode 1)', () => {
+    expect(fn).toContain('password');
+    expect(fn).toContain('PASSWORD_TOO_SHORT');
+    expect(fn).toContain('password_mode');
+  });
+  it('sets email_confirm: true only in password mode', () => {
+    expect(fn).toContain('email_confirm: passwordMode');
+  });
+  it('never logs or stores password in profile', () => {
+    // password is NOT included in the upsert payload
+    expect(fn).not.toContain("upsert({ id: newId, organization_id: orgId, full_name: fullName, role, status: 'active', password");
+  });
+  it('raw password string is never in a json response', () => {
+    // The response returns password_mode (a boolean flag) which is fine.
+    // What must NOT appear: the actual password value echoed back to the caller.
+    // Verify the response line only contains password_mode, not the raw password field.
+    expect(fn).toContain('password_mode: passwordMode');
+    // The password variable is never directly serialized into a response.
+    expect(fn).not.toMatch(/json\(\{[^}]*password\s*:/);
+  });
 });
 
 // ============================================================================
-// 10. Migration 010 safety + 008/009 untouched
+// 9b. admin-user-lifecycle Edge Function safety
+// ============================================================================
+describe('admin-user-lifecycle Edge Function', () => {
+  const fn = readPhoenix('supabase/functions/admin-user-lifecycle/index.ts');
+
+  it('reads service_role only from the server env', () => {
+    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  });
+  it('service_role key value is never in a json response body', () => {
+    // Acceptable: reading the key from Deno.env into a const.
+    // Not acceptable: leaking the key string in a response payload.
+    // Check: no line that calls json() also contains the literal key name as a value.
+    const lines = fn.split('\n');
+    const leaks = lines.filter(l => l.includes('json(') && l.includes('SUPABASE_SERVICE_ROLE_KEY'));
+    expect(leaks).toHaveLength(0);
+  });
+  it('guards against self-action', () => {
+    expect(fn).toContain('SELF_ACTION_FORBIDDEN');
+  });
+  it('guards against last super_admin deletion', () => {
+    expect(fn).toContain('LAST_SUPER_ADMIN');
+  });
+  it('requires confirmation string for hard delete', () => {
+    expect(fn).toContain('INVALID_CONFIRMATION');
+    expect(fn).toContain('DELETE_USER_');
+  });
+  it('uses ban_duration to disable users server-side', () => {
+    expect(fn).toContain('ban_duration');
+    expect(fn).toContain('876000h');
+  });
+  it('only accepts valid actions', () => {
+    expect(fn).toContain('INVALID_ACTION');
+    expect(fn).toContain("'disable', 'enable', 'delete'");
+  });
+  it('requires super_admin caller', () => {
+    expect(fn).toContain('INSUFFICIENT_PERMISSION');
+  });
+});
+
+// ============================================================================
+// 10. Migration 010 + 011 safety + 008/009 untouched
 // ============================================================================
 describe('Migration 010 + prior migrations', () => {
   const sql = readPhoenix('supabase/migrations/010_phoenix_user_permission_matrix.sql');
@@ -381,6 +457,27 @@ describe('Migration 010 + prior migrations', () => {
     const m009 = readPhoenix('supabase/migrations/009_phoenix_inter_institution_alerts.sql');
     expect(m008).toContain('create table if not exists organization_status_contacts');
     expect(m009).toContain('function get_scoped_inter_institution_alerts');
+  });
+});
+
+describe('Migration 011 (user lifecycle)', () => {
+  const sql = readPhoenix('supabase/migrations/011_phoenix_user_lifecycle_controls.sql');
+
+  it('inserts users.disable and users.delete permission keys', () => {
+    expect(sql).toContain("'users.disable'");
+    expect(sql).toContain("'users.delete'");
+    expect(sql).toContain('on conflict (key) do nothing');
+  });
+  it('adds audit columns with IF NOT EXISTS (safe re-run)', () => {
+    expect(sql).toContain('add column if not exists disabled_at');
+    expect(sql).toContain('add column if not exists disabled_by');
+  });
+  it('carries a manual-apply-only warning', () => {
+    expect(sql).toContain('MANUAL APPLY ONLY');
+  });
+  it('does not use DROP TABLE or TRUNCATE', () => {
+    expect(sql).not.toMatch(/drop table/i);
+    expect(sql).not.toMatch(/truncate/i);
   });
 });
 

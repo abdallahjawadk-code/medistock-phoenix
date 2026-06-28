@@ -13,6 +13,7 @@ import {
 import {
   listUsers, getEffectivePermissions, assignProfilePermissions,
   resetProfilePermissions, createUserViaEdge, getOrgStatusContacts,
+  disableUserViaEdge, enableUserViaEdge, deleteUserViaEdge,
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
@@ -33,26 +34,44 @@ const fieldStyle = {
 
 function userName(u: ManagedUser): string { return u.full_name || u.id; }
 
+function statusVariant(status: string): 'ok' | 'warn' | 'err' | 'neutral' {
+  if (status === 'active') return 'ok';
+  if (status === 'suspended') return 'warn';
+  return 'neutral';
+}
+
+function statusLabel(status: string, lang: 'ar' | 'en'): string {
+  if (status === 'active')    return t('um_active', lang);
+  if (status === 'suspended') return t('um_suspended', lang);
+  return t('um_inactive', lang);
+}
+
 export function UserManagementScreen() {
   const { lang, role, activeOrgId, profile } = useApp();
   const isMobile = window.innerWidth < 768;
-  const isSuper = normalizeRole(role) === 'super_admin';
+  const isSuper  = normalizeRole(role) === 'super_admin';
 
-  // Actor effective permissions (role defaults are a safe UI baseline; backend enforces).
-  const actorEff = effectivePermissions(role);
+  const actorEff    = effectivePermissions(role);
   const canViewUsers = isSuper || actorEff.has('users.view');
-  const canCreate = isSuper || actorEff.has('users.create');
+  const canCreate    = isSuper || actorEff.has('users.create');
   const canManagePerms = isSuper || actorEff.has('users.manage_permissions');
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [filterRole, setFilterRole] = useState<string>('');
-  const [showCreate, setShowCreate] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [selectedId,   setSelectedId]   = useState<string | null>(null);
+  const [search,       setSearch]       = useState('');
+  const [filterRole,   setFilterRole]   = useState<string>('');
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [toast,        setToast]        = useState<string | null>(null);
+  const [disableTarget, setDisableTarget] = useState<ManagedUser | null>(null);
+  const [deleteTarget,  setDeleteTarget]  = useState<ManagedUser | null>(null);
 
   const users = useAsync(() => listUsers(isSuper ? activeOrgId : undefined), [isSuper, activeOrgId]);
 
-  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2800); }
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3200); }
+
+  function afterLifecycle() {
+    setSelectedId(null);
+    users.reload();
+  }
 
   const rows = (users.data ?? []).filter(u => {
     if (filterRole && normalizeRole(u.role) !== filterRole) return false;
@@ -100,6 +119,7 @@ export function UserManagementScreen() {
         <CreateUserForm
           lang={lang} isSuper={isSuper} actorOrgId={activeOrgId}
           onClose={() => setShowCreate(false)} onToast={showToast}
+          onCreated={() => { setShowCreate(false); users.reload(); }}
         />
       )}
 
@@ -129,6 +149,7 @@ export function UserManagementScreen() {
           )}
           {rows.map(u => {
             const selected = u.id === selectedId;
+            const isSelf   = u.id === profile?.id;
             return (
               <PhoenixCard key={u.id} padding="12px 14px" onClick={() => setSelectedId(u.id)}
                 style={{ cursor: 'pointer', border: selected ? '1px solid var(--p)' : undefined, background: selected ? 'var(--p2)' : undefined }}>
@@ -138,10 +159,32 @@ export function UserManagementScreen() {
                     {isSuper && <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">{lang === 'ar' ? (u.org_name_ar ?? u.org_name ?? '—') : (u.org_name ?? u.org_name_ar ?? '—')}</div>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    <PhoenixStatusBadge variant={u.status === 'active' ? 'ok' : 'neutral'} label={t(u.status === 'active' ? 'um_active' : 'um_inactive', lang)} />
+                    <PhoenixStatusBadge variant={statusVariant(u.status)} label={statusLabel(u.status, lang)} />
                     <PhoenixStatusBadge variant="neutral" label={t(roleLabelKey(u.role), lang)} />
                   </div>
                 </div>
+
+                {/* Lifecycle actions — super_admin only, not self */}
+                {isSuper && !isSelf && (
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
+                    onClick={e => e.stopPropagation()}>
+                    {u.status === 'suspended' ? (
+                      <PhoenixButton variant="ghost" size="md"
+                        onClick={() => setDisableTarget({ ...u, status: 'active' /* signal: enable */ })}>
+                        ✅ {t('um_enable_user', lang)}
+                      </PhoenixButton>
+                    ) : (
+                      <PhoenixButton variant="ghost" size="md" onClick={() => setDisableTarget(u)}>
+                        🔕 {t('um_disable_user', lang)}
+                      </PhoenixButton>
+                    )}
+                    <PhoenixButton variant="ghost" size="md"
+                      style={{ color: 'var(--err)' }}
+                      onClick={() => setDeleteTarget(u)}>
+                      🗑 {t('um_delete_user_action', lang)}
+                    </PhoenixButton>
+                  </div>
+                )}
               </PhoenixCard>
             );
           })}
@@ -163,6 +206,55 @@ export function UserManagementScreen() {
       </div>
 
       {toast && <PhoenixToast message={toast} />}
+
+      {/* Disable / Enable modal */}
+      {disableTarget && (
+        <DisableConfirmModal
+          user={disableTarget} lang={lang}
+          onCancel={() => setDisableTarget(null)}
+          onConfirm={async () => {
+            // Determine direction from the original live status in the user list.
+            const enabling = ((users.data ?? []).find(u => u.id === disableTarget.id)?.status === 'suspended');
+
+            const res = enabling
+              ? await enableUserViaEdge(disableTarget.id)
+              : await disableUserViaEdge(disableTarget.id);
+
+            setDisableTarget(null);
+            if (res.ok) {
+              showToast(enabling ? t('um_user_enabled', lang) : t('um_user_disabled', lang));
+              afterLifecycle();
+            } else {
+              showToast(res.error === 'LAST_SUPER_ADMIN'
+                ? t('um_last_super_admin', lang)
+                : t('um_lifecycle_failed', lang));
+            }
+          }}
+          isEnable={((users.data ?? []).find(u => u.id === disableTarget.id)?.status === 'suspended')}
+        />
+      )}
+
+      {/* Delete modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          user={deleteTarget} lang={lang}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async (confirmText) => {
+            const res = await deleteUserViaEdge(deleteTarget.id, confirmText);
+            setDeleteTarget(null);
+            if (res.ok) {
+              showToast(t('um_user_deleted', lang));
+              afterLifecycle();
+            } else {
+              showToast(res.error === 'LAST_SUPER_ADMIN'
+                ? t('um_last_super_admin', lang)
+                : res.error === 'INVALID_CONFIRMATION'
+                  ? t('um_delete_type_confirm', lang)
+                  : t('um_lifecycle_failed', lang));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -181,11 +273,10 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
   const defaults = roleDefaults(user.role);
   const eff = useAsync(() => getEffectivePermissions(user.id), [user.id]);
 
-  const [draft, setDraft] = useState<Record<string, boolean> | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [draft, setDraft]       = useState<Record<string, boolean> | null>(null);
+  const [busy, setBusy]         = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  // Initial effective = RPC result, or role defaults when migration missing.
   const migrationMissing = eff.data?.migrationMissing ?? false;
   const initialEff: Record<string, boolean> = (() => {
     if (eff.data?.permissions) return eff.data.permissions;
@@ -194,13 +285,13 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
     return out;
   })();
 
-  const current = draft ?? initialEff;
+  const current  = draft ?? initialEff;
   const readOnly = !canManage || migrationMissing;
 
   const grantCtx: GrantContext = {
     actorRole,
-    isSelf: user.id === actorId,
-    sameScope: isSuper, // server re-checks org scope; client baseline is super-only
+    isSelf:    user.id === actorId,
+    sameScope: isSuper,
   };
 
   function toggle(key: string, value: boolean) {
@@ -208,22 +299,17 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
   }
 
   async function onSave() {
-    // Build overrides: changed keys → value (null when back to role default).
     const overrides: OverrideMap = {};
     for (const p of PERMISSION_KEYS) {
-      const cur = current[p.key] ?? false;
+      const cur  = current[p.key] ?? false;
       const init = initialEff[p.key] ?? false;
       if (cur === init) continue;
       overrides[p.key] = cur === defaults.has(p.key) ? null : cur;
     }
     if (Object.keys(overrides).length === 0) { onToast(t('um_saved', lang)); return; }
 
-    // Client-side validation for UX (server is the real boundary).
     const check = validateOverrides(grantCtx, overrides);
-    if (!check.ok && check.rejected.length > 0) {
-      onToast(t('um_cannot_grant', lang));
-      return;
-    }
+    if (!check.ok && check.rejected.length > 0) { onToast(t('um_cannot_grant', lang)); return; }
 
     setBusy(true);
     try {
@@ -233,9 +319,8 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
       onToast(t('um_saved', lang));
       setDraft(null);
       eff.reload();
-    } catch {
-      onToast(t('load_error', lang));
-    } finally { setBusy(false); }
+    } catch { onToast(t('load_error', lang)); }
+    finally { setBusy(false); }
   }
 
   async function onReset() {
@@ -246,9 +331,8 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
       onToast(t('um_reset_done', lang));
       setDraft(null);
       eff.reload();
-    } catch {
-      onToast(t('load_error', lang));
-    } finally { setBusy(false); }
+    } catch { onToast(t('load_error', lang)); }
+    finally { setBusy(false); }
   }
 
   const modules = permissionsByModule();
@@ -287,7 +371,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, canManage, 
                   {open && (
                     <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {perms.map(p => {
-                        const checked = current[p.key] ?? false;
+                        const checked   = current[p.key] ?? false;
                         const isDefault = defaults.has(p.key);
                         return (
                           <label key={p.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: readOnly ? 'default' : 'pointer' }}>
@@ -354,54 +438,100 @@ function ContactSection({ orgId, lang }: { orgId: string | null; lang: 'ar' | 'e
 
 /* ── Create user form (secure server path only) ── */
 
-function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast }: {
+function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated }: {
   lang: 'ar' | 'en';
   isSuper: boolean;
   actorOrgId: string | null;
   onClose: () => void;
   onToast: (m: string) => void;
+  onCreated: () => void;
 }) {
   const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [orgId, setOrgId] = useState(actorOrgId ?? '');
-  const [selRole, setSelRole] = useState<OfficialRole>('viewer');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Non-super cannot pick super_admin.
-  const roleOptions = OFFICIAL_ROLES.filter(r => canTargetRole(isSuper ? 'super_admin' : 'viewer', r));
-  const effectiveOrg = isSuper ? orgId : (actorOrgId ?? '');
-  const canSubmit = fullName.trim() && email.trim() && effectiveOrg;
+  const [mode,        setMode]        = useState<'password' | 'invite'>('password');
+  const [fullName,    setFullName]    = useState('');
+  const [email,       setEmail]       = useState('');
+  const [orgId,       setOrgId]       = useState(actorOrgId ?? '');
+  const [selRole,     setSelRole]     = useState<OfficialRole>('viewer');
+  const [password,    setPassword]    = useState('');
+  const [confirm,     setConfirm]     = useState('');
+  const [showPwd,     setShowPwd]     = useState(false);
+  const [busy,        setBusy]        = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  const roleOptions   = OFFICIAL_ROLES.filter(r => canTargetRole(isSuper ? 'super_admin' : 'viewer', r));
+  const effectiveOrg  = isSuper ? orgId : (actorOrgId ?? '');
+  const pwdValid      = mode === 'invite' || (password.length >= 8 && password === confirm);
+  const canSubmit     = fullName.trim() && email.trim() && effectiveOrg && pwdValid;
 
   async function onSubmit() {
     setError(null);
     if (selRole === 'super_admin' && !isSuper) { setError(t('um_cannot_create_super', lang)); return; }
     if (!isSuper && actorOrgId && effectiveOrg !== actorOrgId) { setError(t('um_cannot_create_outside_org', lang)); return; }
+
+    if (mode === 'password') {
+      if (password.length < 8) { setError(t('um_password_too_short', lang)); return; }
+      if (password !== confirm) { setError(t('um_passwords_no_match', lang)); return; }
+    }
+
     setBusy(true);
     try {
-      const res = await createUserViaEdge({ fullName: fullName.trim(), email: email.trim(), organizationId: effectiveOrg, role: selRole });
+      const res = await createUserViaEdge({
+        fullName: fullName.trim(),
+        email:    email.trim(),
+        organizationId: effectiveOrg,
+        role:     selRole,
+        ...(mode === 'password' ? { password } : {}),
+      });
+
       if (res.edgeMissing) { setError(t('um_edge_disabled', lang)); return; }
       if (!res.ok) {
         if (res.error === 'CANNOT_CREATE_SUPER_ADMIN') setError(t('um_cannot_create_super', lang));
-        else if (res.error === 'CROSS_ORG_FORBIDDEN') setError(t('um_cannot_create_outside_org', lang));
+        else if (res.error === 'CROSS_ORG_FORBIDDEN')  setError(t('um_cannot_create_outside_org', lang));
+        else if (res.error === 'PASSWORD_TOO_SHORT')   setError(t('um_password_too_short', lang));
         else setError(t('um_edge_disabled', lang));
         return;
       }
-      onToast(t('um_create_user', lang));
-      onClose();
+
+      // Success — show mode-appropriate message.
+      if (res.passwordMode) {
+        onToast(t('um_created_password', lang));
+      } else if (res.invited) {
+        onToast(t('um_created_invited', lang));
+      } else {
+        onToast(t('um_created_no_invite', lang));
+      }
+      onCreated();
     } catch {
       setError(t('um_edge_disabled', lang));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>{t('um_create_user', lang)}</h3>
-      <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
-        🔐 {t('um_server_only', lang)} · {t('um_create_disabled_hint', lang)}
+      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('um_create_user', lang)}</h3>
+
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: '0', marginBottom: '14px', borderRadius: 'var(--r2)', overflow: 'hidden', border: '1px solid var(--brd)' }}>
+        {(['password', 'invite'] as const).map(m => (
+          <button key={m} onClick={() => { setMode(m); setError(null); }}
+            style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: mode === m ? 700 : 400, background: mode === m ? 'var(--p)' : 'var(--s)', color: mode === m ? '#fff' : 'var(--t)', transition: 'background .15s' }}>
+            {m === 'password' ? `🔑 ${t('um_mode_password', lang)}` : `📧 ${t('um_mode_invite', lang)}`}
+          </button>
+        ))}
       </div>
+
+      {/* Invite notice */}
+      {mode === 'invite' && (
+        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
+          ℹ {t('um_invite_notice', lang)}
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {/* Name + Email */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_full_name', lang)} *</label>
@@ -413,7 +543,8 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast }: {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        {/* Org + Role */}
+        <div style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
           {isSuper && (
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_organization', lang)} *</label>
@@ -431,7 +562,39 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast }: {
           </div>
         </div>
 
-        {error && <p style={{ fontSize: '12px', color: 'var(--err)' }} dir="auto">{error}</p>}
+        {/* Password fields (mode === 'password' only) */}
+        {mode === 'password' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                  style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
+                <button type="button" onClick={() => setShowPwd(s => !s)}
+                  style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
+                  {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
+              <input type={showPwd ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
+                style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? 'var(--err)' : undefined }}
+                autoComplete="new-password" dir="ltr" />
+            </div>
+          </div>
+        )}
+
+        {/* Inline password validation hints */}
+        {mode === 'password' && password && password.length < 8 && (
+          <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }}>{t('um_password_too_short', lang)}</p>
+        )}
+        {mode === 'password' && confirm && confirm !== password && (
+          <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_passwords_no_match', lang)}</p>
+        )}
+
+        {error && <p style={{ fontSize: '12px', color: 'var(--err)', margin: 0 }} dir="auto">{error}</p>}
+
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <PhoenixButton variant="ghost" size="md" onClick={onClose}>{t('cancel', lang)}</PhoenixButton>
           <PhoenixButton variant="primary" size="md" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
@@ -440,5 +603,88 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast }: {
         </div>
       </div>
     </PhoenixCard>
+  );
+}
+
+/* ── Disable / Enable confirmation modal ── */
+
+function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+  isEnable: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
+          {isEnable ? `✅ ${t('um_enable_user', lang)}` : `🔕 ${t('um_disable_user', lang)}`}
+        </h3>
+        <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '18px' }} dir="auto">
+          <strong>{userName(user)}</strong> — {t('um_disable_confirm_q', lang)}
+        </p>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" loading={busy}
+            onClick={async () => { setBusy(true); await onConfirm(); setBusy(false); }}>
+            {isEnable ? t('um_enable_user', lang) : t('um_disable_user', lang)}
+          </PhoenixButton>
+        </div>
+      </PhoenixCard>
+    </div>
+  );
+}
+
+/* ── Hard-delete confirmation modal ── */
+
+function DeleteConfirmModal({ user, lang, onCancel, onConfirm }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  onCancel: () => void;
+  onConfirm: (confirmText: string) => Promise<void>;
+}) {
+  const [input, setInput] = useState('');
+  const [busy,  setBusy]  = useState(false);
+  const ready = input.trim() === 'DELETE';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard padding="24px" style={{ maxWidth: '480px', width: '100%', border: '1px solid var(--err)' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--err)', marginBottom: '10px' }}>
+          🗑 {t('um_delete_user_action', lang)}
+        </h3>
+        <p style={{ fontSize: '12.5px', color: 'var(--t)', marginBottom: '10px' }} dir="auto">
+          <strong>{userName(user)}</strong>
+        </p>
+        <p style={{ fontSize: '12.5px', color: 'var(--err)', marginBottom: '14px' }}>
+          {t('um_delete_confirm_q', lang)}
+        </p>
+        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>
+          {t('um_delete_type_confirm', lang)}
+        </label>
+        <input type="text" value={input} onChange={e => setInput(e.target.value)}
+          placeholder="DELETE"
+          style={{ ...fieldStyle, borderColor: input && !ready ? 'var(--err)' : undefined, marginBottom: '16px' }}
+          dir="ltr" autoComplete="off" />
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton size="md" loading={busy} disabled={!ready}
+            style={{ background: ready ? 'var(--err)' : undefined, color: ready ? '#fff' : undefined }}
+            onClick={async () => {
+              setBusy(true);
+              // Build the server-side confirmation string: DELETE_USER_<email>
+              // The server knows the email; the UI just sends 'DELETE' as the UI gate.
+              // We send the full expected string so the server can verify.
+              const fullConfirm = `DELETE_USER_${user.id}`; // server resolves email from id
+              await onConfirm(fullConfirm);
+              setBusy(false);
+            }}>
+            {t('um_delete_user_action', lang)}
+          </PhoenixButton>
+        </div>
+      </PhoenixCard>
+    </div>
   );
 }

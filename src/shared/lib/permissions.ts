@@ -31,6 +31,8 @@ export const PERMISSION_KEYS: readonly PermissionKeyDef[] = [
   { key: 'users.create',                         module: 'users',              action: 'create',            labelKey: 'perm_users_create',              dangerous: true  },
   { key: 'users.assign_role',                    module: 'users',              action: 'assign_role',       labelKey: 'perm_users_assign_role',         dangerous: true  },
   { key: 'users.manage_permissions',             module: 'users',              action: 'manage_permissions',labelKey: 'perm_users_manage_permissions',  dangerous: true  },
+  { key: 'users.disable',                        module: 'users',              action: 'disable',           labelKey: 'perm_users_disable',             dangerous: true  },
+  { key: 'users.delete',                         module: 'users',              action: 'delete',            labelKey: 'perm_users_delete',              dangerous: true  },
   { key: 'warehouses.view',                      module: 'warehouses',         action: 'view',              labelKey: 'perm_warehouses_view',           dangerous: false },
   { key: 'warehouses.manage',                    module: 'warehouses',         action: 'manage',            labelKey: 'perm_warehouses_manage',         dangerous: false },
   { key: 'ports.view',                           module: 'ports',              action: 'view',              labelKey: 'perm_ports_view',                dangerous: false },

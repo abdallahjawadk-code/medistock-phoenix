@@ -124,15 +124,32 @@ curl -s -X POST "$BASE_URL/admin-create-user" \
 - Official roles only: `super_admin`, `warehouse_officer`, `port_officer`,
   `monthly_status_officer`, `viewer`.
 
+## Creation modes
+
+### Mode 1 — Temporary password
+Pass `password` (min 8 chars) in the request body. The user's email is auto-confirmed
+and they can log in immediately with the password. Share the password securely out-of-band.
+The password is **never stored** in the `profiles` table.
+
+### Mode 2 — Email invite (default)
+Omit `password`. The user is created without email confirmation; a best-effort invite
+email is sent. `invited: true` in the response means the invite was sent successfully.
+
 ## Request / response
 
 ```
 POST /functions/v1/admin-create-user
 Authorization: Bearer <caller-jwt>
+
+// Mode 1 (password):
+{ "full_name": "...", "email": "...", "organization_id": "uuid", "role": "viewer", "password": "SecurePass123" }
+
+// Mode 2 (invite):
 { "full_name": "...", "email": "...", "organization_id": "uuid", "role": "viewer" }
 
-→ { "ok": true, "user_id": "uuid", "role": "viewer", "invited": true }
-→ { "ok": false, "error": "INSUFFICIENT_PERMISSION" }
+→ { "ok": true,  "user_id": "uuid", "role": "viewer", "invited": false, "password_mode": true  }
+→ { "ok": true,  "user_id": "uuid", "role": "viewer", "invited": true,  "password_mode": false }
+→ { "ok": false, "error": "INSUFFICIENT_PERMISSION" | "PASSWORD_TOO_SHORT" | ... }
 ```
 
 Raw provider errors are never returned — only structured, safe error codes.
@@ -140,7 +157,7 @@ Raw provider errors are never returned — only structured, safe error codes.
 ## Safety notes
 
 - `service_role` is read from `Deno.env` only; never returned in a response.
-- On profile-insert failure the orphaned auth user is deleted to keep state
-  consistent.
-- The invite email is best-effort and non-fatal.
-- This function never deletes users as part of creation.
+- `password` is never stored in the `profiles` table.
+- On profile-insert failure the orphaned auth user is deleted to keep state consistent.
+- The invite email is best-effort and non-fatal (only attempted in Mode 2).
+- This function never deletes users as part of creation (rollback on profile failure only).

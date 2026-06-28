@@ -446,6 +446,40 @@ export const T: Dict = {
   um_no_users_perm:   { ar: 'لا تملك صلاحية عرض المستخدمين',     en: 'You do not have permission to view users' },
   um_create_disabled_hint: { ar: 'النموذج معطّل بأمان حتى يتم تفعيل المسار الخادمي', en: 'The form is safely disabled until the server path is enabled' },
 
+  /* Create-user: password / invite modes */
+  um_mode_password:      { ar: 'إنشاء بكلمة مرور مؤقتة',            en: 'Create with temporary password' },
+  um_mode_invite:        { ar: 'إرسال دعوة بالبريد الإلكتروني',      en: 'Send email invite' },
+  um_password:           { ar: 'كلمة المرور المؤقتة',                 en: 'Temporary password' },
+  um_confirm_password:   { ar: 'تأكيد كلمة المرور',                   en: 'Confirm password' },
+  um_show_password:      { ar: 'إظهار',                               en: 'Show' },
+  um_hide_password:      { ar: 'إخفاء',                               en: 'Hide' },
+  um_passwords_no_match: { ar: 'كلمتا المرور غير متطابقتين',          en: 'Passwords do not match' },
+  um_password_too_short: { ar: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل', en: 'Password must be at least 8 characters' },
+  um_created_password:   { ar: 'تم إنشاء المستخدم. سلّم كلمة المرور المؤقتة للمستخدم بطريقة آمنة.', en: 'User created. Share the temporary password securely.' },
+  um_created_no_invite:  { ar: 'تم إنشاء المستخدم، لكن لم يتم إرسال دعوة بريدية. عيّن كلمة مرور أو أرسل رابط إعادة تعيين.', en: 'User created, but no invite email was sent. Set a password or send a reset link.' },
+  um_created_invited:    { ar: 'تم إنشاء المستخدم وإرسال دعوة بالبريد الإلكتروني.',  en: 'User created and invite email sent.' },
+  um_invite_notice:      { ar: 'إرسال الدعوة يعتمد على إعدادات البريد في Supabase', en: 'Email invite depends on Supabase email configuration' },
+
+  /* User lifecycle: disable / enable / delete */
+  um_disable_user:       { ar: 'تعطيل المستخدم',   en: 'Disable user' },
+  um_enable_user:        { ar: 'تفعيل المستخدم',    en: 'Enable user' },
+  um_delete_user_action: { ar: 'حذف المستخدم',      en: 'Delete user' },
+  um_disabled:           { ar: 'معطّل',              en: 'Disabled' },
+  um_suspended:          { ar: 'موقوف',              en: 'Suspended' },
+  um_disable_confirm_q:  { ar: 'هل تريد تعطيل هذا المستخدم؟ لن يتمكن من تسجيل الدخول حتى تعيد تفعيله.', en: 'Disable this user? They will be unable to log in until you re-enable them.' },
+  um_delete_confirm_q:   { ar: 'الحذف النهائي يزيل حساب الدخول من Supabase Auth وقد لا يمكن التراجع عنه.', en: 'Permanent deletion removes the login account from Supabase Auth and may not be reversible.' },
+  um_delete_type_confirm:{ ar: 'اكتب DELETE للتأكيد', en: 'Type DELETE to confirm' },
+  um_cannot_delete_self: { ar: 'لا يمكن حذف حسابك الخاص',     en: 'You cannot delete your own account' },
+  um_user_disabled:      { ar: 'تم تعطيل المستخدم بنجاح',      en: 'User disabled successfully' },
+  um_user_enabled:       { ar: 'تم تفعيل المستخدم بنجاح',       en: 'User enabled successfully' },
+  um_user_deleted:       { ar: 'تم حذف المستخدم بنجاح',         en: 'User deleted successfully' },
+  um_lifecycle_failed:   { ar: 'فشلت العملية. حاول مجدداً.',     en: 'Operation failed. Please try again.' },
+  um_last_super_admin:   { ar: 'لا يمكن حذف أو تعطيل مدير المنصة الوحيد', en: 'Cannot delete or disable the last platform administrator' },
+
+  /* New permission labels (migration 011) */
+  perm_users_disable:    { ar: 'تعطيل المستخدمين', en: 'Disable users' },
+  perm_users_delete:     { ar: 'حذف المستخدمين',   en: 'Delete users' },
+
   /* Official role labels (the ONLY labels shown in the role dropdown) */
   orole_super_admin:            { ar: 'مدير المنصة',             en: 'Platform Administrator' },
   orole_warehouse_officer:      { ar: 'مسؤول المذخر',           en: 'Store Officer' },

@@ -20,6 +20,7 @@
 // =============================================================================
 
 // @ts-nocheck — Deno edge runtime types are not part of the app's tsconfig.
+// Updated: supports optional password field (Mode 1) or invite-only (Mode 2).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const OFFICIAL_ROLES = [
@@ -64,17 +65,18 @@ Deno.serve(async (req: Request) => {
   if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
   const callerId = userData.user.id;
 
-  let body: { full_name?: string; email?: string; organization_id?: string; role?: string };
+  let body: { full_name?: string; email?: string; organization_id?: string; role?: string; password?: string };
   try {
     body = await req.json();
   } catch {
     return json({ ok: false, error: 'BAD_REQUEST' }, 400);
   }
 
-  const fullName = (body.full_name ?? '').trim();
-  const email = (body.email ?? '').trim();
-  const orgId = body.organization_id ?? null;
-  const role = body.role ?? '';
+  const fullName  = (body.full_name ?? '').trim();
+  const email     = (body.email ?? '').trim();
+  const orgId     = body.organization_id ?? null;
+  const role      = body.role ?? '';
+  const password  = (body.password ?? '').trim();  // optional; not logged or stored in profile
 
   if (!fullName || !email || !orgId) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
   if (!OFFICIAL_ROLES.includes(role)) return json({ ok: false, error: 'INVALID_ROLE' }, 400);
@@ -106,19 +108,30 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  const passwordMode = password.length >= 8;
+  if (body.password !== undefined && !passwordMode) {
+    // Password was supplied but is too short — reject before creating anything.
+    return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+  }
+
   // Create the auth user.
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+  // Mode 1 (password provided): user can log in immediately; email is auto-confirmed.
+  // Mode 2 (no password): email not confirmed; invite email attempted below.
+  const createParams: Record<string, unknown> = {
     email,
-    email_confirm: false,
+    email_confirm: passwordMode,
     user_metadata: { full_name: fullName },
-  });
+  };
+  if (passwordMode) createParams.password = password;
+
+  const { data: created, error: createErr } = await admin.auth.admin.createUser(createParams);
   if (createErr || !created?.user) {
     // Do not leak raw provider errors to the UI.
     return json({ ok: false, error: 'CREATE_AUTH_USER_FAILED' }, 400);
   }
   const newId = created.user.id;
 
-  // Create / upsert the matching profile row.
+  // Create / upsert the matching profile row (password never stored here).
   const { error: profileErr } = await admin
     .from('profiles')
     .upsert({ id: newId, organization_id: orgId, full_name: fullName, role, status: 'active' });
@@ -128,14 +141,16 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: 'CREATE_PROFILE_FAILED' }, 400);
   }
 
-  // Best-effort invite / password-setup email (non-fatal).
+  // Invite email only in Mode 2 (no password). Best-effort, non-fatal.
   let invited = false;
-  try {
-    const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
-    invited = !inviteErr;
-  } catch {
-    invited = false;
+  if (!passwordMode) {
+    try {
+      const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
+      invited = !inviteErr;
+    } catch {
+      invited = false;
+    }
   }
 
-  return json({ ok: true, user_id: newId, role, invited });
+  return json({ ok: true, user_id: newId, role, invited, password_mode: passwordMode });
 });

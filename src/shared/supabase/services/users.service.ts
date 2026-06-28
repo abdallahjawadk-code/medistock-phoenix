@@ -101,17 +101,24 @@ export async function resetProfilePermissions(profileId: string): Promise<{ ok: 
   return data as { ok: boolean; cleared?: number };
 }
 
+// ── User creation (secure Edge Function path only) ───────────────────────────
+
 export interface CreateUserInput {
   fullName: string;
   email: string;
   organizationId: string;
   role: OfficialRole;
+  /** Mode 1: password provided → user can log in immediately.
+   *  Mode 2: absent/empty → invite email attempted. Min 8 chars when provided. */
+  password?: string;
 }
 
 export interface CreateUserResult {
   ok: boolean;
   userId?: string;
   invited?: boolean;
+  /** True when user was created with an explicit password (can log in immediately). */
+  passwordMode?: boolean;
   error?: string;
   /** True when the admin-create-user Edge Function is not deployed. */
   edgeMissing?: boolean;
@@ -119,32 +126,81 @@ export interface CreateUserResult {
 
 /**
  * Create a user through the secure server-side Edge Function only.
- * The privileged server key NEVER touches the browser. If the function is not
- * deployed yet, returns edgeMissing=true so the UI can stay safely disabled.
+ * The privileged server key NEVER touches the browser.
+ * If password is provided it is sent over HTTPS only to the Edge Function
+ * and is never stored in the profiles table.
  */
 export async function createUserViaEdge(input: CreateUserInput): Promise<CreateUserResult> {
   if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
 
   try {
-    const { data, error } = await supabase.functions.invoke('admin-create-user', {
-      body: {
-        full_name: input.fullName,
-        email: input.email,
-        organization_id: input.organizationId,
-        role: input.role,
-      },
-    });
+    const body: Record<string, string> = {
+      full_name:       input.fullName,
+      email:           input.email,
+      organization_id: input.organizationId,
+      role:            input.role,
+    };
+    // Include password only when the caller explicitly provides one.
+    if (input.password) body.password = input.password;
+
+    const { data, error } = await supabase.functions.invoke('admin-create-user', { body });
 
     if (error) {
-      // FunctionsFetchError / not-found ⇒ treat as not deployed.
       return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
     }
 
-    const res = data as CreateUserResult;
+    const res = data as { ok: boolean; user_id?: string; invited?: boolean; password_mode?: boolean; error?: string };
+    if (!res) return { ok: false, error: 'UNKNOWN' };
+    return {
+      ok:           res.ok,
+      userId:       res.user_id,
+      invited:      res.invited,
+      passwordMode: res.password_mode,
+      error:        res.error,
+    };
+  } catch {
+    return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+  }
+}
+
+// ── User lifecycle (disable / enable / delete via Edge Function) ──────────────
+
+export interface LifecycleResult {
+  ok: boolean;
+  action?: string;
+  error?: string;
+  /** True when the admin-user-lifecycle Edge Function is not deployed. */
+  edgeMissing?: boolean;
+}
+
+async function invokeLifecycle(payload: Record<string, string>): Promise<LifecycleResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  try {
+    const { data, error } = await supabase.functions.invoke('admin-user-lifecycle', { body: payload });
+    if (error) return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+    const res = data as LifecycleResult;
     return res ?? { ok: false, error: 'UNKNOWN' };
   } catch {
     return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
   }
+}
+
+/** Disable a user (ban from auth + suspend profile). Caller must be super_admin. */
+export async function disableUserViaEdge(targetUserId: string): Promise<LifecycleResult> {
+  return invokeLifecycle({ action: 'disable', target_user_id: targetUserId });
+}
+
+/** Re-enable a previously disabled user. Caller must be super_admin. */
+export async function enableUserViaEdge(targetUserId: string): Promise<LifecycleResult> {
+  return invokeLifecycle({ action: 'enable', target_user_id: targetUserId });
+}
+
+/**
+ * Hard-delete a user from auth and profiles (cascade).
+ * confirmation must equal 'DELETE_USER_<target-email>' (built by UI, verified server-side).
+ */
+export async function deleteUserViaEdge(targetUserId: string, confirmation: string): Promise<LifecycleResult> {
+  return invokeLifecycle({ action: 'delete', target_user_id: targetUserId, confirmation });
 }
 
 // ── Monthly Status Officer contacts (organization_status_contacts, migration 008) ──
