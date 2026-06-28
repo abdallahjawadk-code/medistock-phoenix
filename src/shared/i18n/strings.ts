@@ -72,6 +72,22 @@ export const T: Dict = {
   health_desc:    { ar: 'مراقبة حالة النظام والجسور',          en: 'Monitor system & bridge health' },
   reports_desc:   { ar: 'تقارير وسجلات التدقيق',              en: 'Reports and audit logs' },
 
+  /* ── Dashboard (extended) ── */
+  d_central:          { ar: 'لوحة القيادة المركزية',              en: 'Central Dashboard' },
+  d_warehouses:       { ar: 'المذاخر',                           en: 'Warehouses' },
+  d_ports:            { ar: 'المنافذ',                           en: 'Ports' },
+  d_qr_active:        { ar: 'رموز QR النشطة',                   en: 'Active QR Codes' },
+  d_qr_disabled:      { ar: 'رموز QR المعطلة',                   en: 'Disabled QR Codes' },
+  d_surplus:          { ar: 'المواد الفائضة',                    en: 'Surplus Items' },
+  d_scarce:           { ar: 'المواد الشحيحة',                    en: 'Scarce Items' },
+  d_reports_active:   { ar: 'المواقف النشطة',                    en: 'Active Reports' },
+  d_reports_resolved: { ar: 'تمت المعالجة',                      en: 'Resolved' },
+  d_exchange_total:   { ar: 'توصيات التبادل',                    en: 'Exchange Recommendations' },
+  d_exchange_high:    { ar: 'توصيات عالية الأولوية',             en: 'High-Priority Recommendations' },
+  d_no_data:          { ar: 'لا توجد بيانات كافية بعد',          en: 'Not enough data yet' },
+  d_status_reports:   { ar: 'تقارير المواقف',                    en: 'Status Reports' },
+  d_top_alerts:       { ar: 'أبرز التوصيات',                     en: 'Top Recommendations' },
+
   /* ── Editor ── */
   editor_sub:     { ar: 'تعديل بيانات التوفر يدوياً',          en: 'Manually edit availability records' },
   scope:          { ar: 'نطاق مؤسسي',                         en: 'Institution scope' },

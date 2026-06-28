@@ -14,59 +14,96 @@ export interface InstitutionOverview {
 
 export interface DashboardMetrics {
   activeInstitutions: number;
+  activeWarehouses: number;
+  activePorts: number;
+  activeQrCodes: number;
+  disabledQrCodes: number;
   availableItems: number;
   lowStockCount: number;
   missingCount: number;
   nearExpiryCount: number;
-  bridgeHealth: { healthy: number; total: number };
-  safeModeModules: number;
+  surplusCount: number;
   lastUpdated: string;
 }
 
-const DEMO_METRICS: DashboardMetrics = {
-  activeInstitutions: 4,
-  availableItems: 1248,
-  lowStockCount: 42,
-  missingCount: 8,
-  nearExpiryCount: 15,
-  bridgeHealth: { healthy: 7, total: 7 },
-  safeModeModules: 2,
-  lastUpdated: new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
-};
+export interface StatusReportCounts {
+  scarce: number;
+  surplus: number;
+  nearExpiry: number;
+  missing: number;
+  active: number;
+  resolved: number;
+}
 
 export async function getDashboardMetrics(orgId?: string): Promise<DashboardMetrics> {
-  if (!supabaseConfigured) return DEMO_METRICS;
+  if (!supabaseConfigured) return {
+    activeInstitutions: 0, activeWarehouses: 0, activePorts: 0,
+    activeQrCodes: 0, disabledQrCodes: 0,
+    availableItems: 0, lowStockCount: 0, missingCount: 0,
+    nearExpiryCount: 0, surplusCount: 0,
+    lastUpdated: new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
+  };
 
-  const org_filter = orgId ? { organization_id: orgId } : {};
+  const orgMatch = orgId ? { organization_id: orgId } : {};
 
-  const [orgsRes, availRes] = await Promise.all([
+  const [orgsRes, whRes, dpRes, qrActiveRes, qrDisabledRes, availRes] = await Promise.all([
     supabase.from('organizations').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-    supabase.from('item_availability').select('condition', { count: 'exact' }).match(org_filter),
+    supabase.from('warehouses').select('id', { count: 'exact', head: true }).neq('status', 'archived').match(orgMatch),
+    supabase.from('distribution_points').select('id', { count: 'exact', head: true }).neq('status', 'archived').match(orgMatch),
+    supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'active').match(orgMatch),
+    supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'disabled').match(orgMatch),
+    supabase.from('item_availability').select('condition').match(orgMatch),
   ]);
 
   const conditions = (availRes.data ?? []) as { condition: string }[];
-  const available   = conditions.filter(r => r.condition === 'available').length;
-  const lowStock    = conditions.filter(r => r.condition === 'low_stock').length;
-  const missing     = conditions.filter(r => r.condition === 'missing').length;
-  const nearExpiry  = conditions.filter(r => r.condition === 'near_expiry').length;
+  const available  = conditions.filter(r => r.condition === 'available').length;
+  const lowStock   = conditions.filter(r => r.condition === 'low_stock').length;
+  const missing    = conditions.filter(r => r.condition === 'missing').length;
+  const nearExpiry = conditions.filter(r => r.condition === 'near_expiry').length;
+  const surplus    = conditions.filter(r => r.condition === 'surplus').length;
 
   return {
     activeInstitutions: orgsRes.count ?? 0,
+    activeWarehouses:   whRes.count ?? 0,
+    activePorts:        dpRes.count ?? 0,
+    activeQrCodes:      qrActiveRes.count ?? 0,
+    disabledQrCodes:    qrDisabledRes.count ?? 0,
     availableItems:     available,
     lowStockCount:      lowStock,
     missingCount:       missing,
     nearExpiryCount:    nearExpiry,
-    bridgeHealth:       { healthy: 7, total: 7 },   // computed separately when health module wired
-    safeModeModules:    0,
+    surplusCount:       surplus,
     lastUpdated:        new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
   };
 }
 
-/**
- * Live per-institution overview: each active organization with its real
- * availability counts. No fabricated numbers — counts come straight from
- * item_availability (RLS scopes what each role can see).
- */
+export async function getStatusReportCounts(orgId?: string): Promise<StatusReportCounts> {
+  if (!supabaseConfigured) return { scarce: 0, surplus: 0, nearExpiry: 0, missing: 0, active: 0, resolved: 0 };
+
+  try {
+    const orgMatch = orgId ? { organization_id: orgId } : {};
+    const { data, error } = await supabase
+      .from('institution_item_status_reports')
+      .select('status_type, is_active')
+      .match(orgMatch);
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as { status_type: string; is_active: boolean }[];
+    const active = rows.filter(r => r.is_active);
+    return {
+      scarce:     active.filter(r => r.status_type === 'scarce').length,
+      surplus:    active.filter(r => r.status_type === 'surplus').length,
+      nearExpiry: active.filter(r => r.status_type === 'near_expiry').length,
+      missing:    active.filter(r => r.status_type === 'missing').length,
+      active:     active.length,
+      resolved:   rows.filter(r => !r.is_active).length,
+    };
+  } catch {
+    return { scarce: 0, surplus: 0, nearExpiry: 0, missing: 0, active: 0, resolved: 0 };
+  }
+}
+
 export async function getInstitutionOverviews(): Promise<InstitutionOverview[]> {
   if (!supabaseConfigured) return [];
 

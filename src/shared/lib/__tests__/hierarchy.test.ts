@@ -543,6 +543,87 @@ describe('Central Status Center: structure and safety', () => {
   });
 });
 
+describe('Central Dashboard integration', () => {
+  const dashboard = readSrc('features/dashboard/DashboardScreen.tsx');
+  const dashService = readSrc('shared/supabase/services/dashboard.service.ts');
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('dashboard uses real metrics not hardcoded demo values', () => {
+    expect(dashService).not.toContain('DEMO_METRICS');
+    expect(dashService).toContain("from('warehouses')");
+    expect(dashService).toContain("from('distribution_points')");
+    expect(dashService).toContain("from('qr_tokens')");
+  });
+
+  it('dashboard service includes warehouse count', () => {
+    expect(dashService).toContain('activeWarehouses');
+  });
+
+  it('dashboard service includes port count', () => {
+    expect(dashService).toContain('activePorts');
+  });
+
+  it('dashboard service includes QR active/disabled counts', () => {
+    expect(dashService).toContain('activeQrCodes');
+    expect(dashService).toContain('disabledQrCodes');
+  });
+
+  it('dashboard service includes surplus count', () => {
+    expect(dashService).toContain('surplusCount');
+  });
+
+  it('dashboard service fetches status report counts with graceful fallback', () => {
+    expect(dashService).toContain('getStatusReportCounts');
+    expect(dashService).toContain('institution_item_status_reports');
+    expect(dashService).toContain('catch');
+  });
+
+  it('dashboard screen uses generateExchangeAlerts', () => {
+    expect(dashboard).toContain('generateExchangeAlerts');
+  });
+
+  it('dashboard screen shows top 3 recommendations', () => {
+    expect(dashboard).toContain('slice(0, 3)');
+  });
+
+  it('dashboard shows manual action required on alerts', () => {
+    expect(dashboard).toContain('ea_manual');
+  });
+
+  it('no transfer/approval buttons on dashboard', () => {
+    expect(dashboard).not.toContain('approveTransfer');
+    expect(dashboard).not.toContain('autoTransfer');
+    expect(dashboard).not.toContain('createTransfer');
+  });
+
+  it('bilingual dashboard keys exist', () => {
+    expect(strings).toContain('d_central');
+    expect(strings).toContain('d_warehouses');
+    expect(strings).toContain('d_ports');
+    expect(strings).toContain('d_qr_active');
+    expect(strings).toContain('d_qr_disabled');
+    expect(strings).toContain('d_surplus');
+    expect(strings).toContain('d_scarce');
+    expect(strings).toContain('d_reports_active');
+    expect(strings).toContain('d_exchange_total');
+    expect(strings).toContain('d_exchange_high');
+    expect(strings).toContain('d_no_data');
+  });
+
+  it('no service_role in dashboard', () => {
+    expect(dashboard).not.toContain('service_role');
+    expect(dashService).not.toContain('service_role');
+  });
+
+  it('institution cards navigate to institution screen (11)', () => {
+    expect(dashboard).toContain('onNavigate(11)');
+  });
+
+  it('alert cards navigate to status center (12)', () => {
+    expect(dashboard).toContain('onNavigate(12)');
+  });
+});
+
 describe('Disabled modules remain disabled', () => {
   const frozen = readSrc('features/health/IntakeFrozenScreen.tsx');
 
