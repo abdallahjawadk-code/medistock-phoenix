@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { resolveLoginIdentifier } from '@/shared/lib/username';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -10,6 +11,9 @@ export function LoginScreen() {
   const [error, setError]       = useState<string | null>(null);
   const [busy, setBusy]         = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  // Local-username accounts have no deliverable email — show guidance instead
+  // of calling the reset API (LOCAL-CREDENTIALS-MODE-A, Part G).
+  const [localResetNote, setLocalResetNote] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -17,6 +21,10 @@ export function LoginScreen() {
 
     if (mode === 'reset') {
       if (!email.trim()) { setError(t('email_required', lang)); return; }
+      if (!email.includes('@')) {
+        setLocalResetNote(true);
+        return;
+      }
       setBusy(true);
       const res = await requestPasswordReset(email);
       setBusy(false);
@@ -31,7 +39,9 @@ export function LoginScreen() {
       return;
     }
     setBusy(true);
-    const res = await signIn(email, password);
+    // Bare usernames (no "@") resolve to the synthetic internal auth email.
+    // Whether a username exists is never revealed — same generic error either way.
+    const res = await signIn(resolveLoginIdentifier(email), password);
     setBusy(false);
     if (!res.ok) {
       setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('invalid_creds', lang));
@@ -85,7 +95,15 @@ export function LoginScreen() {
           </div>
         )}
 
-        {mode === 'reset' && resetSent ? (
+        {mode === 'reset' && localResetNote ? (
+          <div style={{ textAlign: 'center', padding: '8px 0' }}>
+            <div style={{ fontSize: '34px', marginBottom: '10px' }}>🔑</div>
+            <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '16px' }} dir="auto">{t('login_local_reset_note', lang)}</p>
+            <button type="button" onClick={() => { setMode('signin'); setLocalResetNote(false); setError(null); }} style={{ width: '100%', padding: '12px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'transparent', color: 'var(--t2)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+              {t('back_to_login', lang)}
+            </button>
+          </div>
+        ) : mode === 'reset' && resetSent ? (
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
             <div style={{ fontSize: '34px', marginBottom: '10px' }}>📧</div>
             <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>{t('reset_sent', lang)}</div>
@@ -97,10 +115,10 @@ export function LoginScreen() {
         ) : (
           <>
             <label htmlFor="login-email" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '6px' }}>
-              {t('email', lang)}
+              {t('login_identifier', lang)}
             </label>
             <input
-              id="login-email" type="email" dir="ltr" autoComplete="username"
+              id="login-email" type="text" dir="ltr" autoComplete="username"
               value={email} onChange={e => setEmail(e.target.value)}
               style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '14px' }}
             />

@@ -10,6 +10,8 @@ export interface ManagedUser {
   status: string;
   org_name: string | null;
   org_name_ar: string | null;
+  username: string | null;
+  login_mode: 'email' | 'local';
 }
 
 /**
@@ -22,7 +24,7 @@ export async function listUsers(orgId?: string | null): Promise<ManagedUser[]> {
 
   let query = supabase
     .from('profiles')
-    .select('id, organization_id, full_name, role, status, organizations ( name, name_ar )')
+    .select('id, organization_id, full_name, role, status, username, login_mode, organizations ( name, name_ar )')
     .order('full_name');
 
   if (orgId) query = query.eq('organization_id', orgId);
@@ -33,6 +35,7 @@ export async function listUsers(orgId?: string | null): Promise<ManagedUser[]> {
   type OrgEmbed = { name: string; name_ar: string };
   type Row = {
     id: string; organization_id: string | null; full_name: string; role: string; status: string;
+    username: string | null; login_mode: 'email' | 'local';
     organizations: OrgEmbed | OrgEmbed[] | null;
   };
 
@@ -44,6 +47,8 @@ export async function listUsers(orgId?: string | null): Promise<ManagedUser[]> {
       full_name: r.full_name,
       role: r.role,
       status: r.status,
+      username: r.username,
+      login_mode: r.login_mode,
       org_name: org?.name ?? null,
       org_name_ar: org?.name_ar ?? null,
     };
@@ -105,11 +110,22 @@ export async function resetProfilePermissions(profileId: string): Promise<{ ok: 
 
 export interface CreateUserInput {
   fullName: string;
-  email: string;
   organizationId: string;
   role: OfficialRole;
+  /** 'local' (default): username + temporary password, no email required.
+   *  'email': real-email invite/password mode (secondary/advanced). */
+  loginMode: 'local' | 'email';
+  /** Required when loginMode === 'local'. Internal auth email is derived server-side. */
+  username?: string;
+  /** Required when loginMode === 'local'. Never logged or stored. */
+  temporaryPassword?: string;
+  /** Optional informational contact email for local accounts. Never used for login. */
+  contactEmail?: string;
+  /** Required when loginMode === 'email'. */
+  email?: string;
   /** Mode 1: password provided → user can log in immediately.
-   *  Mode 2: absent/empty → invite email attempted. Min 8 chars when provided. */
+   *  Mode 2: absent/empty → invite email attempted. Min 8 chars when provided.
+   *  Only relevant when loginMode === 'email'. */
   password?: string;
 }
 
@@ -119,6 +135,8 @@ export interface CreateUserResult {
   invited?: boolean;
   /** True when user was created with an explicit password (can log in immediately). */
   passwordMode?: boolean;
+  /** Echoes loginMode back so the UI can show the right success message. */
+  loginMode?: 'local' | 'email';
   error?: string;
   /** True when the admin-create-user Edge Function is not deployed. */
   edgeMissing?: boolean;
@@ -127,8 +145,8 @@ export interface CreateUserResult {
 /**
  * Create a user through the secure server-side Edge Function only.
  * The privileged server key NEVER touches the browser.
- * If password is provided it is sent over HTTPS only to the Edge Function
- * and is never stored in the profiles table.
+ * Temporary/explicit passwords are sent over HTTPS only to the Edge Function
+ * and are never stored in the profiles table.
  */
 export async function createUserViaEdge(input: CreateUserInput): Promise<CreateUserResult> {
   if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
@@ -136,12 +154,19 @@ export async function createUserViaEdge(input: CreateUserInput): Promise<CreateU
   try {
     const body: Record<string, string> = {
       full_name:       input.fullName,
-      email:           input.email,
       organization_id: input.organizationId,
       role:            input.role,
+      login_mode:      input.loginMode,
     };
-    // Include password only when the caller explicitly provides one.
-    if (input.password) body.password = input.password;
+    if (input.loginMode === 'local') {
+      if (input.username) body.username = input.username;
+      if (input.temporaryPassword) body.temporary_password = input.temporaryPassword;
+      if (input.contactEmail) body.contact_email = input.contactEmail;
+    } else {
+      if (input.email) body.email = input.email;
+      // Include password only when the caller explicitly provides one.
+      if (input.password) body.password = input.password;
+    }
 
     const { data, error } = await supabase.functions.invoke('admin-create-user', { body });
 
@@ -149,13 +174,17 @@ export async function createUserViaEdge(input: CreateUserInput): Promise<CreateU
       return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
     }
 
-    const res = data as { ok: boolean; user_id?: string; invited?: boolean; password_mode?: boolean; error?: string };
+    const res = data as {
+      ok: boolean; user_id?: string; invited?: boolean; password_mode?: boolean;
+      login_mode?: 'local' | 'email'; error?: string;
+    };
     if (!res) return { ok: false, error: 'UNKNOWN' };
     return {
       ok:           res.ok,
       userId:       res.user_id,
       invited:      res.invited,
       passwordMode: res.password_mode,
+      loginMode:    res.login_mode,
       error:        res.error,
     };
   } catch {
@@ -208,10 +237,20 @@ export async function deleteUserViaEdge(targetUserId: string, confirmation: stri
 export interface RecycleUserInput {
   targetProfileId: string;
   newFullName: string;
-  newEmail: string;
   newRole: OfficialRole;
   newOrganizationId?: string;
   confirmation: string;
+  /** 'local' (default): new username + temporary password, no email required.
+   *  'email': real-email recycle (secondary/advanced) — generates a recovery link. */
+  loginMode: 'local' | 'email';
+  /** Required when loginMode === 'local'. */
+  newUsername?: string;
+  /** Required when loginMode === 'local'. Never logged, stored, or returned. */
+  newTemporaryPassword?: string;
+  /** Optional informational contact email for local accounts. Never used for login. */
+  contactEmail?: string;
+  /** Required when loginMode === 'email'. */
+  newEmail?: string;
 }
 
 export interface RecycleUserResult {
@@ -220,6 +259,10 @@ export interface RecycleUserResult {
   newEmail?: string;
   newIdentityVersion?: number;
   passwordSetupStatus?: 'link_generated' | 'link_failed';
+  /** Echoed back for local-mode recycles. */
+  credentialMode?: 'local' | 'email';
+  newUsername?: string;
+  temporaryPasswordSet?: boolean;
   error?: string;
   edgeMissing?: boolean;
 }
@@ -231,11 +274,18 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
     const body: Record<string, string> = {
       target_profile_id: input.targetProfileId,
       new_full_name:     input.newFullName,
-      new_email:         input.newEmail,
       new_role:          input.newRole,
       confirmation:      input.confirmation,
+      login_mode:        input.loginMode,
     };
     if (input.newOrganizationId) body.new_organization_id = input.newOrganizationId;
+    if (input.loginMode === 'local') {
+      if (input.newUsername) body.new_username = input.newUsername;
+      if (input.newTemporaryPassword) body.new_temporary_password = input.newTemporaryPassword;
+      if (input.contactEmail) body.contact_email = input.contactEmail;
+    } else {
+      if (input.newEmail) body.new_email = input.newEmail;
+    }
 
     const { data, error } = await supabase.functions.invoke('admin-recycle-user', { body });
 
@@ -247,16 +297,22 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
       new_email?: string;
       new_identity_version?: number;
       password_setup_status?: 'link_generated' | 'link_failed';
+      credential_mode?: 'local' | 'email';
+      new_username?: string;
+      temporary_password_set?: boolean;
       error?: string;
     };
     if (!res) return { ok: false, error: 'UNKNOWN' };
     return {
-      ok:                  res.ok,
-      targetProfileId:     res.target_profile_id,
-      newEmail:            res.new_email,
-      newIdentityVersion:  res.new_identity_version,
-      passwordSetupStatus: res.password_setup_status,
-      error:               res.error,
+      ok:                   res.ok,
+      targetProfileId:      res.target_profile_id,
+      newEmail:             res.new_email,
+      newIdentityVersion:   res.new_identity_version,
+      passwordSetupStatus:  res.password_setup_status,
+      credentialMode:       res.credential_mode,
+      newUsername:          res.new_username,
+      temporaryPasswordSet: res.temporary_password_set,
+      error:                res.error,
     };
   } catch {
     return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };

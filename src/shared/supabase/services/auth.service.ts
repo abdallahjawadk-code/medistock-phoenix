@@ -17,6 +17,14 @@ export interface Profile {
   full_name: string;
   role: Role;
   status: 'active' | 'suspended' | 'archived';
+  /** Local-credentials username (LOCAL-CREDENTIALS-MODE-A). Null for email-mode accounts. */
+  username: string | null;
+  /** 'email' (default, real Supabase email) or 'local' (synthetic internal email). */
+  login_mode: 'email' | 'local';
+  /** Optional informational contact email for local accounts. Never used for login. */
+  contact_email: string | null;
+  /** True until a local user changes their temporary password. */
+  must_change_password: boolean;
 }
 
 export interface SignInResult {
@@ -135,7 +143,7 @@ export async function getMyProfile(): Promise<Profile | null> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, organization_id, full_name, role, status')
+    .select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password')
     .eq('id', uid)
     .single();
 
@@ -144,4 +152,17 @@ export async function getMyProfile(): Promise<Profile | null> {
     return null;
   }
   return data as Profile;
+}
+
+/**
+ * Marks the current session's password as changed (clears must_change_password,
+ * stamps password_changed_at). Server-side RPC only — the frontend never
+ * writes profiles.must_change_password directly. No-op error is swallowed:
+ * this is a best-effort bookkeeping call after a successful password update.
+ */
+export async function markPasswordChanged(): Promise<SignInResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const { error } = await supabase.rpc('phoenix_mark_password_changed');
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }

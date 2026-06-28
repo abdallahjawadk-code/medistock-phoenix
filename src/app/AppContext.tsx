@@ -35,6 +35,8 @@ interface AppState {
   setActiveOrgId: (id: string | null) => void;
   signIn: (email: string, password: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
+  /** Re-fetches the current profile (e.g. after a password change clears must_change_password). */
+  reloadProfile: () => Promise<void>;
 
   // ── Password recovery ──
   /** True when the user arrived via a reset-password email (recovery session). */
@@ -143,6 +145,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return res;
   }, []);
 
+  const reloadProfile = useCallback(async () => {
+    const p = await getMyProfile();
+    setProfile(p);
+  }, []);
+
   const signOut = useCallback(async () => {
     await authSignOut();
     setSession(null);
@@ -182,7 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       configured: supabaseConfigured,
       authReady, session, profile, role,
       activeOrgId, setActiveOrgId,
-      signIn, signOut,
+      signIn, signOut, reloadProfile,
       passwordRecovery, requestPasswordReset, updatePassword, clearRecovery,
     }}>
       {children}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
+import { markPasswordChanged } from '@/shared/supabase/services/auth.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -14,7 +15,7 @@ const fieldStyle = {
 } as const;
 
 export function MyAccountScreen() {
-  const { lang, profile, session, requestPasswordReset, updatePassword } = useApp();
+  const { lang, profile, session, requestPasswordReset, updatePassword, reloadProfile } = useApp();
 
   const [toast, setToast]     = useState<string | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -24,6 +25,7 @@ export function MyAccountScreen() {
   const [showPw, setShowPw]     = useState(false);
   const [pwBusy, setPwBusy]     = useState(false);
 
+  const isLocal = profile?.login_mode === 'local';
   const email = session?.user?.email ?? '';
   const pwMatch = newPw === confirmPw;
   const pwLong  = newPw.length >= 8;
@@ -50,6 +52,10 @@ export function MyAccountScreen() {
     try {
       const res = await updatePassword(newPw);
       if (res.ok) {
+        if (profile?.must_change_password) {
+          await markPasswordChanged();
+          await reloadProfile();
+        }
         showToast(t('ma_password_updated', lang));
         setNewPw('');
         setConfirmPw('');
@@ -72,7 +78,14 @@ export function MyAccountScreen() {
         <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('ma_info', lang)}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <InfoRow label={t('um_full_name', lang)} value={profile?.full_name ?? '—'} />
-          <InfoRow label={t('ma_email', lang)} value={email || '—'} dir="ltr" />
+          {isLocal ? (
+            <>
+              <InfoRow label={t('ma_username', lang)} value={profile?.username ?? '—'} dir="ltr" />
+              <InfoRow label={t('ma_contact_email', lang)} value={profile?.contact_email ?? '—'} dir="ltr" />
+            </>
+          ) : (
+            <InfoRow label={t('ma_email', lang)} value={email || '—'} dir="ltr" />
+          )}
           <InfoRow label={t('um_role', lang)} value={t(roleLabelKey(profile?.role), lang)} />
           <InfoRow label={t('ma_status', lang)}>
             <PhoenixStatusBadge
@@ -83,16 +96,25 @@ export function MyAccountScreen() {
         </div>
       </PhoenixCard>
 
-      {/* Password reset email */}
-      <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('ma_reset_title', lang)}</h3>
-        <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '12px' }} dir="auto">
-          {t('ma_reset_desc', lang)}
-        </p>
-        <PhoenixButton variant="ghost" size="md" loading={resetBusy} onClick={onRequestReset}>
-          📧 {t('ma_reset_btn', lang)}
-        </PhoenixButton>
-      </PhoenixCard>
+      {/* Password reset: email link for email-mode accounts, admin-assisted note for local accounts */}
+      {isLocal ? (
+        <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('ma_local_reset_title', lang)}</h3>
+          <p style={{ fontSize: '12px', color: 'var(--t2)' }} dir="auto">
+            {t('login_local_reset_note', lang)}
+          </p>
+        </PhoenixCard>
+      ) : (
+        <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('ma_reset_title', lang)}</h3>
+          <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '12px' }} dir="auto">
+            {t('ma_reset_desc', lang)}
+          </p>
+          <PhoenixButton variant="ghost" size="md" loading={resetBusy} onClick={onRequestReset}>
+            📧 {t('ma_reset_btn', lang)}
+          </PhoenixButton>
+        </PhoenixCard>
+      )}
 
       {/* Direct password change */}
       <PhoenixCard padding="18px">

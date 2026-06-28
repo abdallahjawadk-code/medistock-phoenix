@@ -190,9 +190,13 @@ export const T: Dict = {
   password:       { ar: 'كلمة المرور',                        en: 'Password' },
   sign_in:        { ar: 'دخول',                               en: 'Sign In' },
   signing_in:     { ar: 'جاري الدخول...',                     en: 'Signing in...' },
-  invalid_creds:  { ar: 'بيانات الدخول غير صحيحة',            en: 'Invalid email or password' },
+  invalid_creds:  { ar: 'اسم المستخدم أو كلمة المرور غير صحيحة', en: 'Invalid username or password' },
   signed_in_as:   { ar: 'جلسة نشطة',                          en: 'Active session' },
   email_required: { ar: 'البريد وكلمة المرور مطلوبان',        en: 'Email and password are required' },
+
+  /* ── Local credentials login (LOCAL-CREDENTIALS-MODE-A) ── */
+  login_identifier:        { ar: 'اسم المستخدم أو البريد الإلكتروني', en: 'Username or email' },
+  login_local_reset_note:  { ar: 'إذا كنت تستخدم اسم مستخدم محلي ولا تملك بريدًا فعليًا، اطلب من مسؤول المؤسسة إعادة تعيين كلمة مرور مؤقتة.', en: 'If you use a local username and do not have a real email, ask your institution administrator to reset a temporary password.' },
 
   /* ── Password reset ── */
   forgot_password:  { ar: 'نسيت كلمة المرور؟',                en: 'Forgot password?' },
@@ -431,6 +435,9 @@ export const T: Dict = {
   um_server_only:     { ar: 'إنشاء المستخدمين يتم عبر مسار خادم آمن فقط', en: 'User creation is handled only through a secure server-side path' },
   um_full_name:       { ar: 'الاسم الكامل',                      en: 'Full name' },
   um_email:           { ar: 'البريد الإلكتروني',                 en: 'Email' },
+  um_username:        { ar: 'اسم المستخدم',                       en: 'Username' },
+  um_username_invalid:{ ar: 'اسم المستخدم يجب أن يتكون من حروف لاتينية صغيرة وأرقام ونقطة أو شرطة فقط (3-32 حرفًا)', en: 'Username must be lowercase letters, numbers, dot, underscore or dash only (3-32 characters)' },
+  um_contact_email_optional: { ar: 'البريد الإلكتروني للتواصل (اختياري)', en: 'Contact email (optional)' },
   um_organization:    { ar: 'المؤسسة',                           en: 'Organization' },
   um_role:            { ar: 'الدور',                             en: 'Role' },
   um_status:          { ar: 'الحالة',                            en: 'Status' },
@@ -449,6 +456,12 @@ export const T: Dict = {
   um_select_user:     { ar: 'اختر مستخدمًا لإدارة صلاحياته',     en: 'Select a user to manage permissions' },
   um_no_users_perm:   { ar: 'لا تملك صلاحية عرض المستخدمين',     en: 'You do not have permission to view users' },
   um_create_disabled_hint: { ar: 'النموذج معطّل بأمان حتى يتم تفعيل المسار الخادمي', en: 'The form is safely disabled until the server path is enabled' },
+
+  /* Local credentials mode (LOCAL-CREDENTIALS-MODE-A) */
+  um_mode_local:              { ar: 'اسم مستخدم محلي',                          en: 'Local username' },
+  um_mode_email_secondary:    { ar: 'بريد إلكتروني (متقدم)',                    en: 'Email (advanced)' },
+  um_local_creation_msg:      { ar: 'سيتم إنشاء المستخدم باسم مستخدم وكلمة مرور مؤقتة، دون الحاجة إلى بريد إلكتروني فعلي.', en: 'The user will be created with a username and a temporary password — no real email required.' },
+  um_created_local:           { ar: 'تم إنشاء المستخدم المحلي. سلّم اسم المستخدم وكلمة المرور المؤقتة للمستخدم بشكل آمن، وسيُطلب منه تغيير كلمة المرور من صفحة حسابي.', en: 'Local user created. Give the username and temporary password to the user securely. They should change the password from My Account.' },
 
   /* Create-user: invite-first flow */
   um_mode_invite:             { ar: 'إرسال دعوة بالبريد الإلكتروني',             en: 'Send email invite' },
@@ -500,11 +513,14 @@ export const T: Dict = {
   /* Account recycling (USER-ACCOUNT-RECYCLING-A) */
   um_recycle_account:         { ar: 'تدوير الحساب',                                    en: 'Recycle Account' },
   um_recycle_new_name:        { ar: 'الاسم الجديد',                                     en: 'New full name' },
+  um_recycle_new_username:    { ar: 'اسم المستخدم الجديد',                              en: 'New username' },
   um_recycle_new_email:       { ar: 'البريد الإلكتروني الجديد',                          en: 'New email' },
   um_recycle_new_role:        { ar: 'الدور الجديد',                                     en: 'New role' },
   um_recycle_new_org:         { ar: 'المؤسسة الجديدة',                                  en: 'New institution' },
   um_recycle_confirm:         { ar: 'تأكيد التدوير',                                    en: 'Confirm recycling' },
   um_recycle_warning:         { ar: 'ستبقى العمليات القديمة محفوظة باسم المستخدم السابق، وستسجل العمليات الجديدة بالهوية الجديدة.', en: 'Old operations remain attributed to the previous identity; new operations will use the new identity.' },
+  um_recycle_warning_local:   { ar: 'سيتم تدوير الحساب إلى مستخدم محلي جديد. ستبقى العمليات القديمة محفوظة باسم المستخدم السابق، وستسجل العمليات الجديدة بالهوية الجديدة. سلّم كلمة المرور المؤقتة للمستخدم بشكل آمن.', en: 'This will recycle the account into a new local user. Old operations remain attributed to the previous identity; new operations will use the new identity. Give the temporary password to the user securely.' },
+  um_recycle_success_local:   { ar: 'تم تدوير الحساب بنجاح إلى مستخدم محلي. سلّم اسم المستخدم وكلمة المرور المؤقتة للمستخدم بشكل آمن.', en: 'Account recycled successfully to a local user. Give the username and temporary password to the user securely.' },
   um_recycle_must_suspend:    { ar: 'يجب تعطيل المستخدم قبل تدوير الحساب.',             en: 'The user must be disabled before recycling.' },
   um_recycle_no_self:         { ar: 'لا يمكن تدوير حسابك الشخصي.',                      en: 'You cannot recycle your own account.' },
   um_recycle_no_super:        { ar: 'لا يمكن تدوير حساب مدير المنصة.',                   en: 'You cannot recycle a platform administrator.' },
@@ -598,6 +614,9 @@ export const T: Dict = {
   ma_title:            { ar: 'حسابي',                                en: 'My Account' },
   ma_info:             { ar: 'معلومات الحساب',                        en: 'Account information' },
   ma_email:            { ar: 'البريد الإلكتروني',                     en: 'Email' },
+  ma_username:         { ar: 'اسم المستخدم',                          en: 'Username' },
+  ma_contact_email:    { ar: 'البريد الإلكتروني (للتواصل)',           en: 'Contact email' },
+  ma_local_reset_title:{ ar: 'إعادة تعيين كلمة المرور',                en: 'Password reset' },
   ma_status:           { ar: 'حالة الحساب',                           en: 'Account status' },
   ma_reset_title:      { ar: 'إعادة تعيين كلمة المرور عبر البريد',    en: 'Password reset by email' },
   ma_reset_desc:       { ar: 'سيتم إرسال رابط إعادة تعيين إلى بريدك الإلكتروني المسجل. تحقق من بريدك إذا كانت إعدادات البريد مفعّلة.', en: 'A reset link will be sent to your registered email. Check your inbox if email delivery is configured.' },

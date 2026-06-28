@@ -108,7 +108,45 @@ Users reset their own passwords through the standard Supabase Auth email flow:
 - The temporary password mode (available during user creation via the Advanced option) is a one-time setup convenience. The user is expected to reset their password afterward via the normal flow.
 - `SUPABASE_SERVICE_ROLE_KEY` never touches the frontend. Password operations use the anon key or the user's own session token.
 
-### 3.4 Recycling
+### 3.4 Local Username Credentials (LOCAL-CREDENTIALS-MODE-A)
+
+Operational users who do not have a reliable real email address (and whose
+institution's email delivery is unreliable in the current operating
+environment) can be created as **local accounts** instead of email accounts.
+Supabase Auth is still the only authentication backend — local accounts are
+not a separate, custom auth system.
+
+- The visible login identifier is a **username** (e.g. `ali.pharmacy`), shown
+  to the user and stored in `profiles.username`.
+- Supabase Auth still requires an email-shaped identifier internally. The app
+  synthesizes one as `<username>@local.medistock.invalid` — a non-deliverable,
+  technical identifier only. It is never shown to the user as a contact
+  email and the app never claims mail can be delivered to it.
+- `profiles.login_mode` records whether an account is `'email'` (default,
+  real address, standard reset-by-email flow) or `'local'` (username +
+  password, no email dependency).
+- `profiles.contact_email`, when present, is purely informational (e.g. "call
+  this address if you need to reach this person by other means") and is
+  never used for login or password recovery.
+
+**Exception to the "admins never see or set user passwords" rule:**
+Because local accounts have no deliverable email, an admin must be able to
+hand the user a **temporary password** at account creation/recycling time
+(via `admin-create-user` / `admin-recycle-user`, server-side only). This is
+the one deliberate, narrow carve-out from §3.3/§8 — admins set an initial
+*temporary* password only, never read or change an existing password, and
+the password is never logged, stored in `profiles`, or returned by any API
+response. `profiles.must_change_password` is set `true` whenever a temporary
+password is assigned, and the user is expected to change it from My Account
+(`phoenix_mark_password_changed()` clears the flag after a successful
+self-service change).
+
+Forgot-password email recovery does not work for local accounts (the
+synthetic email is not deliverable) — the user must ask their institution
+administrator for a new temporary password instead. Real-email accounts keep
+the existing self-service reset-by-email flow unchanged.
+
+### 3.5 Recycling
 
 Recycling is the process of reassigning a **suspended** account to a **different real person**. It must not be approximated by editing a profile's name/email directly.
 
@@ -207,7 +245,7 @@ Summary:
 
 - No role may use a direct `.delete()` on the `profiles` table from frontend code.
 - No role may edit another user's profile via a direct `.update()` on the `profiles` table from frontend code (all user management goes through RPCs or Edge Functions).
-- No role may see or set another user's raw password.
+- No role may see or set another user's raw password — except the one narrow, server-side carve-out in §3.4: an admin may set an initial *temporary* password for a local account at creation/recycling time. The temporary password is never logged, stored in `profiles`, or returned by any API response.
 - No role may bypass the Edge Function and use `auth.admin` from frontend code.
 - No role may use `service_role` or `SUPABASE_SERVICE_ROLE_KEY` in any frontend code; this key must exist only in the Deno edge runtime.
 - No role may perform account recycling outside the dedicated workflow (once implemented).

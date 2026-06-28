@@ -37,6 +37,7 @@ Apply strictly in order. Each builds on the previous schema.
 | **013** | `013_phoenix_user_identity_snapshot_foundation.sql` | Identity snapshot foundation: `profiles.identity_version`, `user_identity_history`, actor snapshot columns on 6 operational tables, initial backfill, helper RPC |
 | **014** | `014_phoenix_actor_snapshot_write_path_triggers.sql` | Actor snapshot write-path triggers: BEFORE INSERT/UPDATE triggers on 6 operational tables to auto-populate actor snapshot fields |
 | **015** | `015_phoenix_user_account_recycling.sql` | Account recycling permission: `users.recycle` permission key + super_admin default |
+| **016** | `016_phoenix_local_credentials_mode.sql` | Local username credentials mode (LOCAL-CREDENTIALS-MODE-A): `profiles.username/login_mode/contact_email/must_change_password/password_changed_at` + `phoenix_mark_password_changed()` RPC |
 
 Apply each one **manually**, in this order:
 
@@ -51,6 +52,7 @@ Apply each one **manually**, in this order:
 9. **Apply 013 manually** — `013_phoenix_user_identity_snapshot_foundation.sql` (requires 001–010; 011+012 recommended)
 10. **Apply 014 manually** — `014_phoenix_actor_snapshot_write_path_triggers.sql` (requires 013)
 11. **Apply 015 manually** — `015_phoenix_user_account_recycling.sql` (requires 010; deploy `admin-recycle-user` Edge Function after applying)
+12. **Apply 016 manually** — `016_phoenix_local_credentials_mode.sql` (requires 001–015; redeploy `admin-create-user` and `admin-recycle-user` Edge Functions after applying — they now support `login_mode: 'local'`)
 
 ## How to apply (each migration)
 

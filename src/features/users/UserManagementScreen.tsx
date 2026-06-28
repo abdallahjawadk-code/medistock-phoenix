@@ -6,6 +6,7 @@ import {
   OFFICIAL_ROLES, OFFICIAL_ROLE_LABEL_KEY, roleLabelKey, canTargetRole, normalizeRole,
   type OfficialRole,
 } from '@/shared/lib/roles';
+import { normalizeUsername, validateUsername } from '@/shared/lib/username';
 import {
   PERMISSION_KEYS, permissionsByModule, roleDefaults, effectivePermissions,
   validateOverrides, isDangerousPermission, type OverrideMap, type GrantContext,
@@ -447,10 +448,18 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
 }) {
   const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
 
+  // identityMode: 'local' is the default (LOCAL-CREDENTIALS-MODE-A) — username +
+  // temporary password, no SMTP dependency. 'email' is the secondary/advanced path.
+  const [identityMode, setIdentityMode] = useState<'local' | 'email'>('local');
   const [mode,        setMode]        = useState<'password' | 'invite'>('invite');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [fullName,    setFullName]    = useState('');
   const [email,       setEmail]       = useState('');
+  const [username,    setUsername]    = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [tempPassword, setTempPassword] = useState('');
+  const [tempConfirm,  setTempConfirm]  = useState('');
+  const [showTempPwd,  setShowTempPwd]  = useState(false);
   const [orgId,       setOrgId]       = useState(actorOrgId ?? '');
   const [selRole,     setSelRole]     = useState<OfficialRole>('viewer');
   const [password,    setPassword]    = useState('');
@@ -463,7 +472,10 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
   const roleOptions   = OFFICIAL_ROLES.filter(r => canTargetRole(actorRole, r));
   const effectiveOrg  = isSuper ? orgId : (actorOrgId ?? '');
   const pwdValid      = mode === 'invite' || (password.length >= 8 && password === confirm);
-  const canSubmit     = fullName.trim() && email.trim() && effectiveOrg && pwdValid;
+  const localValid    = validateUsername(username) && tempPassword.length >= 8 && tempPassword === tempConfirm;
+  const canSubmit     = identityMode === 'local'
+    ? Boolean(fullName.trim() && username.trim() && effectiveOrg && localValid)
+    : Boolean(fullName.trim() && email.trim() && effectiveOrg && pwdValid);
 
   async function onSubmit() {
     setError(null);
@@ -471,18 +483,31 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
     if (selRole === 'institution_admin' && !isSuper) { setError(t('um_cannot_create_institution_admin', lang)); return; }
     if (!isSuper && actorOrgId && effectiveOrg !== actorOrgId) { setError(t('um_cannot_create_outside_org', lang)); return; }
 
-    if (mode === 'password') {
+    if (identityMode === 'local') {
+      if (!validateUsername(username)) { setError(t('um_username_invalid', lang)); return; }
+      if (tempPassword.length < 8) { setError(t('um_password_too_short', lang)); return; }
+      if (tempPassword !== tempConfirm) { setError(t('um_passwords_no_match', lang)); return; }
+    } else if (mode === 'password') {
       if (password.length < 8) { setError(t('um_password_too_short', lang)); return; }
       if (password !== confirm) { setError(t('um_passwords_no_match', lang)); return; }
     }
 
     setBusy(true);
     try {
-      const res = await createUserViaEdge({
+      const res = await createUserViaEdge(identityMode === 'local' ? {
         fullName: fullName.trim(),
-        email:    email.trim(),
         organizationId: effectiveOrg,
-        role:     selRole,
+        role: selRole,
+        loginMode: 'local',
+        username: normalizeUsername(username),
+        temporaryPassword: tempPassword,
+        ...(contactEmail.trim() ? { contactEmail: contactEmail.trim() } : {}),
+      } : {
+        fullName: fullName.trim(),
+        organizationId: effectiveOrg,
+        role: selRole,
+        loginMode: 'email',
+        email: email.trim(),
         ...(mode === 'password' ? { password } : {}),
       });
 
@@ -492,12 +517,15 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         else if (res.error === 'CANNOT_CREATE_INSTITUTION_ADMIN') setError(t('um_cannot_create_institution_admin', lang));
         else if (res.error === 'CROSS_ORG_FORBIDDEN')        setError(t('um_cannot_create_outside_org', lang));
         else if (res.error === 'PASSWORD_TOO_SHORT')         setError(t('um_password_too_short', lang));
+        else if (res.error === 'INVALID_USERNAME')           setError(t('um_username_invalid', lang));
         else setError(t('um_edge_disabled', lang));
         return;
       }
 
       // Success — show mode-appropriate message.
-      if (res.passwordMode) {
+      if (identityMode === 'local') {
+        onToast(t('um_created_local', lang));
+      } else if (res.passwordMode) {
         onToast(t('um_created_password', lang));
       } else if (res.invited) {
         onToast(t('um_created_invited', lang));
@@ -516,11 +544,33 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
     <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('um_create_user', lang)}</h3>
 
-      {/* Primary invite-flow banner — always visible */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-        <span style={{ flexShrink: 0 }}>📧</span>
-        <span dir="auto">{t('um_invite_activation_msg', lang)}</span>
+      {/* Identity mode toggle: local (default) vs. email invite/password (secondary) */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+        <button type="button" onClick={() => setIdentityMode('local')}
+          style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+            border: identityMode === 'local' ? '1px solid var(--p)' : '1px solid var(--brd)',
+            background: identityMode === 'local' ? 'var(--p2)' : 'var(--s)', color: 'var(--t)' }}>
+          🔑 {t('um_mode_local', lang)}
+        </button>
+        <button type="button" onClick={() => setIdentityMode('email')}
+          style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+            border: identityMode === 'email' ? '1px solid var(--p)' : '1px solid var(--brd)',
+            background: identityMode === 'email' ? 'var(--p2)' : 'var(--s)', color: 'var(--t)' }}>
+          📧 {t('um_mode_email_secondary', lang)}
+        </button>
       </div>
+
+      {identityMode === 'local' ? (
+        <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+          <span style={{ flexShrink: 0 }}>🔑</span>
+          <span dir="auto">{t('um_local_creation_msg', lang)}</span>
+        </div>
+      ) : (
+        <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+          <span style={{ flexShrink: 0 }}>📧</span>
+          <span dir="auto">{t('um_invite_activation_msg', lang)}</span>
+        </div>
+      )}
 
       {/* Own-institution scope badge for institution_admin */}
       {isInstitutionAdmin && (
@@ -530,23 +580,38 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         </div>
       )}
 
-      {/* Invite config note */}
-      <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '14px' }}>
-        {t('um_invite_notice', lang)}
-      </div>
+      {/* Invite config note — email mode only */}
+      {identityMode === 'email' && (
+        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '14px' }}>
+          {t('um_invite_notice', lang)}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {/* Name + Email */}
+        {/* Name + Username (local) or Email (email mode) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_full_name', lang)} *</label>
             <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} style={fieldStyle} dir="auto" />
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_email', lang)} *</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} dir="ltr" />
-          </div>
+          {identityMode === 'local' ? (
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_username', lang)} *</label>
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                style={{ ...fieldStyle, borderColor: username && !validateUsername(username) ? 'var(--err)' : undefined }}
+                dir="ltr" autoComplete="off" placeholder="ali.pharmacy" />
+            </div>
+          ) : (
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_email', lang)} *</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={fieldStyle} dir="ltr" />
+            </div>
+          )}
         </div>
+
+        {identityMode === 'local' && username && !validateUsername(username) && (
+          <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_username_invalid', lang)}</p>
+        )}
 
         {/* Org + Role */}
         <div style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
@@ -567,24 +632,10 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
           </div>
         </div>
 
-        {/* Advanced: set temporary password — hidden by default */}
-        <div>
-          <button type="button"
-            onClick={() => {
-              setShowAdvanced(s => {
-                const next = !s;
-                setMode(next ? 'password' : 'invite');
-                if (!next) { setPassword(''); setConfirm(''); setError(null); }
-                return next;
-              });
-            }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', color: 'var(--t2)', padding: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span>{showAdvanced ? '▾' : '▸'}</span>
-            <span>{showAdvanced ? t('um_hide_advanced', lang) : `🔑 ${t('um_advanced_options', lang)}`}</span>
-          </button>
-
-          {showAdvanced && (
-            <div style={{ marginTop: '10px', padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>
+        {identityMode === 'local' ? (
+          <>
+            {/* Local mode: temporary password is required up front */}
+            <div style={{ padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>
               <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 12px 0', fontWeight: 600 }} dir="auto">
                 ⚠ {t('um_password_mode_warning', lang)}
               </p>
@@ -592,30 +643,85 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
                 <div>
                   <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
                   <div style={{ position: 'relative' }}>
-                    <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                    <input type={showTempPwd ? 'text' : 'password'} value={tempPassword} onChange={e => setTempPassword(e.target.value)}
                       style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
-                    <button type="button" onClick={() => setShowPwd(s => !s)}
+                    <button type="button" onClick={() => setShowTempPwd(s => !s)}
                       style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
-                      {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                      {showTempPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
                     </button>
                   </div>
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
-                  <input type={showPwd ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
-                    style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? 'var(--err)' : undefined }}
+                  <input type={showTempPwd ? 'text' : 'password'} value={tempConfirm} onChange={e => setTempConfirm(e.target.value)}
+                    style={{ ...fieldStyle, borderColor: tempConfirm && tempConfirm !== tempPassword ? 'var(--err)' : undefined }}
                     autoComplete="new-password" dir="ltr" />
                 </div>
               </div>
-              {password && password.length < 8 && (
+              {tempPassword && tempPassword.length < 8 && (
                 <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '8px 0 0 0' }}>{t('um_password_too_short', lang)}</p>
               )}
-              {confirm && confirm !== password && (
+              {tempConfirm && tempConfirm !== tempPassword && (
                 <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: '8px 0 0 0' }}>{t('um_passwords_no_match', lang)}</p>
               )}
             </div>
-          )}
-        </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_contact_email_optional', lang)}</label>
+              <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} style={fieldStyle} dir="ltr" />
+            </div>
+          </>
+        ) : (
+          /* Advanced: set temporary password — hidden by default (email mode) */
+          <div>
+            <button type="button"
+              onClick={() => {
+                setShowAdvanced(s => {
+                  const next = !s;
+                  setMode(next ? 'password' : 'invite');
+                  if (!next) { setPassword(''); setConfirm(''); setError(null); }
+                  return next;
+                });
+              }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', color: 'var(--t2)', padding: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span>{showAdvanced ? '▾' : '▸'}</span>
+              <span>{showAdvanced ? t('um_hide_advanced', lang) : `🔑 ${t('um_advanced_options', lang)}`}</span>
+            </button>
+
+            {showAdvanced && (
+              <div style={{ marginTop: '10px', padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>
+                <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 12px 0', fontWeight: 600 }} dir="auto">
+                  ⚠ {t('um_password_mode_warning', lang)}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                        style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
+                      <button type="button" onClick={() => setShowPwd(s => !s)}
+                        style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
+                        {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
+                    <input type={showPwd ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
+                      style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? 'var(--err)' : undefined }}
+                      autoComplete="new-password" dir="ltr" />
+                  </div>
+                </div>
+                {password && password.length < 8 && (
+                  <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '8px 0 0 0' }}>{t('um_password_too_short', lang)}</p>
+                )}
+                {confirm && confirm !== password && (
+                  <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: '8px 0 0 0' }}>{t('um_passwords_no_match', lang)}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <p style={{ fontSize: '12px', color: 'var(--err)', margin: 0 }} dir="auto">{error}</p>}
 
@@ -674,8 +780,16 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
 }) {
   const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
 
+  // identityMode: 'local' is the default (LOCAL-CREDENTIALS-MODE-A) — new
+  // username + temporary password, no recovery email. 'email' is secondary/advanced.
+  const [identityMode, setIdentityMode] = useState<'local' | 'email'>('local');
   const [newName,    setNewName]    = useState('');
   const [newEmail,   setNewEmail]   = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [tempPassword, setTempPassword] = useState('');
+  const [tempConfirm,  setTempConfirm]  = useState('');
+  const [showTempPwd,  setShowTempPwd]  = useState(false);
   const [newRole,    setNewRole]    = useState<OfficialRole>('viewer');
   const [newOrgId,   setNewOrgId]   = useState(user.organization_id ?? actorOrgId ?? '');
   const [confirm,    setConfirm]    = useState('');
@@ -683,16 +797,30 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
 
   const roleOptions = OFFICIAL_ROLES.filter(r => canTargetRole(isSuper ? 'super_admin' : 'institution_admin', r));
   const expectedConfirm = `RECYCLE_USER_${user.id}`;
-  const canSubmit = newName.trim() && newEmail.trim() && confirm === expectedConfirm;
+  const localValid = validateUsername(newUsername) && tempPassword.length >= 8 && tempPassword === tempConfirm;
+  const canSubmit = identityMode === 'local'
+    ? Boolean(newName.trim() && localValid && confirm === expectedConfirm)
+    : Boolean(newName.trim() && newEmail.trim() && confirm === expectedConfirm);
 
   async function onSubmit() {
     setBusy(true);
     try {
-      const res = await recycleUserViaEdge({
+      const res = await recycleUserViaEdge(identityMode === 'local' ? {
         targetProfileId: user.id,
         newFullName: newName.trim(),
-        newEmail: newEmail.trim(),
         newRole,
+        loginMode: 'local',
+        newUsername: normalizeUsername(newUsername),
+        newTemporaryPassword: tempPassword,
+        ...(contactEmail.trim() ? { contactEmail: contactEmail.trim() } : {}),
+        ...(isSuper && newOrgId !== user.organization_id ? { newOrganizationId: newOrgId } : {}),
+        confirmation: confirm,
+      } : {
+        targetProfileId: user.id,
+        newFullName: newName.trim(),
+        newRole,
+        loginMode: 'email',
+        newEmail: newEmail.trim(),
         ...(isSuper && newOrgId !== user.organization_id ? { newOrganizationId: newOrgId } : {}),
         confirmation: confirm,
       });
@@ -703,13 +831,16 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
         else if (res.error === 'SELF_ACTION_FORBIDDEN') onError(t('um_recycle_no_self', lang));
         else if (res.error === 'CANNOT_RECYCLE_SUPER_ADMIN') onError(t('um_recycle_no_super', lang));
         else if (res.error === 'CROSS_ORG_FORBIDDEN')  onError(t('um_recycle_no_cross_org', lang));
+        else if (res.error === 'INVALID_USERNAME')     onError(t('um_username_invalid', lang));
         else onError(t('um_recycle_failed', lang));
         return;
       }
 
-      const msg = res.passwordSetupStatus === 'link_generated'
-        ? t('um_recycle_success', lang)
-        : t('um_recycle_link_failed', lang);
+      const msg = identityMode === 'local'
+        ? t('um_recycle_success_local', lang)
+        : (res.passwordSetupStatus === 'link_generated'
+            ? t('um_recycle_success', lang)
+            : t('um_recycle_link_failed', lang));
       onSuccess(msg);
     } catch {
       onError(t('um_recycle_failed', lang));
@@ -729,7 +860,23 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
         </p>
 
         <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)' }} dir="auto">
-          ⚠ {t('um_recycle_warning', lang)}
+          ⚠ {identityMode === 'local' ? t('um_recycle_warning_local', lang) : t('um_recycle_warning', lang)}
+        </div>
+
+        {/* Identity mode toggle: local (default) vs. email recycle (secondary) */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          <button type="button" onClick={() => setIdentityMode('local')}
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+              border: identityMode === 'local' ? '1px solid var(--p)' : '1px solid var(--brd)',
+              background: identityMode === 'local' ? 'var(--p2)' : 'var(--s)', color: 'var(--t)' }}>
+            🔑 {t('um_mode_local', lang)}
+          </button>
+          <button type="button" onClick={() => setIdentityMode('email')}
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+              border: identityMode === 'email' ? '1px solid var(--p)' : '1px solid var(--brd)',
+              background: identityMode === 'email' ? 'var(--p2)' : 'var(--s)', color: 'var(--t)' }}>
+            📧 {t('um_mode_email_secondary', lang)}
+          </button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -738,11 +885,24 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_name', lang)} *</label>
               <input type="text" value={newName} onChange={e => setNewName(e.target.value)} style={fieldStyle} dir="auto" />
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_email', lang)} *</label>
-              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={fieldStyle} dir="ltr" />
-            </div>
+            {identityMode === 'local' ? (
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_username', lang)} *</label>
+                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                  style={{ ...fieldStyle, borderColor: newUsername && !validateUsername(newUsername) ? 'var(--err)' : undefined }}
+                  dir="ltr" autoComplete="off" />
+              </div>
+            ) : (
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_email', lang)} *</label>
+                <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={fieldStyle} dir="ltr" />
+              </div>
+            )}
           </div>
+
+          {identityMode === 'local' && newUsername && !validateUsername(newUsername) && (
+            <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_username_invalid', lang)}</p>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
             {isSuper && (
@@ -760,6 +920,40 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
               </select>
             </div>
           </div>
+
+          {identityMode === 'local' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
+                  <div style={{ position: 'relative' }}>
+                    <input type={showTempPwd ? 'text' : 'password'} value={tempPassword} onChange={e => setTempPassword(e.target.value)}
+                      style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
+                    <button type="button" onClick={() => setShowTempPwd(s => !s)}
+                      style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
+                      {showTempPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
+                  <input type={showTempPwd ? 'text' : 'password'} value={tempConfirm} onChange={e => setTempConfirm(e.target.value)}
+                    style={{ ...fieldStyle, borderColor: tempConfirm && tempConfirm !== tempPassword ? 'var(--err)' : undefined }}
+                    autoComplete="new-password" dir="ltr" />
+                </div>
+              </div>
+              {tempPassword && tempPassword.length < 8 && (
+                <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }}>{t('um_password_too_short', lang)}</p>
+              )}
+              {tempConfirm && tempConfirm !== tempPassword && (
+                <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_passwords_no_match', lang)}</p>
+              )}
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_contact_email_optional', lang)}</label>
+                <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} style={fieldStyle} dir="ltr" />
+              </div>
+            </>
+          )}
 
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_confirm', lang)} *</label>

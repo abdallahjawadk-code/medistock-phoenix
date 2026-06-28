@@ -115,6 +115,13 @@ npm audit --audit-level=high
 
 No protected data is reachable before login except the public QR page.
 
+**Local username credentials (LOCAL-CREDENTIALS-MODE-A):** the login screen
+accepts a username OR a real email. Bare usernames are resolved to a
+synthetic, non-deliverable internal email (`<username>@local.medistock.invalid`)
+before calling Supabase Auth — see `docs/account-lifecycle-policy.md` §3.4.
+Local accounts never depend on SMTP/email delivery to be created, recovered,
+or logged into.
+
 ---
 
 ## 6. RTL / LTR readiness

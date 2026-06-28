@@ -13,8 +13,8 @@
 //   (SUPABASE_SERVICE_ROLE_KEY is already set from admin-create-user deploy)
 //
 // Contract:
-//   POST { target_profile_id, new_full_name, new_email, new_role,
-//          new_organization_id?, confirmation }
+//   POST { target_profile_id, new_full_name, new_role, login_mode,
+//          new_organization_id?, confirmation, ... }
 //   Bearer = caller JWT
 //
 //   - Caller must be authenticated.
@@ -25,6 +25,17 @@
 //     cannot assign super_admin or institution_admin as new_role;
 //     cannot change organization.
 //   - confirmation must equal RECYCLE_USER_<target_profile_id>.
+//
+//   login_mode = 'local' (default, LOCAL-CREDENTIALS-MODE-A):
+//     { new_username, new_temporary_password, contact_email? }
+//     - Auth email is set to the synthetic <new_username>@local.medistock.invalid.
+//     - Auth password is set directly server-side — no recovery link, no email.
+//     - profiles.must_change_password is set true.
+//
+//   login_mode = 'email' (secondary/advanced, unchanged from prior behavior):
+//     { new_email }
+//     - Auth email is updated to new_email; a best-effort recovery link is
+//       generated (delivery depends on SMTP configuration).
 //
 // PARTIAL FAILURE SAFETY:
 //   Auth email update is performed FIRST (most likely to fail — duplicate email,
@@ -39,6 +50,9 @@
 
 // @ts-nocheck — Deno edge runtime; not part of app tsconfig.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const LOCAL_AUTH_DOMAIN = 'local.medistock.invalid';
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 
 const OFFICIAL_ROLES = [
   'super_admin',
@@ -88,26 +102,49 @@ Deno.serve(async (req: Request) => {
   let body: {
     target_profile_id?: string;
     new_full_name?: string;
-    new_email?: string;
     new_role?: string;
     new_organization_id?: string;
     confirmation?: string;
+    login_mode?: string;
+    new_username?: string;
+    new_temporary_password?: string;
+    contact_email?: string;
+    new_email?: string;
   };
   try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST' }, 400); }
 
   const targetProfileId = (body.target_profile_id ?? '').trim();
   const newFullName     = (body.new_full_name ?? '').trim();
-  const newEmail        = (body.new_email ?? '').trim();
   const newRole         = body.new_role ?? '';
   const newOrgId        = body.new_organization_id ?? null;
   const confirmation    = (body.confirmation ?? '').trim();
+  const loginMode       = body.login_mode === 'email' ? 'email' : 'local'; // default: local
 
   // ── Validate required fields ───────────────────────────────────────────────
-  if (!targetProfileId || !newFullName || !newEmail || !newRole) {
+  if (!targetProfileId || !newFullName || !newRole) {
     return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
   }
   if (!OFFICIAL_ROLES.includes(newRole)) {
     return json({ ok: false, error: 'INVALID_ROLE' }, 400);
+  }
+
+  // ── Resolve identity fields per mode ───────────────────────────────────────
+  let newUsername = '';
+  let newTemporaryPassword = ''; // never logged, stored, or returned
+  let contactEmail = '';
+  let newEmail = '';
+
+  if (loginMode === 'local') {
+    newUsername = (body.new_username ?? '').trim().toLowerCase();
+    newTemporaryPassword = (body.new_temporary_password ?? '').trim();
+    contactEmail = (body.contact_email ?? '').trim();
+    if (!newUsername || !newTemporaryPassword) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
+    if (!USERNAME_PATTERN.test(newUsername)) return json({ ok: false, error: 'INVALID_USERNAME' }, 400);
+    if (newTemporaryPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+    newEmail = `${newUsername}@${LOCAL_AUTH_DOMAIN}`;
+  } else {
+    newEmail = (body.new_email ?? '').trim();
+    if (!newEmail) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
   }
 
   // ── Resolve caller profile ─────────────────────────────────────────────────
@@ -206,11 +243,10 @@ Deno.serve(async (req: Request) => {
   // identity_version matching on the close-old-row step.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // ── Step 1: Auth email update FIRST ────────────────────────────────────────
-  const { error: emailErr } = await admin.auth.admin.updateUserById(targetProfileId, {
-    email: newEmail,
-    email_confirm: true,
-  });
+  // ── Step 1: Auth email (+ password for local mode) update FIRST ───────────
+  const authUpdate: Record<string, unknown> = { email: newEmail, email_confirm: true };
+  if (loginMode === 'local') authUpdate.password = newTemporaryPassword;
+  const { error: emailErr } = await admin.auth.admin.updateUserById(targetProfileId, authUpdate);
   if (emailErr) return json({ ok: false, error: 'EMAIL_UPDATE_FAILED' }, 400);
 
   // ── Step 2: DB changes ─────────────────────────────────────────────────────
@@ -236,6 +272,10 @@ Deno.serve(async (req: Request) => {
     full_name: newFullName,
     role: newRole,
     status: 'active',
+    login_mode: loginMode,
+    username: loginMode === 'local' ? newUsername : null,
+    contact_email: loginMode === 'local' ? (contactEmail || null) : null,
+    must_change_password: loginMode === 'local',
   };
   // Only super_admin can change organization.
   if (isCallerSuper && newOrgId) {
@@ -290,20 +330,25 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: 'UNBAN_FAILED' }, 500);
   }
 
-  // ── Step 4: Generate password recovery link (best-effort, non-fatal) ───────
-  // IMPORTANT: generateLink creates a recovery link server-side but does NOT
+  // ── Step 4: Password setup ──────────────────────────────────────────────────
+  // Local mode: password was already set directly server-side in Step 1 — no
+  // email, no recovery link, no SMTP dependency.
+  // Email mode: generateLink creates a recovery link server-side but does NOT
   // guarantee email delivery. Whether the email is actually sent depends on
   // the Supabase project's email provider (SMTP) configuration. The generated
   // link is intentionally discarded — never returned, logged, or stored.
-  let passwordSetupStatus: 'link_generated' | 'link_failed' = 'link_failed';
-  try {
-    const { error: linkErr } = await admin.auth.admin.generateLink({
-      type: 'recovery',
-      email: newEmail,
-    });
-    passwordSetupStatus = linkErr ? 'link_failed' : 'link_generated';
-  } catch {
+  let passwordSetupStatus: 'link_generated' | 'link_failed' | undefined;
+  if (loginMode === 'email') {
     passwordSetupStatus = 'link_failed';
+    try {
+      const { error: linkErr } = await admin.auth.admin.generateLink({
+        type: 'recovery',
+        email: newEmail,
+      });
+      passwordSetupStatus = linkErr ? 'link_failed' : 'link_generated';
+    } catch {
+      passwordSetupStatus = 'link_failed';
+    }
   }
 
   // ── Step 5: Audit log ──────────────────────────────────────────────────────
@@ -328,11 +373,15 @@ Deno.serve(async (req: Request) => {
   // Audit log failure is non-fatal — do not block the recycled user.
 
   // ── Step 6: Return ─────────────────────────────────────────────────────────
+  // Never return the temporary password — only a safe "was set" boolean.
   return json({
     ok: true,
     target_profile_id: targetProfileId,
-    new_email: newEmail,
+    new_email: loginMode === 'email' ? newEmail : undefined,
     new_identity_version: newVersion,
     password_setup_status: passwordSetupStatus,
+    credential_mode: loginMode,
+    new_username: loginMode === 'local' ? newUsername : undefined,
+    temporary_password_set: loginMode === 'local' ? true : undefined,
   });
 });
