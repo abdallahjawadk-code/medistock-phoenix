@@ -455,6 +455,151 @@ describe('Deployment readiness: vercel.json', () => {
   });
 });
 
+// ============================================================================
+// 17. ACCOUNT LIFECYCLE POLICY: docs exist and contain required content
+// ============================================================================
+
+describe('Account lifecycle policy: docs/account-lifecycle-policy.md', () => {
+  const policy = readPhoenix('docs/account-lifecycle-policy.md');
+
+  it('documents all five lifecycle states', () => {
+    expect(policy).toContain('active');
+    expect(policy).toContain('suspended');
+    expect(policy).toContain('corrected');
+    expect(policy).toContain('recycled_candidate');
+    expect(policy).toContain('recycled');
+  });
+
+  it('covers all official roles', () => {
+    expect(policy).toContain('super_admin');
+    expect(policy).toContain('institution_admin');
+    expect(policy).toContain('warehouse_officer');
+    expect(policy).toContain('port_officer');
+    expect(policy).toContain('monthly_status_officer');
+    expect(policy).toContain('viewer');
+  });
+
+  it('defines disable, correction, password reset, recycling, and hard delete', () => {
+    expect(policy.toLowerCase()).toContain('disable');
+    expect(policy.toLowerCase()).toContain('correction');
+    expect(policy.toLowerCase()).toContain('password reset');
+    expect(policy.toLowerCase()).toContain('recycl');
+    expect(policy.toLowerCase()).toContain('hard delete');
+  });
+
+  it('explicitly states hard delete is not a normal operational action', () => {
+    expect(policy).toContain('NOT a normal operational action');
+  });
+
+  it('explains why hard delete is avoided (attribution / FKs)', () => {
+    expect(policy.toLowerCase()).toContain('profile_id');
+    expect(policy.toLowerCase()).toContain('irreversible');
+  });
+
+  it('explains why normal account edit must not be used for recycling', () => {
+    expect(policy.toLowerCase()).toContain('retroactive');
+    expect(policy.toLowerCase()).toContain('identity substitution');
+  });
+
+  it('references the future identity snapshot plan', () => {
+    expect(policy).toContain('user-identity-snapshot-plan.md');
+    expect(policy).toContain('identity_version');
+  });
+
+  it('documents rollback options for each action', () => {
+    expect(policy.toLowerCase()).toContain('rollback');
+    expect(policy.toLowerCase()).toContain('re-enable');
+  });
+
+  it('prohibits auth.admin and service_role from frontend code', () => {
+    expect(policy).toContain('auth.admin');
+    expect(policy).toContain('service_role');
+  });
+});
+
+describe('Identity snapshot plan: docs/user-identity-snapshot-plan.md', () => {
+  const snapshot = readPhoenix('docs/user-identity-snapshot-plan.md');
+
+  it('describes the user_identity_history table', () => {
+    expect(snapshot).toContain('user_identity_history');
+  });
+
+  it('describes the identity_version column on profiles', () => {
+    expect(snapshot).toContain('identity_version');
+    expect(snapshot).toContain('profiles.identity_version');
+  });
+
+  it('documents all required actor snapshot fields', () => {
+    expect(snapshot).toContain('actor_name_snapshot');
+    expect(snapshot).toContain('actor_email_snapshot');
+    expect(snapshot).toContain('actor_role_snapshot');
+    expect(snapshot).toContain('actor_org_snapshot');
+    expect(snapshot).toContain('actor_identity_version');
+  });
+
+  it('lists tables requiring review before implementation', () => {
+    expect(snapshot).toContain('audit_logs');
+    expect(snapshot).toContain('institution_item_status_reports');
+  });
+
+  it('explains how old operations stay attributed to the old identity', () => {
+    expect(snapshot.toLowerCase()).toContain('historical');
+    expect(snapshot.toLowerCase()).toContain('do not change');
+  });
+
+  it('states recycling must be an atomic server-side operation', () => {
+    expect(snapshot.toLowerCase()).toContain('atomic');
+    expect(snapshot.toLowerCase()).toContain('transaction');
+  });
+
+  it('warns against partial implementation', () => {
+    expect(snapshot.toLowerCase()).toContain('partial implementation');
+  });
+});
+
+// ============================================================================
+// 18. RECYCLING + HARD DELETE: not yet in UI or services
+// ============================================================================
+
+describe('Account lifecycle guardrails: recycling not implemented', () => {
+  const screen  = readSrc('features/users/UserManagementScreen.tsx');
+  const userSvc = readSrc('shared/supabase/services/users.service.ts');
+
+  it('no recycling UI element in UserManagementScreen', () => {
+    expect(screen).not.toContain('recycle');
+    expect(screen).not.toContain('recycled_candidate');
+  });
+
+  it('no recycling service function in users.service.ts', () => {
+    expect(userSvc).not.toContain('recycleUser');
+    expect(userSvc).not.toContain('recycleuserviaedge');
+  });
+
+  it('hard delete button is not rendered in the UI', () => {
+    expect(screen).not.toContain('deleteTarget');
+    expect(screen).not.toContain('um_delete_user_action');
+  });
+
+  it('deleteUserViaEdge exists in service but is not imported in the screen', () => {
+    expect(userSvc).toContain('deleteUserViaEdge');
+    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+  });
+
+  it('no raw .update() on profiles in frontend code (all changes via RPCs/Edge Functions)', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      const content = readFile(path);
+      // Direct profile updates from frontend are prohibited; all lifecycle goes through Edge Functions
+      const dangerousUpdate = content.match(/from\(['"]profiles['"]\)\s*\.\s*update\s*\(/g);
+      expect(dangerousUpdate).toBeNull();
+    });
+  });
+});
+
+// ============================================================================
+// (16 continues below)
+// ============================================================================
+
 describe('Deployment readiness: documentation', () => {
   const doc = readPhoenix('docs/deployment-readiness.md');
 
