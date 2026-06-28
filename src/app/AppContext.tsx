@@ -55,13 +55,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  // Seed recovery mode from the URL so the reset screen shows even before the
-  // Supabase PASSWORD_RECOVERY event fires (e.g. on the /auth/callback landing).
+  // Seed recovery mode from the URL so the reset screen shows immediately,
+  // before Supabase's PASSWORD_RECOVERY event fires. ResetPasswordScreen
+  // handles its own session exchange — AppContext skips profile loading.
   const [passwordRecovery, setPasswordRecovery] = useState<boolean>(
     () => typeof window !== 'undefined' &&
       (window.location.pathname.startsWith('/auth/callback') ||
        window.location.hash.includes('type=recovery')),
   );
+  const passwordRecoveryRef = useRef(passwordRecovery);
 
   const setLang  = (l: Lang)  => setLangState(l);
   const setTheme = (t: Theme) => setThemeState(t);
@@ -93,10 +95,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Establish session on mount + subscribe to auth changes.
-  // When landing on /auth/callback, Supabase auto-detects the code/token and
-  // exchanges it. We must wait for that exchange to complete (via the
-  // onAuthStateChange callback) before marking authReady — otherwise the
-  // recovery form renders before the session exists and updateUser fails.
+  // Recovery callback landing (/auth/callback) is handled entirely by
+  // ResetPasswordScreen — it manages its own session exchange independently.
+  // AppContext just needs to mark passwordRecovery=true so App.tsx renders it.
   useEffect(() => {
     let active = true;
     if (!supabaseConfigured) {
@@ -104,20 +105,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const isCallbackLanding =
-      typeof window !== 'undefined' &&
-      (window.location.pathname.startsWith('/auth/callback') ||
-       window.location.hash.includes('type=recovery') ||
-       window.location.hash.includes('access_token'));
-
     const unsub = onAuthChange(async (event, s) => {
       if (!active) return;
-      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryRef.current = true;
+        setPasswordRecovery(true);
+      }
       setSession(s);
-      await loadProfile(s);
-      // Clean callback tokens from the URL bar after session is established.
-      if (isCallbackLanding && s && typeof window !== 'undefined') {
-        window.history.replaceState(null, '', '/');
+      // Skip profile loading during recovery — ResetPasswordScreen is standalone
+      if (!passwordRecoveryRef.current) {
+        await loadProfile(s);
       }
       if (!authReadyRef.current) {
         authReadyRef.current = true;
@@ -125,29 +122,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // For non-callback pages, also check getSession so we don't wait forever
-    // if there's no auth event pending (normal page load with existing session).
-    if (!isCallbackLanding) {
-      getSession().then(async (s) => {
-        if (!active) return;
-        setSession(s);
+    getSession().then(async (s) => {
+      if (!active) return;
+      setSession(s);
+      if (!passwordRecoveryRef.current) {
         await loadProfile(s);
-        if (!authReadyRef.current) {
-          authReadyRef.current = true;
-          setAuthReady(true);
-        }
-      });
-    } else {
-      // On callback landing, set a timeout fallback so the user doesn't wait
-      // forever if the code exchange fails silently.
-      const fallback = setTimeout(() => {
-        if (active && !authReadyRef.current) {
-          authReadyRef.current = true;
-          setAuthReady(true);
-        }
-      }, 5000);
-      return () => { active = false; unsub(); clearTimeout(fallback); };
-    }
+      }
+      if (!authReadyRef.current) {
+        authReadyRef.current = true;
+        setAuthReady(true);
+      }
+    });
 
     return () => { active = false; unsub(); };
   }, [loadProfile]);

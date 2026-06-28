@@ -94,6 +94,35 @@ export async function updatePassword(newPassword: string): Promise<SignInResult>
 }
 
 /**
+ * Explicitly exchange a PKCE code for a session. Used on /auth/callback
+ * landing when detectSessionInUrl may not have completed.
+ */
+export async function exchangeCodeForSession(code: string): Promise<Session | null> {
+  if (!supabaseConfigured) return null;
+  try {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) return null;
+    return data.session ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set session from hash tokens (implicit grant flow).
+ */
+export async function setSessionFromTokens(accessToken: string, refreshToken: string): Promise<Session | null> {
+  if (!supabaseConfigured) return null;
+  try {
+    const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    if (error) return null;
+    return data.session ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Loads the current user's profile (role + org) from public.profiles.
  * RLS ensures a user can only read their own profile row.
  */

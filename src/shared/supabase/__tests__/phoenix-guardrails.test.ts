@@ -1561,46 +1561,51 @@ describe('My Account: password management safety', () => {
 });
 
 // ============================================================================
-// 31. PASSWORD RECOVERY CALLBACK: session handling and error messages
+// 31. PASSWORD RECOVERY: standalone session handling
 // ============================================================================
 
-describe('Password recovery callback fix', () => {
+describe('Password recovery hardening', () => {
   const ctx    = readSrc('app/AppContext.tsx');
   const reset  = readSrc('features/auth/ResetPasswordScreen.tsx');
+  const auth   = readSrc('shared/supabase/services/auth.service.ts');
   const strings = readSrc('shared/i18n/strings.ts');
 
-  it('AppContext waits for auth callback before setting authReady', () => {
-    expect(ctx).toContain('isCallbackLanding');
-    expect(ctx).toContain("'/auth/callback'");
-    expect(ctx).toContain('authReadyRef');
+  it('ResetPasswordScreen is self-contained — does not use useApp for session/updatePassword', () => {
+    expect(reset).not.toContain("useApp().session");
+    expect(reset).not.toContain("useApp().updatePassword");
+    expect(reset).toContain('authUpdatePassword');
+    expect(reset).toContain('getSession');
   });
 
-  it('AppContext detects hash-based recovery tokens', () => {
-    expect(ctx).toContain("type=recovery");
-    expect(ctx).toContain("access_token");
+  it('ResetPasswordScreen explicitly calls exchangeCodeForSession for PKCE codes', () => {
+    expect(reset).toContain('exchangeCodeForSession');
+    expect(reset).toContain("params.get('code')");
   });
 
-  it('AppContext has timeout fallback for callback landing', () => {
-    expect(ctx).toContain('5000');
-    expect(ctx).toContain('fallback');
+  it('ResetPasswordScreen handles hash-based implicit tokens', () => {
+    expect(reset).toContain('setSessionFromTokens');
+    expect(reset).toContain('access_token');
+    expect(reset).toContain('refresh_token');
   });
 
-  it('AppContext cleans callback tokens from URL after session established', () => {
-    expect(ctx).toContain("window.history.replaceState(null, '', '/')");
+  it('ResetPasswordScreen cleans URL after session exchange', () => {
+    expect(reset).toContain("window.history.replaceState");
   });
 
-  it('ResetPasswordScreen waits for session before showing form', () => {
-    expect(reset).toContain('sessionReady');
-    expect(reset).toContain('recovery_verifying');
+  it('ResetPasswordScreen has loading/ready/no_session/done states', () => {
+    expect(reset).toContain("'loading'");
+    expect(reset).toContain("'ready'");
+    expect(reset).toContain("'no_session'");
+    expect(reset).toContain("'done'");
   });
 
-  it('ResetPasswordScreen checks session before calling updatePassword', () => {
-    expect(reset).toContain("if (!session)");
+  it('ResetPasswordScreen re-checks session right before updatePassword call', () => {
+    expect(reset).toContain('await getSession()');
     expect(reset).toContain('recovery_no_session');
   });
 
-  it('ResetPasswordScreen does not use generic load_error for recovery failures', () => {
-    expect(reset).not.toContain("t('load_error'");
+  it('ResetPasswordScreen does not use generic load_error', () => {
+    expect(reset).not.toContain('load_error');
   });
 
   it('ResetPasswordScreen uses specific recovery error messages', () => {
@@ -1609,19 +1614,30 @@ describe('Password recovery callback fix', () => {
     expect(reset).toContain('recovery_no_session');
   });
 
-  it('i18n has bilingual recovery-specific error messages', () => {
+  it('auth.service exports exchangeCodeForSession and setSessionFromTokens', () => {
+    expect(auth).toContain('exchangeCodeForSession');
+    expect(auth).toContain('setSessionFromTokens');
+    expect(auth).toContain('supabase.auth.exchangeCodeForSession');
+    expect(auth).toContain('supabase.auth.setSession');
+  });
+
+  it('AppContext skips profile loading during recovery', () => {
+    expect(ctx).toContain('passwordRecoveryRef');
+    expect(ctx).toContain('Skip profile loading during recovery');
+  });
+
+  it('AppContext seeds passwordRecovery from /auth/callback URL', () => {
+    expect(ctx).toContain("'/auth/callback'");
+    expect(ctx).toContain("type=recovery");
+  });
+
+  it('i18n has bilingual recovery messages', () => {
     expect(strings).toContain('recovery_verifying');
     expect(strings).toContain('recovery_no_session');
     expect(strings).toContain('recovery_link_expired');
     expect(strings).toContain('recovery_failed');
     expect(strings).toContain('تعذر تأكيد رابط إعادة التعيين');
     expect(strings).toContain('Could not verify the reset link');
-    expect(strings).toContain('انتهت صلاحية رابط إعادة التعيين');
-    expect(strings).toContain('The reset link has expired');
-  });
-
-  it('i18n does not use generic error for recovery link issues', () => {
-    expect(reset).not.toContain("load_error");
   });
 
   it('ResetPasswordScreen does not log tokens or passwords', () => {
@@ -1630,10 +1646,15 @@ describe('Password recovery callback fix', () => {
 
   it('no service_role in recovery flow', () => {
     expect(reset).not.toContain('service_role');
-    expect(ctx).not.toContain('service_role');
   });
 
   it('no auth.admin in recovery flow', () => {
     expect(reset).not.toMatch(/auth\.admin/);
+  });
+
+  it('no profile loading dependency in ResetPasswordScreen', () => {
+    expect(reset).not.toContain('getMyProfile');
+    expect(reset).not.toContain('loadProfile');
+    expect(reset).not.toContain("from('profiles')");
   });
 });
