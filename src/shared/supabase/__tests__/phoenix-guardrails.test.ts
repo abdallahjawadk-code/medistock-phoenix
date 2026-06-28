@@ -430,3 +430,70 @@ describe('Password reset: dynamic redirect + no legacy URL', () => {
     });
   });
 });
+
+// ============================================================================
+// 16. DEPLOYMENT READINESS: vercel config + docs
+// ============================================================================
+
+describe('Deployment readiness: vercel.json', () => {
+  const vercel = JSON.parse(readPhoenix('vercel.json'));
+
+  it('uses the Vite framework preset', () => {
+    expect(vercel.framework).toBe('vite');
+  });
+
+  it('builds with npm run build into dist', () => {
+    expect(vercel.buildCommand).toContain('npm run build');
+    expect(vercel.outputDirectory).toBe('dist');
+  });
+
+  it('has an SPA rewrite so deep links / public QR refresh resolve', () => {
+    const rewrites = vercel.rewrites ?? [];
+    const spa = rewrites.find((r: { source: string }) => r.source === '/(.*)');
+    expect(spa).toBeTruthy();
+    expect(spa.destination).toMatch(/index\.html|\/$/);
+  });
+});
+
+describe('Deployment readiness: documentation', () => {
+  const doc = readPhoenix('docs/deployment-readiness.md');
+
+  it('documents the actual frontend env var names (anon only)', () => {
+    expect(doc).toContain('VITE_PHOENIX_SUPABASE_URL');
+    expect(doc).toContain('VITE_PHOENIX_SUPABASE_ANON_KEY');
+  });
+
+  it('never documents service_role for the frontend', () => {
+    // service_role may only appear as an explicit prohibition, never as a value.
+    expect(doc).not.toMatch(/VITE_[A-Z_]*SERVICE_ROLE/);
+    expect(doc.toLowerCase()).toContain('never');
+    expect(doc).toContain('service_role'); // present only as a "never" warning
+  });
+
+  it('lists the three manual migrations 005/006/007', () => {
+    expect(doc).toContain('005_phoenix_assign_profile_role.sql');
+    expect(doc).toContain('006_phoenix_status_reports.sql');
+    expect(doc).toContain('007_phoenix_clear_port_availability.sql');
+  });
+
+  it('forbids db push and audit fix --force', () => {
+    expect(doc).toContain('supabase db push');
+    expect(doc).toContain('audit fix --force');
+  });
+
+  it('documents the public QR route as public/unauthenticated', () => {
+    expect(doc).toMatch(/public qr/i);
+    expect(doc.toLowerCase()).toMatch(/no auth|unauthenticated|public \(no auth\)/);
+  });
+
+  it('documents protected routes as auth-gated', () => {
+    expect(doc.toLowerCase()).toContain('auth-gated');
+    expect(doc.toLowerCase()).toContain('dashboard');
+  });
+
+  it('includes post-deploy smoke tests and a rollback plan', () => {
+    expect(doc.toLowerCase()).toContain('smoke test');
+    expect(doc.toLowerCase()).toContain('rollback');
+    expect(doc).toContain('git revert');
+  });
+});
