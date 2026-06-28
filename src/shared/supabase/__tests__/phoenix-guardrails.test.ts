@@ -775,9 +775,10 @@ describe('Migration 013: user identity snapshot foundation', () => {
 describe('Identity snapshot plan: foundation status updated', () => {
   const snapshot = readPhoenix('docs/user-identity-snapshot-plan.md');
 
-  it('marks the foundation as authored (migration 013)', () => {
+  it('marks the foundation as applied (migrations 013 + 014)', () => {
     expect(snapshot).toContain('013');
-    expect(snapshot).toContain('Foundation authored');
+    expect(snapshot).toContain('014');
+    expect(snapshot).toContain('Write paths wired');
   });
 
   it('identifies the next phase as ACTOR-SNAPSHOT-WRITE-PATHS-A', () => {
@@ -1050,5 +1051,118 @@ describe('Post-014 guardrails: service_role and auth.admin absent from frontend'
     files.forEach(path => {
       expect(readFile(path)).not.toMatch(/auth\.admin/);
     });
+  });
+});
+
+// ============================================================================
+// 24. RECYCLING AUDIT: snapshot plan documents recycling readiness
+// ============================================================================
+
+describe('Recycling audit: snapshot plan updated for recycling readiness', () => {
+  const plan = readPhoenix('docs/user-identity-snapshot-plan.md');
+
+  it('marks write paths as wired (migrations 013 + 014 applied)', () => {
+    expect(plan).toContain('Write paths wired');
+    expect(plan).toContain('migrations 013 + 014 applied');
+  });
+
+  it('documents ACTOR-SNAPSHOT-WRITE-PATHS-A as completed', () => {
+    expect(plan).toContain('ACTOR-SNAPSHOT-WRITE-PATHS-A');
+  });
+
+  it('documents USER-ACCOUNT-RECYCLING-AUDIT-A as current phase', () => {
+    expect(plan).toContain('USER-ACCOUNT-RECYCLING-AUDIT-A');
+  });
+
+  it('identifies USER-ACCOUNT-RECYCLING-A as next phase', () => {
+    expect(plan).toContain('USER-ACCOUNT-RECYCLING-A');
+  });
+
+  it('documents the required Edge Function admin-recycle-user', () => {
+    expect(plan).toContain('admin-recycle-user');
+  });
+
+  it('documents the required users.recycle permission key', () => {
+    expect(plan).toContain('users.recycle');
+  });
+
+  it('documents required confirmation phrase format', () => {
+    expect(plan).toContain('RECYCLE_USER_');
+  });
+
+  it('documents required audit log event: account_recycled', () => {
+    expect(plan).toContain('account_recycled');
+  });
+
+  it('documents no self-recycling rule', () => {
+    expect(plan.toLowerCase()).toContain('no self-recycling');
+  });
+
+  it('documents no recycling super_admin rule', () => {
+    expect(plan.toLowerCase()).toContain('no recycling');
+    expect(plan).toContain('super_admin');
+  });
+
+  it('documents target must be suspended before recycling', () => {
+    expect(plan).toContain('suspended');
+  });
+
+  it('documents atomic transaction requirement', () => {
+    expect(plan.toLowerCase()).toContain('transaction');
+  });
+
+  it('documents rollback on failure', () => {
+    expect(plan.toLowerCase()).toContain('rollback');
+  });
+
+  it('documents UI label in Arabic and English', () => {
+    expect(plan).toContain('تدوير الحساب');
+    expect(plan).toContain('Recycle Account');
+  });
+
+  it('documents the old-operations warning in Arabic and English', () => {
+    expect(plan).toContain('ستبقى العمليات القديمة');
+    expect(plan).toContain('Old operations remain attributed');
+  });
+});
+
+// ============================================================================
+// 25. RECYCLING AUDIT: recycling still not implemented in code
+// ============================================================================
+
+describe('Recycling audit: no recycling implementation in codebase', () => {
+  it('no recycleUserViaEdge in users.service.ts', () => {
+    const svc = readSrc('shared/supabase/services/users.service.ts');
+    expect(svc).not.toContain('recycleUserViaEdge');
+    expect(svc).not.toContain('admin-recycle-user');
+  });
+
+  it('no recycle button or modal in UserManagementScreen', () => {
+    const screen = readSrc('features/users/UserManagementScreen.tsx');
+    expect(screen).not.toContain('recycle');
+    expect(screen).not.toContain('تدوير');
+  });
+
+  it('no admin-recycle-user Edge Function directory exists yet', () => {
+    let exists = true;
+    try { readPhoenix('supabase/functions/admin-recycle-user/index.ts'); } catch { exists = false; }
+    expect(exists).toBe(false);
+  });
+
+  it('no users.recycle permission in the permission catalog yet', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    expect(perms).not.toContain('users.recycle');
+  });
+
+  it('no recycle i18n strings yet', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).not.toContain('recycle');
+    expect(strings).not.toContain('تدوير');
+  });
+
+  it('account lifecycle policy documents recycling as future', () => {
+    const policy = readPhoenix('docs/account-lifecycle-policy.md');
+    expect(policy).toContain('Future');
+    expect(policy).toContain('Not Yet Implemented');
   });
 });

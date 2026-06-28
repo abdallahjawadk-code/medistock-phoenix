@@ -1,9 +1,13 @@
 # MediStock-Babil Phoenix V2 — User Identity Snapshot Plan
 
 **Plan ID:** USER-IDENTITY-SNAPSHOT-FOUNDATION-A  
-**Status:** Foundation authored — migration 013 written, pending manual apply  
+**Status:** Write paths wired — migrations 013 + 014 applied, triggers active  
 **Depends on:** ACCOUNT-LIFECYCLE-POLICY-A (complete)  
-**Next phase:** ACTOR-SNAPSHOT-WRITE-PATHS-A (wire snapshot fields into Edge Function write paths)
+**Completed phases:**  
+- USER-IDENTITY-SNAPSHOT-FOUNDATION-A (migration 013)  
+- ACTOR-SNAPSHOT-WRITE-PATHS-A (migration 014)  
+**Current phase:** USER-ACCOUNT-RECYCLING-AUDIT-A (audit complete)  
+**Next phase:** USER-ACCOUNT-RECYCLING-A (implement recycling workflow)
 
 ---
 
@@ -165,4 +169,114 @@ Migration 013 (`013_phoenix_user_identity_snapshot_foundation.sql`) completes th
 - ✅ Backfill applied for existing rows (best-effort; nulls remain where actor cannot be resolved).
 - ✅ `get_profile_identity_snapshot(profile_id)` helper RPC added for use by future write paths.
 
-**Next phase:** ACTOR-SNAPSHOT-WRITE-PATHS-A — wire the snapshot columns into Edge Function write operations so new records are always populated at creation time.
+---
+
+## 10. Write Paths Wired — What Was Done in Migration 014
+
+Migration 014 (`014_phoenix_actor_snapshot_write_path_triggers.sql`) completes the ACTOR-SNAPSHOT-WRITE-PATHS-A phase:
+
+- ✅ `phoenix_populate_actor_snapshot()` SECURITY DEFINER trigger function created.
+- ✅ BEFORE INSERT OR UPDATE triggers attached to all 6 operational tables.
+- ✅ On INSERT: always populates snapshot (prevents frontend spoofing).
+- ✅ On UPDATE: preserves existing snapshots (except `item_availability` which re-snapshots current actor).
+- ✅ Falls back to `auth.uid()` when actor column is NULL.
+- ✅ `actor_role_snapshot` skipped for `audit_logs` (already has `actor_role` column).
+
+---
+
+## 11. Recycling Audit — USER-ACCOUNT-RECYCLING-AUDIT-A
+
+### Snapshot readiness: CONFIRMED
+
+All prerequisites for safe account recycling are in place:
+1. `profiles.identity_version` exists (migration 013).
+2. `user_identity_history` exists with RLS enabled (migration 013).
+3. Actor snapshot triggers active on all 6 operational tables (migration 014).
+4. New operations automatically capture actor identity at write time.
+5. Historical records are not overwritten by triggers (UPDATE guard).
+
+### Required implementation pieces for USER-ACCOUNT-RECYCLING-A
+
+1. **Edge Function: `admin-recycle-user`** — required. Must be atomic, server-side only.
+2. **Migration 015** — required. Adds:
+   - `users.recycle` permission key to `permission_keys` table.
+   - RLS policy on `user_identity_history` for authenticated reads (own org + super_admin).
+3. **Frontend UI** — required. Recycle button + confirmation modal in `UserManagementScreen`.
+4. **i18n strings** — required. Arabic + English for recycle labels and warnings.
+5. **Service function** — required. `recycleUserViaEdge()` in `users.service.ts`.
+
+### Safe recycling rules
+
+**Allowed actors:**
+- `super_admin` may recycle any non-super_admin account globally.
+- `institution_admin` may recycle non-admin accounts within own org only if granted `users.recycle` permission.
+
+**Blocked:**
+- No self-recycling.
+- No recycling `super_admin` accounts.
+- No recycling `institution_admin` accounts unless actor is `super_admin`.
+- No recycling active accounts (must be suspended first).
+- No hard delete (remains hidden).
+- No normal edit as recycling substitute.
+- No changing auth email without history snapshot.
+- No changing profile identity without incrementing `identity_version`.
+
+### Proposed recycling workflow (Edge Function: `admin-recycle-user`)
+
+```
+1. Validate caller is super_admin (or institution_admin with users.recycle + own org).
+2. Validate target account is suspended.
+3. Validate target is not super_admin or institution_admin (unless caller is super_admin).
+4. Validate confirmation = 'RECYCLE_USER_' + target_user_id.
+5. BEGIN TRANSACTION (via service_role client):
+   a. Close current identity: UPDATE user_identity_history
+      SET valid_until = now()
+      WHERE profile_id = target_id AND valid_until IS NULL.
+   b. Increment identity_version: UPDATE profiles
+      SET identity_version = identity_version + 1,
+          full_name = <new_name>, status = 'active',
+          updated_at = now().
+   c. Insert new identity history row:
+      INSERT INTO user_identity_history (profile_id, identity_version, full_name, email,
+        role, organization_id, valid_from, change_reason, recycled_by)
+      VALUES (target_id, new_version, new_name, new_email, new_role, new_org_id,
+        now(), 'recycled', caller_id).
+   d. Update auth email: admin.auth.admin.updateUserById(target_id, { email: new_email }).
+   e. Remove auth ban: admin.auth.admin.updateUserById(target_id, { ban_duration: 'none' }).
+   f. Send password setup: admin.auth.admin.inviteUserByEmail(new_email)
+      OR admin.auth.admin.generateLink({ type: 'recovery', email: new_email }).
+6. Write audit log: action = 'account_recycled', payload = { old_identity, new_identity }.
+7. RETURN { ok: true, new_identity_version }.
+```
+
+**Rollback:** If any step fails, the transaction rolls back. No partial recycling.
+
+### Required confirmation phrase
+
+`RECYCLE_USER_<target_user_id>`
+
+### Required audit log event
+
+`action: 'account_recycled'` with payload containing:
+- `old_full_name`, `old_email`, `old_role`, `old_identity_version`
+- `new_full_name`, `new_email`, `new_role`, `new_identity_version`
+- `recycled_by` (caller profile ID)
+
+### UI design proposal
+
+**Button:** appears only for suspended users, only for actors with `users.recycle` permission.
+- Arabic: تدوير الحساب
+- English: Recycle Account
+
+**Confirmation modal fields:**
+- New full name (required)
+- New email (required)
+- New role (dropdown, required)
+- Organization (only if super_admin and cross-org transfer)
+- Confirmation phrase input
+
+**Warning text:**
+- Arabic: ستبقى العمليات القديمة محفوظة باسم المستخدم السابق، وستسجل العمليات الجديدة بالهوية الجديدة.
+- English: Old operations remain attributed to the previous identity; new operations will use the new identity.
+
+**Next phase:** USER-ACCOUNT-RECYCLING-A (implement the recycling workflow).
