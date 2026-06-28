@@ -116,7 +116,7 @@ export function UserManagementScreen() {
 
       {showCreate && canCreate && (
         <CreateUserForm
-          lang={lang} isSuper={isSuper} actorOrgId={activeOrgId}
+          lang={lang} isSuper={isSuper} actorRole={role} actorOrgId={activeOrgId}
           onClose={() => setShowCreate(false)} onToast={showToast}
           onCreated={() => { setShowCreate(false); users.reload(); }}
         />
@@ -415,9 +415,10 @@ function ContactSection({ orgId, lang }: { orgId: string | null; lang: 'ar' | 'e
 
 /* ── Create user form (secure server path only) ── */
 
-function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated }: {
+function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast, onCreated }: {
   lang: 'ar' | 'en';
   isSuper: boolean;
+  actorRole: string;
   actorOrgId: string | null;
   onClose: () => void;
   onToast: (m: string) => void;
@@ -437,7 +438,8 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
-  const roleOptions   = OFFICIAL_ROLES.filter(r => canTargetRole(isSuper ? 'super_admin' : 'viewer', r));
+  const isInstitutionAdmin = normalizeRole(actorRole) === 'institution_admin';
+  const roleOptions   = OFFICIAL_ROLES.filter(r => canTargetRole(actorRole, r));
   const effectiveOrg  = isSuper ? orgId : (actorOrgId ?? '');
   const pwdValid      = mode === 'invite' || (password.length >= 8 && password === confirm);
   const canSubmit     = fullName.trim() && email.trim() && effectiveOrg && pwdValid;
@@ -445,6 +447,7 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
   async function onSubmit() {
     setError(null);
     if (selRole === 'super_admin' && !isSuper) { setError(t('um_cannot_create_super', lang)); return; }
+    if (selRole === 'institution_admin' && !isSuper) { setError(t('um_cannot_create_institution_admin', lang)); return; }
     if (!isSuper && actorOrgId && effectiveOrg !== actorOrgId) { setError(t('um_cannot_create_outside_org', lang)); return; }
 
     if (mode === 'password') {
@@ -464,9 +467,10 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
 
       if (res.edgeMissing) { setError(t('um_edge_disabled', lang)); return; }
       if (!res.ok) {
-        if (res.error === 'CANNOT_CREATE_SUPER_ADMIN') setError(t('um_cannot_create_super', lang));
-        else if (res.error === 'CROSS_ORG_FORBIDDEN')  setError(t('um_cannot_create_outside_org', lang));
-        else if (res.error === 'PASSWORD_TOO_SHORT')   setError(t('um_password_too_short', lang));
+        if (res.error === 'CANNOT_CREATE_SUPER_ADMIN')       setError(t('um_cannot_create_super', lang));
+        else if (res.error === 'CANNOT_CREATE_INSTITUTION_ADMIN') setError(t('um_cannot_create_institution_admin', lang));
+        else if (res.error === 'CROSS_ORG_FORBIDDEN')        setError(t('um_cannot_create_outside_org', lang));
+        else if (res.error === 'PASSWORD_TOO_SHORT')         setError(t('um_password_too_short', lang));
         else setError(t('um_edge_disabled', lang));
         return;
       }
@@ -496,6 +500,14 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
         <span style={{ flexShrink: 0 }}>📧</span>
         <span dir="auto">{t('um_invite_activation_msg', lang)}</span>
       </div>
+
+      {/* Own-institution scope badge for institution_admin */}
+      {isInstitutionAdmin && (
+        <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '10px', fontSize: '12px', color: 'var(--t2)', display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <span>🏢</span>
+          <span dir="auto">{t('um_invite_own_org_only', lang)}</span>
+        </div>
+      )}
 
       {/* Invite config note */}
       <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '14px' }}>

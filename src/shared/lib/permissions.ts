@@ -104,6 +104,19 @@ const MONTHLY_STATUS_OFFICER_DEFAULTS = [
   'status_contacts.view', 'status_contacts.manage',
 ];
 
+// Institution administrator — org-scoped user manager.
+// Cannot create/archive organizations, cannot manage permissions, cannot delete users.
+// users.disable granted only when migration 011 is applied (not in defaults).
+const INSTITUTION_ADMIN_DEFAULTS = [
+  'dashboard.view', 'organizations.view',
+  'users.view', 'users.create', 'users.assign_role',
+  'warehouses.view', 'ports.view',
+  'availability.view',
+  'status_center.view',
+  'exchange_alerts.view', 'inter_institution_alerts.view',
+  'status_contacts.view', 'status_contacts.manage',
+];
+
 // Legacy org-admin (hospital_admin) — broad org scope, but NOT platform-level.
 const LEGACY_ADMIN_DEFAULTS = [
   'dashboard.view', 'organizations.view', 'organizations.edit',
@@ -120,6 +133,7 @@ const LEGACY_ADMIN_DEFAULTS = [
 
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   super_admin:            ALL_KEYS,
+  institution_admin:      INSTITUTION_ADMIN_DEFAULTS,
   warehouse_officer:      WAREHOUSE_OFFICER_DEFAULTS,
   port_officer:           PORT_OFFICER_DEFAULTS,
   monthly_status_officer: MONTHLY_STATUS_OFFICER_DEFAULTS,

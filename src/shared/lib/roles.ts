@@ -1,5 +1,5 @@
 /* ─── MEDISTOCK PHOENIX — Official Role Model ──────────────────────────────────
-   Official simplified role model (USER-PERMISSION-MATRIX-A).
+   Official simplified role model (USER-PERMISSION-MATRIX-A + INSTITUTION-ADMIN-USER-SCOPE-A).
    The live DB still stores legacy keys for existing users; we keep a
    non-destructive compatibility mapping so nothing breaks before migration 010
    expands the role CHECK. Old Arabic labels are NEVER shown as official labels.
@@ -7,6 +7,7 @@
 
 export type OfficialRole =
   | 'super_admin'
+  | 'institution_admin'
   | 'warehouse_officer'
   | 'port_officer'
   | 'monthly_status_officer'
@@ -15,6 +16,7 @@ export type OfficialRole =
 /** The only roles offered in the official role dropdown, in display order. */
 export const OFFICIAL_ROLES: readonly OfficialRole[] = [
   'super_admin',
+  'institution_admin',
   'warehouse_officer',
   'port_officer',
   'monthly_status_officer',
@@ -27,6 +29,7 @@ export const LEGACY_ADMIN_ROLE = 'hospital_admin';
 /** i18n key per official role (labels live in strings.ts). */
 export const OFFICIAL_ROLE_LABEL_KEY: Record<OfficialRole, string> = {
   super_admin:            'orole_super_admin',
+  institution_admin:      'orole_institution_admin',
   warehouse_officer:      'orole_warehouse_officer',
   port_officer:           'orole_port_officer',
   monthly_status_officer: 'orole_monthly_status_officer',
@@ -71,8 +74,15 @@ export function roleLabelKey(role: string | null | undefined): string {
   return OFFICIAL_ROLE_LABEL_KEY[n];
 }
 
-/** Only super_admin may create or assign super_admin. */
+/**
+ * Can actorRole create / assign targetRole?
+ * - Only super_admin may create super_admin.
+ * - Only super_admin may create institution_admin.
+ * - All other combinations are allowed.
+ */
 export function canTargetRole(actorRole: string, targetRole: OfficialRole): boolean {
-  if (targetRole === 'super_admin') return normalizeRole(actorRole) === 'super_admin';
+  const actor = normalizeRole(actorRole);
+  if (targetRole === 'super_admin')       return actor === 'super_admin';
+  if (targetRole === 'institution_admin') return actor === 'super_admin';
   return true;
 }

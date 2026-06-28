@@ -29,7 +29,7 @@ on conflict (key) do nothing;
 
 -- super_admin gets both (all-keys policy already covers it via the wildcard
 -- insert in 010, but be explicit here for clarity).
-insert into role_permission_defaults (role, permission_key, is_allowed)
+insert into role_permission_defaults (role, permission_key, allowed)
 values
   ('super_admin','users.disable', true),
   ('super_admin','users.delete',  true)

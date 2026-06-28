@@ -15,16 +15,18 @@
 //     - Bans the auth user (prevents login immediately).
 //     - Sets profiles.status = 'suspended'.
 //     - Sets profiles.disabled_at / disabled_by if columns exist (migration 011).
-//     - Caller must be super_admin.
+//     - Caller must be super_admin OR institution_admin (with users.disable).
+//     - institution_admin: own org only; cannot disable super_admin/institution_admin.
 //     - Cannot disable self.
 //
 //   action = 'enable'
 //     - Removes the auth ban.
 //     - Sets profiles.status = 'active', clears disabled_at / disabled_by.
-//     - Caller must be super_admin.
+//     - Caller must be super_admin OR institution_admin (with users.disable).
+//     - institution_admin: own org only; cannot enable super_admin/institution_admin.
 //
 //   action = 'delete'
-//     - Caller must be super_admin.
+//     - Caller must be super_admin ONLY (institution_admin cannot hard-delete).
 //     - Cannot delete self.
 //     - Cannot delete the last active super_admin.
 //     - confirmation must equal 'DELETE_USER_' + target email.
@@ -82,11 +84,28 @@ Deno.serve(async (req: Request) => {
   }
   if (!targetId) return json({ ok: false, error: 'MISSING_TARGET' }, 400);
 
-  // Caller must be super_admin (resolved via privileged client, bypasses RLS).
+  // Caller profile (role + org) — resolved via privileged client, bypasses RLS.
   const { data: callerProfile } = await admin
-    .from('profiles').select('role').eq('id', callerId).single();
-  if (!callerProfile || callerProfile.role !== 'super_admin') {
+    .from('profiles').select('role, organization_id').eq('id', callerId).single();
+  if (!callerProfile) return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+
+  const isCallerSuper          = callerProfile.role === 'super_admin';
+  const isCallerInstitutionAdmin = callerProfile.role === 'institution_admin';
+
+  // Only super_admin and institution_admin may call lifecycle actions.
+  if (!isCallerSuper && !isCallerInstitutionAdmin) {
     return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+  }
+
+  // institution_admin must hold users.disable effective permission.
+  if (isCallerInstitutionAdmin) {
+    const { data: canDisable } = await admin.rpc('phoenix_profile_has_permission', {
+      p_profile_id: callerId,
+      p_key: 'users.disable',
+    });
+    if (canDisable !== true) {
+      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+    }
   }
 
   // Self-action guard.
@@ -96,8 +115,22 @@ Deno.serve(async (req: Request) => {
 
   // Fetch target profile.
   const { data: targetProfile } = await admin
-    .from('profiles').select('role, status').eq('id', targetId).single();
+    .from('profiles').select('role, status, organization_id').eq('id', targetId).single();
   if (!targetProfile) return json({ ok: false, error: 'TARGET_NOT_FOUND' }, 404);
+
+  // institution_admin scope guards: own org only, cannot act on super_admin /
+  // institution_admin, and cannot hard-delete anyone.
+  if (isCallerInstitutionAdmin) {
+    if (['super_admin', 'institution_admin'].includes(targetProfile.role)) {
+      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+    }
+    if (callerProfile.organization_id !== targetProfile.organization_id) {
+      return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN' }, 403);
+    }
+    if (action === 'delete') {
+      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+    }
+  }
 
   // ── action: disable ────────────────────────────────────────────────────────
   if (action === 'disable') {

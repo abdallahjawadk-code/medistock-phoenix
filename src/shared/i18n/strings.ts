@@ -482,12 +482,19 @@ export const T: Dict = {
   um_lifecycle_failed:   { ar: 'فشلت العملية. حاول مجدداً.',     en: 'Operation failed. Please try again.' },
   um_last_super_admin:   { ar: 'لا يمكن حذف أو تعطيل مدير المنصة الوحيد', en: 'Cannot delete or disable the last platform administrator' },
 
+  /* Institution admin scope (INSTITUTION-ADMIN-USER-SCOPE-A) */
+  um_scope_own_institution:           { ar: 'ضمن مؤسستك فقط',                                en: 'Own institution only' },
+  um_invite_own_org_only:             { ar: 'يمكنك دعوة مستخدمين داخل مؤسستك فقط',          en: 'You can invite users inside your institution only' },
+  um_cannot_create_institution_admin: { ar: 'لا يمكنك إنشاء مسؤول مؤسسة من هذا الحساب',    en: 'You cannot create an institution administrator from this account' },
+  um_lifecycle_requires_enable:       { ar: 'يتطلب تفعيل صلاحيات دورة حياة المستخدمين',    en: 'Requires user lifecycle permissions to be enabled' },
+
   /* New permission labels (migration 011) */
   perm_users_disable:    { ar: 'تعطيل المستخدمين', en: 'Disable users' },
   perm_users_delete:     { ar: 'حذف المستخدمين',   en: 'Delete users' },
 
   /* Official role labels (the ONLY labels shown in the role dropdown) */
   orole_super_admin:            { ar: 'مدير المنصة',             en: 'Platform Administrator' },
+  orole_institution_admin:      { ar: 'مسؤول المؤسسة',           en: 'Institution Administrator' },
   orole_warehouse_officer:      { ar: 'مسؤول المذخر',           en: 'Store Officer' },
   orole_port_officer:           { ar: 'مسؤول المنفذ',           en: 'Port Officer' },
   orole_monthly_status_officer: { ar: 'مسؤول المواقف الشهرية',  en: 'Monthly Status Officer' },

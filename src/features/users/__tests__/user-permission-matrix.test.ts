@@ -21,9 +21,9 @@ const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 // 1. Official role model
 // ============================================================================
 describe('Official role model', () => {
-  it('has exactly the five official roles', () => {
+  it('has exactly the six official roles (including institution_admin)', () => {
     expect([...OFFICIAL_ROLES]).toEqual([
-      'super_admin', 'warehouse_officer', 'port_officer', 'monthly_status_officer', 'viewer',
+      'super_admin', 'institution_admin', 'warehouse_officer', 'port_officer', 'monthly_status_officer', 'viewer',
     ]);
   });
 
@@ -36,10 +36,16 @@ describe('Official role model', () => {
     expect(normalizeRole('unknown')).toBe('viewer'); // safe fallback
   });
 
-  it('only super_admin can target super_admin', () => {
+  it('only super_admin can target super_admin or institution_admin', () => {
     expect(canTargetRole('super_admin', 'super_admin')).toBe(true);
+    expect(canTargetRole('super_admin', 'institution_admin')).toBe(true);
     expect(canTargetRole('viewer', 'super_admin')).toBe(false);
+    expect(canTargetRole('institution_admin', 'super_admin')).toBe(false);
+    expect(canTargetRole('institution_admin', 'institution_admin')).toBe(false);
     expect(canTargetRole('warehouse_officer', 'super_admin')).toBe(false);
+    expect(canTargetRole('warehouse_officer', 'institution_admin')).toBe(false);
+    expect(canTargetRole('institution_admin', 'warehouse_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'viewer')).toBe(true);
     expect(canTargetRole('warehouse_officer', 'viewer')).toBe(true);
   });
 
@@ -51,7 +57,12 @@ describe('Official role model', () => {
 
   it('isOfficialRole guards', () => {
     expect(isOfficialRole('viewer')).toBe(true);
+    expect(isOfficialRole('institution_admin')).toBe(true);
     expect(isOfficialRole('hospital_admin')).toBe(false);
+  });
+
+  it('normalizeRole returns institution_admin for institution_admin', () => {
+    expect(normalizeRole('institution_admin')).toBe('institution_admin');
   });
 });
 
@@ -67,17 +78,19 @@ describe('Official role & permission labels (bilingual)', () => {
 
   it('official Arabic labels match the spec', () => {
     expect(strings).toContain('مدير المنصة');           // Platform Administrator
+    expect(strings).toContain('مسؤول المؤسسة');         // Institution Administrator
     expect(strings).toContain('مسؤول المذخر');          // Store Officer
     expect(strings).toContain('مسؤول المنفذ');          // Port Officer
     expect(strings).toContain('مسؤول المواقف الشهرية'); // Monthly Status Officer
   });
 
   it('official English labels match the spec', () => {
-    ['Platform Administrator', 'Store Officer', 'Port Officer', 'Monthly Status Officer', 'Viewer']
+    ['Platform Administrator', 'Institution Administrator', 'Store Officer', 'Port Officer', 'Monthly Status Officer', 'Viewer']
       .forEach(l => expect(strings).toContain(l));
   });
 
   it('old Arabic labels are NOT used as official labels', () => {
+    // مدير المؤسسة = old hospital_admin label; مسؤول المؤسسة = new institution_admin label (different)
     expect(strings).not.toContain('مدير المؤسسة');
     expect(strings).not.toContain('مسؤول المخزن');
     expect(strings).not.toContain('مشغل المنفذ');
@@ -100,6 +113,18 @@ describe('Official role & permission labels (bilingual)', () => {
      'um_created_invited', 'um_created_no_invite', 'um_advanced_options',
      'um_password_mode_warning', 'um_created_password']
       .forEach(k => expect(strings).toContain(`${k}:`));
+  });
+
+  it('institution_admin scope strings exist (bilingual)', () => {
+    ['um_scope_own_institution', 'um_invite_own_org_only',
+     'um_cannot_create_institution_admin', 'um_lifecycle_requires_enable',
+     'orole_institution_admin']
+      .forEach(k => expect(strings).toContain(`${k}:`));
+    // Bilingual content
+    expect(strings).toContain('Institution Administrator');
+    expect(strings).toContain('Own institution only');
+    expect(strings).toContain('ضمن مؤسستك فقط');
+    expect(strings).toContain('يمكنك دعوة مستخدمين داخل مؤسستك فقط');
   });
 
   it('invite activation message contains required bilingual text', () => {
@@ -207,6 +232,31 @@ describe('Role default permissions', () => {
     expect(d.has('warehouses.manage')).toBe(true);
     expect(d.has('users.create')).toBe(false);
     expect(d.has('organizations.archive')).toBe(false);
+  });
+
+  it('institution_admin can create users in own org, not outside it', () => {
+    const d = roleDefaults('institution_admin');
+    expect(d.has('users.view')).toBe(true);
+    expect(d.has('users.create')).toBe(true);
+    expect(d.has('users.assign_role')).toBe(true);
+    expect(d.has('dashboard.view')).toBe(true);
+    expect(d.has('organizations.view')).toBe(true);
+    expect(d.has('status_contacts.manage')).toBe(true);
+  });
+
+  it('institution_admin does NOT get dangerous org/user management by default', () => {
+    const d = roleDefaults('institution_admin');
+    expect(d.has('organizations.create')).toBe(false);
+    expect(d.has('organizations.archive')).toBe(false);
+    expect(d.has('users.manage_permissions')).toBe(false);
+    expect(d.has('users.disable')).toBe(false);
+    expect(d.has('users.delete')).toBe(false);
+    expect(d.has('deletion_wizard.archive_organization')).toBe(false);
+    expect(d.has('deletion_wizard.archive_port')).toBe(false);
+  });
+
+  it('institution_admin default count is exactly 13', () => {
+    expect(roleDefaults('institution_admin').size).toBe(13);
   });
 
   it('legacy roles inherit their mapped official defaults', () => {
@@ -385,6 +435,10 @@ describe('admin-create-user Edge Function', () => {
   it('only super_admin can create super_admin', () => {
     expect(fn).toContain('CANNOT_CREATE_SUPER_ADMIN');
   });
+  it('only super_admin can create institution_admin', () => {
+    expect(fn).toContain('CANNOT_CREATE_INSTITUTION_ADMIN');
+    expect(fn).toContain('institution_admin');
+  });
   it('blocks cross-organization creation', () => {
     expect(fn).toContain('CROSS_ORG_FORBIDDEN');
   });
@@ -451,8 +505,23 @@ describe('admin-user-lifecycle Edge Function', () => {
     expect(fn).toContain('INVALID_ACTION');
     expect(fn).toContain("'disable', 'enable', 'delete'");
   });
-  it('requires super_admin caller', () => {
+  it('requires super_admin or institution_admin caller (with users.disable)', () => {
     expect(fn).toContain('INSUFFICIENT_PERMISSION');
+    expect(fn).toContain('institution_admin');
+    expect(fn).toContain("p_key: 'users.disable'");
+  });
+  it('institution_admin cannot act on super_admin or institution_admin targets', () => {
+    expect(fn).toContain("'super_admin', 'institution_admin'");
+    expect(fn).toContain('CROSS_ORG_FORBIDDEN');
+  });
+  it('institution_admin cannot hard-delete users', () => {
+    // institution_admin scope guard rejects delete action before reaching delete logic
+    const lines = fn.split('\n');
+    const institutionAdminBlock = lines.slice(
+      lines.findIndex(l => l.includes('isCallerInstitutionAdmin')),
+      lines.findIndex(l => l.includes("action === 'delete'")) + 5,
+    ).join('\n');
+    expect(institutionAdminBlock).toContain('INSUFFICIENT_PERMISSION');
   });
 });
 
@@ -510,6 +579,11 @@ describe('Migration 011 (user lifecycle)', () => {
     expect(sql).toContain("'users.delete'");
     expect(sql).toContain('on conflict (key) do nothing');
   });
+  it('uses correct column name "allowed" (not "is_allowed") for role_permission_defaults', () => {
+    // role_permission_defaults.allowed is the correct column from migration 010
+    expect(sql).toContain('role_permission_defaults (role, permission_key, allowed)');
+    expect(sql).not.toContain('is_allowed');
+  });
   it('adds audit columns with IF NOT EXISTS (safe re-run)', () => {
     expect(sql).toContain('add column if not exists disabled_at');
     expect(sql).toContain('add column if not exists disabled_by');
@@ -523,6 +597,46 @@ describe('Migration 011 (user lifecycle)', () => {
   });
 });
 
+describe('Migration 012 (institution_admin role)', () => {
+  const sql = readPhoenix('supabase/migrations/012_phoenix_institution_admin_role.sql');
+
+  it('carries a manual-apply-only warning', () => {
+    expect(sql).toContain('MANUAL APPLY ONLY');
+  });
+  it('expands profiles.role CHECK to include institution_admin', () => {
+    expect(sql).toContain("'institution_admin'");
+    expect(sql).toContain('profiles_role_check');
+  });
+  it('seeds institution_admin role defaults (13 required permissions)', () => {
+    const insertBlock = sql.substring(sql.indexOf('institution_admin'));
+    [
+      'dashboard.view', 'organizations.view', 'users.view', 'users.create', 'users.assign_role',
+      'warehouses.view', 'ports.view', 'availability.view', 'status_center.view',
+      'exchange_alerts.view', 'inter_institution_alerts.view',
+      'status_contacts.view', 'status_contacts.manage',
+    ].forEach(key => expect(insertBlock).toContain(key));
+  });
+  it('conditionally grants users.disable if migration 011 key exists (safe no-op if not)', () => {
+    expect(sql).toContain("key = 'users.disable'");
+    // The conditional insert selects from permission_keys — if key doesn't exist, 0 rows inserted
+    expect(sql).toContain('select');
+    expect(sql).toContain('from permission_keys');
+  });
+  it('uses correct column name "allowed" for role_permission_defaults', () => {
+    expect(sql).toContain('role_permission_defaults (role, permission_key, allowed)');
+    expect(sql).not.toContain('is_allowed');
+  });
+  it('does not use DROP TABLE or TRUNCATE', () => {
+    expect(sql).not.toMatch(/drop table/i);
+    expect(sql).not.toMatch(/truncate/i);
+  });
+  it('explicitly warns against supabase db push', () => {
+    // The migration should contain a "DO NOT use supabase db push" warning comment.
+    expect(sql).toContain('DO NOT use');
+    expect(sql).toContain('supabase db push');
+  });
+});
+
 // ============================================================================
 // 11. Disabled-modules guardrails still hold
 // ============================================================================
@@ -531,5 +645,61 @@ describe('Disabled modules unaffected by this phase', () => {
   it('no Data Reset, no Intake/OCR/Excel re-enabled in the new screen', () => {
     expect(screen).not.toMatch(/DataReset|data-reset/i);
     expect(screen).not.toMatch(/import.*[Oo]cr|import.*[Ee]xcel|import.*[Dd]oc[Ii]ntel/);
+  });
+});
+
+// ============================================================================
+// 12. institution_admin UI scoping (INSTITUTION-ADMIN-USER-SCOPE-A)
+// ============================================================================
+describe('institution_admin role scoping (UI + Edge Function)', () => {
+  const screen = readSrc('features/users/UserManagementScreen.tsx');
+  const createFn = readPhoenix('supabase/functions/admin-create-user/index.ts');
+  const lifecycleFn = readPhoenix('supabase/functions/admin-user-lifecycle/index.ts');
+
+  it('CreateUserForm accepts actorRole prop and uses canTargetRole for filtering', () => {
+    expect(screen).toContain('actorRole');
+    expect(screen).toContain('canTargetRole(actorRole, r)');
+  });
+
+  it('CreateUserForm shows own-institution-only scope badge for institution_admin', () => {
+    expect(screen).toContain('um_invite_own_org_only');
+    expect(screen).toContain('isInstitutionAdmin');
+  });
+
+  it('CreateUserForm guards CANNOT_CREATE_INSTITUTION_ADMIN server error', () => {
+    expect(screen).toContain('CANNOT_CREATE_INSTITUTION_ADMIN');
+    expect(screen).toContain('um_cannot_create_institution_admin');
+  });
+
+  it('CreateUserForm client-side guard: non-super cannot pick institution_admin', () => {
+    expect(screen).toContain("selRole === 'institution_admin' && !isSuper");
+  });
+
+  it('admin-create-user lists institution_admin as an official role', () => {
+    expect(createFn).toContain("'institution_admin'");
+  });
+
+  it('admin-create-user blocks non-super from creating institution_admin', () => {
+    expect(createFn).toContain("role === 'institution_admin' && !isSuper");
+    expect(createFn).toContain('CANNOT_CREATE_INSTITUTION_ADMIN');
+  });
+
+  it('admin-user-lifecycle allows institution_admin caller with users.disable', () => {
+    expect(lifecycleFn).toContain('isCallerInstitutionAdmin');
+    expect(lifecycleFn).toContain("p_key: 'users.disable'");
+  });
+
+  it('admin-user-lifecycle institution_admin cross-org guard', () => {
+    expect(lifecycleFn).toContain('CROSS_ORG_FORBIDDEN');
+    expect(lifecycleFn).toContain('organization_id');
+  });
+
+  it('institution_admin canTargetRole: can create operator-level roles, not admin-level', () => {
+    expect(canTargetRole('institution_admin', 'warehouse_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'port_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'monthly_status_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'viewer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'super_admin')).toBe(false);
+    expect(canTargetRole('institution_admin', 'institution_admin')).toBe(false);
   });
 });

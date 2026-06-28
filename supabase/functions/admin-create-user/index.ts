@@ -12,9 +12,11 @@
 //   POST { full_name, email, organization_id, role }  (Bearer = caller JWT)
 //   - Caller must be authenticated.
 //   - super_admin: may create any official role in any organization.
+//   - institution_admin: may create warehouse_officer/port_officer/
+//     monthly_status_officer/viewer in own org only (requires users.create).
 //   - Non-super: may create users ONLY if they hold users.create AND only in
-//     their own organization; may NOT create super_admin.
-//   - Only super_admin may create super_admin.
+//     their own organization; may NOT create super_admin or institution_admin.
+//   - Only super_admin may create super_admin or institution_admin.
 //   - Official roles only.
 //   Returns structured JSON; never leaks raw service errors.
 // =============================================================================
@@ -25,6 +27,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const OFFICIAL_ROLES = [
   'super_admin',
+  'institution_admin',
   'warehouse_officer',
   'port_officer',
   'monthly_status_officer',
@@ -91,9 +94,12 @@ Deno.serve(async (req: Request) => {
 
   const isSuper = callerProfile.role === 'super_admin';
 
-  // Only super_admin may create super_admin.
+  // Only super_admin may create super_admin or institution_admin.
   if (role === 'super_admin' && !isSuper) {
     return json({ ok: false, error: 'CANNOT_CREATE_SUPER_ADMIN' }, 403);
+  }
+  if (role === 'institution_admin' && !isSuper) {
+    return json({ ok: false, error: 'CANNOT_CREATE_INSTITUTION_ADMIN' }, 403);
   }
 
   if (!isSuper) {
