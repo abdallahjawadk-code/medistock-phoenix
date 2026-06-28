@@ -793,3 +793,262 @@ describe('Identity snapshot plan: foundation status updated', () => {
     expect(snapshot).toContain('initial_snapshot');
   });
 });
+
+// ============================================================================
+// 20. MIGRATION 014: actor snapshot write-path triggers
+// ============================================================================
+
+describe('Migration 014: actor snapshot write-path triggers', () => {
+  const sql = readSql('migrations/014_phoenix_actor_snapshot_write_path_triggers.sql');
+
+  it('file exists and is non-empty', () => {
+    expect(sql.length).toBeGreaterThan(500);
+  });
+
+  it('is manual-apply-only', () => {
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('DO NOT use');
+  });
+
+  it('has no DROP TABLE or TRUNCATE statements', () => {
+    expect(sql).not.toMatch(/^\s*(drop table|truncate)\b/im);
+  });
+
+  it('creates the phoenix_populate_actor_snapshot trigger function', () => {
+    expect(sql).toContain('phoenix_populate_actor_snapshot');
+    expect(sql).toContain('returns trigger');
+    expect(sql).toContain('security definer');
+  });
+
+  it('trigger function resolves actor from the correct column per table', () => {
+    expect(sql).toContain("when 'audit_logs'");
+    expect(sql).toContain('new.actor_id');
+    expect(sql).toContain("when 'institution_item_status_reports'");
+    expect(sql).toContain('new.submitted_by');
+    expect(sql).toContain("when 'item_availability'");
+    expect(sql).toContain('new.last_updated_by');
+    expect(sql).toContain("when 'qr_tokens'");
+    expect(sql).toContain("when 'organization_status_contacts'");
+    expect(sql).toContain("when 'profile_permission_overrides'");
+    expect(sql).toContain('new.created_by');
+  });
+
+  it('falls back to auth.uid() when actor column is NULL', () => {
+    expect(sql).toContain('coalesce(new.actor_id, auth.uid())');
+    expect(sql).toContain('coalesce(new.submitted_by, auth.uid())');
+    expect(sql).toContain('coalesce(new.last_updated_by, auth.uid())');
+    expect(sql).toContain('coalesce(new.created_by, auth.uid())');
+  });
+
+  it('on INSERT always populates snapshot (prevents frontend spoofing)', () => {
+    // The UPDATE guard skips re-snapshot, but INSERT always falls through
+    expect(sql).toContain("tg_op = 'UPDATE'");
+    expect(sql).toContain('new.actor_name_snapshot is not null');
+  });
+
+  it('on UPDATE preserves existing snapshots (except item_availability)', () => {
+    expect(sql).toContain("tg_table_name <> 'item_availability'");
+  });
+
+  it('item_availability always re-snapshots on UPDATE (tracks current actor)', () => {
+    expect(sql).toContain("tg_table_name <> 'item_availability'");
+  });
+
+  it('skips actor_role_snapshot for audit_logs (uses actor_role column)', () => {
+    expect(sql).toContain("tg_table_name <> 'audit_logs'");
+    expect(sql).toContain('new.actor_role_snapshot');
+  });
+
+  it('populates all required snapshot fields', () => {
+    expect(sql).toContain('new.actor_identity_version');
+    expect(sql).toContain('new.actor_name_snapshot');
+    expect(sql).toContain('new.actor_email_snapshot');
+    expect(sql).toContain('new.actor_org_snapshot');
+    expect(sql).toContain('new.actor_role_snapshot');
+  });
+
+  const TABLES_WITH_TRIGGERS = [
+    'audit_logs',
+    'institution_item_status_reports',
+    'item_availability',
+    'qr_tokens',
+    'organization_status_contacts',
+    'profile_permission_overrides',
+  ];
+
+  TABLES_WITH_TRIGGERS.forEach(table => {
+    it(`creates trg_actor_snapshot trigger on ${table}`, () => {
+      const pattern = new RegExp(
+        `create trigger trg_actor_snapshot\\s+before insert or update on public\\.${table}`,
+        'i',
+      );
+      expect(sql).toMatch(pattern);
+    });
+  });
+
+  it('uses DROP TRIGGER IF EXISTS for idempotent re-run', () => {
+    const dropCount = (sql.match(/drop trigger if exists trg_actor_snapshot/gi) ?? []).length;
+    expect(dropCount).toBe(6);
+  });
+
+  it('includes a verification block that checks all 6 triggers', () => {
+    expect(sql).toContain('assert v_count = 6');
+    expect(sql).toContain('trg_actor_snapshot');
+  });
+
+  it('does not implement recycling', () => {
+    expect(sql.toLowerCase()).toContain('does not implement');
+    expect(sql.toLowerCase()).toContain('recycl');
+  });
+
+  it('does not modify existing RPCs or applied migrations', () => {
+    expect(sql).not.toContain('create_qr_for_target');
+    expect(sql).not.toContain('disable_qr_token');
+    expect(sql).not.toContain('archive_entity');
+    expect(sql).not.toContain('purge_entity_with_all_data');
+    expect(sql).not.toContain('assign_profile_role');
+    expect(sql).not.toContain('clear_port_availability');
+  });
+
+  it('does not reference service_role', () => {
+    expect(sql).not.toContain('service_role');
+    expect(sql).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+  });
+
+  it('does not modify auth.users', () => {
+    expect(sql).not.toMatch(/\b(insert|update|delete)\b.*auth\.users/i);
+  });
+});
+
+// ============================================================================
+// 21. ACTOR SNAPSHOT WRITE PATHS: anti-spoofing
+// ============================================================================
+
+describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fields', () => {
+  const SNAPSHOT_FIELDS = [
+    'actor_name_snapshot',
+    'actor_email_snapshot',
+    'actor_role_snapshot',
+    'actor_org_snapshot',
+    'actor_identity_version',
+  ];
+
+  const WRITE_SERVICES = [
+    'shared/supabase/services/audit.service.ts',
+    'shared/supabase/services/availability.service.ts',
+    'shared/supabase/services/status-reports.service.ts',
+  ];
+
+  WRITE_SERVICES.forEach(svc => {
+    const content = readSrc(svc);
+    SNAPSHOT_FIELDS.forEach(field => {
+      it(`${svc} does not pass ${field}`, () => {
+        expect(content).not.toContain(field);
+      });
+    });
+  });
+
+  it('no frontend .ts file outside __tests__ passes snapshot fields to supabase', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      const content = readFile(path);
+      SNAPSHOT_FIELDS.forEach(field => {
+        expect(content).not.toContain(field);
+      });
+    });
+  });
+});
+
+// ============================================================================
+// 22. ACTOR SNAPSHOT WRITE PATHS: coverage completeness
+// ============================================================================
+
+describe('Actor snapshot coverage: all operational tables have triggers', () => {
+  const sql = readSql('migrations/014_phoenix_actor_snapshot_write_path_triggers.sql');
+
+  const OPERATIONAL_TABLES = [
+    'audit_logs',
+    'institution_item_status_reports',
+    'item_availability',
+    'qr_tokens',
+    'organization_status_contacts',
+    'profile_permission_overrides',
+  ];
+
+  OPERATIONAL_TABLES.forEach(table => {
+    it(`${table} has a BEFORE INSERT OR UPDATE trigger`, () => {
+      expect(sql).toContain(`on public.${table}`);
+    });
+  });
+
+  it('trigger function is SECURITY DEFINER (required for auth.users join)', () => {
+    expect(sql).toContain('security definer');
+  });
+
+  it('trigger function sets search_path (prevents search_path injection)', () => {
+    expect(sql).toContain('set search_path = public, pg_temp');
+  });
+});
+
+// ============================================================================
+// 23. RECYCLING, HARD DELETE, DATA RESET: still not implemented
+// ============================================================================
+
+describe('Post-014 guardrails: recycling and hard delete still absent', () => {
+  const screen  = readSrc('features/users/UserManagementScreen.tsx');
+  const userSvc = readSrc('shared/supabase/services/users.service.ts');
+
+  it('no recycling UI element in UserManagementScreen', () => {
+    expect(screen).not.toContain('recycle');
+    expect(screen).not.toContain('recycled_candidate');
+  });
+
+  it('no recycling service function', () => {
+    expect(userSvc).not.toContain('recycleUser');
+  });
+
+  it('hard delete button is not rendered', () => {
+    expect(screen).not.toContain('deleteTarget');
+    expect(screen).not.toContain('um_delete_user_action');
+  });
+
+  it('deleteUserViaEdge exists in service but is NOT imported in screen', () => {
+    expect(userSvc).toContain('deleteUserViaEdge');
+    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+  });
+});
+
+describe('Post-014 guardrails: Data Reset and Intake still disabled', () => {
+  const files = allTsxFiles('');
+
+  it('no DataReset import anywhere in src', () => {
+    files.forEach(path => {
+      expect(readFile(path)).not.toMatch(/import.*DataReset/i);
+    });
+  });
+
+  it('no OcrImport, ExcelImport, DocIntel import anywhere in src', () => {
+    files.forEach(path => {
+      const content = readFile(path);
+      expect(content).not.toMatch(/import.*OcrImport/i);
+      expect(content).not.toMatch(/import.*ExcelImport/i);
+      expect(content).not.toMatch(/import.*DocIntel/i);
+    });
+  });
+});
+
+describe('Post-014 guardrails: service_role and auth.admin absent from frontend', () => {
+  const files = allTsxFiles('');
+
+  it('no service_role in any frontend .ts/.tsx file', () => {
+    files.forEach(path => {
+      expect(readFile(path)).not.toContain('service_role');
+    });
+  });
+
+  it('no auth.admin in any frontend .ts/.tsx file', () => {
+    files.forEach(path => {
+      expect(readFile(path)).not.toMatch(/auth\.admin/);
+    });
+  });
+});

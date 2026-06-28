@@ -97,6 +97,10 @@ create table if not exists public.user_identity_history (
   created_at       timestamptz not null default now()
 );
 
+-- Enable RLS (restrictive default — no policies yet, so direct table access
+-- is blocked; the SECURITY DEFINER helper function bypasses RLS for reads).
+alter table public.user_identity_history enable row level security;
+
 -- Unique: each profile can only have one row per identity_version.
 do $$
 begin
