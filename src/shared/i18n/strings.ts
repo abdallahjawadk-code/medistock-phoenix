@@ -446,19 +446,25 @@ export const T: Dict = {
   um_no_users_perm:   { ar: 'لا تملك صلاحية عرض المستخدمين',     en: 'You do not have permission to view users' },
   um_create_disabled_hint: { ar: 'النموذج معطّل بأمان حتى يتم تفعيل المسار الخادمي', en: 'The form is safely disabled until the server path is enabled' },
 
-  /* Create-user: password / invite modes */
-  um_mode_password:      { ar: 'إنشاء بكلمة مرور مؤقتة',            en: 'Create with temporary password' },
-  um_mode_invite:        { ar: 'إرسال دعوة بالبريد الإلكتروني',      en: 'Send email invite' },
-  um_password:           { ar: 'كلمة المرور المؤقتة',                 en: 'Temporary password' },
-  um_confirm_password:   { ar: 'تأكيد كلمة المرور',                   en: 'Confirm password' },
-  um_show_password:      { ar: 'إظهار',                               en: 'Show' },
-  um_hide_password:      { ar: 'إخفاء',                               en: 'Hide' },
-  um_passwords_no_match: { ar: 'كلمتا المرور غير متطابقتين',          en: 'Passwords do not match' },
-  um_password_too_short: { ar: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل', en: 'Password must be at least 8 characters' },
-  um_created_password:   { ar: 'تم إنشاء المستخدم. سلّم كلمة المرور المؤقتة للمستخدم بطريقة آمنة.', en: 'User created. Share the temporary password securely.' },
-  um_created_no_invite:  { ar: 'تم إنشاء المستخدم، لكن لم يتم إرسال دعوة بريدية. عيّن كلمة مرور أو أرسل رابط إعادة تعيين.', en: 'User created, but no invite email was sent. Set a password or send a reset link.' },
-  um_created_invited:    { ar: 'تم إنشاء المستخدم وإرسال دعوة بالبريد الإلكتروني.',  en: 'User created and invite email sent.' },
-  um_invite_notice:      { ar: 'إرسال الدعوة يعتمد على إعدادات البريد في Supabase', en: 'Email invite depends on Supabase email configuration' },
+  /* Create-user: invite-first flow */
+  um_mode_invite:             { ar: 'إرسال دعوة بالبريد الإلكتروني',             en: 'Send email invite' },
+  um_invite_activation_msg:   { ar: 'سيستلم المستخدم رابطاً على بريده لتفعيل الحساب وتعيين كلمة المرور.', en: 'The user will receive an email link to activate the account and set a password.' },
+  um_invite_notice:           { ar: 'ملاحظة: نجاح إرسال الدعوة يعتمد على إعدادات البريد في Supabase.', en: 'Note: Invite delivery depends on Supabase email configuration.' },
+  um_created_invited:         { ar: 'تم إنشاء المستخدم وإرسال دعوة بالبريد الإلكتروني.',  en: 'User created and invite email sent.' },
+  um_created_no_invite:       { ar: 'تم إنشاء المستخدم، لكن لم يتم إرسال دعوة بريدية. أرسل رابط إعادة تعيين من لوحة Supabase.', en: 'User created, but no invite email was sent. Send a reset link from the Supabase dashboard.' },
+
+  /* Create-user: advanced password mode (hidden by default) */
+  um_mode_password:           { ar: 'متقدم: تعيين كلمة مرور مؤقتة',             en: 'Advanced: Set temporary password' },
+  um_advanced_options:        { ar: 'خيارات متقدمة',                            en: 'Advanced options' },
+  um_hide_advanced:           { ar: 'إخفاء الخيارات المتقدمة',                   en: 'Hide advanced options' },
+  um_password_mode_warning:   { ar: 'استخدم هذا الوضع فقط إذا كنت ستسلّم كلمة المرور مباشرةً للمستخدم خارج البريد الإلكتروني. لا تُرسل كلمة المرور بالبريد.', en: 'Use this mode only if you will hand the temporary password directly to the user, outside email. Do not send passwords by email.' },
+  um_password:                { ar: 'كلمة المرور المؤقتة',                        en: 'Temporary password' },
+  um_confirm_password:        { ar: 'تأكيد كلمة المرور',                          en: 'Confirm password' },
+  um_show_password:           { ar: 'إظهار',                                     en: 'Show' },
+  um_hide_password:           { ar: 'إخفاء',                                     en: 'Hide' },
+  um_passwords_no_match:      { ar: 'كلمتا المرور غير متطابقتين',                 en: 'Passwords do not match' },
+  um_password_too_short:      { ar: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل',  en: 'Password must be at least 8 characters' },
+  um_created_password:        { ar: 'تم إنشاء المستخدم. سلّم كلمة المرور المؤقتة للمستخدم بطريقة آمنة خارج البريد الإلكتروني.', en: 'User created. Hand the temporary password to the user securely, outside email.' },
 
   /* User lifecycle: disable / enable / delete */
   um_disable_user:       { ar: 'تعطيل المستخدم',   en: 'Disable user' },

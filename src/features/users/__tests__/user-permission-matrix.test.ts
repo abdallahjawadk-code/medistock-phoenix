@@ -94,6 +94,24 @@ describe('Official role & permission labels (bilingual)', () => {
      'um_server_only', 'um_cannot_create_super', 'um_cannot_create_outside_org', 'um_cannot_grant']
       .forEach(k => expect(strings).toContain(`${k}:`));
   });
+
+  it('invite-first onboarding strings exist', () => {
+    ['um_mode_invite', 'um_invite_activation_msg', 'um_invite_notice',
+     'um_created_invited', 'um_created_no_invite', 'um_advanced_options',
+     'um_password_mode_warning', 'um_created_password']
+      .forEach(k => expect(strings).toContain(`${k}:`));
+  });
+
+  it('invite activation message contains required bilingual text', () => {
+    expect(strings).toContain('سيستلم المستخدم رابطاً على بريده لتفعيل الحساب وتعيين كلمة المرور.');
+    expect(strings).toContain('The user will receive an email link to activate the account and set a password.');
+  });
+
+  it('password mode warning does not imply emailing a password', () => {
+    expect(strings).toContain('um_password_mode_warning:');
+    expect(strings).toContain('خارج البريد الإلكتروني');
+    expect(strings).toContain('outside email');
+  });
 });
 
 // ============================================================================
@@ -318,6 +336,30 @@ describe('User management frontend security', () => {
     expect(screen).toContain('getOrgStatusContacts');
     expect(screen).toContain('ContactSection');
     expect(screen).toContain('um_multi_officer');
+  });
+
+  it('invite mode is the default (invite-first onboarding)', () => {
+    expect(screen).toContain("useState<'password' | 'invite'>('invite')");
+    expect(screen).not.toContain("useState<'password' | 'invite'>('password')");
+  });
+
+  it('password mode is hidden under Advanced — not a primary option', () => {
+    expect(screen).toContain('um_advanced_options');
+    expect(screen).toContain('showAdvanced');
+    expect(screen).not.toContain("(['password', 'invite']");
+  });
+
+  it('invite activation message is shown in the create form', () => {
+    expect(screen).toContain('um_invite_activation_msg');
+  });
+
+  it('hard delete is not exposed in the UI (gated pending next phase)', () => {
+    // No deleteTarget state — delete flow is removed from the UI
+    expect(screen).not.toContain('deleteTarget');
+    // deleteUserViaEdge is not imported in the screen
+    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+    // No delete button rendered — um_delete_user_action not used as a label
+    expect(screen).not.toContain('um_delete_user_action');
   });
   it('institution screen no longer uses old role label keys', () => {
     const inst = readSrc('features/institutions/InstitutionScreen.tsx');

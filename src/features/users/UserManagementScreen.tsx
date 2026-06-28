@@ -13,7 +13,7 @@ import {
 import {
   listUsers, getEffectivePermissions, assignProfilePermissions,
   resetProfilePermissions, createUserViaEdge, getOrgStatusContacts,
-  disableUserViaEdge, enableUserViaEdge, deleteUserViaEdge,
+  disableUserViaEdge, enableUserViaEdge,
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
@@ -62,7 +62,6 @@ export function UserManagementScreen() {
   const [showCreate,   setShowCreate]   = useState(false);
   const [toast,        setToast]        = useState<string | null>(null);
   const [disableTarget, setDisableTarget] = useState<ManagedUser | null>(null);
-  const [deleteTarget,  setDeleteTarget]  = useState<ManagedUser | null>(null);
 
   const users = useAsync(() => listUsers(isSuper ? activeOrgId : undefined), [isSuper, activeOrgId]);
 
@@ -164,13 +163,14 @@ export function UserManagementScreen() {
                   </div>
                 </div>
 
-                {/* Lifecycle actions — super_admin only, not self */}
+                {/* Lifecycle: disable/enable — super_admin only, not self.
+                    Hard delete is gated pending USER-LIFECYCLE-DISABLE-DELETE-A finalization. */}
                 {isSuper && !isSelf && (
                   <div style={{ display: 'flex', gap: '6px', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
                     onClick={e => e.stopPropagation()}>
                     {u.status === 'suspended' ? (
                       <PhoenixButton variant="ghost" size="md"
-                        onClick={() => setDisableTarget({ ...u, status: 'active' /* signal: enable */ })}>
+                        onClick={() => setDisableTarget(u)}>
                         ✅ {t('um_enable_user', lang)}
                       </PhoenixButton>
                     ) : (
@@ -178,11 +178,6 @@ export function UserManagementScreen() {
                         🔕 {t('um_disable_user', lang)}
                       </PhoenixButton>
                     )}
-                    <PhoenixButton variant="ghost" size="md"
-                      style={{ color: 'var(--err)' }}
-                      onClick={() => setDeleteTarget(u)}>
-                      🗑 {t('um_delete_user_action', lang)}
-                    </PhoenixButton>
                   </div>
                 )}
               </PhoenixCard>
@@ -234,27 +229,9 @@ export function UserManagementScreen() {
         />
       )}
 
-      {/* Delete modal */}
-      {deleteTarget && (
-        <DeleteConfirmModal
-          user={deleteTarget} lang={lang}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={async (confirmText) => {
-            const res = await deleteUserViaEdge(deleteTarget.id, confirmText);
-            setDeleteTarget(null);
-            if (res.ok) {
-              showToast(t('um_user_deleted', lang));
-              afterLifecycle();
-            } else {
-              showToast(res.error === 'LAST_SUPER_ADMIN'
-                ? t('um_last_super_admin', lang)
-                : res.error === 'INVALID_CONFIRMATION'
-                  ? t('um_delete_type_confirm', lang)
-                  : t('um_lifecycle_failed', lang));
-            }
-          }}
-        />
-      )}
+      {/* Hard delete UI intentionally not shown — pending USER-LIFECYCLE-DISABLE-DELETE-A finalization.
+          The admin-user-lifecycle Edge Function must be deployed and email-based confirmation
+          must be wired before the delete flow is exposed in the UI. */}
     </div>
   );
 }
@@ -448,7 +425,8 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
 }) {
   const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
 
-  const [mode,        setMode]        = useState<'password' | 'invite'>('password');
+  const [mode,        setMode]        = useState<'password' | 'invite'>('invite');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [fullName,    setFullName]    = useState('');
   const [email,       setEmail]       = useState('');
   const [orgId,       setOrgId]       = useState(actorOrgId ?? '');
@@ -513,22 +491,16 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
     <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('um_create_user', lang)}</h3>
 
-      {/* Mode toggle */}
-      <div style={{ display: 'flex', gap: '0', marginBottom: '14px', borderRadius: 'var(--r2)', overflow: 'hidden', border: '1px solid var(--brd)' }}>
-        {(['password', 'invite'] as const).map(m => (
-          <button key={m} onClick={() => { setMode(m); setError(null); }}
-            style={{ flex: 1, padding: '8px 12px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: mode === m ? 700 : 400, background: mode === m ? 'var(--p)' : 'var(--s)', color: mode === m ? '#fff' : 'var(--t)', transition: 'background .15s' }}>
-            {m === 'password' ? `🔑 ${t('um_mode_password', lang)}` : `📧 ${t('um_mode_invite', lang)}`}
-          </button>
-        ))}
+      {/* Primary invite-flow banner — always visible */}
+      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+        <span style={{ flexShrink: 0 }}>📧</span>
+        <span dir="auto">{t('um_invite_activation_msg', lang)}</span>
       </div>
 
-      {/* Invite notice */}
-      {mode === 'invite' && (
-        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
-          ℹ {t('um_invite_notice', lang)}
-        </div>
-      )}
+      {/* Invite config note */}
+      <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '14px' }}>
+        {t('um_invite_notice', lang)}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Name + Email */}
@@ -562,36 +534,55 @@ function CreateUserForm({ lang, isSuper, actorOrgId, onClose, onToast, onCreated
           </div>
         </div>
 
-        {/* Password fields (mode === 'password' only) */}
-        {mode === 'password' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
-              <div style={{ position: 'relative' }}>
-                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
-                <button type="button" onClick={() => setShowPwd(s => !s)}
-                  style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
-                  {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
-              <input type={showPwd ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
-                style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? 'var(--err)' : undefined }}
-                autoComplete="new-password" dir="ltr" />
-            </div>
-          </div>
-        )}
+        {/* Advanced: set temporary password — hidden by default */}
+        <div>
+          <button type="button"
+            onClick={() => {
+              setShowAdvanced(s => {
+                const next = !s;
+                setMode(next ? 'password' : 'invite');
+                if (!next) { setPassword(''); setConfirm(''); setError(null); }
+                return next;
+              });
+            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', color: 'var(--t2)', padding: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span>{showAdvanced ? '▾' : '▸'}</span>
+            <span>{showAdvanced ? t('um_hide_advanced', lang) : `🔑 ${t('um_advanced_options', lang)}`}</span>
+          </button>
 
-        {/* Inline password validation hints */}
-        {mode === 'password' && password && password.length < 8 && (
-          <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }}>{t('um_password_too_short', lang)}</p>
-        )}
-        {mode === 'password' && confirm && confirm !== password && (
-          <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_passwords_no_match', lang)}</p>
-        )}
+          {showAdvanced && (
+            <div style={{ marginTop: '10px', padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>
+              <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 12px 0', fontWeight: 600 }} dir="auto">
+                ⚠ {t('um_password_mode_warning', lang)}
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
+                  <div style={{ position: 'relative' }}>
+                    <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                      style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
+                    <button type="button" onClick={() => setShowPwd(s => !s)}
+                      style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
+                      {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
+                  <input type={showPwd ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
+                    style={{ ...fieldStyle, borderColor: confirm && confirm !== password ? 'var(--err)' : undefined }}
+                    autoComplete="new-password" dir="ltr" />
+                </div>
+              </div>
+              {password && password.length < 8 && (
+                <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '8px 0 0 0' }}>{t('um_password_too_short', lang)}</p>
+              )}
+              {confirm && confirm !== password && (
+                <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: '8px 0 0 0' }}>{t('um_passwords_no_match', lang)}</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {error && <p style={{ fontSize: '12px', color: 'var(--err)', margin: 0 }} dir="auto">{error}</p>}
 
@@ -637,54 +628,6 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
   );
 }
 
-/* ── Hard-delete confirmation modal ── */
-
-function DeleteConfirmModal({ user, lang, onCancel, onConfirm }: {
-  user: ManagedUser;
-  lang: 'ar' | 'en';
-  onCancel: () => void;
-  onConfirm: (confirmText: string) => Promise<void>;
-}) {
-  const [input, setInput] = useState('');
-  const [busy,  setBusy]  = useState(false);
-  const ready = input.trim() === 'DELETE';
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
-      <PhoenixCard padding="24px" style={{ maxWidth: '480px', width: '100%', border: '1px solid var(--err)' }}>
-        <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--err)', marginBottom: '10px' }}>
-          🗑 {t('um_delete_user_action', lang)}
-        </h3>
-        <p style={{ fontSize: '12.5px', color: 'var(--t)', marginBottom: '10px' }} dir="auto">
-          <strong>{userName(user)}</strong>
-        </p>
-        <p style={{ fontSize: '12.5px', color: 'var(--err)', marginBottom: '14px' }}>
-          {t('um_delete_confirm_q', lang)}
-        </p>
-        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>
-          {t('um_delete_type_confirm', lang)}
-        </label>
-        <input type="text" value={input} onChange={e => setInput(e.target.value)}
-          placeholder="DELETE"
-          style={{ ...fieldStyle, borderColor: input && !ready ? 'var(--err)' : undefined, marginBottom: '16px' }}
-          dir="ltr" autoComplete="off" />
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton size="md" loading={busy} disabled={!ready}
-            style={{ background: ready ? 'var(--err)' : undefined, color: ready ? '#fff' : undefined }}
-            onClick={async () => {
-              setBusy(true);
-              // Build the server-side confirmation string: DELETE_USER_<email>
-              // The server knows the email; the UI just sends 'DELETE' as the UI gate.
-              // We send the full expected string so the server can verify.
-              const fullConfirm = `DELETE_USER_${user.id}`; // server resolves email from id
-              await onConfirm(fullConfirm);
-              setBusy(false);
-            }}>
-            {t('um_delete_user_action', lang)}
-          </PhoenixButton>
-        </div>
-      </PhoenixCard>
-    </div>
-  );
-}
+/* DeleteConfirmModal removed — pending USER-LIFECYCLE-DISABLE-DELETE-A.
+   Hard delete requires email-based confirmation from ManagedUser (email field not
+   currently fetched) and a deployed admin-user-lifecycle Edge Function. */
