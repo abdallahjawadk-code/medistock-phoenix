@@ -6,6 +6,7 @@ const ALL_NAV = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
+  { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
   { screen: 5,  icon: '🌐', labelKey: 'nav_mesh' },

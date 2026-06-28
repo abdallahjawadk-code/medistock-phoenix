@@ -4,6 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { canManageOrg, canAssignRole, isAdminRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
 import type { Role } from '@/shared/lib/types';
+import { roleLabelKey } from '@/shared/lib/roles';
 import {
   getOrganizations,
   getOrganization,
@@ -46,12 +47,13 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 
+// Display legacy DB roles with the official role labels (no old labels in UI).
 const ROLE_LABEL_KEY: Record<Role, string> = {
-  super_admin: 'role_super_admin',
-  hospital_admin: 'role_hospital_admin',
-  warehouse_manager: 'role_warehouse_manager',
-  point_operator: 'role_point_operator',
-  viewer: 'role_viewer',
+  super_admin: roleLabelKey('super_admin'),
+  hospital_admin: roleLabelKey('hospital_admin'),
+  warehouse_manager: roleLabelKey('warehouse_manager'),
+  point_operator: roleLabelKey('point_operator'),
+  viewer: roleLabelKey('viewer'),
 };
 
 const STATUS_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
