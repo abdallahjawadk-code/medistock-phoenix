@@ -123,16 +123,30 @@ export async function getProfilesByOrg(orgId: string): Promise<OrgProfileRow[]> 
   return (data ?? []) as OrgProfileRow[];
 }
 
+export interface RoleAssignResult {
+  ok: boolean;
+  changed?: boolean;
+  error?: string;
+  previous_role?: string;
+  new_role?: string;
+}
+
 export async function updateProfileRole(
   profileId: string,
   newRole: Role,
-): Promise<void> {
+): Promise<RoleAssignResult> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ role: newRole })
-    .eq('id', profileId);
+  const { data, error } = await supabase.rpc('assign_profile_role', {
+    p_target_id: profileId,
+    p_new_role:  newRole,
+  });
 
   if (error) throw error;
+
+  const result = data as RoleAssignResult;
+  if (!result.ok) {
+    throw new Error(result.error ?? 'ROLE_ASSIGN_FAILED');
+  }
+  return result;
 }

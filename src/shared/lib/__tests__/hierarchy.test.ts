@@ -9,10 +9,15 @@ import {
 } from '../types';
 import type { Role } from '../types';
 
-const SRC = join(__dirname, '../../..');
+const SRC     = join(__dirname, '../../..');
+const PHOENIX = join(__dirname, '../../../..');
 
 function readSrc(rel: string) {
   return readFileSync(join(SRC, rel), 'utf8');
+}
+
+function readPhoenix(rel: string) {
+  return readFileSync(join(PHOENIX, rel), 'utf8');
 }
 
 describe('Role hierarchy helpers', () => {
@@ -157,6 +162,96 @@ describe('InstitutionScreen: safety checks', () => {
 
   it('does not contain DataReset or OCR imports', () => {
     expect(screen).not.toMatch(/DataReset|OCR|DocIntel|ExcelImport/i);
+  });
+
+  it('handles RPC escalation errors with bilingual messages', () => {
+    expect(screen).toContain('CANNOT_ESCALATE_TO_SUPER_ADMIN');
+    expect(screen).toContain('CANNOT_MODIFY_OTHER_ORG');
+    expect(screen).toContain('CANNOT_CHANGE_OWN_ROLE');
+    expect(screen).toContain('role_no_escalate');
+  });
+});
+
+describe('Role assignment: RPC-based (not direct update)', () => {
+  const orgService = readSrc('shared/supabase/services/organizations.service.ts');
+
+  it('updateProfileRole calls assign_profile_role RPC', () => {
+    expect(orgService).toContain('assign_profile_role');
+    expect(orgService).toContain("supabase.rpc('assign_profile_role'");
+  });
+
+  it('updateProfileRole does NOT use direct .update() on profiles', () => {
+    const fnStart = orgService.indexOf('async function updateProfileRole');
+    const fnEnd = orgService.indexOf('}', orgService.indexOf('return result', fnStart));
+    const fnBody = orgService.slice(fnStart, fnEnd);
+    expect(fnBody).not.toMatch(/\.from\(['"]profiles['"]\)\s*\.\s*update/);
+  });
+
+  it('updateProfileRole rejects non-ok RPC responses', () => {
+    expect(orgService).toContain('ROLE_ASSIGN_FAILED');
+    expect(orgService).toContain('result.ok');
+  });
+});
+
+describe('Migration 005: assign_profile_role RPC security', () => {
+  const sql = readPhoenix('supabase/migrations/005_phoenix_assign_profile_role.sql');
+
+  it('is SECURITY DEFINER', () => {
+    expect(sql).toContain('security definer');
+  });
+
+  it('sets search_path to public, pg_temp', () => {
+    expect(sql).toContain('set search_path = public, pg_temp');
+  });
+
+  it('checks auth.uid() is not null', () => {
+    expect(sql).toContain('auth.uid()');
+    expect(sql).toContain('NOT_AUTHENTICATED');
+  });
+
+  it('validates role against allowlist', () => {
+    expect(sql).toContain('INVALID_ROLE');
+    expect(sql).toContain("'super_admin', 'hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'");
+  });
+
+  it('blocks self-assignment', () => {
+    expect(sql).toContain('CANNOT_CHANGE_OWN_ROLE');
+    expect(sql).toContain('p_target_id = v_actor_id');
+  });
+
+  it('blocks hospital_admin from assigning super_admin', () => {
+    expect(sql).toContain('CANNOT_ESCALATE_TO_SUPER_ADMIN');
+    expect(sql).toContain("p_new_role = 'super_admin'");
+  });
+
+  it('blocks hospital_admin from modifying profiles outside own org', () => {
+    expect(sql).toContain('CANNOT_MODIFY_OTHER_ORG');
+    expect(sql).toContain('v_target.organization_id is distinct from v_actor_org_id');
+  });
+
+  it('blocks hospital_admin from modifying super_admin profiles', () => {
+    expect(sql).toContain('CANNOT_MODIFY_SUPER_ADMIN');
+  });
+
+  it('only super_admin and hospital_admin can assign roles', () => {
+    expect(sql).toContain('INSUFFICIENT_ROLE');
+    expect(sql).toContain("v_actor_role not in ('super_admin', 'hospital_admin')");
+  });
+
+  it('writes audit log on role change', () => {
+    expect(sql).toContain("'role_assigned'");
+    expect(sql).toContain('previous_role');
+    expect(sql).toContain('new_role');
+  });
+
+  it('is not granted to anon', () => {
+    expect(sql).toContain('revoke all on function assign_profile_role');
+    expect(sql).toContain('from anon');
+  });
+
+  it('is granted to authenticated', () => {
+    expect(sql).toContain('grant execute on function assign_profile_role');
+    expect(sql).toContain('to authenticated');
   });
 });
 

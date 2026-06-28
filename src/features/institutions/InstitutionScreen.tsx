@@ -516,14 +516,27 @@ function UserRow({ user, lang, actorRole, canEditRoles, onRoleChanged }: {
   const assignable = ASSIGNABLE_ROLES_BY_ACTOR[actorRole] ?? [];
   const canChange = canEditRoles && canAssignRole(actorRole, user.role) && user.role !== 'super_admin';
 
+  const [roleError, setRoleError] = useState<string | null>(null);
+
   async function onSaveRole() {
     if (!canAssignRole(actorRole, newRole)) return;
     setBusy(true);
+    setRoleError(null);
     try {
       await updateProfileRole(user.id, newRole);
       setChanging(false);
       onRoleChanged();
     } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('CANNOT_ESCALATE_TO_SUPER_ADMIN')) {
+        setRoleError(t('role_no_escalate', lang));
+      } else if (msg.includes('CANNOT_MODIFY_OTHER_ORG')) {
+        setRoleError(t('load_error', lang));
+      } else if (msg.includes('CANNOT_CHANGE_OWN_ROLE')) {
+        setRoleError(t('role_no_escalate', lang));
+      } else {
+        setRoleError(t('load_error', lang));
+      }
       console.error('[phoenix] role update failed:', e);
     } finally {
       setBusy(false);
@@ -555,24 +568,29 @@ function UserRow({ user, lang, actorRole, canEditRoles, onRoleChanged }: {
         )}
 
         {changing && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <select
-              value={newRole}
-              onChange={e => setNewRole(e.target.value as Role)}
-              style={{ padding: '6px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px' }}
-            >
-              {assignable
-                .filter(r => actorRole === 'super_admin' || r !== 'super_admin')
-                .map(r => (
-                  <option key={r} value={r}>{t(ROLE_LABEL_KEY[r], lang)}</option>
-                ))}
-            </select>
-            <PhoenixButton variant="primary" size="sm" loading={busy} onClick={onSaveRole}>
-              {t('inst_save', lang)}
-            </PhoenixButton>
-            <PhoenixButton variant="ghost" size="sm" onClick={() => setChanging(false)}>
-              {t('cancel', lang)}
-            </PhoenixButton>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <select
+                value={newRole}
+                onChange={e => { setNewRole(e.target.value as Role); setRoleError(null); }}
+                style={{ padding: '6px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px' }}
+              >
+                {assignable
+                  .filter(r => actorRole === 'super_admin' || r !== 'super_admin')
+                  .map(r => (
+                    <option key={r} value={r}>{t(ROLE_LABEL_KEY[r], lang)}</option>
+                  ))}
+              </select>
+              <PhoenixButton variant="primary" size="sm" loading={busy} onClick={onSaveRole}>
+                {t('inst_save', lang)}
+              </PhoenixButton>
+              <PhoenixButton variant="ghost" size="sm" onClick={() => { setChanging(false); setRoleError(null); }}>
+                {t('cancel', lang)}
+              </PhoenixButton>
+            </div>
+            {roleError && (
+              <div style={{ fontSize: '11px', color: 'var(--err)', fontWeight: 600 }}>{roleError}</div>
+            )}
           </div>
         )}
       </div>
