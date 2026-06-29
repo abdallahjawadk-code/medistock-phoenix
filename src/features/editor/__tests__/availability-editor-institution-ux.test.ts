@@ -813,6 +813,14 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(cardBody).not.toMatch(/canEditPorts\s*&&[^(]+qr_generate/);
   });
 
+  it('PortCard regenerate QR button gated by both canGenerateQr AND canRevokeQr', () => {
+    // regenerateQrForPoint = disableQrToken (needs qr.revoke) + createQrForTarget (needs qr.generate)
+    // so regenerate must require both permissions to avoid a runtime error when revoke is missing
+    const cardStart = instScreen.indexOf('function PortCard');
+    const cardBody  = instScreen.slice(cardStart, cardStart + 8000);
+    expect(cardBody).toMatch(/canGenerateQr\s*&&\s*canRevokeQr/);
+  });
+
   it('PortCard QR revoke button gated by canRevokeQr', () => {
     const cardStart = instScreen.indexOf('function PortCard');
     const cardBody  = instScreen.slice(cardStart, cardStart + 4000);

@@ -997,7 +997,7 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
               📱 {t('qr_generate', lang)}
             </PhoenixButton>
           )}
-          {canGenerateQr && qr && (
+          {canGenerateQr && canRevokeQr && qr && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
               🔄 {t('qr_regenerate', lang)}
             </PhoenixButton>
