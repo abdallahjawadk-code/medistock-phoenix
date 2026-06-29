@@ -4,8 +4,8 @@
 -- MANUAL APPLY ONLY — DO NOT use `npx supabase db push`.
 -- Apply via Supabase Dashboard > SQL Editor after a verified backup.
 --
--- Prerequisites: 001, 002, 010 (permission matrix with
--- phoenix_profile_has_permission helper).
+-- Prerequisites: 001, 002, 003, 010 (permission matrix with
+-- phoenix_profile_has_permission helper, archive_entity RPC).
 --
 -- Purpose:
 --   A. Makes distribution_points.warehouse_id nullable so ports can be
@@ -17,38 +17,31 @@
 --        - dp_read_perm: SELECT gated by ports.view + org scope
 --        - dp_write_perm: INSERT/UPDATE/DELETE gated by per-operation
 --          permission keys (ports.create, ports.edit) + org scope
+--   C. Replaces archive_entity() RPC (migration 003) to enforce
+--      ports.archive permission for distribution_point archiving instead
+--      of the hardcoded role check. Warehouse and local_item branches
+--      keep the original role-based check since those entity types do
+--      not yet have dedicated permission keys.
 --
--- How the new write policy works:
---   The USING clause (for UPDATE/DELETE) checks:
---     org scope AND (ports.edit OR super_admin)
---   The WITH CHECK clause (for INSERT/UPDATE) checks:
---     new.organization_id = own org AND (
---       INSERT: ports.create permission
---       UPDATE: ports.edit permission
---     )
---   super_admin always passes via the ALL_KEYS default in
---   role_permission_defaults (migration 010).
---
--- Limitation — ports.archive:
---   Postgres RLS cannot distinguish a normal field update from an
---   archive (status = 'archived'). Both are UPDATE operations.
---   Therefore ports.archive is enforced only at the frontend/UI layer
---   (the archive button is hidden unless the user has ports.archive).
---   At the DB layer, any user with ports.edit can perform updates
---   including status changes. A dedicated archive RPC would be needed
---   to enforce ports.archive at the DB level — that is a future phase.
+-- How ports.archive is enforced at DB level:
+--   The archive_entity() RPC is the ONLY path to archive a distribution
+--   point (set status = 'archived'). The RLS write policy (dp_write_perm)
+--   gates normal UPDATE via ports.edit. The RPC, being SECURITY DEFINER,
+--   bypasses RLS and performs its own authorization:
+--     - For distribution_point: requires ports.archive permission + org scope
+--     - For warehouse/local_item: requires super_admin or hospital_admin role
+--   This means a user with ports.edit but WITHOUT ports.archive can edit
+--   port fields (name, type) but CANNOT archive via the RPC.
 --
 -- What this does NOT do:
 --   - Does NOT drop the warehouses table or any warehouse data.
 --   - Does NOT touch item_availability, migrations 019/020, or auth.users.
 --   - Does NOT add new permission keys (ports.view/create/edit/archive
 --     already exist in migration 010).
---   - Does NOT add role_permission_defaults for institution_admin —
---     the platform admin grants permissions through the User Management
---     permission matrix.
+--   - Does NOT add role_permission_defaults for institution_admin.
 --
 -- Safety:
---   - Idempotent: DROP POLICY IF EXISTS before CREATE POLICY.
+--   - Idempotent: DROP POLICY IF EXISTS, CREATE OR REPLACE FUNCTION.
 --   - Non-destructive: no data wipe, no table drops, no cascade,
 --     no auth.users writes.
 --   - Existing data untouched.
@@ -91,7 +84,6 @@ CREATE POLICY "dp_read_perm" ON distribution_points
 CREATE POLICY "dp_write_perm" ON distribution_points
   FOR ALL TO authenticated
   USING (
-    -- For existing rows (UPDATE/DELETE): must have ports.edit + org scope
     (
       phoenix_my_role() = 'super_admin'
       OR (
@@ -101,7 +93,6 @@ CREATE POLICY "dp_write_perm" ON distribution_points
     )
   )
   WITH CHECK (
-    -- For new/updated rows: org scope enforced + permission check
     (
       phoenix_my_role() = 'super_admin'
       OR (
@@ -115,6 +106,92 @@ CREATE POLICY "dp_write_perm" ON distribution_points
   );
 
 -- ============================================================================
+-- C. Replace archive_entity() to enforce ports.archive for distribution_point
+-- ============================================================================
+-- CREATE OR REPLACE preserves the existing GRANT (authenticated) and
+-- REVOKE (anon) from migration 003 — no need to re-grant.
+
+CREATE OR REPLACE FUNCTION archive_entity(
+  p_entity_type  text,
+  p_entity_id    uuid,
+  p_reason       text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role    text;
+  v_org_id  uuid;
+  v_allowed text[] := array['warehouse', 'distribution_point', 'local_item'];
+  v_rows    int;
+BEGIN
+  v_role   := phoenix_my_role();
+  v_org_id := phoenix_my_org();
+
+  IF p_entity_type != ALL(v_allowed) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'ENTITY_TYPE_NOT_ALLOWLISTED');
+  END IF;
+
+  IF p_reason IS NULL OR trim(p_reason) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'REASON_REQUIRED');
+  END IF;
+
+  -- Authorization: per-entity-type permission check
+  CASE p_entity_type
+    WHEN 'distribution_point' THEN
+      -- Permission-based: requires ports.archive
+      IF v_role <> 'super_admin'
+         AND NOT phoenix_profile_has_permission(auth.uid(), 'ports.archive') THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'INSUFFICIENT_PERMISSION');
+      END IF;
+    ELSE
+      -- Warehouse / local_item: keep original role-based check
+      IF v_role NOT IN ('super_admin', 'hospital_admin') THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'INSUFFICIENT_ROLE');
+      END IF;
+  END CASE;
+
+  CASE p_entity_type
+    WHEN 'warehouse' THEN
+      UPDATE warehouses
+      SET status = 'archived', archived_at = now(), archived_by = auth.uid(), archive_reason = p_reason
+      WHERE id = p_entity_id
+        AND (v_role = 'super_admin' OR organization_id = v_org_id)
+        AND archived_at IS NULL;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+    WHEN 'distribution_point' THEN
+      UPDATE distribution_points
+      SET status = 'archived', archived_at = now(), archived_by = auth.uid(), archive_reason = p_reason
+      WHERE id = p_entity_id
+        AND (v_role = 'super_admin' OR organization_id = v_org_id)
+        AND archived_at IS NULL;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+    WHEN 'local_item' THEN
+      UPDATE local_items
+      SET status = 'archived', archived_at = now(), archived_by = auth.uid(), archive_reason = p_reason
+      WHERE id = p_entity_id
+        AND (v_role = 'super_admin' OR organization_id = v_org_id)
+        AND archived_at IS NULL;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+  END CASE;
+
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND_OR_ALREADY_ARCHIVED');
+  END IF;
+
+  INSERT INTO audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, payload)
+  VALUES (v_org_id, auth.uid(), v_role, 'archived', p_entity_type, p_entity_id,
+          jsonb_build_object('reason', p_reason));
+
+  RETURN jsonb_build_object('ok', true, 'archived', true);
+END;
+$$;
+
+-- ============================================================================
 -- VERIFY
 -- ============================================================================
 
@@ -122,6 +199,7 @@ DO $$
 DECLARE
   v_nullable text;
   v_policy_count integer;
+  v_fn_exists boolean;
 BEGIN
   -- A. warehouse_id must be nullable
   SELECT is_nullable INTO v_nullable
@@ -147,7 +225,15 @@ BEGIN
   ASSERT v_policy_count = 2,
     'VERIFY FAILED: expected 2 permission-based policies, found ' || v_policy_count;
 
-  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS policies in place';
+  -- D. archive_entity function must exist
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'archive_entity'
+  ) INTO v_fn_exists;
+  ASSERT v_fn_exists,
+    'VERIFY FAILED: archive_entity function not found';
+
+  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS + archive_entity with ports.archive enforcement';
 END $$;
 
 COMMIT;
@@ -166,15 +252,19 @@ COMMIT;
 --    SELECT policyname, cmd, qual FROM pg_policies
 --    WHERE schemaname = 'public' AND tablename = 'distribution_points'
 --    ORDER BY policyname;
---    -- expect: dp_read_perm + dp_write_perm only (no dp_write_*)
+--    -- expect: dp_read_perm + dp_write_perm only
 --
 -- 3. Confirm permission keys exist (no duplicates):
 --    SELECT key FROM permission_keys
 --    WHERE key IN ('ports.view','ports.create','ports.edit','ports.archive');
 --    -- expect: 4 rows
 --
--- NOTE on ports.archive:
---   Archive is enforced at the frontend layer only. At the DB layer,
---   ports.edit governs all UPDATE operations including status changes.
---   A dedicated archive RPC is recommended for strict DB-level enforcement.
+-- 4. Test ports.archive enforcement:
+--    As a user with ports.edit but WITHOUT ports.archive, call:
+--      SELECT archive_entity('distribution_point', '<some-port-id>', 'test');
+--    -- expect: {"ok": false, "error": "INSUFFICIENT_PERMISSION"}
+--
+--    As a user WITH ports.archive:
+--      SELECT archive_entity('distribution_point', '<some-port-id>', 'test');
+--    -- expect: {"ok": true, "archived": true}
 -- ============================================================================

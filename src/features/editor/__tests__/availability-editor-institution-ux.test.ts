@@ -536,10 +536,34 @@ describe('Warehouse retired from port workflow', () => {
     expect(sql).toContain('old role-based policies still exist');
   });
 
-  it('migration 021 documents ports.archive limitation', () => {
+  it('migration 021 replaces archive_entity to enforce ports.archive at DB level', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
-    expect(sql.toLowerCase()).toContain('ports.archive');
-    expect(sql.toLowerCase()).toContain('frontend');
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION archive_entity');
+    expect(sql).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.archive')");
+    expect(sql).toContain("INSUFFICIENT_PERMISSION");
+  });
+
+  it('archive_entity keeps role check for non-port entities (warehouse/local_item)', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain("INSUFFICIENT_ROLE");
+    expect(sql).toContain("'super_admin', 'hospital_admin'");
+  });
+
+  it('archive_entity still enforces org scope for distribution_point', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const fnBody = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION archive_entity'));
+    expect(fnBody).toContain('organization_id = v_org_id');
+  });
+
+  it('archive_entity is SECURITY DEFINER', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const fnBlock = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION archive_entity'));
+    expect(fnBlock).toContain('SECURITY DEFINER');
+  });
+
+  it('migration 021 verification checks archive_entity exists', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain("p.proname = 'archive_entity'");
   });
 });
 
