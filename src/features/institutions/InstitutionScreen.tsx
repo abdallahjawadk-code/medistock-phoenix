@@ -1187,10 +1187,13 @@ function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
     setBusy(true);
     setError(null);
     try {
+      const selectedItem = itemRows.find(r => r.id === itemId);
+      const ci = selectedItem ? centralOf(selectedItem) : null;
+      const sciName = ci ? (ci.name ?? ci.name_ar ?? itemId) : itemId;
       await upsertAvailability({
-        localItemId: itemId,
         distributionPointId: pointId,
         organizationId: orgId,
+        scientificName: sciName,
         quantity: qty,
         condition,
         batchNumber: batch || undefined,

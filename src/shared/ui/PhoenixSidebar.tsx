@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
+  { screen: 16, icon: '📊', labelKey: 'nav_status_editor' },
   { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
   { screen: 5,  icon: '🌐', labelKey: 'nav_mesh' },
   { screen: 6,  icon: '📱', labelKey: 'nav_qr' },

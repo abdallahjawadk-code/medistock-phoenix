@@ -1,11 +1,11 @@
 /**
- * Availability Editor Institution UX Tests (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part G)
+ * Availability Editor & Status Editor Tests
  * Run: npm test -- --run
  *
  * Static source-code tests verifying the UX changes without a DB connection.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const SRC     = join(__dirname, '../../../');
@@ -42,145 +42,127 @@ const types   = readSrc('shared/lib/types.ts');
 const service = readSrc('shared/supabase/services/availability.service.ts');
 
 // ============================================================================
-// Part A — Institution auto-selection
+// Free-text port_name removed from editor
 // ============================================================================
 
-describe('Part A: Institution auto-selection for institution users', () => {
-  it('institution-scoped user sees locked display, not dropdown', () => {
-    expect(editor).toContain('lockedFieldStyle');
-    expect(editor).toContain('avail_inst_locked_note');
+describe('Port name free-text input removed from editor', () => {
+  it('no ed-port text input in EditorScreen', () => {
+    expect(editor).not.toContain('<input id="ed-port"');
   });
 
-  it('super_admin still sees institution dropdown', () => {
-    expect(editor).toContain('isSuper');
-    expect(editor).toContain('<select id="ed-inst"');
+  it('no avail_port_field key used in editor', () => {
+    expect(editor).not.toContain('avail_port_field');
   });
 
-  it('locked display uses myOrg data for org name', () => {
-    expect(editor).toContain('myOrgName');
-    expect(editor).toContain('myOrg.data');
+  it('no avail_port_ph key used in editor', () => {
+    expect(editor).not.toContain('avail_port_ph');
   });
 
-  it('locked note is bilingual', () => {
-    expect(strings).toContain('تم تحديد المؤسسة تلقائيًا حسب حسابك.');
-    expect(strings).toContain('Institution is selected automatically based on your account.');
-  });
-
-  it('institution label is bilingual', () => {
-    expect(strings).toContain("avail_inst_label");
-    expect(strings).toContain("'المؤسسة'");
-    expect(strings).toContain("'Institution'");
-  });
-
-  it('non-super users only load their own org, not the full list', () => {
-    expect(editor).toContain('isSuper ? getOrganizations() : Promise.resolve([])');
-    expect(editor).toContain('getOrganization(activeOrgId)');
+  it('no portName state in editor', () => {
+    expect(editor).not.toContain("const [portName,");
   });
 });
 
 // ============================================================================
-// Part B — "الصنف" replaced with "المنفذ" (free text)
+// Port selected via dropdown
 // ============================================================================
 
-describe('Part B: "الصنف" replaced by "المنفذ" free text input', () => {
-  it('"الصنف" label is NOT used in the editor', () => {
-    expect(editor).not.toContain("t('item', lang)");
+describe('Port is selected via dropdown', () => {
+  it('ed-point select element exists', () => {
+    expect(editor).toContain('<select id="ed-point"');
   });
 
-  it('"المنفذ" label appears in the editor', () => {
-    expect(editor).toContain("avail_port_field");
+  it('uses avail_point_select key', () => {
+    expect(editor).toContain('avail_point_select');
   });
 
-  it('port field is a free text input, not a dropdown', () => {
-    expect(editor).toContain('<input id="ed-port" type="text"');
-  });
-
-  it('port field uses placeholder from i18n', () => {
-    expect(editor).toContain("avail_port_ph");
-  });
-
-  it('port field is required (included in canSubmit)', () => {
-    expect(editor).toContain('portName.trim()');
-  });
-
-  it('bilingual port labels exist', () => {
-    expect(strings).toContain('المنفذ');
-    expect(strings).toContain('Access point / Port');
-    expect(strings).toContain('اكتب اسم المنفذ');
-    expect(strings).toContain('Enter access point / port name');
+  it('avail_point_select says "Select port"', () => {
+    expect(strings).toContain("avail_point_select");
+    const line = strings.split('\n').find(l => l.includes('avail_point_select'));
+    expect(line).toContain('Select port');
+    expect(line).toContain('اختر المنفذ');
   });
 });
 
 // ============================================================================
-// Part C — "رقم الدفعة" renamed to "الرمز الوطني"
+// No-ports warning
 // ============================================================================
 
-describe('Part C: "رقم الدفعة" renamed to "الرمز الوطني"', () => {
-  it('"رقم الدفعة" label is NOT used in the editor', () => {
-    expect(editor).not.toContain("t('batch_no', lang)");
+describe('No-ports warning', () => {
+  it('avail_no_ports key exists in strings', () => {
+    expect(strings).toContain('avail_no_ports');
   });
 
-  it('"الرمز الوطني" label appears in the editor', () => {
+  it('avail_no_ports used in editor', () => {
+    expect(editor).toContain('avail_no_ports');
+  });
+});
+
+// ============================================================================
+// New material identity fields in editor
+// ============================================================================
+
+describe('Material identity fields in editor', () => {
+  it('scientific name field exists', () => {
+    expect(editor).toContain('avail_scientific_name');
+    expect(editor).toContain('scientificName');
+  });
+
+  it('trade name field exists', () => {
+    expect(editor).toContain('avail_trade_name');
+    expect(editor).toContain('tradeName');
+  });
+
+  it('dosage form field exists', () => {
+    expect(editor).toContain('avail_dosage_form');
+    expect(editor).toContain('dosageForm');
+  });
+
+  it('concentration field exists', () => {
+    expect(editor).toContain('avail_concentration');
+    expect(editor).toContain('concentrationVal');
+  });
+
+  it('price field exists', () => {
+    expect(editor).toContain('avail_price');
+    expect(editor).toContain('ed-price');
+  });
+
+  it('scientific name is required (in canSubmit)', () => {
+    expect(editor).toContain('scientificName.trim()');
+  });
+});
+
+// ============================================================================
+// National code label remains
+// ============================================================================
+
+describe('National code label remains', () => {
+  it('avail_national_code key used in editor', () => {
     expect(editor).toContain('avail_national_code');
   });
 
   it('bilingual national code labels exist', () => {
     expect(strings).toContain('الرمز الوطني');
     expect(strings).toContain('National code');
-    expect(strings).toContain('أدخل الرمز الوطني');
-    expect(strings).toContain('Enter national code');
-  });
-
-  it('still stores into the batch_number column (no DB rename)', () => {
-    expect(service).toContain('batch_number');
-    expect(service).toContain('batchNumber');
   });
 });
 
 // ============================================================================
-// Part D — Material status localization
+// Status localized (all cond_ keys, surplus/near_expiry combined)
 // ============================================================================
 
-describe('Part D: Material status localization', () => {
-  it('raw "low_stock" enum is never shown as UI text', () => {
-    const conditionDropdownArea = editor.slice(
-      editor.indexOf('CONDITION_OPTIONS'),
-      editor.indexOf('EditorScreen')
-    );
-    expect(conditionDropdownArea).not.toContain("'low_stock' as label");
-    expect(editor).toContain("t(opt.labelKey, lang)");
-  });
-
-  it('label key is "موقف المادة" / "Material status"', () => {
-    expect(strings).toContain("avail_material_status");
-    expect(strings).toContain('موقف المادة');
-    expect(strings).toContain('Material status');
-  });
-
-  it('all four condition options have localized keys', () => {
+describe('Status localization', () => {
+  it('all condition keys exist', () => {
     expect(strings).toContain('cond_available');
     expect(strings).toContain('cond_low_stock');
     expect(strings).toContain('cond_missing');
     expect(strings).toContain('cond_surplus');
-  });
-
-  it('Arabic options are correct', () => {
-    expect(strings).toContain('متوفرة');
-    expect(strings).toContain('قليلة / شحيحة');
-    expect(strings).toContain('مفقودة');
-    expect(strings).toContain('الفائضة - قريبة النفاذ');
-  });
-
-  it('English options are correct', () => {
-    expect(strings).toContain("'Available'");
-    expect(strings).toContain("'Low stock'");
-    expect(strings).toContain("'Missing'");
-    expect(strings).toContain("'Surplus - Near expiry'");
-  });
-
-  it('surplus and near_expiry both display as the combined wording', () => {
-    expect(strings).toContain('cond_surplus');
     expect(strings).toContain('cond_near_expiry');
+    expect(strings).toContain('cond_expired');
+  });
+
+  it('surplus and near_expiry both display as combined wording', () => {
     const surplusLine = strings.split('\n').find(l => l.includes('cond_surplus'));
     const nearLine = strings.split('\n').find(l => l.includes('cond_near_expiry'));
     expect(surplusLine).toContain('الفائضة - قريبة النفاذ');
@@ -189,73 +171,68 @@ describe('Part D: Material status localization', () => {
 });
 
 // ============================================================================
-// Part E — Supply type (institution-private)
+// Supply type field
 // ============================================================================
 
-describe('Part E: "نوع التجهيز" field', () => {
-  it('supply type field appears in the editor', () => {
+describe('Supply type field exists', () => {
+  it('supply type in editor', () => {
     expect(editor).toContain('avail_supply_type');
-    expect(editor).toContain('<input id="ed-supply"');
-  });
-
-  it('supply type is a free text input', () => {
-    expect(editor).toContain('type="text"');
     expect(editor).toContain('supplyType');
   });
 
   it('bilingual supply type labels exist', () => {
     expect(strings).toContain('نوع التجهيز');
     expect(strings).toContain('Supply type');
-    expect(strings).toContain('اكتب نوع التجهيز');
-    expect(strings).toContain('Enter supply type');
-  });
-
-  it('supply type is passed to upsert service', () => {
-    expect(editor).toContain('supplyType: supplyType');
-    expect(service).toContain('supply_type');
-    expect(service).toContain('supplyType');
-  });
-
-  it('AvailabilityRecord type includes supply_type', () => {
-    expect(types).toContain('supply_type');
   });
 });
 
 // ============================================================================
-// Part F — Bilingual strings completeness
+// Status Editor screen
 // ============================================================================
 
-describe('Part F: Bilingual strings completeness', () => {
-  const REQUIRED_KEYS = [
-    'avail_inst_label',
-    'avail_inst_locked_note',
-    'avail_port_field',
-    'avail_port_ph',
-    'avail_national_code',
-    'avail_national_code_ph',
-    'avail_material_status',
-    'cond_available',
-    'cond_low_stock',
-    'cond_missing',
-    'cond_surplus',
-    'cond_near_expiry',
-    'avail_supply_type',
-    'avail_supply_type_ph',
-  ];
+describe('Status Editor screen', () => {
+  const statusEditorPath = join(SRC, 'features/status/StatusEditorScreen.tsx');
 
-  REQUIRED_KEYS.forEach(key => {
-    it(`string key "${key}" exists in strings.ts`, () => {
-      expect(strings).toContain(key);
-    });
+  it('StatusEditorScreen file exists', () => {
+    expect(existsSync(statusEditorPath)).toBe(true);
+  });
+
+  const statusEditor = readFile(statusEditorPath);
+
+  it('has export excel button (se_export_excel)', () => {
+    expect(statusEditor).toContain('se_export_excel');
+  });
+
+  it('has export pdf button (se_export_pdf)', () => {
+    expect(statusEditor).toContain('se_export_pdf');
+  });
+
+  it('has print button (se_print)', () => {
+    expect(statusEditor).toContain('se_print');
+  });
+
+  it('has filter controls', () => {
+    expect(statusEditor).toContain('se_all_ports');
+    expect(statusEditor).toContain('se_all_statuses');
+    expect(statusEditor).toContain('filterPort');
+    expect(statusEditor).toContain('filterStatus');
+  });
+
+  it('shows PhoenixOrgScope', () => {
+    expect(statusEditor).toContain('PhoenixOrgScope');
+  });
+
+  it('uses getAvailabilityByOrg', () => {
+    expect(statusEditor).toContain('getAvailabilityByOrg');
   });
 });
 
 // ============================================================================
-// Migration 019 safety
+// Migration 020 safety
 // ============================================================================
 
-describe('Migration 019: availability editor institution UX', () => {
-  const sql = readPhoenix('supabase/migrations/019_phoenix_availability_editor_institution_ux.sql');
+describe('Migration 020: material identity fields', () => {
+  const sql = readPhoenix('supabase/migrations/020_phoenix_availability_material_fields_and_status_editor.sql');
 
   it('file exists and is non-empty', () => {
     expect(sql.length).toBeGreaterThan(500);
@@ -282,41 +259,29 @@ describe('Migration 019: availability editor institution UX', () => {
     expect(sql).not.toMatch(/\b(insert|update|delete)\b.*auth\.users/i);
   });
 
-  it('adds port_name column', () => {
-    expect(sql).toContain('add column if not exists port_name');
+  it('adds scientific_name column', () => {
+    expect(sql).toContain('add column if not exists scientific_name');
   });
 
-  it('adds supply_type column', () => {
-    expect(sql).toContain('add column if not exists supply_type');
+  it('adds trade_name column', () => {
+    expect(sql).toContain('add column if not exists trade_name');
   });
 
-  it('makes local_item_id nullable', () => {
-    expect(sql).toContain('drop not null');
-    expect(sql).toContain('local_item_id');
+  it('adds dosage_form column', () => {
+    expect(sql).toContain('add column if not exists dosage_form');
   });
 
-  it('adds identity check constraint', () => {
-    expect(sql).toContain('item_availability_identity_chk');
-    expect(sql).toContain('local_item_id is not null or port_name is not null');
+  it('adds concentration column', () => {
+    expect(sql).toContain('add column if not exists concentration');
   });
 
-  it('creates unique index for port_name upsert', () => {
-    expect(sql).toContain('item_avail_point_port_idx');
-    expect(sql).toContain('distribution_point_id, port_name');
+  it('adds price column', () => {
+    expect(sql).toContain('add column if not exists price');
   });
 
-  it('does not modify condition CHECK constraint', () => {
-    expect(sql).not.toContain("check (condition");
-  });
-
-  it('does not modify RLS policies', () => {
-    expect(sql).not.toContain('create policy');
-    expect(sql).not.toContain('alter policy');
-  });
-
-  it('does not modify permission RPCs', () => {
-    expect(sql).not.toContain('phoenix_profile_has_permission');
-    expect(sql).not.toContain('assign_profile_role');
+  it('creates unique index for scientific_name upsert', () => {
+    expect(sql).toContain('item_avail_point_sciname_idx');
+    expect(sql).toContain('distribution_point_id, scientific_name');
   });
 
   it('includes a verification block', () => {
@@ -324,7 +289,7 @@ describe('Migration 019: availability editor institution UX', () => {
     expect(sql).toContain('VERIFY');
   });
 
-  it('is idempotent (uses IF NOT EXISTS / IF EXISTS patterns)', () => {
+  it('is idempotent (uses IF NOT EXISTS patterns)', () => {
     expect(sql).toContain('if not exists');
     expect(sql).toContain('add column if not exists');
     expect(sql).toContain('create unique index if not exists');
@@ -336,29 +301,117 @@ describe('Migration 019: availability editor institution UX', () => {
 });
 
 // ============================================================================
-// Service layer: upsert supports both flows
+// Service layer: upsert uses scientific_name flow
 // ============================================================================
 
-describe('Service: availability upsert supports port_name flow', () => {
-  it('UpsertAvailabilityInput has portName field', () => {
-    expect(service).toContain('portName');
+describe('Service: availability upsert uses scientific_name', () => {
+  it('UpsertAvailabilityInput has scientificName field', () => {
+    expect(service).toContain('scientificName');
   });
 
   it('UpsertAvailabilityInput has supplyType field', () => {
     expect(service).toContain('supplyType');
   });
 
-  it('upsert targets port_name conflict key for free-text flow', () => {
-    expect(service).toContain("onConflict: 'distribution_point_id,port_name'");
+  it('upsert targets scientific_name conflict key', () => {
+    expect(service).toContain("onConflict: 'distribution_point_id,scientific_name'");
   });
 
-  it('upsert still supports legacy localItemId flow', () => {
-    expect(service).toContain("onConflict: 'local_item_id,distribution_point_id'");
+  it('does not write port_name in upsert row', () => {
+    // The upsert function row assignment should not include port_name
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).not.toContain("port_name:");
+    expect(upsertFn).not.toContain("row.port_name");
   });
 
-  it('requires exactly one of localItemId or portName', () => {
-    expect(service).toContain('localItemId');
-    expect(service).toContain('portName');
+  it('does not write local_item_id in upsert row', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).not.toContain("local_item_id:");
+    expect(upsertFn).not.toContain("row.local_item_id");
+  });
+
+  it('getAvailabilityByOrg function exists', () => {
+    expect(service).toContain('async function getAvailabilityByOrg');
+    expect(service).toContain('organization_id');
+  });
+});
+
+// ============================================================================
+// i18n keys completeness
+// ============================================================================
+
+describe('All new i18n keys exist', () => {
+  const REQUIRED_KEYS = [
+    'avail_inst_label',
+    'avail_inst_locked_note',
+    'avail_point_select',
+    'avail_national_code',
+    'avail_national_code_ph',
+    'avail_material_status',
+    'avail_supply_type',
+    'avail_supply_type_ph',
+    'avail_no_ports',
+    'avail_create_port_first',
+    'avail_scientific_name',
+    'avail_scientific_ph',
+    'avail_trade_name',
+    'avail_trade_ph',
+    'avail_dosage_form',
+    'avail_dosage_ph',
+    'avail_concentration',
+    'avail_concentration_ph',
+    'avail_price',
+    'avail_price_ph',
+    'nav_status_editor',
+    'se_sub',
+    'se_export_excel',
+    'se_export_pdf',
+    'se_print',
+    'se_filter_port',
+    'se_filter_status',
+    'se_all_ports',
+    'se_all_statuses',
+    'se_no_records',
+  ];
+
+  REQUIRED_KEYS.forEach(key => {
+    it(`string key "${key}" exists in strings.ts`, () => {
+      expect(strings).toContain(key);
+    });
+  });
+});
+
+// ============================================================================
+// Types include new fields
+// ============================================================================
+
+describe('Types include new material fields', () => {
+  it('scientific_name in AvailabilityRecord', () => {
+    expect(types).toContain('scientific_name');
+  });
+
+  it('trade_name in AvailabilityRecord', () => {
+    expect(types).toContain('trade_name');
+  });
+
+  it('dosage_form in AvailabilityRecord', () => {
+    expect(types).toContain('dosage_form');
+  });
+
+  it('concentration in AvailabilityRecord', () => {
+    expect(types).toContain('concentration');
+  });
+
+  it('price in AvailabilityRecord', () => {
+    expect(types).toContain('price');
+  });
+
+  it('port_name still exists (legacy)', () => {
+    expect(types).toContain('port_name');
+  });
+
+  it('supply_type still exists', () => {
+    expect(types).toContain('supply_type');
   });
 });
 

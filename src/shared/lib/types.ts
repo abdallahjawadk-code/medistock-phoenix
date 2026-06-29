@@ -57,6 +57,11 @@ export interface AvailabilityRecord {
   port_name?: string | null;
   /** Free-text "نوع التجهيز" (Supply type), institution-private (migration 019). */
   supply_type?: string | null;
+  scientific_name?: string | null;
+  trade_name?: string | null;
+  dosage_form?: string | null;
+  concentration?: string | null;
+  price?: number | null;
 }
 
 export interface QrToken {

@@ -19,6 +19,7 @@ import { StatusCenterScreen } from '@/features/status/StatusCenterScreen';
 import { InterInstitutionAlertsScreen } from '@/features/alerts/InterInstitutionAlertsScreen';
 import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
+import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 
 /** Read a public QR handle from the URL (?qid=… or ?token=…). Anon, no auth. */
 function publicQrId(): string | null {
@@ -70,6 +71,7 @@ function AppInner() {
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;
+      case 16: return <StatusEditorScreen />;
       default: return <DashboardScreen onNavigate={setScreen} />;
     }
   };

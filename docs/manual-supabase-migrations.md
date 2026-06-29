@@ -41,6 +41,7 @@ Apply strictly in order. Each builds on the previous schema.
 | **017** | `017_phoenix_permission_rpc_42703_fix.sql` | Fixes a 42703 (undefined_column) error in the permission RPC stack (PERMISSION-RPC-42703-FIX-B): re-asserts `phoenix_profile_has_permission`, and makes the trailing `audit_logs` insert in `assign_profile_permissions`/`reset_profile_permissions` exception-safe so an audit-log schema mismatch can never roll back an already-successful permission write |
 | **018** | `018_phoenix_actor_snapshot_record_field_fix.sql` | Fixes the confirmed live 42703 `record "new" has no field "actor_id"` error (ACTOR-SNAPSHOT-TRIGGER-42703-FIX-A): replaces `phoenix_populate_actor_snapshot()` to resolve the per-table actor column via `to_jsonb(new)->>'...'` instead of directly referencing table-specific `NEW.<column>` fields inside a shared CASE expression |
 | **019** | `019_phoenix_availability_editor_institution_ux.sql` | Availability Editor UX refresh (AVAILABILITY-EDITOR-INSTITUTION-UX-A): adds `item_availability.port_name` (free-text "المنفذ") and `item_availability.supply_type` (free-text "نوع التجهيز", institution-private), makes `local_item_id` nullable, adds a parallel `(distribution_point_id, port_name)` unique index for the new upsert flow |
+| **020** | `020_phoenix_availability_material_fields_and_status_editor.sql` | Material identity fields: adds `scientific_name`, `trade_name`, `dosage_form`, `concentration`, `price` to `item_availability`; creates `(distribution_point_id, scientific_name)` partial unique index for the new upsert flow; `port_name` left as legacy unused column |
 
 Apply each one **manually**, in this order:
 
@@ -59,6 +60,7 @@ Apply each one **manually**, in this order:
 13. **Apply 017 manually** — `017_phoenix_permission_rpc_42703_fix.sql` (requires 010; if its own verification shows `audit_logs` is still missing the actor snapshot columns, re-apply 013 first — no Edge Function changes needed)
 14. **Apply 018 manually** — `018_phoenix_actor_snapshot_record_field_fix.sql` (requires 014; fixes the confirmed `record "new" has no field "actor_id"` error — no Edge Function changes needed)
 15. **Apply 019 manually** — `019_phoenix_availability_editor_institution_ux.sql` (requires 001; the Availability Editor frontend depends on `port_name`/`supply_type` existing — apply before deploying the updated editor code, no Edge Function changes needed)
+16. **Apply 020 manually** — `020_phoenix_availability_material_fields_and_status_editor.sql` (requires 019; adds material identity columns and the `(distribution_point_id, scientific_name)` upsert index — apply before deploying the updated editor/Status Editor code, no Edge Function changes needed)
 
 ## How to apply (each migration)
 

@@ -16,7 +16,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 interface PointRow { id: string; name: string; name_ar: string; }
 
 /**
- * Material status options (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part D).
+ * Material status options.
  * 'surplus' and 'near_expiry' are intentionally merged into a single
  * selectable option here — both i18n keys now carry the same combined
  * "Surplus - Near expiry" wording (see strings.ts), so existing legacy rows
@@ -45,7 +45,11 @@ export function EditorScreen() {
   const myOrg = useAsync(() => (!isSuper && activeOrgId) ? getOrganization(activeOrgId) : Promise.resolve(null), [isSuper, activeOrgId]);
 
   const [pointId, setPointId]   = useState('');
-  const [portName, setPortName] = useState('');
+  const [scientificName, setScientificName] = useState('');
+  const [tradeName, setTradeName] = useState('');
+  const [dosageForm, setDosageForm] = useState('');
+  const [concentrationVal, setConcentrationVal] = useState('');
+  const [price, setPrice] = useState('');
   const [qty, setQty]           = useState(0);
   const [condition, setCondition] = useState<AvailabilityCondition>('available');
   const [batch, setBatch]       = useState('');
@@ -57,14 +61,19 @@ export function EditorScreen() {
   const [toast, setToast]       = useState<string | null>(null);
 
   const qtyInvalid = qty < 0;
-  const canSubmit = !!activeOrgId && !!pointId && !!portName.trim() && !qtyInvalid;
+  const noPorts = !points.loading && (points.data ?? []).length === 0;
+  const canSubmit = !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid;
 
   async function doApply() {
     if (!activeOrgId) return;
     setBusy(true);
     try {
       await upsertAvailability({
-        portName: portName.trim(),
+        scientificName: scientificName.trim(),
+        tradeName: tradeName.trim() || undefined,
+        dosageForm: dosageForm.trim() || undefined,
+        concentrationValue: concentrationVal.trim() || undefined,
+        price: price ? Number(price) : undefined,
         distributionPointId: pointId,
         organizationId: activeOrgId,
         quantity: qty,
@@ -110,7 +119,7 @@ export function EditorScreen() {
           <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               {/* Institution — locked display for institution-scoped users,
-                  dropdown only for super_admin (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part A) */}
+                  dropdown only for super_admin */}
               <div style={{ gridColumn: '1/-1' }}>
                 <label htmlFor="ed-inst" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_inst_label', lang)} *</label>
                 {isSuper ? (
@@ -121,7 +130,7 @@ export function EditorScreen() {
                 ) : (
                   <>
                     <div id="ed-inst" style={lockedFieldStyle} dir="auto">
-                      🏥 {myOrg.loading ? t('loading', lang) : (myOrgName || '—')}
+                      {myOrg.loading ? t('loading', lang) : (myOrgName || '—')}
                     </div>
                     <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
                       {t('avail_inst_locked_note', lang)}
@@ -130,30 +139,63 @@ export function EditorScreen() {
                 )}
               </div>
 
-              {/* Distribution point */}
+              {/* Distribution point / port dropdown */}
               <div style={{ gridColumn: '1/-1' }}>
                 <label htmlFor="ed-point" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_point_select', lang)} *</label>
-                <select id="ed-point" value={pointId} onChange={e => setPointId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+                <select id="ed-point" value={pointId} onChange={e => setPointId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }} disabled={noPorts}>
                   <option value="">— {points.loading ? t('loading', lang) : t('avail_point_select', lang)} —</option>
                   {(points.data ?? []).map(p => <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name}</option>)}
                 </select>
+                {noPorts && (
+                  <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }} dir="auto">
+                    {t('avail_no_ports', lang)}
+                  </p>
+                )}
               </div>
 
-              {/* Port / Access point (free text — replaces the item dropdown, Part B) */}
+              {/* Scientific name (required) */}
               <div style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="ed-port" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_port_field', lang)} *</label>
-                <input id="ed-port" type="text" dir="auto" value={portName} onChange={e => setPortName(e.target.value)}
-                  placeholder={t('avail_port_ph', lang)} style={fieldStyle} />
+                <label htmlFor="ed-sciname" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_scientific_name', lang)} *</label>
+                <input id="ed-sciname" type="text" dir="auto" value={scientificName} onChange={e => setScientificName(e.target.value)}
+                  placeholder={t('avail_scientific_ph', lang)} style={fieldStyle} />
               </div>
 
-              {/* Quantity */}
+              {/* Trade name (optional) */}
+              <div style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="ed-tradename" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_trade_name', lang)}</label>
+                <input id="ed-tradename" type="text" dir="auto" value={tradeName} onChange={e => setTradeName(e.target.value)}
+                  placeholder={t('avail_trade_ph', lang)} style={fieldStyle} />
+              </div>
+
+              {/* Dosage form (half width) */}
+              <div>
+                <label htmlFor="ed-dosage" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_dosage_form', lang)}</label>
+                <input id="ed-dosage" type="text" dir="auto" value={dosageForm} onChange={e => setDosageForm(e.target.value)}
+                  placeholder={t('avail_dosage_ph', lang)} style={fieldStyle} />
+              </div>
+
+              {/* Concentration (half width) */}
+              <div>
+                <label htmlFor="ed-concentration" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_concentration', lang)}</label>
+                <input id="ed-concentration" type="text" dir="auto" value={concentrationVal} onChange={e => setConcentrationVal(e.target.value)}
+                  placeholder={t('avail_concentration_ph', lang)} style={fieldStyle} />
+              </div>
+
+              {/* Price (half width) */}
+              <div>
+                <label htmlFor="ed-price" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_price', lang)}</label>
+                <input id="ed-price" type="number" min={0} step="any" value={price} onChange={e => setPrice(e.target.value)}
+                  placeholder={t('avail_price_ph', lang)} style={fieldStyle} />
+              </div>
+
+              {/* Quantity (half width) */}
               <div>
                 <label htmlFor="ed-qty" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('qty', lang)} *</label>
                 <input id="ed-qty" type="number" min={0} value={qty} onChange={e => setQty(Number(e.target.value))} style={{ ...fieldStyle, border: `1px solid ${qtyInvalid ? 'var(--err)' : 'var(--brd)'}`, background: qtyInvalid ? 'var(--err2)' : 'var(--s)' }} />
                 {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('qty_err', lang)}</p>}
               </div>
 
-              {/* Material status (localized — Part D) */}
+              {/* Material status (localized) */}
               <div>
                 <label htmlFor="ed-cond" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_material_status', lang)}</label>
                 <select id="ed-cond" value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
@@ -161,7 +203,7 @@ export function EditorScreen() {
                 </select>
               </div>
 
-              {/* National code (renamed from Batch No. — Part C; storage unchanged: batch_number column) */}
+              {/* National code (renamed from Batch No.; storage unchanged: batch_number column) */}
               <div>
                 <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_national_code', lang)}</label>
                 <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_national_code_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
@@ -173,7 +215,7 @@ export function EditorScreen() {
                 <input id="ed-exp" type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={fieldStyle} />
               </div>
 
-              {/* Supply type — institution-private (Part E) */}
+              {/* Supply type — institution-private */}
               <div>
                 <label htmlFor="ed-supply" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_supply_type', lang)}</label>
                 <input id="ed-supply" type="text" dir="auto" value={supplyType} onChange={e => setSupplyType(e.target.value)}
@@ -189,7 +231,7 @@ export function EditorScreen() {
           </PhoenixCard>
 
           <PhoenixButton variant="primary" size="lg" fullWidth disabled={!canSubmit} onClick={() => setShowConfirm(true)}>
-            ✅ {t('apply', lang)}
+            {t('apply', lang)}
           </PhoenixButton>
           <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--t3)', marginTop: '8px' }}>{t('apply_note', lang)}</p>
         </>
@@ -198,12 +240,11 @@ export function EditorScreen() {
       {/* Confirm dialog */}
       <PhoenixDialog open={showConfirm} onClose={() => setShowConfirm(false)} title={t('confirm_apply', lang)}>
         <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--warn2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: '26px' }}>⚠️</div>
           <p style={{ fontSize: '13px', color: 'var(--t2)', lineHeight: 1.65 }}>{t('confirm_msg', lang)}</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setShowConfirm(false)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={busy} onClick={doApply}>✅ {t('confirm_btn', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={busy} onClick={doApply}>{t('confirm_btn', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
