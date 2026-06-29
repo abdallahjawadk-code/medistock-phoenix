@@ -96,7 +96,15 @@ export async function createDistributionPoint(input: {
     .select('id, name, name_ar, status, warehouse_id, organization_id, point_type')
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.error('[phoenix] createDistributionPoint insert failed:', {
+        code: error.code, message: error.message, details: error.details, hint: error.hint,
+        payload: row,
+      });
+    }
+    throw error;
+  }
   return {
     id: data.id, name: data.name, name_ar: data.name_ar,
     status: data.status, warehouseId: data.warehouse_id,

@@ -471,6 +471,53 @@ describe('Warehouse retired from port workflow', () => {
     expect(svc).toContain('warehouseId?:');
   });
 
+  it('createDistributionPoint insert payload uses point_type, not type', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    expect(body).toContain('point_type:');
+    expect(body).not.toMatch(/\btype:\s*input\.pointType/);
+  });
+
+  it('createDistributionPoint never sends pointType directly to Supabase', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    // the row object built for insert() must not contain a raw "pointType" key
+    expect(body).not.toMatch(/row\.pointType/);
+    expect(body).not.toMatch(/pointType:\s*input\.pointType/);
+  });
+
+  it('createDistributionPoint insert payload includes organization_id, name, name_ar', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    expect(body).toContain('organization_id: input.organizationId');
+    expect(body).toContain('name:            input.name');
+    expect(body).toContain('name_ar:         input.name_ar');
+  });
+
+  it('createDistributionPoint omits warehouse_id from row when not provided', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    expect(body).toMatch(/if \(input\.warehouseId\) row\.warehouse_id = input\.warehouseId;/);
+  });
+
+  it('createDistributionPoint logs dev-only diagnostics on insert error without secrets', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    expect(body).toContain('import.meta.env.DEV');
+    expect(body).not.toMatch(/service_role/i);
+    expect(body).not.toMatch(/auth\.admin/);
+  });
+
   it('migration 021 exists and makes warehouse_id nullable', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain('warehouse_id');
