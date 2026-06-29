@@ -39,6 +39,7 @@ Apply strictly in order. Each builds on the previous schema.
 | **015** | `015_phoenix_user_account_recycling.sql` | Account recycling permission: `users.recycle` permission key + super_admin default |
 | **016** | `016_phoenix_local_credentials_mode.sql` | Local username credentials mode (LOCAL-CREDENTIALS-MODE-A): `profiles.username/login_mode/contact_email/must_change_password/password_changed_at` + `phoenix_mark_password_changed()` RPC |
 | **017** | `017_phoenix_permission_rpc_42703_fix.sql` | Fixes a 42703 (undefined_column) error in the permission RPC stack (PERMISSION-RPC-42703-FIX-B): re-asserts `phoenix_profile_has_permission`, and makes the trailing `audit_logs` insert in `assign_profile_permissions`/`reset_profile_permissions` exception-safe so an audit-log schema mismatch can never roll back an already-successful permission write |
+| **018** | `018_phoenix_actor_snapshot_record_field_fix.sql` | Fixes the confirmed live 42703 `record "new" has no field "actor_id"` error (ACTOR-SNAPSHOT-TRIGGER-42703-FIX-A): replaces `phoenix_populate_actor_snapshot()` to resolve the per-table actor column via `to_jsonb(new)->>'...'` instead of directly referencing table-specific `NEW.<column>` fields inside a shared CASE expression |
 
 Apply each one **manually**, in this order:
 
@@ -55,6 +56,7 @@ Apply each one **manually**, in this order:
 11. **Apply 015 manually** — `015_phoenix_user_account_recycling.sql` (requires 010; deploy `admin-recycle-user` Edge Function after applying)
 12. **Apply 016 manually** — `016_phoenix_local_credentials_mode.sql` (requires 001–015; redeploy `admin-create-user` and `admin-recycle-user` Edge Functions after applying — they now support `login_mode: 'local'`)
 13. **Apply 017 manually** — `017_phoenix_permission_rpc_42703_fix.sql` (requires 010; if its own verification shows `audit_logs` is still missing the actor snapshot columns, re-apply 013 first — no Edge Function changes needed)
+14. **Apply 018 manually** — `018_phoenix_actor_snapshot_record_field_fix.sql` (requires 014; fixes the confirmed `record "new" has no field "actor_id"` error — no Edge Function changes needed)
 
 ## How to apply (each migration)
 
