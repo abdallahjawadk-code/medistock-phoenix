@@ -47,23 +47,34 @@ function statusLabel(status: string, lang: 'ar' | 'en'): string {
   return t('um_inactive', lang);
 }
 
+/** Business/client error codes that already have a specific, mapped message. */
+const KNOWN_PERMISSION_CODES = new Set([
+  'CANNOT_EDIT_OWN_PERMISSIONS', 'SELF_ESCALATION',
+  'UNKNOWN_PERMISSION', 'NEEDS_AUTHORITY_FOR_DANGEROUS', 'CANNOT_GRANT_UNHELD',
+]);
+
 /**
  * Maps a permission-save RPC result (top-level ok:false) to a toast message.
  * Only a genuinely missing RPC shows the migration-010 message; only an
- * actual network/config failure shows the network message; everything else
- * — including the previously generic catch-all — surfaces as the specific
- * reason from messageForPermissionCodes when one is known.
- * PERMISSION-SAVE-RPC-DIAGNOSTIC-FIX-A.
+ * actual network/config failure shows the network message; a recognized
+ * business/client code shows its specific message. If none of those apply —
+ * a real but unclassified RPC failure (e.g. an ambiguous-function dispatch
+ * error, an unexpected Postgres error) — the diagnostic code captured by
+ * users.service.ts is shown instead of a bare, unhelpful generic message
+ * (PERMISSION-RPC-CONTRACT-FIX-B).
  */
 function permissionResultMessage(
-  res: { ok: boolean; migrationMissing?: boolean; error?: string },
+  res: { ok: boolean; migrationMissing?: boolean; error?: string; diagnostics?: { diagnostic_code: string } },
   lang: 'ar' | 'en',
   successKey: string,
 ): string {
   if (res.ok) return t(successKey, lang);
   if (res.migrationMissing) return t('um_perm_unavailable', lang);
   if (res.error === 'NOT_CONFIGURED' || res.error === 'NETWORK_ERROR') return t('um_perm_network_error', lang);
-  return messageForPermissionCodes(res.error ? [res.error] : [], lang);
+  if (res.error && KNOWN_PERMISSION_CODES.has(res.error)) return messageForPermissionCodes([res.error], lang);
+  const diag = res.diagnostics?.diagnostic_code;
+  if (diag && diag !== 'SUCCESS') return `${t('um_perm_diag_prefix', lang)} ${diag}`;
+  return t('um_perm_save_failed', lang);
 }
 
 /**
@@ -380,6 +391,10 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
     sameScope: isSuper,
   };
 
+  // Included only as diagnostic context on save/reset failures — never used
+  // to bypass the server-side RPC's own authority check.
+  const actorHasManagePermissions = isSuper || actorPermissions.has('users.manage_permissions');
+
   function toggle(key: string, value: boolean) {
     setDraft(d => ({ ...(d ?? initialEff), [key]: value }));
   }
@@ -402,7 +417,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
 
     setBusy(true);
     try {
-      const res = await assignProfilePermissions(user.id, overrides);
+      const res = await assignProfilePermissions(user.id, overrides, actorHasManagePermissions);
       if (!res.ok) {
         onToast(permissionResultMessage(res, lang, 'um_saved'));
         return;
@@ -424,7 +439,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   async function onReset() {
     setBusy(true);
     try {
-      const res = await resetProfilePermissions(user.id);
+      const res = await resetProfilePermissions(user.id, actorHasManagePermissions);
       onToast(permissionResultMessage(res, lang, 'um_reset_done'));
       if (res.ok) {
         setDraft(null);

@@ -164,6 +164,63 @@ export async function getEffectivePermissions(profileId: string): Promise<Effect
   }
 }
 
+// ── Permission save diagnostics (PERMISSION-RPC-CONTRACT-FIX-B) ─────────────
+//
+// assign_profile_permissions(p_profile_id uuid, p_permissions jsonb) expects
+// p_permissions as a FLAT jsonb object keyed by permission key string,
+// e.g. { "users.recycle": true, "qr.revoke": null } — exactly what
+// OverrideMap already is. There is no separate "key"/"permission_key" field
+// name to get wrong; the object's own keys ARE the permission keys. The
+// payload/argument-name contract was re-verified against migration 010 and
+// is correct. This diagnostics layer exists so that if a save still fails
+// for an unrecognized reason, the real Postgrest error code/message and the
+// RPC's own business-logic response are captured and (safely) surfaced,
+// instead of being silently collapsed into a single generic message.
+
+export interface PermissionSaveDiagnostics {
+  ok: boolean;
+  status: 'SUCCESS' | 'RPC_ERROR' | 'BUSINESS_REJECTED' | 'PARTIAL_REJECTED' | 'NETWORK_ERROR' | 'NOT_CONFIGURED';
+  /** The single most specific token available — shown to the user as a last-resort diagnostic code. */
+  diagnostic_code: string;
+  rpc_error_code?: string;
+  rpc_error_message?: string;
+  returned_error?: string;
+  rejected_codes?: string[];
+  rejected_keys?: string[];
+  target_profile_id: string;
+  payload_key_count: number;
+  /** Only set when the caller supplies it — never inferred here. */
+  actor_has_users_manage_permissions?: boolean;
+}
+
+function buildSaveDiagnostics(params: {
+  status: PermissionSaveDiagnostics['status'];
+  targetProfileId: string;
+  payloadKeyCount: number;
+  rpcError?: RpcErrorLike;
+  returnedError?: string;
+  rejected?: { key: string; error: string }[];
+  actorHasManagePermissions?: boolean;
+}): PermissionSaveDiagnostics {
+  const rejected_codes = params.rejected?.map(r => r.error);
+  const rejected_keys = params.rejected?.map(r => r.key);
+  const diagnostic_code =
+    params.rpcError?.code ?? params.returnedError ?? rejected_codes?.[0] ?? 'SUCCESS';
+  return {
+    ok: params.status === 'SUCCESS',
+    status: params.status,
+    diagnostic_code,
+    rpc_error_code: params.rpcError?.code,
+    rpc_error_message: params.rpcError?.message,
+    returned_error: params.returnedError,
+    rejected_codes,
+    rejected_keys,
+    target_profile_id: params.targetProfileId,
+    payload_key_count: params.payloadKeyCount,
+    actor_has_users_manage_permissions: params.actorHasManagePermissions,
+  };
+}
+
 export interface AssignPermissionsResult {
   ok: boolean;
   applied?: number;
@@ -172,14 +229,29 @@ export interface AssignPermissionsResult {
   error?: string;
   /** True only when the permission-matrix RPC is genuinely missing (true migration gap). */
   migrationMissing?: boolean;
+  /** Structured, safe diagnostic detail — never secrets/tokens/passwords. */
+  diagnostics?: PermissionSaveDiagnostics;
 }
 
-/** Persist permission overrides for a profile via the scoped RPC. */
+/**
+ * Persist permission overrides for a profile via the scoped RPC.
+ * `actorHasManagePermissions` is optional, frontend-supplied context (e.g.
+ * `isSuper || myPermissions.has('users.manage_permissions')`) included only
+ * in the returned diagnostics for troubleshooting — it never changes
+ * behavior; the RPC remains the sole authority.
+ */
 export async function assignProfilePermissions(
   profileId: string,
   overrides: OverrideMap,
+  actorHasManagePermissions?: boolean,
 ): Promise<AssignPermissionsResult> {
-  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const payloadKeyCount = Object.keys(overrides).length;
+  if (!supabaseConfigured) {
+    return {
+      ok: false, error: 'NOT_CONFIGURED',
+      diagnostics: buildSaveDiagnostics({ status: 'NOT_CONFIGURED', targetProfileId: profileId, payloadKeyCount, actorHasManagePermissions }),
+    };
+  }
 
   try {
     const { data, error } = await supabase.rpc('assign_profile_permissions', {
@@ -187,11 +259,21 @@ export async function assignProfilePermissions(
       p_permissions: overrides,
     });
     if (error) {
-      if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
+      if (isMissingFunctionError(error)) {
+        return {
+          ok: false, migrationMissing: true, error: 'MIGRATION_MISSING',
+          diagnostics: buildSaveDiagnostics({ status: 'RPC_ERROR', targetProfileId: profileId, payloadKeyCount, rpcError: error, actorHasManagePermissions }),
+        };
+      }
       // A real RPC exists but failed for some other reason (RLS, bad args,
-      // an unrelated runtime bug) — never misreport this as "migration missing".
+      // an ambiguous-overload dispatch error, an unrelated runtime bug) —
+      // never misreport this as "migration missing". The exact Postgrest
+      // code/message is preserved in diagnostics for troubleshooting.
       logRpcDiagnostic('assign_profile_permissions', error);
-      return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
+      return {
+        ok: false, migrationMissing: false, error: 'SAVE_FAILED',
+        diagnostics: buildSaveDiagnostics({ status: 'RPC_ERROR', targetProfileId: profileId, payloadKeyCount, rpcError: error, actorHasManagePermissions }),
+      };
     }
     const result = data as AssignPermissionsResult;
     // Surface exactly which keys the RPC rejected and why — most useful for
@@ -201,26 +283,68 @@ export async function assignProfilePermissions(
     if (result.rejected && result.rejected.length > 0) {
       console.warn('[phoenix] assign_profile_permissions rejected keys:', result.rejected);
     }
+    result.diagnostics = buildSaveDiagnostics({
+      status: !result.ok
+        ? 'BUSINESS_REJECTED'
+        : (result.rejected && result.rejected.length > 0 ? 'PARTIAL_REJECTED' : 'SUCCESS'),
+      targetProfileId: profileId,
+      payloadKeyCount,
+      returnedError: result.ok ? undefined : result.error,
+      rejected: result.rejected,
+      actorHasManagePermissions,
+    });
     return result;
   } catch {
-    return { ok: false, error: 'NETWORK_ERROR' };
+    return {
+      ok: false, error: 'NETWORK_ERROR',
+      diagnostics: buildSaveDiagnostics({ status: 'NETWORK_ERROR', targetProfileId: profileId, payloadKeyCount, actorHasManagePermissions }),
+    };
   }
 }
 
 /** Reset a profile's overrides back to its role defaults. */
-export async function resetProfilePermissions(profileId: string): Promise<{ ok: boolean; cleared?: number; error?: string; migrationMissing?: boolean }> {
-  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+export async function resetProfilePermissions(
+  profileId: string,
+  actorHasManagePermissions?: boolean,
+): Promise<{ ok: boolean; cleared?: number; error?: string; migrationMissing?: boolean; diagnostics?: PermissionSaveDiagnostics }> {
+  if (!supabaseConfigured) {
+    return {
+      ok: false, error: 'NOT_CONFIGURED',
+      diagnostics: buildSaveDiagnostics({ status: 'NOT_CONFIGURED', targetProfileId: profileId, payloadKeyCount: 0, actorHasManagePermissions }),
+    };
+  }
 
   try {
     const { data, error } = await supabase.rpc('reset_profile_permissions', { p_profile_id: profileId });
     if (error) {
-      if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
+      if (isMissingFunctionError(error)) {
+        return {
+          ok: false, migrationMissing: true, error: 'MIGRATION_MISSING',
+          diagnostics: buildSaveDiagnostics({ status: 'RPC_ERROR', targetProfileId: profileId, payloadKeyCount: 0, rpcError: error, actorHasManagePermissions }),
+        };
+      }
       logRpcDiagnostic('reset_profile_permissions', error);
-      return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
+      return {
+        ok: false, migrationMissing: false, error: 'SAVE_FAILED',
+        diagnostics: buildSaveDiagnostics({ status: 'RPC_ERROR', targetProfileId: profileId, payloadKeyCount: 0, rpcError: error, actorHasManagePermissions }),
+      };
     }
-    return data as { ok: boolean; cleared?: number };
+    const result = data as { ok: boolean; cleared?: number };
+    return {
+      ...result,
+      diagnostics: buildSaveDiagnostics({
+        status: result.ok ? 'SUCCESS' : 'BUSINESS_REJECTED',
+        targetProfileId: profileId,
+        payloadKeyCount: 0,
+        returnedError: result.ok ? undefined : (result as { error?: string }).error,
+        actorHasManagePermissions,
+      }),
+    };
   } catch {
-    return { ok: false, error: 'NETWORK_ERROR' };
+    return {
+      ok: false, error: 'NETWORK_ERROR',
+      diagnostics: buildSaveDiagnostics({ status: 'NETWORK_ERROR', targetProfileId: profileId, payloadKeyCount: 0, actorHasManagePermissions }),
+    };
   }
 }
 

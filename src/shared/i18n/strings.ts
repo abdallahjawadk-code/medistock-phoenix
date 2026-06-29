@@ -459,6 +459,7 @@ export const T: Dict = {
   um_perm_unheld:{ ar: 'لا يمكنك منح صلاحية لا تملكها.', en: 'You cannot grant a permission you do not have.' },
   um_perm_dangerous_unauthorized:{ ar: 'لا يمكنك منح صلاحية خطرة بدون تخويل.', en: 'You cannot grant a dangerous permission without authority.' },
   um_perm_unknown_key:{ ar: 'توجد صلاحية غير معروفة أو غير مسجلة في قاعدة البيانات.', en: 'One permission is unknown or not registered in the database.' },
+  um_perm_diag_prefix:{ ar: 'تعذر حفظ الصلاحيات. رمز التشخيص:', en: 'Could not save permissions. Diagnostic code:' },
   um_empty:           { ar: 'لا يوجد مستخدمون',                  en: 'No users' },
   um_select_user:     { ar: 'اختر مستخدمًا لإدارة صلاحياته',     en: 'Select a user to manage permissions' },
   um_no_users_perm:   { ar: 'لا تملك صلاحية عرض المستخدمين',     en: 'You do not have permission to view users' },

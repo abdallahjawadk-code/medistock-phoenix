@@ -51,7 +51,7 @@ describe('users.service.ts: RPC errors are classified, never blindly mapped to m
   it('save/reset no longer throw on missing config — they return a gracefully classifiable result', () => {
     const assignBlock = svc.slice(svc.indexOf('export async function assignProfilePermissions'), svc.indexOf('export async function resetProfilePermissions'));
     expect(assignBlock).not.toContain("throw new Error('Supabase not configured')");
-    expect(assignBlock).toContain("{ ok: false, error: 'NOT_CONFIGURED' }");
+    expect(assignBlock).toContain("ok: false, error: 'NOT_CONFIGURED'");
   });
 
   it('isMissingFunctionError matches Postgrest "function not found" signatures only', () => {

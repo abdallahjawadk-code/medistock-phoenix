@@ -111,7 +111,7 @@ describe('Permission save/reload: persistent RPC round trip (unchanged, still co
   const migration010 = readPhoenix('supabase/migrations/010_phoenix_user_permission_matrix.sql');
 
   it('onSave calls assignProfilePermissions (writes to profile_permission_overrides via RPC)', () => {
-    expect(screen).toContain('assignProfilePermissions(user.id, overrides)');
+    expect(screen).toContain('assignProfilePermissions(user.id, overrides, actorHasManagePermissions)');
     expect(svc).toContain("rpc('assign_profile_permissions'");
   });
 
