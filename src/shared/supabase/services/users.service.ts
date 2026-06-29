@@ -67,7 +67,20 @@ export async function listUsers(orgId?: string | null): Promise<ManagedUser[]> {
 // specific signatures only — every other failure surfaces as a distinct,
 // honest error instead.
 
-interface RpcErrorLike { code?: string; message?: string }
+interface RpcErrorLike { code?: string; message?: string; details?: string; hint?: string }
+
+/**
+ * Logs the real Postgrest/Postgres error signature for a failed RPC call —
+ * developer diagnostics only, never shown to the end user. Safe to log:
+ * these are structural error fields (code/message/details/hint) describing
+ * *why the call failed*, never the request payload, permission values, or
+ * any credential material (PERMISSION-SAVE-RPC-DIAGNOSTIC-FIX-A).
+ */
+function logRpcDiagnostic(rpcName: string, error: RpcErrorLike): void {
+  console.error(`[phoenix] ${rpcName} RPC failed:`, {
+    code: error.code, message: error.message, details: error.details, hint: error.hint,
+  });
+}
 
 /** True only for Postgrest "relation does not exist" (table truly missing). */
 function isMissingRelationError(error: RpcErrorLike): boolean {
@@ -139,6 +152,7 @@ export async function getEffectivePermissions(profileId: string): Promise<Effect
     const { data, error } = await supabase.rpc('get_effective_permissions', { p_profile_id: profileId });
     if (error) {
       if (isMissingFunctionError(error)) return { permissions: null, migrationMissing: true };
+      logRpcDiagnostic('get_effective_permissions', error);
       return { permissions: null, migrationMissing: false, loadError: 'UNKNOWN_ERROR' };
     }
 
@@ -176,9 +190,18 @@ export async function assignProfilePermissions(
       if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
       // A real RPC exists but failed for some other reason (RLS, bad args,
       // an unrelated runtime bug) — never misreport this as "migration missing".
+      logRpcDiagnostic('assign_profile_permissions', error);
       return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
     }
-    return data as AssignPermissionsResult;
+    const result = data as AssignPermissionsResult;
+    // Surface exactly which keys the RPC rejected and why — most useful for
+    // UNKNOWN_PERMISSION, which signals a frontend/DB permission_keys catalog
+    // mismatch (e.g. a key in PERMISSION_KEYS that a later migration never
+    // inserted). Never blocks the response; diagnostics only.
+    if (result.rejected && result.rejected.length > 0) {
+      console.warn('[phoenix] assign_profile_permissions rejected keys:', result.rejected);
+    }
+    return result;
   } catch {
     return { ok: false, error: 'NETWORK_ERROR' };
   }
@@ -192,6 +215,7 @@ export async function resetProfilePermissions(profileId: string): Promise<{ ok: 
     const { data, error } = await supabase.rpc('reset_profile_permissions', { p_profile_id: profileId });
     if (error) {
       if (isMissingFunctionError(error)) return { ok: false, migrationMissing: true, error: 'MIGRATION_MISSING' };
+      logRpcDiagnostic('reset_profile_permissions', error);
       return { ok: false, migrationMissing: false, error: 'SAVE_FAILED' };
     }
     return data as { ok: boolean; cleared?: number };

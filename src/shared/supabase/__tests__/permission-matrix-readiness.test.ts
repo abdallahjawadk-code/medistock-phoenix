@@ -122,9 +122,10 @@ describe('UserManagementScreen: distinct, honest permission-matrix messages', ()
     expect(block).toContain('if (res.migrationMissing) return');
   });
 
-  it('a save/reset failure that is NOT migrationMissing shows the save-failed message, never the migration message', () => {
-    const block = screen.slice(screen.indexOf('function permissionResultMessage'), screen.indexOf('function permissionResultMessage') + 600);
-    expect(block).toContain('um_perm_save_failed');
+  it('a save/reset failure that is NOT migrationMissing falls through to messageForPermissionCodes, never the migration message', () => {
+    const block = screen.slice(screen.indexOf('function permissionResultMessage'), screen.indexOf('function permissionResultMessage') + 700);
+    expect(block).toContain('if (res.migrationMissing) return');
+    expect(block).toContain('messageForPermissionCodes');
   });
 
   it('a network/config failure shows a distinct network message', () => {
@@ -142,7 +143,7 @@ describe('UserManagementScreen: distinct, honest permission-matrix messages', ()
 
   it('after a successful save, the matrix reloads from the DB (not from local component state)', () => {
     const onSaveBlock = screen.slice(screen.indexOf('async function onSave'), screen.indexOf('async function onReset'));
-    expect(onSaveBlock).toContain('if (res.ok)');
+    expect(onSaveBlock).toContain('if (!res.ok)');
     expect(onSaveBlock).toContain('eff.reload()');
   });
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -48,10 +48,12 @@ function statusLabel(status: string, lang: 'ar' | 'en'): string {
 }
 
 /**
- * Maps an assign/reset permission RPC result to the correct toast message.
- * PERMISSION-MATRIX-010-GUARD-FIX-A: only a genuinely missing RPC ever shows
- * the migration-010 message; every other failure gets an honest, distinct
- * message instead (save/RLS failure vs. network/config issue).
+ * Maps a permission-save RPC result (top-level ok:false) to a toast message.
+ * Only a genuinely missing RPC shows the migration-010 message; only an
+ * actual network/config failure shows the network message; everything else
+ * — including the previously generic catch-all — surfaces as the specific
+ * reason from messageForPermissionCodes when one is known.
+ * PERMISSION-SAVE-RPC-DIAGNOSTIC-FIX-A.
  */
 function permissionResultMessage(
   res: { ok: boolean; migrationMissing?: boolean; error?: string },
@@ -61,17 +63,47 @@ function permissionResultMessage(
   if (res.ok) return t(successKey, lang);
   if (res.migrationMissing) return t('um_perm_unavailable', lang);
   if (res.error === 'NOT_CONFIGURED' || res.error === 'NETWORK_ERROR') return t('um_perm_network_error', lang);
+  return messageForPermissionCodes(res.error ? [res.error] : [], lang);
+}
+
+/**
+ * Maps a permission-grant error code (client-side GrantError or server-side
+ * RPC business-logic code) to the specific, safe message the spec requires —
+ * never the vague generic "Check administrator authority or access rules"
+ * unless the code is genuinely unrecognized. Self-edit, unheld, dangerous,
+ * and unknown-key codes from both the client pre-check (validateOverrides)
+ * and the server RPC (per-key `rejected` array or top-level `error`) share
+ * the same priority order, since they describe the same underlying rules.
+ */
+function messageForPermissionCodes(codes: string[], lang: 'ar' | 'en'): string {
+  const priority: [string[], string][] = [
+    [['CANNOT_EDIT_OWN_PERMISSIONS', 'SELF_ESCALATION'], 'um_perm_self_edit_blocked'],
+    [['UNKNOWN_PERMISSION'], 'um_perm_unknown_key'],
+    [['NEEDS_AUTHORITY_FOR_DANGEROUS'], 'um_perm_dangerous_unauthorized'],
+    [['CANNOT_GRANT_UNHELD'], 'um_perm_unheld'],
+  ];
+  for (const [matchCodes, key] of priority) {
+    if (codes.some(c => matchCodes.includes(c))) return t(key, lang);
+  }
   return t('um_perm_save_failed', lang);
 }
 
 export function UserManagementScreen() {
-  const { lang, role, activeOrgId, profile, myPermissions } = useApp();
+  const { lang, role, activeOrgId, profile, myPermissions, reloadMyPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
   const isSuper  = normalizeRole(role) === 'super_admin';
 
   // myPermissions is the actor's DB-backed effective permission set (role
   // defaults + their own profile_permission_overrides), loaded fresh on
   // login by AppContext — never the hardcoded role-default table alone.
+  // Guard against a load race: if this screen mounts before AppContext's
+  // async load finishes, myPermissions is still the empty initial Set.
+  // Proactively reload once rather than letting a save attempt run against
+  // stale/empty data (PERMISSION-SAVE-RPC-DIAGNOSTIC-FIX-A).
+  useEffect(() => {
+    if (myPermissions.size === 0) reloadMyPermissions();
+  }, []);
+
   const actorEff    = myPermissions;
   const canViewUsers = isSuper || actorEff.has('users.view');
   const canCreate    = isSuper || actorEff.has('users.create');
@@ -323,11 +355,22 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   // reflects any overrides actually persisted for the actor — not just their
   // hardcoded role defaults. The server-side RPC re-validates independently;
   // this only avoids a misleading "cannot grant" UI message.
-  const actorDefaults = roleDefaults(actorRole);
+  //
+  // GUARD: actorPermissions starts as an empty Set until AppContext's async
+  // load completes. An empty effective set is never legitimate for any real
+  // account (every role gets at least dashboard.view by default) — diffing
+  // against an empty set would wrongly mark EVERY permission as an explicit
+  // override the actor doesn't hold, including for super_admin, who would
+  // then fail their own authority check while saving someone else's
+  // permissions. Treat "empty" as "not loaded yet" and skip the diff,
+  // falling back to pure role defaults instead (PERMISSION-SAVE-RPC-DIAGNOSTIC-FIX-A).
   const actorOverrides: OverrideMap = {};
-  for (const p of PERMISSION_KEYS) {
-    const has = actorPermissions.has(p.key);
-    if (has !== actorDefaults.has(p.key)) actorOverrides[p.key] = has;
+  if (actorPermissions.size > 0) {
+    const actorDefaults = roleDefaults(actorRole);
+    for (const p of PERMISSION_KEYS) {
+      const has = actorPermissions.has(p.key);
+      if (has !== actorDefaults.has(p.key)) actorOverrides[p.key] = has;
+    }
   }
 
   const grantCtx: GrantContext = {
@@ -352,16 +395,28 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
     if (Object.keys(overrides).length === 0) { onToast(t('um_saved', lang)); return; }
 
     const check = validateOverrides(grantCtx, overrides);
-    if (!check.ok && check.rejected.length > 0) { onToast(t('um_cannot_grant', lang)); return; }
+    if (!check.ok && check.rejected.length > 0) {
+      onToast(messageForPermissionCodes(check.rejected.map(r => r.error), lang));
+      return;
+    }
 
     setBusy(true);
     try {
       const res = await assignProfilePermissions(user.id, overrides);
-      onToast(permissionResultMessage(res, lang, 'um_saved'));
-      if (res.ok) {
-        setDraft(null);
-        eff.reload();
+      if (!res.ok) {
+        onToast(permissionResultMessage(res, lang, 'um_saved'));
+        return;
       }
+      // The RPC can succeed overall (ok:true) while rejecting individual
+      // keys (e.g. an unknown key, or a dangerous permission the actor
+      // doesn't hold) — never report this as a plain "saved" success.
+      if (res.rejected && res.rejected.length > 0) {
+        onToast(messageForPermissionCodes(res.rejected.map(r => r.error), lang));
+      } else {
+        onToast(t('um_saved', lang));
+      }
+      setDraft(null);
+      eff.reload();
     } catch { onToast(t('um_perm_network_error', lang)); }
     finally { setBusy(false); }
   }

@@ -79,7 +79,7 @@ describe('UserManagementScreen: actor gating reads myPermissions from AppContext
   const screen = readSrc('features/users/UserManagementScreen.tsx');
 
   it('destructures myPermissions from useApp() for the actor effective set', () => {
-    expect(screen).toContain('myPermissions } = useApp()');
+    expect(screen).toContain('myPermissions, reloadMyPermissions } = useApp()');
     expect(screen).toContain('const actorEff    = myPermissions;');
   });
 
