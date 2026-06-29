@@ -677,6 +677,135 @@ describe('Warehouse retired from port workflow', () => {
     expect(catchBlock).not.toContain("t('perm_no_create_ports', lang)");
   });
 
+  // ── Migration 024 tests ──────────────────────────────────────────────────────
+
+  it('migration 024 exists as a live-state repair migration', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('BEGIN;');
+    expect(sql).toContain('COMMIT;');
+  });
+
+  it('migration 024 drops all legacy and stale distribution_points policies', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_select_org"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_superadmin"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_hospitaladmin"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_wh_manager"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_perm"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_read_perm"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_insert_perm"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_update_perm"');
+  });
+
+  it('migration 024 creates all 3 final permission-based policies', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain('CREATE POLICY "dp_read_perm"');
+    expect(sql).toContain('CREATE POLICY "dp_insert_perm"');
+    expect(sql).toContain('CREATE POLICY "dp_update_perm"');
+  });
+
+  it('migration 024 dp_read_perm has super_admin bypass first (023 shape)', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const readBlock = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_read_perm"'),
+      sql.indexOf('CREATE POLICY "dp_insert_perm"'),
+    );
+    const superAdminPos = readBlock.indexOf("phoenix_my_role() = 'super_admin'");
+    const permCheckPos  = readBlock.indexOf("phoenix_profile_has_permission");
+    expect(superAdminPos).toBeGreaterThan(-1);
+    expect(permCheckPos).toBeGreaterThan(-1);
+    expect(superAdminPos).toBeLessThan(permCheckPos);
+  });
+
+  it('migration 024 dp_insert_perm uses ports.create', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const block = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_insert_perm"'),
+      sql.indexOf('CREATE POLICY "dp_update_perm"'),
+    );
+    expect(block).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.create')");
+    expect(block).toContain('organization_id = phoenix_my_org()');
+  });
+
+  it('migration 024 dp_update_perm uses ports.edit', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const block = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_update_perm"'),
+      sql.indexOf('-- No DELETE policy'),
+    );
+    expect(block).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.edit')");
+    expect(block).toContain('organization_id = phoenix_my_org()');
+  });
+
+  it('migration 024 creates no DELETE policy', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/CREATE\s+POLICY\s+\S+\s+ON\s+distribution_points\s+FOR\s+DELETE/i);
+  });
+
+  it('migration 024 creates no FOR ALL policy', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/CREATE\s+POLICY\s+\S+\s+ON\s+distribution_points\s+FOR\s+ALL/i);
+  });
+
+  it('migration 024 recreates archive trigger idempotently', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toContain('DROP TRIGGER IF EXISTS trg_guard_dp_archive');
+    expect(noComments).toContain('CREATE TRIGGER trg_guard_dp_archive');
+    expect(noComments).toContain('phoenix_guard_dp_archive_update');
+  });
+
+  it('migration 024 recreates archive_entity with ports.archive and archive_bypass', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const fnStart = sql.indexOf("CREATE OR REPLACE FUNCTION archive_entity(");
+    const fnEnd   = sql.indexOf('-- ============================================================================\n-- F. VERIFY');
+    const body = sql.slice(fnStart, fnEnd);
+    expect(body).toContain("ports.archive");
+    expect(body).toContain("archive_bypass");
+    expect(body).toContain("INSUFFICIENT_PERMISSION");
+  });
+
+  it('migration 024 VERIFY block asserts no DELETE policy and no FOR ALL policy', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain("cmd = 'DELETE'");
+    expect(sql).toContain("cmd = '*'");
+  });
+
+  it('migration 024 VERIFY block asserts trg_guard_dp_archive exists', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain("tgname = 'trg_guard_dp_archive'");
+    expect(sql).toContain('trg_guard_dp_archive trigger not found');
+  });
+
+  it('migration 024 VERIFY block asserts archive_entity has ports.archive and archive_bypass', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain("v_fn_src LIKE '%ports.archive%'");
+    expect(sql).toContain("v_fn_src LIKE '%archive_bypass%'");
+  });
+
+  it('migration 024 VERIFY block asserts warehouse_id is nullable', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain("v_nullable = 'YES'");
+    expect(sql).toContain("warehouse_id is still NOT NULL");
+  });
+
+  it('migration 024 has no DROP TABLE, no TRUNCATE, no destructive CASCADE', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/^\s*drop table/im);
+    expect(noComments).not.toMatch(/truncate/i);
+    expect(noComments).not.toMatch(/delete cascade/i);
+  });
+
+  it('migration 024 has no service_role references', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/service_role/i);
+  });
+
   it('migration 021 verification asserts dp_write_perm no longer exists', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain("policyname = 'dp_write_perm'");
