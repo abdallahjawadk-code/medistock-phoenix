@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useRef, ReactNode, useEffect, useC
 import type { Session } from '@supabase/supabase-js';
 import type { Lang, Theme, Role } from '@/shared/lib/types';
 import { supabaseConfigured } from '@/shared/supabase/client';
-import { roleDefaults } from '@/shared/lib/permissions';
+import { roleDefaults, PERMISSION_KEY_SET } from '@/shared/lib/permissions';
 import {
   getSession,
   onAuthChange,
@@ -111,7 +111,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const res = await getEffectivePermissions(p.id);
     if (res.permissions) {
-      setMyPermissions(new Set(Object.entries(res.permissions).filter(([, v]) => v).map(([k]) => k)));
+      const perms = new Set(Object.entries(res.permissions).filter(([, v]) => v).map(([k]) => k));
+      // super_admin always has every key in the frontend catalog regardless of DB state
+      // (DB RLS also has explicit super_admin bypasses, so this is consistent).
+      // This defends against partial role_permission_defaults seeding (e.g. a key was
+      // added to the frontend catalog after migration 010 ran without a matching DB insert).
+      if (p.role === 'super_admin') {
+        for (const key of PERMISSION_KEY_SET) perms.add(key);
+      }
+      setMyPermissions(perms);
       setMyPermissionsMigrationMissing(false);
     } else {
       setMyPermissions(roleDefaults(p.role));

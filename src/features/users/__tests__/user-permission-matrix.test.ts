@@ -699,3 +699,112 @@ describe('institution_admin role scoping (UI + Edge Function)', () => {
     expect(canTargetRole('institution_admin', 'institution_admin')).toBe(false);
   });
 });
+
+// ============================================================================
+// 13. super_admin effective permission resolution (SUPERADMIN-PORT-PERMISSION-RESOLUTION-FIX-A)
+// ============================================================================
+describe('super_admin effective permission resolution', () => {
+  const appCtx  = readSrc('app/AppContext.tsx');
+  const instScreen = readSrc('features/institutions/InstitutionScreen.tsx');
+
+  // roleDefaults('super_admin') is the source of truth for the frontend catalog
+  it('super_admin roleDefaults includes ports.create, ports.view, ports.edit, ports.archive', () => {
+    const d = roleDefaults('super_admin');
+    expect(d.has('ports.create')).toBe(true);
+    expect(d.has('ports.view')).toBe(true);
+    expect(d.has('ports.edit')).toBe(true);
+    expect(d.has('ports.archive')).toBe(true);
+  });
+
+  it('super_admin roleDefaults includes qr.generate and qr.revoke', () => {
+    const d = roleDefaults('super_admin');
+    expect(d.has('qr.generate')).toBe(true);
+    expect(d.has('qr.revoke')).toBe(true);
+  });
+
+  it('super_admin roleDefaults has ALL permission keys in the frontend catalog', () => {
+    const d = roleDefaults('super_admin');
+    for (const key of PERMISSION_KEY_SET) {
+      expect(d.has(key)).toBe(true);
+    }
+    expect(d.size).toBe(PERMISSION_KEYS.length);
+  });
+
+  it('AppContext augments super_admin permissions with PERMISSION_KEY_SET when DB returns partial result', () => {
+    // Confirms the fix: AppContext adds all keys from PERMISSION_KEY_SET for super_admin
+    // even if the DB returned a partial or empty permissions object.
+    expect(appCtx).toContain("p.role === 'super_admin'");
+    expect(appCtx).toContain('PERMISSION_KEY_SET');
+    expect(appCtx).toContain('perms.add(key)');
+  });
+
+  it('AppContext imports PERMISSION_KEY_SET from permissions', () => {
+    expect(appCtx).toContain('PERMISSION_KEY_SET');
+    expect(appCtx).toMatch(/import[^;]*PERMISSION_KEY_SET[^;]*from[^;]*permissions/);
+  });
+
+  it('institution_admin does NOT get ports.create by roleDefaults', () => {
+    const d = roleDefaults('institution_admin');
+    expect(d.has('ports.create')).toBe(false);
+  });
+
+  it('institution_admin CAN get ports.create via explicit effectivePermissions override', () => {
+    const d = effectivePermissions('institution_admin', { 'ports.create': true });
+    expect(d.has('ports.create')).toBe(true);
+  });
+
+  it('institution_admin WITHOUT explicit ports.create cannot submit AddPortForm (canCreate stays false)', () => {
+    // roleDefaults for institution_admin has ports.view but not ports.create
+    const d = roleDefaults('institution_admin');
+    expect(d.has('ports.view')).toBe(true);
+    expect(d.has('ports.create')).toBe(false);
+  });
+
+  it('viewer cannot create ports by default', () => {
+    const d = roleDefaults('viewer');
+    expect(d.has('ports.create')).toBe(false);
+  });
+
+  it('AddPortForm shows perm_no_create_ports only from !canCreate early-return, not from catch block', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    // The early-return guard still exists
+    expect(addFormBody).toContain("if (!canCreate)");
+    expect(addFormBody).toContain("perm_no_create_ports");
+    // The catch block must NOT re-show perm_no_create_ports
+    const catchStart = addFormBody.indexOf('} catch (e)');
+    const catchBody  = addFormBody.slice(catchStart);
+    expect(catchBody).not.toContain('perm_no_create_ports');
+  });
+
+  it('AddPortForm catch block does not match on "row-level security" or "permission" keyword for error routing', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    const catchStart   = addFormBody.indexOf('} catch (e)');
+    const catchBody    = addFormBody.slice(catchStart);
+    expect(catchBody).not.toContain('row-level security');
+    expect(catchBody).not.toContain("'RLS'");
+    expect(catchBody).not.toContain("'permission'");
+    expect(catchBody).not.toContain('INSUFFICIENT');
+  });
+
+  it('no service_role usage in InstitutionScreen', () => {
+    expect(instScreen).not.toContain('service_role');
+    expect(instScreen).not.toContain('SUPABASE_SERVICE');
+  });
+
+  it('no auth.admin usage in InstitutionScreen', () => {
+    expect(instScreen).not.toContain('auth.admin');
+    expect(instScreen).not.toContain('supabaseAdmin');
+  });
+
+  it('Data Reset absent from InstitutionScreen', () => {
+    expect(instScreen).not.toMatch(/DataReset|data-reset/i);
+  });
+
+  it('Intake/OCR/Excel/DocIntel imports absent', () => {
+    expect(instScreen).not.toMatch(/import.*OcrImport|import.*ExcelImport|import.*DocIntel/i);
+  });
+});

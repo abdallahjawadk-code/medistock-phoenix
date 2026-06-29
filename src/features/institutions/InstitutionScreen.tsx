@@ -796,13 +796,10 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
       const msg = (e instanceof Error ? e.message : '') ||
                   ((e as { message?: string })?.message ?? '');
       console.error('[phoenix] port create failed:', e);
+      // At this point canCreate = true (the !canCreate guard returns early above),
+      // so a DB failure is not a permission gap — show migration-pending or generic.
       if (msg.includes('warehouse_id') || msg.includes('not-null') || msg.includes('null value')) {
         setError(t('port_create_021_pending', lang));
-      } else if (
-        msg.includes('row-level security') || msg.includes('RLS') ||
-        msg.includes('INSUFFICIENT') || msg.includes('permission')
-      ) {
-        setError(t('perm_no_create_ports', lang));
       } else {
         setError(t('port_create_error', lang));
       }
