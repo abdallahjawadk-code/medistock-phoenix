@@ -16,7 +16,6 @@ import {
   type OrgProfileRow,
 } from '@/shared/supabase/services/organizations.service';
 import {
-  getWarehouses,
   getPointsByOrg,
   createDistributionPoint,
   type DistributionPoint,
@@ -331,13 +330,11 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
 
   const org = useAsync(() => getOrganization(orgId), [orgId]);
   const users = useAsync(() => getProfilesByOrg(orgId), [orgId]);
-  const warehouses = useAsync(() => getWarehouses(orgId), [orgId]);
   const points = useAsync(() => getPointsByOrg(orgId), [orgId]);
 
   const [editing, setEditing] = useState(false);
 
   const o = org.data;
-  const whCount = warehouses.data?.length ?? 0;
   const ptCount = points.data?.length ?? 0;
 
   return (
@@ -385,10 +382,6 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
 
           {/* Summary counts */}
           <div style={{ display: 'flex', gap: '16px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--brd)', fontSize: '12.5px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '16px' }}>🏬</span>
-              <span><strong>{whCount}</strong> {t('inst_warehouses', lang)}</span>
-            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '16px' }}>📍</span>
               <span><strong>{ptCount}</strong> {t('inst_points', lang)}</span>
@@ -452,11 +445,10 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
         isMobile={isMobile}
         orgId={orgId}
         actorRole={actorRole}
-        warehouses={warehouses.data ?? []}
         points={points.data ?? []}
         pointsLoading={points.loading}
         pointsError={points.error}
-        onReload={() => { points.reload(); warehouses.reload(); }}
+        onReload={() => { points.reload(); }}
         onToast={onToast}
       />
 
@@ -465,7 +457,7 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
         orgId={orgId}
         lang={lang}
         actorRole={actorRole}
-        onDone={() => { org.reload(); warehouses.reload(); points.reload(); }}
+        onDone={() => { org.reload(); points.reload(); }}
         onToast={onToast}
       />
     </div>
@@ -671,12 +663,11 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, actorRole, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
   actorRole: Role;
-  warehouses: { id: string; name: string; name_ar: string }[];
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
@@ -690,18 +681,12 @@ function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, poi
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
-        {canMutate && warehouses.length > 0 && (
+        {canMutate && (
           <PhoenixButton variant="primary" size="sm" onClick={() => setShowAdd(true)}>
             + {t('port_add', lang)}
           </PhoenixButton>
         )}
       </div>
-
-      {warehouses.length === 0 && (
-        <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--warn)' }}>
-          ⚠ {t('port_no_wh', lang)}
-        </div>
-      )}
 
       {/* Safety notice */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -714,7 +699,6 @@ function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, poi
         <AddPortForm
           lang={lang}
           orgId={orgId}
-          warehouses={warehouses}
           onCreated={() => { setShowAdd(false); onReload(); }}
           onCancel={() => setShowAdd(false)}
           onToast={onToast}
@@ -736,7 +720,6 @@ function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, poi
               lang={lang}
               actorRole={actorRole}
               canMutate={canMutate}
-              warehouses={warehouses}
               onReload={onReload}
               onToast={onToast}
             />
@@ -749,22 +732,20 @@ function PortSection({ lang, isMobile, orgId, actorRole, warehouses, points, poi
 
 /* ── Add Port Form ── */
 
-function AddPortForm({ lang, orgId, warehouses, onCreated, onCancel, onToast }: {
+function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
   lang: 'ar' | 'en';
   orgId: string;
-  warehouses: { id: string; name: string; name_ar: string }[];
   onCreated: () => void;
   onCancel: () => void;
   onToast: (msg: string) => void;
 }) {
   const [name, setName] = useState('');
   const [nameAr, setNameAr] = useState('');
-  const [whId, setWhId] = useState(warehouses[0]?.id ?? '');
   const [ptType, setPtType] = useState<PointType>('dispensing');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim() && nameAr.trim() && whId;
+  const canSubmit = name.trim() && nameAr.trim();
 
   async function onSubmit() {
     if (!canSubmit) { setError(t('inst_required', lang)); return; }
@@ -772,7 +753,7 @@ function AddPortForm({ lang, orgId, warehouses, onCreated, onCancel, onToast }: 
     setError(null);
     try {
       const pt = await createDistributionPoint({
-        warehouseId: whId, organizationId: orgId,
+        organizationId: orgId,
         name: name.trim(), name_ar: nameAr.trim(), pointType: ptType,
       });
       try {
@@ -801,19 +782,11 @@ function AddPortForm({ lang, orgId, warehouses, onCreated, onCancel, onToast }: 
           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_name_ar', lang)} *</label>
           <input type="text" value={nameAr} onChange={e => setNameAr(e.target.value)} style={fieldStyle} dir="rtl" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_warehouse', lang)} *</label>
-            <select value={whId} onChange={e => setWhId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-              {warehouses.map(w => <option key={w.id} value={w.id}>{lang === 'ar' ? w.name_ar : w.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_type', lang)}</label>
-            <select value={ptType} onChange={e => setPtType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-              {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
-            </select>
-          </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_type', lang)}</label>
+          <select value={ptType} onChange={e => setPtType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+            {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+          </select>
         </div>
         {error && <p style={{ fontSize: '12px', color: 'var(--err)' }}>{error}</p>}
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -829,12 +802,11 @@ function AddPortForm({ lang, orgId, warehouses, onCreated, onCancel, onToast }: 
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onToast }: {
+function PortCard({ point, lang, actorRole, canMutate, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
   actorRole: Role;
   canMutate: boolean;
-  warehouses: { id: string; name: string; name_ar: string }[];
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -843,8 +815,6 @@ function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onT
   const [confirmAction, setConfirmAction] = useState<'regenerate' | 'revoke' | 'archive' | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
 
-  const wh = warehouses.find(w => w.id === point.warehouseId);
-  const whName = wh ? (lang === 'ar' ? wh.name_ar : wh.name) : '—';
   const ptTypeKey = POINT_TYPES.find(p => p.value === point.pointType)?.labelKey;
 
   useState(() => {
@@ -932,7 +902,7 @@ function PortCard({ point, lang, actorRole, canMutate, warehouses, onReload, onT
             {pointDisplayName(point, lang)}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>
-            {whName} · {ptTypeKey ? t(ptTypeKey, lang) : point.pointType}
+            {ptTypeKey ? t(ptTypeKey, lang) : point.pointType}
           </div>
         </div>
         <PhoenixStatusBadge variant={point.status === 'active' ? 'ok' : 'neutral'} label={statusLabel(point.status, lang)} />

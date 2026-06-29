@@ -435,6 +435,60 @@ describe('Security: no service_role, no auth.admin in frontend', () => {
   });
 });
 
+// ============================================================================
+// Warehouse retired from port workflow
+// ============================================================================
+
+describe('Warehouse retired from port workflow', () => {
+  const instScreen = readSrc('features/institutions/InstitutionScreen.tsx');
+
+  it('AddPortForm does not have warehouse dropdown', () => {
+    // The AddPortForm function should not reference port_warehouse or whId
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd = instScreen.indexOf('function PortCard');
+    const addFormBody = instScreen.slice(addFormStart, addFormEnd);
+    expect(addFormBody).not.toContain('port_warehouse');
+    expect(addFormBody).not.toContain('whId');
+  });
+
+  it('PortSection does not require warehouses prop', () => {
+    expect(instScreen).not.toContain('warehouses.length === 0');
+    expect(instScreen).not.toContain("port_no_wh");
+  });
+
+  it('warehouse count not shown in org detail', () => {
+    expect(instScreen).not.toContain('whCount');
+    expect(instScreen).not.toContain("inst_warehouses");
+  });
+
+  it('getWarehouses not imported in InstitutionScreen', () => {
+    expect(instScreen).not.toContain('getWarehouses');
+  });
+
+  it('createDistributionPoint does not require warehouseId', () => {
+    const svc = readSrc('shared/supabase/services/warehouses.service.ts');
+    // warehouseId should be optional in the input type
+    expect(svc).toContain('warehouseId?:');
+  });
+
+  it('migration 021 exists and makes warehouse_id nullable', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain('warehouse_id');
+    expect(sql).toContain('drop not null');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+  });
+
+  it('migration 021 has no DROP TABLE', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).not.toMatch(/^\s*drop table/im);
+  });
+
+  it('migration 021 has no TRUNCATE', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).not.toMatch(/truncate/i);
+  });
+});
+
 describe('Safety: Data Reset absent, Intake disabled', () => {
   const files = allTsxFiles('');
 

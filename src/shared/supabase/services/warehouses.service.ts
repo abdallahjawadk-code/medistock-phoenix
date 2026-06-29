@@ -13,7 +13,7 @@ export interface DistributionPoint {
   name: string;
   name_ar: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
   organizationId: string;
   pointType: string;
 }
@@ -74,7 +74,7 @@ export async function getPointsByOrg(orgId: string): Promise<DistributionPoint[]
 }
 
 export async function createDistributionPoint(input: {
-  warehouseId: string;
+  warehouseId?: string;
   organizationId: string;
   name: string;
   name_ar: string;
@@ -82,15 +82,17 @@ export async function createDistributionPoint(input: {
 }): Promise<DistributionPoint> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
+  const row: Record<string, unknown> = {
+    organization_id: input.organizationId,
+    name:            input.name,
+    name_ar:         input.name_ar,
+    point_type:      input.pointType,
+  };
+  if (input.warehouseId) row.warehouse_id = input.warehouseId;
+
   const { data, error } = await supabase
     .from('distribution_points')
-    .insert({
-      warehouse_id:    input.warehouseId,
-      organization_id: input.organizationId,
-      name:            input.name,
-      name_ar:         input.name_ar,
-      point_type:      input.pointType,
-    })
+    .insert(row)
     .select('id, name, name_ar, status, warehouse_id, organization_id, point_type')
     .single();
 

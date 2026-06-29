@@ -42,6 +42,7 @@ Apply strictly in order. Each builds on the previous schema.
 | **018** | `018_phoenix_actor_snapshot_record_field_fix.sql` | Fixes the confirmed live 42703 `record "new" has no field "actor_id"` error (ACTOR-SNAPSHOT-TRIGGER-42703-FIX-A): replaces `phoenix_populate_actor_snapshot()` to resolve the per-table actor column via `to_jsonb(new)->>'...'` instead of directly referencing table-specific `NEW.<column>` fields inside a shared CASE expression |
 | **019** | `019_phoenix_availability_editor_institution_ux.sql` | Availability Editor UX refresh (AVAILABILITY-EDITOR-INSTITUTION-UX-A): adds `item_availability.port_name` (free-text "المنفذ") and `item_availability.supply_type` (free-text "نوع التجهيز", institution-private), makes `local_item_id` nullable, adds a parallel `(distribution_point_id, port_name)` unique index for the new upsert flow |
 | **020** | `020_phoenix_availability_material_fields_and_status_editor.sql` | Material identity fields: adds `scientific_name`, `trade_name`, `dosage_form`, `concentration`, `price` to `item_availability`; creates `(distribution_point_id, scientific_name)` partial unique index for the new upsert flow; `port_name` left as legacy unused column |
+| **021** | `021_phoenix_ports_permissions_warehouse_retirement.sql` | Warehouse retirement: makes `distribution_points.warehouse_id` nullable so ports can be created without a warehouse |
 
 Apply each one **manually**, in this order:
 
@@ -61,6 +62,7 @@ Apply each one **manually**, in this order:
 14. **Apply 018 manually** — `018_phoenix_actor_snapshot_record_field_fix.sql` (requires 014; fixes the confirmed `record "new" has no field "actor_id"` error — no Edge Function changes needed)
 15. **Apply 019 manually** — `019_phoenix_availability_editor_institution_ux.sql` (requires 001; the Availability Editor frontend depends on `port_name`/`supply_type` existing — apply before deploying the updated editor code, no Edge Function changes needed)
 16. **Apply 020 manually** — `020_phoenix_availability_material_fields_and_status_editor.sql` (requires 019; adds material identity columns and the `(distribution_point_id, scientific_name)` upsert index — apply before deploying the updated editor/Status Editor code, no Edge Function changes needed)
+17. **Apply 021 manually** — `021_phoenix_ports_permissions_warehouse_retirement.sql` (requires 001; makes `warehouse_id` nullable on `distribution_points` — apply before deploying the updated port creation UI, no Edge Function changes needed)
 
 ## How to apply (each migration)
 
@@ -301,6 +303,22 @@ select proname from pg_proc where proname = 'get_profile_identity_snapshot';
 > **Important:** Migration 013 does NOT implement account recycling. The recycling
 > workflow (ACCOUNT-RECYCLE-WORKFLOW-A) is a separate future phase. Do not attempt
 > to recycle accounts before that workflow is implemented.
+
+### After 021 — warehouse retirement (warehouse_id nullable)
+
+Purpose: retires the warehouse requirement from port creation. Existing rows keep their `warehouse_id`; new ports can be created without one.
+
+```sql
+-- warehouse_id must be nullable
+SELECT is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'distribution_points'
+  AND column_name = 'warehouse_id';
+-- expect: 'YES'
+```
+
+Functional check: create a new distribution point without providing `warehouse_id` — the insert should succeed. Existing ports with a `warehouse_id` should be unaffected.
 
 ## Prohibitions
 

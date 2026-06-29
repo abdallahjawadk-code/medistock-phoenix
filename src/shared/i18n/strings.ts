@@ -112,6 +112,7 @@ export const T: Dict = {
   avail_supply_type_ph:    { ar: 'اكتب نوع التجهيز',                       en: 'Enter supply type' },
   avail_no_ports:          { ar: 'لا توجد منافذ. أنشئ منفذًا أولًا.',       en: 'No ports found. Create a port first.' },
   avail_create_port_first: { ar: 'أنشئ منفذًا أولًا',                       en: 'Create a port first' },
+  avail_port_load_error:   { ar: 'تعذر تحميل المنافذ. تحقق من صلاحية إدارة المنافذ أو ارتباط حسابك بالمؤسسة.', en: 'Unable to load ports. Check port-management permission or your account institution assignment.' },
   avail_scientific_name:   { ar: 'اسم المادة العلمي',                       en: 'Scientific name' },
   avail_scientific_ph:     { ar: 'أدخل الاسم العلمي',                       en: 'Enter scientific name' },
   avail_trade_name:        { ar: 'اسم المادة التجاري (اختياري)',             en: 'Trade name (optional)' },
