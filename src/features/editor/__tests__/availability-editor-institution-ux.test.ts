@@ -474,7 +474,7 @@ describe('Warehouse retired from port workflow', () => {
   it('migration 021 exists and makes warehouse_id nullable', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain('warehouse_id');
-    expect(sql).toContain('drop not null');
+    expect(sql).toContain('DROP NOT NULL');
     expect(sql).toContain('MANUAL APPLY ONLY');
   });
 
@@ -486,6 +486,60 @@ describe('Warehouse retired from port workflow', () => {
   it('migration 021 has no TRUNCATE', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).not.toMatch(/truncate/i);
+  });
+
+  it('migration 021 replaces role-based policies with permission-based policies', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_superadmin"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_hospitaladmin"');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_write_wh_manager"');
+    expect(sql).toContain('CREATE POLICY "dp_read_perm"');
+    expect(sql).toContain('CREATE POLICY "dp_write_perm"');
+  });
+
+  it('migration 021 uses phoenix_profile_has_permission for RLS', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.view')");
+    expect(sql).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.create')");
+    expect(sql).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.edit')");
+  });
+
+  it('migration 021 enforces org scope in write policy', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain('organization_id = phoenix_my_org()');
+  });
+
+  it('migration 021 does not add broad USING(true) for writes', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const lines = sql.split('\n').filter(l => !l.trimStart().startsWith('--'));
+    const writeBlock = lines.join('\n');
+    expect(writeBlock).not.toMatch(/using\s*\(\s*true\s*\)/i);
+  });
+
+  it('migration 021 does not add duplicate permission keys', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).not.toContain('INSERT INTO permission_keys');
+    expect(sql).not.toContain('insert into permission_keys');
+  });
+
+  it('migration 021 does not add anon/public write policies', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).not.toContain('to anon');
+    expect(sql).not.toContain('to public');
+  });
+
+  it('migration 021 has verification block checking old policies gone and new ones exist', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql).toContain('dp_read_perm');
+    expect(sql).toContain('dp_write_perm');
+    expect(sql).toContain('ASSERT');
+    expect(sql).toContain('old role-based policies still exist');
+  });
+
+  it('migration 021 documents ports.archive limitation', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    expect(sql.toLowerCase()).toContain('ports.archive');
+    expect(sql.toLowerCase()).toContain('frontend');
   });
 });
 
