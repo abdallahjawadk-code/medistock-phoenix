@@ -22,16 +22,22 @@
 --      of the hardcoded role check. Warehouse and local_item branches
 --      keep the original role-based check since those entity types do
 --      not yet have dedicated permission keys.
+--   D. Adds a BEFORE UPDATE trigger (trg_guard_dp_archive) that blocks
+--      direct UPDATE attempts to set status='archived' or modify
+--      archived_at/archived_by/archive_reason unless the user has
+--      ports.archive permission. Also blocks cross-institution
+--      organization_id tampering on UPDATE.
 --
--- How ports.archive is enforced at DB level:
---   The archive_entity() RPC is the ONLY path to archive a distribution
---   point (set status = 'archived'). The RLS write policy (dp_write_perm)
---   gates normal UPDATE via ports.edit. The RPC, being SECURITY DEFINER,
---   bypasses RLS and performs its own authorization:
---     - For distribution_point: requires ports.archive permission + org scope
---     - For warehouse/local_item: requires super_admin or hospital_admin role
+-- How ports.archive is enforced at DB level (defense in depth):
+--   Layer 1 — archive_entity() RPC (SECURITY DEFINER): checks
+--     ports.archive before performing the archive UPDATE. Sets a session
+--     flag so the trigger does not double-check.
+--   Layer 2 — trg_guard_dp_archive trigger: catches direct .update()
+--     calls that bypass the RPC. Any attempt to set status='archived' or
+--     modify archive-related columns without ports.archive raises
+--     PORT_ARCHIVE_PERMISSION_REQUIRED.
 --   This means a user with ports.edit but WITHOUT ports.archive can edit
---   port fields (name, type) but CANNOT archive via the RPC.
+--   port fields (name, type) but CANNOT archive through ANY path.
 --
 -- What this does NOT do:
 --   - Does NOT drop the warehouses table or any warehouse data.
@@ -163,12 +169,14 @@ BEGIN
       GET DIAGNOSTICS v_rows = ROW_COUNT;
 
     WHEN 'distribution_point' THEN
+      PERFORM set_config('phoenix.archive_bypass', 'true', true);
       UPDATE distribution_points
       SET status = 'archived', archived_at = now(), archived_by = auth.uid(), archive_reason = p_reason
       WHERE id = p_entity_id
         AND (v_role = 'super_admin' OR organization_id = v_org_id)
         AND archived_at IS NULL;
       GET DIAGNOSTICS v_rows = ROW_COUNT;
+      PERFORM set_config('phoenix.archive_bypass', '', true);
 
     WHEN 'local_item' THEN
       UPDATE local_items
@@ -190,6 +198,60 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'archived', true);
 END;
 $$;
+
+-- ============================================================================
+-- D. BEFORE UPDATE trigger: guard direct archive/disable status transitions
+-- ============================================================================
+-- Prevents a user with ports.edit (but WITHOUT ports.archive) from directly
+-- updating status to 'archived' or touching archived_at/archived_by/
+-- archive_reason columns via a raw Supabase .update() call.
+--
+-- The archive_entity() RPC sets a session flag before its internal UPDATE
+-- so the trigger does not double-check (the RPC already verified
+-- ports.archive). Direct client UPDATEs do not have this flag.
+--
+-- Also blocks cross-institution organization_id tampering on UPDATE.
+
+CREATE OR REPLACE FUNCTION phoenix_guard_dp_archive_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  -- Allow if called from archive_entity() (flag set by RPC)
+  IF current_setting('phoenix.archive_bypass', true) = 'true' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Block organization_id tampering for non-super users
+  IF NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+    IF phoenix_my_role() <> 'super_admin' THEN
+      RAISE EXCEPTION 'CROSS_INSTITUTION_UPDATE_BLOCKED';
+    END IF;
+  END IF;
+
+  -- Detect archive-related field changes
+  IF (NEW.status IS DISTINCT FROM OLD.status AND NEW.status = 'archived')
+     OR (NEW.archived_at IS DISTINCT FROM OLD.archived_at)
+     OR (NEW.archived_by IS DISTINCT FROM OLD.archived_by)
+     OR (NEW.archive_reason IS DISTINCT FROM OLD.archive_reason) THEN
+    -- Require ports.archive permission
+    IF phoenix_my_role() <> 'super_admin'
+       AND NOT phoenix_profile_has_permission(auth.uid(), 'ports.archive') THEN
+      RAISE EXCEPTION 'PORT_ARCHIVE_PERMISSION_REQUIRED';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_dp_archive ON distribution_points;
+CREATE TRIGGER trg_guard_dp_archive
+  BEFORE UPDATE ON public.distribution_points
+  FOR EACH ROW
+  EXECUTE FUNCTION phoenix_guard_dp_archive_update();
 
 -- ============================================================================
 -- VERIFY
@@ -233,7 +295,13 @@ BEGIN
   ASSERT v_fn_exists,
     'VERIFY FAILED: archive_entity function not found';
 
-  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS + archive_entity with ports.archive enforcement';
+  -- E. Archive guard trigger must exist on distribution_points
+  ASSERT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE c.relname = 'distribution_points' AND t.tgname = 'trg_guard_dp_archive'
+  ), 'VERIFY FAILED: trg_guard_dp_archive trigger not found';
+
+  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS, archive_entity + trigger guard for ports.archive';
 END $$;
 
 COMMIT;
@@ -267,4 +335,14 @@ COMMIT;
 --    As a user WITH ports.archive:
 --      SELECT archive_entity('distribution_point', '<some-port-id>', 'test');
 --    -- expect: {"ok": true, "archived": true}
+--
+-- 5. Test direct UPDATE archive guard (trigger):
+--    As a user with ports.edit but WITHOUT ports.archive:
+--      UPDATE distribution_points SET status = 'archived' WHERE id = '<port-id>';
+--    -- expect: ERROR 'PORT_ARCHIVE_PERMISSION_REQUIRED'
+--
+-- 6. Confirm trigger exists:
+--    SELECT tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+--    WHERE c.relname = 'distribution_points' AND t.tgname = 'trg_guard_dp_archive';
+--    -- expect: 1 row
 -- ============================================================================

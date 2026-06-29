@@ -565,6 +565,67 @@ describe('Warehouse retired from port workflow', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain("p.proname = 'archive_entity'");
   });
+
+  it('archive_entity sets bypass flag before distribution_point UPDATE', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const fnBody = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION archive_entity'));
+    expect(fnBody).toContain("set_config('phoenix.archive_bypass', 'true', true)");
+  });
+
+  it('archive_entity clears bypass flag after distribution_point UPDATE', () => {
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const fnBody = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION archive_entity'));
+    expect(fnBody).toContain("set_config('phoenix.archive_bypass', '', true)");
+  });
+});
+
+// ============================================================================
+// Direct archive UPDATE trigger guard
+// ============================================================================
+
+describe('Direct archive UPDATE trigger guard on distribution_points', () => {
+  const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+
+  it('trigger function phoenix_guard_dp_archive_update exists', () => {
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION phoenix_guard_dp_archive_update');
+  });
+
+  it('trigger fires BEFORE UPDATE on distribution_points', () => {
+    expect(sql).toContain('BEFORE UPDATE ON public.distribution_points');
+    expect(sql).toContain('trg_guard_dp_archive');
+  });
+
+  it('trigger checks ports.archive for archive-related changes', () => {
+    expect(sql).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.archive')");
+    expect(sql).toContain('PORT_ARCHIVE_PERMISSION_REQUIRED');
+  });
+
+  it('trigger detects status change to archived', () => {
+    expect(sql).toContain("NEW.status = 'archived'");
+    expect(sql).toContain('NEW.archived_at IS DISTINCT FROM OLD.archived_at');
+  });
+
+  it('trigger blocks cross-institution org_id tampering', () => {
+    expect(sql).toContain('NEW.organization_id IS DISTINCT FROM OLD.organization_id');
+    expect(sql).toContain('CROSS_INSTITUTION_UPDATE_BLOCKED');
+  });
+
+  it('trigger respects archive_bypass session flag from archive_entity', () => {
+    expect(sql).toContain("current_setting('phoenix.archive_bypass', true)");
+  });
+
+  it('trigger is SECURITY DEFINER', () => {
+    const fnBlock = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION phoenix_guard_dp_archive_update'));
+    expect(fnBlock).toContain('SECURITY DEFINER');
+  });
+
+  it('trigger is idempotent (DROP TRIGGER IF EXISTS before CREATE)', () => {
+    expect(sql).toContain('DROP TRIGGER IF EXISTS trg_guard_dp_archive');
+  });
+
+  it('migration 021 verification checks trigger exists', () => {
+    expect(sql).toContain("t.tgname = 'trg_guard_dp_archive'");
+  });
 });
 
 // ============================================================================
