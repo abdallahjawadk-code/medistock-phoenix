@@ -585,6 +585,98 @@ describe('Warehouse retired from port workflow', () => {
     expect(sql).toContain('unexpected DELETE policy found on distribution_points');
   });
 
+  it('migration 021 dp_read_perm SELECT policy requires ports.view at top level (known asymmetry — fixed by 023)', () => {
+    // This test documents the asymmetry that caused the super_admin INSERT RETURNING bug.
+    // dp_read_perm in 021 puts phoenix_profile_has_permission OUTSIDE the super_admin bypass,
+    // meaning super_admin also needs ports.view for RETURNING to return rows.
+    // Migration 023 fixes this by restructuring dp_read_perm consistently with INSERT/UPDATE.
+    const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
+    const readBlock = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_read_perm"'),
+      sql.indexOf('CREATE POLICY "dp_insert_perm"'),
+    );
+    // Confirm the 021 pattern: permission check comes first, super_admin is nested inside AND
+    expect(readBlock).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.view')");
+    expect(readBlock).toContain("phoenix_my_role() = 'super_admin'");
+  });
+
+  it('migration 023 exists and fixes dp_read_perm super_admin bypass', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('DROP POLICY IF EXISTS "dp_read_perm"');
+    expect(sql).toContain('CREATE POLICY "dp_read_perm"');
+  });
+
+  it('migration 023 dp_read_perm puts super_admin bypass first (consistent with INSERT/UPDATE)', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    const readBlock = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_read_perm"'),
+      sql.indexOf('-- ============================================================================\n-- VERIFY'),
+    );
+    // super_admin bypass must come before the permission check
+    const superAdminPos = readBlock.indexOf("phoenix_my_role() = 'super_admin'");
+    const permCheckPos  = readBlock.indexOf("phoenix_profile_has_permission");
+    expect(superAdminPos).toBeGreaterThan(-1);
+    expect(permCheckPos).toBeGreaterThan(-1);
+    expect(superAdminPos).toBeLessThan(permCheckPos);
+  });
+
+  it('migration 023 dp_read_perm still requires ports.view for non-super users', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    const readBlock = sql.slice(
+      sql.indexOf('CREATE POLICY "dp_read_perm"'),
+      sql.indexOf('-- ============================================================================\n-- VERIFY'),
+    );
+    expect(readBlock).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.view')");
+    expect(readBlock).toContain('organization_id = phoenix_my_org()');
+  });
+
+  it('migration 023 does not touch dp_insert_perm or dp_update_perm', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    expect(sql).not.toContain('DROP POLICY IF EXISTS "dp_insert_perm"');
+    expect(sql).not.toContain('DROP POLICY IF EXISTS "dp_update_perm"');
+    expect(sql).not.toContain('CREATE POLICY "dp_insert_perm"');
+    expect(sql).not.toContain('CREATE POLICY "dp_update_perm"');
+  });
+
+  it('migration 023 has no DELETE policy on distribution_points', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/CREATE\s+POLICY\s+\S+\s+ON\s+distribution_points\s+FOR\s+DELETE/i);
+  });
+
+  it('migration 023 has no DROP TABLE, no TRUNCATE, no destructive CASCADE', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/^\s*drop table/im);
+    expect(noComments).not.toMatch(/truncate/i);
+    expect(noComments).not.toMatch(/delete cascade/i);
+  });
+
+  it('migration 023 verification block asserts no DELETE policy on distribution_points', () => {
+    const sql = readPhoenix('supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql');
+    expect(sql).toContain("cmd = 'DELETE'");
+  });
+
+  it('institution_admin has ports.view but NOT ports.create by default (explicit grant required)', () => {
+    const sql = readPhoenix('supabase/migrations/012_phoenix_institution_admin_role.sql');
+    expect(sql).toContain("'institution_admin', 'ports.view',                    true");
+    expect(sql).not.toContain("'institution_admin', 'ports.create'");
+    expect(sql).not.toContain("'institution_admin', 'ports.edit'");
+  });
+
+  it('AddPortForm catch block shows port_create_error for DB/RLS failures, not perm_no_create_ports', () => {
+    const instScreen = readSrc('features/institutions/InstitutionScreen.tsx');
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const catchStart   = instScreen.indexOf('} catch (e) {', addFormStart);
+    const catchBlock   = instScreen.slice(catchStart, Math.min(catchStart + 600, addFormEnd));
+    // catch block (after canCreate guard already passed) must not show perm_no_create_ports
+    // it shows 021_pending for null violations, and port_create_error for everything else
+    expect(catchBlock).toContain("t('port_create_error', lang)");
+    expect(catchBlock).not.toContain("t('perm_no_create_ports', lang)");
+  });
+
   it('migration 021 verification asserts dp_write_perm no longer exists', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain("policyname = 'dp_write_perm'");
