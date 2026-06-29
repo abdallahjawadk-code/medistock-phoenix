@@ -459,6 +459,15 @@ export const T: Dict = {
   um_perm_unheld:{ ar: 'لا يمكنك منح صلاحية لا تملكها.', en: 'You cannot grant a permission you do not have.' },
   um_perm_dangerous_unauthorized:{ ar: 'لا يمكنك منح صلاحية خطرة بدون تخويل.', en: 'You cannot grant a dangerous permission without authority.' },
   um_perm_unknown_key:{ ar: 'توجد صلاحية غير معروفة أو غير مسجلة في قاعدة البيانات.', en: 'One permission is unknown or not registered in the database.' },
+
+  /* Permission matrix UX hardening (PERMISSION-MATRIX-UX-HARDENING-A): hidden by default */
+  um_manage_user_permissions:    { ar: 'إدارة صلاحيات هذا المستخدم',                          en: "Manage this user's permissions" },
+  um_hide_permissions:           { ar: 'إخفاء الصلاحيات',                                     en: 'Hide permissions' },
+  um_permissions_hidden_note:    { ar: 'صلاحيات المستخدم مخفية حتى تختار إدارتها',           en: 'User permissions are hidden until you choose to manage them' },
+  um_perm_self_edit_session_note:{ ar: 'لا يمكنك تعديل صلاحيات حسابك الحالي من نفس الجلسة.', en: 'You cannot edit permissions for your current account from the same session.' },
+  um_no_manage_permissions_note: { ar: 'لا تملك صلاحية إدارة صلاحيات المستخدمين.',           en: 'You do not have permission to manage user permissions.' },
+  um_editing_sensitive_permissions: { ar: 'أنت تقوم بتعديل صلاحيات حساسة لهذا المستخدم',     en: 'You are editing sensitive permissions for this user' },
+  um_search_permissions:         { ar: 'بحث في الصلاحيات',                                    en: 'Search permissions' },
   um_perm_diag_prefix:{ ar: 'تعذر حفظ الصلاحيات. رمز التشخيص:', en: 'Could not save permissions. Diagnostic code:' },
   um_empty:           { ar: 'لا يوجد مستخدمون',                  en: 'No users' },
   um_select_user:     { ar: 'اختر مستخدمًا لإدارة صلاحياته',     en: 'Select a user to manage permissions' },

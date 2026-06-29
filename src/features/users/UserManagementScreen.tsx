@@ -259,13 +259,13 @@ export function UserManagementScreen() {
           })}
         </div>
 
-        {/* Permission matrix */}
+        {/* Selected-user panel: summary by default, permission matrix only when explicitly opened */}
         <div>
           {!selectedUser && (
             <PhoenixEmptyState icon="🧩" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
           )}
           {selectedUser && (
-            <PermissionMatrix
+            <UserPermissionsPanel
               key={selectedUser.id}
               user={selectedUser} lang={lang} actorRole={role} isSuper={isSuper}
               actorId={profile?.id ?? ''} actorPermissions={actorEff}
@@ -322,7 +322,97 @@ export function UserManagementScreen() {
   );
 }
 
-/* ── Permission matrix ── */
+/* ── User permissions panel: summary by default, matrix only when opened ── */
+/* PERMISSION-MATRIX-UX-HARDENING-A: permission checkboxes are never shown
+   by default. The actor must explicitly click "Manage this user's
+   permissions" before any permission data loads or renders. This is a UX
+   convenience only — every server-side RPC check (self-edit block,
+   users.manage_permissions requirement, dangerous-permission authority,
+   institution_admin scope) remains the real security boundary, completely
+   unaffected by whether this panel is open or closed. */
+
+function UserPermissionsPanel({ user, lang, actorRole, isSuper, actorId, actorPermissions, canManage, onToast }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  actorRole: string;
+  isSuper: boolean;
+  actorId: string;
+  actorPermissions: Set<string>;
+  canManage: boolean;
+  onToast: (m: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isSelf = user.id === actorId;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <PhoenixCard padding="16px">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: 700 }} dir="auto">{userName(user)}</div>
+            <div style={{ fontSize: '11px', color: 'var(--t2)' }} dir="ltr">
+              {user.username ?? '—'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <PhoenixStatusBadge variant={statusVariant(user.status)} label={statusLabel(user.status, lang)} />
+            <PhoenixStatusBadge variant="neutral" label={t(roleLabelKey(user.role), lang)} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: 'var(--t2)' }}>
+          <InfoLine label={t('um_organization', lang)} value={lang === 'ar' ? (user.org_name_ar ?? user.org_name ?? '—') : (user.org_name ?? user.org_name_ar ?? '—')} />
+        </div>
+
+        {!open ? (
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
+            {isSelf ? (
+              <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }} dir="auto">
+                ⚠ {t('um_perm_self_edit_session_note', lang)}
+              </p>
+            ) : canManage ? (
+              <PhoenixButton variant="primary" size="md" onClick={() => setOpen(true)}>
+                🔐 {t('um_manage_user_permissions', lang)}
+              </PhoenixButton>
+            ) : (
+              <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: 0 }} dir="auto">
+                {t('um_no_manage_permissions_note', lang)}
+              </p>
+            )}
+            <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '8px' }} dir="auto">
+              {t('um_permissions_hidden_note', lang)}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
+            <PhoenixButton variant="ghost" size="md" onClick={() => setOpen(false)}>
+              {t('um_hide_permissions', lang)}
+            </PhoenixButton>
+          </div>
+        )}
+      </PhoenixCard>
+
+      {open && (
+        <PermissionMatrix
+          user={user} lang={lang} actorRole={actorRole} isSuper={isSuper}
+          actorId={actorId} actorPermissions={actorPermissions}
+          canManage={canManage} onToast={onToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+      <span>{label}</span>
+      <span style={{ fontWeight: 600, color: 'var(--t)' }} dir="auto">{value}</span>
+    </div>
+  );
+}
+
+/* ── Permission matrix (rendered only once explicitly opened) ── */
 
 function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermissions, canManage, onToast }: {
   user: ManagedUser;
@@ -341,6 +431,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   const [draft, setDraft]       = useState<Record<string, boolean> | null>(null);
   const [busy, setBusy]         = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [permSearch, setPermSearch] = useState('');
 
   // migrationMissing means the permission-matrix RPC is genuinely absent
   // (a true migration gap). loadError covers every other reason the read
@@ -473,12 +564,33 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
         </div>
       )}
 
+      {!readOnly && (
+        <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--err)' }} dir="auto">
+          ⚠ {t('um_editing_sensitive_permissions', lang)}
+        </div>
+      )}
+
       {eff.loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
       {!eff.loading && (
         <>
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', pointerEvents: 'none' }}>🔍</span>
+            <input type="search" placeholder={t('um_search_permissions', lang)} value={permSearch} onChange={e => setPermSearch(e.target.value)}
+              style={{ ...fieldStyle, paddingInlineStart: '32px' }} aria-label={t('um_search_permissions', lang)} />
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {Object.entries(modules).map(([mod, perms]) => {
+            {Object.entries(modules)
+              .map(([mod, perms]) => {
+                const q = permSearch.trim().toLowerCase();
+                const filtered = q
+                  ? perms.filter(p => t(p.labelKey, lang).toLowerCase().includes(q) || p.key.toLowerCase().includes(q))
+                  : perms;
+                return [mod, filtered] as const;
+              })
+              .filter(([, perms]) => perms.length > 0)
+              .map(([mod, perms]) => {
               const open = !collapsed[mod];
               return (
                 <div key={mod} style={{ border: '1px solid var(--brd)', borderRadius: 'var(--r2)', overflow: 'hidden' }}>
