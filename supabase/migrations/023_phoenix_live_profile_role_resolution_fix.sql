@@ -72,25 +72,36 @@
 --     phoenix_profile_has_permission() helper definitions.
 --   - Does NOT touch any other table, RPC, or trigger.
 --
--- Pre-apply diagnostic (run as your super_admin in Supabase SQL Editor):
+-- Pre-apply diagnostic:
 --
---   -- 1. Confirm profile and role
---   SELECT id, role, organization_id FROM profiles WHERE id = auth.uid();
+-- ⚠️  auth.uid() CAVEAT — IMPORTANT:
+--   Running auth.uid() in Supabase Dashboard SQL Editor as the postgres/service-role
+--   user returns NULL because there is no JWT in that context. This makes queries
+--   like phoenix_my_role() or phoenix_profile_has_permission(auth.uid(), ...) useless
+--   when run there directly.
 --
---   -- 2. Confirm permission defaults exist for super_admin
+--   Safe alternatives:
+--     A. (Recommended) Open browser DevTools → Console after login and attempt port
+--        creation. Commit 5ec29db added [phoenix] createDistributionPoint insert failed:
+--        logging with the exact Supabase error code, message, details, hint, and
+--        sanitized payload — this is the ground truth for live diagnosis.
+--     B. Simulate auth.uid() using a known super_admin profile UUID. Replace <your-uuid>
+--        with the actual UUID from auth.users / profiles:
+--          SELECT
+--            phoenix_profile_has_permission('<your-uuid>'::uuid, 'ports.view')   AS has_view,
+--            phoenix_profile_has_permission('<your-uuid>'::uuid, 'ports.create') AS has_create;
+--
+-- Diagnostics safe to run in SQL Editor (no auth.uid() dependency):
+--
+--   -- 1. Confirm super_admin role_permission_defaults exist for ports.view
 --   SELECT permission_key, allowed
 --   FROM role_permission_defaults
 --   WHERE role = 'super_admin'
 --     AND permission_key IN ('ports.view', 'ports.create', 'ports.edit')
 --   ORDER BY permission_key;
+--   -- expect: 3 rows all allowed = true
 --
---   -- 3. Test permission helper and role helpers directly
---   SELECT
---     phoenix_my_role()                                        AS db_role,
---     phoenix_profile_has_permission(auth.uid(), 'ports.view')   AS has_ports_view,
---     phoenix_profile_has_permission(auth.uid(), 'ports.create') AS has_ports_create;
---
---   -- 4. Confirm current policies on distribution_points
+--   -- 2. Confirm current policies on distribution_points
 --   SELECT policyname, cmd, qual, with_check
 --   FROM pg_policies
 --   WHERE schemaname = 'public' AND tablename = 'distribution_points'
@@ -98,6 +109,12 @@
 --   -- expect: dp_insert_perm (INSERT), dp_read_perm (SELECT), dp_update_perm (UPDATE)
 --   -- must NOT see: dp_write_perm, dp_write_superadmin, dp_write_hospitaladmin,
 --   --               dp_write_wh_manager, any cmd='DELETE'
+--
+--   -- 3. Confirm archive guard trigger still exists
+--   SELECT t.tgname FROM pg_trigger t
+--   JOIN pg_class c ON c.oid = t.tgrelid
+--   WHERE c.relname = 'distribution_points' AND t.tgname = 'trg_guard_dp_archive';
+--   -- expect: 1 row
 -- ============================================================================
 
 BEGIN;
@@ -199,13 +216,16 @@ COMMIT;
 --    --   (phoenix_my_role() = 'super_admin') OR (...)
 --    -- NOT with phoenix_profile_has_permission at top level
 --
--- 2. Smoke test — as super_admin, insert a test port directly:
+-- 2. Smoke test — insert a test port via SQL Editor (runs as postgres/service role,
+--    so RLS is bypassed — this only verifies the INSERT/RETURNING plumbing, not RLS):
 --    INSERT INTO distribution_points (organization_id, name, name_ar, point_type)
 --    SELECT id, 'smoke-test', 'smoke-test', 'dispensing'
 --    FROM organizations LIMIT 1
 --    RETURNING id, organization_id, point_type;
---    -- expect: 1 row returned (no PGRST116)
---    -- then DELETE that row manually (super_admin has no DELETE RLS block in SQL Editor)
+--    -- expect: 1 row returned
+--    -- then DELETE that row manually (service role bypasses RLS in SQL Editor)
+--    ⚠️  To test RLS specifically, use the browser UI or the authenticated Supabase client —
+--    SQL Editor as postgres/service role bypasses all RLS policies.
 --
 -- 3. Smoke test — as institution_admin WITHOUT ports.create, try insert:
 --    -- expect: "new row violates row-level security policy" (42501) — CORRECT
