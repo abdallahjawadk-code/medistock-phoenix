@@ -12,11 +12,12 @@
 --      created without a warehouse (warehouse retirement).
 --   B. Replaces the three role-based distribution_points write policies
 --      (dp_write_superadmin, dp_write_hospitaladmin, dp_write_wh_manager)
---      with two permission-based policies that use the existing
+--      with three permission-based policies that use the existing
 --      phoenix_profile_has_permission(uuid, text) helper from migration 010:
---        - dp_read_perm: SELECT gated by ports.view + org scope
---        - dp_write_perm: INSERT/UPDATE/DELETE gated by per-operation
---          permission keys (ports.create, ports.edit) + org scope
+--        - dp_read_perm:   SELECT gated by ports.view + org scope
+--        - dp_insert_perm: INSERT gated by ports.create + org scope
+--        - dp_update_perm: UPDATE gated by ports.edit + org scope
+--        - (no DELETE policy — port removal is archive-only via archive_entity)
 --   C. Replaces archive_entity() RPC (migration 003) to enforce
 --      ports.archive permission for distribution_point archiving instead
 --      of the hardcoded role check. Warehouse and local_item branches
@@ -73,7 +74,9 @@ DROP POLICY IF EXISTS "dp_write_hospitaladmin" ON distribution_points;
 DROP POLICY IF EXISTS "dp_write_wh_manager"    ON distribution_points;
 -- Drop new policies too (idempotent re-run)
 DROP POLICY IF EXISTS "dp_read_perm"           ON distribution_points;
-DROP POLICY IF EXISTS "dp_write_perm"          ON distribution_points;
+DROP POLICY IF EXISTS "dp_write_perm"          ON distribution_points;  -- legacy FOR ALL; replaced by split policies
+DROP POLICY IF EXISTS "dp_insert_perm"         ON distribution_points;
+DROP POLICY IF EXISTS "dp_update_perm"         ON distribution_points;
 
 -- Read policy: org-scoped + ports.view permission
 CREATE POLICY "dp_read_perm" ON distribution_points
@@ -86,30 +89,39 @@ CREATE POLICY "dp_read_perm" ON distribution_points
     )
   );
 
--- Write policy: org-scoped + ports.create (insert) / ports.edit (update)
-CREATE POLICY "dp_write_perm" ON distribution_points
-  FOR ALL TO authenticated
+-- Insert policy: org-scoped + ports.create
+-- FOR INSERT has no USING clause (only WITH CHECK applies).
+CREATE POLICY "dp_insert_perm" ON distribution_points
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    phoenix_my_role() = 'super_admin'
+    OR (
+      organization_id = phoenix_my_org()
+      AND phoenix_profile_has_permission(auth.uid(), 'ports.create')
+    )
+  );
+
+-- Update policy: org-scoped + ports.edit
+-- Archive-related fields are further guarded by trg_guard_dp_archive (requires ports.archive).
+CREATE POLICY "dp_update_perm" ON distribution_points
+  FOR UPDATE TO authenticated
   USING (
-    (
-      phoenix_my_role() = 'super_admin'
-      OR (
-        organization_id = phoenix_my_org()
-        AND phoenix_profile_has_permission(auth.uid(), 'ports.edit')
-      )
+    phoenix_my_role() = 'super_admin'
+    OR (
+      organization_id = phoenix_my_org()
+      AND phoenix_profile_has_permission(auth.uid(), 'ports.edit')
     )
   )
   WITH CHECK (
-    (
-      phoenix_my_role() = 'super_admin'
-      OR (
-        organization_id = phoenix_my_org()
-        AND (
-          phoenix_profile_has_permission(auth.uid(), 'ports.create')
-          OR phoenix_profile_has_permission(auth.uid(), 'ports.edit')
-        )
-      )
+    phoenix_my_role() = 'super_admin'
+    OR (
+      organization_id = phoenix_my_org()
+      AND phoenix_profile_has_permission(auth.uid(), 'ports.edit')
     )
   );
+
+-- No DELETE policy: direct row deletion of distribution_points is prohibited.
+-- Port retirement must go through archive_entity() RPC which sets status='archived'.
 
 -- ============================================================================
 -- C. Replace archive_entity() to enforce ports.archive for distribution_point
@@ -279,13 +291,27 @@ BEGIN
                          'dp_write_hospitaladmin', 'dp_write_wh_manager')
   ), 'VERIFY FAILED: old role-based policies still exist';
 
-  -- C. New permission-based policies must exist
+  -- C. New permission-based policies must exist (SELECT + INSERT + UPDATE only)
   SELECT count(*) INTO v_policy_count
   FROM pg_policies
   WHERE schemaname = 'public' AND tablename = 'distribution_points'
-    AND policyname IN ('dp_read_perm', 'dp_write_perm');
-  ASSERT v_policy_count = 2,
-    'VERIFY FAILED: expected 2 permission-based policies, found ' || v_policy_count;
+    AND policyname IN ('dp_read_perm', 'dp_insert_perm', 'dp_update_perm');
+  ASSERT v_policy_count = 3,
+    'VERIFY FAILED: expected 3 permission-based policies (dp_read_perm/dp_insert_perm/dp_update_perm), found ' || v_policy_count;
+
+  -- C2. Legacy FOR ALL policy must not exist
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'distribution_points'
+      AND policyname = 'dp_write_perm'
+  ), 'VERIFY FAILED: dp_write_perm (FOR ALL) still exists — direct DELETE would be enabled';
+
+  -- C3. No DELETE policy must exist on distribution_points
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'distribution_points'
+      AND cmd = 'DELETE'
+  ), 'VERIFY FAILED: unexpected DELETE policy found on distribution_points';
 
   -- D. archive_entity function must exist
   SELECT EXISTS (
@@ -301,7 +327,7 @@ BEGIN
     WHERE c.relname = 'distribution_points' AND t.tgname = 'trg_guard_dp_archive'
   ), 'VERIFY FAILED: trg_guard_dp_archive trigger not found';
 
-  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS, archive_entity + trigger guard for ports.archive';
+  RAISE NOTICE '021 ✓ warehouse_id nullable, permission-based RLS (SELECT/INSERT/UPDATE — no DELETE), archive_entity + trigger guard for ports.archive';
 END $$;
 
 COMMIT;
@@ -316,11 +342,12 @@ COMMIT;
 --    WHERE table_schema = 'public' AND table_name = 'distribution_points'
 --      AND column_name = 'warehouse_id';
 --
--- 2. Confirm only the new policies exist:
+-- 2. Confirm only the new policies exist (no FOR ALL, no DELETE):
 --    SELECT policyname, cmd, qual FROM pg_policies
 --    WHERE schemaname = 'public' AND tablename = 'distribution_points'
 --    ORDER BY policyname;
---    -- expect: dp_read_perm + dp_write_perm only
+--    -- expect: dp_insert_perm (INSERT) + dp_read_perm (SELECT) + dp_update_perm (UPDATE) only
+--    -- must NOT see: dp_write_perm or any cmd='DELETE' row
 --
 -- 3. Confirm permission keys exist (no duplicates):
 --    SELECT key FROM permission_keys
