@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
-import { canManageOrg, canAssignRole, isAdminRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
+import { canManageOrg, canAssignRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
 import type { Role } from '@/shared/lib/types';
 import { roleLabelKey } from '@/shared/lib/roles';
 import {
@@ -79,7 +79,8 @@ const fieldStyle = {
 } as const;
 
 export function InstitutionScreen() {
-  const { lang, role, activeOrgId, profile } = useApp();
+  const { lang, role, activeOrgId, profile, myPermissions, reloadMyPermissions } = useApp();
+  useEffect(() => { if (myPermissions.size === 0) reloadMyPermissions(); }, []);
   const isMobile = window.innerWidth < 768;
   const isSuper = role === 'super_admin';
 
@@ -152,6 +153,7 @@ export function InstitutionScreen() {
           isMobile={isMobile}
           orgId={effectiveOrgId}
           actorRole={role}
+          actorPermissions={myPermissions}
           onToast={showToast}
         />
       )}
@@ -163,6 +165,7 @@ export function InstitutionScreen() {
           isMobile={isMobile}
           orgId={effectiveOrgId}
           actorRole={role}
+          actorPermissions={myPermissions}
           onToast={showToast}
         />
       )}
@@ -318,15 +321,20 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
 
 /* ── Org Detail + Users ── */
 
-function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
+function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
   actorRole: Role;
+  actorPermissions: Set<string>;
   onToast: (msg: string) => void;
 }) {
   const isSuper = canManageOrg(actorRole);
   const canEditRoles = actorRole === 'super_admin' || actorRole === 'hospital_admin';
+  const canViewPorts    = actorPermissions.has('ports.view');
+  const canCreatePorts  = actorPermissions.has('ports.create');
+  const canEditPorts    = actorPermissions.has('ports.edit');
+  const canArchivePorts = actorPermissions.has('ports.archive');
 
   const org = useAsync(() => getOrganization(orgId), [orgId]);
   const users = useAsync(() => getProfilesByOrg(orgId), [orgId]);
@@ -440,17 +448,25 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, onToast }: {
       </div>
 
       {/* Ports section */}
-      <PortSection
-        lang={lang}
-        isMobile={isMobile}
-        orgId={orgId}
-        actorRole={actorRole}
-        points={points.data ?? []}
-        pointsLoading={points.loading}
-        pointsError={points.error}
-        onReload={() => { points.reload(); }}
-        onToast={onToast}
-      />
+      {canViewPorts ? (
+        <PortSection
+          lang={lang}
+          isMobile={isMobile}
+          orgId={orgId}
+          canCreatePorts={canCreatePorts}
+          canEditPorts={canEditPorts}
+          canArchivePorts={canArchivePorts}
+          points={points.data ?? []}
+          pointsLoading={points.loading}
+          pointsError={points.error}
+          onReload={() => { points.reload(); }}
+          onToast={onToast}
+        />
+      ) : (
+        <div style={{ fontSize: '12px', color: 'var(--t2)', padding: '12px', background: 'var(--s2)', borderRadius: 'var(--r2)' }}>
+          {t('perm_no_view_ports', lang)}
+        </div>
+      )}
 
       {/* Organization cleanup wizard */}
       <OrgCleanupWizard
@@ -663,25 +679,26 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, actorRole, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
-  actorRole: Role;
+  canCreatePorts: boolean;
+  canEditPorts: boolean;
+  canArchivePorts: boolean;
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
-  const canMutate = isAdminRole(actorRole) || actorRole === 'warehouse_manager';
   const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
-        {canMutate && (
+        {canCreatePorts && (
           <PhoenixButton variant="primary" size="sm" onClick={() => setShowAdd(true)}>
             + {t('port_add', lang)}
           </PhoenixButton>
@@ -718,8 +735,8 @@ function PortSection({ lang, isMobile, orgId, actorRole, points, pointsLoading, 
               key={pt.id}
               point={pt}
               lang={lang}
-              actorRole={actorRole}
-              canMutate={canMutate}
+              canEditPorts={canEditPorts}
+              canArchivePorts={canArchivePorts}
               onReload={onReload}
               onToast={onToast}
             />
@@ -802,11 +819,11 @@ function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, actorRole, canMutate, onReload, onToast }: {
+function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
-  actorRole: Role;
-  canMutate: boolean;
+  canEditPorts: boolean;
+  canArchivePorts: boolean;
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -930,7 +947,7 @@ function PortCard({ point, lang, actorRole, canMutate, onReload, onToast }: {
       )}
 
       {/* Actions */}
-      {canMutate && (
+      {canEditPorts && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
           {!qr && qr !== undefined && (
             <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
@@ -947,7 +964,7 @@ function PortCard({ point, lang, actorRole, canMutate, onReload, onToast }: {
               </PhoenixButton>
             </>
           )}
-          {isAdminRole(actorRole) && (
+          {canArchivePorts && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
               📦 {t('archived', lang)}
             </PhoenixButton>
@@ -960,12 +977,12 @@ function PortCard({ point, lang, actorRole, canMutate, onReload, onToast }: {
         pointId={point.id}
         orgId={point.organizationId}
         lang={lang}
-        canMutate={canMutate}
+        canMutate={canEditPorts}
         onToast={onToast}
       />
 
       {/* Port cleanup wizard */}
-      {canMutate && isAdminRole(actorRole) && (
+      {canArchivePorts && (
         <PortCleanupWizard pointId={point.id} lang={lang} onDone={onReload} onToast={onToast} />
       )}
 

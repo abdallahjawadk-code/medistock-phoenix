@@ -333,9 +333,9 @@ describe('Port QR lifecycle: safety checks', () => {
     expect(screen).toContain("confirmAction === 'archive'");
   });
 
-  it('viewer cannot mutate ports (canMutate requires admin or warehouse_manager)', () => {
-    expect(screen).toContain('isAdminRole(actorRole)');
-    expect(screen).toContain("actorRole === 'warehouse_manager'");
+  it('port mutation is gated by permission-based flags (canEditPorts/canArchivePorts)', () => {
+    expect(screen).toContain('canEditPorts');
+    expect(screen).toContain('canArchivePorts');
   });
 });
 
@@ -674,8 +674,8 @@ describe('Hierarchical deletion wizard: safety', () => {
     expect(screen).toContain("if (!isSuper) return null");
   });
 
-  it('PortCleanupWizard requires isAdminRole', () => {
-    expect(screen).toContain('isAdminRole(actorRole)');
+  it('PortCleanupWizard gated by canArchivePorts permission', () => {
+    expect(screen).toContain('canArchivePorts');
   });
 
   it('org impact checks child dependencies', () => {

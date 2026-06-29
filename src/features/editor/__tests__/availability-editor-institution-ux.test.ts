@@ -489,6 +489,83 @@ describe('Warehouse retired from port workflow', () => {
   });
 });
 
+// ============================================================================
+// Permission-based port gating (PORT-PERMISSION-GATE-CORRECTION-A)
+// ============================================================================
+
+describe('Port management uses permission-based gating, not role-based', () => {
+  const instScreen = readSrc('features/institutions/InstitutionScreen.tsx');
+
+  it('PortSection does not use role-based canMutate = isAdminRole', () => {
+    expect(instScreen).not.toContain("isAdminRole(actorRole) || actorRole === 'warehouse_manager'");
+  });
+
+  it('PortSection receives canCreatePorts prop', () => {
+    expect(instScreen).toContain('canCreatePorts');
+  });
+
+  it('PortSection receives canEditPorts prop', () => {
+    expect(instScreen).toContain('canEditPorts');
+  });
+
+  it('PortSection receives canArchivePorts prop', () => {
+    expect(instScreen).toContain('canArchivePorts');
+  });
+
+  it('PortCard does not receive actorRole prop', () => {
+    const cardSig = instScreen.slice(instScreen.indexOf('function PortCard'), instScreen.indexOf('function PortCard') + 300);
+    expect(cardSig).not.toContain('actorRole');
+  });
+
+  it('OrgDetailView derives permission flags from actorPermissions.has(ports.*)', () => {
+    expect(instScreen).toContain("actorPermissions.has('ports.view')");
+    expect(instScreen).toContain("actorPermissions.has('ports.create')");
+    expect(instScreen).toContain("actorPermissions.has('ports.edit')");
+    expect(instScreen).toContain("actorPermissions.has('ports.archive')");
+  });
+
+  it('InstitutionScreen loads myPermissions from useApp', () => {
+    expect(instScreen).toContain('myPermissions');
+    expect(instScreen).toContain('reloadMyPermissions');
+  });
+
+  it('permission-denied message keys exist in strings', () => {
+    expect(strings).toContain('perm_no_view_ports');
+    expect(strings).toContain('perm_no_create_ports');
+    expect(strings).toContain('perm_no_manage_ports');
+  });
+
+  it('no-view-ports message shown when canViewPorts is false', () => {
+    expect(instScreen).toContain('perm_no_view_ports');
+  });
+
+  it('permission keys ports.view/create/edit/archive exist in catalog', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    expect(perms).toContain("'ports.view'");
+    expect(perms).toContain("'ports.create'");
+    expect(perms).toContain("'ports.edit'");
+    expect(perms).toContain("'ports.archive'");
+  });
+
+  it('institution_admin defaults do NOT include ports.create', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    const instAdminBlock = perms.slice(
+      perms.indexOf('INSTITUTION_ADMIN_DEFAULTS'),
+      perms.indexOf('];', perms.indexOf('INSTITUTION_ADMIN_DEFAULTS'))
+    );
+    expect(instAdminBlock).not.toContain("'ports.create'");
+  });
+
+  it('hospital_admin (legacy) defaults include ports.create', () => {
+    const perms = readSrc('shared/lib/permissions.ts');
+    const legacyBlock = perms.slice(
+      perms.indexOf('LEGACY_ADMIN_DEFAULTS'),
+      perms.indexOf('];', perms.indexOf('LEGACY_ADMIN_DEFAULTS'))
+    );
+    expect(legacyBlock).toContain("'ports.create'");
+  });
+});
+
 describe('Safety: Data Reset absent, Intake disabled', () => {
   const files = allTsxFiles('');
 
