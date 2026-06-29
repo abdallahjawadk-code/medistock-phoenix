@@ -751,6 +751,123 @@ describe('Port management uses permission-based gating, not role-based', () => {
     );
     expect(legacyBlock).toContain("'ports.create'");
   });
+
+  // ── AddPortForm simplification ──────────────────────────────────────────────
+  it('AddPortForm has a single visible name field (port_name), not English+Arabic pair', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    expect(addFormBody).toContain("port_name");
+    expect(addFormBody).not.toContain("port_name_en");
+    expect(addFormBody).not.toContain("port_name_ar");
+  });
+
+  it('AddPortForm has no port type dropdown', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    expect(addFormBody).not.toContain("port_type");
+    expect(addFormBody).not.toContain("ptType");
+    expect(addFormBody).not.toContain("setPtType");
+  });
+
+  it('AddPortForm defaults pointType to dispensing internally', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    expect(addFormBody).toContain("dispensing");
+  });
+
+  it('AddPortForm receives canCreate prop and guards submission', () => {
+    const addFormStart = instScreen.indexOf('function AddPortForm');
+    const addFormEnd   = instScreen.indexOf('function PortCard');
+    const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
+    expect(addFormBody).toContain('canCreate');
+  });
+
+  it('port_create_error and port_create_021_pending strings exist', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('port_create_error');
+    expect(strings).toContain('port_create_021_pending');
+  });
+
+  // ── QR permission gating ────────────────────────────────────────────────────
+  it('OrgDetailView derives canGenerateQr from actorPermissions.has(qr.generate)', () => {
+    expect(instScreen).toContain("actorPermissions.has('qr.generate')");
+  });
+
+  it('OrgDetailView derives canRevokeQr from actorPermissions.has(qr.revoke)', () => {
+    expect(instScreen).toContain("actorPermissions.has('qr.revoke')");
+  });
+
+  it('PortSection receives canGenerateQr and canRevokeQr props', () => {
+    expect(instScreen).toContain('canGenerateQr');
+    expect(instScreen).toContain('canRevokeQr');
+  });
+
+  it('PortCard QR generate button gated by canGenerateQr, not canEditPorts', () => {
+    const cardStart = instScreen.indexOf('function PortCard');
+    const cardBody  = instScreen.slice(cardStart, cardStart + 4000);
+    expect(cardBody).toContain('canGenerateQr');
+    // generate/revoke buttons should NOT use canEditPorts as their sole QR gate
+    expect(cardBody).not.toMatch(/canEditPorts\s*&&[^(]+qr_generate/);
+  });
+
+  it('PortCard QR revoke button gated by canRevokeQr', () => {
+    const cardStart = instScreen.indexOf('function PortCard');
+    const cardBody  = instScreen.slice(cardStart, cardStart + 4000);
+    expect(cardBody).toContain('canRevokeQr');
+  });
+
+  it('perm_no_qr_generate and qr_create_error strings exist', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('perm_no_qr_generate');
+    expect(strings).toContain('qr_create_error');
+  });
+
+  it('qr.service createQrForTarget throws when data.ok is false', () => {
+    const svc = readSrc('shared/supabase/services/qr.service.ts');
+    expect(svc).toContain('result.ok');
+    expect(svc).toContain('QR_CREATION_FAILED');
+  });
+
+  it('qr.service disableQrToken throws when data.ok is false and not already_disabled', () => {
+    const svc = readSrc('shared/supabase/services/qr.service.ts');
+    expect(svc).toContain('already_disabled');
+    expect(svc).toContain('QR_REVOKE_FAILED');
+  });
+
+  // ── Migration 022 ───────────────────────────────────────────────────────────
+  it('migration 022 exists', () => {
+    const sql = readPhoenix('supabase/migrations/022_phoenix_qr_permission_fix.sql');
+    expect(sql.length).toBeGreaterThan(100);
+  });
+
+  it('migration 022 replaces role-gate in create_qr_for_target with qr.generate permission', () => {
+    const sql = readPhoenix('supabase/migrations/022_phoenix_qr_permission_fix.sql');
+    expect(sql).toContain("qr.generate");
+    expect(sql).toContain('create_qr_for_target');
+  });
+
+  it('migration 022 replaces role-gate in disable_qr_token with qr.revoke permission', () => {
+    const sql = readPhoenix('supabase/migrations/022_phoenix_qr_permission_fix.sql');
+    expect(sql).toContain("qr.revoke");
+    expect(sql).toContain('disable_qr_token');
+  });
+
+  it('migration 022 does not hardcode hospital_admin in the primary QR permission gate', () => {
+    const sql = readPhoenix('supabase/migrations/022_phoenix_qr_permission_fix.sql');
+    // The old role-list check ('hospital_admin', 'warehouse_manager') must not be
+    // the primary gate — it may appear in comments but not as the IF condition
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/IF\s+v_role\s+NOT?\s+IN\s*\([^)]*hospital_admin/i);
+  });
+
+  it('migration 022 has verification block', () => {
+    const sql = readPhoenix('supabase/migrations/022_phoenix_qr_permission_fix.sql');
+    expect(sql).toContain('VERIFY');
+    expect(sql).toContain('ASSERT');
+  });
 });
 
 describe('Safety: Data Reset absent, Intake disabled', () => {

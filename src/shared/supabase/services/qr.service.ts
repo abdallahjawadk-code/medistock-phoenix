@@ -26,7 +26,9 @@ export async function createQrForTarget(
   });
 
   if (error) throw error;
-  return data as { ok: boolean; created: boolean; token_id: string; public_id: string };
+  const result = data as { ok: boolean; created?: boolean; token_id?: string; public_id?: string; error?: string };
+  if (!result.ok) throw new Error(result.error ?? 'QR_CREATION_FAILED');
+  return result as { ok: boolean; created: boolean; token_id: string; public_id: string };
 }
 
 export async function disableQrToken(tokenId: string, reason = 'manual_disable') {
@@ -38,7 +40,9 @@ export async function disableQrToken(tokenId: string, reason = 'manual_disable')
   });
 
   if (error) throw error;
-  return data as { ok: boolean };
+  const result = data as { ok: boolean; already_disabled?: boolean; error?: string };
+  if (!result.ok && !result.already_disabled) throw new Error(result.error ?? 'QR_REVOKE_FAILED');
+  return result as { ok: boolean };
 }
 
 export async function getQrForPoint(pointId: string): Promise<{

@@ -335,6 +335,8 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
   const canCreatePorts  = actorPermissions.has('ports.create');
   const canEditPorts    = actorPermissions.has('ports.edit');
   const canArchivePorts = actorPermissions.has('ports.archive');
+  const canGenerateQr   = actorPermissions.has('qr.generate');
+  const canRevokeQr     = actorPermissions.has('qr.revoke');
 
   const org = useAsync(() => getOrganization(orgId), [orgId]);
   const users = useAsync(() => getProfilesByOrg(orgId), [orgId]);
@@ -456,6 +458,8 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           canCreatePorts={canCreatePorts}
           canEditPorts={canEditPorts}
           canArchivePorts={canArchivePorts}
+          canGenerateQr={canGenerateQr}
+          canRevokeQr={canRevokeQr}
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
@@ -679,13 +683,15 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
   canCreatePorts: boolean;
   canEditPorts: boolean;
   canArchivePorts: boolean;
+  canGenerateQr: boolean;
+  canRevokeQr: boolean;
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
@@ -716,6 +722,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
         <AddPortForm
           lang={lang}
           orgId={orgId}
+          canCreate={canCreatePorts}
           onCreated={() => { setShowAdd(false); onReload(); }}
           onCancel={() => setShowAdd(false)}
           onToast={onToast}
@@ -737,6 +744,8 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               lang={lang}
               canEditPorts={canEditPorts}
               canArchivePorts={canArchivePorts}
+              canGenerateQr={canGenerateQr}
+              canRevokeQr={canRevokeQr}
               onReload={onReload}
               onToast={onToast}
             />
@@ -749,29 +758,32 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
 /* ── Add Port Form ── */
 
-function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
+function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
   lang: 'ar' | 'en';
   orgId: string;
+  canCreate: boolean;
   onCreated: () => void;
   onCancel: () => void;
   onToast: (msg: string) => void;
 }) {
-  const [name, setName] = useState('');
-  const [nameAr, setNameAr] = useState('');
-  const [ptType, setPtType] = useState<PointType>('dispensing');
+  const [portName, setPortName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim() && nameAr.trim();
+  const canSubmit = portName.trim().length > 0;
 
   async function onSubmit() {
-    if (!canSubmit) { setError(t('inst_required', lang)); return; }
+    if (!canSubmit) return;
+    if (!canCreate) { setError(t('perm_no_create_ports', lang)); return; }
     setBusy(true);
     setError(null);
     try {
+      // name and name_ar both use the same visible value; type defaults to 'dispensing'
       const pt = await createDistributionPoint({
         organizationId: orgId,
-        name: name.trim(), name_ar: nameAr.trim(), pointType: ptType,
+        name:      portName.trim(),
+        name_ar:   portName.trim(),
+        pointType: 'dispensing',
       });
       try {
         await createQrForTarget('distribution_point', pt.id, pt.name);
@@ -781,7 +793,19 @@ function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
       }
       onCreated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('load_error', lang));
+      const msg = (e instanceof Error ? e.message : '') ||
+                  ((e as { message?: string })?.message ?? '');
+      console.error('[phoenix] port create failed:', e);
+      if (msg.includes('warehouse_id') || msg.includes('not-null') || msg.includes('null value')) {
+        setError(t('port_create_021_pending', lang));
+      } else if (
+        msg.includes('row-level security') || msg.includes('RLS') ||
+        msg.includes('INSUFFICIENT') || msg.includes('permission')
+      ) {
+        setError(t('perm_no_create_ports', lang));
+      } else {
+        setError(t('port_create_error', lang));
+      }
     } finally {
       setBusy(false);
     }
@@ -792,18 +816,17 @@ function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px' }}>{t('port_add', lang)}</h4>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div>
-          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_name_en', lang)} *</label>
-          <input type="text" value={name} onChange={e => setName(e.target.value)} style={fieldStyle} dir="ltr" />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_name_ar', lang)} *</label>
-          <input type="text" value={nameAr} onChange={e => setNameAr(e.target.value)} style={fieldStyle} dir="rtl" />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_type', lang)}</label>
-          <select value={ptType} onChange={e => setPtType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-            {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
-          </select>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+            {t('port_name', lang)} *
+          </label>
+          <input
+            type="text"
+            value={portName}
+            onChange={e => setPortName(e.target.value)}
+            style={fieldStyle}
+            dir="auto"
+            autoFocus
+          />
         </div>
         {error && <p style={{ fontSize: '12px', color: 'var(--err)' }}>{error}</p>}
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -819,11 +842,13 @@ function AddPortForm({ lang, orgId, onCreated, onCancel, onToast }: {
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToast }: {
+function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
   canEditPorts: boolean;
   canArchivePorts: boolean;
+  canGenerateQr: boolean;
+  canRevokeQr: boolean;
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -846,8 +871,14 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToas
       const res = await createQrForTarget('distribution_point', point.id, point.name);
       setQr({ tokenId: res.token_id, publicId: res.public_id });
       onToast(t('qr_generated', lang));
-    } catch {
-      onToast(t('qr_gen_failed', lang));
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : '') || ((e as { message?: string })?.message ?? '');
+      console.error('[phoenix] QR generate failed:', e);
+      if (msg.includes('INSUFFICIENT') || msg.includes('permission')) {
+        onToast(t('perm_no_qr_generate', lang));
+      } else {
+        onToast(t('qr_create_error', lang));
+      }
     } finally {
       setBusy(null);
     }
@@ -861,8 +892,14 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToas
       setQr({ tokenId: '', publicId: res.public_id });
       onToast(t('qr_regenerated', lang));
       onReload();
-    } catch {
-      onToast(t('load_error', lang));
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : '') || ((e as { message?: string })?.message ?? '');
+      console.error('[phoenix] QR regenerate failed:', e);
+      if (msg.includes('INSUFFICIENT') || msg.includes('permission')) {
+        onToast(t('perm_no_qr_generate', lang));
+      } else {
+        onToast(t('qr_create_error', lang));
+      }
     } finally {
       setBusy(null);
     }
@@ -877,8 +914,14 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToas
       setQr(null);
       onToast(t('qr_revoked', lang));
       onReload();
-    } catch {
-      onToast(t('load_error', lang));
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : '') || ((e as { message?: string })?.message ?? '');
+      console.error('[phoenix] QR revoke failed:', e);
+      if (msg.includes('INSUFFICIENT') || msg.includes('permission')) {
+        onToast(t('perm_no_qr_generate', lang));
+      } else {
+        onToast(t('qr_create_error', lang));
+      }
     } finally {
       setBusy(null);
     }
@@ -947,22 +990,22 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, onReload, onToas
       )}
 
       {/* Actions */}
-      {canEditPorts && (
+      {(canGenerateQr || canRevokeQr || canArchivePorts) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-          {!qr && qr !== undefined && (
+          {canGenerateQr && !qr && qr !== undefined && (
             <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
               📱 {t('qr_generate', lang)}
             </PhoenixButton>
           )}
-          {qr && (
-            <>
-              <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
-                🔄 {t('qr_regenerate', lang)}
-              </PhoenixButton>
-              <PhoenixButton variant="warn" size="sm" loading={busy === 'revoke'} onClick={() => setConfirmAction('revoke')}>
-                🚫 {t('qr_revoke', lang)}
-              </PhoenixButton>
-            </>
+          {canGenerateQr && qr && (
+            <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
+              🔄 {t('qr_regenerate', lang)}
+            </PhoenixButton>
+          )}
+          {canRevokeQr && qr && (
+            <PhoenixButton variant="warn" size="sm" loading={busy === 'revoke'} onClick={() => setConfirmAction('revoke')}>
+              🚫 {t('qr_revoke', lang)}
+            </PhoenixButton>
           )}
           {canArchivePorts && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
