@@ -3,8 +3,8 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
-import { getLocalItems } from '@/shared/supabase/services/registry.service';
 import { upsertAvailability } from '@/shared/supabase/services/availability.service';
+import { getOrganizations, getOrganization } from '@/shared/supabase/services/organizations.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -13,45 +13,58 @@ import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
-interface CentralRef { name: string; name_ar: string; unit: string; }
-interface LocalRow { id: string; local_code: string | null; local_name: string | null; central_items: CentralRef | CentralRef[] | null; }
 interface PointRow { id: string; name: string; name_ar: string; }
 
-function centralOf(row: LocalRow): CentralRef | null {
-  const c = row.central_items;
-  if (!c) return null;
-  return Array.isArray(c) ? c[0] ?? null : c;
-}
-
-const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
+/**
+ * Material status options (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part D).
+ * 'surplus' and 'near_expiry' are intentionally merged into a single
+ * selectable option here — both i18n keys now carry the same combined
+ * "Surplus - Near expiry" wording (see strings.ts), so existing legacy rows
+ * stored as either value display identically everywhere. No new DB enum
+ * value was introduced; new submissions from this merged option are stored
+ * as 'surplus'. 'expired' is intentionally not offered as a selectable
+ * status here per the simplified 4-option spec — historical 'expired' rows
+ * are unaffected and still display correctly in other screens.
+ */
+const CONDITION_OPTIONS: { value: AvailabilityCondition; labelKey: string }[] = [
+  { value: 'available', labelKey: 'cond_available' },
+  { value: 'low_stock',  labelKey: 'cond_low_stock' },
+  { value: 'missing',    labelKey: 'cond_missing' },
+  { value: 'surplus',    labelKey: 'cond_surplus' },
+];
 
 export function EditorScreen() {
-  const { lang, activeOrgId } = useApp();
+  const { lang, role, activeOrgId, setActiveOrgId } = useApp();
+  const isSuper = role === 'super_admin';
 
   const points = useAsync<PointRow[]>(() => activeOrgId ? getPointsByOrg(activeOrgId) : Promise.resolve([]), [activeOrgId]);
-  const items  = useAsync(() => activeOrgId ? getLocalItems(activeOrgId) : Promise.resolve([]), [activeOrgId]);
-  const itemRows = (items.data ?? []) as unknown as LocalRow[];
+  // Institution field data: super_admin gets the full org list (for the
+  // dropdown they're allowed to switch between); everyone else only needs
+  // their own org's name to render the locked display.
+  const orgs  = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
+  const myOrg = useAsync(() => (!isSuper && activeOrgId) ? getOrganization(activeOrgId) : Promise.resolve(null), [isSuper, activeOrgId]);
 
   const [pointId, setPointId]   = useState('');
-  const [itemId, setItemId]     = useState('');
+  const [portName, setPortName] = useState('');
   const [qty, setQty]           = useState(0);
   const [condition, setCondition] = useState<AvailabilityCondition>('available');
   const [batch, setBatch]       = useState('');
   const [expiry, setExpiry]     = useState('');
   const [notes, setNotes]       = useState('');
+  const [supplyType, setSupplyType] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy]         = useState(false);
   const [toast, setToast]       = useState<string | null>(null);
 
   const qtyInvalid = qty < 0;
-  const canSubmit = !!activeOrgId && !!pointId && !!itemId && !qtyInvalid;
+  const canSubmit = !!activeOrgId && !!pointId && !!portName.trim() && !qtyInvalid;
 
   async function doApply() {
     if (!activeOrgId) return;
     setBusy(true);
     try {
       await upsertAvailability({
-        localItemId: itemId,
+        portName: portName.trim(),
         distributionPointId: pointId,
         organizationId: activeOrgId,
         quantity: qty,
@@ -59,6 +72,7 @@ export function EditorScreen() {
         batchNumber: batch || undefined,
         expiryDate: expiry || undefined,
         notes: notes || undefined,
+        supplyType: supplyType || undefined,
       });
       setShowConfirm(false);
       setToast(t('apply_success', lang));
@@ -75,6 +89,9 @@ export function EditorScreen() {
   }
 
   const fieldStyle = { width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' } as const;
+  const lockedFieldStyle = { ...fieldStyle, background: 'var(--s2)', color: 'var(--t2)', cursor: 'default' } as const;
+
+  const myOrgName = myOrg.data ? (lang === 'ar' ? myOrg.data.name_ar : myOrg.data.name) : '';
 
   return (
     <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
@@ -92,25 +109,41 @@ export function EditorScreen() {
         <>
           <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              {/* Institution — locked display for institution-scoped users,
+                  dropdown only for super_admin (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part A) */}
+              <div style={{ gridColumn: '1/-1' }}>
+                <label htmlFor="ed-inst" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_inst_label', lang)} *</label>
+                {isSuper ? (
+                  <select id="ed-inst" value={activeOrgId ?? ''} onChange={e => setActiveOrgId(e.target.value || null)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+                    <option value="">— {t('select_inst', lang)} —</option>
+                    {(orgs.data ?? []).map(o => <option key={o.id} value={o.id}>{lang === 'ar' ? o.name_ar : o.name}</option>)}
+                  </select>
+                ) : (
+                  <>
+                    <div id="ed-inst" style={lockedFieldStyle} dir="auto">
+                      🏥 {myOrg.loading ? t('loading', lang) : (myOrgName || '—')}
+                    </div>
+                    <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+                      {t('avail_inst_locked_note', lang)}
+                    </p>
+                  </>
+                )}
+              </div>
+
               {/* Distribution point */}
               <div style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="ed-point" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('select_inst', lang)} *</label>
+                <label htmlFor="ed-point" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_point_select', lang)} *</label>
                 <select id="ed-point" value={pointId} onChange={e => setPointId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-                  <option value="">— {points.loading ? t('loading', lang) : t('select_inst', lang)} —</option>
+                  <option value="">— {points.loading ? t('loading', lang) : t('avail_point_select', lang)} —</option>
                   {(points.data ?? []).map(p => <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name}</option>)}
                 </select>
               </div>
 
-              {/* Item */}
+              {/* Port / Access point (free text — replaces the item dropdown, Part B) */}
               <div style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="ed-item" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('item', lang)} *</label>
-                <select id="ed-item" value={itemId} onChange={e => setItemId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-                  <option value="">— {items.loading ? t('loading', lang) : t('item', lang)} —</option>
-                  {itemRows.map(row => {
-                    const c = centralOf(row);
-                    return <option key={row.id} value={row.id}>{(lang === 'ar' ? c?.name_ar : c?.name) ?? row.local_name ?? row.local_code}</option>;
-                  })}
-                </select>
+                <label htmlFor="ed-port" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_port_field', lang)} *</label>
+                <input id="ed-port" type="text" dir="auto" value={portName} onChange={e => setPortName(e.target.value)}
+                  placeholder={t('avail_port_ph', lang)} style={fieldStyle} />
               </div>
 
               {/* Quantity */}
@@ -120,24 +153,31 @@ export function EditorScreen() {
                 {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('qty_err', lang)}</p>}
               </div>
 
-              {/* Condition */}
+              {/* Material status (localized — Part D) */}
               <div>
-                <label htmlFor="ed-cond" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('m_avail', lang)}</label>
+                <label htmlFor="ed-cond" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_material_status', lang)}</label>
                 <select id="ed-cond" value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-                  {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  {CONDITION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey, lang)}</option>)}
                 </select>
               </div>
 
-              {/* Batch */}
+              {/* National code (renamed from Batch No. — Part C; storage unchanged: batch_number column) */}
               <div>
-                <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('batch_no', lang)}</label>
-                <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder="BCH-2026-001" style={{ ...fieldStyle, fontFamily: 'monospace' }} />
+                <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_national_code', lang)}</label>
+                <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_national_code_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
               </div>
 
               {/* Expiry */}
               <div>
                 <label htmlFor="ed-exp" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('expiry', lang)}</label>
                 <input id="ed-exp" type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={fieldStyle} />
+              </div>
+
+              {/* Supply type — institution-private (Part E) */}
+              <div>
+                <label htmlFor="ed-supply" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_supply_type', lang)}</label>
+                <input id="ed-supply" type="text" dir="auto" value={supplyType} onChange={e => setSupplyType(e.target.value)}
+                  placeholder={t('avail_supply_type_ph', lang)} style={fieldStyle} />
               </div>
 
               {/* Notes */}

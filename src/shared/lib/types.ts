@@ -53,6 +53,10 @@ export interface AvailabilityRecord {
   notes?: string;
   updated_at: string;
   updated_by?: string;
+  /** Free-text "المنفذ" (Access point / Port) value — replaces item selection (migration 019). Null for legacy item-based rows. */
+  port_name?: string | null;
+  /** Free-text "نوع التجهيز" (Supply type), institution-private (migration 019). */
+  supply_type?: string | null;
 }
 
 export interface QrToken {
