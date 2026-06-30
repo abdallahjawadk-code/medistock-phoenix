@@ -2098,3 +2098,348 @@ describe('PUBLIC-QR-D6/D7 [frontend: PublicQrScreen expiry_bucket support]', () 
     expect(src).not.toContain('supply_type');
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   QR-AUDIT-CENTER-POLISH-A — QrScreen.tsx guardrails
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+describe('QR-AUDIT-CENTER [QrScreen.tsx: title, subtitle, i18n]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('uses nav_qr_audit for the screen title', () => {
+    expect(src).toContain('nav_qr_audit');
+  });
+
+  it('uses qr_audit_center_subtitle for the subtitle', () => {
+    expect(src).toContain('qr_audit_center_subtitle');
+  });
+
+  it('shows qr_linked_inactive_port risk label', () => {
+    expect(src).toContain('qr_linked_inactive_port');
+  });
+
+  it('shows qr_ports_no_qr label for ports without QR', () => {
+    expect(src).toContain('qr_ports_no_qr');
+  });
+
+  it('shows qr_total_scans metric label', () => {
+    expect(src).toContain('qr_total_scans');
+  });
+
+  it('shows qr_recently_scanned filter chip label', () => {
+    expect(src).toContain('qr_recently_scanned');
+  });
+
+  it('uses qr_no_registered for empty state', () => {
+    expect(src).toContain('qr_no_registered');
+  });
+
+  it('uses qr_no_critical_issues for health banner', () => {
+    expect(src).toContain('qr_no_critical_issues');
+  });
+
+  it('uses qr_copy_link for copy action', () => {
+    expect(src).toContain('qr_copy_link');
+  });
+
+  it('uses qr_open_public for open action', () => {
+    expect(src).toContain('qr_open_public');
+  });
+
+  it('uses qr_print for print action', () => {
+    expect(src).toContain('qr_print');
+  });
+
+  it('uses qr_inactive_target for target status indicator', () => {
+    expect(src).toContain('qr_inactive_target');
+  });
+
+  it('uses qr_review_or_disable advisory text', () => {
+    expect(src).toContain('qr_review_or_disable');
+  });
+
+  it('uses qr_create_from_port for ports-without-QR CTA', () => {
+    expect(src).toContain('qr_create_from_port');
+  });
+});
+
+describe('QR-AUDIT-CENTER [QrScreen.tsx: metrics computation]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('computes activeRows from status === active', () => {
+    expect(src).toContain("status === 'active'");
+  });
+
+  it('computes disabledRows as rows where status is not active', () => {
+    expect(src).toContain('disabledRows');
+  });
+
+  it('computes riskRows as active QR pointing to inactive target', () => {
+    expect(src).toContain('riskRows');
+    expect(src).toContain("tg.status !== 'active'");
+  });
+
+  it('computes totalScans as sum of scan_count', () => {
+    expect(src).toContain('scan_count');
+    expect(src).toContain('totalScans');
+  });
+
+  it('builds activeDpTargetIds Set for ports-without-QR computation', () => {
+    expect(src).toContain('activeDpTargetIds');
+    expect(src).toContain("target_type === 'distribution_point'");
+  });
+
+  it('computes portsWithoutQr by comparing points against activeDpTargetIds', () => {
+    expect(src).toContain('portsWithoutQr');
+    expect(src).toContain('activeDpTargetIds.has');
+  });
+
+  it('loads QR tokens via getQrTokensByOrg', () => {
+    expect(src).toContain('getQrTokensByOrg');
+  });
+
+  it('loads distribution points via getPointsByOrg', () => {
+    expect(src).toContain('getPointsByOrg');
+  });
+
+  it('uses filter state for audit filtering', () => {
+    expect(src).toContain("FilterType");
+    expect(src).toContain("'all'");
+    expect(src).toContain("'active'");
+    expect(src).toContain("'disabled'");
+    expect(src).toContain("'risk'");
+    expect(src).toContain("'no_qr'");
+    expect(src).toContain("'recent'");
+  });
+});
+
+describe('QR-AUDIT-CENTER [QrScreen.tsx: permissions]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('uses myPermissions.has for qr.revoke gating (not hardcoded role check)', () => {
+    expect(src).toContain("myPermissions.has('qr.revoke')");
+  });
+
+  it('uses myPermissions.has for qr.generate gating', () => {
+    expect(src).toContain("myPermissions.has('qr.generate')");
+  });
+
+  it('canRevoke gates the revoke button', () => {
+    expect(src).toContain('canRevoke');
+  });
+
+  it('canGenerate gates the ports-without-QR CTA', () => {
+    expect(src).toContain('canGenerate');
+  });
+
+  it('revoke uses disableQrToken service (existing safe flow)', () => {
+    expect(src).toContain('disableQrToken');
+  });
+});
+
+describe('QR-AUDIT-CENTER [QrScreen.tsx: security — no unsafe fields]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('does not expose token_hash', () => {
+    expect(src).not.toContain('token_hash');
+  });
+
+  it('does not expose actor_name_snapshot', () => {
+    expect(src).not.toContain('actor_name_snapshot');
+  });
+
+  it('does not expose actor_email_snapshot', () => {
+    expect(src).not.toContain('actor_email_snapshot');
+  });
+
+  it('does not expose batch_number', () => {
+    expect(src).not.toContain('batch_number');
+  });
+
+  it('does not expose price field', () => {
+    expect(src).not.toContain("'price'");
+  });
+
+  it('does not use service_role in frontend', () => {
+    expect(src).not.toContain('service_role');
+  });
+
+  it('does not use auth.admin in frontend', () => {
+    expect(src).not.toContain('auth.admin');
+  });
+
+  it('print output does not include token_hash', () => {
+    // print window renders label, url, date, brand — not token_hash or secrets
+    expect(src).not.toContain('token_hash');
+    expect(src).toContain('MediStock-Babil / MASAR Health Network');
+  });
+
+  it('public URL uses only public_id (no secret token in URL)', () => {
+    expect(src).toContain('makePublicUrl');
+    expect(src).toContain('public_id');
+    expect(src).not.toContain('token_hash');
+  });
+
+  it('copy action copies public URL not secret token', () => {
+    expect(src).toContain('makePublicUrl(pid)');
+    expect(src).toContain('clipboard.writeText');
+  });
+});
+
+describe('QR-AUDIT-CENTER [QrScreen.tsx: UX behavior]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('uses PhoenixMetricCard for summary metrics', () => {
+    expect(src).toContain('PhoenixMetricCard');
+  });
+
+  it('print action uses QRCode library (no raw URL in print window)', () => {
+    expect(src).toContain("import QRCode from 'qrcode'");
+    expect(src).toContain('QRCode.toDataURL');
+  });
+
+  it('print output includes brand label', () => {
+    expect(src).toContain('MediStock-Babil / MASAR Health Network');
+  });
+
+  it('revoke shows confirmation dialog before acting', () => {
+    expect(src).toContain('confirmRevokeId');
+    expect(src).toContain('PhoenixDialog');
+  });
+
+  it('copy action shows toast notification', () => {
+    expect(src).toContain('showToast');
+    expect(src).toContain("qr_copied");
+  });
+
+  it('risk cards have visual border indicator', () => {
+    expect(src).toContain('#dc2626');
+  });
+
+  it('uses dir="ltr" for public URL (RTL-safe)', () => {
+    expect(src).toContain('dir="ltr"');
+  });
+
+  it('empty state shown when no QR tokens', () => {
+    expect(src).toContain('qr_no_registered');
+    expect(src).toContain('PhoenixEmptyState');
+  });
+
+  it('print action only shown for active QR tokens', () => {
+    // print button is rendered inside `isActive &&` block
+    expect(src).toContain('isActive');
+    expect(src).toContain('qr_print');
+  });
+});
+
+describe('QR-AUDIT-CENTER [i18n: new keys exist in strings.ts]', () => {
+  const strings = readSrc('shared/i18n/strings.ts');
+
+  it('nav_qr_audit key exists with AR + EN', () => {
+    expect(strings).toContain('nav_qr_audit');
+    expect(strings).toContain('مركز تدقيق QR');
+    expect(strings).toContain('QR Audit Center');
+  });
+
+  it('qr_audit_center_subtitle includes port linkage mention', () => {
+    expect(strings).toContain('qr_audit_center_subtitle');
+    expect(strings).toContain('port linkage');
+    expect(strings).toContain('بالمنافذ');
+  });
+
+  it('qr_ports_no_qr key exists in AR + EN', () => {
+    expect(strings).toContain('qr_ports_no_qr');
+    expect(strings).toContain('منافذ بدون QR نشط');
+    expect(strings).toContain('Ports without active QR');
+  });
+
+  it('qr_linked_inactive_port key exists in AR + EN', () => {
+    expect(strings).toContain('qr_linked_inactive_port');
+    expect(strings).toContain('QR مرتبط بمنفذ غير نشط');
+    expect(strings).toContain('QR linked to inactive port');
+  });
+
+  it('qr_total_scans key exists', () => {
+    expect(strings).toContain('qr_total_scans');
+    expect(strings).toContain('إجمالي عمليات المسح');
+    expect(strings).toContain('Total QR Scans');
+  });
+
+  it('qr_recently_scanned key exists', () => {
+    expect(strings).toContain('qr_recently_scanned');
+    expect(strings).toContain('ممسوح حديثاً');
+    expect(strings).toContain('Recently Scanned');
+  });
+
+  it('qr_no_registered key exists', () => {
+    expect(strings).toContain('qr_no_registered');
+    expect(strings).toContain('لا توجد رموز QR مسجلة حالياً');
+    expect(strings).toContain('No QR codes are registered yet');
+  });
+
+  it('qr_no_critical_issues key exists', () => {
+    expect(strings).toContain('qr_no_critical_issues');
+    expect(strings).toContain('لا توجد مشاكل QR حرجة حالياً');
+    expect(strings).toContain('No critical QR issues right now');
+  });
+
+  it('qr_open_public key exists', () => {
+    expect(strings).toContain('qr_open_public');
+    expect(strings).toContain('فتح صفحة QR العامة');
+    expect(strings).toContain('Open public QR page');
+  });
+
+  it('qr_copy_link key exists', () => {
+    expect(strings).toContain('qr_copy_link');
+    expect(strings).toContain('نسخ رابط QR');
+    expect(strings).toContain('Copy QR link');
+  });
+
+  it('qr_inactive_target key exists', () => {
+    expect(strings).toContain('qr_inactive_target');
+    expect(strings).toContain('هدف غير نشط');
+    expect(strings).toContain('Inactive target');
+  });
+
+  it('qr_review_or_disable key exists', () => {
+    expect(strings).toContain('qr_review_or_disable');
+    expect(strings).toContain('راجع المنفذ أو عطّل الرمز');
+    expect(strings).toContain('Review the port or disable the QR');
+  });
+
+  it('qr_create_from_port key exists', () => {
+    expect(strings).toContain('qr_create_from_port');
+    expect(strings).toContain('إنشاء QR من كرت المنفذ');
+    expect(strings).toContain('Create QR from the port card');
+  });
+});
+
+describe('QR-AUDIT-CENTER [no migration created, no SQL, no RLS changes]', () => {
+  const src = readSrc('features/qr/QrScreen.tsx');
+
+  it('QrScreen.tsx does not reference any migration SQL', () => {
+    expect(src).not.toContain('create or replace function');
+    expect(src).not.toContain('create policy');
+    expect(src).not.toContain('alter table');
+  });
+
+  it('QrScreen.tsx does not call supabase client directly (uses service layer)', () => {
+    expect(src).not.toContain("from '@/shared/supabase/client'");
+  });
+
+  it('QrScreen.tsx imports only from safe service layer', () => {
+    expect(src).toContain("from '@/shared/supabase/services/qr.service'");
+    expect(src).toContain("from '@/shared/supabase/services/warehouses.service'");
+  });
+
+  it('Data Reset is absent from QrScreen', () => {
+    expect(src).not.toContain('DataReset');
+    expect(src).not.toContain('data_reset');
+  });
+
+  it('Intake/OCR/Excel/DocIntel absent from QrScreen', () => {
+    expect(src).not.toContain('Intake');
+    expect(src).not.toContain('DocIntel');
+    expect(src).not.toContain('Excel');
+  });
+});
