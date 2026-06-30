@@ -813,6 +813,128 @@ describe('Warehouse retired from port workflow', () => {
     expect(noComments).not.toMatch(/service_role/i);
   });
 
+  // ── Migration 025 tests ──────────────────────────────────────────────────────
+
+  it('migration 025 exists as a table-level grants fix migration', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('BEGIN;');
+    expect(sql).toContain('COMMIT;');
+  });
+
+  it('migration 025 grants SELECT, INSERT, UPDATE to authenticated', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/GRANT\s+SELECT\s*,\s*INSERT\s*,\s*UPDATE\s+ON\s+TABLE\s+public\.distribution_points\s+TO\s+authenticated/i);
+  });
+
+  it('migration 025 does NOT grant DELETE to authenticated', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+.*DELETE.*ON\s+TABLE\s+public\.distribution_points\s+TO\s+authenticated/i);
+  });
+
+  it('migration 025 revokes DELETE from authenticated', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/REVOKE\s+DELETE\s+ON\s+TABLE\s+public\.distribution_points\s+FROM\s+authenticated/i);
+  });
+
+  it('migration 025 revokes INSERT, UPDATE, DELETE from anon', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s+ON\s+TABLE\s+public\.distribution_points\s+FROM\s+anon/i);
+  });
+
+  it('migration 025 does NOT grant any privilege to anon', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+.*ON\s+TABLE\s+public\.distribution_points\s+TO\s+anon/i);
+  });
+
+  it('migration 025 does NOT grant to service_role', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+.*ON\s+TABLE\s+public\.distribution_points\s+TO\s+service_role/i);
+  });
+
+  it('migration 025 VERIFY block asserts authenticated has SELECT', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("grantee = 'authenticated'");
+    expect(sql).toContain("privilege_type = 'SELECT'");
+    expect(sql).toContain('authenticated does not have SELECT on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts authenticated has INSERT', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("privilege_type = 'INSERT'");
+    expect(sql).toContain('authenticated does not have INSERT on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts authenticated has UPDATE', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("privilege_type = 'UPDATE'");
+    expect(sql).toContain('authenticated does not have UPDATE on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts authenticated does NOT have DELETE', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain('authenticated has DELETE on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts anon has no INSERT/UPDATE/DELETE', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("grantee = 'anon'");
+    expect(sql).toContain('anon has INSERT on distribution_points');
+    expect(sql).toContain('anon has UPDATE on distribution_points');
+    expect(sql).toContain('anon has DELETE on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts exactly 3 RLS policies still exist', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain('expected exactly 3 total policies on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts no DELETE policy', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("cmd = 'DELETE'");
+    expect(sql).toContain('unexpected DELETE policy found on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts no FOR ALL policy', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("cmd = 'ALL'");
+    expect(sql).not.toContain("cmd = '*'");
+    expect(sql).toContain('unexpected FOR ALL policy found on distribution_points');
+  });
+
+  it('migration 025 VERIFY block asserts trg_guard_dp_archive still exists', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain("tgname = 'trg_guard_dp_archive'");
+    expect(sql).toContain('trg_guard_dp_archive trigger not found on distribution_points');
+  });
+
+  it('migration 025 uses information_schema.role_table_grants for VERIFY assertions', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    expect(sql).toContain('information_schema.role_table_grants');
+  });
+
+  it('migration 025 has no DROP TABLE, no TRUNCATE, no destructive CASCADE', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/^\s*drop table/im);
+    expect(noComments).not.toMatch(/truncate/i);
+    expect(noComments).not.toMatch(/delete cascade/i);
+  });
+
+  it('migration 025 has no RLS policy creation or modification', () => {
+    const sql = readPhoenix('supabase/migrations/025_phoenix_distribution_points_grants_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/CREATE\s+POLICY/i);
+    expect(noComments).not.toMatch(/DROP\s+POLICY/i);
+    expect(noComments).not.toMatch(/ALTER\s+POLICY/i);
+  });
+
   it('migration 021 verification asserts dp_write_perm no longer exists', () => {
     const sql = readPhoenix('supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql');
     expect(sql).toContain("policyname = 'dp_write_perm'");
