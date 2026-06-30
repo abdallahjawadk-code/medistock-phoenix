@@ -202,8 +202,10 @@ describe('Exchange alerts: safety and labels', () => {
     expect(engine).not.toContain('service_role');
   });
 
-  it('screen shows manual action required', () => {
-    expect(screen).toContain('ea_manual');
+  it('screen has CTA to exchange center (screen 13) instead of inline alerts', () => {
+    expect(screen).toContain('onNavigate(13)');
+    expect(screen).toContain('material_exchange_center');
+    expect(screen).not.toContain('generateExchangeAlerts');
   });
 
   it('screen uses dir="auto" for item names', () => {

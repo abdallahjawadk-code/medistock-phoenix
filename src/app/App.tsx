@@ -67,7 +67,7 @@ function AppInner() {
       case 9:  return <ReportsScreen />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
       case 11: return <InstitutionScreen />;
-      case 12: return <StatusCenterScreen />;
+      case 12: return <StatusCenterScreen onNavigate={setScreen} />;
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;

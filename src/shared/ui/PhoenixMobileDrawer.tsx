@@ -9,12 +9,9 @@ const ALL_NAV = [
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
-  { screen: 5,  icon: '🌐', labelKey: 'nav_mesh' },
-  { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-  { screen: 7,  icon: '🏥', labelKey: 'nav_health' },
+  { screen: 6,  icon: '📱', labelKey: 'nav_qr_audit' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
   { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
-  { screen: 10, icon: '📲', labelKey: 'nav_mobile' },
 ];
 
 interface Props {

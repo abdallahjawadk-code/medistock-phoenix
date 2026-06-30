@@ -17,16 +17,13 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 16, icon: '📊', labelKey: 'nav_status_editor' },
   { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
-  { screen: 5,  icon: '🌐', labelKey: 'nav_mesh' },
-  { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-  { screen: 7,  icon: '🏥', labelKey: 'nav_health' },
+  { screen: 6,  icon: '📱', labelKey: 'nav_qr_audit' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [
   { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
   { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
-  { screen: 10, icon: '📲', labelKey: 'nav_mobile' },
 ];
 
 const ROLE_MAP: Record<string, { emoji: string }> = {

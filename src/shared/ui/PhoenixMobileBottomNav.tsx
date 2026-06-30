@@ -4,8 +4,8 @@ import { t } from '@/shared/i18n/strings';
 const BOTTOM_NAV = [
   { screen: 2, icon: '📊', labelKey: 'nav_dash' },
   { screen: 3, icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 5, icon: '🌐', labelKey: 'nav_mesh' },
-  { screen: 7, icon: '🏥', labelKey: 'nav_health' },
+  { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
+  { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
 ];
 
 interface Props {

@@ -57,8 +57,8 @@ export function QrScreen() {
     <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_qr', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('qr_sub', lang)}</p>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_qr_audit', lang)}</h2>
+          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('qr_audit_center_subtitle', lang)}</p>
         </div>
         <PhoenixOrgScope />
       </div>

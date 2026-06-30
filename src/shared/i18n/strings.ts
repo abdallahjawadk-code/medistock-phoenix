@@ -35,6 +35,7 @@ export const T: Dict = {
   nav_reg:        { ar: 'سجل العناصر',                        en: 'Item Registry' },
   nav_mesh:       { ar: 'عرض الشبكة',                         en: 'Mesh View' },
   nav_qr:         { ar: 'مركز QR',                            en: 'QR Center' },
+  nav_qr_audit:   { ar: 'مركز تدقيق QR',                     en: 'QR Audit Center' },
   nav_health:     { ar: 'صحة النظام',                         en: 'System Health' },
   nav_intake:     { ar: 'الإدخال',                             en: 'Intake' },
   nav_reports:    { ar: 'التقارير',                           en: 'Reports' },
@@ -165,7 +166,8 @@ export const T: Dict = {
   mesh_sub:       { ar: 'المؤسسات والجسور والوحدات المحمية',   en: 'Institutions, bridges & protected modules' },
 
   /* ── QR ── */
-  qr_sub:         { ar: 'واجهة QR العامة والإدارية',           en: 'Public QR interface and admin center' },
+  qr_sub:               { ar: 'واجهة QR العامة والإدارية',           en: 'Public QR interface and admin center' },
+  qr_audit_center_subtitle: { ar: 'مراقبة رموز QR النشطة والمعطلة ومتابعة استخدامها', en: 'Monitor active/disabled QR codes and usage' },
   privacy_title:  { ar: 'إشعار الخصوصية',                     en: 'Privacy Notice' },
   qr_privacy:     { ar: 'يعرض QR العام معلومات التوفر الآمنة فقط ولا يكشف بيانات الدُفعات الحساسة أو سجلات التدقيق الداخلية أو القيم الديناميكية الخام.', en: 'Public QR shows safe availability only and does not expose sensitive batch, internal audit, or raw dynamic values.' },
   qr_public_label:{ ar: 'بيانات التوفر العامة',               en: 'Public Availability Data' },
@@ -419,6 +421,9 @@ export const T: Dict = {
   sc_empty:           { ar: 'لا توجد تقارير',                    en: 'No reports' },
   sc_empty_hint:      { ar: 'ستظهر التقارير هنا عند إضافتها',    en: 'Reports will appear here once added' },
   sc_no_exchange:     { ar: 'هذا المركز للتقارير فقط · لا يوجد نقل تلقائي', en: 'This center is for reporting only · No auto-transfer' },
+  material_exchange_center:       { ar: 'مركز تبادل المواد',  en: 'Material Exchange Command Center' },
+  open_exchange_center:           { ar: 'فتح مركز تبادل المواد', en: 'Open Exchange Center' },
+  duplicate_exchange_moved_notice: { ar: 'تنبيهات التبادل بين المؤسسات أصبحت متوفرة في مركز تبادل المواد', en: 'Inter-institution exchange alerts are now managed in the Material Exchange Command Center' },
   st_scarce:          { ar: 'شحيح',                              en: 'Scarce' },
   st_surplus:         { ar: 'فائض',                              en: 'Surplus' },
   st_near_expiry:     { ar: 'قريب النفاد',                       en: 'Near Expiry' },
