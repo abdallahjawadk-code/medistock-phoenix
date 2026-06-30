@@ -1658,3 +1658,177 @@ describe('Password recovery hardening', () => {
     expect(reset).not.toContain("from('profiles')");
   });
 });
+
+// ============================================================================
+// 32. MIGRATION 027: PUBLIC AVAILABILITY PRIVACY HARDENING
+// ============================================================================
+
+describe('Migration 027: public availability privacy hardening', () => {
+  const sql = readSql('migrations/027_phoenix_public_availability_privacy_hardening.sql');
+
+  it('file exists and is non-empty', () => {
+    expect(sql.length).toBeGreaterThan(500);
+  });
+
+  it('is manual-apply-only', () => {
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('DO NOT use');
+    expect(sql).toContain('supabase db push');
+  });
+
+  it('has no DROP TABLE, TRUNCATE, or destructive operations', () => {
+    expect(sql).not.toMatch(/^\s*(drop table|truncate)\b/im);
+    expect(sql).not.toMatch(/delete from\s+(organizations|profiles|warehouses|distribution_points|qr_tokens|audit_logs)/im);
+  });
+
+  it('does not expose service_role', () => {
+    expect(sql).not.toContain('service_role');
+  });
+
+  it('does not grant anon write access', () => {
+    expect(sql).not.toMatch(/grant.*(insert|update|delete).*to anon/i);
+  });
+
+  it('does not weaken authenticated RLS policies', () => {
+    expect(sql).not.toMatch(/drop policy.*avail_select_org/i);
+    expect(sql).not.toMatch(/drop policy.*avail_write/i);
+  });
+
+  // D1: avail_select_anon restricted to using (false)
+  it('D1: drops the old avail_select_anon policy', () => {
+    expect(sql).toContain('drop policy if exists "avail_select_anon" on item_availability');
+  });
+
+  it('D1: re-creates avail_select_anon with using (false)', () => {
+    expect(sql).toContain('create policy "avail_select_anon" on item_availability');
+    expect(sql).toContain('for select to anon');
+    expect(sql).toContain('using (false)');
+  });
+
+  it('D1: comment explains why anon must use the RPC not direct table access', () => {
+    expect(sql).toMatch(/SECURITY DEFINER|security definer/);
+    expect(sql).toContain('get_public_qr_payload');
+  });
+
+  // D2: null quantity for expired items in RPC
+  it('D2: RPC nulls quantity for expired items', () => {
+    expect(sql).toMatch(/condition = 'expired' then null/);
+  });
+
+  it('D2: D2 fix appears in all target-type branches (distribution_point + local_item)', () => {
+    const dpIdx   = sql.indexOf("when 'distribution_point'");
+    const liIdx   = sql.indexOf("when 'local_item'");
+    const d2DP    = sql.indexOf("condition = 'expired' then null", dpIdx);
+    const d2LI    = sql.indexOf("condition = 'expired' then null", liIdx);
+    expect(d2DP).toBeGreaterThan(dpIdx);
+    expect(d2LI).toBeGreaterThan(liIdx);
+  });
+
+  // D3: expiry_date only for near_expiry / expired
+  it('D3: RPC guards expiry_date to near_expiry/expired conditions only', () => {
+    expect(sql).toMatch(/condition in \('near_expiry', 'expired'\) then ia\.expiry_date/);
+  });
+
+  it('D3: D3 fix appears in distribution_point branch before local_item branch', () => {
+    const dpIdx = sql.indexOf("when 'distribution_point'");
+    const liIdx = sql.indexOf("when 'local_item'");
+    const d3DP  = sql.indexOf("near_expiry', 'expired') then ia.expiry_date", dpIdx);
+    const d3LI  = sql.indexOf("near_expiry', 'expired') then ia.expiry_date", liIdx);
+    expect(d3DP).toBeGreaterThan(dpIdx);
+    expect(d3LI).toBeGreaterThan(liIdx);
+  });
+
+  // D4: distribution_point status guard
+  it('D4: RPC checks distribution point is active before serving payload', () => {
+    expect(sql).toContain('DISTRIBUTION_POINT_NOT_ACTIVE');
+  });
+
+  it('D4: status check appears in distribution_point branch of RPC', () => {
+    const dpBranchStart = sql.indexOf("when 'distribution_point'");
+    const dpGuard       = sql.indexOf('DISTRIBUTION_POINT_NOT_ACTIVE', dpBranchStart);
+    const whBranchStart = sql.indexOf("when 'warehouse'");
+    expect(dpGuard).toBeGreaterThan(dpBranchStart);
+    expect(dpGuard).toBeLessThan(whBranchStart);
+  });
+
+  // Grants: unchanged from migration 003
+  it('grants get_public_qr_payload to anon and authenticated (unchanged)', () => {
+    expect(sql).toContain('grant execute on function get_public_qr_payload');
+    expect(sql).toContain('to anon, authenticated');
+  });
+
+  it('revokes from authenticated before re-granting (idempotent grant pattern)', () => {
+    expect(sql).toContain('revoke all on function get_public_qr_payload(text) from authenticated');
+  });
+
+  // Verify block
+  it('includes a VERIFY block with assert statements', () => {
+    expect(sql).toContain('assert v_policy_qual');
+    expect(sql).toContain('assert v_fn_exists');
+    expect(sql).toContain('assert v_fn_def');
+  });
+
+  it('verify block checks for DISTRIBUTION_POINT_NOT_ACTIVE marker', () => {
+    expect(sql).toContain("ilike '%DISTRIBUTION_POINT_NOT_ACTIVE%'");
+  });
+
+  it('verify block checks avail_select_anon qual = false', () => {
+    expect(sql).toContain("v_policy_qual = 'false'");
+  });
+
+  it('has the MEDISTOCK_PHOENIX_PUBLIC_QR_PRIVACY_V1 marker', () => {
+    expect(sql).toContain('MEDISTOCK_PHOENIX_PUBLIC_QR_PRIVACY_V1');
+  });
+});
+
+describe('Migration 027: public QR service still uses only RPC (no raw table queries)', () => {
+  const qr = readSrc('shared/supabase/services/qr.service.ts');
+
+  it('getPublicQrPayload calls only the RPC, not .from(item_availability)', () => {
+    expect(qr).toContain("rpc('get_public_qr_payload'");
+    expect(qr).not.toMatch(/from\(['"]item_availability['"]\)/);
+  });
+
+  it('PublicQrScreen imports only getPublicQrPayload (no direct table access)', () => {
+    const screen = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(screen).toContain('getPublicQrPayload');
+    expect(screen).not.toMatch(/from\(['"]item_availability['"]\)/);
+    expect(screen).not.toMatch(/from\(['"]qr_tokens['"]\)/);
+  });
+});
+
+describe('Migration 027: privacy label is now DB-enforced, not just UI-only', () => {
+  it('migration 027 restricts batch_number exposure at DB level (avail_select_anon false)', () => {
+    const sql = readSql('migrations/027_phoenix_public_availability_privacy_hardening.sql');
+    expect(sql).toContain('using (false)');
+    // The privacy label "no batch data exposure" is now enforced: anon cannot
+    // directly query item_availability, so batch_number, price, notes are
+    // inaccessible without going through the curated RPC.
+    expect(sql).toMatch(/batch_number|actor_name_snapshot|price/i);
+  });
+
+  it('RPC (migration 003) does not return batch_number, price, trade_name, notes', () => {
+    const sql = readSql('migrations/003_phoenix_rpc_lifecycle.sql');
+    // Within the distribution_point items aggregation, confirm sensitive fields absent
+    const dpStart = sql.indexOf("when 'distribution_point'");
+    const dpEnd   = sql.indexOf("when 'warehouse'", dpStart);
+    const dpBlock = sql.slice(dpStart, dpEnd);
+    expect(dpBlock).not.toContain("'batch_number'");
+    expect(dpBlock).not.toContain("'price'");
+    expect(dpBlock).not.toContain("'trade_name'");
+    expect(dpBlock).not.toContain("'notes'");
+    expect(dpBlock).not.toContain("'supply_type'");
+  });
+
+  it('migration 027 RPC also does not add batch_number, price, trade_name, notes', () => {
+    const sql = readSql('migrations/027_phoenix_public_availability_privacy_hardening.sql');
+    const dpStart = sql.indexOf("when 'distribution_point'");
+    const dpEnd   = sql.indexOf("when 'warehouse'", dpStart);
+    const dpBlock = sql.slice(dpStart, dpEnd);
+    expect(dpBlock).not.toContain("'batch_number'");
+    expect(dpBlock).not.toContain("'price'");
+    expect(dpBlock).not.toContain("'trade_name'");
+    expect(dpBlock).not.toContain("'notes'");
+    expect(dpBlock).not.toContain("'supply_type'");
+  });
+});

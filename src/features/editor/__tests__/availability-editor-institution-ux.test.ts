@@ -1675,7 +1675,9 @@ describe('PORT-CARD-QR-PREVIEW-PRINT-UX-A: QR preview and print in port cards', 
     const migsDir = join(PHOENIX, 'supabase/migrations');
     if (!existsSync(migsDir)) return;
     const migFiles = readdirSync(migsDir) as string[];
-    expect(migFiles.some((f: string) => f.startsWith('027_'))).toBe(false);
+    // Migration 027 exists but is the privacy-hardening migration, not a QR preview UX migration.
+    // Confirm that any 027_ file is the privacy hardening one, not a port-card/QR-preview migration.
+    expect(migFiles.some((f: string) => f.startsWith('027_') && /qr_preview|port_card/i.test(f))).toBe(false);
   });
 
   it('Data Reset is still absent after QR preview UX changes', () => {
