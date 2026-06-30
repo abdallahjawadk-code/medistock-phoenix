@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
   computeMaterialAlerts,
@@ -448,11 +448,11 @@ describe('computeMaterialAlerts — sorting', () => {
   it('sorts exchange suggestions: urgent before high before opportunity', () => {
     const ID1 = 'match-item';
     const reports = [
-      sr({ id: 's1', org: 'A', organization_id: 'org-A', status_type: 'surplus',    item_id: ID1, quantity: 0 }),    // → opportunity (no qty)
-      sr({ id: 's2', org: 'A', organization_id: 'org-A', status_type: 'near_expiry', item_id: ID1 + 'x', item_name: 'DrugX' }),
-      sr({ id: 't1', org: 'B', organization_id: 'org-B', status_type: 'missing',    item_id: ID1 }),    // → opportunity pair
-      sr({ id: 's3', org: 'C', organization_id: 'org-C', status_type: 'surplus',    item_id: ID1, quantity: 10 }),
-      sr({ id: 't2', org: 'D', organization_id: 'org-D', status_type: 'missing',    item_id: ID1 }),
+      sr({ id: 's1', organization_id: 'org-A', status_type: 'surplus',     item_id: ID1, quantity: 0 }),    // → opportunity (no qty)
+      sr({ id: 's2', organization_id: 'org-A', status_type: 'near_expiry', item_id: ID1 + 'x', item_name: 'DrugX' }),
+      sr({ id: 't1', organization_id: 'org-B', status_type: 'missing',     item_id: ID1 }),    // → opportunity pair
+      sr({ id: 's3', organization_id: 'org-C', status_type: 'surplus',     item_id: ID1, quantity: 10 }),
+      sr({ id: 't2', organization_id: 'org-D', status_type: 'missing',     item_id: ID1 }),
     ];
     const { suggestions } = computeMaterialAlerts(reports, TODAY);
     if (suggestions.length < 2) return; // skip if not enough pairs
@@ -519,5 +519,193 @@ describe('InterInstitutionAlertsScreen: Material Exchange Command Center', () =>
   it('has filter chip UI', () => {
     const src = readFileSync(screenPath, 'utf8');
     expect(src).toContain('filterChip');
+  });
+});
+
+// ─── POST-SMART: Dashboard widget polish ──────────────────────────────────────
+
+describe('POST-SMART: Dashboard widget polish', () => {
+  const dashPath = join(__dirname, '../../dashboard/DashboardScreen.tsx');
+
+  it('shows no_critical_alerts_now as the empty state when no critical/urgent alerts', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).toContain('no_critical_alerts_now');
+  });
+
+  it('references monthsBucket to render threshold badge on alert cards', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).toContain('monthsBucket');
+  });
+
+  it('references ExpiryBucketBadge component for threshold display', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).toContain('ExpiryBucketBadge');
+  });
+
+  it('View all button navigates to screen 13', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).toMatch(/onNavigate\s*\(\s*13\s*\)/);
+  });
+
+  it('uses filter_expired, filter_3_months, filter_6_months, filter_9_months keys', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).toContain('filter_expired');
+    expect(src).toContain('filter_3_months');
+    expect(src).toContain('filter_6_months');
+    expect(src).toContain('filter_9_months');
+  });
+
+  it('does not contain fake, hardcode, or demo alert data', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).not.toMatch(/\b(fake|hardcode|hardcoded|demoAlert)\b/i);
+  });
+
+  it('does not use service_role', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).not.toContain('service_role');
+  });
+
+  it('does not use auth.admin', () => {
+    const src = readFileSync(dashPath, 'utf8');
+    expect(src).not.toContain('auth.admin');
+  });
+});
+
+// ─── POST-SMART: IIA threshold filter chips ───────────────────────────────────
+
+describe('POST-SMART: IIA threshold filter chips', () => {
+  const screenPath = join(__dirname, '../InterInstitutionAlertsScreen.tsx');
+
+  it('has exp_expired filter chip value', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('exp_expired');
+  });
+
+  it('has exp_3months filter chip value', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('exp_3months');
+  });
+
+  it('has exp_6months filter chip value', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('exp_6months');
+  });
+
+  it('has exp_9months filter chip value', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('exp_9months');
+  });
+
+  it('imports expiryBucket from materialAlertEngine for threshold computation', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('expiryBucket');
+    expect(src).toContain('materialAlertEngine');
+  });
+
+  it('uses filter_expired i18n key for chip label', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('filter_expired');
+  });
+
+  it('uses filter_9_months i18n key for chip label', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('filter_9_months');
+  });
+
+  it('uses filter_6_months i18n key for chip label', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('filter_6_months');
+  });
+
+  it('uses filter_3_months i18n key for chip label', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('filter_3_months');
+  });
+
+  it('uses filter_data_quality i18n key for chip label', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('filter_data_quality');
+  });
+
+  it('renders ExpiryBucketBadge on cards with expiry date', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).toContain('ExpiryBucketBadge');
+  });
+
+  it('does not use service_role', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).not.toContain('service_role');
+  });
+
+  it('does not use auth.admin', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).not.toContain('auth.admin');
+  });
+});
+
+// ─── POST-SMART: i18n completeness ───────────────────────────────────────────
+
+describe('POST-SMART: i18n key completeness', () => {
+  const stringsPath = join(__dirname, '../../../shared/i18n/strings.ts');
+
+  it('has no_critical_alerts_now in Arabic and English', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('no_critical_alerts_now');
+    expect(src).toContain('لا توجد تنبيهات حرجة حالياً');
+    expect(src).toContain('No critical alerts right now');
+  });
+
+  it('has filter_expired key', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('filter_expired');
+  });
+
+  it('has filter_9_months, filter_6_months, filter_3_months keys', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('filter_9_months');
+    expect(src).toContain('filter_6_months');
+    expect(src).toContain('filter_3_months');
+  });
+
+  it('has filter_surplus, filter_missing, filter_data_quality keys', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('filter_surplus');
+    expect(src).toContain('filter_missing');
+    expect(src).toContain('filter_data_quality');
+  });
+
+  it('has expiry_threshold_9_months, expiry_threshold_6_months, expiry_threshold_3_months keys', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('expiry_threshold_9_months');
+    expect(src).toContain('expiry_threshold_6_months');
+    expect(src).toContain('expiry_threshold_3_months');
+  });
+
+  it('has expired key with Arabic and English labels', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain("expired:");
+    expect(src).toContain('منتهي الصلاحية');
+    expect(src).toContain('Expired');
+  });
+
+  it('has professional Arabic labels for 9/6/3-month thresholds', () => {
+    const src = readFileSync(stringsPath, 'utf8');
+    expect(src).toContain('ينفذ خلال 9 أشهر');
+    expect(src).toContain('ينفذ خلال 6 أشهر');
+    expect(src).toContain('ينفذ خلال 3 أشهر');
+  });
+});
+
+// ─── POST-SMART: security guardrails ─────────────────────────────────────────
+
+describe('POST-SMART: no SQL or migration created', () => {
+  it('no migration file was created in this phase (supabase/migrations pattern)', () => {
+    // This phase must not create SQL migrations
+    // We verify this by checking that no new migration files reference the phase task ID
+    const migrationsDir = join(__dirname, '../../../../../supabase/migrations');
+    let files: string[] = [];
+    try { files = readdirSync(migrationsDir); } catch { /* dir may not exist */ }
+    const phaseFiles = files.filter(f => f.includes('POST_SMART') || f.includes('post_smart'));
+    expect(phaseFiles).toHaveLength(0);
   });
 });

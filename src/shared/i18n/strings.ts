@@ -737,6 +737,20 @@ export const T: Dict = {
   missing_material:                 { ar: 'المادة مفقودة / غير متوفرة',                       en: 'Material is missing / out of stock' },
   out_of_stock:                     { ar: 'المادة شحيحة — المخزون منخفض',                     en: 'Material is scarce — low stock' },
   no_smart_alerts:                  { ar: 'لا توجد تنبيهات ذكية حالياً',                      en: 'No smart alerts at this time' },
+  no_critical_alerts_now:           { ar: 'لا توجد تنبيهات حرجة حالياً',                      en: 'No critical alerts right now' },
+
+  /* ── Threshold filters & badges (POST-SMART-ALERTS-USABILITY-AND-THRESHOLD-POLISH-A) ── */
+  filter_expired:            { ar: 'منتهي الصلاحية',                                          en: 'Expired' },
+  filter_9_months:           { ar: '9 أشهر',                                                  en: '9 months' },
+  filter_6_months:           { ar: '6 أشهر',                                                  en: '6 months' },
+  filter_3_months:           { ar: '3 أشهر',                                                  en: '3 months' },
+  filter_surplus:            { ar: 'فائض',                                                    en: 'Surplus' },
+  filter_missing:            { ar: 'مفقود',                                                   en: 'Missing' },
+  filter_data_quality:       { ar: 'جودة البيانات',                                           en: 'Data Quality' },
+  expiry_threshold_9_months: { ar: 'ينفذ خلال 9 أشهر',                                        en: '9-Month Expiry' },
+  expiry_threshold_6_months: { ar: 'ينفذ خلال 6 أشهر',                                        en: '6-Month Expiry' },
+  expiry_threshold_3_months: { ar: 'ينفذ خلال 3 أشهر',                                        en: '3-Month Expiry' },
+  expired:                   { ar: 'منتهي الصلاحية',                                          en: 'Expired' },
 
   /* ── Confirmation dialog ── */
   confirm_apply:  { ar: 'تأكيد التطبيق',                      en: 'Confirm Apply' },

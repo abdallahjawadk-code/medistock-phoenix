@@ -216,3 +216,83 @@ It also means the engine has zero dependency on the i18n module.
 **Why calendar `addMonths()` instead of fixed day counts?**  
 91/183/274 days diverge from 3/6/9 calendar months by up to 2–3 days depending on
 the month. Using `new Date(y, m + n, d)` gives exact calendar-month boundaries.
+
+---
+
+## 10. Post-SMART UX Polish (POST-SMART-ALERTS-USABILITY-AND-THRESHOLD-POLISH-A)
+
+**Date:** 2026-06-30  
+**Scope:** UX/visual polish only — no SQL, no migrations, no engine logic changes.
+
+### Final 9 / 6 / 3 / Expired Color Model
+
+| Bucket       | Severity     | Border / Badge Color            | Tone           |
+|---|---|---|---|
+| `expired`    | `critical`   | `var(--err)` dark red           | Serious danger |
+| `3_months`   | `urgent`     | `#dc2626` rose/red              | Urgent warning |
+| `6_months`   | `high`       | `var(--warn)` orange            | Strong warning |
+| `9_months`   | `watch`      | `#d97706` amber                 | Early warning  |
+| surplus      | `opportunity`| `var(--p)` blue/violet          | Opportunity    |
+| missing      | `critical`   | `var(--err)` red                | Critical need  |
+
+### Visible UI Badges and Filters
+
+**`ExpiryBucketBadge` component** (defined locally in both Dashboard and IIA screen):
+- Renders a colored pill badge showing "Expired / منتهي الصلاحية", "3 months / 3 أشهر", etc.
+- Used on Dashboard smart alert cards when `a.kind === 'expiry' && a.monthsBucket` is set.
+- Used on IIA screen alert cards when the source has an `expiryDate` that computes to a bucket.
+
+**Threshold filter chips in IIA screen** (three rows):
+1. Priority row: All · High · Medium · Low
+2. Expiry threshold row: Expired · 3 months · 6 months · 9 months
+3. Condition row: Surplus → Missing · Missing · Scarce · Data Quality
+
+### Dashboard Widget Behavior
+
+- **Always shown** when `materialAlertResult` is not null (data loaded).
+- **Empty state** (`no_critical_alerts_now` key): shown when no critical/urgent alerts exist.
+  - Arabic: لا توجد تنبيهات حرجة حالياً
+  - English: No critical alerts right now
+- **Top 3 cards**: critical + urgent alerts only, sorted highest severity first.
+- **Threshold badge**: shown per card for expiry-kind alerts (9/6/3/expired).
+- **Expiry date**: shown in small text below material name when `a.expiryDate` is set.
+- **View all** button always visible, navigates to screen 13 (Inter-Institution Alerts).
+
+### Mobile / RTL Notes
+
+- All cards use `dir="auto"` for material/institution names.
+- Expiry date displayed `dir="ltr"` to preserve date format.
+- Filter chip rows wrap on mobile via `flexWrap: 'wrap'`.
+- `PhoenixCard` hover lift is CSS-transition-based (60ms implicit by theme).
+
+### Animation and Accessibility
+
+- Entrance animation: container `animation: 'fs .3s ease'` (existing, one-shot, not looping).
+- No infinite pulsing or blinking animations added.
+- Hover effect: `PhoenixCard` hover prop (existing CSS transition, no JS required).
+- `aria-pressed` on Chip and SummaryCard buttons for screen reader state.
+- Color is never the **only** signal — badges carry text labels in both languages.
+
+### i18n Keys Added (12 keys, phase POST-SMART)
+
+`no_critical_alerts_now`, `filter_expired`, `filter_9_months`, `filter_6_months`,
+`filter_3_months`, `filter_surplus`, `filter_missing`, `filter_data_quality`,
+`expiry_threshold_9_months`, `expiry_threshold_6_months`, `expiry_threshold_3_months`,
+`expired`
+
+### What Was Intentionally Not Changed
+
+- `materialAlertEngine.ts` — engine logic untouched (no bugs found).
+- `inter-institution-alerts.ts` — domain logic untouched.
+- `inter-institution-alerts.service.ts` — service untouched.
+- No migrations, no RLS changes, no SQL.
+- No new npm dependencies added.
+- `StatusCenterScreen` exchange section — known duplicate, not touched per scope rules.
+
+### Remaining Future Work
+
+- Dedicated **Material Alerts screen** that renders all `MaterialAlert[]` from the engine
+  with full threshold filter chips (expired/3/6/9/surplus/missing/data-quality).
+- Persistent alert storage (requires new migration — future phase).
+- External notifications (future phase after persistent alerts).
+- `ExpiryBucketBadge` could be extracted to `src/shared/ui/` when more than 2 screens use it.

@@ -19,6 +19,39 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
 interface Props { onNavigate: (screen: number) => void; }
 
+// ─── Severity → left-border color ────────────────────────────────────────────
+
+const SEVERITY_BORDER_COLOR: Record<string, string> = {
+  critical:    'var(--err)',
+  urgent:      '#dc2626',
+  high:        'var(--warn)',
+  watch:       '#d97706',
+  opportunity: 'var(--p)',
+  info:        'var(--brd)',
+};
+
+// ─── Expiry bucket badge ──────────────────────────────────────────────────────
+
+function ExpiryBucketBadge({ bucket, lang }: { bucket: string; lang: 'ar' | 'en' }) {
+  let label = '';
+  let color = '';
+  let bg    = '';
+  if      (bucket === 'expired')   { label = t('filter_expired',  lang); color = 'var(--err)';  bg = 'var(--err2)';  }
+  else if (bucket === '3_months')  { label = t('filter_3_months', lang); color = '#dc2626';     bg = '#fef2f2';      }
+  else if (bucket === '6_months')  { label = t('filter_6_months', lang); color = 'var(--warn)'; bg = 'var(--warn2)'; }
+  else if (bucket === '9_months')  { label = t('filter_9_months', lang); color = '#b45309';     bg = '#fef3c7';      }
+  else return null;
+  return (
+    <span style={{
+      padding: '1px 7px', borderRadius: 'var(--rpill)',
+      border: `1px solid ${color}`, background: bg, color,
+      fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap',
+    }}>
+      {label}
+    </span>
+  );
+}
+
 export function DashboardScreen({ onNavigate }: Props) {
   const { lang, activeOrgId, configured } = useApp();
   const isMobile = window.innerWidth < 768;
@@ -145,8 +178,8 @@ export function DashboardScreen({ onNavigate }: Props) {
         </>
       )}
 
-      {/* Smart Material Alerts compact widget */}
-      {materialAlertResult && (materialAlertResult.summary.criticalCount > 0 || materialAlertResult.summary.urgentCount > 0) && (
+      {/* Smart Material Alerts compact widget — always shown when data is loaded */}
+      {materialAlertResult && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('smart_material_alerts', lang)}</h3>
@@ -157,28 +190,49 @@ export function DashboardScreen({ onNavigate }: Props) {
               {t('view_all_alerts', lang)} →
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: isMobile ? '20px' : '28px' }}>
-            {topSmartAlerts.map(a => {
-              const name = lang === 'ar' ? (a.materialNameAr || a.materialName) : (a.materialName || a.materialNameAr);
-              const inst = lang === 'ar' ? (a.institutionNameAr || a.institutionName) : (a.institutionName || a.institutionNameAr);
-              const isCritical = a.severity === 'critical';
-              return (
-                <PhoenixCard key={a.id} padding="10px 14px" hover onClick={() => onNavigate(13)}
-                  style={{ borderInlineStart: `3px solid ${isCritical ? 'var(--err)' : '#dc2626'}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{name || '—'}</span>
-                      <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">{inst}</div>
+
+          {topSmartAlerts.length === 0 ? (
+            <div style={{
+              padding: '14px 16px', borderRadius: 'var(--r3)',
+              background: 'var(--s)', border: '1px solid var(--brd)',
+              color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center',
+              marginBottom: isMobile ? '20px' : '28px',
+            }}>
+              ✓ {t('no_critical_alerts_now', lang)}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: isMobile ? '20px' : '28px' }}>
+              {topSmartAlerts.map(a => {
+                const name = lang === 'ar' ? (a.materialNameAr || a.materialName) : (a.materialName || a.materialNameAr);
+                const inst = lang === 'ar' ? (a.institutionNameAr || a.institutionName) : (a.institutionName || a.institutionNameAr);
+                const borderColor  = SEVERITY_BORDER_COLOR[a.severity] ?? 'var(--brd)';
+                const sevVariant   = (a.severity === 'critical' || a.severity === 'urgent') ? 'err' as const : a.severity === 'high' ? 'warn' as const : 'neutral' as const;
+                const sevKey       = a.severity === 'critical' ? 'critical' : a.severity === 'urgent' ? 'urgent' : a.severity === 'high' ? 'high' : 'watch';
+                return (
+                  <PhoenixCard key={a.id} padding="10px 14px" hover onClick={() => onNavigate(13)}
+                    style={{ borderInlineStart: `3px solid ${borderColor}` }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{name || '—'}</span>
+                        <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">{inst}</div>
+                        {a.expiryDate && (
+                          <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
+                            ⏱ {t('iia_expiry', lang)}: {a.expiryDate}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+                        {a.kind === 'expiry' && a.monthsBucket && (
+                          <ExpiryBucketBadge bucket={a.monthsBucket} lang={lang} />
+                        )}
+                        <PhoenixStatusBadge variant={sevVariant} label={t(sevKey, lang)} />
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-                      <PhoenixStatusBadge variant="err" label={t(isCritical ? 'critical' : 'urgent', lang)} />
-                      <span style={{ fontSize: '10px', color: 'var(--warn)', fontWeight: 600 }}>⚠ {t('ea_manual', lang)}</span>
-                    </div>
-                  </div>
-                </PhoenixCard>
-              );
-            })}
-          </div>
+                  </PhoenixCard>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 

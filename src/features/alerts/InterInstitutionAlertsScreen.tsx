@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -18,6 +18,7 @@ import {
   type ScopedAlert,
   type StatusPair,
 } from './inter-institution-alerts';
+import { parseExpiryDate, expiryBucket, type ExpiryBucket } from './materialAlertEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,9 @@ type ChipFilter =
   | ''
   | 'high' | 'medium' | 'low'
   | 'surplus' | 'near_expiry'
-  | 'missing' | 'scarce';
+  | 'missing' | 'scarce'
+  | 'exp_expired' | 'exp_3months' | 'exp_6months' | 'exp_9months'
+  | 'data_quality';
 
 // ─── Severity rail colors ─────────────────────────────────────────────────────
 
@@ -34,6 +37,36 @@ const SEVERITY_BORDER: Record<string, string> = {
   medium: 'var(--warn)',
   low:    'var(--brd)',
 };
+
+// ─── Expiry bucket badge ──────────────────────────────────────────────────────
+
+function ExpiryBucketBadge({ bucket, lang }: { bucket: string; lang: 'ar' | 'en' }) {
+  let label = '';
+  let color = '';
+  let bg    = '';
+  if      (bucket === 'expired')   { label = t('filter_expired',  lang); color = 'var(--err)';  bg = 'var(--err2)';  }
+  else if (bucket === '3_months')  { label = t('filter_3_months', lang); color = '#dc2626';     bg = '#fef2f2';      }
+  else if (bucket === '6_months')  { label = t('filter_6_months', lang); color = 'var(--warn)'; bg = 'var(--warn2)'; }
+  else if (bucket === '9_months')  { label = t('filter_9_months', lang); color = '#b45309';     bg = '#fef3c7';      }
+  else return null;
+  return (
+    <span style={{
+      padding: '1px 7px', borderRadius: 'var(--rpill)',
+      border: `1px solid ${color}`, background: bg, color,
+      fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap',
+    }}>
+      {label}
+    </span>
+  );
+}
+
+// ─── Compute expiry bucket for a ScopedAlert (from its source expiryDate) ────
+
+function alertExpBucket(expiryDate: string | null, today: Date): ExpiryBucket | null {
+  if (!expiryDate) return null;
+  const d = parseExpiryDate(expiryDate);
+  return d ? expiryBucket(today, d) : null;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +117,7 @@ export function InterInstitutionAlertsScreen() {
   const { lang, role, activeOrgId } = useApp();
   const isMobile = window.innerWidth < 768;
   const isSuper  = role === 'super_admin';
+  const today    = useMemo(() => new Date(), []);
 
   const [filterChip, setFilterChip]   = useState<ChipFilter>('');
   const [filterPair, setFilterPair]   = useState<StatusPair | ''>('');
@@ -113,13 +147,19 @@ export function InterInstitutionAlertsScreen() {
 
   // Active filter applied
   const filtered = sortByPriority(allAlerts.filter(a => {
-    if (filterChip === 'high'       && a.priority !== 'high') return false;
-    if (filterChip === 'medium'     && a.priority !== 'medium') return false;
-    if (filterChip === 'low'        && a.priority !== 'low') return false;
-    if (filterChip === 'surplus'    && a.sourceStatus !== 'surplus') return false;
-    if (filterChip === 'near_expiry'&& a.sourceStatus !== 'near_expiry') return false;
-    if (filterChip === 'missing'    && a.targetStatus !== 'missing') return false;
-    if (filterChip === 'scarce'     && a.targetStatus !== 'scarce') return false;
+    if (filterChip === 'high'        && a.priority !== 'high') return false;
+    if (filterChip === 'medium'      && a.priority !== 'medium') return false;
+    if (filterChip === 'low'         && a.priority !== 'low') return false;
+    if (filterChip === 'surplus'     && a.sourceStatus !== 'surplus') return false;
+    if (filterChip === 'near_expiry' && a.sourceStatus !== 'near_expiry') return false;
+    if (filterChip === 'missing'     && a.targetStatus !== 'missing') return false;
+    if (filterChip === 'scarce'      && a.targetStatus !== 'scarce') return false;
+    if (filterChip === 'data_quality') return false; // IIA alerts are not data-quality items
+    // Threshold filters: based on computed expiry bucket of the source
+    if (filterChip === 'exp_expired'  && alertExpBucket(a.expiryDate ?? null, today) !== 'expired')   return false;
+    if (filterChip === 'exp_3months'  && alertExpBucket(a.expiryDate ?? null, today) !== '3_months')  return false;
+    if (filterChip === 'exp_6months'  && alertExpBucket(a.expiryDate ?? null, today) !== '6_months')  return false;
+    if (filterChip === 'exp_9months'  && alertExpBucket(a.expiryDate ?? null, today) !== '9_months')  return false;
     if (filterPair && a.statusPair !== filterPair) return false;
     if (filterInst && a.sourceOrgId !== filterInst && a.targetOrgId !== filterInst) return false;
     if (search) {
@@ -200,16 +240,28 @@ export function InterInstitutionAlertsScreen() {
         </div>
       )}
 
-      {/* Filter chips */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-        <Chip label={t('iia_all', lang)} active={filterChip === ''} onClick={() => setFilterChip('')} />
-        <Chip label={t('iia_priority_high', lang)} active={filterChip === 'high'} onClick={() => toggleChip('high')} />
+      {/* Filter chips — priority */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+        <Chip label={t('iia_all', lang)}             active={filterChip === ''}      onClick={() => setFilterChip('')} />
+        <Chip label={t('iia_priority_high', lang)}   active={filterChip === 'high'}   onClick={() => toggleChip('high')} />
         <Chip label={t('iia_priority_medium', lang)} active={filterChip === 'medium'} onClick={() => toggleChip('medium')} />
-        <Chip label={t('iia_priority_low', lang)} active={filterChip === 'low'} onClick={() => toggleChip('low')} />
-        <Chip label={t('iia_pair_expiry_missing', lang)} active={filterChip === 'near_expiry'} onClick={() => toggleChip('near_expiry')} />
-        <Chip label={t('iia_pair_surplus_missing', lang)} active={filterChip === 'surplus'} onClick={() => toggleChip('surplus')} />
-        <Chip label={t('miss', lang)} active={filterChip === 'missing'} onClick={() => toggleChip('missing')} />
-        <Chip label={t('d_scarce', lang)} active={filterChip === 'scarce'} onClick={() => toggleChip('scarce')} />
+        <Chip label={t('iia_priority_low', lang)}    active={filterChip === 'low'}    onClick={() => toggleChip('low')} />
+      </div>
+
+      {/* Filter chips — expiry thresholds (explicit 9/6/3/expired) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+        <Chip label={t('filter_expired',  lang)} active={filterChip === 'exp_expired'} onClick={() => toggleChip('exp_expired')} />
+        <Chip label={t('filter_3_months', lang)} active={filterChip === 'exp_3months'} onClick={() => toggleChip('exp_3months')} />
+        <Chip label={t('filter_6_months', lang)} active={filterChip === 'exp_6months'} onClick={() => toggleChip('exp_6months')} />
+        <Chip label={t('filter_9_months', lang)} active={filterChip === 'exp_9months'} onClick={() => toggleChip('exp_9months')} />
+      </div>
+
+      {/* Filter chips — condition */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+        <Chip label={t('iia_pair_surplus_missing', lang)} active={filterChip === 'surplus'}     onClick={() => toggleChip('surplus')} />
+        <Chip label={t('filter_missing', lang)}            active={filterChip === 'missing'}     onClick={() => toggleChip('missing')} />
+        <Chip label={t('d_scarce', lang)}                  active={filterChip === 'scarce'}      onClick={() => toggleChip('scarce')} />
+        <Chip label={t('filter_data_quality', lang)}       active={filterChip === 'data_quality'} onClick={() => toggleChip('data_quality')} />
       </div>
 
       {/* Secondary filters: pair + institution + search */}
@@ -257,7 +309,7 @@ export function InterInstitutionAlertsScreen() {
       {!result.loading && !result.error && filtered.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filtered.map(a => (
-            <AlertCard key={a.id} a={a} lang={lang} isMobile={isMobile} onCopy={copy} />
+            <AlertCard key={a.id} a={a} lang={lang} isMobile={isMobile} onCopy={copy} today={today} />
           ))}
         </div>
       )}
@@ -297,25 +349,30 @@ function SummaryCard({ icon, count, label, active, onClick, accent }: {
 
 // ─── Alert card ───────────────────────────────────────────────────────────────
 
-function AlertCard({ a, lang, isMobile, onCopy }: {
+function AlertCard({ a, lang, isMobile, onCopy, today }: {
   a: ScopedAlert;
   lang: 'ar' | 'en';
   isMobile: boolean;
   onCopy: (text: string) => void;
+  today: Date;
 }) {
-  const borderColor = SEVERITY_BORDER[a.priority] ?? 'var(--brd)';
-  const priorityVariant = a.priority === 'high' ? 'err' as const : a.priority === 'medium' ? 'warn' as const : 'neutral' as const;
+  const borderColor      = SEVERITY_BORDER[a.priority] ?? 'var(--brd)';
+  const priorityVariant  = a.priority === 'high' ? 'err' as const : a.priority === 'medium' ? 'warn' as const : 'neutral' as const;
   const priorityLabelKey = a.priority === 'high' ? 'iia_priority_high' : a.priority === 'medium' ? 'iia_priority_medium' : 'iia_priority_low';
+  const expBucket        = alertExpBucket(a.expiryDate ?? null, today);
 
   return (
     <PhoenixCard padding="16px" style={{ borderInlineStart: `3px solid ${borderColor}` }}>
-      {/* Title + priority */}
+      {/* Title + priority + threshold badge */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '10.5px', color: 'var(--t2)', fontWeight: 600 }}>{t('iia_item', lang)}</div>
           <div style={{ fontSize: '14px', fontWeight: 700 }} dir="auto">{alertItemName(a, lang)}</div>
         </div>
-        <PhoenixStatusBadge variant={priorityVariant} label={t(priorityLabelKey, lang)} />
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {expBucket && <ExpiryBucketBadge bucket={expBucket} lang={lang} />}
+          <PhoenixStatusBadge variant={priorityVariant} label={t(priorityLabelKey, lang)} />
+        </div>
       </div>
 
       {/* Source / Target */}
