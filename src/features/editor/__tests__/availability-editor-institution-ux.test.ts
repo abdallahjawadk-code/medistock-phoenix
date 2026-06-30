@@ -1273,6 +1273,135 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(sql).toContain('VERIFY');
     expect(sql).toContain('ASSERT');
   });
+
+  // ── Migration 026 tests ──────────────────────────────────────────────────────
+
+  it('migration 026 exists as a QR random bytes fix migration', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toContain('BEGIN;');
+    expect(sql).toContain('COMMIT;');
+  });
+
+  it('migration 026 fixes unqualified gen_random_bytes by using extensions schema', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toContain('extensions.gen_random_bytes(32)');
+    expect(noComments).toContain('extensions.gen_random_bytes(12)');
+  });
+
+  it('migration 026 fixes unqualified digest by using extensions schema', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toContain("extensions.digest(v_plain_token, 'sha256')");
+  });
+
+  it('migration 026 does not use unqualified gen_random_bytes in executable SQL', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    // No unqualified gen_random_bytes call should remain (must have schema prefix)
+    expect(noComments).not.toMatch(/[^.]gen_random_bytes\(/);
+  });
+
+  it('migration 026 preserves qr.generate permission check', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain("qr.generate");
+    expect(sql).toContain('create_qr_for_target');
+  });
+
+  it('migration 026 preserves phoenix_profile_has_permission in create_qr_for_target', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    const body = sql.slice(fnStart, fnEnd);
+    expect(body).toContain('phoenix_profile_has_permission');
+  });
+
+  it('migration 026 preserves SECURITY DEFINER in create_qr_for_target', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    const body = sql.slice(fnStart, fnEnd);
+    expect(body).toContain('SECURITY DEFINER');
+  });
+
+  it('migration 026 preserves org guard TARGET_NOT_FOUND_OR_FORBIDDEN', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    const body = sql.slice(fnStart, fnEnd);
+    expect(body).toContain('TARGET_NOT_FOUND_OR_FORBIDDEN');
+  });
+
+  it('migration 026 grants EXECUTE to authenticated and revokes from anon', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+create_qr_for_target.*TO\s+authenticated/i);
+    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+create_qr_for_target.*FROM\s+anon/i);
+  });
+
+  it('migration 026 does not grant EXECUTE to anon for create_qr_for_target', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+create_qr_for_target.*TO\s+anon/i);
+  });
+
+  it('migration 026 VERIFY block asserts extensions.gen_random_bytes exists', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain("n.nspname = 'extensions' AND p.proname = 'gen_random_bytes'");
+    expect(sql).toContain('extensions.gen_random_bytes not found');
+  });
+
+  it('migration 026 VERIFY block asserts create_qr_for_target is SECURITY DEFINER', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain('prosecdef');
+    expect(sql).toContain('create_qr_for_target is not SECURITY DEFINER');
+  });
+
+  it('migration 026 VERIFY block asserts authenticated can EXECUTE and anon cannot', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain("has_function_privilege('authenticated'");
+    expect(sql).toContain("has_function_privilege('anon'");
+    expect(sql).toContain('authenticated cannot EXECUTE create_qr_for_target');
+    expect(sql).toContain('anon can EXECUTE create_qr_for_target');
+  });
+
+  it('migration 026 VERIFY block checks disable_qr_token still has qr.revoke', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain('disable_qr_token');
+    expect(sql).toContain('qr.revoke');
+    expect(sql).toContain('disable_qr_token does not reference qr.revoke');
+  });
+
+  it('migration 026 create_qr_for_target function body has no service_role reference', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    // Check the function body only — VERIFY block legitimately references service_role
+    // for detection; the function itself must not expose it.
+    const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('$$;', fnStart) + 3;
+    const fnBody  = sql.slice(fnStart, fnEnd);
+    expect(fnBody).not.toMatch(/service_role/i);
+  });
+
+  it('migration 026 has no DROP TABLE, no TRUNCATE, no destructive CASCADE', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/^\s*drop table/im);
+    expect(noComments).not.toMatch(/truncate/i);
+    expect(noComments).not.toMatch(/delete cascade/i);
+  });
+
+  it('migration 026 does not modify disable_qr_token (only create_qr_for_target is replaced)', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toContain('CREATE OR REPLACE FUNCTION disable_qr_token');
+  });
+
+  it('migration 026 does not add anon write grants on QR tables', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+(INSERT|UPDATE|DELETE).*ON\s+(TABLE\s+)?.*qr_/i);
+  });
 });
 
 describe('Safety: Data Reset absent, Intake disabled', () => {
