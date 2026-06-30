@@ -1551,6 +1551,133 @@ describe('FIX-AVAILABILITY-RPC-A: upsertAvailability uses RPC not PostgREST .ups
   });
 });
 
+// ============================================================================
+// FIX-AVAILABILITY-RPC-PORT-NAME-GIT-SYNC-A (migration 031)
+//   Syncs the live hotfix that made phoenix_upsert_availability derive and
+//   insert port_name, satisfying item_availability_identity_chk.
+// ============================================================================
+
+describe('FIX-AVAILABILITY-RPC-PORT-NAME-GIT-SYNC-A: migration 031 port_name fix', () => {
+  const REL = 'supabase/migrations/031_phoenix_availability_upsert_rpc_port_name_fix.sql';
+
+  it('(1) migration 031 file exists and is non-empty', () => {
+    expect(existsSync(join(PHOENIX, REL))).toBe(true);
+    expect(readPhoenix(REL).length).toBeGreaterThan(500);
+  });
+
+  it('(2) replaces public.phoenix_upsert_availability', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.phoenix_upsert_availability');
+  });
+
+  it('(2b) keeps the same 12-argument signature', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain('p_distribution_point_id uuid');
+    expect(sql).toContain('p_scientific_name        text');
+    expect(sql).toContain('p_trade_name             text');
+    expect(sql).toContain('p_dosage_form            text');
+    expect(sql).toContain('p_concentration          text');
+    expect(sql).toContain('p_quantity               integer');
+    expect(sql).toContain('p_condition              text');
+    expect(sql).toContain('p_expiry_date            date');
+    expect(sql).toContain('p_batch_number           text');
+    expect(sql).toContain('p_notes                  text');
+    expect(sql).toContain('p_supply_type            text');
+    expect(sql).toContain('p_price                  numeric');
+  });
+
+  it('(3) is SECURITY DEFINER', () => {
+    expect(readPhoenix(REL)).toContain('SECURITY DEFINER');
+  });
+
+  it('(4) sets search_path = public', () => {
+    expect(readPhoenix(REL)).toContain('SET search_path = public');
+  });
+
+  it('(4b) keeps LANGUAGE plpgsql', () => {
+    expect(readPhoenix(REL)).toContain('LANGUAGE plpgsql');
+  });
+
+  it('(4c) keeps the scientific_name_required guard', () => {
+    expect(readPhoenix(REL)).toContain('scientific_name_required');
+  });
+
+  it('(5) inserts port_name into item_availability', () => {
+    const sql = readPhoenix(REL);
+    const insertStart = sql.indexOf('INSERT INTO public.item_availability');
+    const insertEnd   = sql.indexOf('RETURNING id INTO v_id', insertStart);
+    const insertBlock = sql.slice(insertStart, insertEnd);
+    expect(insertStart).toBeGreaterThan(-1);
+    expect(insertBlock).toContain('port_name');
+    expect(insertBlock).toContain('v_port_name');
+  });
+
+  it('(6) derives v_port_name from distribution_points', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain('v_port_name');
+    expect(sql).toContain('FROM public.distribution_points');
+    // port_name is derived from the distribution_points row, not the client
+    expect(sql).toMatch(/v_port_name\s*:=\s*COALESCE/);
+  });
+
+  it('(6b) derives organization_id from distribution_points, not the client', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain('v_point_org := v_dp.organization_id');
+    expect(sql).not.toContain('p_organization_id');
+  });
+
+  it('(7) keeps REVOKE ALL ... FROM PUBLIC, anon', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION[\s\S]*FROM\s+PUBLIC,\s*anon/i);
+  });
+
+  it('(8) grants EXECUTE to authenticated', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION[\s\S]*TO\s+authenticated/i);
+  });
+
+  it('(8b) preserves the role authorization matrix', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain("v_role = 'super_admin'");
+    expect(sql).toContain("v_role IN ('hospital_admin', 'warehouse_manager', 'point_operator')");
+    expect(sql).toContain("v_role = 'point_operator'");
+    expect(sql).toContain('point_operator_cannot_insert');
+  });
+
+  it('(8c) UPDATE matches on dp id, scientific_name, COALESCE(concentration/dosage_form)', () => {
+    const sql = readPhoenix(REL);
+    expect(sql).toContain('ia.distribution_point_id = p_distribution_point_id');
+    expect(sql).toContain('ia.scientific_name       = p_scientific_name');
+    expect(sql).toContain("COALESCE(ia.concentration, '') = v_conc");
+    expect(sql).toContain("COALESCE(ia.dosage_form,  '') = v_dosage");
+  });
+
+  it('(9) contains no DELETE, no TRUNCATE, no service_role', () => {
+    const noComments = readPhoenix(REL)
+      .split('\n')
+      .filter(l => !l.trimStart().startsWith('--'))
+      .join('\n');
+    expect(noComments).not.toMatch(/\bdelete\b/i);
+    expect(noComments).not.toMatch(/truncate/i);
+    expect(noComments).not.toMatch(/service_role/i);
+  });
+
+  it('(9b) does not set actor_* fields manually (left to trigger 018)', () => {
+    const sql = readPhoenix(REL);
+    const insertStart = sql.indexOf('INSERT INTO public.item_availability');
+    const insertBlock = sql.slice(insertStart, sql.indexOf('RETURNING id INTO v_id', insertStart));
+    expect(insertBlock).not.toMatch(/actor_/i);
+  });
+
+  it('(9c) ends with NOTIFY pgrst reload schema', () => {
+    expect(readPhoenix(REL)).toContain("NOTIFY pgrst, 'reload schema'");
+  });
+
+  it('(10) availability service still calls .rpc(phoenix_upsert_availability, ...)', () => {
+    expect(service).toContain("rpc('phoenix_upsert_availability'");
+  });
+});
+
 describe('Safety: Data Reset absent, Intake disabled', () => {
   const files = allTsxFiles('');
 
