@@ -40,8 +40,14 @@ export async function getAvailabilityByPoint(pointId: string): Promise<Availabil
 
 /**
  * Persist an availability record using the material identity flow.
- * Uses (distribution_point_id, scientific_name) as the upsert conflict key
- * (requires migration 020).
+ * Conflict key: (distribution_point_id, scientific_name, concentration, dosage_form)
+ * matching index item_availability_dp_sci_conc_form_uniq (migration 029).
+ *
+ * concentration and dosage_form are sent as '' (empty string) instead of null
+ * so that COALESCE(column, '') in the partial index evaluates to '' for both
+ * absent and explicitly-empty values, making the onConflict columns align with
+ * the index key.  Sending null would cause Postgres 42P10 because the index
+ * uses COALESCE expressions, not the raw column values.
  */
 export async function upsertAvailability(input: UpsertAvailabilityInput): Promise<void> {
   if (!supabaseConfigured) return;
@@ -54,8 +60,8 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
     organization_id:       input.organizationId,
     scientific_name:       input.scientificName.trim(),
     trade_name:            input.tradeName ?? null,
-    dosage_form:           input.dosageForm ?? null,
-    concentration:         input.concentrationValue ?? null,
+    dosage_form:           input.dosageForm ?? '',
+    concentration:         input.concentrationValue ?? '',
     price:                 input.price ?? null,
     quantity:              input.quantity,
     condition:             input.condition,
@@ -67,7 +73,7 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
 
   const { error } = await supabase
     .from('item_availability')
-    .upsert(row, { onConflict: 'distribution_point_id,scientific_name' });
+    .upsert(row, { onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form' });
   if (error) throw error;
 }
 

@@ -313,8 +313,8 @@ describe('Service: availability upsert uses scientific_name', () => {
     expect(service).toContain('supplyType');
   });
 
-  it('upsert targets scientific_name conflict key', () => {
-    expect(service).toContain("onConflict: 'distribution_point_id,scientific_name'");
+  it('upsert targets 4-column conflict key (migration 029)', () => {
+    expect(service).toContain("onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form'");
   });
 
   it('does not write port_name in upsert row', () => {
@@ -1448,6 +1448,49 @@ describe('Port management uses permission-based gating, not role-based', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
     expect(noComments).not.toMatch(/GRANT\s+(INSERT|UPDATE|DELETE).*ON\s+(TABLE\s+)?.*qr_/i);
+  });
+});
+
+// ============================================================================
+// FIX-AVAILABILITY-UPSERT-UNIQUE-A (migration 029)
+// ============================================================================
+
+describe('FIX-AVAILABILITY-UPSERT-UNIQUE-A: upsertAvailability 4-column key', () => {
+  it('scientific_name is trimmed before insert', () => {
+    // The service must call .trim() on scientificName before building the row.
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain('input.scientificName.trim()');
+  });
+
+  it('concentration sent as empty string when absent (not null)', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    // Must use ?? '' not ?? null
+    expect(upsertFn).toContain("concentration:         input.concentrationValue ?? ''");
+    expect(upsertFn).not.toContain("concentration:         input.concentrationValue ?? null");
+  });
+
+  it('dosage_form sent as empty string when absent (not null)', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain("dosage_form:           input.dosageForm ?? ''");
+    expect(upsertFn).not.toContain("dosage_form:           input.dosageForm ?? null");
+  });
+
+  it('onConflict includes all 4 index columns', () => {
+    expect(service).toContain(
+      "onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form'"
+    );
+  });
+
+  it('onConflict does NOT use the old 2-column key', () => {
+    // The old key caused 42P10; must be gone.
+    expect(service).not.toContain(
+      "onConflict: 'distribution_point_id,scientific_name'"
+    );
+  });
+
+  it('comment documents why concentration/dosage_form use empty string', () => {
+    expect(service).toContain('COALESCE');
+    expect(service).toContain('42P10');
   });
 });
 
