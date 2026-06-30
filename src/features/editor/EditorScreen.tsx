@@ -17,20 +17,22 @@ interface PointRow { id: string; name: string; name_ar: string; }
 
 /**
  * Material status options.
- * 'surplus' and 'near_expiry' are intentionally merged into a single
- * selectable option here — both i18n keys now carry the same combined
- * "Surplus - Near expiry" wording (see strings.ts), so existing legacy rows
- * stored as either value display identically everywhere. No new DB enum
- * value was introduced; new submissions from this merged option are stored
- * as 'surplus'. 'expired' is intentionally not offered as a selectable
- * status here per the simplified 4-option spec — historical 'expired' rows
- * are unaffected and still display correctly in other screens.
+ * 'surplus' and 'near_expiry' are distinct, separately selectable conditions
+ * (FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A). Selecting 'near_expiry' stores the
+ * value 'near_expiry' exactly — it is no longer merged into 'surplus'. Their
+ * i18n labels (cond_surplus / cond_near_expiry) are also distinct, see
+ * strings.ts.
+ * 'expired' is intentionally NOT offered as a manual editor option in this
+ * phase — it may be derived from expiry_date, and full canonicalization is
+ * deferred to STATUS-LOGIC-CANONICALIZATION-A. Historical 'expired' rows are
+ * unaffected and still display correctly in status/QR/filter views.
  */
 const CONDITION_OPTIONS: { value: AvailabilityCondition; labelKey: string }[] = [
-  { value: 'available', labelKey: 'cond_available' },
-  { value: 'low_stock',  labelKey: 'cond_low_stock' },
-  { value: 'missing',    labelKey: 'cond_missing' },
-  { value: 'surplus',    labelKey: 'cond_surplus' },
+  { value: 'available',   labelKey: 'cond_available' },
+  { value: 'low_stock',   labelKey: 'cond_low_stock' },
+  { value: 'missing',     labelKey: 'cond_missing' },
+  { value: 'surplus',     labelKey: 'cond_surplus' },
+  { value: 'near_expiry', labelKey: 'cond_near_expiry' },
 ];
 
 export function EditorScreen() {

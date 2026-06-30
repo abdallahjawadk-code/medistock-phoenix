@@ -149,7 +149,7 @@ describe('National code label remains', () => {
 });
 
 // ============================================================================
-// Status localized (all cond_ keys, surplus/near_expiry combined)
+// Status localized (all cond_ keys, surplus/near_expiry DISTINCT)
 // ============================================================================
 
 describe('Status localization', () => {
@@ -162,11 +162,86 @@ describe('Status localization', () => {
     expect(strings).toContain('cond_expired');
   });
 
-  it('surplus and near_expiry both display as combined wording', () => {
-    const surplusLine = strings.split('\n').find(l => l.includes('cond_surplus'));
-    const nearLine = strings.split('\n').find(l => l.includes('cond_near_expiry'));
-    expect(surplusLine).toContain('الفائضة - قريبة النفاذ');
-    expect(nearLine).toContain('الفائضة - قريبة النفاذ');
+  it('surplus and near_expiry have DISTINCT labels (no longer merged)', () => {
+    const surplusLine = strings.split('\n').find(l => l.includes('cond_surplus:'));
+    const nearLine = strings.split('\n').find(l => l.includes('cond_near_expiry:'));
+    // Regression guards: the old merged wording must be gone in both languages.
+    expect(surplusLine).not.toContain('الفائضة - قريبة النفاذ');
+    expect(nearLine).not.toContain('الفائضة - قريبة النفاذ');
+    expect(surplusLine).not.toContain('Surplus - Near expiry');
+    expect(nearLine).not.toContain('Surplus - Near expiry');
+    // The two condition labels are not identical.
+    expect(surplusLine).not.toEqual(nearLine);
+  });
+});
+
+// ============================================================================
+// FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: surplus / near_expiry separated
+// ============================================================================
+
+describe('FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: editor condition options', () => {
+  // CONDITION_OPTIONS is module-private to EditorScreen; assert against source.
+  const editorSrc = readSrc('features/editor/EditorScreen.tsx');
+  const optsBlock = editorSrc.slice(
+    editorSrc.indexOf('const CONDITION_OPTIONS'),
+    editorSrc.indexOf('];', editorSrc.indexOf('const CONDITION_OPTIONS')),
+  );
+
+  it('(A1) editor exposes available, low_stock, missing, surplus, near_expiry', () => {
+    expect(optsBlock).toContain("value: 'available'");
+    expect(optsBlock).toContain("value: 'low_stock'");
+    expect(optsBlock).toContain("value: 'missing'");
+    expect(optsBlock).toContain("value: 'surplus'");
+    expect(optsBlock).toContain("value: 'near_expiry'");
+  });
+
+  it('(A2) editor does NOT expose expired as a manual option in this phase', () => {
+    expect(optsBlock).not.toContain("value: 'expired'");
+  });
+
+  it('(A3) near_expiry is mapped to cond_near_expiry, not cond_surplus', () => {
+    expect(optsBlock).toMatch(/value:\s*'near_expiry',\s*labelKey:\s*'cond_near_expiry'/);
+    expect(optsBlock).not.toMatch(/value:\s*'near_expiry',\s*labelKey:\s*'cond_surplus'/);
+  });
+
+  it('(B4) Arabic cond_surplus and cond_near_expiry are distinct', () => {
+    const surplus = strings.match(/cond_surplus:\s*\{\s*ar:\s*'([^']*)'/);
+    const near = strings.match(/cond_near_expiry:\s*\{\s*ar:\s*'([^']*)'/);
+    expect(surplus?.[1]).toBeTruthy();
+    expect(near?.[1]).toBeTruthy();
+    expect(surplus![1]).not.toEqual(near![1]);
+  });
+
+  it('(B5) English cond_surplus and cond_near_expiry are distinct', () => {
+    const surplus = strings.match(/cond_surplus:[^}]*en:\s*'([^']*)'/);
+    const near = strings.match(/cond_near_expiry:[^}]*en:\s*'([^']*)'/);
+    expect(surplus?.[1]).toBeTruthy();
+    expect(near?.[1]).toBeTruthy();
+    expect(surplus![1]).not.toEqual(near![1]);
+  });
+
+  it('(B6) cond_near_expiry exists with both Arabic and English', () => {
+    expect(strings).toMatch(/cond_near_expiry:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
+  });
+
+  it('(B7) cond_expired remains present in both Arabic and English', () => {
+    expect(strings).toMatch(/cond_expired:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
+  });
+
+  it('(C8) selecting near_expiry sends condition through unchanged to the save call', () => {
+    // The editor binds `condition` state directly to the option value and
+    // passes it straight to upsertAvailability — no surplus remap.
+    expect(editorSrc).toContain('condition,');
+    expect(editorSrc).not.toMatch(/condition:\s*'surplus'/);
+    expect(editorSrc).toContain("setCondition(e.target.value as AvailabilityCondition)");
+  });
+
+  it('(D10) no test/source expects the merged "Surplus - Near expiry" label', () => {
+    expect(strings).not.toContain('Surplus - Near expiry');
+  });
+
+  it('(D11) no source expects the merged Arabic "الفائضة - قريبة النفاذ" label', () => {
+    expect(strings).not.toContain('الفائضة - قريبة النفاذ');
   });
 });
 

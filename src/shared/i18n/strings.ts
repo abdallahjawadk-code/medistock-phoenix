@@ -374,16 +374,15 @@ export const T: Dict = {
   avail_condition:    { ar: 'الحالة',                             en: 'Condition' },
   avail_saved:        { ar: 'تم حفظ التوفر بنجاح',               en: 'Availability saved successfully' },
   avail_count:        { ar: 'أصناف',                              en: 'items' },
-  cond_available:     { ar: 'متوفرة',                             en: 'Available' },
-  cond_low_stock:     { ar: 'قليلة / شحيحة',                     en: 'Low stock' },
-  cond_missing:       { ar: 'مفقودة',                             en: 'Missing' },
-  /* surplus and near_expiry merge into one combined wording in the UI
-     (AVAILABILITY-EDITOR-INSTITUTION-UX-A, Part D) — both pre-existing DB
-     values display identically; no new enum value was added to avoid
-     touching the wide web of consumers (dashboard, reports, alerts) that
-     already branch on the separate 'surplus'/'near_expiry' strings. */
-  cond_surplus:       { ar: 'الفائضة - قريبة النفاذ',            en: 'Surplus - Near expiry' },
-  cond_near_expiry:   { ar: 'الفائضة - قريبة النفاذ',            en: 'Surplus - Near expiry' },
+  cond_available:     { ar: 'متوفر',                             en: 'Available' },
+  cond_low_stock:     { ar: 'شحيح',                              en: 'Low stock' },
+  cond_missing:       { ar: 'مفقود',                             en: 'Missing' },
+  /* surplus and near_expiry are DISTINCT conditions with distinct labels
+     (FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A) — the previous merged surplus/
+     near-expiry wording is removed so the two values are no longer confused
+     in the editor, status, QR and filter views. */
+  cond_surplus:       { ar: 'فائض',                             en: 'Surplus' },
+  cond_near_expiry:   { ar: 'قريب النفاذ',                       en: 'Near expiry' },
   cond_expired:       { ar: 'منتهي الصلاحية',                    en: 'Expired' },
   public_empty_port:  { ar: 'لا توجد مواد مدخلة لهذا المنفذ حالياً', en: 'No items have been entered for this port yet.' },
   public_expiry_warn: { ar: 'ينتهي بتاريخ',                      en: 'Expires' },
