@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -460,6 +461,7 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           canArchivePorts={canArchivePorts}
           canGenerateQr={canGenerateQr}
           canRevokeQr={canRevokeQr}
+          orgName={o ? orgDisplayName(o, lang) : undefined}
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
@@ -683,7 +685,7 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
@@ -692,6 +694,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   canArchivePorts: boolean;
   canGenerateQr: boolean;
   canRevokeQr: boolean;
+  orgName?: string;
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
@@ -746,6 +749,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               canArchivePorts={canArchivePorts}
               canGenerateQr={canGenerateQr}
               canRevokeQr={canRevokeQr}
+              orgName={orgName}
               onReload={onReload}
               onToast={onToast}
             />
@@ -845,13 +849,14 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, onReload, onToast }: {
+function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
   canEditPorts: boolean;
   canArchivePorts: boolean;
   canGenerateQr: boolean;
   canRevokeQr: boolean;
+  orgName?: string;
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -859,6 +864,9 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<'regenerate' | 'revoke' | 'archive' | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
+  const [qrSrc, setQrSrc] = useState<string | null>(null);
+  const [qrSrcErr, setQrSrcErr] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const ptTypeKey = POINT_TYPES.find(p => p.value === point.pointType)?.labelKey;
 
@@ -867,6 +875,17 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
   });
 
   const publicUrl = qr?.publicId ? `${window.location.origin}/?qid=${qr.publicId}` : null;
+
+  useEffect(() => {
+    if (!publicUrl) { setQrSrc(null); setQrSrcErr(false); return; }
+    let cancelled = false;
+    setQrSrc(null);
+    setQrSrcErr(false);
+    QRCode.toDataURL(publicUrl, { width: 240, margin: 2, color: { dark: '#1a1a1a', light: '#ffffff' } })
+      .then(src => { if (!cancelled) setQrSrc(src); })
+      .catch(() => { if (!cancelled) setQrSrcErr(true); });
+    return () => { cancelled = true; };
+  }, [publicUrl]);
 
   async function onGenerateQr() {
     setBusy('generate');
@@ -971,7 +990,7 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
         <PhoenixStatusBadge variant={point.status === 'active' ? 'ok' : 'neutral'} label={statusLabel(point.status, lang)} />
       </div>
 
-      {/* QR status */}
+      {/* QR status / thumbnail */}
       {qr === undefined && (
         <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>{t('loading', lang)}</div>
       )}
@@ -979,16 +998,39 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
         <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>📱 {t('qr_no_token', lang)}</div>
       )}
       {qr && publicUrl && (
-        <div style={{ marginBottom: '8px' }}>
-          <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginBottom: '3px' }}>{t('qr_url', lang)}:</div>
-          <div
-            onClick={onCopyUrl}
-            style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--p)', cursor: 'pointer', wordBreak: 'break-all', lineHeight: 1.4 }}
-            dir="ltr"
-            title={t('qr_copied', lang)}
-          >
-            {publicUrl}
-          </div>
+        <div style={{ marginBottom: '10px' }}>
+          {qrSrcErr ? (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '6px' }}>{t('qr_display_error', lang)}</div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <button
+                onClick={() => setShowPreview(true)}
+                title={t('qr_open_preview', lang)}
+                aria-label={t('qr_open_preview', lang)}
+                style={{ padding: 0, border: '1.5px solid var(--brd)', borderRadius: '7px', background: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, overflow: 'hidden', transition: 'border-color .15s' }}
+              >
+                {qrSrc ? (
+                  <img src={qrSrc} width={80} height={80} alt="QR Code" style={{ display: 'block' }} />
+                ) : (
+                  <div style={{ width: 80, height: 80, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: '28px' }}>📱</span>
+                  </div>
+                )}
+                <span style={{ fontSize: '9px', color: 'var(--p)', fontWeight: 700, padding: '2px 0 4px', letterSpacing: '.3px' }}>{t('qr_preview', lang)}</span>
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '10px', color: 'var(--t2)', marginBottom: '3px' }}>{t('qr_url', lang)}:</div>
+                <div
+                  onClick={onCopyUrl}
+                  style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--p)', cursor: 'pointer', wordBreak: 'break-all', lineHeight: 1.4 }}
+                  dir="ltr"
+                  title={t('qr_copied', lang)}
+                >
+                  {publicUrl}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1084,7 +1126,128 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
           <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onArchivePort}>📦 {t('port_archived', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
+
+      {/* QR Preview Modal */}
+      <QrPreviewModal
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        src={qrSrc}
+        srcErr={qrSrcErr}
+        url={publicUrl ?? ''}
+        portName={pointDisplayName(point, lang)}
+        orgName={orgName}
+        lang={lang}
+        canRegenerate={canGenerateQr && canRevokeQr}
+        onRegenerate={() => { setShowPreview(false); setConfirmAction('regenerate'); }}
+        busy={busy === 'regenerate'}
+      />
     </PhoenixCard>
+  );
+}
+
+/* ── QR Preview / Print Modal ── */
+
+function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, lang, canRegenerate, onRegenerate, busy }: {
+  open: boolean;
+  onClose: () => void;
+  src: string | null;
+  srcErr: boolean;
+  url: string;
+  portName: string;
+  orgName?: string;
+  lang: 'ar' | 'en';
+  canRegenerate: boolean;
+  onRegenerate: () => void;
+  busy: boolean;
+}) {
+  function esc(s: string) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function handlePrint() {
+    if (!src) return;
+    const generated = new Date().toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-US');
+    const win = window.open('', '_blank', 'width=520,height=680');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html>
+<html dir="${lang === 'ar' ? 'rtl' : 'ltr'}" lang="${lang === 'ar' ? 'ar' : 'en'}">
+<head>
+  <meta charset="UTF-8">
+  <title>QR — ${esc(portName)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 40px 24px; color: #111; margin: 0; background: #fff; }
+    h2 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+    .org { font-size: 14px; color: #555; margin: 0 0 20px; }
+    img { display: block; margin: 0 auto 16px; width: 200px; height: 200px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+    .url { font-size: 10.5px; color: #666; word-break: break-all; font-family: monospace; direction: ltr; margin: 0 0 6px; }
+    .date { font-size: 10px; color: #888; margin: 0 0 16px; }
+    .brand { font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <h2>${esc(portName)}</h2>
+  ${orgName ? `<p class="org">${esc(orgName)}</p>` : ''}
+  <img src="${src}" alt="QR Code">
+  <p class="url">${esc(url)}</p>
+  <p class="date">${esc(generated)}</p>
+  <p class="brand">MediStock-Babil / MASAR Health Network</p>
+</body>
+</html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
+  }
+
+  if (!open) return null;
+
+  return (
+    <PhoenixDialog open={open} onClose={onClose} title={t('qr_large_preview', lang)} maxWidth={460}>
+      <div style={{ textAlign: 'center' }}>
+        {/* Port and org label */}
+        <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '2px' }}>{portName}</div>
+        {orgName && <div style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '14px' }}>{orgName}</div>}
+
+        {/* QR image */}
+        {srcErr ? (
+          <div style={{ padding: '24px', color: 'var(--err)', fontSize: '13px' }}>{t('qr_display_error', lang)}</div>
+        ) : (
+          <div style={{ display: 'inline-block', background: '#fff', borderRadius: '10px', padding: '10px', border: '1px solid var(--brd)', marginBottom: '14px' }}>
+            {src ? (
+              <img src={src} width={200} height={200} alt="QR Code" style={{ display: 'block', borderRadius: '4px' }} />
+            ) : (
+              <div style={{ width: 200, height: 200, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
+                <span style={{ fontSize: '36px' }}>📱</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Public URL */}
+        {url && (
+          <div style={{ fontSize: '10.5px', fontFamily: 'monospace', color: 'var(--t2)', wordBreak: 'break-all', marginBottom: '18px', lineHeight: 1.5, padding: '0 8px' }} dir="ltr">
+            {url}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {canRegenerate && (
+            <PhoenixButton variant="ghost" size="sm" loading={busy} onClick={onRegenerate}>
+              🔄 {t('qr_regenerate', lang)}
+            </PhoenixButton>
+          )}
+          <PhoenixButton variant="ghost" size="md" disabled={!src} onClick={handlePrint}>
+            🖨 {t('qr_print', lang)}
+          </PhoenixButton>
+          <PhoenixButton variant="primary" size="md" onClick={onClose}>
+            {t('qr_close', lang)}
+          </PhoenixButton>
+        </div>
+      </div>
+    </PhoenixDialog>
   );
 }
 

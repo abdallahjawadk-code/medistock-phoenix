@@ -343,6 +343,17 @@ export const T: Dict = {
   qr_copied:          { ar: 'تم نسخ الرابط',                     en: 'Link copied' },
   qr_no_token:        { ar: 'لا يوجد QR نشط',                    en: 'No active QR' },
 
+  /* ── QR Preview / Print UX (PORT-CARD-QR-PREVIEW-PRINT-UX-A) ── */
+  qr_preview:            { ar: 'معاينة QR',                        en: 'QR Preview' },
+  qr_open_preview:       { ar: 'فتح معاينة QR',                    en: 'Open QR Preview' },
+  qr_print:              { ar: 'طباعة',                            en: 'Print' },
+  qr_close:              { ar: 'إغلاق',                            en: 'Close' },
+  qr_large_preview:      { ar: 'معاينة QR الكاملة',                en: 'Large QR Preview' },
+  qr_no_active:          { ar: 'لا يوجد رمز QR نشط',               en: 'No active QR' },
+  qr_display_error:      { ar: 'تعذر عرض رمز QR.',                 en: 'Unable to display QR code.' },
+  qr_print_empty:        { ar: 'لا يوجد رمز QR نشط للطباعة.',      en: 'No active QR code to print.' },
+  qr_generated_for_port: { ar: 'تم إنشاء QR للمنفذ',              en: 'QR generated for port' },
+
   /* ── Port Availability ── */
   avail_manage:       { ar: 'إدارة التوفر',                      en: 'Manage Availability' },
   avail_add:          { ar: 'إضافة صنف',                         en: 'Add Item' },

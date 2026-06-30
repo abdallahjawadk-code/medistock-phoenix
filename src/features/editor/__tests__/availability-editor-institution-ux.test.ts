@@ -1469,3 +1469,228 @@ describe('Safety: Data Reset absent, Intake disabled', () => {
     });
   });
 });
+
+// ============================================================================
+// PORT-CARD-QR-PREVIEW-PRINT-UX-A
+// ============================================================================
+
+describe('PORT-CARD-QR-PREVIEW-PRINT-UX-A: QR preview and print in port cards', () => {
+  const institution = readSrc('features/institutions/InstitutionScreen.tsx');
+  const stringsFile = readSrc('shared/i18n/strings.ts');
+
+  // ── i18n strings ──
+
+  it('i18n has qr_preview string', () => {
+    expect(stringsFile).toContain("qr_preview:");
+  });
+
+  it('i18n has qr_open_preview string', () => {
+    expect(stringsFile).toContain("qr_open_preview:");
+  });
+
+  it('i18n has qr_print string', () => {
+    expect(stringsFile).toContain("qr_print:");
+  });
+
+  it('i18n has qr_close string', () => {
+    expect(stringsFile).toContain("qr_close:");
+  });
+
+  it('i18n has qr_large_preview string', () => {
+    expect(stringsFile).toContain("qr_large_preview:");
+  });
+
+  it('i18n has qr_display_error string', () => {
+    expect(stringsFile).toContain("qr_display_error:");
+  });
+
+  it('i18n has qr_print_empty string', () => {
+    expect(stringsFile).toContain("qr_print_empty:");
+  });
+
+  it('i18n has qr_generated_for_port string', () => {
+    expect(stringsFile).toContain("qr_generated_for_port:");
+  });
+
+  it('i18n qr_print has Arabic and English translations', () => {
+    expect(stringsFile).toMatch(/qr_print:\s*\{[^}]*ar:.*طباعة/);
+    expect(stringsFile).toMatch(/qr_print:\s*\{[^}]*en:.*Print/);
+  });
+
+  it('i18n qr_close has Arabic and English translations', () => {
+    expect(stringsFile).toMatch(/qr_close:\s*\{[^}]*ar:.*إغلاق/);
+    expect(stringsFile).toMatch(/qr_close:\s*\{[^}]*en:.*Close/);
+  });
+
+  // ── Dependencies ──
+
+  it('InstitutionScreen imports qrcode library', () => {
+    expect(institution).toContain("from 'qrcode'");
+  });
+
+  // ── Component existence ──
+
+  it('QrPreviewModal component exists in InstitutionScreen', () => {
+    expect(institution).toContain('function QrPreviewModal');
+  });
+
+  it('QrPreviewModal is invoked inside PortCard', () => {
+    expect(institution).toContain('<QrPreviewModal');
+  });
+
+  // ── PortCard QR thumbnail ──
+
+  it('PortCard shows QR thumbnail button when active QR exists', () => {
+    expect(institution).toContain("onClick={() => setShowPreview(true)}");
+  });
+
+  it('PortCard QR thumbnail is guarded by qr && publicUrl condition', () => {
+    // Both the null-guard and the preview button must be present in the file
+    expect(institution).toContain('qr && publicUrl');
+    expect(institution).toContain('setShowPreview(true)');
+    // The button must appear after the guard (order check via indexOf)
+    expect(institution.indexOf('setShowPreview(true)')).toBeGreaterThan(institution.indexOf('qr && publicUrl'));
+  });
+
+  it('PortCard QR thumbnail renders img when src available', () => {
+    expect(institution).toContain('qrSrc');
+    expect(institution).toMatch(/qrSrc\s*\?\s*\(/);
+  });
+
+  it('PortCard shows qr_display_error when QR rendering fails', () => {
+    expect(institution).toContain("t('qr_display_error'");
+    expect(institution).toContain('qrSrcErr');
+  });
+
+  it('PortCard generates QR data URL via QRCode.toDataURL', () => {
+    expect(institution).toContain('QRCode.toDataURL');
+  });
+
+  it('PortCard useEffect cancels QR generation on unmount', () => {
+    expect(institution).toContain('let cancelled = false');
+    expect(institution).toContain('cancelled = true');
+  });
+
+  // ── Modal content ──
+
+  it('QrPreviewModal shows port name', () => {
+    const modalStart = institution.indexOf('function QrPreviewModal');
+    const modalEnd   = institution.indexOf('\n/* ──', modalStart);
+    const modalBody  = institution.slice(modalStart, modalEnd);
+    expect(modalBody).toContain('portName');
+  });
+
+  it('QrPreviewModal shows large QR image (200x200)', () => {
+    const modalStart = institution.indexOf('function QrPreviewModal');
+    const modalEnd   = institution.indexOf('\n/* ──', modalStart);
+    const modalBody  = institution.slice(modalStart, modalEnd);
+    expect(modalBody).toContain('200');
+    expect(modalBody).toContain('<img');
+  });
+
+  it('QrPreviewModal shows org name when provided', () => {
+    const modalStart = institution.indexOf('function QrPreviewModal');
+    const modalEnd   = institution.indexOf('\n/* ──', modalStart);
+    const modalBody  = institution.slice(modalStart, modalEnd);
+    expect(modalBody).toContain('orgName');
+  });
+
+  it('QrPreviewModal shows public URL', () => {
+    const modalStart = institution.indexOf('function QrPreviewModal');
+    const modalEnd   = institution.indexOf('\n/* ──', modalStart);
+    const modalBody  = institution.slice(modalStart, modalEnd);
+    expect(modalBody).toContain('url');
+  });
+
+  it('QrPreviewModal has print button using qr_print key', () => {
+    expect(institution).toContain("t('qr_print'");
+  });
+
+  it('QrPreviewModal has close button using qr_close key', () => {
+    expect(institution).toContain("t('qr_close'");
+  });
+
+  // ── Print behavior ──
+
+  it('Print handler opens a new window', () => {
+    expect(institution).toContain("window.open(");
+  });
+
+  it('Print handler calls window.print()', () => {
+    expect(institution).toContain('win.print()');
+  });
+
+  it('Print content includes brand label', () => {
+    expect(institution).toContain('MediStock-Babil / MASAR Health Network');
+  });
+
+  it('Print content escapes HTML to prevent XSS', () => {
+    expect(institution).toContain('function esc(');
+    expect(institution).toContain("replace(/&/g, '&amp;')");
+  });
+
+  it('Print function does not expose QR token secrets', () => {
+    const printStart = institution.indexOf('function handlePrint');
+    const printEnd   = institution.indexOf('\n  }', printStart) + 4;
+    const printFn    = institution.slice(printStart, printEnd);
+    expect(printFn).not.toContain('tokenId');
+    expect(printFn).not.toContain('token_hash');
+    expect(printFn).not.toContain('service_role');
+  });
+
+  it('Print is disabled when QR src is not yet generated', () => {
+    expect(institution).toContain('disabled={!src}');
+  });
+
+  // ── Permissions ──
+
+  it('Regenerate button in modal requires qr.generate AND qr.revoke', () => {
+    expect(institution).toContain('canRegenerate={canGenerateQr && canRevokeQr}');
+  });
+
+  it('Regenerate button is gated by canRegenerate prop in QrPreviewModal', () => {
+    const modalStart = institution.indexOf('function QrPreviewModal');
+    const modalEnd   = institution.indexOf('\n/* ──', modalStart);
+    const modalBody  = institution.slice(modalStart, modalEnd);
+    expect(modalBody).toContain('canRegenerate');
+    expect(modalBody).toContain('{canRegenerate && (');
+  });
+
+  it('orgName is threaded from OrgDetailView through PortSection to PortCard', () => {
+    expect(institution).toContain('orgName={o ? orgDisplayName(o, lang) : undefined}');
+    expect(institution).toContain('orgName={orgName}');
+  });
+
+  // ── Security ──
+
+  it('no service_role in InstitutionScreen frontend', () => {
+    expect(institution).not.toMatch(/service_role/i);
+  });
+
+  it('no auth.admin in InstitutionScreen frontend', () => {
+    expect(institution).not.toMatch(/auth\.admin/i);
+  });
+
+  it('no SQL migration created for QR preview UX', () => {
+    const migsDir = join(PHOENIX, 'supabase/migrations');
+    if (!existsSync(migsDir)) return;
+    const migFiles = readdirSync(migsDir) as string[];
+    expect(migFiles.some((f: string) => f.startsWith('027_'))).toBe(false);
+  });
+
+  it('Data Reset is still absent after QR preview UX changes', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      expect(readFile(path)).not.toMatch(/import.*DataReset/i);
+    });
+  });
+
+  it('Intake is still disabled after QR preview UX changes', () => {
+    const files = allTsxFiles('');
+    files.forEach(path => {
+      const content = readFile(path);
+      expect(content).not.toMatch(/import.*OcrImport/i);
+      expect(content).not.toMatch(/import.*ExcelImport/i);
+    });
+  });
+});
