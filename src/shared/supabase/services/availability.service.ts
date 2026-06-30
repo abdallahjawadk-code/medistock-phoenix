@@ -1,5 +1,62 @@
 import { supabase, supabaseConfigured } from '../client';
 import type { AvailabilityRecord, AvailabilityCondition } from '../../lib/types';
+import {
+  computeEffectiveStatus,
+  type RawAvailabilityCondition,
+  type CanonicalStatus,
+  type ExpiryBucket,
+  type DerivedExpiryStatus,
+  type EffectiveSeverity,
+} from '../../lib/status/canonical';
+
+/**
+ * Non-breaking derived status fields appended to availability read rows
+ * (EFFECTIVE-STATUS-DERIVATION-A). The raw stored `condition` field is always
+ * preserved unchanged; these are additive, derived values for later UI/report
+ * use. Snake_case to match the DB-shaped read payloads.
+ */
+export interface EffectiveAvailabilityFields {
+  /** Copy of the raw stored condition (never modified). */
+  raw_condition: string;
+  /** Canonical vocabulary (scarce -> low_stock); falls back to 'available' for unknown. */
+  normalized_condition: CanonicalStatus;
+  /** Fine-grained expiry bucket from expiry_date, or null. */
+  expiry_bucket: ExpiryBucket;
+  /** normal | near_expiry | expired derived from expiry_date. */
+  derived_expiry_status: DerivedExpiryStatus;
+  /** Final status for later UI/report/alert use (raw condition is untouched). */
+  effective_status: CanonicalStatus;
+  /** Baseline severity for the effective status. */
+  effective_severity: EffectiveSeverity;
+}
+
+/**
+ * Append derived/effective status to a raw availability row WITHOUT mutating or
+ * removing any existing field. `condition` stays the raw stored value; the new
+ * fields are computed from condition + quantity + expiry_date via the canonical
+ * helpers. Thresholds are inactive (low_stock/surplus stay manual). `today` is
+ * injectable for deterministic tests.
+ */
+export function withEffectiveAvailabilityStatus<
+  T extends { condition?: string | null; quantity?: number | null; expiry_date?: string | null },
+>(row: T, today?: Date): T & EffectiveAvailabilityFields {
+  const rawCondition = (row.condition ?? 'available') as RawAvailabilityCondition;
+  const eff = computeEffectiveStatus({
+    rawCondition,
+    quantity: row.quantity ?? null,
+    expiryDate: row.expiry_date ?? null,
+    today,
+  });
+  return {
+    ...row,
+    raw_condition: (row.condition ?? rawCondition) as string,
+    normalized_condition: eff.normalizedCondition,
+    expiry_bucket: eff.expiryBucket,
+    derived_expiry_status: eff.derivedExpiryStatus,
+    effective_status: eff.effectiveStatus,
+    effective_severity: eff.severity,
+  };
+}
 
 export interface UpsertAvailabilityInput {
   distributionPointId: string;
@@ -18,7 +75,9 @@ export interface UpsertAvailabilityInput {
   supplyType?: string;
 }
 
-export async function getAvailabilityByPoint(pointId: string): Promise<AvailabilityRecord[]> {
+export async function getAvailabilityByPoint(
+  pointId: string,
+): Promise<(AvailabilityRecord & EffectiveAvailabilityFields)[]> {
   if (!supabaseConfigured) return [];
 
   const { data, error } = await supabase
@@ -35,7 +94,7 @@ export async function getAvailabilityByPoint(pointId: string): Promise<Availabil
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as unknown as AvailabilityRecord[];
+  return ((data ?? []) as unknown as AvailabilityRecord[]).map(r => withEffectiveAvailabilityStatus(r));
 }
 
 /**
@@ -87,7 +146,9 @@ export async function getLowStockItems(orgId: string) {
     .order('condition');
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map(r => withEffectiveAvailabilityStatus(r as {
+    condition?: string | null; quantity?: number | null; expiry_date?: string | null;
+  }));
 }
 
 export async function getAvailabilityByOrg(orgId: string) {
@@ -104,5 +165,7 @@ export async function getAvailabilityByOrg(orgId: string) {
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map(r => withEffectiveAvailabilityStatus(r as {
+    condition?: string | null; quantity?: number | null; expiry_date?: string | null;
+  }));
 }
