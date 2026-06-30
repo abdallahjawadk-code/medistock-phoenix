@@ -74,8 +74,15 @@ export function parseExpiryDate(s: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Matches Postgres `(date + interval 'N months')::date` semantics:
+// the result day is clamped to the last day of the target month,
+// preventing JS Date overflow at month boundaries (e.g. Jan 31 + 1 month → Feb 28/29).
 export function addMonths(base: Date, months: number): Date {
-  return new Date(base.getFullYear(), base.getMonth() + months, base.getDate());
+  const rawMonth  = base.getMonth() + months;
+  const y         = base.getFullYear() + Math.floor(rawMonth / 12);
+  const m         = ((rawMonth % 12) + 12) % 12;
+  const lastDay   = new Date(y, m + 1, 0).getDate(); // day 0 of next month = last day of m
+  return new Date(y, m, Math.min(base.getDate(), lastDay));
 }
 
 export function daysUntil(today: Date, target: Date): number {
@@ -100,6 +107,18 @@ export function expiryBucketToSeverity(bucket: ExpiryBucket): AlertSeverity {
     case '3_months': return 'urgent';
     case '6_months': return 'high';
     case '9_months': return 'watch';
+  }
+}
+
+// Returns the canonical color/bg for a bucket — single source of truth shared by
+// DashboardScreen, InterInstitutionAlertsScreen, and PublicQrScreen.
+export function getExpiryBucketStyle(bucket: string): { color: string; bg: string } | null {
+  switch (bucket) {
+    case 'expired':  return { color: 'var(--err)',  bg: 'var(--err2)'  };
+    case '3_months': return { color: '#dc2626',     bg: '#fef2f2'      };
+    case '6_months': return { color: 'var(--warn)', bg: 'var(--warn2)' };
+    case '9_months': return { color: '#b45309',     bg: '#fef3c7'      };
+    default:         return null;
   }
 }
 
@@ -129,10 +148,15 @@ function keysMatch(a: string, b: string): boolean {
   return pA.some(x => x && pB.includes(x));
 }
 
+// Name-only match (medium confidence) does NOT guarantee pharmacological equivalence:
+// concentration, dosage_form, and supply_type are absent from StatusReport.
+// Matching on those fields is deferred to Phase 5 when StatusReport gains them.
+// Guard: if neither side carries item_id nor any name, return null — no blind matching.
 function matchConfidence(src: StatusReport, dst: StatusReport): MatchConfidence | null {
   if (src.item_id && dst.item_id) return src.item_id === dst.item_id ? 'high' : null;
   const srcEn = normalize(src.item_name), dstEn = normalize(dst.item_name);
   const srcAr = normalize(src.item_name_ar), dstAr = normalize(dst.item_name_ar);
+  if (!srcEn && !srcAr && !dstEn && !dstAr) return null;
   return (srcEn && srcEn === dstEn) || (srcAr && srcAr === dstAr) ? 'medium' : null;
 }
 

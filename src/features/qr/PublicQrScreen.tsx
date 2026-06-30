@@ -6,6 +6,7 @@ import { getPublicQrPayload } from '@/shared/supabase/services/qr.service';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
 
 interface Props { publicId: string; }
 
@@ -40,11 +41,15 @@ function conditionLabel(cond: string, lang: 'ar' | 'en'): string {
 
 function getExpBucketBadge(bucket: string | undefined, lang: 'ar' | 'en'): { label: string; color: string; bg: string } | null {
   if (!bucket) return null;
-  if (bucket === 'expired')   return { label: t('expired_material',        lang), color: 'var(--err)',  bg: 'var(--err2)'  };
-  if (bucket === '3_months')  return { label: t('expires_within_3_months', lang), color: '#dc2626',     bg: '#fef2f2'      };
-  if (bucket === '6_months')  return { label: t('expires_within_6_months', lang), color: 'var(--warn)', bg: 'var(--warn2)' };
-  if (bucket === '9_months')  return { label: t('expires_within_9_months', lang), color: '#b45309',     bg: '#fef3c7'      };
-  return null;
+  const style = getExpiryBucketStyle(bucket);
+  if (!style) return null;
+  let label = '';
+  if      (bucket === 'expired')  label = t('expired_material',        lang);
+  else if (bucket === '3_months') label = t('expires_within_3_months', lang);
+  else if (bucket === '6_months') label = t('expires_within_6_months', lang);
+  else if (bucket === '9_months') label = t('expires_within_9_months', lang);
+  else return null;
+  return { label, color: style.color, bg: style.bg };
 }
 
 function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {

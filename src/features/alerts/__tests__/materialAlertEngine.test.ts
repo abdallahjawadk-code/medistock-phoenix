@@ -92,6 +92,49 @@ describe('addMonths', () => {
     expect(result.getFullYear()).toBe(2026);
     expect(result.getMonth()).toBe(1); // Feb
   });
+
+  // Month-end clamping — matches Postgres (date + interval 'N months')::date
+  it('clamps Jan 31 + 1 month to Feb 28 (non-leap)', () => {
+    const r = addMonths(new Date(2026, 0, 31), 1);
+    expect(r.getFullYear()).toBe(2026);
+    expect(r.getMonth()).toBe(1);   // Feb
+    expect(r.getDate()).toBe(28);
+  });
+
+  it('clamps Jan 31 + 3 months to Apr 30', () => {
+    const r = addMonths(new Date(2026, 0, 31), 3);
+    expect(r.getFullYear()).toBe(2026);
+    expect(r.getMonth()).toBe(3);   // Apr
+    expect(r.getDate()).toBe(30);
+  });
+
+  it('does not clamp Jan 31 + 6 months (Jul has 31 days)', () => {
+    const r = addMonths(new Date(2026, 0, 31), 6);
+    expect(r.getFullYear()).toBe(2026);
+    expect(r.getMonth()).toBe(6);   // Jul
+    expect(r.getDate()).toBe(31);
+  });
+
+  it('does not clamp Jan 31 + 9 months (Oct has 31 days)', () => {
+    const r = addMonths(new Date(2026, 0, 31), 9);
+    expect(r.getFullYear()).toBe(2026);
+    expect(r.getMonth()).toBe(9);   // Oct
+    expect(r.getDate()).toBe(31);
+  });
+
+  it('clamps Jan 31 + 1 month to Feb 29 in a leap year', () => {
+    const r = addMonths(new Date(2024, 0, 31), 1);
+    expect(r.getFullYear()).toBe(2024);
+    expect(r.getMonth()).toBe(1);   // Feb
+    expect(r.getDate()).toBe(29);   // 2024 is leap
+  });
+
+  it('leaves mid-month day unchanged (Jan 15 + 3 months → Apr 15)', () => {
+    const r = addMonths(new Date(2026, 0, 15), 3);
+    expect(r.getFullYear()).toBe(2026);
+    expect(r.getMonth()).toBe(3);   // Apr
+    expect(r.getDate()).toBe(15);
+  });
 });
 
 describe('daysUntil', () => {
@@ -147,6 +190,26 @@ describe('expiryBucket', () => {
     const oneMore  = new Date(exactly9.getTime() + 86_400_000);
     expect(expiryBucket(TODAY, exactly9)).toBe('9_months');
     expect(expiryBucket(TODAY, oneMore)).toBeNull();
+  });
+});
+
+// ─── expiryBucket — month-end boundary (today = 2026-01-31) ──────────────────
+// These tests verify that the clamped addMonths produces boundaries that match
+// Postgres (current_date + interval 'N months')::date behaviour exactly.
+
+describe('expiryBucket — month-end boundary (today = 2026-01-31)', () => {
+  const JAN31 = new Date(2026, 0, 31);
+
+  it('expiry = 2026-04-30 → 3_months (boundary is inclusive, Apr 30 = Jan 31 + 3 months clamped)', () => {
+    expect(expiryBucket(JAN31, new Date(2026, 3, 30))).toBe('3_months');
+  });
+
+  it('expiry = 2026-05-01 → 6_months (one day past 3-month boundary)', () => {
+    expect(expiryBucket(JAN31, new Date(2026, 4, 1))).toBe('6_months');
+  });
+
+  it('expiry = 2026-01-30 → expired (one day before today)', () => {
+    expect(expiryBucket(JAN31, new Date(2026, 0, 30))).toBe('expired');
   });
 });
 
@@ -401,6 +464,39 @@ describe('computeMaterialAlerts — exchange suggestions', () => {
     // dedup by pairId src.id:tgt.id — same pair should only appear once
     const ids = suggestions.map(s => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // ─── matchConfidence guardrail tests ─────────────────────────────────────────
+
+  it('matchConfidence guard: no suggestion when both sides have no item_id and no name', () => {
+    // Both rows have empty names → materialKey returns '' → engine skips them.
+    // Explicit guard in matchConfidence prevents any blind anonymous-material pairing.
+    const src = sr({ id: 'src-g1', organization_id: 'org-A', status_type: 'surplus',
+      item_id: null, item_name: null, item_name_ar: null, quantity: 10 });
+    const tgt = sr({ id: 'tgt-g1', organization_id: 'org-B', status_type: 'missing',
+      item_id: null, item_name: null, item_name_ar: null });
+    const { suggestions } = computeMaterialAlerts([src, tgt], TODAY);
+    expect(suggestions).toHaveLength(0);
+  });
+
+  it('matchConfidence high: same item_id on both sides produces high-confidence suggestion', () => {
+    const src = sr({ id: 'src-g2', organization_id: 'org-A', status_type: 'surplus',
+      item_id: 'uuid-high', quantity: 20 });
+    const tgt = sr({ id: 'tgt-g2', organization_id: 'org-B', status_type: 'missing',
+      item_id: 'uuid-high' });
+    const { suggestions } = computeMaterialAlerts([src, tgt], TODAY);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].confidence).toBe('high');
+  });
+
+  it('matchConfidence medium: exact English name match (no item_id) produces medium-confidence suggestion', () => {
+    const src = sr({ id: 'src-g3', organization_id: 'org-A', status_type: 'surplus',
+      item_id: null, item_name: 'Paracetamol', quantity: 30 });
+    const tgt = sr({ id: 'tgt-g3', organization_id: 'org-B', status_type: 'missing',
+      item_id: null, item_name: 'Paracetamol' });
+    const { suggestions } = computeMaterialAlerts([src, tgt], TODAY);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].confidence).toBe('medium');
   });
 });
 
