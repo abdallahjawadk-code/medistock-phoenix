@@ -16,16 +16,26 @@ import {
   recommendationSummary,
   STATUS_PAIR_LABEL_KEY,
   type ScopedAlert,
-  type AlertPriority,
   type StatusPair,
 } from './inter-institution-alerts';
 
-const PRIORITY_VARIANT: Record<AlertPriority, 'err' | 'warn' | 'neutral'> = {
-  high: 'err', medium: 'warn', low: 'neutral',
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ChipFilter =
+  | ''
+  | 'high' | 'medium' | 'low'
+  | 'surplus' | 'near_expiry'
+  | 'missing' | 'scarce';
+
+// ─── Severity rail colors ─────────────────────────────────────────────────────
+
+const SEVERITY_BORDER: Record<string, string> = {
+  high:   'var(--err)',
+  medium: 'var(--warn)',
+  low:    'var(--brd)',
 };
-const PRIORITY_LABEL_KEY: Record<AlertPriority, string> = {
-  high: 'iia_priority_high', medium: 'iia_priority_medium', low: 'iia_priority_low',
-};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -41,40 +51,75 @@ function orgName(name: string, nameAr: string, lang: 'ar' | 'en'): string {
   if (lang === 'ar') return nameAr || name || '—';
   return name || nameAr || '—';
 }
-/** wa.me requires bare digits — strip everything else. Empty = no link. */
 function waDigits(phone: string | null): string {
   if (!phone) return '';
   return phone.replace(/[^\d]/g, '');
 }
 
+// ─── Chip button ──────────────────────────────────────────────────────────────
+
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '5px 12px', borderRadius: 'var(--rpill)',
+        border: `1px solid ${active ? 'var(--p)' : 'var(--brd)'}`,
+        background: active ? 'var(--p2)' : 'var(--s)',
+        color: active ? 'var(--p)' : 'var(--t2)',
+        fontSize: '11.5px', fontWeight: active ? 700 : 400,
+        cursor: 'pointer', whiteSpace: 'nowrap',
+        transition: 'all 120ms',
+      }}
+      aria-pressed={active}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
 export function InterInstitutionAlertsScreen() {
   const { lang, role, activeOrgId } = useApp();
   const isMobile = window.innerWidth < 768;
-  const isSuper = role === 'super_admin';
+  const isSuper  = role === 'super_admin';
 
-  const [filterPriority, setFilterPriority] = useState<AlertPriority | ''>('');
-  const [filterPair, setFilterPair] = useState<StatusPair | ''>('');
-  const [filterInst, setFilterInst] = useState<string>('');
-  const [search, setSearch] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  const [filterChip, setFilterChip]   = useState<ChipFilter>('');
+  const [filterPair, setFilterPair]   = useState<StatusPair | ''>('');
+  const [filterInst, setFilterInst]   = useState<string>('');
+  const [search, setSearch]           = useState('');
+  const [toast, setToast]             = useState<string | null>(null);
 
   const result = useAsync(
     () => getScopedInterInstitutionAlerts({ isSuper, orgId: activeOrgId }),
     [isSuper, activeOrgId],
   );
 
-  const allAlerts = result.data?.alerts ?? [];
+  const allAlerts      = result.data?.alerts ?? [];
   const migrationMissing = result.data?.migrationMissing ?? false;
 
-  // Institution filter options (unique source + target across visible alerts).
+  // Summary counts derived from loaded alerts
+  const summaryHighCount     = allAlerts.filter(a => a.priority === 'high').length;
+  const summaryNearExpCount  = allAlerts.filter(a => a.sourceStatus === 'near_expiry').length;
+  const summarySurplusCount  = allAlerts.filter(a => a.sourceStatus === 'surplus').length;
+
+  // Institution filter options
   const instMap = new Map<string, string>();
   for (const a of allAlerts) {
     if (!instMap.has(a.sourceOrgId)) instMap.set(a.sourceOrgId, orgName(a.sourceOrgName, a.sourceOrgNameAr, lang));
     if (!instMap.has(a.targetOrgId)) instMap.set(a.targetOrgId, orgName(a.targetOrgName, a.targetOrgNameAr, lang));
   }
 
+  // Active filter applied
   const filtered = sortByPriority(allAlerts.filter(a => {
-    if (filterPriority && a.priority !== filterPriority) return false;
+    if (filterChip === 'high'       && a.priority !== 'high') return false;
+    if (filterChip === 'medium'     && a.priority !== 'medium') return false;
+    if (filterChip === 'low'        && a.priority !== 'low') return false;
+    if (filterChip === 'surplus'    && a.sourceStatus !== 'surplus') return false;
+    if (filterChip === 'near_expiry'&& a.sourceStatus !== 'near_expiry') return false;
+    if (filterChip === 'missing'    && a.targetStatus !== 'missing') return false;
+    if (filterChip === 'scarce'     && a.targetStatus !== 'scarce') return false;
     if (filterPair && a.statusPair !== filterPair) return false;
     if (filterInst && a.sourceOrgId !== filterInst && a.targetOrgId !== filterInst) return false;
     if (search) {
@@ -88,6 +133,10 @@ export function InterInstitutionAlertsScreen() {
     }
     return true;
   }));
+
+  function toggleChip(chip: ChipFilter) {
+    setFilterChip(prev => prev === chip ? '' : chip);
+  }
 
   function showToast(msg: string) {
     setToast(msg);
@@ -103,14 +152,14 @@ export function InterInstitutionAlertsScreen() {
 
   return (
     <div style={{ maxWidth: '1040px', animation: 'fs .3s ease' }}>
-      {/* Header */}
+      {/* Header — Material Exchange Command Center */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         <div>
           <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
-            {t('iia_title', lang)}
+            {t('material_exchange_command_center', lang)}
           </h2>
           <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px', maxWidth: '640px' }} dir="auto">
-            {t('iia_sub', lang)}
+            {t('exchange_command_subtitle', lang)}
           </p>
         </div>
         {isSuper && <PhoenixOrgScope />}
@@ -121,16 +170,50 @@ export function InterInstitutionAlertsScreen() {
         ℹ️ {t('iia_no_transfer', lang)}
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
-        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value as AlertPriority | '')}
-          style={{ ...fieldStyle, width: 'auto', minWidth: '150px', appearance: 'none', cursor: 'pointer' }} aria-label={t('iia_filter_priority', lang)}>
-          <option value="">{t('iia_filter_priority', lang)}: {t('iia_all', lang)}</option>
-          <option value="high">{t('iia_priority_high', lang)}</option>
-          <option value="medium">{t('iia_priority_medium', lang)}</option>
-          <option value="low">{t('iia_priority_low', lang)}</option>
-        </select>
+      {/* Summary cards — visible only when data is loaded */}
+      {!result.loading && !result.error && !migrationMissing && allAlerts.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
+          <SummaryCard
+            icon="🔄" count={allAlerts.length}
+            label={t('d_exchange_total', lang)}
+            active={filterChip === ''} onClick={() => setFilterChip('')}
+            accent="var(--info)"
+          />
+          <SummaryCard
+            icon="🔴" count={summaryHighCount}
+            label={t('critical_need', lang)}
+            active={filterChip === 'high'} onClick={() => toggleChip('high')}
+            accent="var(--err)"
+          />
+          <SummaryCard
+            icon="⏱️" count={summaryNearExpCount}
+            label={t('expires_within_3_months', lang)}
+            active={filterChip === 'near_expiry'} onClick={() => toggleChip('near_expiry')}
+            accent="var(--warn)"
+          />
+          <SummaryCard
+            icon="📦" count={summarySurplusCount}
+            label={t('surplus_for_redistribution', lang)}
+            active={filterChip === 'surplus'} onClick={() => toggleChip('surplus')}
+            accent="var(--ok)"
+          />
+        </div>
+      )}
 
+      {/* Filter chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+        <Chip label={t('iia_all', lang)} active={filterChip === ''} onClick={() => setFilterChip('')} />
+        <Chip label={t('iia_priority_high', lang)} active={filterChip === 'high'} onClick={() => toggleChip('high')} />
+        <Chip label={t('iia_priority_medium', lang)} active={filterChip === 'medium'} onClick={() => toggleChip('medium')} />
+        <Chip label={t('iia_priority_low', lang)} active={filterChip === 'low'} onClick={() => toggleChip('low')} />
+        <Chip label={t('iia_pair_expiry_missing', lang)} active={filterChip === 'near_expiry'} onClick={() => toggleChip('near_expiry')} />
+        <Chip label={t('iia_pair_surplus_missing', lang)} active={filterChip === 'surplus'} onClick={() => toggleChip('surplus')} />
+        <Chip label={t('miss', lang)} active={filterChip === 'missing'} onClick={() => toggleChip('missing')} />
+        <Chip label={t('d_scarce', lang)} active={filterChip === 'scarce'} onClick={() => toggleChip('scarce')} />
+      </div>
+
+      {/* Secondary filters: pair + institution + search */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
         <select value={filterPair} onChange={e => setFilterPair(e.target.value as StatusPair | '')}
           style={{ ...fieldStyle, width: 'auto', minWidth: '160px', appearance: 'none', cursor: 'pointer' }} aria-label={t('iia_filter_pair', lang)}>
           <option value="">{t('iia_filter_pair', lang)}: {t('iia_all', lang)}</option>
@@ -167,10 +250,10 @@ export function InterInstitutionAlertsScreen() {
       )}
 
       {!result.loading && !result.error && !migrationMissing && filtered.length === 0 && (
-        <PhoenixEmptyState icon="🔄" title={t('iia_empty', lang)} description={t('iia_sub', lang)} />
+        <PhoenixEmptyState icon="🔄" title={t('no_exchange_opportunities', lang)} description={t('current_position_based', lang)} />
       )}
 
-      {/* Alert cards (high priority first via sortByPriority) */}
+      {/* Alert cards */}
       {!result.loading && !result.error && filtered.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filtered.map(a => (
@@ -184,34 +267,70 @@ export function InterInstitutionAlertsScreen() {
   );
 }
 
+// ─── Summary card ─────────────────────────────────────────────────────────────
+
+function SummaryCard({ icon, count, label, active, onClick, accent }: {
+  icon: string;
+  count: number;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  accent: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? 'var(--s2)' : 'var(--s)', borderRadius: 'var(--r3)',
+        border: `1px solid ${active ? accent : 'var(--brd)'}`,
+        padding: '12px 14px', textAlign: 'start', cursor: 'pointer',
+        transition: 'all 120ms', width: '100%',
+      }}
+      aria-pressed={active}
+    >
+      <div style={{ fontSize: '18px', marginBottom: '4px' }}>{icon}</div>
+      <div style={{ fontSize: '20px', fontWeight: 700, color: accent }}>{count}</div>
+      <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{label}</div>
+    </button>
+  );
+}
+
+// ─── Alert card ───────────────────────────────────────────────────────────────
+
 function AlertCard({ a, lang, isMobile, onCopy }: {
   a: ScopedAlert;
   lang: 'ar' | 'en';
   isMobile: boolean;
   onCopy: (text: string) => void;
 }) {
+  const borderColor = SEVERITY_BORDER[a.priority] ?? 'var(--brd)';
+  const priorityVariant = a.priority === 'high' ? 'err' as const : a.priority === 'medium' ? 'warn' as const : 'neutral' as const;
+  const priorityLabelKey = a.priority === 'high' ? 'iia_priority_high' : a.priority === 'medium' ? 'iia_priority_medium' : 'iia_priority_low';
+
   return (
-    <PhoenixCard padding="16px" style={{ borderInlineStart: `3px solid ${a.priority === 'high' ? 'var(--err)' : a.priority === 'medium' ? 'var(--warn)' : 'var(--brd)'}` }}>
+    <PhoenixCard padding="16px" style={{ borderInlineStart: `3px solid ${borderColor}` }}>
       {/* Title + priority */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '10.5px', color: 'var(--t2)', fontWeight: 600 }}>{t('iia_item', lang)}</div>
           <div style={{ fontSize: '14px', fontWeight: 700 }} dir="auto">{alertItemName(a, lang)}</div>
         </div>
-        <PhoenixStatusBadge variant={PRIORITY_VARIANT[a.priority]} label={t(PRIORITY_LABEL_KEY[a.priority], lang)} />
+        <PhoenixStatusBadge variant={priorityVariant} label={t(priorityLabelKey, lang)} />
       </div>
 
       {/* Source / Target */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
         <PartyBlock
-          roleLabel={t('iia_source', lang)} statusLabelKey={a.sourceStatus === 'surplus' ? 'st_surplus' : 'st_near_expiry'}
+          roleLabel={t('source_institution', lang)}
+          statusLabelKey={a.sourceStatus === 'surplus' ? 'st_surplus' : 'st_near_expiry'}
           statusVariant={a.sourceStatus === 'surplus' ? 'ok' : 'warn'}
           name={orgName(a.sourceOrgName, a.sourceOrgNameAr, lang)}
           contactName={a.sourceContactName} contactPhone={a.sourceContactPhone}
           lang={lang} onCopy={onCopy}
         />
         <PartyBlock
-          roleLabel={t('iia_target', lang)} statusLabelKey={a.targetStatus === 'missing' ? 'st_missing' : 'st_scarce'}
+          roleLabel={t('destination_institution', lang)}
+          statusLabelKey={a.targetStatus === 'missing' ? 'st_missing' : 'st_scarce'}
           statusVariant={a.targetStatus === 'missing' ? 'err' : 'warn'}
           name={orgName(a.targetOrgName, a.targetOrgNameAr, lang)}
           contactName={a.targetContactName} contactPhone={a.targetContactPhone}
@@ -239,6 +358,8 @@ function AlertCard({ a, lang, isMobile, onCopy }: {
   );
 }
 
+// ─── Party block ──────────────────────────────────────────────────────────────
+
 function PartyBlock({ roleLabel, statusLabelKey, statusVariant, name, contactName, contactPhone, lang, onCopy }: {
   roleLabel: string;
   statusLabelKey: string;
@@ -258,7 +379,6 @@ function PartyBlock({ roleLabel, statusLabelKey, statusVariant, name, contactNam
       </div>
       <div style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{name}</div>
 
-      {/* Monthly Status Officer contact */}
       <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--t2)' }}>
         <div>{t('iia_officer', lang)}: <span dir="auto">{contactName ?? '—'}</span></div>
         {contactPhone ? (

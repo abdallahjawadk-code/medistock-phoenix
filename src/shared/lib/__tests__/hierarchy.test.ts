@@ -619,8 +619,10 @@ describe('Central Dashboard integration', () => {
     expect(dashboard).toContain('onNavigate(11)');
   });
 
-  it('alert cards navigate to status center (12)', () => {
-    expect(dashboard).toContain('onNavigate(12)');
+  it('exchange-alert cards navigate to inter-institution alerts (13)', () => {
+    // Bug fix: cards previously pointed to screen 12 (Status Center); correct target is 13
+    expect(dashboard).toContain('onNavigate(13)');
+    expect(dashboard).not.toMatch(/onClick\s*=\s*\{[^}]*onNavigate\(12\)/);
   });
 });
 

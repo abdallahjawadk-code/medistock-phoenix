@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -8,6 +9,7 @@ import {
 } from '@/shared/supabase/services/dashboard.service';
 import { getStatusReports } from '@/shared/supabase/services/status-reports.service';
 import { generateExchangeAlerts } from '@/features/status/exchange-alerts';
+import { computeMaterialAlerts } from '@/features/alerts/materialAlertEngine';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -33,6 +35,14 @@ export function DashboardScreen({ onNavigate }: Props) {
   const sr = srCounts.data;
   const alerts = allReports.data ? generateExchangeAlerts(allReports.data) : [];
   const highAlerts = alerts.filter(a => a.priority === 'high');
+
+  const materialAlertResult = useMemo(
+    () => allReports.data ? computeMaterialAlerts(allReports.data) : null,
+    [allReports.data],
+  );
+  const topSmartAlerts = materialAlertResult
+    ? materialAlertResult.alerts.filter(a => a.severity === 'critical' || a.severity === 'urgent').slice(0, 3)
+    : [];
 
   return (
     <div style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
@@ -115,7 +125,7 @@ export function DashboardScreen({ onNavigate }: Props) {
               const prioKey = a.priority === 'high' ? 'ea_priority_high' : a.priority === 'medium' ? 'ea_priority_medium' : 'ea_priority_low';
               const prioVariant = a.priority === 'high' ? 'err' as const : a.priority === 'medium' ? 'warn' as const : 'neutral' as const;
               return (
-                <PhoenixCard key={a.id} padding="12px 14px" hover onClick={() => onNavigate(12)}>
+                <PhoenixCard key={a.id} padding="12px 14px" hover onClick={() => onNavigate(13)}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{itemName || '—'}</span>
@@ -125,6 +135,43 @@ export function DashboardScreen({ onNavigate }: Props) {
                     </div>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <PhoenixStatusBadge variant={prioVariant} label={t(prioKey, lang)} />
+                      <span style={{ fontSize: '10px', color: 'var(--warn)', fontWeight: 600 }}>⚠ {t('ea_manual', lang)}</span>
+                    </div>
+                  </div>
+                </PhoenixCard>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Smart Material Alerts compact widget */}
+      {materialAlertResult && (materialAlertResult.summary.criticalCount > 0 || materialAlertResult.summary.urgentCount > 0) && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('smart_material_alerts', lang)}</h3>
+            <button
+              onClick={() => onNavigate(13)}
+              style={{ padding: '5px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--err)', background: 'var(--err2)', color: 'var(--err)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              {t('view_all_alerts', lang)} →
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: isMobile ? '20px' : '28px' }}>
+            {topSmartAlerts.map(a => {
+              const name = lang === 'ar' ? (a.materialNameAr || a.materialName) : (a.materialName || a.materialNameAr);
+              const inst = lang === 'ar' ? (a.institutionNameAr || a.institutionName) : (a.institutionName || a.institutionNameAr);
+              const isCritical = a.severity === 'critical';
+              return (
+                <PhoenixCard key={a.id} padding="10px 14px" hover onClick={() => onNavigate(13)}
+                  style={{ borderInlineStart: `3px solid ${isCritical ? 'var(--err)' : '#dc2626'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{name || '—'}</span>
+                      <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">{inst}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                      <PhoenixStatusBadge variant="err" label={t(isCritical ? 'critical' : 'urgent', lang)} />
                       <span style={{ fontSize: '10px', color: 'var(--warn)', fontWeight: 600 }}>⚠ {t('ea_manual', lang)}</span>
                     </div>
                   </div>
