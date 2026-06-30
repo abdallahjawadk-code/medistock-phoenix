@@ -39,15 +39,15 @@ export async function getAvailabilityByPoint(pointId: string): Promise<Availabil
 }
 
 /**
- * Persist an availability record using the material identity flow.
- * Conflict key: (distribution_point_id, scientific_name, concentration, dosage_form)
- * matching index item_availability_dp_sci_conc_form_uniq (migration 029).
+ * Persist an availability record via the phoenix_upsert_availability RPC (migration 030).
+ * Replaces PostgREST .upsert() which cannot match the COALESCE partial index (migration 029),
+ * causing Postgres 42P10. The RPC performs UPDATE-then-INSERT server-side.
  *
- * concentration and dosage_form are sent as '' (empty string) instead of null
- * so that COALESCE(column, '') in the partial index evaluates to '' for both
- * absent and explicitly-empty values, making the onConflict columns align with
- * the index key.  Sending null would cause Postgres 42P10 because the index
- * uses COALESCE expressions, not the raw column values.
+ * concentration and dosage_form are sent as '' (empty string) instead of null so that
+ * COALESCE(column, '') in the partial index evaluates to '' for both absent and
+ * explicitly-empty values.
+ *
+ * organization_id is derived server-side from distribution_point_id — never trusted from client.
  */
 export async function upsertAvailability(input: UpsertAvailabilityInput): Promise<void> {
   if (!supabaseConfigured) return;
@@ -55,25 +55,20 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
     throw new Error('upsertAvailability requires scientificName');
   }
 
-  const row: Record<string, unknown> = {
-    distribution_point_id: input.distributionPointId,
-    organization_id:       input.organizationId,
-    scientific_name:       input.scientificName.trim(),
-    trade_name:            input.tradeName ?? null,
-    dosage_form:           input.dosageForm ?? '',
-    concentration:         input.concentrationValue ?? '',
-    price:                 input.price ?? null,
-    quantity:              input.quantity,
-    condition:             input.condition,
-    batch_number:          input.batchNumber ?? null,
-    expiry_date:           input.expiryDate ?? null,
-    notes:                 input.notes ?? null,
-    supply_type:           input.supplyType ?? null,
-  };
-
-  const { error } = await supabase
-    .from('item_availability')
-    .upsert(row, { onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form' });
+  const { error } = await supabase.rpc('phoenix_upsert_availability', {
+    p_distribution_point_id: input.distributionPointId,
+    p_scientific_name:       input.scientificName.trim(),
+    p_trade_name:            input.tradeName ?? null,
+    p_dosage_form:           input.dosageForm ?? '',
+    p_concentration:         input.concentrationValue ?? '',
+    p_quantity:              input.quantity,
+    p_condition:             input.condition,
+    p_expiry_date:           input.expiryDate ?? null,
+    p_batch_number:          input.batchNumber ?? null,
+    p_notes:                 input.notes ?? null,
+    p_supply_type:           input.supplyType ?? null,
+    p_price:                 input.price ?? null,
+  });
   if (error) throw error;
 }
 

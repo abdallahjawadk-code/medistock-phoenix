@@ -313,8 +313,8 @@ describe('Service: availability upsert uses scientific_name', () => {
     expect(service).toContain('supplyType');
   });
 
-  it('upsert targets 4-column conflict key (migration 029)', () => {
-    expect(service).toContain("onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form'");
+  it('upsert calls phoenix_upsert_availability RPC (migration 030)', () => {
+    expect(service).toContain("rpc('phoenix_upsert_availability'");
   });
 
   it('does not write port_name in upsert row', () => {
@@ -1452,45 +1452,102 @@ describe('Port management uses permission-based gating, not role-based', () => {
 });
 
 // ============================================================================
-// FIX-AVAILABILITY-UPSERT-UNIQUE-A (migration 029)
+// FIX-AVAILABILITY-UPSERT-UNIQUE-A (migration 029) — updated for RPC path
 // ============================================================================
 
-describe('FIX-AVAILABILITY-UPSERT-UNIQUE-A: upsertAvailability 4-column key', () => {
-  it('scientific_name is trimmed before insert', () => {
-    // The service must call .trim() on scientificName before building the row.
+describe('FIX-AVAILABILITY-UPSERT-UNIQUE-A: upsertAvailability normalization (preserved in RPC)', () => {
+  it('scientific_name is trimmed before RPC call', () => {
     const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
     expect(upsertFn).toContain('input.scientificName.trim()');
   });
 
-  it('concentration sent as empty string when absent (not null)', () => {
+  it('p_concentration sent as empty string when absent (not null)', () => {
     const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
-    // Must use ?? '' not ?? null
-    expect(upsertFn).toContain("concentration:         input.concentrationValue ?? ''");
-    expect(upsertFn).not.toContain("concentration:         input.concentrationValue ?? null");
+    expect(upsertFn).toContain("p_concentration:");
+    expect(upsertFn).toContain("input.concentrationValue ?? ''");
+    expect(upsertFn).not.toContain("input.concentrationValue ?? null");
   });
 
-  it('dosage_form sent as empty string when absent (not null)', () => {
+  it('p_dosage_form sent as empty string when absent (not null)', () => {
     const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
-    expect(upsertFn).toContain("dosage_form:           input.dosageForm ?? ''");
-    expect(upsertFn).not.toContain("dosage_form:           input.dosageForm ?? null");
+    expect(upsertFn).toContain("p_dosage_form:");
+    expect(upsertFn).toContain("input.dosageForm ?? ''");
+    expect(upsertFn).not.toContain("input.dosageForm ?? null");
   });
 
-  it('onConflict includes all 4 index columns', () => {
-    expect(service).toContain(
-      "onConflict: 'distribution_point_id,scientific_name,concentration,dosage_form'"
-    );
+  it('PostgREST onConflict is gone — no longer needed with RPC', () => {
+    expect(service).not.toContain("onConflict:");
   });
 
-  it('onConflict does NOT use the old 2-column key', () => {
-    // The old key caused 42P10; must be gone.
+  it('old 2-column onConflict key is not present', () => {
     expect(service).not.toContain(
       "onConflict: 'distribution_point_id,scientific_name'"
     );
   });
 
-  it('comment documents why concentration/dosage_form use empty string', () => {
+  it('comment documents COALESCE and 42P10 motivation', () => {
     expect(service).toContain('COALESCE');
     expect(service).toContain('42P10');
+  });
+});
+
+// ============================================================================
+// FIX-AVAILABILITY-RPC-A (migration 030)
+// ============================================================================
+
+describe('FIX-AVAILABILITY-RPC-A: upsertAvailability uses RPC not PostgREST .upsert()', () => {
+  it('(a) RPC name is exactly phoenix_upsert_availability', () => {
+    expect(service).toContain("rpc('phoenix_upsert_availability'");
+  });
+
+  it('(b) p_concentration param is empty string when absent', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain("p_concentration:");
+    expect(upsertFn).toContain("input.concentrationValue ?? ''");
+  });
+
+  it('(b) p_dosage_form param is empty string when absent', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain("p_dosage_form:");
+    expect(upsertFn).toContain("input.dosageForm ?? ''");
+  });
+
+  it('(c) scientific_name guard throws before RPC is called', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain("input.scientificName?.trim()");
+    expect(upsertFn).toContain('upsertAvailability requires scientificName');
+  });
+
+  it('(d) old PostgREST .upsert() is not present in upsert function', () => {
+    // Scope to upsertAvailability body only (slice stops at next export)
+    const start = service.indexOf('async function upsertAvailability');
+    const end   = service.indexOf('export async function getLowStockItems');
+    const upsertFn = service.slice(start, end);
+    expect(upsertFn).not.toContain(".upsert(");
+    expect(upsertFn).not.toContain("onConflict:");
+    expect(upsertFn).not.toContain(".from('item_availability')");
+  });
+
+  it('organization_id not sent from client — derived server-side in RPC', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).not.toContain("p_organization_id:");
+    expect(upsertFn).not.toContain("organization_id:       input.organizationId");
+  });
+
+  it('all 12 RPC params are present in the call', () => {
+    const upsertFn = service.slice(service.indexOf('async function upsertAvailability'));
+    expect(upsertFn).toContain('p_distribution_point_id:');
+    expect(upsertFn).toContain('p_scientific_name:');
+    expect(upsertFn).toContain('p_trade_name:');
+    expect(upsertFn).toContain('p_dosage_form:');
+    expect(upsertFn).toContain('p_concentration:');
+    expect(upsertFn).toContain('p_quantity:');
+    expect(upsertFn).toContain('p_condition:');
+    expect(upsertFn).toContain('p_expiry_date:');
+    expect(upsertFn).toContain('p_batch_number:');
+    expect(upsertFn).toContain('p_notes:');
+    expect(upsertFn).toContain('p_supply_type:');
+    expect(upsertFn).toContain('p_price:');
   });
 });
 
