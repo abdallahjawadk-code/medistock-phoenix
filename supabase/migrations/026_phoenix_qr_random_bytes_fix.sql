@@ -1,6 +1,6 @@
 -- ============================================================================
 -- MIGRATION 026 — Fix gen_random_bytes / digest schema qualification in
---                 create_qr_for_target
+--                 create_qr_for_target; harden mutation RPC execute grants
 -- ============================================================================
 -- MANUAL APPLY ONLY — DO NOT use `npx supabase db push`.
 -- Apply via Supabase Dashboard > SQL Editor after a verified backup.
@@ -10,48 +10,67 @@
 -- Root cause (MIGRATION-026-QR-RANDOM-BYTES-FIX-A):
 --   POST /rest/v1/rpc/create_qr_for_target → 404 / PostgreSQL error 42883:
 --     "function gen_random_bytes(integer) does not exist"
---     "No function matches the given name and argument types."
 --
---   The function create_qr_for_target is declared with:
---     SET search_path = public
---   This means only the public schema is searched for unqualified function calls.
---   pgcrypto (gen_random_bytes, digest) is installed by Supabase in the
---   `extensions` schema, NOT in `public`. With search_path = public, the
---   unqualified calls:
---     gen_random_bytes(32)           — 42883: not found
---     digest(v_plain_token, 'sha256') — 42883: not found
---     gen_random_bytes(12)           — 42883: not found
---   cannot be resolved.
+--   create_qr_for_target has SET search_path = public.
+--   pgcrypto (gen_random_bytes, digest) is installed in the `extensions`
+--   schema, not `public`. Unqualified calls fail at runtime with 42883.
 --
--- Safe diagnostics to run BEFORE applying (confirm pgcrypto location):
+-- Secondary fix (MIGRATION-026-ANON-EXECUTE-REVOKE-FIX-A):
+--   Initial migration 026 rolled back with:
+--     P0004: VERIFY FAILED: anon can EXECUTE create_qr_for_target
 --
---   SELECT extname, extnamespace::regnamespace AS schema
---   FROM pg_extension
---   WHERE extname = 'pgcrypto';
---   -- Expected: pgcrypto | extensions
+--   PostgreSQL grants EXECUTE to the pseudo-role PUBLIC on every newly
+--   created function. `REVOKE ALL FROM anon` alone does not prevent anon
+--   from executing because anon INHERITS the PUBLIC grant at runtime.
+--   The correct pattern is:
+--     REVOKE ALL … FROM PUBLIC;   ← strips the inherited default
+--     REVOKE ALL … FROM anon;     ← belt-and-suspenders
+--     GRANT EXECUTE … TO authenticated;
 --
---   SELECT n.nspname AS schema, p.proname, pg_get_function_arguments(p.oid) AS args
---   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
---   WHERE p.proname = 'gen_random_bytes'
---   ORDER BY n.nspname;
---   -- Expected: extensions | gen_random_bytes | size integer
+--   The same PUBLIC-grant issue applies to disable_qr_token, which was
+--   created in migration 003 with `REVOKE … FROM anon` but not `FROM PUBLIC`.
+--   This migration also hardens disable_qr_token with the safe pattern.
+--   (The disable_qr_token function BODY is NOT replaced — grants only.)
 --
 -- What this migration does:
---   A. Re-creates create_qr_for_target (CREATE OR REPLACE) with all three
---      pgcrypto calls fully schema-qualified:
---        gen_random_bytes(32)  →  extensions.gen_random_bytes(32)
---        digest(…, 'sha256')   →  extensions.digest(…, 'sha256')
---        gen_random_bytes(12)  →  extensions.gen_random_bytes(12)
---      All other logic is preserved verbatim from migration 022.
---   B. Re-states GRANT/REVOKE for create_qr_for_target (idempotent).
---   C. Leaves disable_qr_token unchanged — it does not call pgcrypto.
---   D. VERIFY block — 11 assertions.
+--   A. Re-creates create_qr_for_target (CREATE OR REPLACE) with pgcrypto
+--      calls fully schema-qualified. All other logic is unchanged from 022.
+--   B. Safe EXECUTE grants for create_qr_for_target
+--        (REVOKE FROM PUBLIC, REVOKE FROM anon, GRANT TO authenticated).
+--   C. Safe EXECUTE grants for disable_qr_token (grants only, no body change).
+--   D. VERIFY block — 15 assertions.
+--
+-- Safe diagnostics to run BEFORE applying:
+--
+--   -- Confirm pgcrypto location
+--   SELECT extname, extnamespace::regnamespace AS schema
+--   FROM pg_extension WHERE extname = 'pgcrypto';
+--   -- Expected: pgcrypto | extensions
+--
+--   -- Confirm gen_random_bytes and digest exist in extensions schema
+--   SELECT n.nspname AS schema, p.proname, pg_get_function_arguments(p.oid) AS args
+--   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--   WHERE p.proname IN ('gen_random_bytes', 'digest')
+--   ORDER BY p.proname, n.nspname;
+--   -- Expected rows: extensions | gen_random_bytes | size integer
+--   --                extensions | digest | ...
+--
+--   -- Confirm current grant state (both functions)
+--   SELECT n.nspname AS schema, p.proname,
+--     pg_get_function_arguments(p.oid) AS args,
+--     has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_execute,
+--     has_function_privilege('anon', p.oid, 'EXECUTE')          AS anon_execute
+--   FROM pg_proc p
+--   JOIN pg_namespace n ON n.oid = p.pronamespace
+--   WHERE n.nspname = 'public'
+--     AND p.proname IN ('create_qr_for_target', 'disable_qr_token')
+--   ORDER BY p.proname;
+--   -- Expected BEFORE applying: anon_execute = true (the bug — inherited from PUBLIC)
+--   -- Expected AFTER applying:  anon_execute = false for both functions
 --
 -- ⚠️  auth.uid() CAVEAT:
 --   Supabase Dashboard SQL Editor runs as postgres/service role — no JWT.
---   auth.uid() returns NULL in that context. Do NOT use RLS helper functions
---   (phoenix_my_role, phoenix_my_org, phoenix_profile_has_permission) in
---   diagnostic queries run from SQL Editor.
+--   Do NOT use RLS helper functions in diagnostic queries from SQL Editor.
 -- ============================================================================
 
 BEGIN;
@@ -60,7 +79,7 @@ BEGIN;
 -- A. create_qr_for_target — qualify gen_random_bytes and digest with
 --    extensions schema to resolve 42883
 -- ============================================================================
--- Preserved exactly from migration 022, except three pgcrypto call sites.
+-- Preserved exactly from migration 022 except three pgcrypto call sites.
 
 CREATE OR REPLACE FUNCTION create_qr_for_target(
   p_target_type  text,
@@ -182,88 +201,131 @@ END;
 $$;
 
 -- ============================================================================
--- B. Re-state GRANT/REVOKE (idempotent, preserves migration 022 intent)
+-- B. Safe EXECUTE grants for create_qr_for_target
 -- ============================================================================
-REVOKE ALL ON FUNCTION create_qr_for_target(text, uuid, text) FROM anon;
-GRANT EXECUTE ON FUNCTION create_qr_for_target(text, uuid, text) TO authenticated;
+-- Step 1: Revoke from PUBLIC — removes the default grant PostgreSQL applies to
+--         every newly created function. Without this, anon inherits EXECUTE
+--         from PUBLIC even after REVOKE FROM anon.
+-- Step 2: Belt-and-suspenders revoke from anon directly.
+-- Step 3: Grant EXECUTE to authenticated only.
+-- All three statements are idempotent.
+REVOKE ALL ON FUNCTION public.create_qr_for_target(text, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.create_qr_for_target(text, uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.create_qr_for_target(text, uuid, text) TO authenticated;
 
 -- ============================================================================
--- C. VERIFY — 11 assertions
+-- C. Safe EXECUTE grants for disable_qr_token
+-- ============================================================================
+-- Migration 003 issued REVOKE FROM anon but not FROM PUBLIC.
+-- This migration applies the same safe pattern to close the inherited gap.
+-- The disable_qr_token function BODY is NOT changed here — grants only.
+REVOKE ALL ON FUNCTION public.disable_qr_token(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.disable_qr_token(uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.disable_qr_token(uuid, text) TO authenticated;
+
+-- ============================================================================
+-- D. VERIFY — 15 assertions
 -- ============================================================================
 
 DO $$
 DECLARE
   v_fn_src      text;
   v_fn_oid      oid;
+  v_dq_oid      oid;
   v_is_secdef   boolean;
   v_disable_src text;
 BEGIN
 
-  -- Resolve function OID once (used for privilege checks)
+  -- Resolve OIDs once (used for privilege checks)
   SELECT p.oid INTO v_fn_oid
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.proname = 'create_qr_for_target';
+
+  SELECT p.oid INTO v_dq_oid
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'disable_qr_token';
 
   -- 1. create_qr_for_target exists
   ASSERT v_fn_oid IS NOT NULL,
     'VERIFY FAILED: create_qr_for_target not found in public schema';
 
   -- 2. create_qr_for_target is SECURITY DEFINER
-  SELECT p.prosecdef INTO v_is_secdef
-  FROM pg_proc p WHERE p.oid = v_fn_oid;
+  SELECT p.prosecdef INTO v_is_secdef FROM pg_proc p WHERE p.oid = v_fn_oid;
   ASSERT v_is_secdef,
     'VERIFY FAILED: create_qr_for_target is not SECURITY DEFINER';
 
-  -- Load function source body
+  -- Load create_qr_for_target source body
   SELECT p.prosrc INTO v_fn_src FROM pg_proc p WHERE p.oid = v_fn_oid;
 
-  -- 3. body references qr.generate permission
-  ASSERT v_fn_src LIKE '%qr.generate%',
-    'VERIFY FAILED: create_qr_for_target does not reference qr.generate';
-
-  -- 4. body references phoenix_profile_has_permission
-  ASSERT v_fn_src LIKE '%phoenix_profile_has_permission%',
-    'VERIFY FAILED: create_qr_for_target does not reference phoenix_profile_has_permission';
-
-  -- 5. body uses extensions-qualified gen_random_bytes (fix applied)
+  -- 3. body uses extensions-qualified gen_random_bytes (42883 fix applied)
   ASSERT v_fn_src LIKE '%extensions.gen_random_bytes%',
     'VERIFY FAILED: create_qr_for_target does not use extensions.gen_random_bytes — 42883 fix not applied';
 
-  -- 6. extensions.gen_random_bytes is resolvable (pgcrypto in extensions schema)
-  ASSERT EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'extensions' AND p.proname = 'gen_random_bytes'
-  ), 'VERIFY FAILED: extensions.gen_random_bytes not found — pgcrypto may not be installed in extensions schema';
+  -- 4. body uses extensions-qualified digest (42883 fix applied)
+  ASSERT v_fn_src LIKE '%extensions.digest%',
+    'VERIFY FAILED: create_qr_for_target does not use extensions.digest — 42883 fix not applied';
 
-  -- 7. authenticated can EXECUTE create_qr_for_target
+  -- 5. body references qr.generate permission
+  ASSERT v_fn_src LIKE '%qr.generate%',
+    'VERIFY FAILED: create_qr_for_target does not reference qr.generate';
+
+  -- 6. body references phoenix_profile_has_permission
+  ASSERT v_fn_src LIKE '%phoenix_profile_has_permission%',
+    'VERIFY FAILED: create_qr_for_target does not reference phoenix_profile_has_permission';
+
+  -- 7. body contains org guard
+  ASSERT v_fn_src LIKE '%TARGET_NOT_FOUND_OR_FORBIDDEN%',
+    'VERIFY FAILED: create_qr_for_target does not contain org guard TARGET_NOT_FOUND_OR_FORBIDDEN';
+
+  -- 8. authenticated can EXECUTE create_qr_for_target
   ASSERT has_function_privilege('authenticated', v_fn_oid, 'EXECUTE'),
     'VERIFY FAILED: authenticated cannot EXECUTE create_qr_for_target';
 
-  -- 8. anon cannot EXECUTE create_qr_for_target
+  -- 9. anon cannot EXECUTE create_qr_for_target
+  -- (anon must not inherit EXECUTE from PUBLIC after REVOKE ALL FROM PUBLIC)
   ASSERT NOT has_function_privilege('anon', v_fn_oid, 'EXECUTE'),
-    'VERIFY FAILED: anon can EXECUTE create_qr_for_target — REVOKE may not have applied';
+    'VERIFY FAILED: anon can EXECUTE create_qr_for_target — REVOKE FROM PUBLIC may not have applied';
 
-  -- 9. disable_qr_token still references qr.revoke and phoenix_profile_has_permission
-  SELECT p.prosrc INTO v_disable_src
-  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public' AND p.proname = 'disable_qr_token';
-  ASSERT v_disable_src IS NOT NULL,
+  -- 10. PUBLIC pseudo-role has no EXECUTE on create_qr_for_target
+  -- In pg_proc ACL entries, grantee OID 0 represents the pseudo-role PUBLIC.
+  -- proacl IS NULL means no explicit ACL exists and default PUBLIC EXECUTE applies — a bug here.
+  ASSERT (SELECT proacl IS NOT NULL FROM pg_proc WHERE oid = v_fn_oid),
+    'VERIFY FAILED: create_qr_for_target proacl is NULL — REVOKE FROM PUBLIC was not persisted (default PUBLIC EXECUTE still in effect)';
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM aclexplode((SELECT proacl FROM pg_proc WHERE oid = v_fn_oid))
+    WHERE grantee = 0 AND privilege_type = 'EXECUTE'
+  ), 'VERIFY FAILED: PUBLIC (grantee OID 0) still has EXECUTE on create_qr_for_target';
+
+  -- 11. disable_qr_token exists and still contains qr.revoke and phoenix_profile_has_permission
+  ASSERT v_dq_oid IS NOT NULL,
     'VERIFY FAILED: disable_qr_token not found in public schema';
+  SELECT p.prosrc INTO v_disable_src FROM pg_proc p WHERE p.oid = v_dq_oid;
   ASSERT v_disable_src LIKE '%qr.revoke%',
     'VERIFY FAILED: disable_qr_token does not reference qr.revoke (migration 022 may not be applied)';
   ASSERT v_disable_src LIKE '%phoenix_profile_has_permission%',
     'VERIFY FAILED: disable_qr_token does not reference phoenix_profile_has_permission';
 
-  -- 10. no service_role reference in create_qr_for_target body
+  -- 12. authenticated can EXECUTE disable_qr_token
+  ASSERT has_function_privilege('authenticated', v_dq_oid, 'EXECUTE'),
+    'VERIFY FAILED: authenticated cannot EXECUTE disable_qr_token';
+
+  -- 13. anon cannot EXECUTE disable_qr_token
+  ASSERT NOT has_function_privilege('anon', v_dq_oid, 'EXECUTE'),
+    'VERIFY FAILED: anon can EXECUTE disable_qr_token — REVOKE FROM PUBLIC may not have applied';
+
+  -- 14. PUBLIC has no EXECUTE on disable_qr_token
+  ASSERT (SELECT proacl IS NOT NULL FROM pg_proc WHERE oid = v_dq_oid),
+    'VERIFY FAILED: disable_qr_token proacl is NULL — REVOKE FROM PUBLIC was not persisted';
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM aclexplode((SELECT proacl FROM pg_proc WHERE oid = v_dq_oid))
+    WHERE grantee = 0 AND privilege_type = 'EXECUTE'
+  ), 'VERIFY FAILED: PUBLIC (grantee OID 0) still has EXECUTE on disable_qr_token';
+
+  -- 15. no service_role reference in create_qr_for_target body
   ASSERT v_fn_src NOT LIKE '%service_role%',
     'VERIFY FAILED: create_qr_for_target references service_role — security risk';
 
-  -- 11. create_qr_for_target preserves org guard (TARGET_NOT_FOUND_OR_FORBIDDEN)
-  ASSERT v_fn_src LIKE '%TARGET_NOT_FOUND_OR_FORBIDDEN%',
-    'VERIFY FAILED: create_qr_for_target does not contain org guard TARGET_NOT_FOUND_OR_FORBIDDEN';
-
-  RAISE NOTICE '026 ✓ create_qr_for_target: extensions.gen_random_bytes qualified; qr.generate preserved; SECURITY DEFINER preserved; org guard preserved; authenticated EXECUTE granted; anon EXECUTE revoked; disable_qr_token qr.revoke intact';
+  RAISE NOTICE '026 ✓ create_qr_for_target: extensions.gen_random_bytes/digest qualified; qr.generate preserved; SECURITY DEFINER preserved; org guard preserved; PUBLIC+anon EXECUTE revoked; authenticated EXECUTE granted. disable_qr_token: PUBLIC+anon EXECUTE revoked; authenticated EXECUTE granted; qr.revoke intact.';
 END $$;
 
 COMMIT;
@@ -273,25 +335,40 @@ COMMIT;
 --
 -- Post-apply verification (run in Supabase SQL Editor):
 --
--- 1. Confirm pgcrypto location:
---    SELECT extname, extnamespace::regnamespace AS schema
---    FROM pg_extension WHERE extname = 'pgcrypto';
---    Expected: pgcrypto | extensions
---
--- 2. Confirm gen_random_bytes is visible at extensions schema:
---    SELECT n.nspname AS schema, p.proname, pg_get_function_arguments(p.oid) AS args
+-- 1. Confirm fix applied to function body:
+--    SELECT
+--      prosrc LIKE '%extensions.gen_random_bytes%' AS gen_random_bytes_qualified,
+--      prosrc LIKE '%extensions.digest%'            AS digest_qualified,
+--      prosrc NOT LIKE '%service_role%'             AS no_service_role,
+--      prosrc LIKE '%qr.generate%'                  AS qr_generate_present,
+--      prosrc LIKE '%TARGET_NOT_FOUND_OR_FORBIDDEN%' AS org_guard_present
 --    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
---    WHERE p.proname = 'gen_random_bytes' ORDER BY n.nspname;
---    Expected: extensions | gen_random_bytes | size integer
---
--- 3. Confirm create_qr_for_target body uses extensions-qualified calls:
---    SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 --    WHERE n.nspname = 'public' AND p.proname = 'create_qr_for_target';
---    Expected: body contains 'extensions.gen_random_bytes'
+--    Expected: all five columns = true
 --
--- 4. Confirm EXECUTE grant:
+-- 2. Confirm EXECUTE grant state (both functions):
+--    SELECT n.nspname AS schema, p.proname,
+--      pg_get_function_arguments(p.oid) AS args,
+--      has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth_execute,
+--      has_function_privilege('anon', p.oid, 'EXECUTE')          AS anon_execute
+--    FROM pg_proc p
+--    JOIN pg_namespace n ON n.oid = p.pronamespace
+--    WHERE n.nspname = 'public'
+--      AND p.proname IN ('create_qr_for_target', 'disable_qr_token')
+--    ORDER BY p.proname;
+--    Expected: auth_execute = true, anon_execute = false for both
+--
+-- 3. Confirm via role_routine_grants (PUBLIC should not appear):
 --    SELECT grantee, privilege_type
 --    FROM information_schema.role_routine_grants
---    WHERE routine_schema = 'public' AND routine_name = 'create_qr_for_target';
---    Expected: authenticated | EXECUTE (and no anon row)
+--    WHERE routine_schema = 'public'
+--      AND routine_name IN ('create_qr_for_target', 'disable_qr_token')
+--    ORDER BY routine_name, grantee;
+--    Expected: only authenticated | EXECUTE for each (no anon, no PUBLIC row)
+--
+-- 4. Confirm disable_qr_token qr.revoke intact:
+--    SELECT prosrc LIKE '%qr.revoke%' AS qr_revoke_present
+--    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--    WHERE n.nspname = 'public' AND p.proname = 'disable_qr_token';
+--    Expected: true
 -- ============================================================================

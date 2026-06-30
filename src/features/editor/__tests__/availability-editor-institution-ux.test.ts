@@ -1312,7 +1312,8 @@ describe('Port management uses permission-based gating, not role-based', () => {
   it('migration 026 preserves phoenix_profile_has_permission in create_qr_for_target', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
-    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    // function body ends before the schema-qualified REVOKE statement
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION public.create_qr_for_target');
     const body = sql.slice(fnStart, fnEnd);
     expect(body).toContain('phoenix_profile_has_permission');
   });
@@ -1320,7 +1321,7 @@ describe('Port management uses permission-based gating, not role-based', () => {
   it('migration 026 preserves SECURITY DEFINER in create_qr_for_target', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
-    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION public.create_qr_for_target');
     const body = sql.slice(fnStart, fnEnd);
     expect(body).toContain('SECURITY DEFINER');
   });
@@ -1328,28 +1329,52 @@ describe('Port management uses permission-based gating, not role-based', () => {
   it('migration 026 preserves org guard TARGET_NOT_FOUND_OR_FORBIDDEN', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION create_qr_for_target');
-    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION create_qr_for_target');
+    const fnEnd   = sql.indexOf('REVOKE ALL ON FUNCTION public.create_qr_for_target');
     const body = sql.slice(fnStart, fnEnd);
     expect(body).toContain('TARGET_NOT_FOUND_OR_FORBIDDEN');
   });
 
-  it('migration 026 grants EXECUTE to authenticated and revokes from anon', () => {
+  it('migration 026 revokes EXECUTE from PUBLIC for create_qr_for_target', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
-    expect(noComments).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+create_qr_for_target.*TO\s+authenticated/i);
-    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+create_qr_for_target.*FROM\s+anon/i);
+    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.create_qr_for_target.*FROM\s+PUBLIC/i);
+  });
+
+  it('migration 026 grants EXECUTE to authenticated and revokes from PUBLIC and anon for create_qr_for_target', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.create_qr_for_target.*TO\s+authenticated/i);
+    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.create_qr_for_target.*FROM\s+anon/i);
   });
 
   it('migration 026 does not grant EXECUTE to anon for create_qr_for_target', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
-    expect(noComments).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+create_qr_for_target.*TO\s+anon/i);
+    expect(noComments).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.create_qr_for_target.*TO\s+anon/i);
   });
 
-  it('migration 026 VERIFY block asserts extensions.gen_random_bytes exists', () => {
+  it('migration 026 revokes EXECUTE from PUBLIC for disable_qr_token', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
-    expect(sql).toContain("n.nspname = 'extensions' AND p.proname = 'gen_random_bytes'");
-    expect(sql).toContain('extensions.gen_random_bytes not found');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.disable_qr_token.*FROM\s+PUBLIC/i);
+  });
+
+  it('migration 026 revokes EXECUTE from anon for disable_qr_token', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.disable_qr_token.*FROM\s+anon/i);
+  });
+
+  it('migration 026 grants EXECUTE to authenticated for disable_qr_token', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.disable_qr_token.*TO\s+authenticated/i);
+  });
+
+  it('migration 026 does not grant EXECUTE to anon for disable_qr_token', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    expect(noComments).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.disable_qr_token.*TO\s+anon/i);
   });
 
   it('migration 026 VERIFY block asserts create_qr_for_target is SECURITY DEFINER', () => {
@@ -1358,12 +1383,26 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(sql).toContain('create_qr_for_target is not SECURITY DEFINER');
   });
 
-  it('migration 026 VERIFY block asserts authenticated can EXECUTE and anon cannot', () => {
+  it('migration 026 VERIFY block asserts extensions.gen_random_bytes and digest are in function body', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain('extensions.gen_random_bytes — 42883 fix not applied');
+    expect(sql).toContain('extensions.digest — 42883 fix not applied');
+  });
+
+  it('migration 026 VERIFY block asserts authenticated can EXECUTE and anon cannot for create_qr_for_target', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     expect(sql).toContain("has_function_privilege('authenticated'");
     expect(sql).toContain("has_function_privilege('anon'");
     expect(sql).toContain('authenticated cannot EXECUTE create_qr_for_target');
-    expect(sql).toContain('anon can EXECUTE create_qr_for_target');
+    expect(sql).toContain('anon can EXECUTE create_qr_for_target — REVOKE FROM PUBLIC may not have applied');
+  });
+
+  it('migration 026 VERIFY block checks PUBLIC cannot EXECUTE create_qr_for_target via proacl', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    // PostgreSQL ACL grantee OID 0 = pseudo-role PUBLIC
+    expect(sql).toContain('grantee = 0 AND privilege_type');
+    expect(sql).toContain('proacl IS NOT NULL FROM pg_proc WHERE oid = v_fn_oid');
+    expect(sql).toContain('PUBLIC (grantee OID 0) still has EXECUTE on create_qr_for_target');
   });
 
   it('migration 026 VERIFY block checks disable_qr_token still has qr.revoke', () => {
@@ -1371,6 +1410,13 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(sql).toContain('disable_qr_token');
     expect(sql).toContain('qr.revoke');
     expect(sql).toContain('disable_qr_token does not reference qr.revoke');
+  });
+
+  it('migration 026 VERIFY block checks authenticated and anon EXECUTE for disable_qr_token', () => {
+    const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
+    expect(sql).toContain('authenticated cannot EXECUTE disable_qr_token');
+    expect(sql).toContain('anon can EXECUTE disable_qr_token');
+    expect(sql).toContain('PUBLIC (grantee OID 0) still has EXECUTE on disable_qr_token');
   });
 
   it('migration 026 create_qr_for_target function body has no service_role reference', () => {
@@ -1391,9 +1437,10 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(noComments).not.toMatch(/delete cascade/i);
   });
 
-  it('migration 026 does not modify disable_qr_token (only create_qr_for_target is replaced)', () => {
+  it('migration 026 does not replace disable_qr_token function body', () => {
     const sql = readPhoenix('supabase/migrations/026_phoenix_qr_random_bytes_fix.sql');
     const noComments = sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+    // 026 manages disable_qr_token grants only; the function body is not replaced
     expect(noComments).not.toContain('CREATE OR REPLACE FUNCTION disable_qr_token');
   });
 
