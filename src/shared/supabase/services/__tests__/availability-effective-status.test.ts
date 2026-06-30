@@ -113,7 +113,7 @@ describe('withEffectiveAvailabilityStatus: additive & non-destructive', () => {
     expect(original).toEqual(snapshot);
     // all original keys survive on the result
     for (const k of Object.keys(snapshot)) {
-      expect((r as Record<string, unknown>)[k]).toEqual(snapshot[k]);
+      expect((r as unknown as Record<string, unknown>)[k]).toEqual(snapshot[k]);
     }
   });
 
