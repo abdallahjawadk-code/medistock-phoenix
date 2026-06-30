@@ -18,6 +18,7 @@ type PublicItem = {
   quantity?: number;
   unit?: string;
   expiry_date?: string;
+  expiry_bucket?: string; // D7: 'expired'|'3_months'|'6_months'|'9_months'|null
 };
 
 const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
@@ -35,6 +36,15 @@ const CONDITION_LABEL: Record<string, { ar: string; en: string }> = {
 
 function conditionLabel(cond: string, lang: 'ar' | 'en'): string {
   return CONDITION_LABEL[cond]?.[lang] ?? cond;
+}
+
+function getExpBucketBadge(bucket: string | undefined, lang: 'ar' | 'en'): { label: string; color: string; bg: string } | null {
+  if (!bucket) return null;
+  if (bucket === 'expired')   return { label: t('expired_material',        lang), color: 'var(--err)',  bg: 'var(--err2)'  };
+  if (bucket === '3_months')  return { label: t('expires_within_3_months', lang), color: '#dc2626',     bg: '#fef2f2'      };
+  if (bucket === '6_months')  return { label: t('expires_within_6_months', lang), color: 'var(--warn)', bg: 'var(--warn2)' };
+  if (bucket === '9_months')  return { label: t('expires_within_9_months', lang), color: '#b45309',     bg: '#fef3c7'      };
+  return null;
 }
 
 function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {
@@ -152,20 +162,28 @@ export function PublicQrScreen({ publicId }: Props) {
                 const variant = item.condition ? CONDITION_VARIANT[item.condition] ?? 'neutral' : 'neutral';
                 const condLabel = item.condition ? conditionLabel(item.condition, lang) : '';
                 const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
+                const bucketBadge = getExpBucketBadge(item.expiry_bucket, lang);
                 return (
-                  <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: '1px solid var(--brd)' }}>
+                  <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: `1px solid ${bucketBadge ? bucketBadge.color : 'var(--brd)'}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{label}</span>
-                      {condLabel && (
-                        <PhoenixStatusBadge variant={variant} label={condLabel} />
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                        {bucketBadge && (
+                          <span style={{ padding: '1px 7px', borderRadius: 'var(--rpill)', border: `1px solid ${bucketBadge.color}`, background: bucketBadge.bg, color: bucketBadge.color, fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {bucketBadge.label}
+                          </span>
+                        )}
+                        {condLabel && (
+                          <PhoenixStatusBadge variant={variant} label={condLabel} />
+                        )}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>
                       {typeof item.quantity === 'number' && variant !== 'err' && (
                         <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
                       )}
                       {item.expiry_date && isNearExpiry && (
-                        <span style={{ color: 'var(--warn)' }} dir="ltr">
+                        <span style={{ color: bucketBadge ? bucketBadge.color : 'var(--warn)' }} dir="ltr">
                           ⏱ {t('public_expiry_warn', lang)} {item.expiry_date}
                         </span>
                       )}

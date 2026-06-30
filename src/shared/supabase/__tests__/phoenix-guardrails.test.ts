@@ -1832,3 +1832,269 @@ describe('Migration 027: privacy label is now DB-enforced, not just UI-only', ()
     expect(dpBlock).not.toContain("'supply_type'");
   });
 });
+
+// =============================================================================
+// Migration 028 — Public QR D6/D7 expiry and scientific-name fix
+// =============================================================================
+
+function readMig028() {
+  return readPhoenix('supabase/migrations/028_phoenix_public_qr_expiry_scientific_name_fix.sql');
+}
+
+describe('PUBLIC-QR-D6 [scientific-name-only items visible on QR]', () => {
+  it('migration 028 exists', () => {
+    expect(() => readMig028()).not.toThrow();
+  });
+
+  it('migration 028 uses LEFT JOIN on local_items (D6: include local_item_id = NULL rows)', () => {
+    const sql = readMig028();
+    expect(sql.toLowerCase()).toMatch(/left\s+join\s+local_items/);
+  });
+
+  it('migration 028 uses LEFT JOIN on central_items (D6: cascade of LEFT JOINs)', () => {
+    const sql = readMig028();
+    expect(sql.toLowerCase()).toMatch(/left\s+join\s+central_items/);
+  });
+
+  it('migration 028 includes scientific_name in COALESCE fallback chain', () => {
+    const sql = readMig028();
+    // must appear in the distribution_point branch name coalesce
+    expect(sql).toContain('ia.scientific_name');
+  });
+
+  it('migration 028 provides an English fallback for nameless rows', () => {
+    const sql = readMig028();
+    expect(sql).toContain('Unnamed material');
+  });
+
+  it('migration 028 provides an Arabic fallback for nameless rows', () => {
+    const sql = readMig028();
+    expect(sql).toContain('مادة غير مسماة');
+  });
+
+  it('migration 028 does not expose scientific_name directly as a separate output field', () => {
+    // scientific_name is only used as a COALESCE source for name/name_ar;
+    // it must NOT be emitted as its own 'scientific_name' key in the JSON output
+    const sql = readMig028();
+    expect(sql).not.toContain("'scientific_name'");
+  });
+
+  it('migration 028 VERIFY block asserts LEFT JOIN on local_items', () => {
+    const sql = readMig028();
+    const verifyBlock = sql.slice(sql.indexOf('do $$'));
+    expect(verifyBlock.toLowerCase()).toContain('left join local_items');
+  });
+});
+
+describe('PUBLIC-QR-D7 [auto-compute expiry condition from expiry_date]', () => {
+  it('migration 028 computes effective_condition from expiry_date (not raw ia.condition)', () => {
+    const sql = readMig028();
+    expect(sql).toContain('effective_condition');
+  });
+
+  it('migration 028 marks past-expiry-date rows as expired', () => {
+    const sql = readMig028();
+    expect(sql).toContain("expiry_date < current_date");
+  });
+
+  it('migration 028 applies 3-month threshold', () => {
+    const sql = readMig028();
+    expect(sql).toContain("interval '3 months'");
+  });
+
+  it('migration 028 applies 6-month threshold', () => {
+    const sql = readMig028();
+    expect(sql).toContain("interval '6 months'");
+  });
+
+  it('migration 028 applies 9-month threshold', () => {
+    const sql = readMig028();
+    expect(sql).toContain("interval '9 months'");
+  });
+
+  it('migration 028 emits expiry_bucket field in JSON output', () => {
+    const sql = readMig028();
+    expect(sql).toContain("'expiry_bucket'");
+  });
+
+  it('migration 028 expiry_bucket emits "3_months" value', () => {
+    const sql = readMig028();
+    expect(sql).toContain("'3_months'");
+  });
+
+  it('migration 028 expiry_bucket emits "6_months" value', () => {
+    const sql = readMig028();
+    expect(sql).toContain("'6_months'");
+  });
+
+  it('migration 028 expiry_bucket emits "9_months" value', () => {
+    const sql = readMig028();
+    expect(sql).toContain("'9_months'");
+  });
+
+  it('migration 028 uses effective_condition to null out expired quantity (D2 extended)', () => {
+    const sql = readMig028();
+    expect(sql).toContain("effective_condition = 'expired'");
+  });
+
+  it('migration 028 uses effective_condition to guard expiry_date return (D3 extended)', () => {
+    const sql = readMig028();
+    expect(sql).toContain("effective_condition in ('near_expiry', 'expired')");
+  });
+
+  it('migration 028 applies D7 fix to local_item branch as well', () => {
+    const sql = readMig028();
+    // both distribution_point and local_item branches must have effective_condition
+    const firstOcc  = sql.indexOf('effective_condition');
+    const secondOcc = sql.indexOf('effective_condition', firstOcc + 1);
+    expect(secondOcc).toBeGreaterThan(firstOcc);
+  });
+
+  it('migration 028 VERIFY block asserts expiry_date < current_date', () => {
+    const sql = readMig028();
+    const verifyBlock = sql.slice(sql.indexOf('do $$'));
+    expect(verifyBlock).toContain('expiry_date < current_date');
+  });
+
+  it('migration 028 VERIFY block asserts expiry_bucket field present', () => {
+    const sql = readMig028();
+    const verifyBlock = sql.slice(sql.indexOf('do $$'));
+    expect(verifyBlock).toContain('expiry_bucket');
+  });
+});
+
+describe('PUBLIC-QR-D6/D7 [security: privacy guardrails preserved in migration 028]', () => {
+  // Scope privacy checks to the function body only (before the DO $$ VERIFY block).
+  // The VERIFY block itself contains field names in ilike patterns like '%''batch_number''%'
+  // to assert those fields are NOT in the function — those assertions are correct and expected.
+  function mig028FnBody() {
+    const sql = readMig028();
+    const fnStart = sql.indexOf('create or replace function get_public_qr_payload');
+    const verifyStart = sql.indexOf('\ndo $$');
+    return sql.slice(fnStart, verifyStart);
+  }
+
+  it('migration 028 preserves D4 — DISTRIBUTION_POINT_NOT_ACTIVE guard', () => {
+    expect(mig028FnBody()).toContain('DISTRIBUTION_POINT_NOT_ACTIVE');
+  });
+
+  it('migration 028 does not expose batch_number in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'batch_number'");
+  });
+
+  it('migration 028 does not expose price in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'price'");
+  });
+
+  it('migration 028 does not expose trade_name in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'trade_name'");
+  });
+
+  it('migration 028 does not expose notes in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'notes'");
+  });
+
+  it('migration 028 does not expose supply_type in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'supply_type'");
+  });
+
+  it('migration 028 does not reference service_role in function body', () => {
+    expect(mig028FnBody().toLowerCase()).not.toContain('service_role');
+  });
+
+  it('migration 028 does not expose actor_name_snapshot in function body', () => {
+    expect(mig028FnBody()).not.toContain('actor_name_snapshot');
+  });
+
+  it('migration 028 does not expose actor_email_snapshot in function body', () => {
+    expect(mig028FnBody()).not.toContain('actor_email_snapshot');
+  });
+
+  it('migration 028 does not expose token_hash in JSON output', () => {
+    expect(mig028FnBody()).not.toContain("'token_hash'");
+  });
+
+  it('migration 028 preserves SECURITY DEFINER on get_public_qr_payload', () => {
+    const sql = readMig028();
+    expect(sql.toLowerCase()).toContain('security definer');
+  });
+
+  it('migration 028 grants execute to anon and authenticated (not broader)', () => {
+    const sql = readMig028();
+    expect(sql.toLowerCase()).toContain('grant execute on function get_public_qr_payload');
+    expect(sql.toLowerCase()).toContain('to anon, authenticated');
+  });
+
+  it('migration 028 has MANUAL APPLY ONLY header', () => {
+    const sql = readMig028();
+    expect(sql.toUpperCase()).toContain('MANUAL APPLY ONLY');
+  });
+
+  it('migration 028 VERIFY block asserts avail_select_anon still false', () => {
+    const sql = readMig028();
+    const verifyBlock = sql.slice(sql.indexOf('do $$'));
+    expect(verifyBlock).toContain('avail_select_anon');
+    expect(verifyBlock).toContain("'false'");
+  });
+});
+
+describe('PUBLIC-QR-D6/D7 [frontend: PublicQrScreen expiry_bucket support]', () => {
+  it('PublicQrScreen.tsx defines expiry_bucket on PublicItem type', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain('expiry_bucket');
+  });
+
+  it('PublicQrScreen.tsx has getExpBucketBadge helper', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain('getExpBucketBadge');
+  });
+
+  it('PublicQrScreen.tsx getExpBucketBadge handles expired bucket', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain("bucket === 'expired'");
+  });
+
+  it('PublicQrScreen.tsx getExpBucketBadge handles 3_months bucket', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain("bucket === '3_months'");
+  });
+
+  it('PublicQrScreen.tsx getExpBucketBadge handles 6_months bucket', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain("bucket === '6_months'");
+  });
+
+  it('PublicQrScreen.tsx getExpBucketBadge handles 9_months bucket', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain("bucket === '9_months'");
+  });
+
+  it('PublicQrScreen.tsx uses existing i18n keys for threshold labels (no new keys added)', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    // uses already-existing i18n keys from migration 021 / strings.ts
+    expect(src).toContain('expired_material');
+    expect(src).toContain('expires_within_3_months');
+    expect(src).toContain('expires_within_6_months');
+    expect(src).toContain('expires_within_9_months');
+  });
+
+  it('PublicQrScreen.tsx renders bucketBadge alongside condition badge', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).toContain('bucketBadge');
+  });
+
+  it('PublicQrScreen.tsx does not import from supabase client directly (uses service layer)', () => {
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).not.toContain("from '@/shared/supabase/client'");
+  });
+
+  it('PublicQrScreen.tsx does not expose expiry_bucket from type in unsafe field names', () => {
+    // expiry_bucket is safe (threshold label, not internal identifier)
+    // but confirm price/batch_number/trade_name are not referenced in the UI
+    const src = readSrc('features/qr/PublicQrScreen.tsx');
+    expect(src).not.toContain('batch_number');
+    expect(src).not.toContain('trade_name');
+    expect(src).not.toContain('price');
+    expect(src).not.toContain('supply_type');
+  });
+});
