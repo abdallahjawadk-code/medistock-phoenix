@@ -119,10 +119,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (p.role === 'super_admin') {
         for (const key of PERMISSION_KEY_SET) perms.add(key);
       }
+      if (import.meta.env.DEV) {
+        console.info('[phoenix] loadPermissions:', {
+          profileId: p.id, role: p.role,
+          superAdminTopUp: p.role === 'super_admin',
+          permCount: perms.size,
+          hasPortsCreate: perms.has('ports.create'),
+          hasPortsView: perms.has('ports.view'),
+          source: 'rpc',
+        });
+      }
       setMyPermissions(perms);
       setMyPermissionsMigrationMissing(false);
     } else {
-      setMyPermissions(roleDefaults(p.role));
+      const fallback = roleDefaults(p.role);
+      if (import.meta.env.DEV) {
+        console.warn('[phoenix] loadPermissions: RPC fallback to roleDefaults', {
+          profileId: p.id, role: p.role,
+          migrationMissing: res.migrationMissing,
+          loadError: res.loadError,
+          fallbackPermCount: fallback.size,
+          hasPortsCreate: fallback.has('ports.create'),
+          source: 'fallback',
+        });
+      }
+      setMyPermissions(fallback);
       setMyPermissionsMigrationMissing(res.migrationMissing);
     }
   }, []);

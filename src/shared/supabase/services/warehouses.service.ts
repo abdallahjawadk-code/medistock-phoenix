@@ -98,9 +98,16 @@ export async function createDistributionPoint(input: {
 
   if (error) {
     if (import.meta.env.DEV) {
+      // Capture auth user ID to cross-check against profiles in DB
+      const { data: authData } = await supabase.auth.getUser();
       console.error('[phoenix] createDistributionPoint insert failed:', {
-        code: error.code, message: error.message, details: error.details, hint: error.hint,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
         payload: row,
+        // code guide: '42501'=RLS INSERT blocked, 'PGRST116'=INSERT ok but RETURNING empty (SELECT RLS), '23502'=NOT NULL, '23503'=FK
+        authUserId: authData?.user?.id ?? 'NO_SESSION',
       });
     }
     throw error;

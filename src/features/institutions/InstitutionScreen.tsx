@@ -775,6 +775,12 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
   async function onSubmit() {
     if (!canSubmit) return;
     if (!canCreate) { setError(t('perm_no_create_ports', lang)); return; }
+    if (import.meta.env.DEV) {
+      console.info('[phoenix] AddPortForm.submit:', {
+        orgId, canCreate, portName: portName.trim(),
+        payload: { organization_id: orgId, name: portName.trim(), name_ar: portName.trim(), point_type: 'dispensing' },
+      });
+    }
     setBusy(true);
     setError(null);
     try {
