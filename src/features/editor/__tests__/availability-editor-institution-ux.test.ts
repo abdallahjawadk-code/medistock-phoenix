@@ -771,7 +771,14 @@ describe('Warehouse retired from port workflow', () => {
   it('migration 024 VERIFY block asserts no DELETE policy and no FOR ALL policy', () => {
     const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
     expect(sql).toContain("cmd = 'DELETE'");
-    expect(sql).toContain("cmd = '*'");
+    // pg_policies.cmd for FOR ALL is 'ALL', not '*' — '*' is the pg_policy.polcmd char
+    expect(sql).toContain("cmd = 'ALL'");
+    expect(sql).not.toContain("cmd = '*'");
+  });
+
+  it('migration 024 VERIFY block checks total policy count is exactly 3 (no unknown extras)', () => {
+    const sql = readPhoenix('supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql');
+    expect(sql).toContain('expected exactly 3 total policies on distribution_points');
   });
 
   it('migration 024 VERIFY block asserts trg_guard_dp_archive exists', () => {

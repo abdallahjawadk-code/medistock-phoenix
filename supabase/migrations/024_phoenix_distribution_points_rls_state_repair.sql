@@ -307,13 +307,20 @@ DECLARE
   v_fn_src      text;
 BEGIN
 
-  -- 1. Exactly 3 policies exist (SELECT + INSERT + UPDATE)
+  -- 1a. Named policies: all 3 expected policies exist
   SELECT count(*) INTO v_policy_count
   FROM pg_policies
   WHERE schemaname = 'public' AND tablename = 'distribution_points'
     AND policyname IN ('dp_read_perm', 'dp_insert_perm', 'dp_update_perm');
   ASSERT v_policy_count = 3,
-    'VERIFY FAILED: expected 3 permission-based policies; found ' || v_policy_count;
+    'VERIFY FAILED: expected 3 named permission-based policies; found ' || v_policy_count;
+
+  -- 1b. Total count: exactly 3 policies total (no unknown extras)
+  SELECT count(*) INTO v_policy_count
+  FROM pg_policies
+  WHERE schemaname = 'public' AND tablename = 'distribution_points';
+  ASSERT v_policy_count = 3,
+    'VERIFY FAILED: expected exactly 3 total policies on distribution_points; found ' || v_policy_count;
 
   -- 2. No DELETE policy exists
   ASSERT NOT EXISTS (
@@ -323,10 +330,12 @@ BEGIN
   ), 'VERIFY FAILED: unexpected DELETE policy found on distribution_points';
 
   -- 3. No FOR ALL policy exists
+  -- Note: pg_policies.cmd for FOR ALL policies is 'ALL' (not '*');
+  --       '*' is the pg_policy.polcmd char but the view maps it to 'ALL'.
   ASSERT NOT EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'distribution_points'
-      AND cmd = '*'
+      AND cmd = 'ALL'
   ), 'VERIFY FAILED: unexpected FOR ALL policy found on distribution_points';
 
   -- 4. All legacy role-based policies are gone
