@@ -490,8 +490,13 @@ describe('Central Status Center: structure and safety', () => {
     expect(screen).toContain('PhoenixOrgScope');
   });
 
-  it('screen uses isAdminRole for mutation gating', () => {
-    expect(screen).toContain('isAdminRole');
+  it('screen is a read-only live availability report (manual mutation gating removed)', () => {
+    // LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A: the manual report add/edit/resolve
+    // workflow was removed, so the screen no longer performs role-gated mutations.
+    // It now reads live item_availability instead.
+    expect(screen).toContain('getAvailabilityByOrg');
+    expect(screen).not.toContain('createStatusReport');
+    expect(screen).not.toContain('updateStatusReport');
   });
 
   it('no exchange alert logic beyond the disclaimer notice', () => {
@@ -518,9 +523,11 @@ describe('Central Status Center: structure and safety', () => {
     expect(screen).toContain('dir="auto"');
   });
 
-  it('item names use bilingual fallback', () => {
-    expect(screen).toContain('item_name_ar');
-    expect(screen).toContain('item_name');
+  it('port/material names use bilingual fallback', () => {
+    // The live report renders distribution point names with an AR/EN fallback
+    // (name_ar || name) and material identity (scientific_name / trade_name).
+    expect(screen).toContain('name_ar');
+    expect(screen).toContain('scientific_name');
   });
 
   it('service filters by org, statusType, and activeOnly', () => {
