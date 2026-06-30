@@ -12,6 +12,8 @@ import {
   type StatusType,
 } from '@/shared/supabase/services/status-reports.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
+import type { CanonicalStatus } from '@/shared/lib/status/canonical';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -31,6 +33,32 @@ const STATUS_TYPES: { value: StatusType; labelKey: string }[] = [
 const STATUS_VARIANT: Record<StatusType, 'warn' | 'ok' | 'err'> = {
   scarce: 'warn', surplus: 'ok', near_expiry: 'warn', missing: 'err',
 };
+
+/** The 6 canonical statuses summarized in the live availability matrix. */
+const CANONICAL_STATUSES: CanonicalStatus[] = [
+  'available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired',
+];
+
+/** Badge variant per canonical effective status (UI only). */
+const CANON_VARIANT: Record<CanonicalStatus, 'ok' | 'warn' | 'err' | 'neutral'> = {
+  available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
+};
+
+/** A live item_availability row enriched with derived fields by the service layer. */
+interface LiveAvailRow {
+  id: string;
+  scientific_name: string | null;
+  trade_name: string | null;
+  dosage_form: string | null;
+  concentration: string | null;
+  quantity: number;
+  condition: string | null;
+  expiry_date: string | null;
+  raw_condition?: string;
+  effective_status?: CanonicalStatus;
+  expiry_bucket?: string | null;
+  distribution_points: { id: string; name: string; name_ar: string } | null;
+}
 
 function reportItemName(r: StatusReport, lang: 'ar' | 'en'): string {
   if (lang === 'ar') return r.item_name_ar ?? r.item_name ?? '—';
@@ -74,6 +102,14 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     [effectiveOrgId, filterType, activeOnly],
   );
 
+  // Live availability matrix — reads item_availability (the live inventory
+  // source of truth) for the active org. Independent of the manual reports
+  // workflow above; visibility only, no alerts generated here.
+  const liveAvailability = useAsync(
+    () => effectiveOrgId ? getAvailabilityByOrg(effectiveOrgId) : Promise.resolve([]),
+    [effectiveOrgId],
+  );
+
   const rows = (reports.data ?? []).filter(r => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -113,6 +149,20 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         ℹ️ {t('sc_no_exchange', lang)}
       </div>
+
+      {/* Live availability matrix — real item_availability, separate from manual reports */}
+      <LiveAvailabilityMatrix
+        lang={lang}
+        loading={liveAvailability.loading}
+        error={liveAvailability.error}
+        rows={(liveAvailability.data ?? []) as unknown as LiveAvailRow[]}
+        onRetry={liveAvailability.reload}
+      />
+
+      {/* Manual status reports section header */}
+      <h3 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 700, margin: '28px 0 6px' }}>
+        {t('sc_manual_reports', lang)}
+      </h3>
 
       {/* Filters + Add */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
@@ -247,6 +297,111 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
       {toast && <PhoenixToast message={toast} />}
     </div>
+  );
+}
+
+/* ── Live Availability Matrix (read-only, item_availability) ── */
+
+function LiveAvailabilityMatrix({ lang, loading, error, rows, onRetry }: {
+  lang: 'ar' | 'en';
+  loading: boolean;
+  error: string | null;
+  rows: LiveAvailRow[];
+  onRetry: () => void;
+}) {
+  // Count by effective_status; fall back to raw condition if derived field absent.
+  const counts: Record<string, number> = {};
+  for (const s of CANONICAL_STATUSES) counts[s] = 0;
+  for (const r of rows) {
+    const s = (r.effective_status ?? r.condition ?? 'available') as string;
+    counts[s] = (counts[s] ?? 0) + 1;
+  }
+
+  const matName = (r: LiveAvailRow): string =>
+    (lang === 'ar'
+      ? (r.scientific_name || r.trade_name)
+      : (r.scientific_name || r.trade_name)) || '—';
+
+  const dpName = (r: LiveAvailRow): string => {
+    const dp = r.distribution_points;
+    if (!dp) return '—';
+    return lang === 'ar' ? (dp.name_ar || dp.name) : dp.name;
+  };
+
+  const th = { textAlign: 'start' as const, padding: '6px 8px', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', whiteSpace: 'nowrap' as const };
+  const td = { padding: '6px 8px', fontSize: '11.5px', borderTop: '1px solid var(--brd)', whiteSpace: 'nowrap' as const };
+
+  return (
+    <PhoenixCard padding="16px" style={{ marginBottom: '8px' }}>
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '15px', fontWeight: 700 }}>📊 {t('sc_live_matrix', lang)}</span>
+          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ok)', background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--rpill)', padding: '1px 8px' }}>LIVE</span>
+        </div>
+        <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('sc_live_matrix_sub', lang)}</div>
+      </div>
+
+      {/* Summary counts — all 6 canonical statuses */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+        {CANONICAL_STATUSES.map(s => (
+          <div key={s} style={{ flex: '1 1 90px', minWidth: '90px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 10px' }}>
+            <div style={{ fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>{counts[s]}</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('cond_' + s, lang)}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading && <div style={{ fontSize: '12px', color: 'var(--t2)', padding: '8px 0' }}>{t('loading', lang)}</div>}
+      {!loading && error && (
+        <div style={{ fontSize: '12px', color: 'var(--err)', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {t('load_error', lang)}
+          <button onClick={onRetry} style={{ fontSize: '11px', padding: '3px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', cursor: 'pointer' }}>↻</button>
+        </div>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '24px', color: 'var(--t2)', fontSize: '12.5px' }}>
+          {t('sc_live_empty', lang)}
+        </div>
+      )}
+
+      {!loading && !error && rows.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>{t('sc_lm_port', lang)}</th>
+                <th style={th}>{t('sc_lm_material', lang)}</th>
+                <th style={th}>{t('avail_concentration', lang)}</th>
+                <th style={th}>{t('avail_dosage_form', lang)}</th>
+                <th style={th}>{t('qty', lang)}</th>
+                <th style={th}>{t('sc_raw_condition', lang)}</th>
+                <th style={th}>{t('sc_effective_status', lang)}</th>
+                <th style={th}>{t('expiry', lang)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const eff = (r.effective_status ?? r.condition ?? 'available') as CanonicalStatus;
+                const variant = CANON_VARIANT[eff] ?? 'neutral';
+                return (
+                  <tr key={r.id}>
+                    <td style={td} dir="auto">{dpName(r)}</td>
+                    <td style={td} dir="auto">{matName(r)}</td>
+                    <td style={td} dir="auto">{r.concentration || '—'}</td>
+                    <td style={td} dir="auto">{r.dosage_form || '—'}</td>
+                    <td style={td}>{r.quantity}</td>
+                    <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
+                    <td style={td}><PhoenixStatusBadge variant={variant} label={t('cond_' + eff, lang)} /></td>
+                    <td style={td} dir="ltr">{r.expiry_date || (r.expiry_bucket ? t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang) : '—')}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </PhoenixCard>
   );
 }
 
