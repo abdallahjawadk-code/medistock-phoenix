@@ -110,7 +110,7 @@ export function DashboardScreen({ onNavigate }: Props) {
         </div>
         <button
           onClick={() => onNavigate(3)}
-          style={{ padding: '10px 16px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 120ms', whiteSpace: 'nowrap' }}
+          className="premium-hero-cta premium-focus-ring" style={{ padding: '11px 18px', borderRadius: 'var(--r3)', border: 'none', background: 'linear-gradient(145deg, var(--p), var(--pd))', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 120ms', whiteSpace: 'nowrap' }}
         >
           ✏️ {t('nav_editor', lang)}
         </button>
@@ -147,7 +147,7 @@ export function DashboardScreen({ onNavigate }: Props) {
       {/* Status Reports summary */}
       {sr && (sr.active > 0 || sr.resolved > 0) && (
         <>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('d_status_reports', lang)}</h3>
+          <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('d_status_reports', lang)}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: isMobile ? '20px' : '28px' }}>
             <PhoenixMetricCard icon="⚠️" value={sr.scarce}     label={t('d_scarce', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
             <PhoenixMetricCard icon="📦" value={sr.surplus}     label={t('d_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
@@ -163,7 +163,7 @@ export function DashboardScreen({ onNavigate }: Props) {
           of the rest of the dashboard. */}
       {!liveForbidden && (
         <>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{t('d_live_alerts_title', lang)}</h3>
+          <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{t('d_live_alerts_title', lang)}</h3>
           <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '12px' }} dir="auto">{t('lia_sub', lang)}</p>
 
           {liveAlerts.loading && <PhoenixLoadingState label={t('loading', lang)} />}
@@ -213,7 +213,7 @@ export function DashboardScreen({ onNavigate }: Props) {
       {materialAlertResult && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('smart_material_alerts', lang)}</h3>
+            <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700 }}>{t('smart_material_alerts', lang)}</h3>
             <button
               onClick={() => onNavigate(13)}
               style={{ padding: '5px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--err)', background: 'var(--err2)', color: 'var(--err)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
@@ -268,7 +268,7 @@ export function DashboardScreen({ onNavigate }: Props) {
       )}
 
       {/* Institution status cards */}
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('inst_status', lang)}</h3>
+      <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('inst_status', lang)}</h3>
       {insts.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!insts.loading && insts.error && (
         <PhoenixErrorState title={t('load_error', lang)} message={insts.error} onRetry={insts.reload} />
@@ -312,7 +312,7 @@ export function DashboardScreen({ onNavigate }: Props) {
       )}
 
       {/* Quick actions */}
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('quick', lang)}</h3>
+      <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('quick', lang)}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: isMobile ? undefined : '480px' }}>
         {[
           { screen: 11, icon: '🏛️', labelKey: 'nav_institutions', descKey: 'inst_sub' },
@@ -323,6 +323,7 @@ export function DashboardScreen({ onNavigate }: Props) {
           <button
             key={item.screen}
             onClick={() => onNavigate(item.screen)}
+            className="premium-quick-action premium-focus-ring"
             style={{
               display: 'flex', alignItems: 'center', gap: '12px',
               padding: '13px 14px', borderRadius: 'var(--r3)',

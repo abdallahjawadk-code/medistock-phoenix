@@ -11,8 +11,9 @@
   --sh: #EBF2FA;
   --glass: rgba(255,255,255,.82);
   --glass-strong: rgba(255,255,255,.92);
-  --ambient-a: rgba(13,148,136,.16);
-  --ambient-b: rgba(59,130,246,.13);
+  --ambient-a: rgba(13,148,136,.20);
+  --ambient-b: rgba(59,130,246,.16);
+  --ambient-c: rgba(2,132,199,.10);
   --highlight: rgba(255,255,255,.82);
 
   /* Text */
@@ -36,7 +37,7 @@
   --info: #0284C7;  --info2: #E0F2FE;
 
   /* Structure */
-  --brd:  #DDE5EF;
+  --brd:  #D6E0EC;
   --skel: #E6EEF7;
 
   /* Shadows */
@@ -71,6 +72,7 @@
   --glass-strong: rgba(13,29,48,.94);
   --ambient-a: rgba(20,184,166,.19);
   --ambient-b: rgba(59,130,246,.17);
+  --ambient-c: rgba(2,132,199,.12);
   --highlight: rgba(255,255,255,.055);
   --t:  #DCE9F5;
   --t2: #6E90AE;

@@ -74,14 +74,15 @@ export function LoginScreen() {
       </div>
 
       {/* Brand */}
-      <div style={{ textAlign: 'center', marginBottom: '26px', animation: 'fs .5s ease' }}>
-        <div style={{ width: '74px', height: '74px', borderRadius: 'var(--r4)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 8px 28px rgba(13,148,136,.35)', fontSize: '36px' }}>⚕</div>
+      <div style={{ textAlign: 'center', marginBottom: '26px', animation: 'fs .5s ease', position: 'relative', zIndex: 1 }}>
+        <div className="premium-login__logo" style={{ width: '78px', height: '78px', borderRadius: 'var(--r4)', background: 'linear-gradient(145deg, var(--p), var(--pd))', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '37px', color: '#fff' }}>⚕</div>
         <h1 className="premium-login__brand" style={{ fontSize: '25px', fontWeight: 700, color: 'var(--t)', letterSpacing: '-.4px', marginBottom: '5px' }}>MediStock-Babil</h1>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>{t('tagline', lang)}</p>
+        <div className="premium-login__divider" aria-hidden="true" />
       </div>
 
       {/* Card */}
-      <form className="premium-depth-card premium-login__card" onSubmit={onSubmit} style={{ width: '100%', maxWidth: '375px', borderRadius: 'var(--r5)', padding: '26px', animation: 'fs .6s ease .12s both' }}>
+      <form className="premium-depth-card premium-login__card" onSubmit={onSubmit} style={{ width: '100%', maxWidth: '380px', borderRadius: 'var(--r5)', padding: '28px 26px', animation: 'fs .6s ease .12s both', position: 'relative', zIndex: 1 }}>
         <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
           {mode === 'reset' ? t('reset_title', lang) : t('login_title', lang)}
         </h2>
@@ -119,6 +120,7 @@ export function LoginScreen() {
             </label>
             <input
               id="login-email" type="text" dir="ltr" autoComplete="username"
+              className="premium-field"
               value={email} onChange={e => setEmail(e.target.value)}
               style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '14px' }}
             />
@@ -130,6 +132,7 @@ export function LoginScreen() {
                 </label>
                 <input
                   id="login-password" type="password" dir="ltr" autoComplete="current-password"
+                  className="premium-field"
                   value={password} onChange={e => setPassword(e.target.value)}
                   style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '8px' }}
                 />
@@ -149,11 +152,12 @@ export function LoginScreen() {
 
             <button
               type="submit" disabled={busy}
+              className="premium-login__submit premium-focus-ring"
               style={{
                 width: '100%', padding: '14px', borderRadius: 'var(--r3)',
-                border: 'none', background: 'var(--p)', color: '#fff',
+                border: 'none', background: 'linear-gradient(145deg, var(--p), var(--pd))', color: '#fff',
                 fontSize: '15px', fontWeight: 700, cursor: busy ? 'wait' : 'pointer',
-                opacity: busy ? 0.7 : 1, transition: 'all 150ms', boxShadow: '0 4px 16px rgba(13,148,136,.3)',
+                opacity: busy ? 0.7 : 1, transition: 'all 150ms',
               }}
             >
               {mode === 'reset'
@@ -171,9 +175,9 @@ export function LoginScreen() {
 
         {/* Trust badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '18px', justifyContent: 'center' }}>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--ok2)', color: 'var(--ok)', fontSize: '10.5px', fontWeight: 600 }}>🛡 RLS</span>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '10.5px', fontWeight: 600 }}>📱 QR Public Safe</span>
-          <span style={{ padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 600 }}>🔒 Intake Frozen</span>
+          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--ok2)', color: 'var(--ok)', fontSize: '10.5px', fontWeight: 600 }}>🛡 RLS</span>
+          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '10.5px', fontWeight: 600 }}>📱 QR Public Safe</span>
+          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 600 }}>🔒 Intake Frozen</span>
         </div>
       </form>
     </div>

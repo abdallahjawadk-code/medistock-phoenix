@@ -345,8 +345,10 @@ function AlertCard({ a, lang, onAction, onHistory }: {
         />
       </div>
 
-      <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px 12px', marginBottom: '10px', fontSize: '11px', color: 'var(--t2)' }}>
-        <div dir="ltr">{t('alertLifecycle_alertKey', lang)}: {a.alertKey}</div>
+      {/* Timeline metadata — the technical alertKey is intentionally NOT rendered
+          here (UI-FINAL-LUXURY-DESIGN-POLISH-A): it stays internal for React keys,
+          updateInterOrgAlertState, reopenInterOrgAlert and getInterOrgAlertEvents. */}
+      <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px 12px', marginBottom: '10px', fontSize: '11px', color: 'var(--t2)', border: '1px solid color-mix(in srgb, var(--brd) 60%, transparent)' }}>
         <div>{t('alertLifecycle_firstSeen', lang)}: <span dir="ltr">{new Date(a.firstSeenAt).toLocaleString(lang)}</span></div>
         <div>{t('alertLifecycle_lastSeen', lang)}: <span dir="ltr">{new Date(a.lastSeenAt).toLocaleString(lang)}</span></div>
         {a.acknowledgedAt && <div>{t('alertLifecycle_acknowledgedAt', lang)}: <span dir="ltr">{new Date(a.acknowledgedAt).toLocaleString(lang)}</span> · {a.acknowledgedBy || '—'}</div>}

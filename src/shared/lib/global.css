@@ -73,12 +73,13 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 .premium-command-hero {
   position: relative;
   overflow: hidden;
-  padding: 22px 24px;
+  padding: 24px 26px;
   border-radius: var(--r5);
   background:
-    linear-gradient(120deg, color-mix(in srgb, var(--p) 15%, var(--glass-strong)), var(--glass-strong) 48%, color-mix(in srgb, var(--sec) 12%, var(--glass-strong)));
-  border: 1px solid color-mix(in srgb, var(--p) 25%, var(--brd));
-  box-shadow: var(--sh-depth);
+    linear-gradient(120deg, color-mix(in srgb, var(--p) 16%, var(--glass-strong)), var(--glass-strong) 48%, color-mix(in srgb, var(--sec) 13%, var(--glass-strong)));
+  border: 1px solid color-mix(in srgb, var(--p) 27%, var(--brd));
+  box-shadow: var(--sh-depth), 0 0 0 1px color-mix(in srgb, var(--highlight) 55%, transparent) inset;
+  backdrop-filter: blur(14px) saturate(125%);
 }
 .premium-command-hero::before,
 .premium-command-hero::after {
@@ -103,9 +104,71 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   text-transform: uppercase;
 }
 .premium-command-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--p); box-shadow: 0 0 0 5px var(--p2), 0 0 18px var(--p); }
+.premium-hero-cta {
+  box-shadow: 0 8px 22px rgba(13,148,136,.3), inset 0 1px 0 rgba(255,255,255,.26);
+}
+@media (hover: hover) and (pointer: fine) {
+  .premium-hero-cta:not(:disabled):hover {
+    box-shadow: 0 12px 28px rgba(13,148,136,.38), inset 0 1px 0 rgba(255,255,255,.3);
+    transform: translateY(-1px);
+  }
+}
+.premium-quick-action {
+  box-shadow: var(--sh-card, 0 1px 3px rgba(15,43,79,.07));
+}
+@media (hover: hover) and (pointer: fine) {
+  .premium-quick-action:hover {
+    border-color: color-mix(in srgb, var(--p) 35%, var(--brd)) !important;
+    box-shadow: 0 6px 18px rgba(15,43,79,.1), 0 0 0 1px color-mix(in srgb, var(--p) 14%, transparent);
+    transform: translateY(-1px);
+  }
+}
 .premium-alerts-page > div:first-child { padding-block: 4px; }
-.premium-login { background: radial-gradient(circle at 50% 20%, var(--ambient-a), transparent 28rem); }
+.premium-login {
+  background:
+    radial-gradient(circle at 50% 14%, var(--ambient-a), transparent 26rem),
+    radial-gradient(circle at 16% 82%, var(--ambient-b), transparent 24rem),
+    radial-gradient(circle at 86% 70%, var(--ambient-c), transparent 22rem);
+}
+.premium-login::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .32;
+  background-image: linear-gradient(var(--brd) 1px, transparent 1px), linear-gradient(90deg, var(--brd) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,.5), transparent 68%);
+}
 .premium-login__brand { overflow-wrap: anywhere; }
+.premium-login__logo {
+  position: relative;
+  box-shadow:
+    0 14px 34px rgba(13,148,136,.36),
+    0 4px 10px rgba(13,148,136,.24),
+    inset 0 1px 0 rgba(255,255,255,.38),
+    0 0 0 8px color-mix(in srgb, var(--p) 9%, transparent);
+}
+.premium-login__divider {
+  width: 54px;
+  height: 3px;
+  margin: 12px auto 0;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--p), var(--sec));
+  box-shadow: 0 0 14px var(--ambient-a);
+}
+.premium-login__card {
+  backdrop-filter: blur(16px) saturate(128%);
+}
+.premium-login__submit {
+  box-shadow: 0 10px 26px rgba(13,148,136,.32), inset 0 1px 0 rgba(255,255,255,.28);
+}
+@media (hover: hover) and (pointer: fine) {
+  .premium-login__submit:not(:disabled):hover {
+    box-shadow: 0 14px 32px rgba(13,148,136,.4), inset 0 1px 0 rgba(255,255,255,.3);
+    transform: translateY(-1px);
+  }
+}
 .premium-glass-panel {
   background: var(--glass);
   border: 1px solid color-mix(in srgb, var(--brd) 74%, var(--highlight));
@@ -149,7 +212,8 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   pointer-events: none;
 }
 .premium-kpi-card .premium-kpi-icon {
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--p) 7%, transparent), inset 0 1px 0 rgba(255,255,255,.4), 0 8px 20px rgba(15,43,79,.11);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--p) 8%, transparent), inset 0 1px 0 rgba(255,255,255,.4), 0 8px 20px rgba(15,43,79,.12);
+  border: 1px solid color-mix(in srgb, var(--p) 14%, transparent);
 }
 .premium-kpi-footer {
   display: flex;
