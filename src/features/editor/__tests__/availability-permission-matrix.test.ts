@@ -104,6 +104,11 @@ describe('classifyAvailabilitySaveError', () => {
       .toBe('load_error');
     expect(classifyAvailabilitySaveError(new Error('network down'))).toBe('load_error');
   });
+
+  it('classifies quantity_update_requires_movement (migration 035 hard guard) as its own key', () => {
+    expect(classifyAvailabilitySaveError({ code: '23514', message: 'quantity_update_requires_movement' }))
+      .toBe('avail_qty_update_requires_movement');
+  });
 });
 
 // ============================================================================

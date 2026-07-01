@@ -133,13 +133,15 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
 
 /**
  * Classify a phoenix_upsert_availability RPC failure (42501 permission errors,
- * from migration 032's availability.create/availability.update matrix checks)
+ * from migration 032's availability.create/availability.update matrix checks;
+ * 23514 quantity_update_requires_movement from migration 035's hard guard)
  * into an i18n string key for the editor toast. Falls back to a generic
  * save-failure key for anything else (network errors, unexpected DB errors).
  */
 export function classifyAvailabilitySaveError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   const message = (error as { message?: string } | null)?.message ?? '';
+  if (message.includes('quantity_update_requires_movement')) return 'avail_qty_update_requires_movement';
   if (code === '42501' || /forbidden/.test(message)) {
     if (message.includes('create')) return 'avail_no_create_permission';
     if (message.includes('update')) return 'avail_no_update_permission';

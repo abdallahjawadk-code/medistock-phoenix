@@ -156,6 +156,7 @@ export const T: Dict = {
   avail_no_update_permission: { ar: 'لا تملك صلاحية تعديل هذا السجل', en: 'You do not have permission to update this availability record.' },
   avail_cross_org_denied: { ar: 'لا يمكنك تعديل التوفر خارج مؤسستك', en: 'You cannot modify availability outside your organization.' },
   avail_qty_locked_note: { ar: 'لتغيير الكمية استخدم مركز المواقف ← تعديل الكمية.', en: 'Use Status Center → Adjust Quantity to change stock quantity.' },
+  avail_qty_update_requires_movement: { ar: 'يجب تغيير الكمية من مركز المواقف ← تعديل الكمية.', en: 'Quantity changes must be made from Status Center → Adjust Quantity.' },
 
   /* ── AVAILABILITY-QUANTITY-MOVEMENT-UI-A: Adjust Quantity modal ── */
   sc_adjust_qty:              { ar: 'تعديل الكمية',                          en: 'Adjust Quantity' },
