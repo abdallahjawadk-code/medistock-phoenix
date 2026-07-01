@@ -45,6 +45,8 @@ export const PERMISSION_KEYS: readonly PermissionKeyDef[] = [
   { key: 'qr.revoke',                            module: 'qr',                 action: 'revoke',            labelKey: 'perm_qr_revoke',                 dangerous: true  },
   { key: 'availability.view',                    module: 'availability',       action: 'view',              labelKey: 'perm_availability_view',         dangerous: false },
   { key: 'availability.manage',                  module: 'availability',       action: 'manage',            labelKey: 'perm_availability_manage',       dangerous: false },
+  { key: 'availability.create',                  module: 'availability',       action: 'create',            labelKey: 'perm_availability_create',       dangerous: false },
+  { key: 'availability.update',                  module: 'availability',       action: 'update',            labelKey: 'perm_availability_update',       dangerous: false },
   { key: 'status_center.view',                   module: 'status_center',      action: 'view',              labelKey: 'perm_status_center_view',         dangerous: false },
   { key: 'status_center.create',                 module: 'status_center',      action: 'create',            labelKey: 'perm_status_center_create',       dangerous: false },
   { key: 'status_center.edit',                   module: 'status_center',      action: 'edit',              labelKey: 'perm_status_center_edit',         dangerous: false },
@@ -87,14 +89,20 @@ const VIEWER_DEFAULTS = [
 
 const WAREHOUSE_OFFICER_DEFAULTS = [
   'dashboard.view', 'organizations.view', 'warehouses.view', 'warehouses.manage',
-  'ports.view', 'qr.view', 'qr.generate', 'availability.view', 'availability.manage',
+  'ports.view', 'qr.view', 'qr.generate',
+  'availability.view', 'availability.manage', 'availability.create', 'availability.update',
   'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
   'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port',
 ];
 
+// Port officer: can update existing availability rows but NOT create new ones
+// (AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A). availability.manage is
+// intentionally NOT granted here — it would read as blanket create+update in
+// the UI. The RPC/RLS treat availability.create and availability.update as
+// the authoritative write permissions, independent of availability.manage.
 const PORT_OFFICER_DEFAULTS = [
   'dashboard.view', 'organizations.view', 'ports.view', 'ports.edit',
-  'qr.view', 'availability.view', 'availability.manage',
+  'qr.view', 'availability.view', 'availability.update',
   'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
 ];
 
@@ -112,7 +120,7 @@ const INSTITUTION_ADMIN_DEFAULTS = [
   'dashboard.view', 'organizations.view',
   'users.view', 'users.create', 'users.assign_role',
   'warehouses.view', 'ports.view',
-  'availability.view',
+  'availability.view', 'availability.create', 'availability.update',
   'status_center.view',
   'exchange_alerts.view', 'inter_institution_alerts.view',
   'status_contacts.view', 'status_contacts.manage',
@@ -125,7 +133,7 @@ const LEGACY_ADMIN_DEFAULTS = [
   'warehouses.view', 'warehouses.manage',
   'ports.view', 'ports.create', 'ports.edit', 'ports.archive',
   'qr.view', 'qr.generate', 'qr.revoke',
-  'availability.view', 'availability.manage',
+  'availability.view', 'availability.manage', 'availability.create', 'availability.update',
   'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
   'exchange_alerts.view', 'inter_institution_alerts.view',
   'status_contacts.view', 'status_contacts.manage',

@@ -3,7 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
-import { upsertAvailability } from '@/shared/supabase/services/availability.service';
+import { upsertAvailability, classifyAvailabilitySaveError } from '@/shared/supabase/services/availability.service';
 import { getOrganizations, getOrganization } from '@/shared/supabase/services/organizations.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -36,8 +36,16 @@ const CONDITION_OPTIONS: { value: AvailabilityCondition; labelKey: string }[] = 
 ];
 
 export function EditorScreen() {
-  const { lang, role, activeOrgId, setActiveOrgId } = useApp();
+  const { lang, role, activeOrgId, setActiveOrgId, myPermissions } = useApp();
   const isSuper = role === 'super_admin';
+
+  // Permission-matrix gating (AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A).
+  // UX-only: the real security boundary is the DB (RLS + phoenix_upsert_availability RPC,
+  // migration 032), which independently enforces availability.create/availability.update.
+  const canViewAvailability   = myPermissions.has('availability.view');
+  const canCreateAvailability = myPermissions.has('availability.create');
+  const canUpdateAvailability = myPermissions.has('availability.update');
+  const canAttemptSave        = canCreateAvailability || canUpdateAvailability;
 
   const points = useAsync<PointRow[]>(() => activeOrgId ? getPointsByOrg(activeOrgId) : Promise.resolve([]), [activeOrgId]);
   // Institution field data: super_admin gets the full org list (for the
@@ -64,7 +72,10 @@ export function EditorScreen() {
 
   const qtyInvalid = qty < 0;
   const noPorts = !points.loading && (points.data ?? []).length === 0;
-  const canSubmit = !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid;
+  // Attempt is allowed with either create or update — the RPC (migration 032)
+  // determines whether the row is new (needs availability.create) or existing
+  // (needs availability.update) and denies accordingly; see doApply's catch.
+  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid;
 
   async function doApply() {
     if (!activeOrgId) return;
@@ -92,7 +103,7 @@ export function EditorScreen() {
     } catch (e) {
       console.error('[phoenix] availability upsert failed:', e);
       setShowConfirm(false);
-      setToast(t('load_error', lang));
+      setToast(t(classifyAvailabilitySaveError(e), lang));
       setTimeout(() => setToast(null), 3000);
     } finally {
       setBusy(false);
@@ -116,7 +127,11 @@ export function EditorScreen() {
 
       {!activeOrgId && <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
-      {activeOrgId && (
+      {activeOrgId && !canViewAvailability && (
+        <PhoenixEmptyState icon="🔒" title={t('avail_no_edit_permission', lang)} description={t('avail_no_edit_permission', lang)} />
+      )}
+
+      {activeOrgId && canViewAvailability && (
         <>
           <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -232,10 +247,18 @@ export function EditorScreen() {
             </div>
           </PhoenixCard>
 
-          <PhoenixButton variant="primary" size="lg" fullWidth disabled={!canSubmit} onClick={() => setShowConfirm(true)}>
-            {t('apply', lang)}
-          </PhoenixButton>
-          <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--t3)', marginTop: '8px' }}>{t('apply_note', lang)}</p>
+          {canAttemptSave ? (
+            <>
+              <PhoenixButton variant="primary" size="lg" fullWidth disabled={!canSubmit} onClick={() => setShowConfirm(true)}>
+                {t('apply', lang)}
+              </PhoenixButton>
+              <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--t3)', marginTop: '8px' }}>{t('apply_note', lang)}</p>
+            </>
+          ) : (
+            <p style={{ textAlign: 'center', fontSize: '12.5px', color: 'var(--err)', marginTop: '8px' }} dir="auto">
+              {t('avail_no_edit_permission', lang)}
+            </p>
+          )}
         </>
       )}
 

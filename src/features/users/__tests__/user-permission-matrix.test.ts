@@ -149,6 +149,7 @@ describe('Permission catalog', () => {
     'users.disable', 'users.delete',  // migration 011
     'warehouses.view', 'warehouses.manage', 'ports.view', 'ports.create', 'ports.edit', 'ports.archive',
     'qr.view', 'qr.generate', 'qr.revoke', 'availability.view', 'availability.manage',
+    'availability.create', 'availability.update', // AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A
     'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
     'exchange_alerts.view', 'inter_institution_alerts.view', 'status_contacts.view', 'status_contacts.manage',
     'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port', 'deletion_wizard.archive_organization',
@@ -159,10 +160,10 @@ describe('Permission catalog', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 35 (32 from migration 010 + 2 from migration 011 + 1 from migration 015)', () => {
-    expect(REQUIRED).toHaveLength(35);
-    expect(PERMISSION_KEYS).toHaveLength(35);
-    expect(PERMISSION_KEY_SET.size).toBe(35);
+  it('canonical permission count is exactly 37 (32 from migration 010 + 2 from migration 011 + 1 from migration 015 + 2 from AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A)', () => {
+    expect(REQUIRED).toHaveLength(37);
+    expect(PERMISSION_KEYS).toHaveLength(37);
+    expect(PERMISSION_KEY_SET.size).toBe(37);
   });
 
   it('rejects unknown permission keys', () => {
@@ -256,13 +257,91 @@ describe('Role default permissions', () => {
     expect(d.has('deletion_wizard.archive_port')).toBe(false);
   });
 
-  it('institution_admin default count is exactly 13', () => {
-    expect(roleDefaults('institution_admin').size).toBe(13);
+  it('institution_admin default count is exactly 15 (13 + availability.create/update)', () => {
+    expect(roleDefaults('institution_admin').size).toBe(15);
   });
 
   it('legacy roles inherit their mapped official defaults', () => {
     expect([...roleDefaults('warehouse_manager')].sort()).toEqual([...roleDefaults('warehouse_officer')].sort());
     expect([...roleDefaults('point_operator')].sort()).toEqual([...roleDefaults('port_officer')].sort());
+  });
+});
+
+// ============================================================================
+// 4b. AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A: availability.create / availability.update
+// ============================================================================
+describe('Availability create/update permission matrix', () => {
+  it('permission catalog contains availability.create and availability.update', () => {
+    expect(PERMISSION_KEY_SET.has('availability.create')).toBe(true);
+    expect(PERMISSION_KEY_SET.has('availability.update')).toBe(true);
+  });
+
+  it('super_admin has availability.create and availability.update', () => {
+    const d = roleDefaults('super_admin');
+    expect(d.has('availability.create')).toBe(true);
+    expect(d.has('availability.update')).toBe(true);
+  });
+
+  it('institution_admin has availability.create and availability.update', () => {
+    const d = roleDefaults('institution_admin');
+    expect(d.has('availability.create')).toBe(true);
+    expect(d.has('availability.update')).toBe(true);
+  });
+
+  it('hospital_admin (legacy) has availability.create and availability.update', () => {
+    const d = roleDefaults('hospital_admin');
+    expect(d.has('availability.create')).toBe(true);
+    expect(d.has('availability.update')).toBe(true);
+  });
+
+  it('warehouse_officer has availability.create and availability.update', () => {
+    const d = roleDefaults('warehouse_officer');
+    expect(d.has('availability.create')).toBe(true);
+    expect(d.has('availability.update')).toBe(true);
+  });
+
+  it('warehouse_manager (legacy) has availability.create and availability.update', () => {
+    const d = roleDefaults('warehouse_manager');
+    expect(d.has('availability.create')).toBe(true);
+    expect(d.has('availability.update')).toBe(true);
+  });
+
+  it('port_officer has availability.update but NOT availability.create', () => {
+    const d = roleDefaults('port_officer');
+    expect(d.has('availability.update')).toBe(true);
+    expect(d.has('availability.create')).toBe(false);
+  });
+
+  it('point_operator (legacy) has availability.update but NOT availability.create', () => {
+    const d = roleDefaults('point_operator');
+    expect(d.has('availability.update')).toBe(true);
+    expect(d.has('availability.create')).toBe(false);
+  });
+
+  it('monthly_status_officer / transfer_manager are read-only for availability', () => {
+    const monthly = roleDefaults('monthly_status_officer');
+    const transfer = roleDefaults('transfer_manager');
+    expect(monthly.has('availability.create')).toBe(false);
+    expect(monthly.has('availability.update')).toBe(false);
+    expect(transfer.has('availability.create')).toBe(false);
+    expect(transfer.has('availability.update')).toBe(false);
+  });
+
+  it('viewer does not have availability.create or availability.update', () => {
+    const d = roleDefaults('viewer');
+    expect(d.has('availability.create')).toBe(false);
+    expect(d.has('availability.update')).toBe(false);
+  });
+
+  it('port_officer does NOT get availability.manage (avoids implying create via the legacy key)', () => {
+    const d = roleDefaults('port_officer');
+    expect(d.has('availability.manage')).toBe(false);
+  });
+
+  it('availability.view remains granted to every role (read access unchanged)', () => {
+    for (const role of ['super_admin', 'institution_admin', 'hospital_admin', 'warehouse_officer', 'port_officer', 'monthly_status_officer', 'viewer']) {
+      expect(roleDefaults(role).has('availability.view')).toBe(true);
+    }
   });
 });
 

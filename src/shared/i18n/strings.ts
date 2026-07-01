@@ -150,7 +150,11 @@ export const T: Dict = {
   blocker_msg:    { ar: '⚠ يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en: '⚠ Blocker found — review negative quantity before applying' },
   apply:          { ar: 'تطبيق التغييرات',                    en: 'Apply Changes' },
   apply_note:     { ar: 'سيُطلب التأكيد قبل التطبيق · لا تطبيق تلقائي', en: 'Confirmation required before applying · No auto-apply' },
-  apply_success:  { ar: 'تم التطبيق بنجاح (تجريبي)',           en: 'Applied successfully (demo)' },
+  apply_success:  { ar: 'تم التطبيق بنجاح',                   en: 'Applied successfully' },
+  avail_no_edit_permission: { ar: 'لا تملك صلاحية تعديل التوفر', en: 'You do not have permission to edit availability.' },
+  avail_no_create_permission: { ar: 'لا تملك صلاحية إضافة مادة جديدة', en: 'You do not have permission to create a new availability record.' },
+  avail_no_update_permission: { ar: 'لا تملك صلاحية تعديل هذا السجل', en: 'You do not have permission to update this availability record.' },
+  avail_cross_org_denied: { ar: 'لا يمكنك تعديل التوفر خارج مؤسستك', en: 'You cannot modify availability outside your organization.' },
 
   /* ── Item Registry ── */
   reg_sub:        { ar: 'إدارة الأصناف المحلية للمؤسسة',       en: 'Manage institution-local items' },
@@ -689,6 +693,8 @@ export const T: Dict = {
   perm_qr_revoke:                         { ar: 'إلغاء QR',             en: 'Revoke QR' },
   perm_availability_view:                 { ar: 'عرض التوفر',            en: 'View availability' },
   perm_availability_manage:               { ar: 'إدارة التوفر',          en: 'Manage availability' },
+  perm_availability_create:               { ar: 'إضافة مواد توفر',       en: 'Create availability records' },
+  perm_availability_update:               { ar: 'تعديل مواد توفر',       en: 'Update availability records' },
   perm_status_center_view:                { ar: 'عرض مركز المواقف',      en: 'View status center' },
   perm_status_center_create:              { ar: 'إنشاء تقارير المواقف',  en: 'Create status reports' },
   perm_status_center_edit:                { ar: 'تعديل تقارير المواقف',  en: 'Edit status reports' },

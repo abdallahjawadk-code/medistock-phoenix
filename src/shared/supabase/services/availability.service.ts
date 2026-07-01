@@ -131,6 +131,24 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
   if (error) throw error;
 }
 
+/**
+ * Classify a phoenix_upsert_availability RPC failure (42501 permission errors,
+ * from migration 032's availability.create/availability.update matrix checks)
+ * into an i18n string key for the editor toast. Falls back to a generic
+ * save-failure key for anything else (network errors, unexpected DB errors).
+ */
+export function classifyAvailabilitySaveError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+  if (code === '42501' || /forbidden/.test(message)) {
+    if (message.includes('create')) return 'avail_no_create_permission';
+    if (message.includes('update')) return 'avail_no_update_permission';
+    if (message.includes('cross_org')) return 'avail_cross_org_denied';
+    return 'avail_no_edit_permission';
+  }
+  return 'load_error';
+}
+
 export async function getLowStockItems(orgId: string) {
   if (!supabaseConfigured) return [];
 
