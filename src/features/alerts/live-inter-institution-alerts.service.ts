@@ -21,6 +21,10 @@ export type LiveAlertSeverity = 'high' | 'medium';
 export interface LiveInterInstitutionAlert {
   alertType: LiveAlertType;
   severity: LiveAlertSeverity;
+  /** Stable id of the source item_availability row — anchors this alert to a real DB row (migration 037). */
+  sourceItemAvailabilityId: string;
+  /** Stable id of the target item_availability row — anchors this alert to a real DB row (migration 037). */
+  targetItemAvailabilityId: string;
   sourceOrganizationId: string;
   sourceOrganizationName: string | null;
   sourceOrganizationNameAr: string | null;
@@ -59,6 +63,8 @@ export interface LiveInterInstitutionAlertsResult {
 interface RawLiveAlertRow {
   alert_type: LiveAlertType;
   severity: LiveAlertSeverity;
+  source_item_availability_id: string;
+  target_item_availability_id: string;
   source_organization_id: string;
   source_organization_name: string | null;
   source_organization_name_ar: string | null;
@@ -88,6 +94,8 @@ function mapRow(r: RawLiveAlertRow): LiveInterInstitutionAlert {
   return {
     alertType: r.alert_type,
     severity: r.severity,
+    sourceItemAvailabilityId: r.source_item_availability_id,
+    targetItemAvailabilityId: r.target_item_availability_id,
     sourceOrganizationId: r.source_organization_id,
     sourceOrganizationName: r.source_organization_name,
     sourceOrganizationNameAr: r.source_organization_name_ar,
