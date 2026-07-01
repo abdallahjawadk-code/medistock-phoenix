@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
-import { upsertAvailability, classifyAvailabilitySaveError } from '@/shared/supabase/services/availability.service';
+import { upsertAvailability, classifyAvailabilitySaveError, getAvailabilityByPoint } from '@/shared/supabase/services/availability.service';
 import { getOrganizations, getOrganization } from '@/shared/supabase/services/organizations.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -70,7 +70,29 @@ export function EditorScreen() {
   const [busy, setBusy]         = useState(false);
   const [toast, setToast]       = useState<string | null>(null);
 
-  const qtyInvalid = qty < 0;
+  // Rows already saved for the selected point — used only to detect whether
+  // the in-progress entry matches an existing row (EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A).
+  const pointAvailability = useAsync(() => pointId ? getAvailabilityByPoint(pointId) : Promise.resolve([]), [pointId]);
+
+  // Detect whether the in-progress entry matches an already-saved row for this
+  // point (EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A). Mirrors the exact 4-column
+  // match key of the DB partial unique index (migration 029) and the RPC's
+  // UPDATE-then-INSERT lookup (migration 030): distribution_point_id + scientific_name
+  // (exact) + COALESCE(concentration,'') + COALESCE(dosage_form,'') — so this
+  // never disagrees with what the server will actually do.
+  const normKey = (v: string) => v.trim();
+  const existingRow = useMemo(() => {
+    const name = scientificName.trim();
+    if (!name) return null;
+    return (pointAvailability.data ?? []).find(r =>
+      (r.scientific_name ?? '') === name &&
+      normKey(r.concentration ?? '') === normKey(concentrationVal) &&
+      normKey(r.dosage_form ?? '') === normKey(dosageForm)
+    ) ?? null;
+  }, [pointAvailability.data, scientificName, dosageForm, concentrationVal]);
+  const isEditMode = !!existingRow;
+
+  const qtyInvalid = !isEditMode && qty < 0;
   const noPorts = !points.loading && (points.data ?? []).length === 0;
   // Attempt is allowed with either create or update — the RPC (migration 032)
   // determines whether the row is new (needs availability.create) or existing
@@ -89,7 +111,11 @@ export function EditorScreen() {
         price: price ? Number(price) : undefined,
         distributionPointId: pointId,
         organizationId: activeOrgId,
-        quantity: qty,
+        // For an existing row, always resend its current DB quantity — never
+        // the (disabled, unreachable) local qty state — so this save can never
+        // silently overwrite stock. Quantity changes must go through the
+        // Status Center's quantity-movement action instead.
+        quantity: isEditMode ? existingRow!.quantity : qty,
         condition,
         batchNumber: batch || undefined,
         expiryDate: expiry || undefined,
@@ -205,11 +231,33 @@ export function EditorScreen() {
                   placeholder={t('avail_price_ph', lang)} style={fieldStyle} />
               </div>
 
-              {/* Quantity (half width) */}
+              {/* Quantity (half width) — read-only for existing rows; see
+                  EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A. Quantity changes for an
+                  existing row must go through Status Center → Adjust Quantity. */}
               <div>
                 <label htmlFor="ed-qty" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('qty', lang)} *</label>
-                <input id="ed-qty" type="number" min={0} value={qty} onChange={e => setQty(Number(e.target.value))} style={{ ...fieldStyle, border: `1px solid ${qtyInvalid ? 'var(--err)' : 'var(--brd)'}`, background: qtyInvalid ? 'var(--err2)' : 'var(--s)' }} />
+                <input
+                  id="ed-qty"
+                  type="number"
+                  min={0}
+                  value={isEditMode ? existingRow!.quantity : qty}
+                  onChange={e => setQty(Number(e.target.value))}
+                  disabled={isEditMode}
+                  readOnly={isEditMode}
+                  style={{
+                    ...fieldStyle,
+                    border: `1px solid ${qtyInvalid ? 'var(--err)' : 'var(--brd)'}`,
+                    background: isEditMode ? 'var(--s2)' : (qtyInvalid ? 'var(--err2)' : 'var(--s)'),
+                    color: isEditMode ? 'var(--t2)' : 'var(--t)',
+                    cursor: isEditMode ? 'default' : 'text',
+                  }}
+                />
                 {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('qty_err', lang)}</p>}
+                {isEditMode && (
+                  <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+                    {t('avail_qty_locked_note', lang)}
+                  </p>
+                )}
               </div>
 
               {/* Material status (localized) */}

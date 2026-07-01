@@ -69,7 +69,8 @@ describe('EditorScreen uses the permission matrix for save UX', () => {
   });
 
   it('imports classifyAvailabilitySaveError from availability.service', () => {
-    expect(editor).toContain("import { upsertAvailability, classifyAvailabilitySaveError } from '@/shared/supabase/services/availability.service'");
+    expect(editor).toContain('classifyAvailabilitySaveError');
+    expect(editor).toContain("from '@/shared/supabase/services/availability.service'");
   });
 });
 
