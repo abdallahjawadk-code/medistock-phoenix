@@ -331,6 +331,47 @@ export interface AvailabilityMovementsReportFilters {
 }
 
 /**
+ * BUGFIX-MOVEMENT-REPORT-NO-RESULTS-A: convert a plain 'YYYY-MM-DD' date
+ * (as produced by an <input type="date">, which is always a LOCAL calendar
+ * date with no timezone of its own) into the UTC instant for the start of
+ * that day in the browser's local timezone. Naively appending a literal
+ * 'Z' (e.g. `${date}T00:00:00.000Z`) was WRONG: it treats the date as UTC
+ * midnight regardless of the user's actual timezone, which for a positive
+ * UTC offset (e.g. Baghdad, UTC+3 — this project's primary user base)
+ * shifts the boundary 3 hours late and silently EXCLUDES movements made
+ * between local midnight and 3 AM on the "from" date. `new Date(str)` with
+ * no offset suffix parses `str` as local time, so `.toISOString()` yields
+ * the correct absolute UTC instant regardless of the caller's timezone.
+ */
+export function startOfLocalDayIso(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00`).toISOString();
+}
+
+/** Same fix as startOfLocalDayIso, for the inclusive end of the local day. */
+export function endOfLocalDayIso(dateStr: string): string {
+  return new Date(`${dateStr}T23:59:59.999`).toISOString();
+}
+
+/**
+ * BUGFIX-MOVEMENT-REPORT-NO-RESULTS-A: safely interpolate a free-text search
+ * term into a PostgREST `.or(...)` ilike filter. PostgREST's filter grammar
+ * treats comma, parentheses, and double-quote as RESERVED characters — all
+ * of which are common in real material names (e.g. "Augmentin (Amoxicillin,
+ * Clavulanate)"). Interpolating the raw term unescaped silently broke the
+ * filter grammar (a stray `,`/`(`/`)` in the term — or in ANY of the OR'd
+ * column values PostgREST tries to parse the whole expression against —
+ * could truncate or corrupt the filter), causing the query to return zero
+ * or wrong rows instead of erroring. Per PostgREST's documented escaping
+ * rule, wrapping the value in double quotes (with any embedded backslash/
+ * double-quote itself escaped) makes it safe regardless of content, while
+ * leaving the `%` ilike wildcards intact.
+ */
+export function escapePostgrestIlikeValue(raw: string): string {
+  const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"%${escaped}%"`;
+}
+
+/**
  * Read-only, filterable quantity-movement report for one organization. This
  * is a plain PostgREST SELECT (no RPC) against item_availability_movements —
  * the table grants SELECT only (no INSERT/UPDATE/DELETE to any client role,
@@ -338,6 +379,12 @@ export interface AvailabilityMovementsReportFilters {
  * org scope + availability.movements.view for every caller regardless of
  * which filters the client sends. All filters here are plain equality/range/
  * ilike predicates — never raw SQL, never an elevated/admin key.
+ *
+ * distribution_points is embedded with the explicit `!left` hint so a row
+ * whose distribution point cannot be resolved/read for any reason never
+ * silently drops the movement row itself from the report — it only nulls
+ * out the point name/name_ar (defense-in-depth; movement visibility must
+ * depend solely on avail_mvmt_select_perm, never on a secondary embed).
  */
 export async function getAvailabilityMovementsReport(
   filters: AvailabilityMovementsReportFilters,
@@ -351,21 +398,21 @@ export async function getAvailabilityMovementsReport(
       reason, notes, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
       created_at, scientific_name, trade_name, concentration, dosage_form,
       distribution_point_id,
-      distribution_points ( name, name_ar )
+      distribution_points!left ( name, name_ar )
     `)
     .eq('organization_id', filters.organizationId);
 
-  if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`);
-  if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`);
+  if (filters.dateFrom) query = query.gte('created_at', startOfLocalDayIso(filters.dateFrom));
+  if (filters.dateTo) query = query.lte('created_at', endOfLocalDayIso(filters.dateTo));
   if (filters.movementType) query = query.eq('movement_type', filters.movementType);
   if (filters.distributionPointId) query = query.eq('distribution_point_id', filters.distributionPointId);
   if (filters.materialSearch?.trim()) {
-    const q = filters.materialSearch.trim();
-    query = query.or(`scientific_name.ilike.%${q}%,trade_name.ilike.%${q}%,concentration.ilike.%${q}%,dosage_form.ilike.%${q}%`);
+    const q = escapePostgrestIlikeValue(filters.materialSearch.trim());
+    query = query.or(`scientific_name.ilike.${q},trade_name.ilike.${q},concentration.ilike.${q},dosage_form.ilike.${q}`);
   }
   if (filters.actorSearch?.trim()) {
-    const q = filters.actorSearch.trim();
-    query = query.or(`actor_name_snapshot.ilike.%${q}%,actor_email_snapshot.ilike.%${q}%`);
+    const q = escapePostgrestIlikeValue(filters.actorSearch.trim());
+    query = query.or(`actor_name_snapshot.ilike.${q},actor_email_snapshot.ilike.${q}`);
   }
 
   const { data, error } = await query
