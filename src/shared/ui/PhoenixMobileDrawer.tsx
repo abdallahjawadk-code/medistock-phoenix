@@ -1,6 +1,10 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 
+// UI-LEGACY-PAGES-NAV-HIDE-A: nav_reg and nav_qr_audit are intentionally NOT
+// listed here (hidden from navigation only). Their routes (screens 4, 6 —
+// RegistryScreen, QrScreen) remain fully wired in App.tsx; only the drawer
+// entry point was removed.
 const ALL_NAV = [
   { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
@@ -8,8 +12,6 @@ const ALL_NAV = [
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
-  { screen: 6,  icon: '📱', labelKey: 'nav_qr_audit' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
   { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
 ];

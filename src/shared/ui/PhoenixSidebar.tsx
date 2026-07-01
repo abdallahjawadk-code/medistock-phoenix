@@ -8,6 +8,10 @@ interface NavItem {
   frozen?: boolean;
 }
 
+// UI-LEGACY-PAGES-NAV-HIDE-A: nav_status_editor, nav_reg, and nav_qr_audit are
+// intentionally NOT listed here (hidden from navigation only). Their routes
+// (screens 16, 4, 6 — StatusEditorScreen, RegistryScreen, QrScreen) remain
+// fully wired in App.tsx; only the sidebar entry point was removed.
 const NAV_ITEMS: NavItem[] = [
   { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
@@ -15,9 +19,6 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 16, icon: '📊', labelKey: 'nav_status_editor' },
-  { screen: 4,  icon: '📋', labelKey: 'nav_reg' },
-  { screen: 6,  icon: '📱', labelKey: 'nav_qr_audit' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
 ];
 
