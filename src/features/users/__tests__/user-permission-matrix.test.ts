@@ -150,6 +150,9 @@ describe('Permission catalog', () => {
     'warehouses.view', 'warehouses.manage', 'ports.view', 'ports.create', 'ports.edit', 'ports.archive',
     'qr.view', 'qr.generate', 'qr.revoke', 'availability.view', 'availability.manage',
     'availability.create', 'availability.update', // AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A
+    'availability.quantity.set', 'availability.quantity.add', 'availability.quantity.subtract',
+    'availability.quantity.correct', 'availability.movements.view', 'availability.movements.export',
+    'availability.movements.print', // AVAILABILITY-QUANTITY-MOVEMENT-DB-A
     'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
     'exchange_alerts.view', 'inter_institution_alerts.view', 'status_contacts.view', 'status_contacts.manage',
     'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port', 'deletion_wizard.archive_organization',
@@ -160,10 +163,10 @@ describe('Permission catalog', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 37 (32 from migration 010 + 2 from migration 011 + 1 from migration 015 + 2 from AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A)', () => {
-    expect(REQUIRED).toHaveLength(37);
-    expect(PERMISSION_KEYS).toHaveLength(37);
-    expect(PERMISSION_KEY_SET.size).toBe(37);
+  it('canonical permission count is exactly 44 (37 previous + 7 from AVAILABILITY-QUANTITY-MOVEMENT-DB-A)', () => {
+    expect(REQUIRED).toHaveLength(44);
+    expect(PERMISSION_KEYS).toHaveLength(44);
+    expect(PERMISSION_KEY_SET.size).toBe(44);
   });
 
   it('rejects unknown permission keys', () => {
@@ -257,8 +260,8 @@ describe('Role default permissions', () => {
     expect(d.has('deletion_wizard.archive_port')).toBe(false);
   });
 
-  it('institution_admin default count is exactly 15 (13 + availability.create/update)', () => {
-    expect(roleDefaults('institution_admin').size).toBe(15);
+  it('institution_admin default count is exactly 22 (15 + 7 quantity/movement keys)', () => {
+    expect(roleDefaults('institution_admin').size).toBe(22);
   });
 
   it('legacy roles inherit their mapped official defaults', () => {
@@ -342,6 +345,96 @@ describe('Availability create/update permission matrix', () => {
     for (const role of ['super_admin', 'institution_admin', 'hospital_admin', 'warehouse_officer', 'port_officer', 'monthly_status_officer', 'viewer']) {
       expect(roleDefaults(role).has('availability.view')).toBe(true);
     }
+  });
+});
+
+// ============================================================================
+// 4c. AVAILABILITY-QUANTITY-MOVEMENT-DB-A: quantity movement permission matrix
+// ============================================================================
+describe('Quantity movement permission matrix', () => {
+  const QUANTITY_KEYS = [
+    'availability.quantity.set', 'availability.quantity.add',
+    'availability.quantity.subtract', 'availability.quantity.correct',
+  ];
+  const MOVEMENT_KEYS = [
+    'availability.movements.view', 'availability.movements.export', 'availability.movements.print',
+  ];
+
+  it('permission catalog contains all 7 quantity-movement keys', () => {
+    [...QUANTITY_KEYS, ...MOVEMENT_KEYS].forEach(key => expect(PERMISSION_KEY_SET.has(key)).toBe(true));
+  });
+
+  it('super_admin has all 7 keys', () => {
+    const d = roleDefaults('super_admin');
+    [...QUANTITY_KEYS, ...MOVEMENT_KEYS].forEach(key => expect(d.has(key)).toBe(true));
+  });
+
+  it('institution_admin has set/add/subtract/correct/view/export/print', () => {
+    const d = roleDefaults('institution_admin');
+    [...QUANTITY_KEYS, ...MOVEMENT_KEYS].forEach(key => expect(d.has(key)).toBe(true));
+  });
+
+  it('hospital_admin (legacy) has set/add/subtract/correct/view/export/print', () => {
+    const d = roleDefaults('hospital_admin');
+    [...QUANTITY_KEYS, ...MOVEMENT_KEYS].forEach(key => expect(d.has(key)).toBe(true));
+  });
+
+  it('warehouse_officer has set/add/subtract/view/export/print but NOT correct', () => {
+    const d = roleDefaults('warehouse_officer');
+    expect(d.has('availability.quantity.set')).toBe(true);
+    expect(d.has('availability.quantity.add')).toBe(true);
+    expect(d.has('availability.quantity.subtract')).toBe(true);
+    expect(d.has('availability.quantity.correct')).toBe(false);
+    expect(d.has('availability.movements.view')).toBe(true);
+    expect(d.has('availability.movements.export')).toBe(true);
+    expect(d.has('availability.movements.print')).toBe(true);
+  });
+
+  it('warehouse_manager (legacy) has set/add/subtract/view/export/print but NOT correct', () => {
+    const d = roleDefaults('warehouse_manager');
+    expect(d.has('availability.quantity.set')).toBe(true);
+    expect(d.has('availability.quantity.correct')).toBe(false);
+    expect(d.has('availability.movements.export')).toBe(true);
+  });
+
+  it('port_officer has add/subtract/view only', () => {
+    const d = roleDefaults('port_officer');
+    expect(d.has('availability.quantity.add')).toBe(true);
+    expect(d.has('availability.quantity.subtract')).toBe(true);
+    expect(d.has('availability.movements.view')).toBe(true);
+    expect(d.has('availability.quantity.set')).toBe(false);
+    expect(d.has('availability.quantity.correct')).toBe(false);
+    expect(d.has('availability.movements.export')).toBe(false);
+    expect(d.has('availability.movements.print')).toBe(false);
+  });
+
+  it('point_operator (legacy) has add/subtract/view only', () => {
+    const d = roleDefaults('point_operator');
+    expect(d.has('availability.quantity.add')).toBe(true);
+    expect(d.has('availability.quantity.subtract')).toBe(true);
+    expect(d.has('availability.movements.view')).toBe(true);
+    expect(d.has('availability.quantity.set')).toBe(false);
+    expect(d.has('availability.quantity.correct')).toBe(false);
+    expect(d.has('availability.movements.export')).toBe(false);
+    expect(d.has('availability.movements.print')).toBe(false);
+  });
+
+  it('monthly_status_officer and transfer_manager have view only', () => {
+    for (const role of ['monthly_status_officer', 'transfer_manager']) {
+      const d = roleDefaults(role);
+      expect(d.has('availability.movements.view')).toBe(true);
+      QUANTITY_KEYS.forEach(key => expect(d.has(key)).toBe(false));
+      expect(d.has('availability.movements.export')).toBe(false);
+      expect(d.has('availability.movements.print')).toBe(false);
+    }
+  });
+
+  it('viewer has view only', () => {
+    const d = roleDefaults('viewer');
+    expect(d.has('availability.movements.view')).toBe(true);
+    QUANTITY_KEYS.forEach(key => expect(d.has(key)).toBe(false));
+    expect(d.has('availability.movements.export')).toBe(false);
+    expect(d.has('availability.movements.print')).toBe(false);
   });
 });
 
