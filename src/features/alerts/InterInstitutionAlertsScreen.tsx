@@ -65,13 +65,13 @@ function statusVariant(status: string): 'ok' | 'warn' | 'err' | 'neutral' {
 }
 
 function orgName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'): string {
-  if (lang === 'ar') return nameAr || name || '—';
-  return name || nameAr || '—';
+  if (lang === 'ar') return nameAr || name || t('common_notSpecified', lang);
+  return name || nameAr || t('common_notSpecified', lang);
 }
 
-function pointName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'): string | null {
+function pointName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'): string {
   const v = lang === 'ar' ? (nameAr || name) : (name || nameAr);
-  return v || null;
+  return v || t('common_notSpecified', lang);
 }
 
 const fieldStyle = {
@@ -132,10 +132,10 @@ export function InterInstitutionAlertsScreen() {
   }), [allAlerts, severityFilter, typeFilter, instFilter, search]);
 
   return (
-    <div style={{ maxWidth: '1040px', animation: 'fs .3s ease' }}>
+    <div className="premium-page premium-alerts-page" style={{ maxWidth: '1180px', animation: 'fs .3s ease' }}>
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
+        <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '26px', fontWeight: 700, letterSpacing: '-.3px' }}>
           {t('lia_title', lang)}
         </h2>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px', maxWidth: '640px' }} dir="auto">
@@ -151,19 +151,19 @@ export function InterInstitutionAlertsScreen() {
       {/* Summary cards */}
       {ok && allAlerts.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-          <div style={{ background: 'var(--s)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
             <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--info)' }}>{summaryTotal}</div>
             <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_total', lang)}</div>
           </div>
-          <div style={{ background: 'var(--s)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
             <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--err)' }}>{summaryHigh}</div>
             <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_high', lang)}</div>
           </div>
-          <div style={{ background: 'var(--s)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
             <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--ok)' }}>{summarySurplus}</div>
             <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_surplus', lang)}</div>
           </div>
-          <div style={{ background: 'var(--s)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
             <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{summaryNearExpiry}</div>
             <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_near_expiry', lang)}</div>
           </div>
@@ -172,11 +172,12 @@ export function InterInstitutionAlertsScreen() {
 
       {/* Filters */}
       {ok && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
+        <div className="premium-glass-panel" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '18px', alignItems: 'center', padding: '12px', borderRadius: 'var(--r4)' }}>
           <select
             id="lia-severity"
             value={severityFilter}
             onChange={e => setSeverityFilter(e.target.value as LiveAlertSeverity | '')}
+            className="premium-field"
             style={{ ...fieldStyle, width: 'auto', minWidth: '150px', appearance: 'none', cursor: 'pointer' }}
             aria-label={t('lia_severity_label', lang)}
           >
@@ -189,6 +190,7 @@ export function InterInstitutionAlertsScreen() {
             id="lia-type"
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value as LiveAlertType | '')}
+            className="premium-field"
             style={{ ...fieldStyle, width: 'auto', minWidth: '170px', appearance: 'none', cursor: 'pointer' }}
             aria-label={t('lia_type_label', lang)}
           >
@@ -202,6 +204,7 @@ export function InterInstitutionAlertsScreen() {
               id="lia-inst"
               value={instFilter}
               onChange={e => setInstFilter(e.target.value)}
+              className="premium-field"
               style={{ ...fieldStyle, width: 'auto', minWidth: '160px', appearance: 'none', cursor: 'pointer' }}
               aria-label={t('avail_inst_label', lang)}
             >
@@ -217,6 +220,7 @@ export function InterInstitutionAlertsScreen() {
             <input
               id="lia-search"
               type="search"
+              className="premium-field"
               dir="auto"
               placeholder={t('lia_search_ph', lang)}
               value={search}
@@ -255,7 +259,6 @@ export function InterInstitutionAlertsScreen() {
               key={a.alertKey}
               a={a}
               lang={lang}
-              isMobile={isMobile}
               onAction={to => setAction({ alert: a, to })}
               onHistory={() => setHistoryAlert(a)}
             />
@@ -278,10 +281,9 @@ export function InterInstitutionAlertsScreen() {
 
 // ─── Alert card ───────────────────────────────────────────────────────────────
 
-function AlertCard({ a, lang, isMobile, onAction, onHistory }: {
+function AlertCard({ a, lang, onAction, onHistory }: {
   a: LiveInterInstitutionAlertWithState;
   lang: 'ar' | 'en';
-  isMobile: boolean;
   onAction: (to: AlertLifecycleStatus) => void;
   onHistory: () => void;
 }) {
@@ -315,9 +317,10 @@ function AlertCard({ a, lang, isMobile, onAction, onHistory }: {
       </div>
 
       {/* Source / Target */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+      <div className="institution-flow" style={{ marginBottom: '12px' }}>
         <PartyBlock
-          roleLabel={t('source_institution', lang)}
+          roleLabel={t('alertLifecycle_institution_sourceInstitution', lang)}
+          pointRoleLabel={t('alertLifecycle_institution_sourcePoint', lang)}
           statusLabelKey={statusLabelKey(a.sourceStatus)}
           statusVar={statusVariant(a.sourceStatus)}
           orgLabel={orgName(a.sourceOrganizationName, a.sourceOrganizationNameAr, lang)}
@@ -327,8 +330,10 @@ function AlertCard({ a, lang, isMobile, onAction, onHistory }: {
           expiryDate={a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryDate : null}
           lang={lang}
         />
+        <div className="institution-flow__connector" aria-hidden="true">→</div>
         <PartyBlock
-          roleLabel={t('destination_institution', lang)}
+          roleLabel={t('alertLifecycle_institution_targetInstitution', lang)}
+          pointRoleLabel={t('alertLifecycle_institution_targetPoint', lang)}
           statusLabelKey={statusLabelKey(a.targetStatus)}
           statusVar={statusVariant(a.targetStatus)}
           orgLabel={orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang)}
@@ -361,7 +366,7 @@ function AlertCard({ a, lang, isMobile, onAction, onHistory }: {
           {t('lia_computed_at', lang)}: {new Date(a.computedAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
         </span>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' }}>
+      <div className="premium-action-bar" style={{ marginTop: '12px' }}>
         {a.lifecycleStatus === 'open' && <ActionButton onClick={() => onAction('acknowledged')} label={t('alertLifecycle_action_acknowledge', lang)} />}
         {a.lifecycleStatus === 'acknowledged' && <ActionButton onClick={() => onAction('in_progress')} label={t('alertLifecycle_action_startProcessing', lang)} />}
         {a.lifecycleStatus === 'in_progress' && <ActionButton onClick={() => onAction('resolved')} label={t('alertLifecycle_action_resolve', lang)} />}
@@ -378,7 +383,7 @@ function AlertCard({ a, lang, isMobile, onAction, onHistory }: {
 }
 
 function ActionButton({ label, onClick, disabled = false }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} style={{ padding: '7px 11px', borderRadius: 'var(--r2)', border: '1px solid var(--p)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '11.5px', fontWeight: 600, cursor: disabled ? 'wait' : 'pointer' }}>{label}</button>;
+  return <button className="premium-action-button" type="button" onClick={onClick} disabled={disabled} style={{ borderRadius: 'var(--r2)', border: '1px solid var(--p)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '12px', fontWeight: 700, cursor: disabled ? 'wait' : 'pointer' }}>{label}</button>;
 }
 
 function lifecycleErrorKey(error?: string): string {
@@ -439,11 +444,11 @@ function LifecycleActionDialog({ action, lang, onClose, onSuccess }: {
         </div>
         {required && <label style={{ display: 'block', fontSize: '12px', marginBottom: '10px' }}>
           {t('alertLifecycle_modal_reason', lang)}
-          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} style={{ ...fieldStyle, resize: 'vertical', marginTop: '5px' }} />
+          <textarea className="premium-field" value={reason} onChange={e => setReason(e.target.value)} rows={3} style={{ ...fieldStyle, resize: 'vertical', marginTop: '5px' }} />
         </label>}
         <label style={{ display: 'block', fontSize: '12px', marginBottom: '10px' }}>
           {t('alertLifecycle_modal_notes', lang)}
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} style={{ ...fieldStyle, resize: 'vertical', marginTop: '5px' }} />
+          <textarea className="premium-field" value={notes} onChange={e => setNotes(e.target.value)} rows={3} style={{ ...fieldStyle, resize: 'vertical', marginTop: '5px' }} />
         </label>
         {error && <div role="alert" style={{ color: 'var(--err)', fontSize: '12px', marginBottom: '10px' }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -468,8 +473,8 @@ function AlertHistoryDialog({ alert, lang, onClose }: { alert: LiveInterInstitut
       {!history.loading && history.error && <PhoenixErrorState title={t('alertLifecycle_history_error', lang)} message={t('alertLifecycle_error_generic', lang)} onRetry={history.reload} />}
       {!history.loading && !history.error && history.data && !history.data.ok && <PhoenixErrorState title={t('alertLifecycle_history_error', lang)} message={t(lifecycleErrorKey(history.data.error), lang)} onRetry={history.reload} />}
       {!history.loading && !history.error && history.data?.ok && history.data.events.length === 0 && <PhoenixEmptyState icon="🕘" title={t('alertLifecycle_history_empty', lang)} />}
-      {!history.loading && !history.error && history.data?.ok && history.data.events.map((event, index) => (
-        <div key={`${event.createdAt}:${index}`} style={{ borderBottom: '1px solid var(--brd)', padding: '10px 0', fontSize: '12px' }}>
+      {!history.loading && !history.error && history.data?.ok && <div className="history-timeline">{history.data.events.map((event, index) => (
+        <div className="history-event" key={`${event.createdAt}:${index}`} style={{ fontSize: '12px' }}>
           <strong>{event.eventType}</strong>
           <div dir="ltr">{new Date(event.createdAt).toLocaleString(lang)}</div>
           <div>{event.fromStatus || '—'} → {event.toStatus || '—'}</div>
@@ -477,32 +482,34 @@ function AlertHistoryDialog({ alert, lang, onClose }: { alert: LiveInterInstitut
           {event.reason && <div>{t('alertLifecycle_modal_reason', lang)}: {event.reason}</div>}
           {event.notes && <div>{t('alertLifecycle_modal_notes', lang)}: {event.notes}</div>}
         </div>
-      ))}
+      ))}</div>}
     </PhoenixDialog>
   );
 }
 
 // ─── Party block ──────────────────────────────────────────────────────────────
 
-function PartyBlock({ roleLabel, statusLabelKey: statusKey, statusVar, orgLabel, pointLabel, tradeName, quantity, expiryDate, lang }: {
+function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, statusVar, orgLabel, pointLabel, tradeName, quantity, expiryDate, lang }: {
   roleLabel: string;
+  pointRoleLabel: string;
   statusLabelKey: string;
   statusVar: 'ok' | 'warn' | 'err' | 'neutral';
   orgLabel: string;
-  pointLabel: string | null;
+  pointLabel: string;
   tradeName: string | null;
   quantity: number;
   expiryDate: string | null;
   lang: 'ar' | 'en';
 }) {
   return (
-    <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px 12px' }}>
+    <div className="institution-card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
         <span style={{ fontSize: '10.5px', color: 'var(--t2)', fontWeight: 600 }}>{roleLabel}</span>
         {statusKey && <PhoenixStatusBadge variant={statusVar} label={t(statusKey, lang)} />}
       </div>
       <div style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{orgLabel}</div>
-      {pointLabel && <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">🏥 {pointLabel}</div>}
+      <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '8px', fontWeight: 700 }}>{pointRoleLabel}</div>
+      <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">🏥 {pointLabel}</div>
       <div style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--t2)' }}>
         {t('qty', lang)}: <strong style={{ color: 'var(--t)' }}>{quantity}</strong>
       </div>

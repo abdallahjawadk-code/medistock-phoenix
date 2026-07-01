@@ -20,6 +20,7 @@ const badgeColors: Record<string, CSSProperties> = {
 export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'ok', valueColor, iconBg, onClick }: Props) {
   return (
     <div
+      className="premium-depth-card premium-3d-hover premium-kpi-card"
       onClick={onClick}
       style={{
         background: 'var(--s)',
@@ -29,16 +30,6 @@ export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'o
         border: '1px solid var(--brd)',
         transition: 'all 180ms',
         cursor: onClick ? 'pointer' : undefined,
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLDivElement;
-        el.style.boxShadow = 'var(--sh-md)';
-        el.style.transform = 'translateY(-2px)';
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLDivElement;
-        el.style.boxShadow = 'var(--sh-sm)';
-        el.style.transform = '';
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px', marginBottom: '12px' }}>

@@ -28,17 +28,9 @@ export function PhoenixCard({
 
   return (
     <div
-      className={`phoenix-card ${className}`}
+      className={`phoenix-card premium-depth-card ${hover ? 'premium-3d-hover' : ''} ${className}`}
       style={baseStyle}
       onClick={onClick}
-      onMouseEnter={hover ? (e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = 'var(--sh-md)';
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-      } : undefined}
-      onMouseLeave={hover ? (e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = `var(--sh-${shadow})`;
-        (e.currentTarget as HTMLDivElement).style.transform = '';
-      } : undefined}
     >
       {children}
     </div>

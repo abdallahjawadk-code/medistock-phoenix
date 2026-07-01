@@ -939,6 +939,13 @@ export const T: Dict = {
   alertLifecycle_inProgressAt:         { ar: 'بدأت المعالجة', en: 'Processing started' },
   alertLifecycle_resolvedAt:           { ar: 'تم الحل', en: 'Resolved' },
   alertLifecycle_dismissedAt:          { ar: 'تم الاستبعاد', en: 'Dismissed' },
+  alertLifecycle_institution_sourceInstitution: { ar: 'المؤسسة المصدرة', en: 'Source Institution' },
+  alertLifecycle_institution_sourcePoint:       { ar: 'نقطة التوزيع المصدرة', en: 'Source Point' },
+  alertLifecycle_institution_targetInstitution: { ar: 'المؤسسة المستفيدة', en: 'Target Institution' },
+  alertLifecycle_institution_targetPoint:       { ar: 'نقطة التوزيع المستفيدة', en: 'Target Point' },
+  alertLifecycle_institution_from:              { ar: 'من', en: 'From' },
+  alertLifecycle_institution_to:                { ar: 'إلى', en: 'To' },
+  common_notSpecified:                          { ar: 'غير محدد', en: 'Not specified' },
 };
 
 export function t(key: string, lang: Lang): string {

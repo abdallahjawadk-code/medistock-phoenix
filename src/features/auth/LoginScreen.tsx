@@ -50,7 +50,7 @@ export function LoginScreen() {
   }
 
   return (
-    <div style={{
+    <div className="premium-login" style={{
       minHeight: '100dvh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       padding: '24px', position: 'relative', overflow: 'hidden',
@@ -76,12 +76,12 @@ export function LoginScreen() {
       {/* Brand */}
       <div style={{ textAlign: 'center', marginBottom: '26px', animation: 'fs .5s ease' }}>
         <div style={{ width: '74px', height: '74px', borderRadius: 'var(--r4)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 8px 28px rgba(13,148,136,.35)', fontSize: '36px' }}>⚕</div>
-        <h1 style={{ fontSize: '25px', fontWeight: 700, color: 'var(--t)', letterSpacing: '-.4px', marginBottom: '5px' }}>MediStock-Babil</h1>
+        <h1 className="premium-login__brand" style={{ fontSize: '25px', fontWeight: 700, color: 'var(--t)', letterSpacing: '-.4px', marginBottom: '5px' }}>MediStock-Babil</h1>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>{t('tagline', lang)}</p>
       </div>
 
       {/* Card */}
-      <form onSubmit={onSubmit} style={{ width: '100%', maxWidth: '375px', background: 'var(--s)', borderRadius: 'var(--r5)', boxShadow: 'var(--sh-xl)', padding: '26px', border: '1px solid var(--brd)', animation: 'fs .6s ease .12s both' }}>
+      <form className="premium-depth-card premium-login__card" onSubmit={onSubmit} style={{ width: '100%', maxWidth: '375px', borderRadius: 'var(--r5)', padding: '26px', animation: 'fs .6s ease .12s both' }}>
         <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
           {mode === 'reset' ? t('reset_title', lang) : t('login_title', lang)}
         </h2>

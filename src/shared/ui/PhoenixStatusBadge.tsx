@@ -21,7 +21,7 @@ const badgeMap: Record<BadgeVariant, CSSProperties> = {
 
 export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props) {
   return (
-    <span style={{
+    <span className="premium-status-badge" style={{
       padding: '2px 8px',
       borderRadius: 'var(--rpill)',
       fontSize: '10px',

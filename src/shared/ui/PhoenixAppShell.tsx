@@ -36,7 +36,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_dash', lang);
 
   return (
-    <div dir={dir} style={{
+    <div dir={dir} className="premium-shell" style={{
       display: 'flex',
       flexDirection: 'row',
       minHeight: '100dvh',
@@ -65,7 +65,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onMenuClick={() => setSidebarOpen(s => !s)}
         />
 
-        <main style={{
+        <main className="premium-main" style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',

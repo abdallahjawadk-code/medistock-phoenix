@@ -11,7 +11,7 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
   const { lang, toggleLang, toggleTheme, theme } = useApp();
 
   return (
-    <header style={{
+    <header className="premium-topbar" style={{
       height: 'var(--tbh)',
       background: 'var(--s)',
       borderBottom: '1px solid var(--brd)',

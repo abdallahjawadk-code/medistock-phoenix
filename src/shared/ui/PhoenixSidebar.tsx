@@ -57,7 +57,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   });
 
   return (
-    <aside style={{
+    <aside className="premium-sidebar" style={{
       width: 'var(--sw)',
       flexShrink: 0,
       background: 'var(--s)',
@@ -91,6 +91,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           const s = ns(item.screen);
           return (
             <button
+              className="premium-nav-item"
+              data-active={currentScreen === item.screen}
               key={item.screen}
               onClick={() => onNavigate(item.screen)}
               style={{
@@ -115,6 +117,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           const s = ns(item.screen);
           return (
             <button
+              className="premium-nav-item"
+              data-active={currentScreen === item.screen}
               key={item.screen}
               onClick={() => onNavigate(item.screen)}
               style={{

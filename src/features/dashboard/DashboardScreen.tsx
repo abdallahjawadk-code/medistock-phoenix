@@ -96,7 +96,7 @@ export function DashboardScreen({ onNavigate }: Props) {
     : [];
 
   return (
-    <div style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
+    <div className="premium-page premium-dashboard" style={{ maxWidth: '1320px', animation: 'fs .3s ease' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
         <div>

@@ -26,7 +26,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate, onMoreClick 
   });
 
   return (
-    <nav style={{
+    <nav className="premium-topbar" style={{
       position: 'fixed', bottom: 0,
       insetInlineStart: 0, insetInlineEnd: 0,
       height: 'var(--bnh)',

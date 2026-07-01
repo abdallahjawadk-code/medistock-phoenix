@@ -43,7 +43,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
       aria-modal="true"
     >
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} />
-      <aside style={{
+      <aside className="premium-sidebar premium-dialog-panel" style={{
         position: 'relative',
         width: 'min(var(--sw), 88vw)',
         background: 'var(--s)',
@@ -70,6 +70,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
           const s = ns(item.screen);
           return (
             <button
+              className="premium-nav-item"
+              data-active={currentScreen === item.screen}
               key={item.screen}
               onClick={() => { onNavigate(item.screen); onClose(); }}
               style={{

@@ -30,6 +30,7 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
         style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(2px)' }}
       />
       <div
+        className="premium-dialog-panel"
         style={{
           position: 'relative',
           background: 'var(--s)',

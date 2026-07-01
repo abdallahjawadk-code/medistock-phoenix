@@ -44,6 +44,27 @@ describe('InterInstitutionAlertsScreen lifecycle wiring', () => {
     expect(screen).not.toMatch(/event\.(id|alert_state_id|actor_id)/);
   });
 
+  it('renders the source and target institution flow from the lifecycle payload', () => {
+    expect(screen).toContain('a.sourceOrganizationName');
+    expect(screen).toContain('a.targetOrganizationName');
+    expect(screen).toContain('a.sourceDistributionPointName');
+    expect(screen).toContain('a.targetDistributionPointName');
+    expect(screen).toContain('alertLifecycle_institution_sourceInstitution');
+    expect(screen).toContain('alertLifecycle_institution_targetInstitution');
+    expect(screen).toContain('alertLifecycle_institution_sourcePoint');
+    expect(screen).toContain('alertLifecycle_institution_targetPoint');
+    expect(screen).toContain('common_notSpecified');
+    expect(screen).toContain('institution-flow');
+  });
+
+  it('keeps lifecycle controls and history in responsive premium presentation classes', () => {
+    expect(screen).toContain('premium-action-bar');
+    expect(screen).toContain('premium-action-button');
+    expect(screen).toContain('premium-field');
+    expect(screen).toContain('history-timeline');
+    expect(screen).toContain('history-event');
+  });
+
   it('contains all bilingual lifecycle labels and friendly errors', () => {
     for (const key of ['status_open', 'status_acknowledged', 'status_in_progress', 'status_resolved', 'status_dismissed', 'error_notAuthenticated', 'error_forbidden', 'error_invalidTransition']) {
       expect(strings).toContain(`alertLifecycle_${key}:`);
