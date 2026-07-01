@@ -326,9 +326,9 @@ describe('Inter-institution alerts: frontend safety', () => {
     expect(service).toMatch(/if \(actor\.isSuper\)/);
   });
 
-  it('phone numbers render with dir="ltr"', () => {
+  it('timestamps/dates render with dir="ltr" (LIVE-INTER-INSTITUTION-ALERTS-UI-A: the rebuilt screen has no phone/contact UI — the live RPC payload carries no contact fields at all, unlike the legacy migration-009 RPC)', () => {
     expect(screen).toMatch(/dir="ltr"/);
-    expect(screen).toContain('tel:');
+    expect(screen).not.toContain('tel:');
   });
 
   it('dates render with dir="ltr"', () => {

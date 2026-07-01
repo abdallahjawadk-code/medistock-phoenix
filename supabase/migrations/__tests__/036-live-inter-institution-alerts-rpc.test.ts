@@ -423,12 +423,12 @@ describe('Service layer: getLiveInterInstitutionAlerts wrapper', () => {
     expect(service).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
-  it('is not imported by any UI screen yet (no UI rebuild in this phase)', () => {
+  it('is wired into InterInstitutionAlertsScreen only (LIVE-INTER-INSTITUTION-ALERTS-UI-A); Dashboard/StatusCenter left unchanged this phase', () => {
     const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
     const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
     const statusCenter = readFileSync(join(__dirname, '../../../src/features/status/StatusCenterScreen.tsx'), 'utf8');
-    expect(alertsScreen).not.toContain('live-inter-institution-alerts.service');
-    expect(alertsScreen).not.toContain('getLiveInterInstitutionAlerts');
+    expect(alertsScreen).toContain('live-inter-institution-alerts.service');
+    expect(alertsScreen).toContain('getLiveInterInstitutionAlerts');
     expect(dashboardScreen).not.toContain('getLiveInterInstitutionAlerts');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });

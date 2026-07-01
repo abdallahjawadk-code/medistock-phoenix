@@ -587,6 +587,25 @@ export const T: Dict = {
   iia_pair_expiry_missing:  { ar: 'قريب النفاد ← مفقود',       en: 'Near-expiry → Missing' },
   iia_pair_expiry_scarce:   { ar: 'قريب النفاد ← شحيح',        en: 'Near-expiry → Scarce' },
 
+  /* ── LIVE-INTER-INSTITUTION-ALERTS-UI-A: live, item_availability-based alerts ── */
+  lia_title:               { ar: 'تنبيهات بين المؤسسات',                              en: 'Inter-Institution Alerts' },
+  lia_sub:                 { ar: 'تنبيهات محسوبة من التوفر الحالي المباشر',           en: 'Alerts computed from current live availability' },
+  lia_summary_total:       { ar: 'مجموع التنبيهات',                                   en: 'Total alerts' },
+  lia_summary_high:        { ar: 'عالية الأولوية',                                    en: 'High severity' },
+  lia_summary_surplus:     { ar: 'فائض مقابل نقص',                                   en: 'Surplus to shortage' },
+  lia_summary_near_expiry: { ar: 'قريب النفاد مقابل نقص',                            en: 'Near expiry to shortage' },
+  lia_search_ph:           { ar: 'ابحث عن المادة أو المؤسسة أو الاسم التجاري...',   en: 'Search material, organization, or trade name...' },
+  lia_severity_label:      { ar: 'الأولوية',                                          en: 'Severity' },
+  lia_severity_high:       { ar: 'عالية',                                             en: 'High' },
+  lia_severity_medium:     { ar: 'متوسطة',                                            en: 'Medium' },
+  lia_type_label:          { ar: 'نوع التنبيه',                                       en: 'Alert type' },
+  lia_type_surplus:        { ar: 'فائض ← نقص',                                        en: 'Surplus → Shortage' },
+  lia_type_near_expiry:    { ar: 'قريب النفاد ← نقص',                                 en: 'Near Expiry → Shortage' },
+  lia_required_action:     { ar: 'إجراء مطلوب',                                       en: 'Required Action' },
+  lia_empty:               { ar: 'لا توجد تنبيهات حالياً',                            en: 'No alerts at this time' },
+  lia_forbidden:           { ar: 'لا تملك صلاحية عرض هذه التنبيهات',                  en: 'You do not have permission to view these alerts' },
+  lia_computed_at:         { ar: 'وقت الاحتساب',                                      en: 'Computed at' },
+
   /* ── User Management & Permission Matrix ── */
   nav_users:          { ar: 'إدارة المستخدمين',                 en: 'User Management' },
   um_title:           { ar: 'إدارة المستخدمين',                 en: 'User Management' },

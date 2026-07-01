@@ -598,23 +598,31 @@ describe('Dashboard: navigation wiring', () => {
 });
 
 // ─── InterInstitutionAlertsScreen wiring ──────────────────────────────────────
+// LIVE-INTER-INSTITUTION-ALERTS-UI-A: rebuilt to read exclusively from
+// getLiveInterInstitutionAlerts() (migration 036). The screen's old title/
+// empty-state/chip-filter identifiers below are intentionally gone — see
+// src/features/alerts/__tests__/inter-institution-alerts.test.ts for the
+// full rebuilt-screen test coverage (title, subtitle, summary cards,
+// filters, loading/error/empty/forbidden states, no supply_type, no
+// forbidden wording, trade_name display-only).
 
-describe('InterInstitutionAlertsScreen: Material Exchange Command Center', () => {
+describe('InterInstitutionAlertsScreen: rebuilt for live alerts', () => {
   const screenPath = join(__dirname, '../InterInstitutionAlertsScreen.tsx');
 
-  it('uses material_exchange_command_center as the screen title key', () => {
+  it('uses lia_title as the screen title key (live rebuild)', () => {
     const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('material_exchange_command_center');
+    expect(src).toContain('lia_title');
   });
 
-  it('uses no_exchange_opportunities for the empty state', () => {
+  it('uses lia_empty for the empty state (live rebuild)', () => {
     const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('no_exchange_opportunities');
+    expect(src).toContain('lia_empty');
   });
 
-  it('has filter chip UI', () => {
+  it('has severity/type filter UI (live rebuild)', () => {
     const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filterChip');
+    expect(src).toContain('severityFilter');
+    expect(src).toContain('typeFilter');
   });
 });
 
@@ -668,65 +676,15 @@ describe('POST-SMART: Dashboard widget polish', () => {
 });
 
 // ─── POST-SMART: IIA threshold filter chips ───────────────────────────────────
+// LIVE-INTER-INSTITUTION-ALERTS-UI-A: the old expiry-threshold chip filters
+// (exp_expired/3/6/9months, ExpiryBucketBadge, materialAlertEngine import)
+// were specific to the legacy status-report-based screen and are
+// intentionally gone from the rebuilt screen. It shows source_expiry_date
+// directly (from the live RPC payload) only for near_expiry_to_shortage
+// alerts instead — see inter-institution-alerts.test.ts.
 
-describe('POST-SMART: IIA threshold filter chips', () => {
+describe('POST-SMART: InterInstitutionAlertsScreen guards (live rebuild)', () => {
   const screenPath = join(__dirname, '../InterInstitutionAlertsScreen.tsx');
-
-  it('has exp_expired filter chip value', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('exp_expired');
-  });
-
-  it('has exp_3months filter chip value', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('exp_3months');
-  });
-
-  it('has exp_6months filter chip value', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('exp_6months');
-  });
-
-  it('has exp_9months filter chip value', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('exp_9months');
-  });
-
-  it('imports expiryBucket from materialAlertEngine for threshold computation', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('expiryBucket');
-    expect(src).toContain('materialAlertEngine');
-  });
-
-  it('uses filter_expired i18n key for chip label', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filter_expired');
-  });
-
-  it('uses filter_9_months i18n key for chip label', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filter_9_months');
-  });
-
-  it('uses filter_6_months i18n key for chip label', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filter_6_months');
-  });
-
-  it('uses filter_3_months i18n key for chip label', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filter_3_months');
-  });
-
-  it('uses filter_data_quality i18n key for chip label', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('filter_data_quality');
-  });
-
-  it('renders ExpiryBucketBadge on cards with expiry date', () => {
-    const src = readFileSync(screenPath, 'utf8');
-    expect(src).toContain('ExpiryBucketBadge');
-  });
 
   it('does not use service_role', () => {
     const src = readFileSync(screenPath, 'utf8');
@@ -735,7 +693,12 @@ describe('POST-SMART: IIA threshold filter chips', () => {
 
   it('does not use auth.admin', () => {
     const src = readFileSync(screenPath, 'utf8');
-    expect(src).not.toContain('auth.admin');
+    expect(src).not.toMatch(/auth\.admin/);
+  });
+
+  it('no longer imports materialAlertEngine (legacy expiry-threshold engine)', () => {
+    const src = readFileSync(screenPath, 'utf8');
+    expect(src).not.toContain('materialAlertEngine');
   });
 });
 
