@@ -3,7 +3,7 @@
  * Run: npm test -- --run
  *
  * Static source-code tests for the rebuilt InterInstitutionAlertsScreen,
- * now wired to getLiveInterInstitutionAlerts() (migration 036) instead of
+ * now wired to getLiveInterInstitutionAlertsWithState() instead of
  * the legacy institution_item_status_reports-based path.
  */
 import { describe, it, expect } from 'vitest';
@@ -18,14 +18,14 @@ const strings = readSrc('shared/i18n/strings.ts');
 const dashboardScreen = readSrc('features/dashboard/DashboardScreen.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 
-describe('InterInstitutionAlertsScreen: uses the live RPC service', () => {
-  it('imports getLiveInterInstitutionAlerts from live-inter-institution-alerts.service', () => {
-    expect(screen).toContain("from './live-inter-institution-alerts.service'");
-    expect(screen).toContain('getLiveInterInstitutionAlerts');
+describe('InterInstitutionAlertsScreen: uses the lifecycle RPC service', () => {
+  it('imports getLiveInterInstitutionAlertsWithState from inter-org-alert-lifecycle.service', () => {
+    expect(screen).toContain("from './inter-org-alert-lifecycle.service'");
+    expect(screen).toContain('getLiveInterInstitutionAlertsWithState');
   });
 
-  it('calls getLiveInterInstitutionAlerts inside the data-loading hook', () => {
-    expect(screen).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlerts\(/);
+  it('calls getLiveInterInstitutionAlertsWithState inside the data-loading hook', () => {
+    expect(screen).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsWithState\(/);
   });
 });
 
@@ -255,8 +255,8 @@ describe('InterInstitutionAlertsScreen: guardrails', () => {
   });
 
   it('StatusCenter is left unchanged; Dashboard is now wired to the live summary (LIVE-ALERTS-DASHBOARD-SUMMARY-A)', () => {
-    expect(dashboardScreen).toContain('getLiveInterInstitutionAlerts');
-    expect(dashboardScreen).toContain('live-inter-institution-alerts.service');
+    expect(dashboardScreen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });
 });

@@ -3,7 +3,7 @@
  * Run: npm test -- --run
  *
  * Static source-code tests for the Dashboard's rebuilt inter-institution
- * alert summary widget, now backed by getLiveInterInstitutionAlerts()
+ * alert summary widget, now backed by getLiveInterInstitutionAlertsWithState()
  * (migration 036) instead of generateExchangeAlerts() over the manual
  * status-report layer.
  */
@@ -18,13 +18,13 @@ const dashboard = readSrc('features/dashboard/DashboardScreen.tsx');
 const strings = readSrc('shared/i18n/strings.ts');
 
 describe('DashboardScreen: uses the live inter-institution alerts service', () => {
-  it('imports getLiveInterInstitutionAlerts from live-inter-institution-alerts.service', () => {
-    expect(dashboard).toContain("from '@/features/alerts/live-inter-institution-alerts.service'");
-    expect(dashboard).toContain('getLiveInterInstitutionAlerts');
+  it('imports the lifecycle-aware alert service', () => {
+    expect(dashboard).toContain("from '@/features/alerts/inter-org-alert-lifecycle.service'");
+    expect(dashboard).toContain('getLiveInterInstitutionAlertsWithState');
   });
 
   it('loads live alerts with a safe limit via useAsync', () => {
-    expect(dashboard).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlerts\(200\), \[\]\)/);
+    expect(dashboard).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsWithState\(200\), \[\]\)/);
   });
 });
 
@@ -62,6 +62,7 @@ describe('DashboardScreen: legacy local/material alert engine intentionally reta
 
 describe('DashboardScreen: live summary counts', () => {
   it('computes total, high severity, surplus_to_shortage, and near_expiry_to_shortage counts', () => {
+    expect(dashboard).toMatch(/filter\(a => \['open', 'acknowledged', 'in_progress'\]\.includes\(a\.lifecycleStatus\)\)/);
     expect(dashboard).toMatch(/const liveTotal = liveList\.length/);
     expect(dashboard).toMatch(/const liveHigh = liveList\.filter\(a => a\.severity === 'high'\)\.length/);
     expect(dashboard).toMatch(/const liveSurplus = liveList\.filter\(a => a\.alertType === 'surplus_to_shortage'\)\.length/);

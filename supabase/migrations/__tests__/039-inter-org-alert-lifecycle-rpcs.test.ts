@@ -503,19 +503,19 @@ describe('No UI strings were added in this phase', () => {
   });
 });
 
-describe('Regression: UI screens untouched', () => {
+describe('Lifecycle UI phase wiring', () => {
   const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
   const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
 
-  it('InterInstitutionAlertsScreen does not reference the new lifecycle RPCs', () => {
+  it('InterInstitutionAlertsScreen uses the lifecycle service without embedding RPC names', () => {
     expect(alertsScreen).not.toContain('phoenix_get_live_inter_institution_alerts_with_state');
     expect(alertsScreen).not.toContain('phoenix_update_inter_org_alert_state');
-    expect(alertsScreen).not.toContain('inter-org-alert-lifecycle.service');
+    expect(alertsScreen).toContain('inter-org-alert-lifecycle.service');
   });
 
-  it('DashboardScreen does not reference the new lifecycle RPCs', () => {
+  it('DashboardScreen uses the lifecycle service without embedding RPC names', () => {
     expect(dashboardScreen).not.toContain('phoenix_get_live_inter_institution_alerts_with_state');
-    expect(dashboardScreen).not.toContain('inter-org-alert-lifecycle.service');
+    expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
   });
 });
 
@@ -558,11 +558,11 @@ describe('Service wrapper: inter-org-alert-lifecycle.service.ts', () => {
     expect(service).not.toContain("from('item_availability')");
   });
 
-  it('is not imported by any UI screen yet', () => {
+  it('is imported by the alert and dashboard UI screens', () => {
     const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
     const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
-    expect(alertsScreen).not.toContain('inter-org-alert-lifecycle.service');
-    expect(dashboardScreen).not.toContain('inter-org-alert-lifecycle.service');
+    expect(alertsScreen).toContain('inter-org-alert-lifecycle.service');
+    expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
   });
 
   it('does not use service_role or auth.admin', () => {

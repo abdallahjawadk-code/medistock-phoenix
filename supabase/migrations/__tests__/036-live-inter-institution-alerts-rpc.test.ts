@@ -423,14 +423,14 @@ describe('Service layer: getLiveInterInstitutionAlerts wrapper', () => {
     expect(service).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
-  it('is wired into InterInstitutionAlertsScreen (UI-A) and DashboardScreen (LIVE-ALERTS-DASHBOARD-SUMMARY-A); StatusCenter left unchanged', () => {
+  it('is superseded in the alert and dashboard UI by the lifecycle-aware service; StatusCenter remains unchanged', () => {
     const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
     const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
     const statusCenter = readFileSync(join(__dirname, '../../../src/features/status/StatusCenterScreen.tsx'), 'utf8');
-    expect(alertsScreen).toContain('live-inter-institution-alerts.service');
-    expect(alertsScreen).toContain('getLiveInterInstitutionAlerts');
-    expect(dashboardScreen).toContain('live-inter-institution-alerts.service');
-    expect(dashboardScreen).toContain('getLiveInterInstitutionAlerts');
+    expect(alertsScreen).toContain('inter-org-alert-lifecycle.service');
+    expect(alertsScreen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
+    expect(dashboardScreen).toContain('getLiveInterInstitutionAlertsWithState');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });
 

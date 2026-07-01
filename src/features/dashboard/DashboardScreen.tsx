@@ -9,7 +9,7 @@ import {
 } from '@/shared/supabase/services/dashboard.service';
 import { getStatusReports } from '@/shared/supabase/services/status-reports.service';
 import { computeMaterialAlerts, getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
-import { getLiveInterInstitutionAlerts } from '@/features/alerts/live-inter-institution-alerts.service';
+import { getLiveInterInstitutionAlertsWithState } from '@/features/alerts/inter-org-alert-lifecycle.service';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -71,12 +71,14 @@ export function DashboardScreen({ onNavigate }: Props) {
   // computeMaterialAlerts() below is a SEPARATE, single-institution
   // local/material alert path (expiry + missing status per institution) —
   // it is NOT inter-institution matching and is left untouched.
-  const liveAlerts = useAsync(() => getLiveInterInstitutionAlerts(200), []);
+  const liveAlerts = useAsync(() => getLiveInterInstitutionAlertsWithState(200), []);
   const liveResult = liveAlerts.data;
   const liveOk = liveResult?.ok ?? false;
   const liveRpcError = liveResult?.error;
   const liveForbidden = liveRpcError === 'FORBIDDEN';
-  const liveList = liveOk ? (liveResult?.alerts ?? []) : [];
+  const liveList = liveOk
+    ? (liveResult?.alerts ?? []).filter(a => ['open', 'acknowledged', 'in_progress'].includes(a.lifecycleStatus))
+    : [];
   const liveTotal = liveList.length;
   const liveHigh = liveList.filter(a => a.severity === 'high').length;
   const liveSurplus = liveList.filter(a => a.alertType === 'surplus_to_shortage').length;
