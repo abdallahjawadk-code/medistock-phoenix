@@ -88,12 +88,10 @@ export function DashboardScreen({ onNavigate }: Props) {
             {m ? `${t('m_upd', lang)}: ${m.lastUpdated}` : t('dash_sub', lang)}
           </p>
         </div>
-        <button
-          onClick={() => onNavigate(3)}
-          style={{ padding: '10px 16px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 120ms', whiteSpace: 'nowrap' }}
-        >
-          ✏️ {t('nav_editor', lang)}
-        </button>
+        {/* AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-A: quick-nav button to
+            the Availability Editor (screen 3) removed — nav_editor is hidden
+            from all nav surfaces, so this shortcut is no longer offered here
+            either. Route/EditorScreen remain fully intact. */}
       </div>
 
       {!configured && (
@@ -285,7 +283,6 @@ export function DashboardScreen({ onNavigate }: Props) {
         {[
           { screen: 11, icon: '🏛️', labelKey: 'nav_institutions', descKey: 'inst_sub' },
           { screen: 12, icon: '📋', labelKey: 'nav_status_center', descKey: 'sc_sub' },
-          { screen: 3,  icon: '✏️', labelKey: 'nav_editor', descKey: 'editor_desc' },
           { screen: 9,  icon: '📈', labelKey: 'nav_reports', descKey: 'reports_desc' },
         ].map(item => (
           <button

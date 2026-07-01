@@ -73,21 +73,10 @@ export function MobileCommandScreen({ onNavigate }: Props) {
         )}
       </PhoenixCard>
 
-      {/* Sticky CTA */}
-      <button
-        onClick={() => onNavigate(3)}
-        style={{
-          position: 'fixed', bottom: 'calc(var(--bnh) + 12px)',
-          insetInlineStart: '50%', transform: 'translateX(-50%)',
-          padding: '13px 28px', borderRadius: 'var(--rpill)',
-          border: 'none', background: 'var(--p)', color: '#fff',
-          fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap',
-          boxShadow: '0 4px 16px rgba(13,148,136,.4)',
-          cursor: 'pointer', zIndex: 80,
-        }}
-      >
-        ✏️ {t('nav_editor', lang)}
-      </button>
+      {/* AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B: the sticky floating
+          action button to the Availability Editor (screen 3, nav_editor) was
+          removed — no visible entry point to manual input remains on this
+          screen. Other mobile command features above are unchanged. */}
     </div>
   );
 }

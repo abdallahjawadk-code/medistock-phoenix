@@ -1,9 +1,11 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 
+// AVAILABILITY-EDITOR-NAV-HIDE-A: nav_editor is intentionally NOT listed here
+// (hidden from navigation only). Its route (screen 3 — EditorScreen) remains
+// fully wired in App.tsx; only the bottom-nav entry point was removed.
 const BOTTOM_NAV = [
   { screen: 2, icon: '📊', labelKey: 'nav_dash' },
-  { screen: 3, icon: '✏️', labelKey: 'nav_editor' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
 ];

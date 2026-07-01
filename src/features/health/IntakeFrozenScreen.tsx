@@ -61,15 +61,12 @@ export function IntakeFrozenScreen({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* Redirect */}
-      <div style={{ background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ fontSize: '12.5px', color: 'var(--pd)' }}>✅ {t('use_editor_instead', lang)}</div>
-        <button
-          onClick={() => onNavigate(3)}
-          style={{ padding: '9px 16px', borderRadius: 'var(--r2)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
-        >
-          {t('nav_editor', lang)}
-        </button>
+      {/* AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B: the redirect button to
+          the Availability Editor (screen 3, nav_editor) was removed — no
+          visible entry point to manual input remains on this screen. Kept as
+          a neutral notice that Intake is frozen; no navigation offered. */}
+      <div style={{ background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '14px 16px', fontSize: '12.5px', color: 'var(--pd)' }}>
+        🔒 {t('intake_frozen', lang)}
       </div>
     </div>
   );

@@ -43,7 +43,9 @@ describe('Desktop sidebar hides legacy pages', () => {
   });
 
   it('NAV_ITEMS still contains the core unaffected pages', () => {
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    // nav_editor is intentionally excluded here — hidden separately by
+    // AVAILABILITY-EDITOR-NAV-HIDE-A (see nav-availability-editor-hide.test.ts).
+    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -79,7 +81,9 @@ describe('Mobile drawer hides legacy pages', () => {
   });
 
   it('ALL_NAV still contains the core unaffected pages', () => {
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor', 'nav_intake']
+    // nav_editor is intentionally excluded here — hidden separately by
+    // AVAILABILITY-EDITOR-NAV-HIDE-A (see nav-availability-editor-hide.test.ts).
+    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_intake']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });

@@ -5,13 +5,15 @@ import { t } from '@/shared/i18n/strings';
 // listed here (hidden from navigation only). Their routes (screens 4, 6 —
 // RegistryScreen, QrScreen) remain fully wired in App.tsx; only the drawer
 // entry point was removed.
+// AVAILABILITY-EDITOR-NAV-HIDE-A: nav_editor is also intentionally NOT listed
+// here (hidden from navigation only). Its route (screen 3 — EditorScreen)
+// remains fully wired in App.tsx; only the drawer entry point was removed.
 const ALL_NAV = [
   { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
-  { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
   { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
 ];

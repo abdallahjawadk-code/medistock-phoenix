@@ -5,7 +5,6 @@ import { useAsync } from '@/shared/lib/useAsync';
 import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
-import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
@@ -90,9 +89,10 @@ export function MeshScreen({ onNavigate }: Props) {
                   </div>
                 ))}
               </div>
-              <PhoenixButton variant="primary" size="md" fullWidth style={{ marginTop: '14px' }} onClick={() => onNavigate(3)}>
-                ✏️ {t('nav_editor', lang)}
-              </PhoenixButton>
+              {/* AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B: the "open
+                  Availability Editor" button (screen 3, nav_editor) was
+                  removed from this institution detail panel — no visible
+                  entry point to manual input remains here. */}
             </PhoenixCard>
           )}
         </div>
