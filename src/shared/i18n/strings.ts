@@ -10,12 +10,16 @@ type Dict = Record<string, { ar: string; en: string }>;
 export const T: Dict = {
   /* ── Auth ── */
   tagline:        { ar: 'شبكة توفر الصحة · MASAR',          en: 'MASAR Health Availability Network' },
+  /* MOBILE-NAV-BRAND-POLISH-A: sidebar/mobile-drawer brand subtitle, replaces the old "MASAR Health Network" phrase. */
+  shell_brand_department: { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
   selectRole:     { ar: 'اختر الدور التجريبي',                en: 'Select Demo Role' },
   demoLogin:      { ar: 'دخول تجريبي',                        en: 'Demo Login' },
   demoData:       { ar: 'بيانات تجريبية',                     en: 'Demo Data' },
   demoOnly:       { ar: 'للأغراض التجريبية فقط',              en: 'Demo purposes only — no real connection' },
   demoSession:    { ar: 'جلسة تجريبية',                       en: 'Demo Session' },
   logout:         { ar: 'خروج',                               en: 'Exit Demo' },
+  close:          { ar: 'إغلاق',                               en: 'Close' },
+  menu:           { ar: 'القائمة',                             en: 'Menu' },
 
   /* ── Status ── */
   frozen:         { ar: 'مجمد',                               en: 'Frozen' },

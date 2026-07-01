@@ -14,10 +14,13 @@ const BOTTOM_NAV = [
 interface Props {
   currentScreen: number;
   onNavigate: (screen: number) => void;
-  onMoreClick: () => void;
 }
 
-export function PhoenixMobileBottomNav({ currentScreen, onNavigate, onMoreClick }: Props) {
+// MOBILE-NAV-BRAND-POLISH-A: the hamburger/"More" (previously the localized
+// 'more' string key) item was removed from the bottom nav — drawer access is
+// preserved via the icon-only menu button already in PhoenixTopbar (no text
+// label, same setSidebarOpen toggle), so no page/feature access was lost.
+export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
   const { lang } = useApp();
 
   const bns = (n: number) => ({
@@ -34,6 +37,9 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate, onMoreClick 
       borderTop: '1px solid var(--brd)',
       display: 'flex',
       alignItems: 'stretch',
+      justifyContent: 'space-evenly',
+      paddingInline: 'max(env(safe-area-inset-left, 0px), 4px) max(env(safe-area-inset-right, 0px), 4px)',
+      paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       zIndex: 70,
       boxShadow: '0 -4px 16px rgba(15,43,79,.07)',
     }} aria-label="Bottom Navigation">
@@ -43,40 +49,26 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate, onMoreClick 
           <button
             key={item.screen}
             onClick={() => onNavigate(item.screen)}
+            className="premium-bottom-nav-item"
+            data-active={currentScreen === item.screen}
             style={{
               flex: 1,
               display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center',
               gap: '3px', border: 'none', background: 'transparent',
-              padding: '8px 4px', transition: 'all 120ms',
+              padding: '8px 6px', transition: 'all 120ms',
               minWidth: '44px', minHeight: '44px', cursor: 'pointer',
               ...s,
             }}
             aria-label={t(item.labelKey, lang)}
           >
             <span style={{ fontSize: '20px' }}>{item.icon}</span>
-            <span style={{ fontSize: '9.5px', fontWeight: s.fontWeight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60px' }}>
+            <span style={{ fontSize: '9.5px', fontWeight: s.fontWeight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '68px' }}>
               {t(item.labelKey, lang)}
             </span>
           </button>
         );
       })}
-
-      <button
-        onClick={onMoreClick}
-        style={{
-          flex: 1,
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          gap: '3px', border: 'none', background: 'transparent',
-          color: 'var(--t2)', padding: '8px 4px',
-          transition: 'all 120ms', minWidth: '44px', minHeight: '44px', cursor: 'pointer',
-        }}
-        aria-label="More"
-      >
-        <span style={{ fontSize: '20px' }}>☰</span>
-        <span style={{ fontSize: '9.5px', fontWeight: 500 }}>{t('more', lang)}</span>
-      </button>
     </nav>
   );
 }

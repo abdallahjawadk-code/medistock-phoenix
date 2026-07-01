@@ -80,7 +80,6 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
         <PhoenixMobileBottomNav
           currentScreen={currentScreen}
           onNavigate={onNavigate}
-          onMoreClick={() => setSidebarOpen(s => !s)}
         />
       )}
     </div>

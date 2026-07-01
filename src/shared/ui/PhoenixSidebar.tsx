@@ -80,7 +80,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           }}>⚕</div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>MediStock-Babil</div>
-            <div style={{ fontSize: '10px', color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>MASAR Health Network</div>
+            <div style={{ fontSize: '10px', color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('shell_brand_department', lang)}</div>
           </div>
         </div>
       </div>

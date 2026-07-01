@@ -20,6 +20,14 @@ const ALL_NAV: { screen: number; icon: string; labelKey: string; frozen?: boolea
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
 ];
 
+// MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the
+// mobile drawer offers the exact same standalone pages as the desktop
+// sidebar (previously only ALL_NAV's 7 items were mirrored — nav_my_account
+// was missing from mobile).
+const SECONDARY_NAV: { screen: number; icon: string; labelKey: string }[] = [
+  { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+];
+
 interface Props {
   currentScreen: number;
   onNavigate: (screen: number) => void;
@@ -42,8 +50,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
       role="dialog"
       aria-modal="true"
     >
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} />
-      <aside className="premium-sidebar premium-dialog-panel" style={{
+      <div onClick={onClose} className="premium-drawer-backdrop" style={{ position: 'absolute', inset: 0 }} />
+      <aside className="premium-sidebar premium-dialog-panel premium-mobile-drawer" style={{
         position: 'relative',
         width: 'min(var(--sw), 88vw)',
         background: 'var(--s)',
@@ -52,42 +60,83 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
-        padding: '16px 8px',
+        padding: '14px 8px calc(env(safe-area-inset-bottom, 0px) + 14px)',
         boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
-        <div className="premium-sidebar-brand" style={{ padding: '10px 8px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '6px', borderRadius: 'var(--r3)' }}>
+        <div className="premium-sidebar-brand premium-drawer-brand" style={{ padding: '10px 10px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '8px', borderRadius: 'var(--r3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className="premium-sidebar-logo" style={{ width: '36px', height: '36px', borderRadius: 'var(--r2)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚕</div>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 700 }}>MediStock-Babil</div>
-              <div style={{ fontSize: '10px', color: 'var(--t2)' }}>MASAR Health Network</div>
+            <div className="premium-sidebar-logo premium-drawer-logo" style={{ width: '38px', height: '38px', borderRadius: 'var(--r2)', background: 'linear-gradient(145deg, var(--p), var(--pd))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '19px', color: '#fff', flexShrink: 0 }}>⚕</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>MediStock-Babil</div>
+              <div style={{ fontSize: '10px', color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('shell_brand_department', lang)}</div>
             </div>
+            <button
+              onClick={onClose}
+              className="premium-drawer-close premium-focus-ring"
+              aria-label={t('close', lang)}
+              style={{
+                width: '34px', height: '34px', flexShrink: 0, borderRadius: 'var(--r2)',
+                border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t2)',
+                fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', transition: 'all 120ms',
+              }}
+            >
+              ✕
+            </button>
           </div>
         </div>
 
-        {ALL_NAV.map(item => {
-          const s = ns(item.screen);
-          return (
-            <button
-              className="premium-nav-item"
-              data-active={currentScreen === item.screen}
-              key={item.screen}
-              onClick={() => { onNavigate(item.screen); onClose(); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '12px 10px', borderRadius: 'var(--r2)',
-                border: 'none', width: '100%', textAlign: 'start',
-                fontSize: '14px', transition: 'all 100ms',
-                opacity: item.frozen ? 0.7 : 1,
-                cursor: 'pointer',
-                ...s,
-              }}
-            >
-              {item.icon} {t(item.labelKey, lang)}
-            </button>
-          );
-        })}
+        <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
+          {ALL_NAV.map(item => {
+            const s = ns(item.screen);
+            return (
+              <button
+                className="premium-nav-item"
+                data-active={currentScreen === item.screen}
+                key={item.screen}
+                onClick={() => { onNavigate(item.screen); onClose(); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '12px 10px', borderRadius: 'var(--r2)',
+                  border: 'none', width: '100%', textAlign: 'start',
+                  fontSize: '14px', transition: 'all 100ms', minHeight: '44px',
+                  opacity: item.frozen ? 0.7 : 1,
+                  cursor: 'pointer',
+                  ...s,
+                }}
+              >
+                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
+              </button>
+            );
+          })}
+
+          <div style={{ height: '1px', background: 'var(--brd)', margin: '6px 4px' }} />
+
+          {SECONDARY_NAV.map(item => {
+            const s = ns(item.screen);
+            return (
+              <button
+                className="premium-nav-item"
+                data-active={currentScreen === item.screen}
+                key={item.screen}
+                onClick={() => { onNavigate(item.screen); onClose(); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '12px 10px', borderRadius: 'var(--r2)',
+                  border: 'none', width: '100%', textAlign: 'start',
+                  fontSize: '14px', transition: 'all 100ms', minHeight: '44px',
+                  cursor: 'pointer',
+                  ...s,
+                }}
+              >
+                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
+              </button>
+            );
+          })}
+        </nav>
       </aside>
     </div>
   );

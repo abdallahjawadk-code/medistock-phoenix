@@ -27,14 +27,15 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
       {isMobile && (
         <button
           onClick={onMenuClick}
+          className="premium-drawer-trigger premium-focus-ring"
           style={{
-            width: '38px', height: '38px', borderRadius: 'var(--r2)',
-            border: '1px solid var(--brd)', background: 'transparent',
-            color: 'var(--t)', fontSize: '17px',
+            width: '42px', height: '42px', borderRadius: 'var(--r2)',
+            border: '1px solid var(--brd)', background: 'var(--s2)',
+            color: 'var(--t)', fontSize: '18px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0, cursor: 'pointer', transition: 'all 120ms',
           }}
-          aria-label="Menu"
+          aria-label={t('menu', lang)}
         >
           ☰
         </button>
