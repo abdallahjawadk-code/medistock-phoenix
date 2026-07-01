@@ -306,12 +306,16 @@ describe('EditorScreen, StatusCenter, and QR/public-QR are untouched by this pha
     expect(editorScreen).not.toContain('phoenix_apply_availability_movement');
   });
 
-  it('StatusCenterScreen.tsx has no quantity-movement UI wiring yet', () => {
+  it('StatusCenterScreen.tsx quantity-movement UI wiring (added by AVAILABILITY-QUANTITY-MOVEMENT-UI-A) does not touch item_availability_movements directly', () => {
+    // As of AVAILABILITY-QUANTITY-MOVEMENT-UI-A, StatusCenterScreen legitimately
+    // gates its "Adjust Quantity" action on the quantity-movement permission
+    // keys and calls applyAvailabilityMovement() via AdjustQuantityModal — see
+    // src/features/status/__tests__/adjust-quantity-modal.test.ts for the full
+    // UI-phase test coverage. This test only guards that the screen never
+    // touches the ledger table directly (writes must go through the RPC).
     const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
-    expect(statusCenter).not.toContain('availability.quantity.');
-    expect(statusCenter).not.toContain('availability.movements.');
-    expect(statusCenter).not.toContain('phoenix_apply_availability_movement');
     expect(statusCenter).not.toContain('item_availability_movements');
+    expect(statusCenter).not.toContain('supabase.rpc(');
   });
 
   it('migration 033 does not modify get_public_qr_payload or any QR table', () => {

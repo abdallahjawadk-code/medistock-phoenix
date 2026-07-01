@@ -397,10 +397,17 @@ describe('EditorScreen, StatusCenter, and QR are untouched by this phase', () =>
     expect(editorScreen).not.toContain('AvailabilityMovementType');
   });
 
-  it('StatusCenterScreen.tsx does not call applyAvailabilityMovement', () => {
+  it('StatusCenterScreen.tsx calls applyAvailabilityMovement only via the service wrapper (added by AVAILABILITY-QUANTITY-MOVEMENT-UI-A), never the raw RPC name', () => {
+    // As of AVAILABILITY-QUANTITY-MOVEMENT-UI-A, StatusCenterScreen legitimately
+    // wires up the "Adjust Quantity" action through applyAvailabilityMovement()
+    // (via AdjustQuantityModal) — see adjust-quantity-modal.test.ts for full
+    // coverage. This test guards that it never bypasses the wrapper by calling
+    // the RPC name/supabase.rpc directly.
+    // The RPC name may legitimately appear in an explanatory code comment
+    // (documenting why the permission check is UX-only) — assert there is no
+    // actual supabase.rpc(...) call site bypassing the wrapper.
     const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
-    expect(statusCenter).not.toContain('applyAvailabilityMovement');
-    expect(statusCenter).not.toContain('phoenix_apply_availability_movement');
+    expect(statusCenter).not.toContain('supabase.rpc(');
   });
 
   it('qr.service.ts is unaffected', () => {

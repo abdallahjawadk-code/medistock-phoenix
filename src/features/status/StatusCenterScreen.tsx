@@ -10,6 +10,9 @@ import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
+import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -94,7 +97,7 @@ function escHtml(s: string): string {
 }
 
 export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
-  const { lang, activeOrgId } = useApp();
+  const { lang, activeOrgId, myPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
 
   const effectiveOrgId = activeOrgId ?? undefined;
@@ -102,6 +105,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const [filterStatus, setFilterStatus] = useState<CanonicalStatus | ''>('');
   const [filterSupply, setFilterSupply] = useState<SupplyCategory | ''>('');
   const [search, setSearch] = useState('');
+
+  // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
+  // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
+  // independently re-enforces the same permission matrix server-side.
+  const canAdjustQuantity = QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key));
+  const [adjustRow, setAdjustRow] = useState<AdjustQuantityRow | null>(null);
+  const [movementToast, setMovementToast] = useState<string | null>(null);
 
   const live = useAsync(
     () => effectiveOrgId ? getAvailabilityByOrg(effectiveOrgId) : Promise.resolve([]),
@@ -227,6 +237,14 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     URL.revokeObjectURL(url);
   }
 
+  function handleMovementSuccess(result: ApplyAvailabilityMovementResult) {
+    setMovementToast(
+      `${t('mvmt_success', lang)}: ${result.quantityBefore} → ${result.quantityAfter}`,
+    );
+    setTimeout(() => setMovementToast(null), 3000);
+    live.reload();
+  }
+
   const btnStyle = {
     padding: '8px 14px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
     background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
@@ -338,6 +356,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('sc_effective_status', lang)}</th>
                 <th style={th}>{t('expiry', lang)}</th>
                 <th style={th}>{t('last_upd', lang)}</th>
+                {canAdjustQuantity && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
@@ -356,6 +375,17 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
                     <td style={td} dir="ltr">{r.expiry_date || (r.expiry_bucket ? t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang) : '—')}</td>
                     <td style={td} dir="ltr">{r.updated_at ? new Date(r.updated_at).toLocaleDateString(lang === 'ar' ? 'ar' : 'en') : '—'}</td>
+                    {canAdjustQuantity && (
+                      <td style={td}>
+                        <button
+                          onClick={() => setAdjustRow(r)}
+                          aria-label={t('sc_adjust_qty', lang)}
+                          style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          ✏️ {t('sc_adjust_qty', lang)}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -363,6 +393,16 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           </table>
         </div>
       )}
+
+      <AdjustQuantityModal
+        open={adjustRow !== null}
+        row={adjustRow}
+        lang={lang}
+        myPermissions={myPermissions}
+        onClose={() => setAdjustRow(null)}
+        onSuccess={handleMovementSuccess}
+      />
+      {movementToast && <PhoenixToast message={movementToast} />}
 
       {/* Material Exchange Command Center CTA */}
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
