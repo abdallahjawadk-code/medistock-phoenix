@@ -206,6 +206,23 @@ export const T: Dict = {
   mvmt_col_reason:            { ar: 'السبب',                                en: 'Reason' },
   mvmt_col_notes:             { ar: 'ملاحظات',                              en: 'Notes' },
 
+  /* ── AVAILABILITY-MOVEMENT-REPORTS-PRINT-A: Quantity Movement Report ── */
+  mvmt_report_title:              { ar: 'تقرير حركات الكمية',                        en: 'Quantity Movement Report' },
+  mvmt_report_sub:                { ar: 'تصفية وطباعة وتصدير حركات الكمية المسجلة', en: 'Filter, print, and export recorded quantity movements' },
+  mvmt_report_no_permission:      { ar: 'لا تملك صلاحية عرض تقرير حركات الكمية',    en: 'You do not have permission to view the quantity movement report.' },
+  mvmt_report_date_from:          { ar: 'من تاريخ',                                  en: 'From date' },
+  mvmt_report_date_to:            { ar: 'إلى تاريخ',                                 en: 'To date' },
+  mvmt_report_all_types:          { ar: 'كل الأنواع',                                en: 'All types' },
+  mvmt_report_material_search_ph: { ar: 'ابحث عن مادة...',                          en: 'Search material...' },
+  mvmt_report_actor_search_ph:    { ar: 'ابحث عن مستخدم...',                        en: 'Search actor...' },
+  mvmt_report_summary_total:      { ar: 'إجمالي الحركات',                           en: 'Total movements' },
+  mvmt_report_summary_add:        { ar: 'إجمالي الإضافات',                          en: 'Total additions' },
+  mvmt_report_summary_subtract:   { ar: 'إجمالي الخصومات',                          en: 'Total subtractions' },
+  mvmt_report_summary_correction: { ar: 'إجمالي التصحيحات',                         en: 'Total corrections' },
+  mvmt_report_summary_net:        { ar: 'صافي التغيير في الكمية',                   en: 'Net quantity delta' },
+  mvmt_report_export_csv:         { ar: 'تصدير CSV',                                en: 'Export CSV' },
+  mvmt_report_empty:              { ar: 'لا توجد حركات كمية مطابقة لعوامل التصفية المحددة.', en: 'No quantity movements match the selected filters.' },
+
   /* ── Item Registry ── */
   reg_sub:        { ar: 'إدارة الأصناف المحلية للمؤسسة',       en: 'Manage institution-local items' },
   add_item:       { ar: 'إضافة صنف',                          en: 'Add Item' },

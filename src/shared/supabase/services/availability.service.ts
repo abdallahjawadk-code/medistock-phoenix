@@ -297,6 +297,109 @@ export async function getAvailabilityMovementsByItem(
   }));
 }
 
+/**
+ * AVAILABILITY-MOVEMENT-REPORTS-PRINT-A: one row of the filterable, org-wide
+ * quantity-movement report — extends AvailabilityMovementRecord with the
+ * denormalized material identity + distribution point already stored on
+ * each movement row (migration 033), so the report never needs a second
+ * query per row.
+ */
+export interface AvailabilityMovementReportRecord extends AvailabilityMovementRecord {
+  scientificName: string | null;
+  tradeName: string | null;
+  concentration: string | null;
+  dosageForm: string | null;
+  distributionPointId: string;
+  distributionPointName: string | null;
+  distributionPointNameAr: string | null;
+}
+
+export interface AvailabilityMovementsReportFilters {
+  organizationId: string;
+  /** Inclusive, 'YYYY-MM-DD'. */
+  dateFrom?: string;
+  /** Inclusive, 'YYYY-MM-DD'. */
+  dateTo?: string;
+  movementType?: AvailabilityMovementType;
+  distributionPointId?: string;
+  /** Matched against scientific_name / trade_name / concentration / dosage_form. */
+  materialSearch?: string;
+  /** Matched against actor_name_snapshot / actor_email_snapshot. */
+  actorSearch?: string;
+  /** Defaults to 200 — a reporting view, not an unbounded export. */
+  limit?: number;
+}
+
+/**
+ * Read-only, filterable quantity-movement report for one organization. This
+ * is a plain PostgREST SELECT (no RPC) against item_availability_movements —
+ * the table grants SELECT only (no INSERT/UPDATE/DELETE to any client role,
+ * migration 033), and avail_mvmt_select_perm RLS independently re-enforces
+ * org scope + availability.movements.view for every caller regardless of
+ * which filters the client sends. All filters here are plain equality/range/
+ * ilike predicates — never raw SQL, never an elevated/admin key.
+ */
+export async function getAvailabilityMovementsReport(
+  filters: AvailabilityMovementsReportFilters,
+): Promise<AvailabilityMovementReportRecord[]> {
+  if (!supabaseConfigured) return [];
+
+  let query = supabase
+    .from('item_availability_movements')
+    .select(`
+      id, movement_type, quantity_before, quantity_delta, quantity_after,
+      reason, notes, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+      created_at, scientific_name, trade_name, concentration, dosage_form,
+      distribution_point_id,
+      distribution_points ( name, name_ar )
+    `)
+    .eq('organization_id', filters.organizationId);
+
+  if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`);
+  if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`);
+  if (filters.movementType) query = query.eq('movement_type', filters.movementType);
+  if (filters.distributionPointId) query = query.eq('distribution_point_id', filters.distributionPointId);
+  if (filters.materialSearch?.trim()) {
+    const q = filters.materialSearch.trim();
+    query = query.or(`scientific_name.ilike.%${q}%,trade_name.ilike.%${q}%,concentration.ilike.%${q}%,dosage_form.ilike.%${q}%`);
+  }
+  if (filters.actorSearch?.trim()) {
+    const q = filters.actorSearch.trim();
+    query = query.or(`actor_name_snapshot.ilike.%${q}%,actor_email_snapshot.ilike.%${q}%`);
+  }
+
+  const { data, error } = await query
+    .order('created_at', { ascending: false })
+    .limit(filters.limit ?? 200);
+
+  if (error) throw error;
+
+  return (data ?? []).map(r => {
+    const dp = (Array.isArray(r.distribution_points) ? r.distribution_points[0] : r.distribution_points) as
+      { name: string | null; name_ar: string | null } | null;
+    return {
+      id: r.id,
+      movementType: r.movement_type as AvailabilityMovementType,
+      quantityBefore: r.quantity_before,
+      quantityDelta: r.quantity_delta,
+      quantityAfter: r.quantity_after,
+      reason: r.reason,
+      notes: r.notes,
+      actorNameSnapshot: r.actor_name_snapshot,
+      actorEmailSnapshot: r.actor_email_snapshot,
+      actorRoleSnapshot: r.actor_role_snapshot,
+      createdAt: r.created_at,
+      scientificName: r.scientific_name,
+      tradeName: r.trade_name,
+      concentration: r.concentration,
+      dosageForm: r.dosage_form,
+      distributionPointId: r.distribution_point_id,
+      distributionPointName: dp?.name ?? null,
+      distributionPointNameAr: dp?.name_ar ?? null,
+    };
+  });
+}
+
 export async function getLowStockItems(orgId: string) {
   if (!supabaseConfigured) return [];
 

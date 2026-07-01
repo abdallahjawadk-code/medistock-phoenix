@@ -13,6 +13,7 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
 import { MovementHistoryModal } from './MovementHistoryModal';
+import { MovementReportSection } from './MovementReportSection';
 import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
@@ -430,6 +431,11 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         onClose={() => setHistoryRow(null)}
       />
       {movementToast && <PhoenixToast message={movementToast} />}
+
+      {/* AVAILABILITY-MOVEMENT-REPORTS-PRINT-A: read-only, filterable
+          quantity-movement report — hides itself when the caller lacks
+          availability.movements.view (RLS remains the real enforcement). */}
+      <MovementReportSection />
 
       {/* Material Exchange Command Center CTA */}
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
