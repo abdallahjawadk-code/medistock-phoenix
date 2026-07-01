@@ -9,9 +9,26 @@ type Dict = Record<string, { ar: string; en: string }>;
 
 export const T: Dict = {
   /* ── Auth ── */
-  tagline:        { ar: 'شبكة توفر الصحة · MASAR',          en: 'MASAR Health Availability Network' },
+  /* AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A: replaces the old "شبكة توفر الصحة · MASAR" login subtitle. */
+  login_department_subtitle: { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
   /* MOBILE-NAV-BRAND-POLISH-A: sidebar/mobile-drawer brand subtitle, replaces the old "MASAR Health Network" phrase. */
   shell_brand_department: { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
+
+  /* ── Login rights/supervision block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
+     Replaces the removed technical badges (RLS / QR Public Safe / Intake Frozen). */
+  login_rights_code:      { ar: 'ph.Abdallahjawadk@2026',                              en: 'ph.Abdallahjawadk@2026' },
+  login_supervision_line: { ar: 'بأشراف الصيدلاني باسم كاظم رمح',                      en: 'Under the supervision of Pharmacist Basim Kazim Ramh' },
+
+  /* ── Mobile logout (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ── */
+  auth_sign_out: { ar: 'تسجيل الخروج', en: 'Sign out' },
+
+  /* ── Biometric / passkey readiness copy — reserved for a future
+     WEBAUTHN-PASSKEY-B backend phase; not wired into any UI yet because no
+     WebAuthn challenge/verification backend exists (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A audit). ── */
+  auth_passkey_title:                  { ar: 'الدخول بالبصمة أو الوجه',                     en: 'Sign in with passkey' },
+  auth_passkey_description:            { ar: 'استخدام بصمة/Face ID من جهازك',              en: 'Use your device fingerprint or Face ID' },
+  auth_passkey_unavailable:            { ar: 'تسجيل الدخول الحيوي غير متاح حالياً',        en: 'Biometric sign-in is not available yet' },
+  auth_passkey_secure_context_required: { ar: 'يتطلب تسجيل الدخول الحيوي اتصالاً آمناً HTTPS', en: 'Biometric sign-in requires a secure HTTPS connection' },
   selectRole:     { ar: 'اختر الدور التجريبي',                en: 'Select Demo Role' },
   demoLogin:      { ar: 'دخول تجريبي',                        en: 'Demo Login' },
   demoData:       { ar: 'بيانات تجريبية',                     en: 'Demo Data' },

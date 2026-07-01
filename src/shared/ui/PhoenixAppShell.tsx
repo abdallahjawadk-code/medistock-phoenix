@@ -56,6 +56,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           currentScreen={currentScreen}
           onNavigate={onNavigate}
           onClose={() => setSidebarOpen(false)}
+          onLogout={onLogout}
         />
       )}
 

@@ -77,7 +77,7 @@ export function LoginScreen() {
       <div style={{ textAlign: 'center', marginBottom: '26px', animation: 'fs .5s ease', position: 'relative', zIndex: 1 }}>
         <div className="premium-login__logo" style={{ width: '78px', height: '78px', borderRadius: 'var(--r4)', background: 'linear-gradient(145deg, var(--p), var(--pd))', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '37px', color: '#fff' }}>⚕</div>
         <h1 className="premium-login__brand" style={{ fontSize: '25px', fontWeight: 700, color: 'var(--t)', letterSpacing: '-.4px', marginBottom: '5px' }}>MediStock-Babil</h1>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>{t('tagline', lang)}</p>
+        <p style={{ fontSize: '12.5px', color: 'var(--t2)' }} dir="auto">{t('login_department_subtitle', lang)}</p>
         <div className="premium-login__divider" aria-hidden="true" />
       </div>
 
@@ -173,11 +173,10 @@ export function LoginScreen() {
           </>
         )}
 
-        {/* Trust badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '18px', justifyContent: 'center' }}>
-          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--ok2)', color: 'var(--ok)', fontSize: '10.5px', fontWeight: 600 }}>🛡 RLS</span>
-          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '10.5px', fontWeight: 600 }}>📱 QR Public Safe</span>
-          <span className="premium-status-badge" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 600 }}>🔒 Intake Frozen</span>
+        {/* Rights / supervision block */}
+        <div className="premium-login__rights">
+          <div className="premium-login__rights-code" dir="ltr">{t('login_rights_code', lang)}</div>
+          <div className="premium-login__rights-line" dir="auto">{t('login_supervision_line', lang)}</div>
         </div>
       </form>
     </div>

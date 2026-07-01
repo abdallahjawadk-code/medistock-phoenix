@@ -32,9 +32,10 @@ interface Props {
   currentScreen: number;
   onNavigate: (screen: number) => void;
   onClose: () => void;
+  onLogout: () => void;
 }
 
-export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Props) {
+export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
   const { lang, dir } = useApp();
 
   const ns = (n: number) => ({
@@ -137,6 +138,22 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
             );
           })}
         </nav>
+
+        <button
+          type="button"
+          className="premium-drawer-logout premium-focus-ring"
+          onClick={() => { onLogout(); onClose(); }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            width: '100%', minHeight: '44px', marginTop: '8px', padding: '12px 10px',
+            borderRadius: 'var(--r2)', border: '1px solid color-mix(in srgb, var(--err) 30%, var(--brd))',
+            background: 'var(--err2)', color: 'var(--err)', fontSize: '14px', fontWeight: 700,
+            cursor: 'pointer', flexShrink: 0,
+          }}
+        >
+          <span aria-hidden="true">⏻</span>
+          <span>{t('auth_sign_out', lang)}</span>
+        </button>
       </aside>
     </div>
   );
