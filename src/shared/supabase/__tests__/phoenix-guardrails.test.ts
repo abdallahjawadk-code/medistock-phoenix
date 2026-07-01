@@ -970,8 +970,35 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     expect(content).not.toContain('actor_identity_version');
   });
 
-  it('no frontend .ts file outside __tests__ passes snapshot fields to supabase, except the documented read-only movement history query', () => {
-    const files = allTsxFiles('').filter(path => !path.endsWith(join('services', 'availability.service.ts')));
+  // ALERT-LIFECYCLE-RPC-A: features/alerts/inter-org-alert-lifecycle.service.ts
+  // legitimately READS actor_name_snapshot/actor_email_snapshot/
+  // actor_role_snapshot via getInterOrgAlertEvents() — a supabase.rpc() call
+  // to phoenix_get_inter_org_alert_events (migration 039), which itself reads
+  // inter_org_alert_events (migration 038) and returns these fields purely
+  // for read-only event-history display. Same carve-out reasoning as
+  // availability.service.ts above: the anti-spoofing concern is a client
+  // WRITING these fields into an insert/rpc payload to forge actor identity;
+  // this service never does that — every RPC call it makes
+  // (phoenix_get_live_inter_institution_alerts_with_state,
+  // phoenix_update_inter_org_alert_state, phoenix_reopen_inter_org_alert,
+  // phoenix_get_inter_org_alert_events) sends only alert_key/status/reason/
+  // notes/limit as arguments, never any actor_*_snapshot field.
+  it('features/alerts/inter-org-alert-lifecycle.service.ts only READS snapshot fields (RPC response mapping), never writes them', () => {
+    const content = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
+    SNAPSHOT_FIELDS.slice(0, 3).forEach(field => {
+      // present (read/display use), but never as an outbound rpc argument
+      expect(content).not.toMatch(new RegExp(`p_${field}\\s*:`));
+    });
+    expect(content).not.toMatch(/\.rpc\('phoenix_update_inter_org_alert_state'[^)]*actor_(name|email|role)_snapshot/s);
+    expect(content).not.toMatch(/\.rpc\('phoenix_reopen_inter_org_alert'[^)]*actor_(name|email|role)_snapshot/s);
+    expect(content).not.toContain('actor_org_snapshot');
+    expect(content).not.toContain('actor_identity_version');
+  });
+
+  it('no frontend .ts file outside __tests__ passes snapshot fields to supabase, except the documented read-only movement history / alert event history queries', () => {
+    const files = allTsxFiles('')
+      .filter(path => !path.endsWith(join('services', 'availability.service.ts')))
+      .filter(path => !path.endsWith(join('alerts', 'inter-org-alert-lifecycle.service.ts')));
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {
