@@ -149,6 +149,90 @@ export function classifyAvailabilitySaveError(error: unknown): string {
   return 'load_error';
 }
 
+/**
+ * AVAILABILITY-QUANTITY-MOVEMENT-RPC-A: the four supported quantity-movement
+ * modes, matching migration 034's phoenix_apply_availability_movement RPC.
+ */
+export type AvailabilityMovementType = 'set_exact' | 'add' | 'subtract' | 'correction';
+
+export interface ApplyAvailabilityMovementInput {
+  itemAvailabilityId: string;
+  movementType: AvailabilityMovementType;
+  amount: number;
+  reason?: string;
+  notes?: string;
+}
+
+export interface ApplyAvailabilityMovementResult {
+  ok: boolean;
+  itemAvailabilityId: string;
+  movementId: string;
+  movementType: AvailabilityMovementType;
+  quantityBefore: number;
+  quantityDelta: number;
+  quantityAfter: number;
+}
+
+/**
+ * Apply an auditable quantity movement via the phoenix_apply_availability_movement
+ * RPC (migration 034). This is the ONLY way to write a row into
+ * item_availability_movements — the table itself grants no direct client
+ * INSERT/UPDATE/DELETE privilege. No UI calls this yet (RPC-only phase).
+ */
+export async function applyAvailabilityMovement(
+  input: ApplyAvailabilityMovementInput,
+): Promise<ApplyAvailabilityMovementResult> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const { data, error } = await supabase.rpc('phoenix_apply_availability_movement', {
+    p_item_availability_id: input.itemAvailabilityId,
+    p_movement_type:        input.movementType,
+    p_amount:               input.amount,
+    p_reason:               input.reason ?? null,
+    p_notes:                input.notes ?? null,
+  });
+  if (error) throw error;
+
+  const result = data as {
+    ok: boolean; item_availability_id: string; movement_id: string; movement_type: string;
+    quantity_before: number; quantity_delta: number; quantity_after: number;
+  };
+  return {
+    ok: result.ok,
+    itemAvailabilityId: result.item_availability_id,
+    movementId: result.movement_id,
+    movementType: result.movement_type as AvailabilityMovementType,
+    quantityBefore: result.quantity_before,
+    quantityDelta: result.quantity_delta,
+    quantityAfter: result.quantity_after,
+  };
+}
+
+/**
+ * Classify a phoenix_apply_availability_movement RPC failure into an i18n
+ * string key. Separate from classifyAvailabilitySaveError since the error
+ * vocabulary differs (movement-specific codes vs. the editor's create/update
+ * codes) — upsertAvailability's behavior/classification is unchanged.
+ */
+export function classifyAvailabilityMovementError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+
+  if (message.includes('availability_not_found')) return 'avail_movement_not_found';
+  if (message.includes('quantity_cannot_go_negative')) return 'avail_movement_negative';
+  if (message.includes('correction_reason_required')) return 'avail_movement_reason_required';
+
+  if (code === '42501' || /forbidden/.test(message)) {
+    if (message.includes('forbidden_cross_org')) return 'avail_cross_org_denied';
+    if (message.includes('forbidden_availability_quantity_set')) return 'avail_movement_no_set_permission';
+    if (message.includes('forbidden_availability_quantity_add')) return 'avail_movement_no_add_permission';
+    if (message.includes('forbidden_availability_quantity_subtract')) return 'avail_movement_no_subtract_permission';
+    if (message.includes('forbidden_availability_quantity_correct')) return 'avail_movement_no_correct_permission';
+    return 'avail_no_edit_permission';
+  }
+  return 'load_error';
+}
+
 export async function getLowStockItems(orgId: string) {
   if (!supabaseConfigured) return [];
 
