@@ -110,10 +110,11 @@ export function InstitutionScreen() {
   }
 
   return (
-    <div style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
+    <div className="premium-page premium-institutions-page" style={{ animation: 'fs .3s ease' }}>
+      <div className="premium-page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
         <div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
+          <div className="premium-command-kicker">MediStock-Babil</div>
+          <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 700, letterSpacing: '-.3px' }}>
             {t('nav_institutions', lang)}
           </h2>
           <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
@@ -203,7 +204,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
 
   return (
     <>
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="premium-org-toolbar" style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
           <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>🔍</span>
           <input
@@ -211,6 +212,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
             placeholder={t('search', lang)}
             value={search}
             onChange={e => setSearch(e.target.value)}
+            className="premium-field"
             style={{ ...fieldStyle, paddingInlineStart: '38px' }}
             aria-label={t('search', lang)}
           />
@@ -227,18 +229,31 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
       )}
 
       {!orgs.loading && !orgs.error && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '12px' }}>
+        <div className="premium-org-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
           {filtered.map(org => (
-            <PhoenixCard key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {orgDisplayName(org, lang)}
-                </span>
-                <PhoenixStatusBadge variant={STATUS_VARIANT[org.status] ?? 'neutral'} label={statusLabel(org.status, lang)} />
+            <PhoenixCard className="premium-org-card" key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
+              <div className="premium-org-card__head">
+                <div className="premium-org-card__icon" aria-hidden="true">🏥</div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {orgDisplayName(org, lang)}
+                    </span>
+                    <PhoenixStatusBadge variant={STATUS_VARIANT[org.status] ?? 'neutral'} label={statusLabel(org.status, lang)} />
+                  </div>
+                  {lang === 'ar' && org.name && <div dir="ltr" style={{ color: 'var(--t2)', fontSize: '10.5px', marginTop: '3px' }}>{org.name}</div>}
+                  {lang === 'en' && org.name_ar && <div dir="rtl" style={{ color: 'var(--t2)', fontSize: '10.5px', marginTop: '3px' }}>{org.name_ar}</div>}
+                </div>
               </div>
-              <div style={{ fontSize: '11.5px', color: 'var(--t2)', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                <span dir="ltr" style={{ fontFamily: 'monospace' }}>{org.code}</span>
-                {org.city && <span>· {org.city}</span>}
+              <div className="premium-org-card__meta">
+                <div className="premium-org-card__meta-item">
+                  <span className="premium-org-card__meta-label">{t('inst_code', lang)}</span>
+                  <span className="premium-org-card__meta-value" dir="ltr" style={{ fontFamily: 'monospace' }}>{org.code}</span>
+                </div>
+                <div className="premium-org-card__meta-item">
+                  <span className="premium-org-card__meta-label">{t('inst_city', lang)}</span>
+                  <span className="premium-org-card__meta-value" dir="auto">{org.city || '—'}</span>
+                </div>
               </div>
             </PhoenixCard>
           ))}

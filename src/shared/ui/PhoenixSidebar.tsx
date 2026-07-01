@@ -71,9 +71,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       zIndex: 50,
     }}>
       {/* Brand */}
-      <div style={{ padding: '18px 14px 14px', borderBottom: '1px solid var(--brd)' }}>
+      <div className="premium-sidebar-brand" style={{ padding: '18px 14px 14px', borderBottom: '1px solid var(--brd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
+          <div className="premium-sidebar-logo" style={{
             width: '36px', height: '36px', borderRadius: 'var(--r2)',
             background: 'var(--p)', display: 'flex', alignItems: 'center',
             justifyContent: 'center', fontSize: '18px', flexShrink: 0,
@@ -149,7 +149,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       </nav>
 
       {/* User row */}
-      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--brd)' }}>
+      <div className="premium-sidebar-user" style={{ padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{
             width: '30px', height: '30px', borderRadius: 'var(--rpill)',

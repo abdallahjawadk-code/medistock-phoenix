@@ -29,6 +29,20 @@ describe('premium visual system', () => {
     expect(read('shared/ui/PhoenixDialog.tsx')).toContain('premium-dialog-panel');
   });
 
+  it('adds dense command-center and organization card hierarchy without new data sources', () => {
+    const dashboard = read('features/dashboard/DashboardScreen.tsx');
+    const institutions = read('features/institutions/InstitutionScreen.tsx');
+    expect(dashboard).toContain('premium-command-hero');
+    expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
+    expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');
+    expect(institutions).toContain('premium-page-header');
+    expect(institutions).toContain('premium-org-toolbar');
+    expect(institutions).toContain('premium-org-card__meta');
+    expect(institutions).toContain('org.code');
+    expect(institutions).toContain('org.city');
+    expect(institutions).not.toContain("supabase.from('organizations')");
+  });
+
   it('uses CSS-only effects without visual library dependencies', () => {
     const pkg = readFileSync(join(SRC, '../package.json'), 'utf8');
     expect(pkg).not.toMatch(/three|react-three-fiber|framer-motion/);

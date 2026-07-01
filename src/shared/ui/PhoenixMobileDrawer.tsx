@@ -56,9 +56,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose }: Prop
         boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
-        <div style={{ padding: '0 8px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '6px' }}>
+        <div className="premium-sidebar-brand" style={{ padding: '10px 8px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '6px', borderRadius: 'var(--r3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--r2)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚕</div>
+            <div className="premium-sidebar-logo" style={{ width: '36px', height: '36px', borderRadius: 'var(--r2)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚕</div>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700 }}>MediStock-Babil</div>
               <div style={{ fontSize: '10px', color: 'var(--t2)' }}>MASAR Health Network</div>

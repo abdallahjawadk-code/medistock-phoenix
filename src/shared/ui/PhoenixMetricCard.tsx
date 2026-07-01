@@ -33,7 +33,7 @@ export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'o
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px', marginBottom: '12px' }}>
-        <div style={{
+        <div className="premium-kpi-icon" style={{
           width: '38px', height: '38px', borderRadius: 'var(--r2)',
           background: iconBg ?? 'var(--p2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -53,6 +53,7 @@ export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'o
       </div>
       <div style={{ fontSize: '26px', fontWeight: 700, lineHeight: 1, color: valueColor }}>{value}</div>
       <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>{label}</div>
+      <div className="premium-kpi-footer" aria-hidden="true" style={{ color: valueColor ?? 'var(--p)' }} />
     </div>
   );
 }
