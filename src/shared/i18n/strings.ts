@@ -191,6 +191,21 @@ export const T: Dict = {
   avail_movement_no_subtract_permission: { ar: 'لا تملك صلاحية إنقاص الكمية',          en: 'You do not have permission to subtract quantity.' },
   avail_movement_no_correct_permission: { ar: 'لا تملك صلاحية تصحيح الجرد',            en: 'You do not have permission to make an inventory correction.' },
 
+  /* ── AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: read-only movement history modal ── */
+  mvmt_history_action:        { ar: 'سجل الحركات',                          en: 'History' },
+  mvmt_history_title:         { ar: 'سجل حركات الكمية',                     en: 'Quantity Movement History' },
+  mvmt_history_empty:         { ar: 'لا توجد حركات كمية مسجلة بعد.',        en: 'No quantity movements recorded yet.' },
+  mvmt_history_refresh:       { ar: 'تحديث',                                en: 'Refresh' },
+  mvmt_history_close:         { ar: 'إغلاق',                                en: 'Close' },
+  mvmt_col_datetime:          { ar: 'التاريخ والوقت',                       en: 'Date/Time' },
+  mvmt_col_type:              { ar: 'النوع',                                en: 'Type' },
+  mvmt_col_before:            { ar: 'قبل',                                  en: 'Before' },
+  mvmt_col_delta:             { ar: 'التغيير',                              en: 'Delta' },
+  mvmt_col_after:             { ar: 'بعد',                                  en: 'After' },
+  mvmt_col_actor:             { ar: 'المستخدم',                             en: 'Actor' },
+  mvmt_col_reason:            { ar: 'السبب',                                en: 'Reason' },
+  mvmt_col_notes:             { ar: 'ملاحظات',                              en: 'Notes' },
+
   /* ── Item Registry ── */
   reg_sub:        { ar: 'إدارة الأصناف المحلية للمؤسسة',       en: 'Manage institution-local items' },
   add_item:       { ar: 'إضافة صنف',                          en: 'Add Item' },

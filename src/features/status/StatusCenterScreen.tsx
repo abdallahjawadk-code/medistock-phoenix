@@ -12,6 +12,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
+import { MovementHistoryModal } from './MovementHistoryModal';
 import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
@@ -112,6 +113,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canAdjustQuantity = QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key));
   const [adjustRow, setAdjustRow] = useState<AdjustQuantityRow | null>(null);
   const [movementToast, setMovementToast] = useState<string | null>(null);
+
+  // AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: row-level "History" action.
+  // Visibility is UX-only — avail_mvmt_select_perm RLS (migration 033)
+  // independently re-enforces availability.movements.view + org scope on the
+  // actual read; hiding the button here never substitutes for that.
+  const canViewMovementHistory = myPermissions.has('availability.movements.view');
+  const [historyRow, setHistoryRow] = useState<AdjustQuantityRow | null>(null);
 
   const live = useAsync(
     () => effectiveOrgId ? getAvailabilityByOrg(effectiveOrgId) : Promise.resolve([]),
@@ -356,7 +364,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('sc_effective_status', lang)}</th>
                 <th style={th}>{t('expiry', lang)}</th>
                 <th style={th}>{t('last_upd', lang)}</th>
-                {canAdjustQuantity && <th style={th}></th>}
+                {(canAdjustQuantity || canViewMovementHistory) && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
@@ -375,15 +383,28 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
                     <td style={td} dir="ltr">{r.expiry_date || (r.expiry_bucket ? t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang) : '—')}</td>
                     <td style={td} dir="ltr">{r.updated_at ? new Date(r.updated_at).toLocaleDateString(lang === 'ar' ? 'ar' : 'en') : '—'}</td>
-                    {canAdjustQuantity && (
+                    {(canAdjustQuantity || canViewMovementHistory) && (
                       <td style={td}>
-                        <button
-                          onClick={() => setAdjustRow(r)}
-                          aria-label={t('sc_adjust_qty', lang)}
-                          style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          ✏️ {t('sc_adjust_qty', lang)}
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
+                          {canAdjustQuantity && (
+                            <button
+                              onClick={() => setAdjustRow(r)}
+                              aria-label={t('sc_adjust_qty', lang)}
+                              style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              ✏️ {t('sc_adjust_qty', lang)}
+                            </button>
+                          )}
+                          {canViewMovementHistory && (
+                            <button
+                              onClick={() => setHistoryRow(r)}
+                              aria-label={t('mvmt_history_action', lang)}
+                              style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              🕘 {t('mvmt_history_action', lang)}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -401,6 +422,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         myPermissions={myPermissions}
         onClose={() => setAdjustRow(null)}
         onSuccess={handleMovementSuccess}
+      />
+      <MovementHistoryModal
+        open={historyRow !== null}
+        row={historyRow}
+        lang={lang}
+        onClose={() => setHistoryRow(null)}
       />
       {movementToast && <PhoenixToast message={movementToast} />}
 

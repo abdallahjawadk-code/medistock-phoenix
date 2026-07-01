@@ -934,7 +934,6 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
 
   const WRITE_SERVICES = [
     'shared/supabase/services/audit.service.ts',
-    'shared/supabase/services/availability.service.ts',
     'shared/supabase/services/status-reports.service.ts',
   ];
 
@@ -947,8 +946,32 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     });
   });
 
-  it('no frontend .ts file outside __tests__ passes snapshot fields to supabase', () => {
-    const files = allTsxFiles('');
+  // AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: availability.service.ts legitimately
+  // READS actor_name_snapshot/actor_email_snapshot/actor_role_snapshot via
+  // getAvailabilityMovementsByItem() — a plain SELECT against
+  // item_availability_movements (migration 033), purely for read-only display
+  // in the movement history view. This is NOT the anti-spoofing concern this
+  // suite guards against (a client WRITING/spoofing these fields into an
+  // insert/rpc payload to forge actor identity) — those write paths
+  // (upsertAvailability, applyAvailabilityMovement) never reference these
+  // fields at all. The check below asserts the snapshot fields appear only
+  // inside the read-only SELECT/interface/mapping, never as an insert/rpc
+  // parameter key (e.g. `p_actor_name_snapshot:` or `actor_name_snapshot:`
+  // used as an outbound argument name).
+  it('shared/supabase/services/availability.service.ts only READS snapshot fields (SELECT projection), never writes them', () => {
+    const content = readSrc('shared/supabase/services/availability.service.ts');
+    SNAPSHOT_FIELDS.slice(0, 3).forEach(field => {
+      // present (read/display use), but never as an outbound rpc/insert argument
+      expect(content).not.toMatch(new RegExp(`p_${field}\\s*:`));
+    });
+    expect(content).not.toMatch(/\.insert\([^)]*actor_(name|email|role)_snapshot/s);
+    expect(content).not.toMatch(/\.rpc\([^)]*actor_(name|email|role)_snapshot/s);
+    expect(content).not.toContain('actor_org_snapshot');
+    expect(content).not.toContain('actor_identity_version');
+  });
+
+  it('no frontend .ts file outside __tests__ passes snapshot fields to supabase, except the documented read-only movement history query', () => {
+    const files = allTsxFiles('').filter(path => !path.endsWith(join('services', 'availability.service.ts')));
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {

@@ -235,6 +235,68 @@ export function classifyAvailabilityMovementError(error: unknown): string {
   return 'load_error';
 }
 
+/**
+ * AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: one row of the read-only quantity
+ * movement history for an item_availability row. Typed camelCase projection
+ * of item_availability_movements (migration 033) — read access is enforced
+ * server-side by the avail_mvmt_select_perm RLS policy (org scope +
+ * availability.movements.view); this function does not and cannot bypass it.
+ */
+export interface AvailabilityMovementRecord {
+  id: string;
+  movementType: AvailabilityMovementType;
+  quantityBefore: number;
+  quantityDelta: number;
+  quantityAfter: number;
+  reason: string | null;
+  notes: string | null;
+  actorNameSnapshot: string | null;
+  actorEmailSnapshot: string | null;
+  actorRoleSnapshot: string | null;
+  createdAt: string;
+}
+
+/**
+ * Read-only history of quantity movements for one item_availability row,
+ * newest first. This is a plain PostgREST SELECT (no RPC) — the table grants
+ * SELECT only (no INSERT/UPDATE/DELETE to any client role, migration 033),
+ * and avail_mvmt_select_perm RLS independently re-enforces org scope +
+ * availability.movements.view for every caller. Limited to the most recent
+ * 100 rows; this view does not need full unbounded history.
+ */
+export async function getAvailabilityMovementsByItem(
+  itemAvailabilityId: string,
+): Promise<AvailabilityMovementRecord[]> {
+  if (!supabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('item_availability_movements')
+    .select(`
+      id, movement_type, quantity_before, quantity_delta, quantity_after,
+      reason, notes, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+      created_at
+    `)
+    .eq('item_availability_id', itemAvailabilityId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) throw error;
+
+  return (data ?? []).map(r => ({
+    id: r.id,
+    movementType: r.movement_type as AvailabilityMovementType,
+    quantityBefore: r.quantity_before,
+    quantityDelta: r.quantity_delta,
+    quantityAfter: r.quantity_after,
+    reason: r.reason,
+    notes: r.notes,
+    actorNameSnapshot: r.actor_name_snapshot,
+    actorEmailSnapshot: r.actor_email_snapshot,
+    actorRoleSnapshot: r.actor_role_snapshot,
+    createdAt: r.created_at,
+  }));
+}
+
 export async function getLowStockItems(orgId: string) {
   if (!supabaseConfigured) return [];
 

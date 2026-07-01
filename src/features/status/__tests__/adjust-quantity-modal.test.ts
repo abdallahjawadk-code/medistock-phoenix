@@ -45,8 +45,12 @@ describe('Adjust Quantity button visibility is permission-gated', () => {
       .forEach(key => expect(modal).toContain(key));
   });
 
-  it('the action column/button only renders when canAdjustQuantity is true', () => {
-    expect(statusCenter).toMatch(/\{canAdjustQuantity && </);
+  it('the Adjust Quantity button itself only renders when canAdjustQuantity is true', () => {
+    // AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: the shared actions column/header
+    // now also shows for canViewMovementHistory (a separate action in the
+    // same cell), but the Adjust Quantity button specifically is still
+    // wrapped in its own `{canAdjustQuantity && (...)}` guard.
+    expect(statusCenter).toMatch(/\{canAdjustQuantity && \(/);
   });
 
   it('button uses the sc_adjust_qty label (bilingual)', () => {
