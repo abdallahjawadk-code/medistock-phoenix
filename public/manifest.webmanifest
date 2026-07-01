@@ -1,0 +1,34 @@
+{
+  "name": "MediStock-Babil Phoenix",
+  "short_name": "MediStock",
+  "description": "Bilingual medical supply and institution alert management platform",
+  "lang": "ar-IQ",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F3F7FB",
+  "theme_color": "#0D9488",
+  "orientation": "any",
+  "categories": ["medical", "productivity", "business"],
+  "icons": [
+    {
+      "src": "/pwa-icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon-maskable-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

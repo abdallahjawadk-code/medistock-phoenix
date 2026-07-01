@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MediStock-Babil">
+  <!-- Maskable icon: background fills the full canvas edge-to-edge (the OS
+       applies its own mask shape), and the cross glyph is kept well inside
+       the ~safe zone (centered, well under the 80% guideline) so it is
+       never clipped by circle/squircle/rounded-square masks. -->
+  <defs>
+    <linearGradient id="gm512" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0D9488"/>
+      <stop offset="1" stop-color="#0A7468"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#gm512)"/>
+  <g fill="#ffffff">
+    <rect x="236" y="156" width="40" height="200" rx="14"/>
+    <rect x="156" y="236" width="200" height="40" rx="14"/>
+  </g>
+</svg>

@@ -21,6 +21,15 @@ export const T: Dict = {
   close:          { ar: 'إغلاق',                               en: 'Close' },
   menu:           { ar: 'القائمة',                             en: 'Menu' },
 
+  /* ── PWA install prompt (PWA-INSTALL-PROMPT-A) ── */
+  pwa_install_eyebrow:        { ar: 'تثبيت التطبيق',                                                                              en: 'Install App' },
+  pwa_install_title:          { ar: 'تثبيت MediStock على الهاتف',                                                                 en: 'Install MediStock on this phone' },
+  pwa_install_description:    { ar: 'استخدم التطبيق بسرعة من الشاشة الرئيسية.',                                                   en: 'Open the app quickly from your home screen.' },
+  pwa_install_install:        { ar: 'تثبيت',                                                                                      en: 'Install' },
+  pwa_install_later:          { ar: 'لاحقاً',                                                                                     en: 'Later' },
+  pwa_install_ios_instruction: { ar: 'لتثبيت التطبيق على الهاتف، افتح قائمة المشاركة ثم اختر "إضافة إلى الشاشة الرئيسية".',        en: 'To install the app, open the Share menu and choose "Add to Home Screen".' },
+  pwa_install_dismiss_label:  { ar: 'إخفاء رسالة التثبيت',                                                                        en: 'Dismiss install message' },
+
   /* ── Status ── */
   frozen:         { ar: 'مجمد',                               en: 'Frozen' },
   safe_frozen:    { ar: 'مجمد بأمان',                         en: 'Safe Frozen' },

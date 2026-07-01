@@ -5,6 +5,7 @@ import { PhoenixSidebar } from './PhoenixSidebar';
 import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
 import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
+import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 
 const SCREEN_TITLE_KEYS: Record<number, string> = {
   2: 'nav_dash', 3: 'nav_editor', 4: 'nav_reg', 5: 'nav_mesh',
@@ -82,6 +83,8 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onNavigate={onNavigate}
         />
       )}
+
+      <PwaInstallPrompt isMobile={isMobile} />
     </div>
   );
 }

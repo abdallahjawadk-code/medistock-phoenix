@@ -1,0 +1,13 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MediStock-Babil">
+  <defs>
+    <linearGradient id="g512" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0D9488"/>
+      <stop offset="1" stop-color="#0A7468"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g512)"/>
+  <g fill="#ffffff">
+    <rect x="219" y="123" width="74" height="266" rx="20"/>
+    <rect x="123" y="219" width="266" height="74" rx="20"/>
+  </g>
+</svg>
