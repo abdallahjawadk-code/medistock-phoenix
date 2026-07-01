@@ -606,6 +606,9 @@ export const T: Dict = {
   lia_forbidden:           { ar: 'لا تملك صلاحية عرض هذه التنبيهات',                  en: 'You do not have permission to view these alerts' },
   lia_computed_at:         { ar: 'وقت الاحتساب',                                      en: 'Computed at' },
 
+  /* ── LIVE-ALERTS-DASHBOARD-SUMMARY-A: Dashboard live inter-institution summary ── */
+  d_live_alerts_title:     { ar: 'تنبيهات حية بين المؤسسات',                          en: 'Live Inter-Institution Alerts' },
+
   /* ── User Management & Permission Matrix ── */
   nav_users:          { ar: 'إدارة المستخدمين',                 en: 'User Management' },
   um_title:           { ar: 'إدارة المستخدمين',                 en: 'User Management' },

@@ -8,8 +8,8 @@ import {
   getStatusReportCounts,
 } from '@/shared/supabase/services/dashboard.service';
 import { getStatusReports } from '@/shared/supabase/services/status-reports.service';
-import { generateExchangeAlerts } from '@/features/status/exchange-alerts';
 import { computeMaterialAlerts, getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
+import { getLiveInterInstitutionAlerts } from '@/features/alerts/live-inter-institution-alerts.service';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -63,10 +63,27 @@ export function DashboardScreen({ onNavigate }: Props) {
     [],
   );
 
+  // LIVE-ALERTS-DASHBOARD-SUMMARY-A: live, item_availability-based
+  // inter-institution alert summary (migration 036's
+  // phoenix_get_live_inter_institution_alerts RPC). Replaces the former
+  // "Exchange alerts summary" widget, which was computed client-side over
+  // the manual status-report layer's cross-institution matching helper.
+  // computeMaterialAlerts() below is a SEPARATE, single-institution
+  // local/material alert path (expiry + missing status per institution) —
+  // it is NOT inter-institution matching and is left untouched.
+  const liveAlerts = useAsync(() => getLiveInterInstitutionAlerts(200), []);
+  const liveResult = liveAlerts.data;
+  const liveOk = liveResult?.ok ?? false;
+  const liveRpcError = liveResult?.error;
+  const liveForbidden = liveRpcError === 'FORBIDDEN';
+  const liveList = liveOk ? (liveResult?.alerts ?? []) : [];
+  const liveTotal = liveList.length;
+  const liveHigh = liveList.filter(a => a.severity === 'high').length;
+  const liveSurplus = liveList.filter(a => a.alertType === 'surplus_to_shortage').length;
+  const liveNearExpiry = liveList.filter(a => a.alertType === 'near_expiry_to_shortage').length;
+
   const m = metrics.data;
   const sr = srCounts.data;
-  const alerts = allReports.data ? generateExchangeAlerts(allReports.data) : [];
-  const highAlerts = alerts.filter(a => a.priority === 'high');
 
   const materialAlertResult = useMemo(
     () => allReports.data ? computeMaterialAlerts(allReports.data) : null,
@@ -137,43 +154,55 @@ export function DashboardScreen({ onNavigate }: Props) {
         </>
       )}
 
-      {/* Exchange alerts summary */}
-      {alerts.length > 0 && (
+      {/* Live Inter-Institution Alerts summary — LIVE-ALERTS-DASHBOARD-SUMMARY-A.
+          Hidden entirely (no header, no crash) when the RPC reports FORBIDDEN;
+          otherwise always shows its own loading/error/empty states independent
+          of the rest of the dashboard. */}
+      {!liveForbidden && (
         <>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('ea_title', lang)}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: '16px' }}>
-            <PhoenixMetricCard icon="🔄" value={alerts.length}     label={t('d_exchange_total', lang)} iconBg="var(--info2)" />
-            <PhoenixMetricCard icon="🔴" value={highAlerts.length}  label={t('d_exchange_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
-            <PhoenixMetricCard icon="⚠️" value={alerts.filter(a => a.priority === 'medium').length} label={t('ea_priority_medium', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-          </div>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{t('d_live_alerts_title', lang)}</h3>
+          <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '12px' }} dir="auto">{t('lia_sub', lang)}</p>
 
-          {/* Top 3 recommendations */}
-          <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '10px', color: 'var(--t2)' }}>{t('d_top_alerts', lang)}</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: isMobile ? '20px' : '28px' }}>
-            {alerts.slice(0, 3).map(a => {
-              const itemName = lang === 'ar' ? (a.itemNameAr || a.itemName) : (a.itemName || a.itemNameAr);
-              const srcOrg = lang === 'ar' ? (a.sourceOrgNameAr || a.sourceOrgName) : (a.sourceOrgName || a.sourceOrgNameAr);
-              const tgtOrg = lang === 'ar' ? (a.targetOrgNameAr || a.targetOrgName) : (a.targetOrgName || a.targetOrgNameAr);
-              const prioKey = a.priority === 'high' ? 'ea_priority_high' : a.priority === 'medium' ? 'ea_priority_medium' : 'ea_priority_low';
-              const prioVariant = a.priority === 'high' ? 'err' as const : a.priority === 'medium' ? 'warn' as const : 'neutral' as const;
-              return (
-                <PhoenixCard key={a.id} padding="12px 14px" hover onClick={() => onNavigate(13)}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{itemName || '—'}</span>
-                      <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>
-                        {srcOrg} → {tgtOrg}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <PhoenixStatusBadge variant={prioVariant} label={t(prioKey, lang)} />
-                      <span style={{ fontSize: '10px', color: 'var(--warn)', fontWeight: 600 }}>⚠ {t('ea_manual', lang)}</span>
-                    </div>
-                  </div>
-                </PhoenixCard>
-              );
-            })}
-          </div>
+          {liveAlerts.loading && <PhoenixLoadingState label={t('loading', lang)} />}
+
+          {!liveAlerts.loading && liveAlerts.error && (
+            <PhoenixErrorState title={t('load_error', lang)} message={liveAlerts.error} onRetry={liveAlerts.reload} />
+          )}
+
+          {!liveAlerts.loading && !liveAlerts.error && !liveOk && (
+            <PhoenixErrorState title={t('load_error', lang)} message={liveRpcError ?? t('load_error', lang)} onRetry={liveAlerts.reload} />
+          )}
+
+          {!liveAlerts.loading && !liveAlerts.error && liveOk && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: '12px' }}>
+                <PhoenixMetricCard icon="🔔" value={liveTotal}      label={t('lia_summary_total', lang)} iconBg="var(--info2)" />
+                <PhoenixMetricCard icon="🔴" value={liveHigh}       label={t('lia_summary_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
+                <PhoenixMetricCard icon="📦" value={liveSurplus}    label={t('lia_summary_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
+                <PhoenixMetricCard icon="⏱️" value={liveNearExpiry} label={t('lia_summary_near_expiry', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
+              </div>
+
+              {liveTotal === 0 ? (
+                <div style={{
+                  padding: '14px 16px', borderRadius: 'var(--r3)',
+                  background: 'var(--s)', border: '1px solid var(--brd)',
+                  color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center',
+                  marginBottom: isMobile ? '20px' : '28px',
+                }}>
+                  ✓ {t('lia_empty', lang)}
+                </div>
+              ) : (
+                <div style={{ marginBottom: isMobile ? '20px' : '28px' }}>
+                  <button
+                    onClick={() => onNavigate(13)}
+                    style={{ padding: '5px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--p)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {t('view_all_alerts', lang)} →
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 

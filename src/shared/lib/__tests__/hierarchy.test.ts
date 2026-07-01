@@ -585,16 +585,13 @@ describe('Central Dashboard integration', () => {
     expect(dashService).toContain('catch');
   });
 
-  it('dashboard screen uses generateExchangeAlerts', () => {
-    expect(dashboard).toContain('generateExchangeAlerts');
+  it('dashboard screen uses the live inter-institution alerts service (LIVE-ALERTS-DASHBOARD-SUMMARY-A; generateExchangeAlerts summary widget replaced)', () => {
+    expect(dashboard).toContain('getLiveInterInstitutionAlerts');
+    expect(dashboard).not.toContain('generateExchangeAlerts');
   });
 
-  it('dashboard screen shows top 3 recommendations', () => {
+  it('dashboard screen shows top 3 recommendations for the separate local/material alert widget', () => {
     expect(dashboard).toContain('slice(0, 3)');
-  });
-
-  it('dashboard shows manual action required on alerts', () => {
-    expect(dashboard).toContain('ea_manual');
   });
 
   it('no transfer/approval buttons on dashboard', () => {

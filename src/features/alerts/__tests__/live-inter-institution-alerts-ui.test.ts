@@ -254,9 +254,9 @@ describe('InterInstitutionAlertsScreen: guardrails', () => {
     expect(screen).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
-  it('Dashboard and StatusCenter are left unchanged this phase (safer option chosen)', () => {
-    expect(dashboardScreen).not.toContain('getLiveInterInstitutionAlerts');
-    expect(dashboardScreen).not.toContain('live-inter-institution-alerts.service');
+  it('StatusCenter is left unchanged; Dashboard is now wired to the live summary (LIVE-ALERTS-DASHBOARD-SUMMARY-A)', () => {
+    expect(dashboardScreen).toContain('getLiveInterInstitutionAlerts');
+    expect(dashboardScreen).toContain('live-inter-institution-alerts.service');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });
 });
