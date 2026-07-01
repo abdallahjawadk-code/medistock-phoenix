@@ -12,22 +12,24 @@ interface NavItem {
 // intentionally NOT listed here (hidden from navigation only). Their routes
 // (screens 16, 4, 6 — StatusEditorScreen, RegistryScreen, QrScreen) remain
 // fully wired in App.tsx; only the sidebar entry point was removed.
-// AVAILABILITY-EDITOR-NAV-HIDE-A: nav_editor is also intentionally NOT listed
-// here (hidden from navigation only). Its route (screen 3 — EditorScreen)
-// remains fully wired in App.tsx; only the sidebar entry point was removed.
-// No save logic, permission logic, or RPC/RLS behavior was touched.
+// RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A: nav_editor was previously hidden
+// here by mistake (AVAILABILITY-EDITOR-NAV-HIDE-A intended to hide nav_intake,
+// not nav_editor) and is now restored. The owner only wants the frozen Input
+// page (nav_intake, screen 8) hidden — see SECONDARY_ITEMS below, which no
+// longer lists it. Its route (screen 8 — IntakeFrozenScreen) remains fully
+// wired in App.tsx; only the sidebar entry point was removed.
 const NAV_ITEMS: NavItem[] = [
   { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
+  { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [
   { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
-  { screen: 8,  icon: '🔒', labelKey: 'nav_intake', frozen: true },
 ];
 
 const ROLE_MAP: Record<string, { emoji: string }> = {

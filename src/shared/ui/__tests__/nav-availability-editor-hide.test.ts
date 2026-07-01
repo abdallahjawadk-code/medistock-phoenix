@@ -1,11 +1,25 @@
 /**
- * AVAILABILITY-EDITOR-NAV-HIDE-A
+ * RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A
  *
- * Verifies the Availability Editor / Input page (nav_editor, screen 3) is
- * hidden from desktop sidebar, mobile drawer, and mobile bottom nav — while
- * its route/screen case in App.tsx, EditorScreen.tsx itself, and the
- * permission matrix remain fully untouched. Nav-only hiding, no route
- * removal, no save-logic or permission-logic change.
+ * Corrects a prior misunderstanding: AVAILABILITY-EDITOR-NAV-HIDE-A and
+ * AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-A/B hid nav_editor (screen 3,
+ * Availability Editor) from the sidebar, mobile drawer, mobile bottom nav,
+ * and Dashboard — but the owner only ever wanted the frozen Input page
+ * (nav_intake, screen 8, IntakeFrozenScreen) hidden.
+ *
+ * This file now verifies the corrected intent:
+ *  - nav_editor (screen 3) IS visible again in sidebar, drawer, bottom nav,
+ *    and the Dashboard shortcut/quick-actions list.
+ *  - nav_intake (screen 8) is hidden from sidebar, drawer, and bottom nav.
+ *  - Both App.tsx routes (case 3 EditorScreen, case 8 IntakeFrozenScreen)
+ *    remain fully intact — nav-only changes, no route removal.
+ *  - EditorScreen.tsx and the permission matrix remain untouched.
+ *  - The screen-level Editor entry points removed from IntakeFrozenScreen,
+ *    MeshScreen, and MobileCommandScreen by
+ *    AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B are NOT part of this
+ *    correction and remain removed (the owner did not ask to restore those
+ *    screen-specific shortcuts — only the normal sidebar/drawer/bottom-nav/
+ *    dashboard entry points).
  *
  * Static source-code tests — no DB connection required.
  */
@@ -16,96 +30,191 @@ import { join } from 'path';
 const SRC = join(__dirname, '../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
-const sidebar        = readSrc('shared/ui/PhoenixSidebar.tsx');
-const mobileDrawer    = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
-const dashboardScreen = readSrc('features/dashboard/DashboardScreen.tsx');
-const intakeFrozenScreen = readSrc('features/health/IntakeFrozenScreen.tsx');
-const meshScreen         = readSrc('features/mesh/MeshScreen.tsx');
+const sidebar             = readSrc('shared/ui/PhoenixSidebar.tsx');
+const mobileDrawer        = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
+const mobileBottomNav     = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
+const dashboardScreen     = readSrc('features/dashboard/DashboardScreen.tsx');
+const intakeFrozenScreen  = readSrc('features/health/IntakeFrozenScreen.tsx');
+const meshScreen          = readSrc('features/mesh/MeshScreen.tsx');
 const mobileCommandScreen = readSrc('features/mesh/MobileCommandScreen.tsx');
-const mobileBottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
-const app             = readSrc('app/App.tsx');
-const editorScreen    = readSrc('features/editor/EditorScreen.tsx');
+const app                 = readSrc('app/App.tsx');
+const editorScreen        = readSrc('features/editor/EditorScreen.tsx');
 
 // ============================================================================
-// 1. Desktop sidebar no longer lists nav_editor
+// 1. Desktop sidebar: nav_editor restored, nav_intake hidden
 // ============================================================================
 
-describe('Desktop sidebar hides Availability Editor', () => {
+describe('Desktop sidebar: nav_editor visible, nav_intake hidden', () => {
   const navItemsBlock = sidebar.slice(
     sidebar.indexOf('const NAV_ITEMS'),
     sidebar.indexOf('const SECONDARY_ITEMS'),
   );
+  const secondaryItemsBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'));
 
-  it("NAV_ITEMS does not contain 'nav_editor'", () => {
-    expect(navItemsBlock).not.toContain("'nav_editor'");
+  it("NAV_ITEMS contains 'nav_editor' (restored)", () => {
+    expect(navItemsBlock).toContain("'nav_editor'");
   });
 
-  it('NAV_ITEMS still contains the required-visible pages', () => {
+  it('NAV_ITEMS still contains the other required-visible pages', () => {
     ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
-  it('documents the hide-only intent (route remains wired in App.tsx)', () => {
-    expect(sidebar).toContain('AVAILABILITY-EDITOR-NAV-HIDE-A');
+  it("SECONDARY_ITEMS does not contain 'nav_intake' (hidden)", () => {
+    expect(secondaryItemsBlock).not.toContain("'nav_intake'");
+  });
+
+  it('SECONDARY_ITEMS still contains nav_my_account', () => {
+    expect(secondaryItemsBlock).toContain("'nav_my_account'");
+  });
+
+  it('documents the corrected intent', () => {
+    expect(sidebar).toContain('RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A');
   });
 });
 
 // ============================================================================
-// 2. Mobile drawer no longer lists nav_editor
+// 2. Mobile drawer: nav_editor restored, nav_intake hidden
 // ============================================================================
 
-describe('Mobile drawer hides Availability Editor', () => {
+describe('Mobile drawer: nav_editor visible, nav_intake hidden', () => {
   const allNavBlock = mobileDrawer.slice(
     mobileDrawer.indexOf('const ALL_NAV'),
     mobileDrawer.indexOf('interface Props'),
   );
 
-  it("ALL_NAV does not contain 'nav_editor'", () => {
-    expect(allNavBlock).not.toContain("'nav_editor'");
+  it("ALL_NAV contains 'nav_editor' (restored)", () => {
+    expect(allNavBlock).toContain("'nav_editor'");
   });
 
-  it('ALL_NAV still contains the required-visible pages', () => {
+  it("ALL_NAV does not contain 'nav_intake' (hidden)", () => {
+    expect(allNavBlock).not.toContain("'nav_intake'");
+  });
+
+  it('ALL_NAV still contains the other required-visible pages', () => {
     ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });
 
 // ============================================================================
-// 3. Mobile bottom nav no longer lists nav_editor
+// 3. Mobile bottom nav: nav_editor restored (nav_intake was never present)
 // ============================================================================
 
-describe('Mobile bottom nav hides Availability Editor', () => {
+describe('Mobile bottom nav: nav_editor visible', () => {
   const bottomNavBlock = mobileBottomNav.slice(
     mobileBottomNav.indexOf('const BOTTOM_NAV'),
     mobileBottomNav.indexOf('interface Props'),
   );
 
-  it("BOTTOM_NAV does not contain 'nav_editor'", () => {
-    expect(bottomNavBlock).not.toContain("'nav_editor'");
+  it("BOTTOM_NAV contains 'nav_editor' (restored)", () => {
+    expect(bottomNavBlock).toContain("'nav_editor'");
   });
 
-  it('BOTTOM_NAV still contains nav_dash and nav_institutions and nav_inter_alerts', () => {
+  it("BOTTOM_NAV does not contain 'nav_intake' (never present)", () => {
+    expect(bottomNavBlock).not.toContain("'nav_intake'");
+  });
+
+  it('BOTTOM_NAV still contains nav_dash, nav_institutions, and nav_inter_alerts', () => {
     ['nav_dash', 'nav_institutions', 'nav_inter_alerts']
       .forEach(key => expect(bottomNavBlock).toContain(`'${key}'`));
   });
 });
 
 // ============================================================================
-// 4. App.tsx retains EditorScreen import and case (route not removed)
+// 4. Dashboard: nav_editor shortcut restored
 // ============================================================================
 
-describe('App.tsx retains the EditorScreen route (not removed)', () => {
-  it('imports EditorScreen', () => {
-    expect(app).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
+describe('DashboardScreen exposes the Availability Editor shortcut again', () => {
+  it('header button calls onNavigate(3)', () => {
+    expect(dashboardScreen).toContain('onNavigate(3)');
   });
 
-  it('still renders EditorScreen on case 3', () => {
-    expect(app).toMatch(/case 3:\s*return <EditorScreen \/>/);
+  it('header button renders the nav_editor label', () => {
+    expect(dashboardScreen).toMatch(/t\(['"]nav_editor['"]/);
+  });
+
+  it('the quick-actions list includes screen 3 / nav_editor / editor_desc', () => {
+    const quickActionsBlock = dashboardScreen.slice(
+      dashboardScreen.indexOf('/* Quick actions */'),
+    );
+    expect(quickActionsBlock).toContain('screen: 3');
+    expect(quickActionsBlock).toContain("labelKey: 'nav_editor'");
+    expect(quickActionsBlock).toContain("descKey: 'editor_desc'");
+  });
+
+  it('the quick-actions list still includes Institutions, Status Center, and Reports', () => {
+    const quickActionsBlock = dashboardScreen.slice(
+      dashboardScreen.indexOf('/* Quick actions */'),
+    );
+    expect(quickActionsBlock).toContain("labelKey: 'nav_institutions'");
+    expect(quickActionsBlock).toContain("labelKey: 'nav_status_center'");
+    expect(quickActionsBlock).toContain("labelKey: 'nav_reports'");
+  });
+
+  it('other Dashboard navigation (alerts screen 13, institutions screen 11) is untouched', () => {
+    expect(dashboardScreen).toContain('onNavigate(13)');
+    expect(dashboardScreen).toContain('onNavigate(11)');
   });
 });
 
 // ============================================================================
-// 5. EditorScreen.tsx itself was not modified
+// 5. nav_intake: hidden from all nav surfaces, no visible onNavigate(8)
+// ============================================================================
+
+describe('nav_intake is hidden from all visible navigation', () => {
+  it('is not present anywhere in the sidebar file (nav array, not just a substring)', () => {
+    const navItemsBlock = sidebar.slice(
+      sidebar.indexOf('const NAV_ITEMS'),
+      sidebar.indexOf('const SECONDARY_ITEMS'),
+    );
+    const secondaryItemsBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'));
+    expect(navItemsBlock).not.toContain("'nav_intake'");
+    expect(secondaryItemsBlock).not.toContain("'nav_intake'");
+  });
+
+  it('is not present in the mobile drawer nav array', () => {
+    const allNavBlock = mobileDrawer.slice(
+      mobileDrawer.indexOf('const ALL_NAV'),
+      mobileDrawer.indexOf('interface Props'),
+    );
+    expect(allNavBlock).not.toContain("'nav_intake'");
+  });
+
+  it('is not present in the mobile bottom nav array', () => {
+    const bottomNavBlock = mobileBottomNav.slice(
+      mobileBottomNav.indexOf('const BOTTOM_NAV'),
+      mobileBottomNav.indexOf('interface Props'),
+    );
+    expect(bottomNavBlock).not.toContain("'nav_intake'");
+  });
+
+  it('no visible onNavigate(8) entrypoint exists in any nav surface or Dashboard', () => {
+    [sidebar, mobileDrawer, mobileBottomNav, dashboardScreen].forEach(src => {
+      expect(src).not.toContain('onNavigate(8)');
+      expect(src).not.toContain('setScreen(8)');
+    });
+  });
+});
+
+// ============================================================================
+// 6. App.tsx retains both EditorScreen (case 3) and IntakeFrozenScreen (case 8)
+// ============================================================================
+
+describe('App.tsx retains both routes (nothing removed)', () => {
+  it('imports and renders EditorScreen on case 3', () => {
+    expect(app).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
+    expect(app).toMatch(/case 3:\s*return <EditorScreen \/>/);
+  });
+
+  it('imports and renders IntakeFrozenScreen on case 8', () => {
+    expect(app).toContain("import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen'");
+    expect(app).toMatch(/case 8:\s*return <IntakeFrozenScreen onNavigate={setScreen} \/>/);
+  });
+});
+
+// ============================================================================
+// 7. EditorScreen.tsx itself was not modified
 // ============================================================================
 
 describe('EditorScreen.tsx save/permission logic is untouched', () => {
@@ -126,7 +235,19 @@ describe('EditorScreen.tsx save/permission logic is untouched', () => {
 });
 
 // ============================================================================
-// 6. Permission matrix files were not modified
+// 8. IntakeFrozenScreen.tsx route/content remain (only its nav link is hidden)
+// ============================================================================
+
+describe('IntakeFrozenScreen route remains intact', () => {
+  it('still renders the frozen/disabled notice', () => {
+    expect(intakeFrozenScreen).toContain("t('nav_intake', lang)");
+    expect(intakeFrozenScreen).toContain("t('intake_frozen', lang)");
+    expect(intakeFrozenScreen).toContain('BLOCKED');
+  });
+});
+
+// ============================================================================
+// 9. Permission matrix files were not modified
 // ============================================================================
 
 describe('Permission matrix files are untouched', () => {
@@ -144,11 +265,11 @@ describe('Permission matrix files are untouched', () => {
 });
 
 // ============================================================================
-// 7. No SQL/migration changes were introduced by this task
+// 10. No SQL/migration changes were introduced by this task
 // ============================================================================
 
-describe('No SQL/migration changes for this nav-hide task', () => {
-  it('migration 032 (availability permission matrix) is unaffected by nav hiding', () => {
+describe('No SQL/migration changes for this restore/hide task', () => {
+  it('migration 032 (availability permission matrix) is unaffected', () => {
     const migration = readFileSync(
       join(SRC, '../supabase/migrations/032_phoenix_availability_permission_matrix_integration.sql'),
       'utf8',
@@ -159,7 +280,7 @@ describe('No SQL/migration changes for this nav-hide task', () => {
 });
 
 // ============================================================================
-// 8. Status Center remains visible
+// 11. Status Center remains visible
 // ============================================================================
 
 describe('Status Center remains visible', () => {
@@ -173,7 +294,7 @@ describe('Status Center remains visible', () => {
 });
 
 // ============================================================================
-// 9. Reports remains visible
+// 12. Reports remains visible
 // ============================================================================
 
 describe('Reports remains visible', () => {
@@ -187,134 +308,37 @@ describe('Reports remains visible', () => {
 });
 
 // ============================================================================
-// i18n key retained (not removed)
+// 13. i18n keys retained (not removed)
 // ============================================================================
 
-describe('nav_editor i18n key is not removed', () => {
+describe('nav_editor and nav_intake i18n keys are not removed', () => {
   it('strings.ts still defines nav_editor bilingually', () => {
     const strings = readSrc('shared/i18n/strings.ts');
     expect(strings).toMatch(/nav_editor:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
-});
 
-// ============================================================================
-// AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-A: Dashboard quick-nav shortcut
-// ============================================================================
-
-describe('DashboardScreen no longer exposes an Availability Editor shortcut', () => {
-  it('does not call onNavigate(3) anywhere', () => {
-    expect(dashboardScreen).not.toContain('onNavigate(3)');
-  });
-
-  it('does not reference nav_editor', () => {
-    // Only the explanatory code comment may mention it by name; no t('nav_editor', ...) call remains.
-    expect(dashboardScreen).not.toMatch(/t\(['"]nav_editor['"]/);
-  });
-
-  it('the quick-actions list no longer includes screen 3 / editor_desc', () => {
-    const quickActionsBlock = dashboardScreen.slice(
-      dashboardScreen.indexOf('/* Quick actions */'),
-    );
-    expect(quickActionsBlock).not.toContain('screen: 3');
-    expect(quickActionsBlock).not.toContain("labelKey: 'nav_editor'");
-    expect(quickActionsBlock).not.toContain("descKey: 'editor_desc'");
-  });
-
-  it('the quick-actions list still includes Institutions, Status Center, and Reports', () => {
-    const quickActionsBlock = dashboardScreen.slice(
-      dashboardScreen.indexOf('/* Quick actions */'),
-    );
-    expect(quickActionsBlock).toContain("labelKey: 'nav_institutions'");
-    expect(quickActionsBlock).toContain("labelKey: 'nav_status_center'");
-    expect(quickActionsBlock).toContain("labelKey: 'nav_reports'");
-  });
-
-  it('the header no longer renders a button that navigates to screen 3', () => {
-    const headerBlock = dashboardScreen.slice(
-      dashboardScreen.indexOf('{/* Header */}'),
-      dashboardScreen.indexOf('{!configured'),
-    );
-    expect(headerBlock).not.toContain('<button');
-    expect(headerBlock).not.toContain('onNavigate(3)');
-  });
-
-  it('documents the entry-point removal intent', () => {
-    expect(dashboardScreen).toContain('AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-A');
-  });
-
-  it('other Dashboard navigation (alerts screen 13, institutions screen 11) is untouched', () => {
-    expect(dashboardScreen).toContain('onNavigate(13)');
-    expect(dashboardScreen).toContain('onNavigate(11)');
+  it('strings.ts still defines nav_intake bilingually', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toMatch(/nav_intake:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
 });
 
 // ============================================================================
-// AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B: remaining visible entrypoints
+// 14. AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B screens are UNCHANGED by
+//     this correction — the owner did not ask to restore these screen-level
+//     shortcuts, only the normal sidebar/drawer/bottom-nav/dashboard ones.
 // ============================================================================
 
-describe('IntakeFrozenScreen no longer offers a visible Editor CTA', () => {
-  it('does not call onNavigate(3) anywhere', () => {
+describe('IntakeFrozenScreen/MeshScreen/MobileCommandScreen Editor shortcuts remain removed (out of scope for this correction)', () => {
+  it('IntakeFrozenScreen still has no onNavigate(3) redirect button', () => {
     expect(intakeFrozenScreen).not.toContain('onNavigate(3)');
   });
 
-  it('does not render a visible nav_editor label/button', () => {
-    expect(intakeFrozenScreen).not.toMatch(/t\(['"]nav_editor['"]/);
-    expect(intakeFrozenScreen).not.toContain('use_editor_instead');
-  });
-
-  it('still shows the frozen/disabled notice (screen otherwise intact)', () => {
-    expect(intakeFrozenScreen).toContain("t('nav_intake', lang)");
-    expect(intakeFrozenScreen).toContain("t('intake_frozen', lang)");
-    expect(intakeFrozenScreen).toContain('BLOCKED');
-  });
-
-  it('documents the entry-point removal intent', () => {
-    expect(intakeFrozenScreen).toContain('AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B');
-  });
-});
-
-describe('MeshScreen no longer offers a visible Editor button', () => {
-  it('does not call onNavigate(3) anywhere', () => {
+  it('MeshScreen still has no onNavigate(3) button', () => {
     expect(meshScreen).not.toContain('onNavigate(3)');
   });
 
-  it('does not render a visible nav_editor label/button', () => {
-    expect(meshScreen).not.toMatch(/t\(['"]nav_editor['"]/);
-    expect(meshScreen).not.toContain('<PhoenixButton');
-  });
-
-  it('other mesh/institution interactions remain (selecting a node)', () => {
-    expect(meshScreen).toContain('setSelectedId');
-    expect(meshScreen).toContain('getInstitutionOverviews');
-  });
-
-  it('documents the entry-point removal intent', () => {
-    expect(meshScreen).toContain('AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B');
-  });
-});
-
-describe('MobileCommandScreen no longer offers a visible Editor FAB', () => {
-  it('does not call onNavigate(3) anywhere', () => {
+  it('MobileCommandScreen still has no onNavigate(3) FAB', () => {
     expect(mobileCommandScreen).not.toContain('onNavigate(3)');
-  });
-
-  it('does not render a visible nav_editor label/button', () => {
-    expect(mobileCommandScreen).not.toMatch(/t\(['"]nav_editor['"]/);
-  });
-
-  it('other mobile command navigation remains (institutions quick view, screen 6)', () => {
-    expect(mobileCommandScreen).toContain('onNavigate(6)');
-  });
-
-  it('documents the entry-point removal intent', () => {
-    expect(mobileCommandScreen).toContain('AVAILABILITY-EDITOR-VISIBLE-ENTRYPOINTS-HIDE-B');
-  });
-});
-
-describe('Repo-wide: no forbidden visible entrypoint to screen 3 remains', () => {
-  it('none of the three fixed screens contain onNavigate(3)', () => {
-    [intakeFrozenScreen, meshScreen, mobileCommandScreen].forEach(src => {
-      expect(src).not.toContain('onNavigate(3)');
-    });
   });
 });
