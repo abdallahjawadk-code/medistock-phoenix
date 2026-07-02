@@ -132,6 +132,95 @@ describe('InterInstitutionAlertsScreen: summary cards', () => {
   });
 });
 
+describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: smart summary + grouping (read-only display only)', () => {
+  it('adds missing/low_stock summary chips derived from the already-fetched targetStatus field', () => {
+    expect(screen).toContain('lia_summary_missing');
+    expect(screen).toContain('lia_summary_low_stock');
+    expect(screen).toMatch(/a\.targetStatus === 'missing'/);
+    expect(screen).toMatch(/a\.targetStatus === 'low_stock'/);
+  });
+
+  it('does not invent new statuses — missing/low_stock are already used by statusLabelKey/statusVariant', () => {
+    expect(screen).toMatch(/case 'missing': return 'cond_missing'/);
+    expect(screen).toMatch(/case 'low_stock': return 'cond_low_stock'/);
+  });
+
+  it('has a read-only group-by toggle (none/material/institution) computed from the already-filtered list', () => {
+    expect(screen).toContain('groupMode');
+    expect(screen).toContain("useState<GroupMode>('none')");
+    expect(screen).toContain('lia_group_label');
+    expect(screen).toContain('lia_group_material');
+    expect(screen).toContain('lia_group_institution');
+    expect(screen).toMatch(/for \(const a of filtered\)/);
+  });
+
+  it('organization/material ids used for grouping are internal Map keys only, never rendered as visible text', () => {
+    expect(screen).not.toMatch(/>\{a\.targetOrganizationId\}</);
+    expect(screen).not.toMatch(/>\{key\}</);
+    const groupsBlock = screen.slice(screen.indexOf('const groups = useMemo'), screen.indexOf('const groups = useMemo') + 700);
+    expect(groupsBlock).not.toMatch(/<span[^>]*>\{key\}/);
+  });
+
+  it('grouping does not add a new fetch/RPC — same result.data.alerts source as the flat view', () => {
+    const fnStart = screen.indexOf('const groups = useMemo');
+    const fnBody = screen.slice(fnStart, fnStart + 700);
+    expect(fnBody).not.toMatch(/supabase\.|\.rpc\(|await /);
+  });
+
+  it('has a smart-view badge label but no exchange/approval wording anywhere near it', () => {
+    expect(screen).toContain('lia_smart_view_badge');
+    const badgeBlock = screen.slice(screen.indexOf('lia_smart_view_badge') - 200, screen.indexOf('lia_smart_view_badge') + 100);
+    expect(badgeBlock).not.toMatch(/exchange|approve|reject|request/i);
+  });
+});
+
+describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: no exchange workflow, no Service-D, no forbidden wording', () => {
+  it('no exchange-request button/CTA text', () => {
+    expect(screen).not.toMatch(/create.{0,3}exchange|request.{0,3}exchange|send.{0,3}request/i);
+    expect(screen).not.toContain('createInterOrgExchangeRequest');
+  });
+
+  it('no approval/rejection workflow wording', () => {
+    expect(screen).not.toMatch(/\bapprove\b|\breject\b|\bapproval\b/i);
+    expect(screen).not.toContain('موافقة');
+    expect(screen).not.toContain('رفض');
+    expect(screen).not.toContain('طلب تبادل');
+    expect(screen).not.toContain('إنشاء طلب');
+  });
+
+  it('does not import the Service-D exchange service', () => {
+    expect(screen).not.toMatch(/from '\.\/inter-org-exchange\.service'/);
+    expect(screen).not.toContain('inter_org_exchange');
+  });
+
+  it('no new exchange RPC usage', () => {
+    expect(screen).not.toMatch(/phoenix_create_inter_org_exchange_request|phoenix_update_inter_org_exchange_status|phoenix_get_inter_org_exchange_events|phoenix_get_inter_org_exchange_requests/);
+  });
+
+  it('does not render alert_key, exchange_request_id, or raw supply_type', () => {
+    expect(screen).not.toMatch(/>\{a\.alertKey\}</);
+    expect(screen).not.toContain('exchange_request_id');
+    expect(screen).not.toContain('supply_type');
+  });
+
+  it('none of the new lia_*/smart-view strings use forbidden wording (including new Arabic terms)', () => {
+    const liaLines = strings.split('\n').filter(l => /^\s*lia_/.test(l));
+    const joined = liaLines.join('\n');
+    expect(joined.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
+    expect(joined).not.toContain('اقتراح');
+    expect(joined).not.toContain('فرصة');
+    expect(joined).not.toContain('توصية');
+    expect(joined).not.toContain('طلب تبادل');
+    expect(joined).not.toContain('إنشاء طلب');
+    expect(joined).not.toContain('موافقة');
+    expect(joined).not.toContain('رفض');
+  });
+
+  it('filters/grouping are read-only display controls only — no onClick side effects that call RPCs', () => {
+    expect(screen).not.toMatch(/onChange={e => setGroupMode[^}]*}\s*>\s*[^<]*supabase/);
+  });
+});
+
 describe('InterInstitutionAlertsScreen: filters', () => {
   it('has a severity filter', () => {
     expect(screen).toContain('severityFilter');

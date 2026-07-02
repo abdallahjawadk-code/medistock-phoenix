@@ -649,6 +649,19 @@ export const T: Dict = {
   lia_forbidden:           { ar: 'لا تملك صلاحية عرض هذه التنبيهات',                  en: 'You do not have permission to view these alerts' },
   lia_computed_at:         { ar: 'وقت الاحتساب',                                      en: 'Computed at' },
 
+  /* ── INTER-INSTITUTION-ALERTS-SMART-VIEW-A: read-only smart display polish ──
+     Summary/grouping labels only — computed entirely from the already-loaded
+     alert list (sourceStatus/targetStatus/scientificName/etc, all fields the
+     screen already fetches). No new statuses, no exchange/approval wording. */
+  lia_smart_view_badge:      { ar: 'عرض ذكي',                                         en: 'Smart View' },
+  lia_summary_section_label: { ar: 'ملخص التنبيهات',                                  en: 'Alerts Summary' },
+  lia_summary_missing:       { ar: 'مواد مفقودة',                                     en: 'Missing materials' },
+  lia_summary_low_stock:     { ar: 'مواد شحيحة',                                      en: 'Low stock materials' },
+  lia_group_label:           { ar: 'تجميع حسب',                                       en: 'Group by' },
+  lia_group_none:            { ar: 'بدون تجميع',                                      en: 'No grouping' },
+  lia_group_material:        { ar: 'حسب المادة',                                      en: 'By material' },
+  lia_group_institution:     { ar: 'حسب المؤسسة',                                     en: 'By institution' },
+
   /* ── LIVE-ALERTS-DASHBOARD-SUMMARY-A: Dashboard live inter-institution summary ── */
   d_live_alerts_title:     { ar: 'تنبيهات حية بين المؤسسات',                          en: 'Live Inter-Institution Alerts' },
 

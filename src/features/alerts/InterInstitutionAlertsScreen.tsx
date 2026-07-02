@@ -32,6 +32,14 @@ import {
  * visibility) happens entirely server-side inside the RPC; this screen only
  * renders whatever it is given and surfaces a FORBIDDEN response as a
  * permission-denied state.
+ *
+ * INTER-INSTITUTION-ALERTS-SMART-VIEW-A: adds two more summary chips
+ * (missing/low_stock, both derived from the already-fetched targetStatus
+ * field — no new statuses, no new fetch) and a read-only "group by" display
+ * toggle (none / material / institution) that only reorganizes the already-
+ * filtered `filtered` array into local groups for rendering. Distribution
+ * point/organization ids are used only as internal Map keys — never
+ * rendered — and no lifecycle/exchange behavior is touched by any of this.
  */
 
 const ALERT_TYPE_LABEL_KEY: Record<LiveAlertType, string> = {
@@ -80,6 +88,17 @@ const fieldStyle = {
   color: 'var(--t)', fontSize: '12.5px',
 } as const;
 
+type GroupMode = 'none' | 'material' | 'institution';
+
+/** Display-only grouping key/label — computed from fields the alert already has. */
+function materialGroupKey(a: LiveInterInstitutionAlertWithState): string {
+  return [a.scientificName, a.concentration ?? '', a.dosageForm ?? ''].join('|').toLowerCase();
+}
+
+function materialGroupLabel(a: LiveInterInstitutionAlertWithState): string {
+  return [a.scientificName, a.concentration, a.dosageForm].filter(Boolean).join(' · ');
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function InterInstitutionAlertsScreen() {
@@ -90,6 +109,7 @@ export function InterInstitutionAlertsScreen() {
   const [typeFilter, setTypeFilter] = useState<LiveAlertType | ''>('');
   const [instFilter, setInstFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [groupMode, setGroupMode] = useState<GroupMode>('none');
 
   const result = useAsync(() => getLiveInterInstitutionAlertsWithState(200), []);
   const [action, setAction] = useState<{ alert: LiveInterInstitutionAlertWithState; to: AlertLifecycleStatus } | null>(null);
@@ -104,6 +124,8 @@ export function InterInstitutionAlertsScreen() {
   const summaryHigh = allAlerts.filter(a => a.severity === 'high').length;
   const summarySurplus = allAlerts.filter(a => a.alertType === 'surplus_to_shortage').length;
   const summaryNearExpiry = allAlerts.filter(a => a.alertType === 'near_expiry_to_shortage').length;
+  const summaryMissing = allAlerts.filter(a => a.targetStatus === 'missing').length;
+  const summaryLowStock = allAlerts.filter(a => a.targetStatus === 'low_stock').length;
 
   const instMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -131,13 +153,35 @@ export function InterInstitutionAlertsScreen() {
     return true;
   }), [allAlerts, severityFilter, typeFilter, instFilter, search]);
 
+  // Display-only regrouping of the already-filtered alerts — no new data
+  // source. Organization/material keys are internal Map keys only, never
+  // rendered; only their display labels (org name / material name) are shown.
+  const groups = useMemo(() => {
+    if (groupMode === 'none') return null;
+    const map = new Map<string, { label: string; items: LiveInterInstitutionAlertWithState[] }>();
+    for (const a of filtered) {
+      const key = groupMode === 'material' ? materialGroupKey(a) : a.targetOrganizationId;
+      const label = groupMode === 'material'
+        ? materialGroupLabel(a)
+        : orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang);
+      if (!map.has(key)) map.set(key, { label, items: [] });
+      map.get(key)!.items.push(a);
+    }
+    return [...map.values()].sort((x, y) => x.label.localeCompare(y.label));
+  }, [filtered, groupMode, lang]);
+
   return (
     <div className="premium-page premium-alerts-page" style={{ maxWidth: '1180px', animation: 'fs .3s ease' }}>
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
-        <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '26px', fontWeight: 700, letterSpacing: '-.3px' }}>
-          {t('lia_title', lang)}
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '26px', fontWeight: 700, letterSpacing: '-.3px' }}>
+            {t('lia_title', lang)}
+          </h2>
+          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--p)', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--rpill)', padding: '2px 10px' }}>
+            ✨ {t('lia_smart_view_badge', lang)}
+          </span>
+        </div>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px', maxWidth: '640px' }} dir="auto">
           {t('lia_sub', lang)}
         </p>
@@ -150,22 +194,33 @@ export function InterInstitutionAlertsScreen() {
 
       {/* Summary cards */}
       {ok && allAlerts.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--info)' }}>{summaryTotal}</div>
-            <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_total', lang)}</div>
-          </div>
-          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--err)' }}>{summaryHigh}</div>
-            <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_high', lang)}</div>
-          </div>
-          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--ok)' }}>{summarySurplus}</div>
-            <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_surplus', lang)}</div>
-          </div>
-          <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{summaryNearExpiry}</div>
-            <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_near_expiry', lang)}</div>
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--t2)', marginBottom: '6px' }}>{t('lia_summary_section_label', lang)}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--info)' }}>{summaryTotal}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_total', lang)}</div>
+            </div>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--err)' }}>{summaryHigh}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_high', lang)}</div>
+            </div>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--err)' }}>{summaryMissing}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_missing', lang)}</div>
+            </div>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{summaryLowStock}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_low_stock', lang)}</div>
+            </div>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--ok)' }}>{summarySurplus}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_surplus', lang)}</div>
+            </div>
+            <div className="premium-depth-card premium-3d-hover" style={{ borderRadius: 'var(--r3)', padding: '12px 14px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{summaryNearExpiry}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_near_expiry', lang)}</div>
+            </div>
           </div>
         </div>
       )}
@@ -215,6 +270,19 @@ export function InterInstitutionAlertsScreen() {
             </select>
           )}
 
+          <select
+            id="lia-group"
+            value={groupMode}
+            onChange={e => setGroupMode(e.target.value as GroupMode)}
+            className="premium-field"
+            style={{ ...fieldStyle, width: 'auto', minWidth: '160px', appearance: 'none', cursor: 'pointer' }}
+            aria-label={t('lia_group_label', lang)}
+          >
+            <option value="none">{t('lia_group_label', lang)}: {t('lia_group_none', lang)}</option>
+            <option value="material">{t('lia_group_material', lang)}</option>
+            <option value="institution">{t('lia_group_institution', lang)}</option>
+          </select>
+
           <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
             <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
             <input
@@ -251,19 +319,43 @@ export function InterInstitutionAlertsScreen() {
         <PhoenixEmptyState icon="🔔" title={t('lia_empty', lang)} />
       )}
 
-      {/* Alert cards */}
+      {/* Alert cards — flat list, or grouped for display only when groupMode !== 'none' */}
       {!result.loading && !result.error && ok && filtered.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {filtered.map(a => (
-            <AlertCard
-              key={a.alertKey}
-              a={a}
-              lang={lang}
-              onAction={to => setAction({ alert: a, to })}
-              onHistory={() => setHistoryAlert(a)}
-            />
-          ))}
-        </div>
+        groups === null ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {filtered.map(a => (
+              <AlertCard
+                key={a.alertKey}
+                a={a}
+                lang={lang}
+                onAction={to => setAction({ alert: a, to })}
+                onHistory={() => setHistoryAlert(a)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {groups.map(g => (
+              <div key={g.label}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid var(--brd)' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700 }} dir="auto">{g.label}</span>
+                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>({g.items.length})</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {g.items.map(a => (
+                    <AlertCard
+                      key={a.alertKey}
+                      a={a}
+                      lang={lang}
+                      onAction={to => setAction({ alert: a, to })}
+                      onHistory={() => setHistoryAlert(a)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       )}
       <LifecycleActionDialog
         action={action}
