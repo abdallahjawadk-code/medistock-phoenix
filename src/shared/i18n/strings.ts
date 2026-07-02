@@ -554,6 +554,8 @@ export const T: Dict = {
   sc_view_table:            { ar: 'عرض جدول',                                     en: 'Table view' },
   sc_view_outlet:           { ar: 'عرض حسب المنفذ',                               en: 'Outlet view' },
   sc_outlet_empty:          { ar: 'لا توجد مواد لهذا المنفذ',                     en: 'No materials for this outlet' },
+  sc_outlet_items_count:    { ar: 'مادة',                                        en: 'items' },
+  sc_outlet_needs_attention:{ ar: 'يحتاج انتباه',                                en: 'Needs attention' },
   /* ── Live availability report / print / export (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A) ── */
   sc_report_title:      { ar: 'تقرير موقف التوفر الحي للمواد',     en: 'Live Material Availability Status Report' },
   sc_report_sub:        { ar: 'تقرير حي مبني على سجل التوفر · تصفية وطباعة وتصدير', en: 'Live report from item availability · filter, print & export' },

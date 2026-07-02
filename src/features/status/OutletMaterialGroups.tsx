@@ -6,7 +6,7 @@ import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
 
 /**
- * AVAILABILITY-ALERTS-QR-POLISH-B
+ * AVAILABILITY-ALERTS-QR-POLISH-B / -C
  *
  * Groups the SAME already-filtered rows StatusCenterScreen's table renders
  * into per-outlet (distribution point) cards — an additional display mode,
@@ -14,6 +14,10 @@ import type { CanonicalStatus } from '@/shared/lib/status/canonical';
  * to operate on the existing flat table; this component is purely a
  * read-only alternate view of identical data. No distribution-point id is
  * ever rendered — only its display name.
+ *
+ * -C polish: a per-outlet "needs attention" count (missing/low_stock rows
+ * within that outlet's own already-grouped rows — no new data source),
+ * a clearer card header, and tighter row/badge alignment.
  */
 
 export interface OutletGroupRow {
@@ -55,43 +59,57 @@ export function OutletMaterialGroups({ rows }: Props) {
 
   if (groups.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '40px', color: 'var(--t2)', fontSize: '13px' }}>
-        {t('sc_outlet_empty', lang)}
+      <div style={{ textAlign: 'center', padding: '40px 12px', color: 'var(--t2)' }}>
+        <div style={{ fontSize: '26px', marginBottom: '6px', opacity: 0.6 }}>📦</div>
+        <div style={{ fontSize: '13px' }}>{t('sc_outlet_empty', lang)}</div>
       </div>
     );
   }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-      {groups.map(g => (
-        <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '13.5px', fontWeight: 700 }} dir="auto">📦 {lang === 'ar' ? g.nameAr : g.name}</span>
-            <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{g.rows.length}</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {g.rows.map((r, i) => {
-              const eff = effOf(r);
-              return (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingBottom: '8px', borderBottom: i < g.rows.length - 1 ? '1px solid var(--brd)' : 'none' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
-                      {r.scientific_name || '—'}
+      {groups.map(g => {
+        const attentionCount = g.rows.filter(r => {
+          const eff = effOf(r);
+          return eff === 'missing' || eff === 'low_stock';
+        }).length;
+        return (
+          <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--brd)' }}>
+              <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">📦 {lang === 'ar' ? g.nameAr : g.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {attentionCount > 0 && (
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--rpill)', padding: '2px 8px' }}>
+                    {t('sc_outlet_needs_attention', lang)}: {attentionCount}
+                  </span>
+                )}
+                <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{g.rows.length} {t('sc_outlet_items_count', lang)}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {g.rows.map((r, i) => {
+                const eff = effOf(r);
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingBottom: '8px', borderBottom: i < g.rows.length - 1 ? '1px solid var(--brd)' : 'none' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+                        {r.scientific_name || '—'}
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--t2)' }}>
+                        {[r.concentration, r.dosage_form].filter(Boolean).join(' · ') || '—'}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--t2)' }}>
-                      {[r.concentration, r.dosage_form].filter(Boolean).join(' · ') || '—'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11.5px', color: 'var(--t2)' }}>{r.quantity}</span>
+                      <PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} />
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    <span style={{ fontSize: '11.5px', color: 'var(--t2)' }}>{r.quantity}</span>
-                    <PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </PhoenixCard>
-      ))}
+                );
+              })}
+            </div>
+          </PhoenixCard>
+        );
+      })}
     </div>
   );
 }
