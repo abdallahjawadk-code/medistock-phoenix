@@ -261,7 +261,7 @@ describe('MovementReportSection: CSV export behavior', () => {
 
   it('CSV includes the same visible column headers', () => {
     const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toContain('columns.map(c => `"${c.label');
+    expect(fnBody).toContain('columns.map(c => cell(c.label))');
   });
 
   it('CSV escapes quotes safely (doubled quotes, matches existing project convention)', () => {
@@ -272,6 +272,19 @@ describe('MovementReportSection: CSV export behavior', () => {
   it('CSV uses a UTF-8 BOM (existing project convention)', () => {
     const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
     expect(fnBody).toMatch(/const bom = /);
+  });
+
+  it('CSV escapes cells that could be interpreted as spreadsheet formulas (CSV injection protection)', () => {
+    expect(section).toContain('function csvSafeCell');
+    const guardFn = section.slice(section.indexOf('function csvSafeCell'), section.indexOf('function csvSafeCell') + 300);
+    expect(guardFn).toContain('/^[=+\\-@]/');
+    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
+    expect(fnBody).toContain('csvSafeCell');
+  });
+
+  it('uses a medistock-movements-prefixed, date-stamped filename', () => {
+    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
+    expect(fnBody).toContain('medistock-movements-');
   });
 
   it('does not add xlsx/exceljs/sheetjs/read-excel-file/papaparse', () => {

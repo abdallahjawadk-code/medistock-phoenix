@@ -31,6 +31,16 @@ const CONDITION_OPTIONS = [
   'available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired',
 ] as const;
 
+/**
+ * PRODUCTION-READINESS-CLEANUP-B: CSV injection protection — same pattern
+ * already used by StatusCenterScreen's exportCsv(). A cell value beginning
+ * with =, +, -, or @ can be interpreted as a formula by Excel/Sheets; a
+ * leading apostrophe forces plain-text treatment without altering the value.
+ */
+function csvSafeCell(v: string): string {
+  return /^[=+\-@]/.test(v) ? `'${v}` : v;
+}
+
 export function StatusEditorScreen() {
   const { lang, activeOrgId } = useApp();
 
@@ -93,12 +103,13 @@ export function StatusEditorScreen() {
     ]);
 
     const bom = '﻿';
-    const csv = bom + [headers, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const cell = (c: string | number) => `"${csvSafeCell(String(c)).replace(/"/g, '""')}"`;
+    const csv = bom + [headers, ...rows].map(row => row.map(cell).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `status_editor_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `medistock-status-editor-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

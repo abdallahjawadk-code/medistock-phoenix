@@ -51,6 +51,16 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * PRODUCTION-READINESS-CLEANUP-B: CSV injection protection — same pattern
+ * already used by StatusCenterScreen's exportCsv(). A cell value beginning
+ * with =, +, -, or @ can be interpreted as a formula by Excel/Sheets; a
+ * leading apostrophe forces plain-text treatment without altering the value.
+ */
+function csvSafeCell(v: string): string {
+  return /^[=+\-@]/.test(v) ? `'${v}` : v;
+}
+
 const fieldStyle = {
   padding: '8px 12px', borderRadius: 'var(--r2)',
   border: '1px solid var(--brd)', background: 'var(--s)',
@@ -192,16 +202,17 @@ export function MovementReportSection() {
 
   function exportCsv() {
     const bom = '﻿';
+    const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
     const lines = [
-      columns.map(c => `"${c.label.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(r => columns.map(c => `"${String(c.value(r)).replace(/"/g, '""')}"`).join(',')),
+      columns.map(c => cell(c.label)).join(','),
+      ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
     ];
     const csv = bom + lines.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `quantity-movements-report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `medistock-movements-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
