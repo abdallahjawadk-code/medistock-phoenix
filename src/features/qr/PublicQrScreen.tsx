@@ -141,8 +141,12 @@ export function PublicQrScreen({ publicId }: Props) {
 
         {loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
+        {/* FINAL-POLISH-PERMISSIONS-QR-A (F-06): this page is anonymous/public —
+            never render the raw useAsync error string (it may contain internal
+            backend error details). The raw error is already logged to the
+            console by useAsync for developers. */}
         {!loading && error && (
-          <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />
+          <PhoenixErrorState title={t('load_error', lang)} message={t('qr_public_load_error', lang)} onRetry={reload} />
         )}
 
         {!loading && !error && !ok && (

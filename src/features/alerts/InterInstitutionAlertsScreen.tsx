@@ -61,6 +61,29 @@ const SEVERITY_BORDER: Record<LiveAlertSeverity, string> = {
   medium: 'var(--warn)',
 };
 
+/**
+ * FINAL-POLISH-PERMISSIONS-QR-A (F-03): permission required per TARGET
+ * lifecycle status — mirrors the exact server-side checks the migration 039
+ * update/reopen RPCs enforce (RPC names live only in the lifecycle service):
+ *   open→acknowledged  requires inter_institution_alerts.acknowledge
+ *   acknowledged→in_progress requires inter_institution_alerts.manage
+ *   in_progress→resolved requires inter_institution_alerts.resolve
+ *   any→dismissed      requires inter_institution_alerts.dismiss
+ *   reopen (→open)     requires inter_institution_alerts.manage
+ * super_admin needs no special-casing here: AppContext tops up myPermissions
+ * with every catalog key for super_admin, and the RPCs bypass server-side.
+ * Buttons for transitions the user cannot perform are simply not rendered —
+ * the server checks remain authoritative and rejected calls still surface
+ * translated errors via lifecycleErrorKey.
+ */
+const TRANSITION_PERMISSION: Record<AlertLifecycleStatus, string> = {
+  open:         'inter_institution_alerts.manage',
+  acknowledged: 'inter_institution_alerts.acknowledge',
+  in_progress:  'inter_institution_alerts.manage',
+  resolved:     'inter_institution_alerts.resolve',
+  dismissed:    'inter_institution_alerts.dismiss',
+};
+
 function statusLabelKey(status: string): string {
   switch (status) {
     case 'surplus': return 'cond_surplus';
@@ -137,8 +160,12 @@ function sortAlerts(list: LiveInterInstitutionAlertWithState[], mode: SortMode):
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function InterInstitutionAlertsScreen() {
-  const { lang } = useApp();
+  const { lang, myPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
+
+  // F-03: lifecycleStatus decides which action is RELEVANT; effective
+  // permission decides whether it is VISIBLE at all.
+  const canTransition = (to: AlertLifecycleStatus) => myPermissions.has(TRANSITION_PERMISSION[to]);
 
   const [severityFilter, setSeverityFilter] = useState<LiveAlertSeverity | ''>('');
   const [typeFilter, setTypeFilter] = useState<LiveAlertType | ''>('');
@@ -417,6 +444,7 @@ export function InterInstitutionAlertsScreen() {
                 key={a.alertKey}
                 a={a}
                 lang={lang}
+                canTransition={canTransition}
                 onAction={to => setAction({ alert: a, to })}
                 onHistory={() => setHistoryAlert(a)}
               />
@@ -436,6 +464,7 @@ export function InterInstitutionAlertsScreen() {
                       key={a.alertKey}
                       a={a}
                       lang={lang}
+                      canTransition={canTransition}
                       onAction={to => setAction({ alert: a, to })}
                       onHistory={() => setHistoryAlert(a)}
                     />
@@ -480,9 +509,11 @@ function CriticalAlertCard({ a, lang }: { a: LiveInterInstitutionAlertWithState;
 
 // ─── Alert card ───────────────────────────────────────────────────────────────
 
-function AlertCard({ a, lang, onAction, onHistory }: {
+function AlertCard({ a, lang, canTransition, onAction, onHistory }: {
   a: LiveInterInstitutionAlertWithState;
   lang: 'ar' | 'en';
+  /** F-03: true when the current user holds the server-required permission for this target status. */
+  canTransition: (to: AlertLifecycleStatus) => boolean;
   onAction: (to: AlertLifecycleStatus) => void;
   onHistory: () => void;
 }) {
@@ -568,13 +599,13 @@ function AlertCard({ a, lang, onAction, onHistory }: {
         </span>
       </div>
       <div className="premium-action-bar" style={{ marginTop: '12px' }}>
-        {a.lifecycleStatus === 'open' && <ActionButton onClick={() => onAction('acknowledged')} label={t('alertLifecycle_action_acknowledge', lang)} />}
-        {a.lifecycleStatus === 'acknowledged' && <ActionButton onClick={() => onAction('in_progress')} label={t('alertLifecycle_action_startProcessing', lang)} />}
-        {a.lifecycleStatus === 'in_progress' && <ActionButton onClick={() => onAction('resolved')} label={t('alertLifecycle_action_resolve', lang)} />}
-        {(['open', 'acknowledged', 'in_progress'] as AlertLifecycleStatus[]).includes(a.lifecycleStatus) && (
+        {a.lifecycleStatus === 'open' && canTransition('acknowledged') && <ActionButton onClick={() => onAction('acknowledged')} label={t('alertLifecycle_action_acknowledge', lang)} />}
+        {a.lifecycleStatus === 'acknowledged' && canTransition('in_progress') && <ActionButton onClick={() => onAction('in_progress')} label={t('alertLifecycle_action_startProcessing', lang)} />}
+        {a.lifecycleStatus === 'in_progress' && canTransition('resolved') && <ActionButton onClick={() => onAction('resolved')} label={t('alertLifecycle_action_resolve', lang)} />}
+        {(['open', 'acknowledged', 'in_progress'] as AlertLifecycleStatus[]).includes(a.lifecycleStatus) && canTransition('dismissed') && (
           <ActionButton onClick={() => onAction('dismissed')} label={t('alertLifecycle_action_dismiss', lang)} />
         )}
-        {(['resolved', 'dismissed'] as AlertLifecycleStatus[]).includes(a.lifecycleStatus) && (
+        {(['resolved', 'dismissed'] as AlertLifecycleStatus[]).includes(a.lifecycleStatus) && canTransition('open') && (
           <ActionButton onClick={() => onAction('open')} label={t('alertLifecycle_action_reopen', lang)} />
         )}
         <ActionButton onClick={onHistory} label={t('alertLifecycle_action_viewHistory', lang)} />

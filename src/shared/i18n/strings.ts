@@ -396,6 +396,8 @@ export const T: Dict = {
   public_sub:     { ar: 'بيانات آمنة للعرض العام فقط',        en: 'Safe public-display data only' },
   qr_invalid:     { ar: 'الرمز غير صالح أو معطل',             en: 'QR code is invalid or disabled' },
   qr_scan_again:  { ar: 'يرجى مسح رمز صالح',                  en: 'Please scan a valid code' },
+  /* FINAL-POLISH-PERMISSIONS-QR-A: public-safe load error — never show raw internal error text to anonymous scanners. */
+  qr_public_load_error: { ar: 'تعذر تحميل بيانات رمز QR. قد يكون الرمز غير صالح أو منتهي الصلاحية.', en: 'Unable to load this QR code. It may be invalid or expired.' },
 
   /* ── Institution Management ── */
   nav_institutions: { ar: 'إدارة المؤسسات',                    en: 'Institutions' },
@@ -884,6 +886,11 @@ export const T: Dict = {
   perm_status_center_resolve:             { ar: 'إغلاق تقارير المواقف',  en: 'Resolve status reports' },
   perm_exchange_alerts_view:              { ar: 'عرض تنبيهات التبادل',   en: 'View exchange alerts' },
   perm_inter_institution_alerts_view:     { ar: 'عرض تنبيهات بين المؤسسات', en: 'View inter-institution alerts' },
+  /* FINAL-POLISH-PERMISSIONS-QR-A: labels mirror permission_keys.label_ar/label_en (migration 038). */
+  perm_inter_institution_alerts_acknowledge: { ar: 'تأكيد الاطلاع على التنبيه بين المؤسسات', en: 'Acknowledge inter-institution alert' },
+  perm_inter_institution_alerts_manage:      { ar: 'إدارة التنبيه بين المؤسسات (بدء/إعادة فتح)', en: 'Manage inter-institution alert (start/reopen)' },
+  perm_inter_institution_alerts_resolve:     { ar: 'إغلاق التنبيه بين المؤسسات', en: 'Resolve inter-institution alert' },
+  perm_inter_institution_alerts_dismiss:     { ar: 'تجاهل التنبيه بين المؤسسات', en: 'Dismiss inter-institution alert' },
   perm_status_contacts_view:              { ar: 'عرض جهات الاتصال',      en: 'View status contacts' },
   perm_status_contacts_manage:            { ar: 'إدارة جهات الاتصال',    en: 'Manage status contacts' },
   perm_deletion_wizard_view:              { ar: 'عرض معالج الحذف',       en: 'View deletion wizard' },

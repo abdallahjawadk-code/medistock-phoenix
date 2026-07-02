@@ -60,6 +60,17 @@ export const PERMISSION_KEYS: readonly PermissionKeyDef[] = [
   { key: 'status_center.resolve',                module: 'status_center',      action: 'resolve',           labelKey: 'perm_status_center_resolve',      dangerous: false },
   { key: 'exchange_alerts.view',                 module: 'exchange_alerts',    action: 'view',              labelKey: 'perm_exchange_alerts_view',      dangerous: false },
   { key: 'inter_institution_alerts.view',        module: 'inter_institution_alerts', action: 'view',        labelKey: 'perm_inter_institution_alerts_view', dangerous: false },
+  // FINAL-POLISH-PERMISSIONS-QR-A: the 4 active alert-lifecycle keys from
+  // migration 038 (dangerous flags mirror permission_keys.is_dangerous there).
+  // The server RPCs (migration 039) require the EXACT key per transition:
+  // acknowledge→.acknowledge, start-processing→.manage, resolve→.resolve,
+  // dismiss→.dismiss, reopen→.manage (super_admin bypasses). The dormant
+  // inter_org_exchange.* keys (migration 040 / paused Service-D) are
+  // deliberately NOT in this catalog.
+  { key: 'inter_institution_alerts.acknowledge', module: 'inter_institution_alerts', action: 'acknowledge', labelKey: 'perm_inter_institution_alerts_acknowledge', dangerous: false },
+  { key: 'inter_institution_alerts.manage',      module: 'inter_institution_alerts', action: 'manage',      labelKey: 'perm_inter_institution_alerts_manage',      dangerous: false },
+  { key: 'inter_institution_alerts.resolve',     module: 'inter_institution_alerts', action: 'resolve',     labelKey: 'perm_inter_institution_alerts_resolve',     dangerous: false },
+  { key: 'inter_institution_alerts.dismiss',     module: 'inter_institution_alerts', action: 'dismiss',     labelKey: 'perm_inter_institution_alerts_dismiss',     dangerous: true  },
   { key: 'status_contacts.view',                 module: 'status_contacts',    action: 'view',              labelKey: 'perm_status_contacts_view',      dangerous: false },
   { key: 'status_contacts.manage',               module: 'status_contacts',    action: 'manage',            labelKey: 'perm_status_contacts_manage',    dangerous: false },
   { key: 'deletion_wizard.view',                 module: 'deletion_wizard',    action: 'view',              labelKey: 'perm_deletion_wizard_view',      dangerous: false },
@@ -106,6 +117,10 @@ const WAREHOUSE_OFFICER_DEFAULTS = [
   // reserved for admin roles).
   'availability.quantity.set', 'availability.quantity.add', 'availability.quantity.subtract',
   'availability.movements.view', 'availability.movements.export', 'availability.movements.print',
+  // FINAL-POLISH-PERMISSIONS-QR-A: mirrors migration 038 role_permission_defaults
+  // — warehouse_officer gets acknowledge/manage/resolve but NOT dismiss.
+  'inter_institution_alerts.acknowledge', 'inter_institution_alerts.manage',
+  'inter_institution_alerts.resolve',
 ];
 
 // Port officer: can update existing availability rows but NOT create new ones
@@ -120,6 +135,8 @@ const PORT_OFFICER_DEFAULTS = [
   'qr.view', 'availability.view', 'availability.update',
   'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
   'availability.quantity.add', 'availability.quantity.subtract', 'availability.movements.view',
+  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — port_officer: acknowledge only.
+  'inter_institution_alerts.acknowledge',
 ];
 
 const MONTHLY_STATUS_OFFICER_DEFAULTS = [
@@ -128,6 +145,8 @@ const MONTHLY_STATUS_OFFICER_DEFAULTS = [
   'exchange_alerts.view', 'inter_institution_alerts.view',
   'status_contacts.view', 'status_contacts.manage',
   'availability.movements.view',
+  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — monthly_status_officer: acknowledge only.
+  'inter_institution_alerts.acknowledge',
 ];
 
 // Institution administrator — org-scoped user manager.
@@ -145,6 +164,9 @@ const INSTITUTION_ADMIN_DEFAULTS = [
   'availability.quantity.set', 'availability.quantity.add', 'availability.quantity.subtract',
   'availability.quantity.correct',
   'availability.movements.view', 'availability.movements.export', 'availability.movements.print',
+  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — institution_admin: all 4 lifecycle keys.
+  'inter_institution_alerts.acknowledge', 'inter_institution_alerts.manage',
+  'inter_institution_alerts.resolve', 'inter_institution_alerts.dismiss',
 ];
 
 // Legacy org-admin (hospital_admin) — broad org scope, but NOT platform-level.
@@ -163,6 +185,9 @@ const LEGACY_ADMIN_DEFAULTS = [
   'availability.quantity.set', 'availability.quantity.add', 'availability.quantity.subtract',
   'availability.quantity.correct',
   'availability.movements.view', 'availability.movements.export', 'availability.movements.print',
+  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — hospital_admin: all 4 lifecycle keys.
+  'inter_institution_alerts.acknowledge', 'inter_institution_alerts.manage',
+  'inter_institution_alerts.resolve', 'inter_institution_alerts.dismiss',
 ];
 
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {

@@ -155,6 +155,8 @@ describe('Permission catalog', () => {
     'availability.movements.print', // AVAILABILITY-QUANTITY-MOVEMENT-DB-A
     'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
     'exchange_alerts.view', 'inter_institution_alerts.view', 'status_contacts.view', 'status_contacts.manage',
+    'inter_institution_alerts.acknowledge', 'inter_institution_alerts.manage',
+    'inter_institution_alerts.resolve', 'inter_institution_alerts.dismiss', // FINAL-POLISH-PERMISSIONS-QR-A (migration 038)
     'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port', 'deletion_wizard.archive_organization',
     'users.recycle',
   ];
@@ -163,10 +165,16 @@ describe('Permission catalog', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 44 (37 previous + 7 from AVAILABILITY-QUANTITY-MOVEMENT-DB-A)', () => {
-    expect(REQUIRED).toHaveLength(44);
-    expect(PERMISSION_KEYS).toHaveLength(44);
-    expect(PERMISSION_KEY_SET.size).toBe(44);
+  it('canonical permission count is exactly 48 (44 previous + 4 alert-lifecycle keys from FINAL-POLISH-PERMISSIONS-QR-A)', () => {
+    expect(REQUIRED).toHaveLength(48);
+    expect(PERMISSION_KEYS).toHaveLength(48);
+    expect(PERMISSION_KEY_SET.size).toBe(48);
+  });
+
+  it('does NOT contain any dormant inter_org_exchange keys (Service-D paused)', () => {
+    for (const key of PERMISSION_KEY_SET) {
+      expect(key.startsWith('inter_org_exchange')).toBe(false);
+    }
   });
 
   it('rejects unknown permission keys', () => {
@@ -260,8 +268,8 @@ describe('Role default permissions', () => {
     expect(d.has('deletion_wizard.archive_port')).toBe(false);
   });
 
-  it('institution_admin default count is exactly 22 (15 + 7 quantity/movement keys)', () => {
-    expect(roleDefaults('institution_admin').size).toBe(22);
+  it('institution_admin default count is exactly 26 (22 + 4 alert-lifecycle keys)', () => {
+    expect(roleDefaults('institution_admin').size).toBe(26);
   });
 
   it('legacy roles inherit their mapped official defaults', () => {
