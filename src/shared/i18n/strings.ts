@@ -104,7 +104,7 @@ export const T: Dict = {
   reports_desc:   { ar: 'تقارير وسجلات التدقيق',              en: 'Reports and audit logs' },
 
   /* ── Dashboard (extended) ── */
-  d_central:          { ar: 'لوحة القيادة المركزية',              en: 'Central Dashboard' },
+  d_central:          { ar: 'اللوحة المركزية',                      en: 'Central Dashboard' },
   d_warehouses:       { ar: 'المذاخر',                           en: 'Warehouses' },
   d_ports:            { ar: 'المنافذ',                           en: 'Ports' },
   d_qr_active:        { ar: 'رموز QR النشطة',                   en: 'Active QR Codes' },
