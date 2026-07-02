@@ -5,7 +5,6 @@ import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PublicQrScreen } from '@/features/qr/PublicQrScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
-import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 import { EditorScreen } from '@/features/editor/EditorScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
 import { MeshScreen } from '@/features/mesh/MeshScreen';
@@ -29,7 +28,10 @@ function publicQrId(): string | null {
 
 function AppInner() {
   const { authReady, session, signOut, passwordRecovery } = useApp();
-  const [screen, setScreen] = useState(2);
+  // PRODUCTION-READINESS-CLEANUP-A: the central dashboard (screen 2) was
+  // removed from navigation and no longer renders; Status Center (screen 12)
+  // is the real-data landing screen.
+  const [screen, setScreen] = useState(12);
 
   // ── Anon public QR scan view — bypasses auth entirely ──
   const qid = publicQrId();
@@ -57,7 +59,6 @@ function AppInner() {
 
   const screenContent = () => {
     switch (screen) {
-      case 2:  return <DashboardScreen onNavigate={setScreen} />;
       case 3:  return <EditorScreen />;
       case 4:  return <RegistryScreen />;
       case 5:  return <MeshScreen onNavigate={setScreen} />;
@@ -72,7 +73,9 @@ function AppInner() {
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;
       case 16: return <StatusEditorScreen />;
-      default: return <DashboardScreen onNavigate={setScreen} />;
+      // Central dashboard (former screen 2) and any unknown screen number
+      // safely redirect to Status Center — the real-data landing screen.
+      default: return <StatusCenterScreen onNavigate={setScreen} />;
     }
   };
 
@@ -80,7 +83,7 @@ function AppInner() {
     <PhoenixAppShell
       currentScreen={screen}
       onNavigate={setScreen}
-      onLogout={() => { void signOut(); setScreen(2); }}
+      onLogout={() => { void signOut(); setScreen(12); }}
     >
       {screenContent()}
     </PhoenixAppShell>

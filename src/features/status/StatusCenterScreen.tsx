@@ -101,6 +101,17 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * PRODUCTION-READINESS-CLEANUP-A: CSV injection protection — a cell value
+ * beginning with =, +, -, or @ can be interpreted as a formula by
+ * Excel/Sheets when the file is opened. Prefixing with a leading apostrophe
+ * (the standard mitigation) forces spreadsheet apps to treat it as plain
+ * text while keeping the value itself unchanged.
+ */
+function csvSafeCell(v: string): string {
+  return /^[=+\-@]/.test(v) ? `'${v}` : v;
+}
+
 export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
   const { lang, activeOrgId, myPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
@@ -217,6 +228,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 10.5px; }
   th, td { border: 1px solid #999; padding: 4px 6px; text-align: ${lang === 'ar' ? 'right' : 'left'}; white-space: nowrap; }
   th { background: #eee; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
 </style></head><body>
   <h1>${escHtml(t('sc_report_title', lang))}</h1>
   <div class="brand">MediStock-Babil / MASAR Health Network</div>
@@ -241,9 +254,10 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
   function exportCsv() {
     const bom = '﻿';
+    const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
     const lines = [
-      columns.map(c => `"${c.label.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(r => columns.map(c => `"${String(c.value(r)).replace(/"/g, '""')}"`).join(',')),
+      columns.map(c => cell(c.label)).join(','),
+      ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
     ];
     const csv = bom + lines.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -251,7 +265,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     const safeOrg = orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `live-availability-report${safeOrg ? '_' + safeOrg : ''}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `medistock-status${safeOrg ? '-' + safeOrg : ''}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

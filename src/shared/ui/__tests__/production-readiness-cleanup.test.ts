@@ -1,0 +1,173 @@
+/**
+ * PRODUCTION-READINESS-CLEANUP-A
+ * Run: npm test -- --run
+ *
+ * Static source-code tests covering:
+ *  - the central dashboard (screen 2 / DashboardScreen) is removed from all
+ *    navigation surfaces and its route safely redirects to Status Center;
+ *  - the permanent "Demo Data" badge no longer appears in the app topbar;
+ *  - the real, reachable Reports screen no longer mislabels its data as demo;
+ *  - CSV export includes UTF-8 BOM, injection-safe cell escaping, and a
+ *    medistock-status-prefixed filename;
+ *  - no migrations/package/lockfile changes, Service-D stash intact,
+ *    premium-preview.html untouched.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { execSync } from 'child_process';
+
+const SRC = join(__dirname, '../../../');
+const ROOT = join(__dirname, '../../../../');
+const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
+
+const app = readSrc('app/App.tsx');
+const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
+const drawer = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
+const bottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
+const shell = readSrc('shared/ui/PhoenixAppShell.tsx');
+const topbar = readSrc('shared/ui/PhoenixTopbar.tsx');
+const strings = readSrc('shared/i18n/strings.ts');
+const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
+
+describe('Central dashboard removed from navigation', () => {
+  it('App.tsx no longer imports or renders DashboardScreen', () => {
+    expect(app).not.toContain('DashboardScreen');
+  });
+
+  it('App.tsx has no case 2 (former central dashboard screen number)', () => {
+    expect(app).not.toMatch(/case 2:/);
+  });
+
+  it('unknown/removed screen numbers (including the former screen 2) redirect to Status Center', () => {
+    const defaultIdx = app.indexOf('default:');
+    const around = app.slice(defaultIdx, defaultIdx + 80);
+    expect(around).toContain('StatusCenterScreen');
+  });
+
+  it('the initial screen and post-logout screen are Status Center (12), not the removed dashboard (2)', () => {
+    expect(app).toContain('useState(12)');
+    expect(app).toContain('setScreen(12)');
+    expect(app).not.toContain('useState(2)');
+    expect(app).not.toContain('setScreen(2)');
+  });
+
+  it('sidebar NAV_ITEMS no longer contains nav_dash', () => {
+    const block = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
+    expect(block).not.toContain("'nav_dash'");
+  });
+
+  it('mobile drawer ALL_NAV no longer contains nav_dash', () => {
+    const block = drawer.slice(drawer.indexOf('const ALL_NAV'), drawer.indexOf('const SECONDARY_NAV'));
+    expect(block).not.toContain("'nav_dash'");
+  });
+
+  it('mobile bottom nav no longer contains nav_dash (replaced by nav_status_center)', () => {
+    const block = bottomNav.slice(bottomNav.indexOf('const BOTTOM_NAV'), bottomNav.indexOf('interface Props'));
+    expect(block).not.toContain("'nav_dash'");
+    expect(block).toContain("'nav_status_center'");
+  });
+
+  it('PhoenixAppShell screen-title map no longer maps screen 2 to nav_dash', () => {
+    const block = shell.slice(shell.indexOf('SCREEN_TITLE_KEYS'), shell.indexOf('interface Props'));
+    expect(block).not.toMatch(/(?<![0-9])2:/);
+    expect(block).not.toContain("'nav_dash'");
+  });
+
+  it('PhoenixAppShell falls back to nav_status_center for unmapped screens', () => {
+    expect(shell).toContain("?? 'nav_status_center'");
+  });
+});
+
+describe('No permanent fake "Demo Data" badge shown to real users', () => {
+  it('PhoenixTopbar (rendered on every authenticated screen) no longer shows a demoData badge', () => {
+    expect(topbar).not.toContain('demoData');
+    expect(topbar).not.toContain('Demo Data');
+  });
+
+  it('the real, nav-reachable Reports screen subtitle no longer claims demo data', () => {
+    const line = strings.split('\n').find(l => l.trim().startsWith('reports_sub:'));
+    expect(line).toBeDefined();
+    expect(line).not.toContain('Demo data');
+    expect(line).not.toContain('بيانات تجريبية');
+  });
+});
+
+describe('CSV export: Arabic-safe, injection-safe, clean filename', () => {
+  it('includes a UTF-8 BOM', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+    expect(fn).toContain('﻿');
+    expect(fn).toContain('text/csv;charset=utf-8');
+  });
+
+  it('escapes cells that could be interpreted as spreadsheet formulas (CSV injection protection)', () => {
+    expect(statusCenter).toContain('function csvSafeCell');
+    const guardFn = statusCenter.slice(statusCenter.indexOf('function csvSafeCell'), statusCenter.indexOf('function csvSafeCell') + 300);
+    expect(guardFn).toContain('/^[=+\\-@]/');
+    const exportFn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+    expect(exportFn).toContain('csvSafeCell');
+  });
+
+  it('uses a medistock-status-prefixed, date-stamped filename', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+    expect(fn).toContain('medistock-status');
+    expect(fn).toContain("toISOString().slice(0, 10)");
+  });
+
+  it('does not export raw ids, alert_key, exchange_request_id, or supply_type technical keys', () => {
+    const columnsBlock = statusCenter.slice(statusCenter.indexOf('const columns:'), statusCenter.indexOf('function buildReportHtml'));
+    expect(columnsBlock).not.toMatch(/key: 'id'/);
+    expect(columnsBlock).not.toContain('alert_key');
+    expect(columnsBlock).not.toContain('exchange_request_id');
+  });
+});
+
+describe('Print report: professional header, RTL-safe, no technical fields', () => {
+  it('print HTML includes app name, org, generated date, and active filters', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function buildReportHtml'), statusCenter.indexOf('function printReport'));
+    expect(fn).toContain('MediStock-Babil');
+    expect(fn).toContain('sc_generated_at');
+    expect(fn).toContain('sc_selected_filters');
+    expect(fn).toContain('orgName');
+  });
+
+  it('print HTML sets RTL/LTR direction from the active language', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function buildReportHtml'), statusCenter.indexOf('function printReport'));
+    expect(fn).toMatch(/dir="\$\{dir\}"/);
+  });
+
+  it('print HTML escapes all interpolated content', () => {
+    expect(statusCenter).toContain('function escHtml');
+  });
+
+  it('does not print raw ids/alert_key/exchange_request_id/supply_type technical keys', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function buildReportHtml'), statusCenter.indexOf('function printReport'));
+    expect(fn).not.toContain('alert_key');
+    expect(fn).not.toContain('exchange_request_id');
+  });
+});
+
+describe('PRODUCTION-READINESS-CLEANUP-A: safety guards', () => {
+  it('stash@{0} (paused Service-D work) was not popped or applied', () => {
+    const stashList = execSync('git stash list', { cwd: ROOT, encoding: 'utf8' });
+    expect(stashList).toContain('paused Service-D inter-org exchange service work');
+  });
+
+  it('no migrations touched, no package/lockfile changes', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- supabase/migrations/ package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('premium-preview.html remains untouched', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    if (status.trim()) {
+      expect(status.trim().startsWith('??')).toBe(true);
+    }
+  });
+});

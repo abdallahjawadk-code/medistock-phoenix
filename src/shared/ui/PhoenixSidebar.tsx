@@ -18,8 +18,10 @@ interface NavItem {
 // page (nav_intake, screen 8) hidden — see SECONDARY_ITEMS below, which no
 // longer lists it. Its route (screen 8 — IntakeFrozenScreen) remains fully
 // wired in App.tsx; only the sidebar entry point was removed.
+// PRODUCTION-READINESS-CLEANUP-A: nav_dash (screen 2, the central dashboard)
+// was removed here — App.tsx now redirects screen 2 to Status Center
+// (screen 12, nav_status_center below), the real-data landing screen.
 const NAV_ITEMS: NavItem[] = [
-  { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },

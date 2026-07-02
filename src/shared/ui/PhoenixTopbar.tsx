@@ -46,14 +46,6 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
       </h1>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
-        <span style={{
-          padding: '3px 8px', borderRadius: 'var(--rpill)',
-          background: 'var(--warn2)', color: 'var(--warn)',
-          fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap',
-        }}>
-          ⚠ {t('demoData', lang)}
-        </span>
-
         <button
           onClick={toggleLang}
           style={{

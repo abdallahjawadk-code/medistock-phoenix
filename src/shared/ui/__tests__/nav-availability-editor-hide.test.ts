@@ -56,7 +56,7 @@ describe('Desktop sidebar: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('NAV_ITEMS still contains the other required-visible pages', () => {
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -92,7 +92,7 @@ describe('Mobile drawer: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('ALL_NAV still contains the other required-visible pages', () => {
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });
@@ -115,8 +115,8 @@ describe('Mobile bottom nav: nav_editor visible', () => {
     expect(bottomNavBlock).not.toContain("'nav_intake'");
   });
 
-  it('BOTTOM_NAV still contains nav_dash, nav_institutions, and nav_inter_alerts', () => {
-    ['nav_dash', 'nav_institutions', 'nav_inter_alerts']
+  it('BOTTOM_NAV still contains nav_status_center, nav_institutions, and nav_inter_alerts', () => {
+    ['nav_status_center', 'nav_institutions', 'nav_inter_alerts']
       .forEach(key => expect(bottomNavBlock).toContain(`'${key}'`));
   });
 });

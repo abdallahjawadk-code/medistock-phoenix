@@ -318,7 +318,7 @@ export const T: Dict = {
   use_editor_instead:  { ar: 'استخدم محرر التوفر المضبوط بدلاً من ذلك', en: 'Use the controlled Availability Editor instead' },
 
   /* ── Reports ── */
-  reports_sub:    { ar: 'بيانات تجريبية للقراءة فقط',         en: 'Demo data · Read only' },
+  reports_sub:    { ar: 'للقراءة فقط',                        en: 'Read only' },
   filter:         { ar: 'تصفية',                              en: 'Filter' },
   export_csv:     { ar: 'تصدير CSV',                          en: 'Export CSV' },
   tab_summary:    { ar: 'الملخص',                             en: 'Summary' },

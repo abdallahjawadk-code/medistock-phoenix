@@ -43,12 +43,12 @@ describe('Mobile bottom nav: "More / المزيد" item removed', () => {
     expect(bottomNav).not.toMatch(/aria-label="More"/);
   });
 
-  it('BOTTOM_NAV array itself is untouched (still 4 core pages)', () => {
+  it('BOTTOM_NAV array itself still has 4 core pages (nav_status_center replaced the removed central dashboard)', () => {
     const bottomNavBlock = bottomNav.slice(
       bottomNav.indexOf('const BOTTOM_NAV'),
       bottomNav.indexOf('interface Props'),
     );
-    ['nav_dash', 'nav_editor', 'nav_institutions', 'nav_inter_alerts']
+    ['nav_status_center', 'nav_editor', 'nav_institutions', 'nav_inter_alerts']
       .forEach(key => expect(bottomNavBlock).toContain(`'${key}'`));
   });
 
@@ -109,7 +109,7 @@ describe('Mobile drawer mirrors the desktop sidebar page set', () => {
   const secondaryItemsBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'));
 
   it('drawer ALL_NAV contains every primary desktop NAV_ITEMS label key', () => {
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor', 'nav_reports']
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor', 'nav_reports']
       .forEach(key => {
         expect(navItemsBlock).toContain(`'${key}'`);
         expect(allNavBlock).toContain(`'${key}'`);

@@ -7,8 +7,11 @@ import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 
+// PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
+// longer has an entry — App.tsx redirects it to Status Center, so the
+// fallback below (nav_status_center) already covers it correctly.
 const SCREEN_TITLE_KEYS: Record<number, string> = {
-  2: 'nav_dash', 3: 'nav_editor', 4: 'nav_reg', 5: 'nav_mesh',
+  3: 'nav_editor', 4: 'nav_reg', 5: 'nav_mesh',
   6: 'nav_qr', 7: 'nav_health', 8: 'nav_intake', 9: 'nav_reports', 10: 'nav_mobile',
   11: 'nav_institutions', 12: 'nav_status_center', 13: 'nav_inter_alerts',
   14: 'nav_users',
@@ -34,7 +37,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_dash', lang);
+  const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_status_center', lang);
 
   return (
     <div dir={dir} className="premium-shell" style={{

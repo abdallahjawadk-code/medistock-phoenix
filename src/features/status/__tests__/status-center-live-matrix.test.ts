@@ -93,11 +93,19 @@ describe('StatusCenter: print and export', () => {
     expect(around).toContain('printReport');
   });
 
-  it('CSV export includes a UTF-8 BOM for Arabic', () => {
+  it('CSV export includes a UTF-8 BOM for Arabic and a medistock-status filename', () => {
     const fn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function exportCsv') + 900);
     expect(fn).toContain('﻿');
     expect(fn).toContain('text/csv;charset=utf-8');
-    expect(fn).toContain('live-availability-report');
+    expect(fn).toContain('medistock-status');
+  });
+
+  it('CSV export escapes cells that could be interpreted as spreadsheet formulas', () => {
+    expect(screen).toContain('function csvSafeCell');
+    const fn = screen.slice(screen.indexOf('function csvSafeCell'), screen.indexOf('function csvSafeCell') + 300);
+    expect(fn).toContain('/^[=+\\-@]/');
+    const exportFn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function exportCsv') + 900);
+    expect(exportFn).toContain('csvSafeCell');
   });
 
   it('print html escapes content to prevent injection', () => {

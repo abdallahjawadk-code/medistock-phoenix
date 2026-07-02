@@ -4,8 +4,10 @@ import { t } from '@/shared/i18n/strings';
 // RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A: nav_editor was previously hidden
 // here by mistake and is now restored. nav_intake was never part of the
 // bottom nav, so there is nothing to hide here for that page.
+// PRODUCTION-READINESS-CLEANUP-A: nav_dash (the central dashboard) was
+// removed; nav_status_center takes its slot as the real-data landing screen.
 const BOTTOM_NAV = [
-  { screen: 2, icon: '📊', labelKey: 'nav_dash' },
+  { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 3, icon: '✏️', labelKey: 'nav_editor' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },

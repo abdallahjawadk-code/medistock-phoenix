@@ -45,7 +45,7 @@ describe('Desktop sidebar hides legacy pages', () => {
   it('NAV_ITEMS still contains the core unaffected pages', () => {
     // nav_editor is restored (RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A) — see
     // nav-availability-editor-hide.test.ts for the full corrected-intent tests.
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -84,7 +84,7 @@ describe('Mobile drawer hides legacy pages', () => {
     // nav_editor is restored (RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A).
     // nav_intake is intentionally excluded here — it is the page the owner
     // actually wants hidden; see nav-availability-editor-hide.test.ts.
-    ['nav_dash', 'nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });

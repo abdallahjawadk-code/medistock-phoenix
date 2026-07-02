@@ -11,7 +11,6 @@ import { t } from '@/shared/i18n/strings';
 // below. Its route (screen 8 — IntakeFrozenScreen) remains fully wired in
 // App.tsx; only the drawer entry point was removed.
 const ALL_NAV: { screen: number; icon: string; labelKey: string; frozen?: boolean }[] = [
-  { screen: 2,  icon: '📊', labelKey: 'nav_dash' },
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
