@@ -160,7 +160,7 @@ export function EditorScreen() {
       {activeOrgId && canViewAvailability && (
         <>
           <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
               {/* Institution — locked display for institution-scoped users,
                   dropdown only for super_admin */}
               <div style={{ gridColumn: '1/-1' }}>

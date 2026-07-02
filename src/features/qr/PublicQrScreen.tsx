@@ -122,7 +122,7 @@ export function PublicQrScreen({ publicId }: Props) {
           <>
             {/* Org/point header */}
             {orgName && (
-              <div style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px' }}>
+              <div style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px', boxShadow: 'var(--sh-sm)' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>{orgName}</div>
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
@@ -169,7 +169,7 @@ export function PublicQrScreen({ publicId }: Props) {
                 const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
                 const bucketBadge = getExpBucketBadge(item.expiry_bucket, lang);
                 return (
-                  <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: `1px solid ${bucketBadge ? bucketBadge.color : 'var(--brd)'}` }}>
+                  <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: `1px solid ${bucketBadge ? bucketBadge.color : 'var(--brd)'}`, boxShadow: 'var(--sh-xs)', transition: 'box-shadow 150ms' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{label}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
