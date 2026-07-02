@@ -96,6 +96,43 @@ describe('Public QR page exposes only safe display fields', () => {
   });
 });
 
+describe('AVAILABILITY-ALERTS-QR-POLISH-D: public QR status-summary chips', () => {
+  it('computes summary counts from rawItems only (no new fetch/field)', () => {
+    expect(publicQr).toContain('summaryCounts');
+    expect(publicQr).toMatch(/for \(const item of rawItems\)/);
+  });
+
+  it('only uses conditions already present in the existing CONDITION_VARIANT/CONDITION_LABEL set', () => {
+    expect(publicQr).toContain("const SUMMARY_CONDITIONS = ['available', 'surplus', 'low_stock', 'near_expiry', 'missing', 'expired']");
+  });
+
+  it('summary chips are display-only — no buttons, no exchange wiring', () => {
+    const summaryBlock = publicQr.slice(publicQr.indexOf('Status summary'), publicQr.indexOf('{/* Search */}'));
+    expect(summaryBlock).not.toMatch(/<button/);
+    expect(summaryBlock).not.toContain('inter_org_exchange');
+    expect(summaryBlock).not.toContain('createInterOrgExchangeRequest');
+  });
+
+  it('summary does not expose ids/uuid/alert_key/exchange fields', () => {
+    const summaryBlock = publicQr.slice(publicQr.indexOf('Status summary'), publicQr.indexOf('{/* Search */}'));
+    expect(summaryBlock).not.toMatch(UUID_LITERAL_RE);
+    expect(summaryBlock).not.toMatch(/\bitem\.id\b/);
+    expect(summaryBlock).not.toContain('alert_key');
+    expect(summaryBlock).not.toContain('inter_org_exchange');
+  });
+
+  it('still does not reference supply_type anywhere in the file', () => {
+    expect(publicQr).not.toContain('supply_type');
+  });
+
+  it('has no forbidden wording near the summary block', () => {
+    const summaryBlock = publicQr.slice(publicQr.indexOf('Status summary'), publicQr.indexOf('{/* Search */}'));
+    expect(summaryBlock.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
+    expect(summaryBlock).not.toContain('اقتراح');
+    expect(summaryBlock).not.toContain('فرصة');
+  });
+});
+
 describe('Material editor: responsive layout polish', () => {
   it('uses an auto-fit responsive grid instead of a fixed 2-column grid (mobile-friendly)', () => {
     expect(editorScreen).toContain("gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))'");

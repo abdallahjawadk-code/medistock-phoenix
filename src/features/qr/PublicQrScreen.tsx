@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -7,6 +7,17 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
+
+/**
+ * AVAILABILITY-ALERTS-QR-POLISH-D
+ *
+ * Status-summary chips near the top of the page: counts per `item.condition`
+ * value, computed entirely from the already-loaded `rawItems` (the same data
+ * the item list below renders) — no new fetch, no new field. Only conditions
+ * already present in `CONDITION_LABEL`/`CONDITION_VARIANT` (the same set the
+ * per-item badges already use) are ever shown, and only when at least one
+ * loaded item actually has that condition.
+ */
 
 interface Props { publicId: string; }
 
@@ -38,6 +49,17 @@ const CONDITION_LABEL: Record<string, { ar: string; en: string }> = {
 function conditionLabel(cond: string, lang: 'ar' | 'en'): string {
   return CONDITION_LABEL[cond]?.[lang] ?? cond;
 }
+
+// Display order for the summary chips — mirrors the existing condition set
+// (CONDITION_VARIANT/CONDITION_LABEL) already used for per-item badges below.
+const SUMMARY_CONDITIONS = ['available', 'surplus', 'low_stock', 'near_expiry', 'missing', 'expired'] as const;
+
+const VARIANT_COLOR: Record<'ok' | 'warn' | 'err' | 'neutral', { color: string; bg: string }> = {
+  ok:      { color: 'var(--ok)',   bg: 'var(--ok2)' },
+  warn:    { color: 'var(--warn)', bg: 'var(--warn2)' },
+  err:     { color: 'var(--err)',  bg: 'var(--err2)' },
+  neutral: { color: 'var(--t2)',   bg: 'var(--s2)' },
+};
 
 function getExpBucketBadge(bucket: string | undefined, lang: 'ar' | 'en'): { label: string; color: string; bg: string } | null {
   if (!bucket) return null;
@@ -76,6 +98,19 @@ export function PublicQrScreen({ publicId }: Props) {
     (payload?.availability as PublicItem[] | undefined) ??
     (payload?.points as PublicItem[] | undefined) ??
     [];
+
+  // Status-summary counts derived entirely from the already-loaded rawItems
+  // — no new fetch, only conditions already present in the loaded items.
+  const summaryCounts = useMemo(() => {
+    const counts: Partial<Record<string, number>> = {};
+    for (const item of rawItems) {
+      if (!item.condition) continue;
+      counts[item.condition] = (counts[item.condition] ?? 0) + 1;
+    }
+    return SUMMARY_CONDITIONS
+      .filter(c => (counts[c] ?? 0) > 0)
+      .map(c => ({ condition: c, count: counts[c]! }));
+  }, [rawItems]);
 
   const filteredItems = search
     ? rawItems.filter(item => {
@@ -132,6 +167,24 @@ export function PublicQrScreen({ publicId }: Props) {
                     {t('public_items_count', lang)}: {rawItems.length}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Status summary — counts computed from the already-loaded rawItems only */}
+            {summaryCounts.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                {summaryCounts.map(({ condition, count }) => {
+                  const variant = CONDITION_VARIANT[condition] ?? 'neutral';
+                  const { color, bg } = VARIANT_COLOR[variant];
+                  return (
+                    <span
+                      key={condition}
+                      style={{ fontSize: '10.5px', fontWeight: 700, color, background: bg, border: `1px solid ${color}`, borderRadius: 'var(--rpill)', padding: '3px 10px' }}
+                    >
+                      {conditionLabel(condition, lang)}: {count}
+                    </span>
+                  );
+                })}
               </div>
             )}
 
