@@ -18,6 +18,8 @@ const strings = readSrc('shared/i18n/strings.ts');
 const dashboardScreen = readSrc('features/dashboard/DashboardScreen.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 
+const UUID_LITERAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
 describe('InterInstitutionAlertsScreen: uses the lifecycle RPC service', () => {
   it('imports getLiveInterInstitutionAlertsWithState from inter-org-alert-lifecycle.service', () => {
     expect(screen).toContain("from './inter-org-alert-lifecycle.service'");
@@ -151,7 +153,7 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: smart summary + grouping (read-
     expect(screen).toContain('lia_group_label');
     expect(screen).toContain('lia_group_material');
     expect(screen).toContain('lia_group_institution');
-    expect(screen).toMatch(/for \(const a of filtered\)/);
+    expect(screen).toMatch(/for \(const a of sortedFiltered\)/);
   });
 
   it('organization/material ids used for grouping are internal Map keys only, never rendered as visible text', () => {
@@ -218,6 +220,81 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: no exchange workflow, no Servic
 
   it('filters/grouping are read-only display controls only — no onClick side effects that call RPCs', () => {
     expect(screen).not.toMatch(/onChange={e => setGroupMode[^}]*}\s*>\s*[^<]*supabase/);
+  });
+});
+
+describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-B: priority sort + critical lane (read-only display only)', () => {
+  it('has a read-only sort-by toggle computed from the already-filtered list, no new fetch', () => {
+    expect(screen).toContain('sortMode');
+    expect(screen).toContain("useState<SortMode>('default')");
+    expect(screen).toContain('lia_sort_label');
+    expect(screen).toContain('lia_sort_severity');
+    expect(screen).toContain('lia_sort_missing');
+    expect(screen).toContain('lia_sort_lowstock');
+    expect(screen).toContain('lia_sort_nearexpiry');
+    expect(screen).toContain('lia_sort_newest');
+  });
+
+  it('sortAlerts is a pure function over already-fetched fields only (severity/targetStatus/alertType/computedAt)', () => {
+    const fnStart = screen.indexOf('function sortAlerts');
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n}', fnStart) + 2);
+    expect(fnBody).toContain('a.severity');
+    expect(fnBody).toContain('a.targetStatus');
+    expect(fnBody).toContain('a.alertType');
+    expect(fnBody).toContain('a.computedAt');
+    expect(fnBody).not.toMatch(/supabase\.|\.rpc\(|await /);
+  });
+
+  it('does not invent new statuses — sort options reuse missing/low_stock/near_expiry_to_shortage already used elsewhere in the screen', () => {
+    expect(screen).toMatch(/a\.targetStatus === 'missing'/);
+    expect(screen).toMatch(/a\.targetStatus === 'low_stock'/);
+    expect(screen).toMatch(/a\.alertType === 'near_expiry_to_shortage'/);
+  });
+
+  it('has a read-only critical lane limited to a small number of already-filtered high-severity alerts', () => {
+    expect(screen).toContain('criticalAlerts');
+    expect(screen).toContain('lia_critical_lane_title');
+    expect(screen).toMatch(/\.slice\(0, isMobile \? 3 : 5\)/);
+    const fnStart = screen.indexOf('const criticalAlerts = useMemo');
+    const fnBody = screen.slice(fnStart, fnStart + 500);
+    expect(fnBody).toContain('filtered');
+    expect(fnBody).not.toMatch(/supabase\.|\.rpc\(|await /);
+  });
+
+  it('critical lane cards are read-only — no action buttons, no exchange wiring', () => {
+    const fnStart = screen.indexOf('function CriticalAlertCard');
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n}\n', fnStart) + 3);
+    expect(fnBody).not.toMatch(/<button|ActionButton/);
+    expect(fnBody).not.toContain('onAction');
+    expect(fnBody).not.toContain('inter_org_exchange');
+  });
+
+  it('critical lane cards do not expose ids/uuid/alert_key/exchange fields, only names', () => {
+    const fnStart = screen.indexOf('function CriticalAlertCard');
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n}\n', fnStart) + 3);
+    expect(fnBody).not.toMatch(UUID_LITERAL_RE);
+    expect(fnBody).not.toMatch(/>\{a\.targetOrganizationId\}</);
+    expect(fnBody).not.toContain('alert_key');
+    expect(fnBody).not.toContain('supply_type');
+    expect(fnBody).not.toContain('exchange_request_id');
+  });
+
+  it('has a visible-alerts count label derived from the already-filtered/sorted list', () => {
+    expect(screen).toContain('lia_visible_alerts_label');
+    expect(screen).toMatch(/\{sortedFiltered\.length\} \{t\('lia_visible_alerts_label', lang\)\}/);
+  });
+
+  it('no forbidden wording near the sort/critical-lane additions', () => {
+    const liaLines = strings.split('\n').filter(l => /^\s*lia_(sort_|critical_lane_|visible_alerts_)/.test(l));
+    const joined = liaLines.join('\n');
+    expect(joined.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
+    expect(joined).not.toContain('اقتراح');
+    expect(joined).not.toContain('فرصة');
+    expect(joined).not.toContain('توصية');
+    expect(joined).not.toContain('طلب تبادل');
+    expect(joined).not.toContain('إنشاء طلب');
+    expect(joined).not.toContain('موافقة');
+    expect(joined).not.toContain('رفض');
   });
 });
 

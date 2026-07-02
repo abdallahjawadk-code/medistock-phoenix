@@ -40,6 +40,15 @@ import {
  * filtered `filtered` array into local groups for rendering. Distribution
  * point/organization ids are used only as internal Map keys — never
  * rendered — and no lifecycle/exchange behavior is touched by any of this.
+ *
+ * INTER-INSTITUTION-ALERTS-SMART-VIEW-B: adds a read-only "sort by" display
+ * toggle (default / severity / missing-first / low-stock-first /
+ * near-expiry-first / newest) that only reorders the already-filtered
+ * `filtered` array (via sortAlerts, a pure function over existing fields —
+ * severity, targetStatus, alertType, computedAt), and a read-only "critical
+ * lane" showing up to a handful of the highest-severity missing/low-stock
+ * alerts already present in `filtered`. Both are pure display reorderings —
+ * no new fetch, no new RPC, no action buttons, no exchange-workflow wording.
  */
 
 const ALERT_TYPE_LABEL_KEY: Record<LiveAlertType, string> = {
@@ -99,6 +108,32 @@ function materialGroupLabel(a: LiveInterInstitutionAlertWithState): string {
   return [a.scientificName, a.concentration, a.dosageForm].filter(Boolean).join(' · ');
 }
 
+type SortMode = 'default' | 'severity' | 'missing' | 'lowStock' | 'nearExpiry' | 'newest';
+
+/** Display-only reordering of an already-loaded alert array — pure, no I/O. */
+function sortAlerts(list: LiveInterInstitutionAlertWithState[], mode: SortMode): LiveInterInstitutionAlertWithState[] {
+  if (mode === 'default') return list;
+  const arr = [...list];
+  switch (mode) {
+    case 'severity':
+      arr.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'high' ? -1 : 1));
+      break;
+    case 'missing':
+      arr.sort((a, b) => (a.targetStatus === b.targetStatus ? 0 : a.targetStatus === 'missing' ? -1 : 1));
+      break;
+    case 'lowStock':
+      arr.sort((a, b) => (a.targetStatus === b.targetStatus ? 0 : a.targetStatus === 'low_stock' ? -1 : 1));
+      break;
+    case 'nearExpiry':
+      arr.sort((a, b) => (a.alertType === b.alertType ? 0 : a.alertType === 'near_expiry_to_shortage' ? -1 : 1));
+      break;
+    case 'newest':
+      arr.sort((a, b) => new Date(b.computedAt).getTime() - new Date(a.computedAt).getTime());
+      break;
+  }
+  return arr;
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function InterInstitutionAlertsScreen() {
@@ -110,6 +145,7 @@ export function InterInstitutionAlertsScreen() {
   const [instFilter, setInstFilter] = useState('');
   const [search, setSearch] = useState('');
   const [groupMode, setGroupMode] = useState<GroupMode>('none');
+  const [sortMode, setSortMode] = useState<SortMode>('default');
 
   const result = useAsync(() => getLiveInterInstitutionAlertsWithState(200), []);
   const [action, setAction] = useState<{ alert: LiveInterInstitutionAlertWithState; to: AlertLifecycleStatus } | null>(null);
@@ -153,13 +189,29 @@ export function InterInstitutionAlertsScreen() {
     return true;
   }), [allAlerts, severityFilter, typeFilter, instFilter, search]);
 
-  // Display-only regrouping of the already-filtered alerts — no new data
-  // source. Organization/material keys are internal Map keys only, never
-  // rendered; only their display labels (org name / material name) are shown.
+  // Display-only reordering of the already-filtered alerts — no new data
+  // source, pure sort over existing fields (severity/targetStatus/alertType/
+  // computedAt).
+  const sortedFiltered = useMemo(() => sortAlerts(filtered, sortMode), [filtered, sortMode]);
+
+  // Display-only "critical lane" — the handful of highest-severity
+  // missing/low-stock alerts already present in `filtered`. No new data
+  // source, no action, just a highlighted display subset.
+  const criticalAlerts = useMemo(() => {
+    return filtered
+      .filter(a => a.severity === 'high' && (a.targetStatus === 'missing' || a.targetStatus === 'low_stock'))
+      .sort((a, b) => (a.targetStatus === b.targetStatus ? 0 : a.targetStatus === 'missing' ? -1 : 1))
+      .slice(0, isMobile ? 3 : 5);
+  }, [filtered, isMobile]);
+
+  // Display-only regrouping of the already-sorted, already-filtered alerts —
+  // no new data source. Organization/material keys are internal Map keys
+  // only, never rendered; only their display labels (org name / material
+  // name) are shown.
   const groups = useMemo(() => {
     if (groupMode === 'none') return null;
     const map = new Map<string, { label: string; items: LiveInterInstitutionAlertWithState[] }>();
-    for (const a of filtered) {
+    for (const a of sortedFiltered) {
       const key = groupMode === 'material' ? materialGroupKey(a) : a.targetOrganizationId;
       const label = groupMode === 'material'
         ? materialGroupLabel(a)
@@ -168,7 +220,7 @@ export function InterInstitutionAlertsScreen() {
       map.get(key)!.items.push(a);
     }
     return [...map.values()].sort((x, y) => x.label.localeCompare(y.label));
-  }, [filtered, groupMode, lang]);
+  }, [sortedFiltered, groupMode, lang]);
 
   return (
     <div className="premium-page premium-alerts-page" style={{ maxWidth: '1180px', animation: 'fs .3s ease' }}>
@@ -221,6 +273,22 @@ export function InterInstitutionAlertsScreen() {
               <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--warn)' }}>{summaryNearExpiry}</div>
               <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('lia_summary_near_expiry', lang)}</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Critical lane — display-only highlight of the highest-severity
+          missing/low-stock alerts already present in `filtered` */}
+      {ok && criticalAlerts.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--err)' }}>🔥 {t('lia_critical_lane_title', lang)}</span>
+            <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{t('lia_critical_lane_sub', lang)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {criticalAlerts.map(a => (
+              <CriticalAlertCard key={a.alertKey} a={a} lang={lang} />
+            ))}
           </div>
         </div>
       )}
@@ -283,6 +351,22 @@ export function InterInstitutionAlertsScreen() {
             <option value="institution">{t('lia_group_institution', lang)}</option>
           </select>
 
+          <select
+            id="lia-sort"
+            value={sortMode}
+            onChange={e => setSortMode(e.target.value as SortMode)}
+            className="premium-field"
+            style={{ ...fieldStyle, width: 'auto', minWidth: '170px', appearance: 'none', cursor: 'pointer' }}
+            aria-label={t('lia_sort_label', lang)}
+          >
+            <option value="default">{t('lia_sort_label', lang)}: {t('lia_sort_default', lang)}</option>
+            <option value="severity">{t('lia_sort_severity', lang)}</option>
+            <option value="missing">{t('lia_sort_missing', lang)}</option>
+            <option value="lowStock">{t('lia_sort_lowstock', lang)}</option>
+            <option value="nearExpiry">{t('lia_sort_nearexpiry', lang)}</option>
+            <option value="newest">{t('lia_sort_newest', lang)}</option>
+          </select>
+
           <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
             <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
             <input
@@ -321,9 +405,14 @@ export function InterInstitutionAlertsScreen() {
 
       {/* Alert cards — flat list, or grouped for display only when groupMode !== 'none' */}
       {!result.loading && !result.error && ok && filtered.length > 0 && (
+        <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginBottom: '10px' }}>
+          {sortedFiltered.length} {t('lia_visible_alerts_label', lang)}
+        </div>
+      )}
+      {!result.loading && !result.error && ok && filtered.length > 0 && (
         groups === null ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filtered.map(a => (
+            {sortedFiltered.map(a => (
               <AlertCard
                 key={a.alertKey}
                 a={a}
@@ -367,6 +456,24 @@ export function InterInstitutionAlertsScreen() {
         }}
       />
       <AlertHistoryDialog alert={historyAlert} lang={lang} onClose={() => setHistoryAlert(null)} />
+    </div>
+  );
+}
+
+// ─── Critical lane card (compact, read-only, no actions) ──────────────────────
+
+function CriticalAlertCard({ a, lang }: { a: LiveInterInstitutionAlertWithState; lang: 'ar' | 'en' }) {
+  const tgtOrg = orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang);
+  const tgtPoint = pointName(a.targetDistributionPointName, a.targetDistributionPointNameAr, lang);
+  return (
+    <div style={{ flex: '0 0 auto', minWidth: '190px', maxWidth: '220px', background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r3)', padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
+        <span style={{ fontSize: '12px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{a.scientificName}</span>
+        <PhoenixStatusBadge variant="err" label={t(a.targetStatus === 'missing' ? 'cond_missing' : 'cond_low_stock', lang)} />
+      </div>
+      <div style={{ fontSize: '10.5px', color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+        🏥 {tgtOrg} · {tgtPoint}
+      </div>
     </div>
   );
 }

@@ -662,6 +662,20 @@ export const T: Dict = {
   lia_group_material:        { ar: 'حسب المادة',                                      en: 'By material' },
   lia_group_institution:     { ar: 'حسب المؤسسة',                                     en: 'By institution' },
 
+  /* ── INTER-INSTITUTION-ALERTS-SMART-VIEW-B: read-only priority ordering +
+     critical lane — sort/lane options use only already-fetched fields
+     (severity, targetStatus, alertType, computedAt). No new statuses. */
+  lia_sort_label:            { ar: 'أولوية العرض',                                    en: 'Sort by' },
+  lia_sort_default:          { ar: 'الترتيب الافتراضي',                               en: 'Default order' },
+  lia_sort_severity:         { ar: 'عرض حسب الأولوية',                               en: 'By severity' },
+  lia_sort_missing:          { ar: 'المفقودة أولاً',                                  en: 'Missing first' },
+  lia_sort_lowstock:         { ar: 'الشحيحة أولاً',                                   en: 'Low stock first' },
+  lia_sort_nearexpiry:       { ar: 'قريبة النفاد أولاً',                              en: 'Near expiry first' },
+  lia_sort_newest:           { ar: 'أحدث التنبيهات',                                  en: 'Newest first' },
+  lia_critical_lane_title:   { ar: 'تنبيهات حرجة',                                    en: 'Critical Alerts' },
+  lia_critical_lane_sub:     { ar: 'الأعلى أهمية',                                    en: 'Highest priority' },
+  lia_visible_alerts_label:  { ar: 'تنبيهات مرئية',                                   en: 'visible alerts' },
+
   /* ── LIVE-ALERTS-DASHBOARD-SUMMARY-A: Dashboard live inter-institution summary ── */
   d_live_alerts_title:     { ar: 'تنبيهات حية بين المؤسسات',                          en: 'Live Inter-Institution Alerts' },
 
