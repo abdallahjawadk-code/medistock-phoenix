@@ -543,6 +543,17 @@ export const T: Dict = {
   sc_lm_port:           { ar: 'المنفذ',                           en: 'Port' },
   sc_lm_material:       { ar: 'المادة',                           en: 'Material' },
   sc_lm_org:            { ar: 'المؤسسة',                          en: 'Organization' },
+  /* ── Internal (same-institution) alerts + outlet grouping (AVAILABILITY-ALERTS-QR-POLISH-B) ──
+     Computed entirely client-side from the same live availability rows this
+     screen already loads — no new RPC/SQL. Reporting-only, same as the rest
+     of Status Center: no auto-transfer, no exchange-request action. */
+  sc_internal_alerts_title: { ar: 'تنبيهات داخل المؤسسة',                          en: 'Internal Alerts' },
+  sc_internal_alerts_sub:   { ar: 'فائض أو قرب انتهاء في منفذ يقابله نقص في منفذ آخر لنفس المؤسسة · للاطلاع فقط', en: 'Surplus or near-expiry at one outlet matching a shortage at another outlet in the same institution · For awareness only' },
+  sc_internal_alerts_empty: { ar: 'لا توجد تنبيهات داخل المؤسسة حالياً',           en: 'No internal alerts at this time' },
+  sc_by_outlet_title:       { ar: 'المواد حسب المنفذ',                            en: 'Materials by Outlet' },
+  sc_view_table:            { ar: 'عرض جدول',                                     en: 'Table view' },
+  sc_view_outlet:           { ar: 'عرض حسب المنفذ',                               en: 'Outlet view' },
+  sc_outlet_empty:          { ar: 'لا توجد مواد لهذا المنفذ',                     en: 'No materials for this outlet' },
   /* ── Live availability report / print / export (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A) ── */
   sc_report_title:      { ar: 'تقرير موقف التوفر الحي للمواد',     en: 'Live Material Availability Status Report' },
   sc_report_sub:        { ar: 'تقرير حي مبني على سجل التوفر · تصفية وطباعة وتصدير', en: 'Live report from item availability · filter, print & export' },

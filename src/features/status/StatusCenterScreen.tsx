@@ -15,6 +15,9 @@ import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuan
 import { MovementHistoryModal } from './MovementHistoryModal';
 import { MovementReportSection } from './MovementReportSection';
 import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
+import { computeInternalAlerts } from './internalAlerts';
+import { InternalAlertsSection } from './InternalAlertsSection';
+import { OutletMaterialGroups } from './OutletMaterialGroups';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -107,6 +110,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const [filterStatus, setFilterStatus] = useState<CanonicalStatus | ''>('');
   const [filterSupply, setFilterSupply] = useState<SupplyCategory | ''>('');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'outlet'>('table');
 
   // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
   // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
@@ -161,6 +165,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     for (const r of rows) { const s = effOf(r); c[s] = (c[s] ?? 0) + 1; }
     return c;
   }, [rows]);
+
+  // AVAILABILITY-ALERTS-QR-POLISH-B: same-institution alerts, computed
+  // client-side from the full (unfiltered) live rows already loaded above —
+  // independent of the table's current search/status filter, since this is
+  // a whole-organization summary, not a filtered view.
+  const internalAlerts = useMemo(() => computeInternalAlerts(allRows), [allRows]);
 
   const generatedAt = () => new Date().toLocaleString(lang === 'ar' ? 'ar' : 'en');
 
@@ -302,6 +312,10 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         </div>
       </PhoenixCard>
 
+      {/* AVAILABILITY-ALERTS-QR-POLISH-B: internal (same-institution) alerts —
+          read-only, computed client-side from the rows already loaded above. */}
+      {!live.loading && !live.error && <InternalAlertsSection matches={internalAlerts} />}
+
       {/* Filters + export/print actions */}
       <PhoenixCard padding="14px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
@@ -322,6 +336,24 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             <button onClick={printReport} disabled={rows.length === 0} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
             <button onClick={printReport} disabled={rows.length === 0} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
           </div>
+        </div>
+
+        {/* AVAILABILITY-ALERTS-QR-POLISH-B: table / outlet-grouped view toggle —
+            both modes render the exact same filtered `rows`; export/print
+            always use the table's column definitions regardless of view mode. */}
+        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+          <button
+            onClick={() => setViewMode('table')}
+            style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
+          >
+            📋 {t('sc_view_table', lang)}
+          </button>
+          <button
+            onClick={() => setViewMode('outlet')}
+            style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
+          >
+            📦 {t('sc_view_outlet', lang)}
+          </button>
         </div>
 
         {/* Supply-type quick chips */}
@@ -349,7 +381,10 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           {allRows.length === 0 ? t('sc_live_empty', lang) : t('sc_no_match', lang)}
         </div>
       )}
-      {!live.loading && !live.error && rows.length > 0 && (
+      {!live.loading && !live.error && rows.length > 0 && viewMode === 'outlet' && (
+        <OutletMaterialGroups rows={rows} />
+      )}
+      {!live.loading && !live.error && rows.length > 0 && viewMode === 'table' && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>
             <thead>
