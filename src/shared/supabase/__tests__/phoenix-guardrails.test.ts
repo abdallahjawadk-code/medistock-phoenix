@@ -5,7 +5,7 @@
  * These tests verify safety constraints without requiring a real DB connection.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 // __dirname = phoenix/src/shared/supabase/__tests__
@@ -46,37 +46,37 @@ function readSql(rel: string) {
 }
 
 // ============================================================================
-// 1. FULL WIPE SQL SAFETY
+// 1. WIPE TOOLING REMOVED (FINAL-HANDOVER-BLOCKER-A)
 // ============================================================================
+// The destructive full-wipe executor (phoenix-wipe-execute.cjs) and its SQL
+// (supabase/full_wipe_tools/) were removed from the repo before handover.
+// The production DB was already cleaned; no wipe tooling may return. These
+// guards fail if anyone re-adds it.
 
-describe('Full wipe SQL: 000_full_public_app_wipe.sql', () => {
-  const sql = readSql('full_wipe_tools/000_full_public_app_wipe.sql');
-
-  it('drops only public schema (not auth)', () => {
-    expect(sql).toContain('drop schema if exists public cascade');
-    expect(sql).not.toMatch(/drop schema.*(auth|storage|realtime|extensions|vault|graphql)/i);
+describe('Wipe tooling stays removed from the repo', () => {
+  it('phoenix-wipe-execute.cjs does not exist', () => {
+    expect(existsSync(join(PHOENIX, 'phoenix-wipe-execute.cjs'))).toBe(false);
   });
 
-  it('recreates public schema', () => {
-    expect(sql).toContain('create schema public');
+  it('supabase/full_wipe_tools/ does not exist', () => {
+    expect(existsSync(join(PHOENIX, 'supabase/full_wipe_tools'))).toBe(false);
   });
 
-  it('restores required grants', () => {
-    expect(sql).toContain('grant usage on schema public');
-    expect(sql).toContain('anon');
-    expect(sql).toContain('authenticated');
+  it('no package.json script references wipe tooling', () => {
+    const pkg = JSON.parse(readPhoenix('package.json'));
+    const scripts = Object.values(pkg.scripts ?? {}).join(' ');
+    expect(scripts).not.toMatch(/wipe|full_wipe|phoenix-wipe-execute/i);
   });
 
-  it('has safety checks that abort on wrong database', () => {
-    expect(sql).toContain('SAFETY_ABORT');
+  it('.env.example no longer offers the wipe approval gate', () => {
+    expect(readPhoenix('.env.example')).not.toContain('FULL_PUBLIC_APP_WIPE_APPROVED');
   });
 
-  it('verifies auth, storage, extensions survive', () => {
-    expect(sql).toContain("array['auth', 'storage', 'extensions']");
-  });
-
-  it('confirms wipe completion before proceeding', () => {
-    expect(sql).toContain('WIPE_COMPLETE');
+  it('migration 004 (demo seed) still exists but nothing in the repo can execute it', () => {
+    // The migration file itself is intentionally preserved (history/reference);
+    // the executor that auto-ran it after a wipe is gone.
+    expect(existsSync(join(PHOENIX, 'supabase/migrations/004_phoenix_seed_demo_data.sql'))).toBe(true);
+    expect(existsSync(join(PHOENIX, 'phoenix-wipe-execute.cjs'))).toBe(false);
   });
 });
 
