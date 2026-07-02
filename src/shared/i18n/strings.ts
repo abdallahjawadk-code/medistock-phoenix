@@ -432,6 +432,10 @@ export const T: Dict = {
   port_warehouse:     { ar: 'المستودع',                          en: 'Warehouse' },
   port_created:       { ar: 'تم إنشاء المنفذ بنجاح',             en: 'Port created successfully' },
   port_updated:       { ar: 'تم تحديث المنفذ بنجاح',             en: 'Port updated successfully' },
+  /* ── BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: edit-outlet form ── */
+  port_save_action:   { ar: 'حفظ معلومات المنفذ',                 en: 'Save outlet information' },
+  port_name_required: { ar: 'اسم المنفذ مطلوب',                   en: 'Outlet name is required' },
+  port_update_error:  { ar: 'تعذر تحديث معلومات المنفذ',         en: 'Could not update outlet information' },
   port_archived:      { ar: 'تم أرشفة المنفذ بنجاح',             en: 'Port archived successfully' },
   port_type_dispensing: { ar: 'توزيع',                           en: 'Dispensing' },
   port_type_storage:    { ar: 'تخزين',                           en: 'Storage' },
@@ -475,6 +479,12 @@ export const T: Dict = {
   avail_condition:    { ar: 'الحالة',                             en: 'Condition' },
   avail_saved:        { ar: 'تم حفظ التوفر بنجاح',               en: 'Availability saved successfully' },
   avail_count:        { ar: 'أصناف',                              en: 'items' },
+  /* ── BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: safe "remove from outlet"
+     (quantity → 0 + condition → missing via the existing audited movement/
+     upsert RPCs — no hard delete, history/audit preserved). ── */
+  avail_remove_from_outlet: { ar: 'إزالة من المنفذ',                                            en: 'Remove from outlet' },
+  avail_remove_confirm:     { ar: 'سيتم تعطيل المادة في هذا المنفذ (الكمية = صفر) دون حذف السجل التاريخي أو سجل الحركات.', en: 'This deactivates the material in this outlet (quantity set to 0) without deleting its movement history.' },
+  avail_removed_from_outlet:{ ar: 'تمت إزالة المادة من المنفذ',                                 en: 'Material removed from outlet' },
   cond_available:     { ar: 'متوفر',                             en: 'Available' },
   cond_low_stock:     { ar: 'شحيح',                              en: 'Low stock' },
   cond_missing:       { ar: 'مفقود',                             en: 'Missing' },
@@ -497,6 +507,13 @@ export const T: Dict = {
   port_archive_deps:  { ar: 'لا يمكن حذف منفذ مرتبط بسجلات تشغيلية؛ سيتم استخدام الأرشفة الآمنة إن أمكن', en: 'A port with operational records cannot be hard-deleted; safe archiving will be used when available.' },
   port_confirm_archive: { ar: 'هل تريد أرشفة هذا المنفذ؟', en: 'Archive this port?' },
   port_archive_reason:  { ar: 'سبب الأرشفة',                    en: 'Archive Reason' },
+  /* ── BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: action-verb label for the
+     archive button (was incorrectly reusing the "Archived" status word) plus
+     honest error messages for the two ways archive_entity reports failure
+     without throwing (INSUFFICIENT_ROLE / NOT_FOUND_OR_ALREADY_ARCHIVED). ── */
+  port_disable_action:   { ar: 'تعطيل المنفذ',                                        en: 'Disable outlet' },
+  port_archive_forbidden:{ ar: 'لا تملك صلاحية تعطيل هذا المنفذ',                    en: 'You do not have permission to disable this outlet.' },
+  port_already_archived: { ar: 'هذا المنفذ غير موجود أو معطل بالفعل',                en: 'This outlet was not found or is already disabled.' },
 
   /* ── Roles ── */
   role_super_admin:       { ar: 'مدير عام',                     en: 'Super Admin' },

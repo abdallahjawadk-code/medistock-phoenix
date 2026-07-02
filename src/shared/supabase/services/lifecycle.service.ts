@@ -106,7 +106,11 @@ export async function archiveEntity(
   });
 
   if (error) throw error;
-  return data as { ok: boolean; archived: boolean };
+  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: archive_entity (migration 003)
+  // returns { ok: false, error: '...' } as a normal JSONB payload (not a
+  // thrown Postgres exception) for INSUFFICIENT_ROLE / NOT_FOUND_OR_ALREADY_ARCHIVED
+  // / etc — callers must check `ok`, not rely on this function throwing.
+  return data as { ok: boolean; archived?: boolean; error?: string };
 }
 
 export async function purgeEntityWithAllData(

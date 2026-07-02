@@ -19,6 +19,7 @@ import {
 import {
   getPointsByOrg,
   createDistributionPoint,
+  updateDistributionPoint,
   type DistributionPoint,
   type PointType,
 } from '@/shared/supabase/services/warehouses.service';
@@ -35,7 +36,12 @@ import {
   clearPortAvailability,
   archiveOrganization,
 } from '@/shared/supabase/services/lifecycle.service';
-import { getAvailabilityByPoint, upsertAvailability } from '@/shared/supabase/services/availability.service';
+import {
+  getAvailabilityByPoint,
+  upsertAvailability,
+  applyAvailabilityMovement,
+  classifyAvailabilityMovementError,
+} from '@/shared/supabase/services/availability.service';
 import { getLocalItems } from '@/shared/supabase/services/registry.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -66,6 +72,17 @@ function statusLabel(status: string, lang: 'ar' | 'en'): string {
   if (status === 'suspended') return t('suspended', lang);
   if (status === 'archived') return t('archived', lang);
   return status;
+}
+
+/**
+ * BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: map archive_entity's
+ * { ok: false, error } codes (migration 003) to an honest, translated
+ * message instead of a raw code or a false "success" toast.
+ */
+function archiveErrorKey(error: string | undefined): string {
+  if (error === 'INSUFFICIENT_ROLE') return 'port_archive_forbidden';
+  if (error === 'NOT_FOUND_OR_ALREADY_ARCHIVED') return 'port_already_archived';
+  return 'load_error';
 }
 
 function orgDisplayName(org: OrgRow, lang: 'ar' | 'en'): string {
@@ -351,6 +368,23 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
   const canCreatePorts  = actorPermissions.has('ports.create');
   const canEditPorts    = actorPermissions.has('ports.edit');
   const canArchivePorts = actorPermissions.has('ports.archive');
+  // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A (permission-matrix fix): the
+  // permission key alone (ports.archive) is not sufficient — archive_entity
+  // (migration 003) hardcodes role IN ('super_admin', 'hospital_admin') and
+  // will reject any other role (e.g. institution_admin) with
+  // INSUFFICIENT_ROLE even if that role holds ports.archive. Mirrors the
+  // exact same actorRole check already used two lines above for canEditRoles.
+  const canArchivePortsEffective = canArchivePorts
+    && (actorRole === 'super_admin' || actorRole === 'hospital_admin');
+  // "Remove from outlet" writes through TWO existing RPCs in sequence
+  // (phoenix_apply_availability_movement then phoenix_upsert_availability —
+  // see onConfirmRemove in PortAvailabilitySection below), each independently
+  // permission-checked server-side. ports.edit alone (e.g. port_officer) is
+  // not sufficient — the button must only appear when every permission the
+  // backend will actually check is present.
+  const canRemoveOutletMaterial = canEditPorts
+    && actorPermissions.has('availability.quantity.set')
+    && (actorPermissions.has('availability.update') || actorPermissions.has('availability.create'));
   const canGenerateQr   = actorPermissions.has('qr.generate');
   const canRevokeQr     = actorPermissions.has('qr.revoke');
 
@@ -474,6 +508,8 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           canCreatePorts={canCreatePorts}
           canEditPorts={canEditPorts}
           canArchivePorts={canArchivePorts}
+          canArchivePortsEffective={canArchivePortsEffective}
+          canRemoveOutletMaterial={canRemoveOutletMaterial}
           canGenerateQr={canGenerateQr}
           canRevokeQr={canRevokeQr}
           orgName={o ? orgDisplayName(o, lang) : undefined}
@@ -700,13 +736,15 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
   canCreatePorts: boolean;
   canEditPorts: boolean;
   canArchivePorts: boolean;
+  canArchivePortsEffective: boolean;
+  canRemoveOutletMaterial: boolean;
   canGenerateQr: boolean;
   canRevokeQr: boolean;
   orgName?: string;
@@ -762,6 +800,8 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               lang={lang}
               canEditPorts={canEditPorts}
               canArchivePorts={canArchivePorts}
+              canArchivePortsEffective={canArchivePortsEffective}
+              canRemoveOutletMaterial={canRemoveOutletMaterial}
               canGenerateQr={canGenerateQr}
               canRevokeQr={canRevokeQr}
               orgName={orgName}
@@ -864,11 +904,13 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
+function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
   canEditPorts: boolean;
   canArchivePorts: boolean;
+  canArchivePortsEffective: boolean;
+  canRemoveOutletMaterial: boolean;
   canGenerateQr: boolean;
   canRevokeQr: boolean;
   orgName?: string;
@@ -877,11 +919,55 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
 }) {
   const [qr, setQr] = useState<{ tokenId: string; publicId: string } | null | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<'regenerate' | 'revoke' | 'archive' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'regenerate' | 'revoke' | 'archive' | 'edit' | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
   const [qrSrc, setQrSrc] = useState<string | null>(null);
   const [qrSrcErr, setQrSrcErr] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+
+  // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: "Edit outlet" — uses the existing
+  // updateDistributionPoint() service (a direct PostgREST update, RLS-gated
+  // by the same dp_update_perm policy — super_admin OR org + ports.edit —
+  // that already governs this button's visibility via canEditPorts). Only
+  // name/name_ar/pointType are edited here; status changes stay exclusively
+  // in the archive flow above (a separate trigger-guarded path).
+  const [editName, setEditName] = useState(point.name);
+  const [editNameAr, setEditNameAr] = useState(point.name_ar);
+  const [editPointType, setEditPointType] = useState<PointType>(point.pointType as PointType);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEdit() {
+    setEditName(point.name);
+    setEditNameAr(point.name_ar);
+    setEditPointType(point.pointType as PointType);
+    setEditError(null);
+    setConfirmAction('edit');
+  }
+
+  async function onSaveEdit() {
+    if (!editName.trim() || !editNameAr.trim()) {
+      setEditError(t('port_name_required', lang));
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await updateDistributionPoint(point.id, {
+        name: editName.trim(),
+        name_ar: editNameAr.trim(),
+        pointType: editPointType,
+      });
+      setConfirmAction(null);
+      onToast(t('port_updated', lang));
+      onReload();
+    } catch (e) {
+      console.error('[phoenix] port update failed:', e);
+      setEditError(t('port_update_error', lang));
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   const ptTypeKey = POINT_TYPES.find(p => p.value === point.pointType)?.labelKey;
 
@@ -971,7 +1057,16 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
       if (qr?.tokenId) {
         await disableQrToken(qr.tokenId, 'port_archived');
       }
-      await archiveEntity('distribution_point', point.id, archiveReason || 'archived_via_ui');
+      // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: archive_entity reports
+      // failure via { ok: false, error } rather than a thrown exception — the
+      // previous code always showed "archived successfully" even when the
+      // RPC silently declined (e.g. insufficient role), which is exactly the
+      // "outlet won't delete/disable" symptom reported by the user.
+      const result = await archiveEntity('distribution_point', point.id, archiveReason || 'archived_via_ui');
+      if (!result.ok) {
+        onToast(t(archiveErrorKey(result.error), lang));
+        return;
+      }
       setQr(null);
       onToast(t('port_archived', lang));
       onReload();
@@ -1050,8 +1145,13 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
       )}
 
       {/* Actions */}
-      {(canGenerateQr || canRevokeQr || canArchivePorts) && (
+      {(canEditPorts || canGenerateQr || canRevokeQr || canArchivePortsEffective) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+          {canEditPorts && (
+            <PhoenixButton variant="ghost" size="sm" onClick={openEdit} style={{ minHeight: '32px' }}>
+              ✏️ {t('port_edit', lang)}
+            </PhoenixButton>
+          )}
           {canGenerateQr && !qr && qr !== undefined && (
             <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
               📱 {t('qr_generate', lang)}
@@ -1067,9 +1167,9 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
               🚫 {t('qr_revoke', lang)}
             </PhoenixButton>
           )}
-          {canArchivePorts && (
+          {canArchivePortsEffective && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
-              📦 {t('archived', lang)}
+              📦 {t('port_disable_action', lang)}
             </PhoenixButton>
           )}
         </div>
@@ -1081,10 +1181,14 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
         orgId={point.organizationId}
         lang={lang}
         canMutate={canEditPorts}
+        canRemove={canRemoveOutletMaterial}
         onToast={onToast}
       />
 
-      {/* Port cleanup wizard */}
+      {/* Port cleanup wizard — deletion_wizard.clear_port_items is a separate
+          permission from ports.archive/archive_entity; left as-is (out of
+          scope for this permission-matrix fix, which targets only the
+          archive_entity-backed "Disable outlet" button above). */}
       {canArchivePorts && (
         <PortCleanupWizard pointId={point.id} lang={lang} onDone={onReload} onToast={onToast} />
       )}
@@ -1122,6 +1226,40 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
       </PhoenixDialog>
 
       <PhoenixDialog
+        open={confirmAction === 'edit'}
+        onClose={() => { if (!editBusy) setConfirmAction(null); }}
+        title={t('port_edit', lang)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+              {t('port_name_ar', lang)} *
+            </label>
+            <input type="text" value={editNameAr} onChange={e => setEditNameAr(e.target.value)} style={fieldStyle} dir="auto" />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+              {t('port_name_en', lang)} *
+            </label>
+            <input type="text" value={editName} onChange={e => setEditName(e.target.value)} style={fieldStyle} dir="auto" />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+              {t('port_type', lang)}
+            </label>
+            <select value={editPointType} onChange={e => setEditPointType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+              {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+            </select>
+          </div>
+        </div>
+        {editError && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '12px' }}>{editError}</p>}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} disabled={editBusy} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}>💾 {t('port_save_action', lang)}</PhoenixButton>
+        </div>
+      </PhoenixDialog>
+
+      <PhoenixDialog
         open={confirmAction === 'archive'}
         onClose={() => setConfirmAction(null)}
         title={t('port_confirm_archive', lang)}
@@ -1138,7 +1276,7 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canGenerateQr, c
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onArchivePort}>📦 {t('port_archived', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={busy === 'archive'} onClick={onArchivePort}>📦 {t('port_disable_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1276,6 +1414,15 @@ interface AvailRow {
   expiry_date: string | null;
   notes: string | null;
   updated_at: string;
+  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: getAvailabilityByPoint already
+  // selects these identity fields (availability.service.ts) — needed to call
+  // upsertAvailability's identity-matched update when removing a material.
+  scientific_name?: string | null;
+  trade_name?: string | null;
+  dosage_form?: string | null;
+  concentration?: string | null;
+  price?: number | null;
+  supply_type?: string | null;
   local_items: {
     id: string;
     local_code: string | null;
@@ -1299,16 +1446,74 @@ function centralOf(row: LocalRow | AvailRow['local_items']): { name: string; nam
   return Array.isArray(c) ? c[0] ?? null : c;
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canMutate, onToast }: {
+function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, onToast }: {
   pointId: string;
   orgId: string;
   lang: 'ar' | 'en';
   canMutate: boolean;
+  // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A (permission-matrix fix): separate
+  // from canMutate (which only reflects ports.edit, gating the "+ Add"
+  // button) because "Remove from outlet" writes through TWO additional
+  // permission-checked RPCs (phoenix_apply_availability_movement then
+  // phoenix_upsert_availability) — see canRemoveOutletMaterial in
+  // OrgDetailView, which already folds in availability.quantity.set and
+  // availability.update/create alongside ports.edit.
+  canRemove: boolean;
   onToast: (msg: string) => void;
 }) {
   const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId]);
   const [showAdd, setShowAdd] = useState(false);
   const rows = (avail.data ?? []) as unknown as AvailRow[];
+
+  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: "Remove from outlet" — no hard
+  // DELETE exists (or is allowed) for item_availability rows tied to movement
+  // history/audit, so this performs the same safe pattern already used by the
+  // Status Center's quantity-movement UI: zero the quantity via the audited
+  // phoenix_apply_availability_movement RPC (the only permitted quantity-write
+  // path — migration 035's hard guard blocks direct quantity writes), then
+  // mark condition = 'missing' via the existing upsert RPC now that the
+  // stored quantity matches. History/reports/QR audit trail are untouched.
+  const [removeTarget, setRemoveTarget] = useState<AvailRow | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  async function onConfirmRemove() {
+    if (!removeTarget) return;
+    setRemoveBusy(true);
+    setRemoveError(null);
+    try {
+      if (removeTarget.quantity !== 0) {
+        await applyAvailabilityMovement({
+          itemAvailabilityId: removeTarget.id,
+          movementType: 'set_exact',
+          amount: 0,
+          reason: 'removed_from_outlet',
+        });
+      }
+      await upsertAvailability({
+        distributionPointId: pointId,
+        organizationId: orgId,
+        scientificName: removeTarget.scientific_name ?? '',
+        tradeName: removeTarget.trade_name ?? undefined,
+        dosageForm: removeTarget.dosage_form ?? undefined,
+        concentrationValue: removeTarget.concentration ?? undefined,
+        price: removeTarget.price ?? undefined,
+        quantity: 0,
+        condition: 'missing',
+        batchNumber: removeTarget.batch_number ?? undefined,
+        expiryDate: removeTarget.expiry_date ?? undefined,
+        notes: removeTarget.notes ?? undefined,
+        supplyType: removeTarget.supply_type ?? undefined,
+      });
+      setRemoveTarget(null);
+      onToast(t('avail_removed_from_outlet', lang));
+      avail.reload();
+    } catch (e) {
+      setRemoveError(t(classifyAvailabilityMovementError(e), lang));
+    } finally {
+      setRemoveBusy(false);
+    }
+  }
 
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
@@ -1351,16 +1556,26 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, onToast }: {
             const itemName = lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar);
             const condKey = CONDITION_LABEL_KEY[r.condition];
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
+            const alreadyRemoved = r.quantity === 0 && r.condition === 'missing';
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
                 <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
                   {itemName ?? '—'}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
                   <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
                   {r.expiry_date && r.condition === 'near_expiry' && (
                     <span style={{ fontSize: '9.5px', color: 'var(--warn)' }} dir="ltr">{r.expiry_date}</span>
+                  )}
+                  {canRemove && !alreadyRemoved && (
+                    <button
+                      onClick={() => { setRemoveError(null); setRemoveTarget(r); }}
+                      aria-label={t('avail_remove_from_outlet', lang)}
+                      style={{ fontSize: '10.5px', color: 'var(--err)', border: '1px solid var(--err)', background: 'transparent', borderRadius: 'var(--r1)', padding: '3px 8px', cursor: 'pointer', minHeight: '28px' }}
+                    >
+                      🗑 {t('avail_remove_from_outlet', lang)}
+                    </button>
                   )}
                 </div>
               </div>
@@ -1368,6 +1583,25 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, onToast }: {
           })}
         </div>
       )}
+
+      <PhoenixDialog
+        open={removeTarget !== null}
+        onClose={() => { if (!removeBusy) { setRemoveTarget(null); setRemoveError(null); } }}
+        title={t('avail_remove_from_outlet', lang)}
+      >
+        <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '8px', lineHeight: 1.6 }}>
+          {t('avail_remove_confirm', lang)}
+        </p>
+        {removeError && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '12px' }}>{removeError}</p>}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} disabled={removeBusy} onClick={() => { setRemoveTarget(null); setRemoveError(null); }}>
+            {t('cancel', lang)}
+          </PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={removeBusy} onClick={onConfirmRemove}>
+            🗑 {t('avail_remove_from_outlet', lang)}
+          </PhoenixButton>
+        </div>
+      </PhoenixDialog>
     </div>
   );
 }
