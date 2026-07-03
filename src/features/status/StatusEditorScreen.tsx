@@ -2,11 +2,21 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
+import {
+  buildCsvContent,
+  buildPrintDocument,
+  buildStableFileName,
+  downloadTextFile,
+  openPrintWindow,
+  type ReportColumn,
+} from '@/shared/lib/reportExport';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 
 interface PointRow { id: string; name: string; name_ar: string; }
 
@@ -31,16 +41,6 @@ const CONDITION_OPTIONS = [
   'available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired',
 ] as const;
 
-/**
- * PRODUCTION-READINESS-CLEANUP-B: CSV injection protection — same pattern
- * already used by StatusCenterScreen's exportCsv(). A cell value beginning
- * with =, +, -, or @ can be interpreted as a formula by Excel/Sheets; a
- * leading apostrophe forces plain-text treatment without altering the value.
- */
-function csvSafeCell(v: string): string {
-  return /^[=+\-@]/.test(v) ? `'${v}` : v;
-}
-
 export function StatusEditorScreen() {
   const { lang, activeOrgId } = useApp();
 
@@ -50,6 +50,12 @@ export function StatusEditorScreen() {
   const [filterPort, setFilterPort] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [search, setSearch] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
 
   const filtered = useMemo(() => {
     let list = (records.data ?? []) as unknown as OrgAvailRow[];
@@ -72,49 +78,76 @@ export function StatusEditorScreen() {
     return lang === 'ar' ? (dp.name_ar || dp.name) : dp.name;
   }
 
+  // Shared column definitions for table / CSV / print — single source of truth.
+  const columns: ReportColumn<OrgAvailRow>[] = [
+    { key: 'port',   label: t('se_filter_port', lang),        value: dpName },
+    { key: 'sci',    label: t('avail_scientific_name', lang), value: r => r.scientific_name ?? '—' },
+    { key: 'trade',  label: t('avail_trade_name', lang),      value: r => r.trade_name ?? '—' },
+    { key: 'dosage', label: t('avail_dosage_form', lang),     value: r => r.dosage_form ?? '—' },
+    { key: 'conc',   label: t('avail_concentration', lang),   value: r => r.concentration ?? '—' },
+    { key: 'qty',    label: t('qty', lang),                   value: r => String(r.quantity ?? 0) },
+    { key: 'status', label: t('avail_material_status', lang), value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
+    { key: 'batch',  label: t('batch_no', lang),               value: r => r.batch_number ?? '—', ltr: true },
+    { key: 'expiry', label: t('expiry', lang),                 value: r => formatStableDate(r.expiry_date, lang), ltr: true },
+    { key: 'supply', label: t('avail_supply_type', lang),      value: r => r.supply_type ?? '—' },
+    { key: 'price',  label: t('avail_price', lang),            value: r => r.price != null ? String(r.price) : '—', ltr: true },
+  ];
+
+  const selectedFiltersText = useMemo(() => {
+    const parts: string[] = [];
+    if (filterPort) {
+      const p = (pointsAsync.data ?? []).find(x => x.id === filterPort);
+      if (p) parts.push(`${t('se_filter_port', lang)}: ${lang === 'ar' ? p.name_ar : p.name}`);
+    }
+    if (filterStatus) parts.push(`${t('avail_material_status', lang)}: ${t('cond_' + filterStatus, lang)}`);
+    if (search.trim()) parts.push(`${t('search', lang)}: ${search.trim()}`);
+    return parts.length ? parts.join(' · ') : t('sc_all', lang);
+  }, [filterPort, filterStatus, search, pointsAsync.data, lang]);
+
   function exportCsv() {
-    const isAr = lang === 'ar';
-    const headers = [
-      isAr ? 'المنفذ' : 'Port',
-      isAr ? 'الاسم العلمي' : 'Scientific Name',
-      isAr ? 'الاسم التجاري' : 'Trade Name',
-      isAr ? 'الشكل الدوائي' : 'Dosage Form',
-      isAr ? 'التركيز' : 'Concentration',
-      isAr ? 'الكمية' : 'Quantity',
-      isAr ? 'الموقف' : 'Status',
-      isAr ? 'رقم الدفعة' : 'Batch No.',
-      isAr ? 'تاريخ الانتهاء' : 'Expiry',
-      isAr ? 'نوع التجهيز' : 'Supply Type',
-      isAr ? 'السعر' : 'Price',
-    ];
+    try {
+      const metadataLines = [
+        `${t('nav_status_editor', lang)}`,
+        `${t('sc_selected_filters', lang)}: ${selectedFiltersText}`,
+        `${t('sc_generated_at', lang)}: ${formatStableDateTime(new Date(), lang)}`,
+        `${t('sc_total_rows', lang)}: ${filtered.length}`,
+      ];
+      const csv = buildCsvContent(columns, filtered, metadataLines);
+      const ok = downloadTextFile(
+        buildStableFileName('medistock-status-editor', 'csv'),
+        csv,
+        'text/csv;charset=utf-8;',
+      );
+      if (!ok) showToast(t('csv_export_failed', lang));
+    } catch {
+      showToast(t('csv_export_failed', lang));
+    }
+  }
 
-    const rows = filtered.map((r: OrgAvailRow) => [
-      dpName(r),
-      r.scientific_name ?? '',
-      r.trade_name ?? '',
-      r.dosage_form ?? '',
-      r.concentration ?? '',
-      r.quantity ?? 0,
-      r.condition ? t('cond_' + r.condition, lang) : '',
-      r.batch_number ?? '',
-      r.expiry_date ?? '',
-      r.supply_type ?? '',
-      r.price ?? '',
-    ]);
-
-    const bom = '﻿';
-    const cell = (c: string | number) => `"${csvSafeCell(String(c)).replace(/"/g, '""')}"`;
-    const csv = bom + [headers, ...rows].map(row => row.map(cell).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `medistock-status-editor-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  function printReport() {
+    const html = buildPrintDocument({
+      lang,
+      title: t('nav_status_editor', lang),
+      metaLines: [
+        { label: t('sc_selected_filters', lang), value: selectedFiltersText },
+        { label: t('sc_generated_at', lang), value: formatStableDateTime(new Date(), lang), ltr: true },
+        { label: t('sc_total_rows', lang), value: String(filtered.length) },
+      ],
+      columns,
+      rows: filtered,
+      footerText: t('report_footer_generated_by', lang),
+      emptyMessage: t('se_no_records', lang),
+    });
+    const ok = openPrintWindow(html);
+    if (!ok) showToast(t('print_popup_blocked', lang));
   }
 
   const fieldStyle = { padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' } as const;
+
+  const actionBtnStyle = {
+    padding: '9px 14px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
+    background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+  } as const;
 
   const thStyle = { padding: '8px 10px', textAlign: 'start' as const, fontSize: '11px', fontWeight: 700, color: 'var(--t2)', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' as const };
   const tdStyle = { padding: '8px 10px', fontSize: '12.5px', borderBottom: '1px solid var(--brd)', verticalAlign: 'top' as const };
@@ -148,15 +181,17 @@ export function StatusEditorScreen() {
 
               <input type="text" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '140px' }} />
 
-              <div style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto' }}>
-                <button onClick={exportCsv} style={{ padding: '7px 14px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', cursor: 'pointer' }}>
-                  {t('se_export_excel', lang)}
+              {/* Mobile-friendly, wrapping action bar — export/print stay reachable
+                  above the (potentially horizontally scrollable) table below. */}
+              <div style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
+                <button onClick={exportCsv} disabled={filtered.length === 0} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
+                  📄 {t('se_export_excel', lang)}
                 </button>
-                <button onClick={() => window.print()} style={{ padding: '7px 14px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', cursor: 'pointer' }}>
-                  {t('se_export_pdf', lang)}
+                <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_export_pdf', lang)} style={actionBtnStyle}>
+                  📑 {t('se_export_pdf', lang)}
                 </button>
-                <button onClick={() => window.print()} style={{ padding: '7px 14px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', cursor: 'pointer' }}>
-                  {t('se_print', lang)}
+                <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_print', lang)} style={actionBtnStyle}>
+                  🖨 {t('se_print', lang)}
                 </button>
               </div>
             </div>
@@ -172,33 +207,13 @@ export function StatusEditorScreen() {
               <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>{t('se_filter_port', lang)}</th>
-                    <th style={thStyle}>{t('avail_scientific_name', lang)}</th>
-                    <th style={thStyle}>{t('avail_trade_name', lang)}</th>
-                    <th style={thStyle}>{t('avail_dosage_form', lang)}</th>
-                    <th style={thStyle}>{t('avail_concentration', lang)}</th>
-                    <th style={thStyle}>{t('qty', lang)}</th>
-                    <th style={thStyle}>{t('avail_material_status', lang)}</th>
-                    <th style={thStyle}>{t('batch_no', lang)}</th>
-                    <th style={thStyle}>{t('expiry', lang)}</th>
-                    <th style={thStyle}>{t('avail_supply_type', lang)}</th>
-                    <th style={thStyle}>{t('avail_price', lang)}</th>
+                    {columns.map(c => <th key={c.key} style={thStyle}>{c.label}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((r: OrgAvailRow) => (
                     <tr key={r.id}>
-                      <td style={tdStyle}>{dpName(r)}</td>
-                      <td style={tdStyle} dir="auto">{r.scientific_name ?? '—'}</td>
-                      <td style={tdStyle} dir="auto">{r.trade_name ?? '—'}</td>
-                      <td style={tdStyle} dir="auto">{r.dosage_form ?? '—'}</td>
-                      <td style={tdStyle} dir="auto">{r.concentration ?? '—'}</td>
-                      <td style={tdStyle}>{r.quantity ?? 0}</td>
-                      <td style={tdStyle}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
-                      <td style={tdStyle} dir="ltr">{r.batch_number ?? '—'}</td>
-                      <td style={tdStyle} dir="ltr">{r.expiry_date ?? '—'}</td>
-                      <td style={tdStyle} dir="auto">{r.supply_type ?? '—'}</td>
-                      <td style={tdStyle} dir="ltr">{r.price != null ? r.price : '—'}</td>
+                      {columns.map(c => <td key={c.key} style={tdStyle} dir={c.ltr ? 'ltr' : 'auto'}>{c.value(r)}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -207,6 +222,7 @@ export function StatusEditorScreen() {
           )}
         </>
       )}
+      {toast && <PhoenixToast message={toast} />}
     </div>
   );
 }

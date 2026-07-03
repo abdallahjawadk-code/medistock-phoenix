@@ -95,7 +95,7 @@ describe('No permanent fake "Demo Data" badge shown to real users', () => {
 
 describe('CSV export: Arabic-safe, injection-safe, clean filename', () => {
   it('includes a UTF-8 BOM', () => {
-    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
     expect(fn).toContain('﻿');
     expect(fn).toContain('text/csv;charset=utf-8');
   });
@@ -104,14 +104,14 @@ describe('CSV export: Arabic-safe, injection-safe, clean filename', () => {
     expect(statusCenter).toContain('function csvSafeCell');
     const guardFn = statusCenter.slice(statusCenter.indexOf('function csvSafeCell'), statusCenter.indexOf('function csvSafeCell') + 300);
     expect(guardFn).toContain('/^[=+\\-@]/');
-    const exportFn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+    const exportFn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
     expect(exportFn).toContain('csvSafeCell');
   });
 
-  it('uses a medistock-status-prefixed, date-stamped filename', () => {
-    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function exportCsv') + 900);
+  it('uses a medistock-status-prefixed, stable report-name_YYYY-MM-DD_HH-mm filename (FINAL-EXPORT-REPORTS-PRO-A)', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
     expect(fn).toContain('medistock-status');
-    expect(fn).toContain("toISOString().slice(0, 10)");
+    expect(fn).toMatch(/\$\{now\.getFullYear\(\)\}-\$\{pad2\(now\.getMonth\(\) \+ 1\)\}-\$\{pad2\(now\.getDate\(\)\)\}_\$\{pad2\(now\.getHours\(\)\)\}-\$\{pad2\(now\.getMinutes\(\)\)\}/);
   });
 
   it('does not export raw ids, alert_key, exchange_request_id, or supply_type technical keys', () => {

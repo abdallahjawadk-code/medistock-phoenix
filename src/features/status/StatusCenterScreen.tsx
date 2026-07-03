@@ -95,6 +95,16 @@ function dpNameOf(r: LiveAvailRow, lang: 'ar' | 'en'): string {
   return lang === 'ar' ? (dp.name_ar || dp.name) : dp.name;
 }
 
+// BUGFIX-REPORTS-DATES-PORT-CLEAR-A follow-up: expiry_date must go through
+// formatStableDate (like every other exported/printed date) rather than
+// being passed through raw — otherwise its on-screen/CSV/print format
+// diverges from the "updated" column right next to it.
+function expiryDisplay(r: LiveAvailRow, lang: 'ar' | 'en'): string {
+  if (r.expiry_date) return formatStableDate(r.expiry_date, lang);
+  if (r.expiry_bucket) return t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang);
+  return '—';
+}
+
 const fieldStyle = {
   padding: '8px 12px', borderRadius: 'var(--r2)',
   border: '1px solid var(--brd)', background: 'var(--s)',
@@ -225,7 +235,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     { key: 'supply',  label: t('avail_supply_type', lang),  value: r => r.supply_type || '—' },
     { key: 'raw',     label: t('sc_raw_condition', lang),   value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
     { key: 'eff',     label: t('sc_effective_status', lang),value: r => t('cond_' + effOf(r), lang) },
-    { key: 'expiry',  label: t('expiry', lang),             value: r => r.expiry_date || '—' },
+    { key: 'expiry',  label: t('expiry', lang),             value: r => expiryDisplay(r, lang) },
     { key: 'bucket',  label: t('sc_expiry_bucket', lang),   value: r => r.expiry_bucket || '—' },
     { key: 'updated', label: t('last_upd', lang),    value: r => formatStableDate(r.updated_at, lang) },
   ];
@@ -259,6 +269,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   <div class="meta">${escHtml(t('sc_generated_at', lang))}: <span class="val" dir="ltr">${escHtml(generatedAt())}</span></div>
   <div class="meta">${escHtml(t('sc_total_rows', lang))}: ${rows.length}</div>
   <div class="meta">${escHtml(countsLine)}</div>
+  <div class="footer">${escHtml(t('report_footer_generated_by', lang))}</div>
   <table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>
 </body></html>`;
   }
@@ -275,24 +286,41 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     win.document.close();
     win.focus();
     win.print();
+    win.close();
   }
 
   function exportCsv() {
-    const bom = '﻿';
-    const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
-    const lines = [
-      columns.map(c => cell(c.label)).join(','),
-      ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
-    ];
-    const csv = bom + lines.join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const safeOrg = orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `medistock-status${safeOrg ? '-' + safeOrg : ''}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const bom = '﻿';
+      const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
+      const metadataLines = [
+        t('sc_report_title', lang),
+        `${t('sc_selected_filters', lang)}: ${selectedFiltersText}`,
+        `${t('sc_generated_at', lang)}: ${generatedAt()}`,
+        `${t('sc_total_rows', lang)}: ${rows.length}`,
+      ];
+      const lines = [
+        ...metadataLines.map(m => cell(m)),
+        '',
+        columns.map(c => cell(c.label)).join(','),
+        ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
+      ];
+      const csv = bom + lines.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const safeOrg = orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const now = new Date();
+      const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `medistock-status${safeOrg ? '-' + safeOrg : ''}-${stamp}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setMovementToast(t('csv_export_failed', lang));
+      setTimeout(() => setMovementToast(null), 3000);
+    }
   }
 
   function handleMovementSuccess(result: ApplyAvailabilityMovementResult) {
@@ -304,7 +332,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   }
 
   const btnStyle = {
-    padding: '8px 14px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
+    padding: '9px 14px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
     background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
   } as const;
 
@@ -371,9 +399,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={exportCsv} disabled={rows.length === 0} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
+            <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
           </div>
         </div>
 
@@ -456,7 +484,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td} dir="auto">{r.supply_type || '—'}</td>
                     <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
-                    <td style={td} dir="ltr">{r.expiry_date || (r.expiry_bucket ? t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang) : '—')}</td>
+                    <td style={td} dir="ltr">{expiryDisplay(r, lang)}</td>
                     <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
                     {(canAdjustQuantity || canViewMovementHistory) && (
                       <td style={td}>
