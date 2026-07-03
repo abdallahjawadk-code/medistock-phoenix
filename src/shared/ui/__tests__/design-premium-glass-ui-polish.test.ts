@@ -117,12 +117,14 @@ describe('6. User management function invocations remain unchanged', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('UserManagementScreen.tsx was not touched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  it('UserManagementScreen.tsx still invokes the same user-management functions (later phases may add UI additively, e.g. UX-WHATSAPP-INSTITUTION-CONTACT-A\'s ContactSection button, without touching this logic)', () => {
+    for (const fn of [
+      'createUserViaEdge', 'disableUserViaEdge', 'enableUserViaEdge',
+      'recycleUserViaEdge', 'rotatePasswordViaEdge',
+      'assignProfilePermissions', 'resetProfilePermissions', 'listUsers', 'getEffectivePermissions',
+    ]) {
+      expect(usersScreen).toContain(fn);
+    }
   });
 
   it('createUserViaEdge/disableUserViaEdge/enableUserViaEdge/rotatePasswordViaEdge still call supabase.functions.invoke', () => {

@@ -1112,6 +1112,13 @@ export const T: Dict = {
   mt_timeline_empty:  { ar: 'ستظهر هنا حركة المادة بعد بدء تسجيل العمليات.', en: 'Material activity will appear here after operations are recorded.' },
   mt_view_table:      { ar: 'عرض الجدول',                                    en: 'Table view' },
   mt_view_timeline:   { ar: 'عرض الخط الزمني',                                en: 'Timeline view' },
+
+  /* ── UX-WHATSAPP-INSTITUTION-CONTACT-A: WhatsApp contact button ── */
+  wa_contact:              { ar: 'تواصل واتساب',                    en: 'WhatsApp' },
+  wa_contact_institution:  { ar: 'تواصل واتساب مع المؤسسة',         en: 'WhatsApp the institution' },
+  wa_number_missing:       { ar: 'رقم واتساب غير مدخل',              en: 'WhatsApp number not configured' },
+  wa_invalid_number:       { ar: 'رقم واتساب غير صالح',              en: 'Invalid WhatsApp number' },
+  wa_open:                 { ar: 'فتح واتساب',                       en: 'Open WhatsApp' },
 };
 
 export function t(key: string, lang: Lang): string {

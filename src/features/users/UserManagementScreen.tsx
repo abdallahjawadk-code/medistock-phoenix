@@ -26,6 +26,8 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
+import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -672,10 +674,17 @@ function ContactSection({ orgId, lang }: { orgId: string | null; lang: 'ar' | 'e
         <div style={{ fontSize: '11.5px', color: 'var(--t3)', fontStyle: 'italic' }}>—</div>
       )}
       {(contacts.data ?? []).map(c => (
-        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', marginBottom: '4px' }}>
+        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12px', marginBottom: '4px' }}>
           <span dir="auto">{c.display_name}</span>
           <a href={`tel:${c.phone}`} style={{ color: 'var(--pd)', fontWeight: 700 }} dir="ltr">📞 {c.phone}</a>
           {c.is_primary && <PhoenixStatusBadge variant="ok" label="★" />}
+          {/* UX-WHATSAPP-INSTITUTION-CONTACT-A: reuses this exact already-loaded
+              contact phone — no new fetch, no fake number. */}
+          <WhatsAppContactButton
+            phone={c.phone}
+            lang={lang}
+            message={buildMaterialContactMessage({}, lang)}
+          />
         </div>
       ))}
     </div>
