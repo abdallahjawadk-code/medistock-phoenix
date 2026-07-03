@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { formatStableDateTime } from '@/shared/lib/date';
 import {
@@ -10,6 +10,7 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { MaterialTimeline, type MaterialTimelineEntry } from '@/shared/ui/MaterialTimeline';
 import type { AdjustQuantityRow } from './AdjustQuantityModal';
 
 /**
@@ -49,6 +50,10 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
   const [movements, setMovements] = useState<AvailabilityMovementRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // UX-SMART-FILTERS-TIMELINE-A: table stays the default view (unchanged
+  // behavior); timeline is an additional, opt-in presentation of the exact
+  // same already-fetched `movements` — no new query.
+  const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
 
   async function load(itemAvailabilityId: string) {
     setLoading(true);
@@ -79,11 +84,31 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row?.id]);
 
+  // UX-SMART-FILTERS-TIMELINE-A: maps the exact same already-fetched
+  // `movements` into MaterialTimeline's entry shape — no new fetch, no
+  // fabricated fields. Location is the row's own outlet name (real, constant
+  // across all of this item's movements).
+  const dpNameForTimeline = row?.distribution_points
+    ? (lang === 'ar' ? (row.distribution_points.name_ar || row.distribution_points.name) : row.distribution_points.name)
+    : undefined;
+  const timelineEntries: MaterialTimelineEntry[] = useMemo(() => movements.map(m => ({
+    id: m.id,
+    timestamp: formatStableDateTime(m.createdAt, lang),
+    typeLabel: t(MOVEMENT_TYPE_LABEL_KEY[m.movementType], lang),
+    quantityBefore: m.quantityBefore,
+    quantityAfter: m.quantityAfter,
+    deltaLabel: formatDelta(m.movementType, m.quantityDelta),
+    actor: (m.actorNameSnapshot || m.actorEmailSnapshot || undefined)
+      ? `${m.actorNameSnapshot || m.actorEmailSnapshot}${m.actorRoleSnapshot ? ` (${m.actorRoleSnapshot})` : ''}`
+      : undefined,
+    reason: m.reason ?? undefined,
+    notes: m.notes ?? undefined,
+    location: dpNameForTimeline,
+  })), [movements, lang, dpNameForTimeline]);
+
   if (!open || !row) return null;
 
-  const dpName = row.distribution_points
-    ? (lang === 'ar' ? (row.distribution_points.name_ar || row.distribution_points.name) : row.distribution_points.name)
-    : null;
+  const dpName = dpNameForTimeline;
 
   const th = { textAlign: 'start' as const, padding: '7px 8px', fontSize: '10.5px', fontWeight: 700, color: 'var(--t2)', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' as const };
   const td = { padding: '6px 8px', fontSize: '11px', borderBottom: '1px solid var(--brd)' };
@@ -127,7 +152,33 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
         </div>
       )}
 
+      {/* View toggle — UX-SMART-FILTERS-TIMELINE-A. Table remains the default
+          and unchanged; timeline is an additional, opt-in presentation of the
+          same already-fetched movements. */}
       {!loading && !error && movements.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+          <button
+            onClick={() => setViewMode('table')}
+            aria-pressed={viewMode === 'table'}
+            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            📋 {t('mt_view_table', lang)}
+          </button>
+          <button
+            onClick={() => setViewMode('timeline')}
+            aria-pressed={viewMode === 'timeline'}
+            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            🕒 {t('mt_view_timeline', lang)}
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && movements.length > 0 && viewMode === 'timeline' && (
+        <MaterialTimeline entries={timelineEntries} />
+      )}
+
+      {!loading && !error && movements.length > 0 && viewMode === 'table' && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>

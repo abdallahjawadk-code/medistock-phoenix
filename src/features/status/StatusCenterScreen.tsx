@@ -23,6 +23,7 @@ import { InternalAlertsSection } from './InternalAlertsSection';
 import { OutletMaterialGroups } from './OutletMaterialGroups';
 import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
 import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
+import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -45,6 +46,13 @@ const CANON_VARIANT: Record<CanonicalStatus, 'ok' | 'warn' | 'err' | 'neutral'> 
 // dir="ltr" in RTL layout (on-screen AND in the generated print HTML) or the
 // bidi algorithm can visually reorder the separated digit groups.
 const LTR_COLUMN_KEYS = new Set(['expiry', 'updated']);
+
+// UX-SMART-FILTERS-TIMELINE-A: "recently updated" window for the smart
+// filter chip — purely a client-side predicate over already-loaded rows'
+// real updated_at, no new query.
+const RECENTLY_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type QuantityFilter = 'all' | 'has_quantity' | 'zero_quantity';
 
 type SupplyCategory = 'purchases' | 'kimadia' | 'donations' | 'aid';
 
@@ -143,6 +151,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'outlet'>('table');
 
+  // UX-SMART-FILTERS-TIMELINE-A: additional smart-filter dimensions, combined
+  // safely with the existing filterStatus/filterSupply/search filters below —
+  // all operate on already-loaded rows only, no new reads.
+  const [quantityFilter, setQuantityFilter] = useState<QuantityFilter>('all');
+  const [recentOnly, setRecentOnly] = useState(false);
+
   // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
   // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
   // independently re-enforces the same permission matrix server-side.
@@ -194,6 +208,14 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     list = list.filter(r => !r.distribution_points?.status || r.distribution_points.status === 'active');
     if (filterStatus) list = list.filter(r => effOf(r) === filterStatus);
     if (filterSupply) list = list.filter(r => normalizeSupplyType(r.supply_type) === filterSupply);
+    // UX-SMART-FILTERS-TIMELINE-A: smart-filter chips — combined additively
+    // with the filters above, over the same already-loaded rows.
+    if (quantityFilter === 'has_quantity') list = list.filter(r => r.quantity > 0);
+    if (quantityFilter === 'zero_quantity') list = list.filter(r => r.quantity === 0);
+    if (recentOnly) {
+      const cutoff = Date.now() - RECENTLY_UPDATED_WINDOW_MS;
+      list = list.filter(r => !!r.updated_at && new Date(r.updated_at).getTime() >= cutoff);
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(r =>
@@ -206,7 +228,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       );
     }
     return list;
-  }, [allRows, filterStatus, filterSupply, search]);
+  }, [allRows, filterStatus, filterSupply, search, quantityFilter, recentOnly]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -262,9 +284,66 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     const parts: string[] = [];
     if (filterStatus) parts.push(`${t('sc_effective_status', lang)}: ${t('cond_' + filterStatus, lang)}`);
     if (filterSupply) parts.push(`${t('avail_supply_type', lang)}: ${t('sc_supply_' + filterSupply, lang)}`);
+    // UX-SMART-FILTERS-TIMELINE-A: reflect the smart-filter chips in the same
+    // "selected filters" summary already shown on screen and in export/print
+    // — exportCsv/printReport themselves are unchanged, they just read `rows`
+    // (already smart-filtered above) and this text.
+    if (quantityFilter === 'has_quantity') parts.push(t('sf_has_quantity', lang));
+    if (quantityFilter === 'zero_quantity') parts.push(t('sf_zero_quantity', lang));
+    if (recentOnly) parts.push(t('sf_recently_updated', lang));
     if (search.trim()) parts.push(`${t('search', lang)}: ${search.trim()}`);
     return parts.length ? parts.join(' · ') : t('sc_all', lang);
-  }, [filterStatus, filterSupply, search, lang]);
+  }, [filterStatus, filterSupply, quantityFilter, recentOnly, search, lang]);
+
+  // UX-SMART-FILTERS-TIMELINE-A: smart-filter chip definitions — every chip
+  // only toggles the client-side state above; no new reads, no backend calls.
+  const smartFilterChips: SmartFilterChipItem[] = [
+    {
+      key: 'all', labelKey: 'sc_all', icon: '🔎',
+      active: filterStatus === '' && quantityFilter === 'all' && !recentOnly,
+      onClick: () => { setFilterStatus(''); setQuantityFilter('all'); setRecentOnly(false); },
+    },
+    {
+      key: 'available', labelKey: 'cond_available', icon: '✅',
+      active: filterStatus === 'available',
+      onClick: () => setFilterStatus(prev => (prev === 'available' ? '' : 'available')),
+    },
+    {
+      key: 'low_stock', labelKey: 'cond_low_stock', icon: '⚠️',
+      active: filterStatus === 'low_stock',
+      onClick: () => setFilterStatus(prev => (prev === 'low_stock' ? '' : 'low_stock')),
+    },
+    {
+      key: 'missing', labelKey: 'cond_missing', icon: '❌',
+      active: filterStatus === 'missing',
+      onClick: () => setFilterStatus(prev => (prev === 'missing' ? '' : 'missing')),
+    },
+    {
+      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: '⏱️',
+      active: filterStatus === 'near_expiry',
+      onClick: () => setFilterStatus(prev => (prev === 'near_expiry' ? '' : 'near_expiry')),
+    },
+    {
+      key: 'expired', labelKey: 'cond_expired', icon: '🚫',
+      active: filterStatus === 'expired',
+      onClick: () => setFilterStatus(prev => (prev === 'expired' ? '' : 'expired')),
+    },
+    {
+      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: '📦',
+      active: quantityFilter === 'has_quantity',
+      onClick: () => setQuantityFilter(prev => (prev === 'has_quantity' ? 'all' : 'has_quantity')),
+    },
+    {
+      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: '🕳️',
+      active: quantityFilter === 'zero_quantity',
+      onClick: () => setQuantityFilter(prev => (prev === 'zero_quantity' ? 'all' : 'zero_quantity')),
+    },
+    {
+      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: '🕒',
+      active: recentOnly,
+      onClick: () => setRecentOnly(prev => !prev),
+    },
+  ];
 
   // ── Column definitions shared by table / print / CSV ──
   const columns: { key: string; label: string; value: (r: LiveAvailRow) => string }[] = [
@@ -467,6 +546,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
             <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
           </div>
+        </div>
+
+        {/* Smart filter chips — UX-SMART-FILTERS-TIMELINE-A. Combine safely
+            with the dropdowns/search above: every chip only sets the same
+            client-side state, all applied together in the `rows` memo. */}
+        <div style={{ marginTop: '12px' }}>
+          <SmartFilterChips items={smartFilterChips} ariaLabel={t('sf_group_label', lang)} />
         </div>
 
         {/* AVAILABILITY-ALERTS-QR-POLISH-B: table / outlet-grouped view toggle —

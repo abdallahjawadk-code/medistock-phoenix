@@ -1101,6 +1101,17 @@ export const T: Dict = {
   cc_activity_title:    { ar: 'آخر العمليات',                                en: 'Recent Activity' },
   cc_activity_empty:    { ar: 'ستظهر هنا آخر العمليات بعد بدء استخدام النظام.', en: 'Recent activity will appear here after the system is used.' },
   cc_activity_updated:  { ar: 'محدث',                                       en: 'updated' },
+
+  /* ── UX-SMART-FILTERS-TIMELINE-A: Smart Filters ── */
+  sf_group_label:        { ar: 'مرشحات ذكية',            en: 'Smart filters' },
+  sf_has_quantity:       { ar: 'يوجد كمية',              en: 'Has quantity' },
+  sf_zero_quantity:      { ar: 'كمية صفرية',             en: 'Zero quantity' },
+  sf_recently_updated:   { ar: 'محدث حديثًا',            en: 'Recently updated' },
+
+  /* ── UX-SMART-FILTERS-TIMELINE-A: Material Timeline ── */
+  mt_timeline_empty:  { ar: 'ستظهر هنا حركة المادة بعد بدء تسجيل العمليات.', en: 'Material activity will appear here after operations are recorded.' },
+  mt_view_table:      { ar: 'عرض الجدول',                                    en: 'Table view' },
+  mt_view_timeline:   { ar: 'عرض الخط الزمني',                                en: 'Timeline view' },
 };
 
 export function t(key: string, lang: Lang): string {
