@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -234,28 +234,58 @@ export function InterInstitutionAlertsScreen() {
   const forbidden = rpcError === 'FORBIDDEN';
   const allAlerts = result.data?.alerts ?? [];
 
-  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A: batched, read-only contact lookup for
-  // every organization id appearing in the already-loaded alerts — reuses
-  // organization_status_contacts (migration 008) via the existing
-  // getOrgStatusContactsForOrgs service, no new SQL/RPC/migration. RLS scopes
-  // this to the actor's own org unless super_admin; a missing entry for a
-  // given org id is treated as "no contact available" — never substituted
-  // with an invented number.
-  const alertOrgIds = useMemo(
-    () => Array.from(new Set(allAlerts.flatMap(a => [a.sourceOrganizationId, a.targetOrganizationId]))),
-    [allAlerts],
-  );
-  const contactsResult = useAsync(
-    () => alertOrgIds.length ? getOrgStatusContactsForOrgs(alertOrgIds) : Promise.resolve([]),
-    [alertOrgIds],
-  );
-  const contactsByOrg = useMemo(() => {
-    const map = new Map<string, OrgContactRow>();
-    for (const c of contactsResult.data ?? []) {
-      if (!map.has(c.organization_id)) map.set(c.organization_id, c);
+  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A / BUGFIX-INTER-ALERTS-FREEZE-A:
+  // batched, read-only contact lookup for every organization id appearing in
+  // the already-loaded alerts — reuses organization_status_contacts
+  // (migration 008) via the existing getOrgStatusContactsForOrgs service, no
+  // new SQL/RPC/migration. RLS scopes this to the actor's own org unless
+  // super_admin; a missing entry for a given org id is treated as "no
+  // contact available" — never substituted with an invented number.
+  //
+  // `allAlerts` is a fresh `[]` on every render while `result.data` is still
+  // null (loading), so deriving an *array* from it and using that array as
+  // an effect dependency re-fires the effect every render, forever (the
+  // freeze root cause). `contactOrgKey` collapses that into a content-stable
+  // string — identical org sets always produce the identical string, so the
+  // effect below only re-runs when the actual set of organizations changes.
+  const contactOrgKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of allAlerts) {
+      if (a.sourceOrganizationId) ids.add(a.sourceOrganizationId);
+      if (a.targetOrganizationId) ids.add(a.targetOrganizationId);
     }
-    return map;
-  }, [contactsResult.data]);
+    return Array.from(ids).sort().join('|');
+  }, [allAlerts]);
+
+  const [contactsByOrg, setContactsByOrg] = useState<Map<string, OrgContactRow>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!contactOrgKey) {
+      setContactsByOrg(new Map());
+      return;
+    }
+
+    const ids = contactOrgKey.split('|').filter(Boolean);
+
+    void getOrgStatusContactsForOrgs(ids)
+      .then((contacts) => {
+        if (cancelled) return;
+        const next = new Map<string, OrgContactRow>();
+        for (const c of contacts) {
+          if (!next.has(c.organization_id)) next.set(c.organization_id, c);
+        }
+        setContactsByOrg(next);
+      })
+      .catch(() => {
+        if (!cancelled) setContactsByOrg(new Map());
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [contactOrgKey]);
 
   const summaryTotal = allAlerts.length;
   const summaryHigh = allAlerts.filter(a => a.severity === 'high').length;
