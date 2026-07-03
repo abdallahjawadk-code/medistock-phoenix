@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
 import { getQrTokensByOrg, disableQrToken } from '@/shared/supabase/services/qr.service';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -56,17 +57,11 @@ function esc(s: string): string {
 }
 
 function fmtDate(iso: string | null, lang: 'ar' | 'en'): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-GB');
+  return formatStableDate(iso, lang);
 }
 
 function fmtDatetime(iso: string | null, lang: 'ar' | 'en'): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-GB', {
-      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return iso; }
+  return formatStableDateTime(iso, lang);
 }
 
 /* ── Main screen ── */
@@ -156,13 +151,20 @@ export function QrScreen() {
     const tg    = getTarget(row);
     const label = tg?.label ?? tg?.target_type ?? '—';
     const url   = makePublicUrl(row.public_id);
+    // Open the window synchronously, still inside the click handler's user-
+    // gesture context — some browsers (notably Safari) treat window.open()
+    // called after an `await` as no longer gesture-triggered and silently
+    // block it. Write the QR image in once it's ready instead.
+    const win = window.open('', '_blank', 'width=520,height=680');
+    if (!win) {
+      showToast(t('print_popup_blocked', lang));
+      return;
+    }
     try {
       const src = await QRCode.toDataURL(url, {
         width: 240, margin: 2, color: { dark: '#1a1a1a', light: '#ffffff' },
       });
-      const win = window.open('', '_blank', 'width=520,height=680');
-      if (!win) return;
-      const generated = new Date().toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-US');
+      const generated = formatStableDate(new Date(), lang);
       win.document.write(`<!DOCTYPE html>
 <html dir="${lang === 'ar' ? 'rtl' : 'ltr'}" lang="${lang === 'ar' ? 'ar' : 'en'}">
 <head>
@@ -175,7 +177,7 @@ export function QrScreen() {
     .type { font-size: 12px; color: #888; margin: 0 0 20px; text-transform: uppercase; letter-spacing: .5px; }
     img { display: block; margin: 0 auto 16px; width: 200px; height: 200px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
     .url { font-size: 10.5px; color: #666; word-break: break-all; font-family: monospace; direction: ltr; margin: 0 0 6px; }
-    .date { font-size: 10px; color: #888; margin: 0 0 16px; }
+    .date { font-size: 10px; color: #888; margin: 0 0 16px; direction: ltr; }
     .brand { font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
     @media print { body { padding: 20px; } }
   </style>
@@ -185,7 +187,7 @@ export function QrScreen() {
   <p class="type">${esc(tg?.target_type ?? '')}</p>
   <img src="${src}" alt="QR Code">
   <p class="url">${esc(url)}</p>
-  <p class="date">${esc(generated)}</p>
+  <p class="date" dir="ltr">${esc(generated)}</p>
   <p class="brand">MediStock-Babil / MASAR Health Network</p>
 </body>
 </html>`);
@@ -193,7 +195,10 @@ export function QrScreen() {
       win.focus();
       win.print();
       win.close();
-    } catch { showToast(t('qr_display_error', lang)); }
+    } catch {
+      win.close();
+      showToast(t('qr_display_error', lang));
+    }
   }
 
   async function onRevoke(id: string) {
@@ -600,7 +605,7 @@ function AuditTokenCard({
         {row.last_scanned_at ? (
           <span>
             {lang === 'ar' ? 'آخر مسح: ' : 'Last scan: '}
-            <span style={{ fontWeight: 600 }}>{fmtDatetime(row.last_scanned_at, lang)}</span>
+            <span style={{ fontWeight: 600 }} dir="ltr">{fmtDatetime(row.last_scanned_at, lang)}</span>
           </span>
         ) : (
           <span style={{ color: 'var(--t3)' }}>
@@ -608,11 +613,11 @@ function AuditTokenCard({
           </span>
         )}
         <span>
-          {lang === 'ar' ? 'أُنشئ: ' : 'Created: '}{fmtDate(row.created_at, lang)}
+          {lang === 'ar' ? 'أُنشئ: ' : 'Created: '}<span dir="ltr">{fmtDate(row.created_at, lang)}</span>
         </span>
         {row.disabled_at && (
           <span style={{ color: 'var(--t3)' }}>
-            {lang === 'ar' ? 'عُطِّل: ' : 'Disabled: '}{fmtDate(row.disabled_at, lang)}
+            {lang === 'ar' ? 'عُطِّل: ' : 'Disabled: '}<span dir="ltr">{fmtDate(row.disabled_at, lang)}</span>
           </span>
         )}
       </div>

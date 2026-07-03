@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDate } from '@/shared/lib/date';
 import { canManageOrg, canAssignRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
 import type { Role } from '@/shared/lib/types';
 import { roleLabelKey } from '@/shared/lib/roles';
@@ -34,6 +35,7 @@ import {
   getEntityPurgeImpact,
   getOrgDeleteImpact,
   clearPortAvailability,
+  classifyClearPortItemsError,
   archiveOrganization,
 } from '@/shared/supabase/services/lifecycle.service';
 import {
@@ -308,6 +310,8 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
       });
       onCreated();
     } catch (e) {
+      // Developer-safe console log; user sees a friendly message only (mirrors useAsync).
+      console.error('[phoenix] createOrganization failed:', e);
       setError(e instanceof Error ? e.message : t('load_error', lang));
     } finally {
       setBusy(false);
@@ -1293,6 +1297,7 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
         canRegenerate={canGenerateQr && canRevokeQr}
         onRegenerate={() => { setShowPreview(false); setConfirmAction('regenerate'); }}
         busy={busy === 'regenerate'}
+        onToast={onToast}
       />
     </PhoenixCard>
   );
@@ -1300,7 +1305,7 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
 
 /* ── QR Preview / Print Modal ── */
 
-function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, lang, canRegenerate, onRegenerate, busy }: {
+function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, lang, canRegenerate, onRegenerate, busy, onToast }: {
   open: boolean;
   onClose: () => void;
   src: string | null;
@@ -1312,6 +1317,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
   canRegenerate: boolean;
   onRegenerate: () => void;
   busy: boolean;
+  onToast: (msg: string) => void;
 }) {
   function esc(s: string) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1319,9 +1325,12 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
 
   function handlePrint() {
     if (!src) return;
-    const generated = new Date().toLocaleDateString(lang === 'ar' ? 'ar-IQ' : 'en-US');
+    const generated = formatStableDate(new Date(), lang);
     const win = window.open('', '_blank', 'width=520,height=680');
-    if (!win) return;
+    if (!win) {
+      onToast(t('print_popup_blocked', lang));
+      return;
+    }
     win.document.write(`<!DOCTYPE html>
 <html dir="${lang === 'ar' ? 'rtl' : 'ltr'}" lang="${lang === 'ar' ? 'ar' : 'en'}">
 <head>
@@ -1334,7 +1343,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
     .org { font-size: 14px; color: #555; margin: 0 0 20px; }
     img { display: block; margin: 0 auto 16px; width: 200px; height: 200px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
     .url { font-size: 10.5px; color: #666; word-break: break-all; font-family: monospace; direction: ltr; margin: 0 0 6px; }
-    .date { font-size: 10px; color: #888; margin: 0 0 16px; }
+    .date { font-size: 10px; color: #888; margin: 0 0 16px; direction: ltr; }
     .brand { font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
     @media print { body { padding: 20px; } }
   </style>
@@ -1344,7 +1353,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
   ${orgName ? `<p class="org">${esc(orgName)}</p>` : ''}
   <img src="${src}" alt="QR Code">
   <p class="url">${esc(url)}</p>
-  <p class="date">${esc(generated)}</p>
+  <p class="date" dir="ltr">${esc(generated)}</p>
   <p class="brand">MediStock-Babil / MASAR Health Network</p>
 </body>
 </html>`);
@@ -1710,7 +1719,8 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
       impact.reload();
       onDone();
     } catch (e) {
-      onToast(e instanceof Error ? e.message : t('load_error', lang));
+      console.error('[phoenix] clearPortAvailability failed:', e);
+      onToast(t(classifyClearPortItemsError(e), lang));
     } finally {
       setBusy(false);
     }

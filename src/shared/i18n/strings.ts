@@ -581,6 +581,7 @@ export const T: Dict = {
   sc_print_report:      { ar: 'طباعة التقرير',                     en: 'Print report' },
   sc_export_excel:      { ar: 'تصدير Excel',                       en: 'Export Excel' },
   sc_print_pdf:         { ar: 'طباعة / حفظ PDF',                   en: 'Print / Save as PDF' },
+  print_popup_blocked:  { ar: 'يبدو أن المتصفح منع فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم إعادة المحاولة.', en: 'Your browser appears to have blocked the print window. Please allow pop-ups for this site and try again.' },
   sc_all_statuses:      { ar: 'كل الحالات',                        en: 'All statuses' },
   sc_all_supply_types:  { ar: 'كل أنواع التجهيز',                  en: 'All supply types' },
   sc_supply_purchases:  { ar: 'مشتريات',                          en: 'Purchases' },
@@ -920,6 +921,14 @@ export const T: Dict = {
   dw_cleared:         { ar: 'تم حذف مواد المنفذ بنجاح',          en: 'Port items cleared successfully' },
   dw_org_archived:    { ar: 'تم أرشفة المؤسسة بنجاح',            en: 'Organization archived successfully' },
   dw_wh_archived:     { ar: 'تم أرشفة المذخر بنجاح',             en: 'Warehouse archived successfully' },
+  // BUGFIX-REPORTS-DATES-PORT-CLEAR-A: clear_port_availability (migration 007)
+  // error codes, classified precisely instead of showing the raw backend
+  // code/message or a generic load-failure toast.
+  dw_clear_forbidden_role: { ar: 'لا تملك صلاحية حذف مواد هذا المنفذ', en: "You do not have permission to clear this outlet's items." },
+  dw_clear_forbidden_org:  { ar: 'لا يمكنك حذف مواد منفذ خارج مؤسستك', en: 'You cannot clear items for an outlet outside your organization.' },
+  dw_clear_confirmation_mismatch: { ar: 'عبارة التأكيد غير مطابقة',   en: 'Confirmation phrase does not match.' },
+  dw_clear_point_not_found: { ar: 'تعذر العثور على المنفذ',           en: 'Outlet not found.' },
+  dw_clear_has_movements:  { ar: 'تعذر حذف المواد لوجود سجل حركات كمية مرتبط بها. يُحتفظ بسجل الحركات كأثر تدقيقي — استخدم "إزالة من المنفذ" لتصفير كل مادة بدلاً من ذلك.', en: 'Cannot clear items — quantity movement history is linked to them and is kept as an audit trail. Use "Remove from outlet" per item instead.' },
 
   /* ── My Account (MY-ACCOUNT-PASSWORD-RESET-A) ── */
   nav_my_account:      { ar: 'حسابي',                                en: 'My Account' },

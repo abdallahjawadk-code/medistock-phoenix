@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { formatStableDateTime } from '@/shared/lib/date';
 import {
   getAvailabilityMovementsByItem,
   type AvailabilityMovementRecord,
@@ -144,7 +145,7 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
             <tbody>
               {movements.map(m => (
                 <tr key={m.id}>
-                  <td style={td} dir="ltr">{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}</td>
+                  <td style={td} dir="ltr">{formatStableDateTime(m.createdAt, lang)}</td>
                   <td style={td}>{t(MOVEMENT_TYPE_LABEL_KEY[m.movementType], lang)}</td>
                   <td style={td}>{m.quantityBefore}</td>
                   <td style={td} dir="ltr">{formatDelta(m.movementType, m.quantityDelta)}</td>

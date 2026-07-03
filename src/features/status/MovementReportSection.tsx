@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDateTime } from '@/shared/lib/date';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAvailabilityMovementsReport,
@@ -11,6 +12,7 @@ import {
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 
 /**
  * AVAILABILITY-MOVEMENT-REPORTS-PRINT-A
@@ -37,6 +39,12 @@ const MOVEMENT_TYPE_LABEL_KEY: Record<AvailabilityMovementType, string> = {
   subtract: 'mvmt_subtract',
   correction: 'mvmt_correction',
 };
+
+// BUGFIX-REPORTS-DATES-PORT-CLEAR-A: columns whose values are digit/slash
+// text (dates, quantities) — must render dir="ltr" in RTL layout (on-screen
+// AND in the generated print HTML) or the bidi algorithm can visually
+// reorder the separated groups.
+const LTR_COLUMN_KEYS = new Set(['datetime', 'before', 'delta', 'after']);
 
 function formatDelta(type: AvailabilityMovementType, delta: number): string {
   if (type === 'add') return `+${Math.abs(delta)}`;
@@ -88,6 +96,12 @@ export function MovementReportSection() {
   const [pointId, setPointId] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
   const [actorSearch, setActorSearch] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
 
   const points = useAsync(
     () => (canViewReport && activeOrgId) ? getPointsByOrg(activeOrgId) : Promise.resolve([]),
@@ -132,7 +146,7 @@ export function MovementReportSection() {
   // Shared column definitions for table / print / CSV — mirrors the pattern
   // already used by StatusCenterScreen's live availability report.
   const columns: { key: string; label: string; value: (r: AvailabilityMovementReportRecord) => string }[] = [
-    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => new Date(r.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en') },
+    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => formatStableDateTime(r.createdAt, lang) },
     { key: 'point',    label: t('sc_lm_port', lang),        value: dpLabel },
     { key: 'sci',      label: t('avail_scientific_name', lang), value: r => r.scientificName || '—' },
     { key: 'trade',    label: t('avail_trade_name', lang), value: r => r.tradeName || '—' },
@@ -147,7 +161,7 @@ export function MovementReportSection() {
     { key: 'notes',    label: t('mvmt_col_notes', lang),    value: r => r.notes || '—' },
   ];
 
-  const generatedAt = () => new Date().toLocaleString(lang === 'ar' ? 'ar' : 'en');
+  const generatedAt = () => formatStableDateTime(new Date(), lang);
 
   const selectedFiltersText = useMemo(() => {
     const parts: string[] = [];
@@ -167,7 +181,7 @@ export function MovementReportSection() {
     const dir = lang === 'ar' ? 'rtl' : 'ltr';
     const headCells = columns.map(c => `<th>${escHtml(c.label)}</th>`).join('');
     const bodyRows = rows.map(r =>
-      '<tr>' + columns.map(c => `<td>${escHtml(c.value(r))}</td>`).join('') + '</tr>'
+      '<tr>' + columns.map(c => `<td${LTR_COLUMN_KEYS.has(c.key) ? ' dir="ltr"' : ''}>${escHtml(c.value(r))}</td>`).join('') + '</tr>'
     ).join('');
     return `<!doctype html><html dir="${dir}" lang="${lang}"><head><meta charset="utf-8">
 <title>${escHtml(t('mvmt_report_title', lang))}</title>
@@ -177,6 +191,7 @@ export function MovementReportSection() {
   h1 { font-size: 18px; margin: 0 0 4px; }
   .brand { font-size: 11px; color: #555; margin-bottom: 10px; }
   .meta { font-size: 11px; color: #333; margin: 2px 0; }
+  .meta .val { unicode-bidi: isolate; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 10px; }
   th, td { border: 1px solid #999; padding: 4px 6px; text-align: ${lang === 'ar' ? 'right' : 'left'}; white-space: nowrap; }
   th { background: #eee; }
@@ -184,7 +199,7 @@ export function MovementReportSection() {
   <h1>${escHtml(t('mvmt_report_title', lang))}</h1>
   <div class="brand">MediStock-Babil / MASAR Health Network</div>
   <div class="meta">${escHtml(t('sc_selected_filters', lang))}: ${escHtml(selectedFiltersText)}</div>
-  <div class="meta">${escHtml(t('sc_generated_at', lang))}: ${escHtml(generatedAt())}</div>
+  <div class="meta">${escHtml(t('sc_generated_at', lang))}: <span class="val" dir="ltr">${escHtml(generatedAt())}</span></div>
   <div class="meta">${escHtml(t('sc_total_rows', lang))}: ${rows.length}</div>
   <table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>
 </body></html>`;
@@ -193,7 +208,10 @@ export function MovementReportSection() {
   function printReport() {
     if (rows.length === 0) return;
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      showToast(t('print_popup_blocked', lang));
+      return;
+    }
     win.document.write(buildReportHtml());
     win.document.close();
     win.focus();
@@ -311,7 +329,7 @@ export function MovementReportSection() {
                 <tbody>
                   {rows.map(r => (
                     <tr key={r.id}>
-                      {columns.map(c => <td key={c.key} style={td} dir={c.key === 'datetime' || c.key === 'before' || c.key === 'delta' || c.key === 'after' ? 'ltr' : 'auto'}>{c.value(r)}</td>)}
+                      {columns.map(c => <td key={c.key} style={td} dir={LTR_COLUMN_KEYS.has(c.key) ? 'ltr' : 'auto'}>{c.value(r)}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -320,6 +338,7 @@ export function MovementReportSection() {
           )}
         </>
       )}
+      {toast && <PhoenixToast message={toast} />}
     </PhoenixCard>
   );
 }

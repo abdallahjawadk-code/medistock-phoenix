@@ -66,6 +66,35 @@ export async function clearPortAvailability(pointId: string): Promise<{ ok: bool
   return result;
 }
 
+/**
+ * BUGFIX-REPORTS-DATES-PORT-CLEAR-A: classify a clearPortAvailability failure
+ * into an i18n string key instead of showing the raw backend error code
+ * (INSUFFICIENT_ROLE, CONFIRMATION_MISMATCH, ...) or a raw Postgres message.
+ *
+ * clear_port_availability (migration 007) hard-DELETEs item_availability
+ * rows. item_availability_movements.item_availability_id references that
+ * table ON DELETE RESTRICT (migration 033), added after 007 shipped — so any
+ * port that has quantity-movement history (the common case once Adjust
+ * Quantity is used) makes the DELETE fail with Postgres 23503
+ * (foreign_key_violation). That case is classified to dw_clear_has_movements
+ * so the user gets an honest, actionable message instead of a raw DB error.
+ * A backend fix (see BUGFIX-REPORTS-DATES-PORT-CLEAR-A migration plan) is
+ * required to actually allow clearing ports with movement history; this is
+ * frontend-only error classification, not a workaround for the underlying
+ * restriction.
+ */
+export function classifyClearPortItemsError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+
+  if (code === '23503' || /foreign key constraint/i.test(message)) return 'dw_clear_has_movements';
+  if (message === 'INSUFFICIENT_ROLE') return 'dw_clear_forbidden_role';
+  if (message === 'FORBIDDEN_ORG') return 'dw_clear_forbidden_org';
+  if (message === 'CONFIRMATION_MISMATCH') return 'dw_clear_confirmation_mismatch';
+  if (message === 'POINT_NOT_FOUND') return 'dw_clear_point_not_found';
+  return 'load_error';
+}
+
 export async function archiveOrganization(orgId: string): Promise<void> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 

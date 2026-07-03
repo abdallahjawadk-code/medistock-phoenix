@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
@@ -35,6 +36,11 @@ const CANONICAL_STATUSES: CanonicalStatus[] = [
 const CANON_VARIANT: Record<CanonicalStatus, 'ok' | 'warn' | 'err' | 'neutral'> = {
   available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
 };
+
+// BUGFIX-REPORTS-DATES-PORT-CLEAR-A: date-shaped columns — must render
+// dir="ltr" in RTL layout (on-screen AND in the generated print HTML) or the
+// bidi algorithm can visually reorder the separated digit groups.
+const LTR_COLUMN_KEYS = new Set(['expiry', 'updated']);
 
 type SupplyCategory = 'purchases' | 'kimadia' | 'donations' | 'aid';
 
@@ -183,7 +189,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // a whole-organization summary, not a filtered view.
   const internalAlerts = useMemo(() => computeInternalAlerts(allRows), [allRows]);
 
-  const generatedAt = () => new Date().toLocaleString(lang === 'ar' ? 'ar' : 'en');
+  const generatedAt = () => formatStableDateTime(new Date(), lang);
 
   const selectedFiltersText = useMemo(() => {
     const parts: string[] = [];
@@ -207,7 +213,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     { key: 'eff',     label: t('sc_effective_status', lang),value: r => t('cond_' + effOf(r), lang) },
     { key: 'expiry',  label: t('expiry', lang),             value: r => r.expiry_date || '—' },
     { key: 'bucket',  label: t('sc_expiry_bucket', lang),   value: r => r.expiry_bucket || '—' },
-    { key: 'updated', label: t('last_upd', lang),    value: r => r.updated_at ? new Date(r.updated_at).toLocaleDateString(lang === 'ar' ? 'ar' : 'en') : '—' },
+    { key: 'updated', label: t('last_upd', lang),    value: r => formatStableDate(r.updated_at, lang) },
   ];
 
   function buildReportHtml(): string {
@@ -215,7 +221,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     const countsLine = CANONICAL_STATUSES.map(s => `${t('cond_' + s, lang)}: ${counts[s]}`).join(' · ');
     const headCells = columns.map(c => `<th>${escHtml(c.label)}</th>`).join('');
     const bodyRows = rows.map(r =>
-      '<tr>' + columns.map(c => `<td>${escHtml(c.value(r))}</td>`).join('') + '</tr>'
+      '<tr>' + columns.map(c => `<td${LTR_COLUMN_KEYS.has(c.key) ? ' dir="ltr"' : ''}>${escHtml(c.value(r))}</td>`).join('') + '</tr>'
     ).join('');
     return `<!doctype html><html dir="${dir}" lang="${lang}"><head><meta charset="utf-8">
 <title>${escHtml(t('sc_report_title', lang))}</title>
@@ -225,6 +231,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   h1 { font-size: 18px; margin: 0 0 4px; }
   .brand { font-size: 11px; color: #555; margin-bottom: 10px; }
   .meta { font-size: 11px; color: #333; margin: 2px 0; }
+  .meta .val { unicode-bidi: isolate; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 10.5px; }
   th, td { border: 1px solid #999; padding: 4px 6px; text-align: ${lang === 'ar' ? 'right' : 'left'}; white-space: nowrap; }
   th { background: #eee; }
@@ -235,7 +242,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   <div class="brand">MediStock-Babil / MASAR Health Network</div>
   ${orgName ? `<div class="meta">${escHtml(t('sc_lm_org', lang))}: ${escHtml(orgName)}</div>` : ''}
   <div class="meta">${escHtml(t('sc_selected_filters', lang))}: ${escHtml(selectedFiltersText)}</div>
-  <div class="meta">${escHtml(t('sc_generated_at', lang))}: ${escHtml(generatedAt())}</div>
+  <div class="meta">${escHtml(t('sc_generated_at', lang))}: <span class="val" dir="ltr">${escHtml(generatedAt())}</span></div>
   <div class="meta">${escHtml(t('sc_total_rows', lang))}: ${rows.length}</div>
   <div class="meta">${escHtml(countsLine)}</div>
   <table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>
@@ -245,7 +252,11 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   function printReport() {
     if (rows.length === 0) return;
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      setMovementToast(t('print_popup_blocked', lang));
+      setTimeout(() => setMovementToast(null), 3000);
+      return;
+    }
     win.document.write(buildReportHtml());
     win.document.close();
     win.focus();
@@ -432,7 +443,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
                     <td style={td} dir="ltr">{r.expiry_date || (r.expiry_bucket ? t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang) : '—')}</td>
-                    <td style={td} dir="ltr">{r.updated_at ? new Date(r.updated_at).toLocaleDateString(lang === 'ar' ? 'ar' : 'en') : '—'}</td>
+                    <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
                     {(canAdjustQuantity || canViewMovementHistory) && (
                       <td style={td}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
