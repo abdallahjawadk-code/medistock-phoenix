@@ -467,6 +467,18 @@ export async function enableUserViaEdge(targetUserId: string): Promise<Lifecycle
 }
 
 /**
+ * Rotate an active user's password to a new admin-chosen/generated temporary
+ * value, without touching their identity (name/username/role/org). Distinct
+ * from recycleUserViaEdge, which requires the target to already be suspended
+ * and reassigns their whole identity. The password is sent over HTTPS to the
+ * Edge Function only — never logged, never stored, never echoed back (the
+ * caller already has it, since they typed/generated it before calling this).
+ */
+export async function rotatePasswordViaEdge(targetUserId: string, newPassword: string): Promise<LifecycleResult> {
+  return invokeLifecycle({ action: 'rotate_password', target_user_id: targetUserId, new_password: newPassword });
+}
+
+/**
  * Hard-delete a user from auth and profiles (cascade).
  * confirmation must equal 'DELETE_USER_<target-email>' (built by UI, verified server-side).
  */

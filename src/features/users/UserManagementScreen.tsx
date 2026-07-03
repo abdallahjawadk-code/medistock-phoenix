@@ -14,7 +14,7 @@ import {
 import {
   listUsers, getEffectivePermissions, assignProfilePermissions,
   resetProfilePermissions, createUserViaEdge, getOrgStatusContacts,
-  disableUserViaEdge, enableUserViaEdge, recycleUserViaEdge,
+  disableUserViaEdge, enableUserViaEdge, recycleUserViaEdge, rotatePasswordViaEdge,
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
@@ -128,6 +128,7 @@ export function UserManagementScreen() {
   const [toast,        setToast]        = useState<string | null>(null);
   const [disableTarget, setDisableTarget] = useState<ManagedUser | null>(null);
   const [recycleTarget, setRecycleTarget] = useState<ManagedUser | null>(null);
+  const [rotateTarget, setRotateTarget] = useState<ManagedUser | null>(null);
 
   const users = useAsync(() => listUsers(isSuper ? activeOrgId : undefined), [isSuper, activeOrgId]);
 
@@ -232,7 +233,7 @@ export function UserManagementScreen() {
                 {/* Lifecycle: disable/enable — super_admin only, not self.
                     Hard delete is gated pending USER-LIFECYCLE-DISABLE-DELETE-A finalization. */}
                 {isSuper && !isSelf && (
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
                     onClick={e => e.stopPropagation()}>
                     {u.status === 'suspended' ? (
                       <>
@@ -248,9 +249,14 @@ export function UserManagementScreen() {
                         )}
                       </>
                     ) : (
-                      <PhoenixButton variant="ghost" size="md" onClick={() => setDisableTarget(u)}>
-                        🔕 {t('um_disable_user', lang)}
-                      </PhoenixButton>
+                      <>
+                        <PhoenixButton variant="ghost" size="md" onClick={() => setDisableTarget(u)}>
+                          🔕 {t('um_disable_user', lang)}
+                        </PhoenixButton>
+                        <PhoenixButton variant="ghost" size="md" onClick={() => setRotateTarget(u)}>
+                          🔑 {t('um_rotate_password', lang)}
+                        </PhoenixButton>
+                      </>
                     )}
                   </div>
                 )}
@@ -312,6 +318,15 @@ export function UserManagementScreen() {
           onCancel={() => setRecycleTarget(null)}
           onSuccess={(msg) => { setRecycleTarget(null); showToast(msg); afterLifecycle(); }}
           onError={(msg) => showToast(msg)}
+        />
+      )}
+
+      {/* Rotate temporary password modal */}
+      {rotateTarget && (
+        <RotatePasswordModal
+          user={rotateTarget} lang={lang}
+          onCancel={() => setRotateTarget(null)}
+          onDone={() => { setRotateTarget(null); afterLifecycle(); }}
         />
       )}
 
@@ -875,6 +890,128 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
             {isEnable ? t('um_enable_user', lang) : t('um_disable_user', lang)}
           </PhoenixButton>
         </div>
+      </PhoenixCard>
+    </div>
+  );
+}
+
+/* ── Rotate temporary password modal ──
+   Two steps in one modal: (1) confirm + enter a new temporary password for an
+   ACTIVE user (no identity change — distinct from account recycling, which
+   requires the target to already be suspended); (2) show the new password
+   exactly once after a successful reset, with the required one-time warning,
+   then discard it from state on close. The password never leaves this
+   component's local state and is never logged. */
+
+function RotatePasswordModal({ user, lang, onCancel, onDone }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultPassword, setResultPassword] = useState<string | null>(null);
+
+  const valid = newPassword.length >= 8 && newPassword === confirmPassword;
+
+  async function onConfirm() {
+    setError(null);
+    if (newPassword.length < 8) { setError(t('um_password_too_short', lang)); return; }
+    if (newPassword !== confirmPassword) { setError(t('um_passwords_no_match', lang)); return; }
+
+    setBusy(true);
+    try {
+      const res = await rotatePasswordViaEdge(user.id, newPassword);
+      if (res.ok) {
+        // Shown exactly once, from the value already held locally — the
+        // server never echoes the password back.
+        setResultPassword(newPassword);
+      } else {
+        setError(res.error === 'LAST_SUPER_ADMIN' ? t('um_last_super_admin', lang) : t('um_rotate_password_failed', lang));
+      }
+    } catch {
+      setError(t('um_rotate_password_failed', lang));
+    } finally {
+      setBusy(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+  }
+
+  function handleClose() {
+    setResultPassword(null);
+    if (resultPassword) onDone();
+    else onCancel();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
+          🔑 {t('um_rotate_password', lang)}
+        </h3>
+
+        {!resultPassword ? (
+          <>
+            <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '14px' }} dir="auto">
+              <strong>{userName(user)}</strong> — {t('um_rotate_password_confirm_q', lang)}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_rotate_password_new', lang)} *</label>
+                <div style={{ position: 'relative' }}>
+                  <input type={showPwd ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                    style={{ ...fieldStyle, paddingInlineEnd: '60px' }} autoComplete="new-password" dir="ltr" />
+                  <button type="button" onClick={() => setShowPwd(s => !s)}
+                    style={{ position: 'absolute', insetInlineEnd: '8px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--t2)' }}>
+                    {showPwd ? t('um_hide_password', lang) : t('um_show_password', lang)}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_confirm_password', lang)} *</label>
+                <input type={showPwd ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  style={{ ...fieldStyle, borderColor: confirmPassword && confirmPassword !== newPassword ? 'var(--err)' : undefined }}
+                  autoComplete="new-password" dir="ltr" />
+              </div>
+              {newPassword && newPassword.length < 8 && (
+                <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }}>{t('um_password_too_short', lang)}</p>
+              )}
+              {confirmPassword && confirmPassword !== newPassword && (
+                <p style={{ fontSize: '11.5px', color: 'var(--err)', margin: 0 }}>{t('um_passwords_no_match', lang)}</p>
+              )}
+            </div>
+
+            {error && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '10px' }} dir="auto">{error}</p>}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+              <PhoenixButton variant="primary" size="md" loading={busy} disabled={!valid} onClick={onConfirm}>
+                {t('um_rotate_password', lang)}
+              </PhoenixButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)', fontWeight: 600 }} dir="auto">
+              ⚠ {t('um_rotate_password_show_once', lang)}
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{t('um_rotate_password_success', lang)}</p>
+            <div style={{ padding: '10px 12px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', fontSize: '14px', fontWeight: 700, marginBottom: '16px', wordBreak: 'break-all' }} dir="ltr">
+              {resultPassword}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <PhoenixButton variant="primary" size="md" onClick={handleClose}>
+                {t('um_rotate_password_close', lang)}
+              </PhoenixButton>
+            </div>
+          </>
+        )}
       </PhoenixCard>
     </div>
   );

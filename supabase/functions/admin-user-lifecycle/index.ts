@@ -9,7 +9,7 @@
 //   (SUPABASE_SERVICE_ROLE_KEY is already set from admin-create-user deploy)
 //
 // Contract:
-//   POST { action, target_user_id, confirmation? }  (Bearer = caller JWT)
+//   POST { action, target_user_id, confirmation?, new_password? }  (Bearer = caller JWT)
 //
 //   action = 'disable'
 //     - Bans the auth user (prevents login immediately).
@@ -18,12 +18,32 @@
 //     - Caller must be super_admin OR institution_admin (with users.disable).
 //     - institution_admin: own org only; cannot disable super_admin/institution_admin.
 //     - Cannot disable self.
+//     - Cannot disable the last active super_admin
+//       (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A: this guard previously only
+//       existed for 'delete' — disabling the only super_admin would have left
+//       the platform with zero usable admin access just as surely as deleting
+//       them would).
 //
 //   action = 'enable'
 //     - Removes the auth ban.
 //     - Sets profiles.status = 'active', clears disabled_at / disabled_by.
 //     - Caller must be super_admin OR institution_admin (with users.disable).
 //     - institution_admin: own org only; cannot enable super_admin/institution_admin.
+//
+//   action = 'rotate_password'
+//     - Sets a new temporary password directly on the auth user
+//       (auth.admin.updateUserById — server-side only).
+//     - Sets profiles.must_change_password = true if the column exists
+//       (migration 016) so the user is prompted to change it at next login.
+//     - Caller must be super_admin OR institution_admin (with users.disable —
+//       reuses the existing lifecycle permission key; no new key introduced).
+//     - institution_admin: own org only; cannot rotate super_admin/institution_admin.
+//     - Cannot rotate own password through this admin action (self-service
+//       password change is a separate, already-existing flow).
+//     - Requires { new_password } (min 8 chars). The temporary password is
+//       never logged, never stored in profiles/audit_logs, and is only ever
+//       known to the caller who already typed/generated it client-side —
+//       this function does not echo it back.
 //
 //   action = 'delete'
 //     - Caller must be super_admin ONLY (institution_admin cannot hard-delete).
@@ -72,17 +92,22 @@ Deno.serve(async (req: Request) => {
   const callerId = userData.user.id;
 
   // Parse body.
-  let body: { action?: string; target_user_id?: string; confirmation?: string };
+  let body: { action?: string; target_user_id?: string; confirmation?: string; new_password?: string };
   try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST' }, 400); }
 
   const action       = body.action ?? '';
   const targetId     = (body.target_user_id ?? '').trim();
   const confirmation = (body.confirmation ?? '').trim();
+  const newPassword  = (body.new_password ?? '').trim(); // never logged
 
-  if (!['disable', 'enable', 'delete'].includes(action)) {
+  if (!['disable', 'enable', 'delete', 'rotate_password'].includes(action)) {
     return json({ ok: false, error: 'INVALID_ACTION' }, 400);
   }
   if (!targetId) return json({ ok: false, error: 'MISSING_TARGET' }, 400);
+  if (action === 'rotate_password') {
+    if (!newPassword) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
+    if (newPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+  }
 
   // Caller profile (role + org) — resolved via privileged client, bypasses RLS.
   const { data: callerProfile } = await admin
@@ -132,8 +157,25 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // Shared guard: cannot disable/delete the last active super_admin. Reused by
+  // both 'disable' and 'delete' so the platform can never end up with zero
+  // usable super_admin access (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A).
+  async function isLastActiveSuperAdmin(): Promise<boolean> {
+    if (targetProfile.role !== 'super_admin') return false;
+    const { count } = await admin
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'super_admin')
+      .eq('status', 'active');
+    return (count ?? 0) <= 1;
+  }
+
   // ── action: disable ────────────────────────────────────────────────────────
   if (action === 'disable') {
+    if (await isLastActiveSuperAdmin()) {
+      return json({ ok: false, error: 'LAST_SUPER_ADMIN' }, 403);
+    }
+
     // Ban the auth user so they cannot log in.
     const { error: banErr } = await admin.auth.admin.updateUserById(targetId, {
       ban_duration: '876000h', // ~100 years
@@ -174,6 +216,28 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, action: 'enabled', user_id: targetId });
   }
 
+  // ── action: rotate_password ────────────────────────────────────────────────
+  // Sets a brand-new temporary password on the SAME identity (username/email/
+  // role/org untouched) — distinct from admin-recycle-user, which requires the
+  // target to already be suspended and reassigns the whole identity. This is
+  // for an active user who forgot/needs a reset of their credential only.
+  if (action === 'rotate_password') {
+    const { error: pwErr } = await admin.auth.admin.updateUserById(targetId, {
+      password: newPassword,
+    });
+    if (pwErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
+
+    // Best-effort: must_change_password / password_changed_at exist since
+    // migration 016; degrade gracefully if a project hasn't applied it yet.
+    try {
+      await admin.from('profiles').update({ must_change_password: true }).eq('id', targetId);
+    } catch {
+      // Column may not exist yet — the password itself is still rotated.
+    }
+
+    return json({ ok: true, action: 'password_rotated', user_id: targetId });
+  }
+
   // ── action: delete ─────────────────────────────────────────────────────────
   if (action === 'delete') {
     // Fetch target auth user to get email for confirmation check.
@@ -187,15 +251,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Guard: cannot delete the last active super_admin.
-    if (targetProfile.role === 'super_admin') {
-      const { count } = await admin
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .eq('role', 'super_admin')
-        .eq('status', 'active');
-      if ((count ?? 0) <= 1) {
-        return json({ ok: false, error: 'LAST_SUPER_ADMIN' }, 403);
-      }
+    if (await isLastActiveSuperAdmin()) {
+      return json({ ok: false, error: 'LAST_SUPER_ADMIN' }, 403);
     }
 
     // Delete auth user — profile cascades (ON DELETE CASCADE from migration 001).

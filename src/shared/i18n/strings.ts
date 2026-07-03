@@ -804,6 +804,16 @@ export const T: Dict = {
   um_lifecycle_failed:   { ar: 'فشلت العملية. حاول مجدداً.',     en: 'Operation failed. Please try again.' },
   um_last_super_admin:   { ar: 'لا يمكن حذف أو تعطيل مدير المنصة الوحيد', en: 'Cannot delete or disable the last platform administrator' },
 
+  /* Password rotation (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A) */
+  um_rotate_password:            { ar: 'إعادة تعيين كلمة المرور المؤقتة', en: 'Reset temporary password' },
+  um_rotate_password_confirm_q:  { ar: 'سيتم تعيين كلمة مرور مؤقتة جديدة لهذا المستخدم، وستُطلب منه إعادة تعيينها عند الدخول التالي.', en: 'A new temporary password will be set for this user. They will be asked to change it at their next login.' },
+  um_rotate_password_new:        { ar: 'كلمة المرور المؤقتة الجديدة', en: 'New temporary password' },
+  um_rotate_password_show_once:  { ar: 'اعرض كلمة المرور للمستخدم مرة واحدة فقط ولا تحفظها.', en: 'Show this password to the user once and do not store it.' },
+  um_rotate_password_success:    { ar: 'تم تعيين كلمة المرور المؤقتة الجديدة',  en: 'New temporary password has been set' },
+  um_rotate_password_failed:     { ar: 'تعذّر تعيين كلمة المرور. حاول مجدداً.',  en: 'Failed to set the password. Please try again.' },
+  um_rotate_password_close:      { ar: 'تم، إغلاق',                            en: 'Done, close' },
+  um_cannot_rotate_self:         { ar: 'لا يمكن إعادة تعيين كلمة المرور لحسابك الخاص من هنا', en: 'You cannot reset your own password from here' },
+
   /* Institution admin scope (INSTITUTION-ADMIN-USER-SCOPE-A) */
   um_scope_own_institution:           { ar: 'ضمن مؤسستك فقط',                                en: 'Own institution only' },
   um_invite_own_org_only:             { ar: 'يمكنك دعوة مستخدمين داخل مؤسستك فقط',          en: 'You can invite users inside your institution only' },
