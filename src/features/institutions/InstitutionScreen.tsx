@@ -1634,7 +1634,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
             const condKey = CONDITION_LABEL_KEY[r.condition];
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
             return (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
+              <div key={r.id} className="premium-material-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
                 <div style={{ minWidth: 0, overflow: 'hidden' }}>
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} dir="auto">
                     {title}

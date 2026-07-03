@@ -84,7 +84,7 @@ export function OutletMaterialGroups({ rows }: Props) {
           return eff === 'missing' || eff === 'low_stock';
         }).length;
         return (
-          <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px">
+          <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px" hover>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--brd)' }}>
               <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">📦 {lang === 'ar' ? g.nameAr : g.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>

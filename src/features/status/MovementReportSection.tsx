@@ -277,7 +277,7 @@ export function MovementReportSection() {
             🔒 {t('mvmt_report_history_preserved_note', lang)}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {canExportCsv && (
             <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('mvmt_report_export_csv', lang)} style={btnStyle}>📄 {t('mvmt_report_export_csv', lang)}</button>
           )}

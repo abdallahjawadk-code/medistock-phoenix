@@ -196,7 +196,7 @@ export function StatusEditorScreen() {
 
               {/* Mobile-friendly, wrapping action bar — export/print stay reachable
                   above the (potentially horizontally scrollable) table below. */}
-              <div style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
+              <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
                 <button onClick={exportCsv} disabled={filtered.length === 0} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
                   📄 {t('se_export_excel', lang)}
                 </button>

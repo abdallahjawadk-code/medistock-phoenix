@@ -123,7 +123,7 @@ export function PublicQrScreen({ publicId }: Props) {
     : rawItems;
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+    <div className="premium-qr-public-shell" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: '480px' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
@@ -255,7 +255,7 @@ export function PublicQrScreen({ publicId }: Props) {
               })}
             </div>
 
-            <div style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
+            <div className="premium-qr-trust-note" style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
               🔒 {t('qr_no_expose', lang)}
             </div>
           </>
