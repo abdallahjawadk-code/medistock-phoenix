@@ -599,3 +599,34 @@ export async function getOrgStatusContacts(orgId: string): Promise<OrgContactRow
     return [];
   }
 }
+
+/**
+ * UX-WHATSAPP-ALERT-CONTACT-WIRING-A: batched variant of getOrgStatusContacts
+ * for multiple organization ids in one read (avoids N+1 queries when showing
+ * a WhatsApp contact per inter-institution alert card). Same table, same
+ * columns, same read-only PostgREST select — no new SQL/RPC/migration.
+ *
+ * RLS (migration 008) scopes direct table access to the caller's OWN
+ * organization only, except super_admin who can read every organization's
+ * contacts. For a non-super caller this means rows for any OTHER
+ * organization id in `orgIds` are silently omitted by RLS (not an error) —
+ * callers must treat a missing entry as "no contact available", never as a
+ * bug, and never substitute a fake number.
+ */
+export async function getOrgStatusContactsForOrgs(orgIds: string[]): Promise<OrgContactRow[]> {
+  if (!supabaseConfigured) return [];
+  const ids = [...new Set(orgIds.filter(Boolean))];
+  if (ids.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .from('organization_status_contacts')
+      .select('id, organization_id, display_name, phone, is_primary, is_active')
+      .in('organization_id', ids)
+      .eq('is_active', true)
+      .order('is_primary', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as OrgContactRow[];
+  } catch {
+    return [];
+  }
+}

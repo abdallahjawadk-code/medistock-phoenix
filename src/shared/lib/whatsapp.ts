@@ -38,27 +38,43 @@ export function buildWhatsappUrl(phone: string | null | undefined, message: stri
 export interface MaterialContactMessageInput {
   material?: string | null;
   status?: string | null;
+  /** Generic single-institution field — used by the status/officer contact context. */
   institution?: string | null;
+  /** UX-WHATSAPP-ALERT-CONTACT-WIRING-A: inter-institution alert context only. */
+  sourceInstitution?: string | null;
+  targetInstitution?: string | null;
   outlet?: string | null;
   quantity?: string | number | null;
   expiryDate?: string | null;
   lastUpdate?: string | null;
+  /**
+   * 'status' (default) — original generic status follow-up wording, exactly
+   * as used by UserManagementScreen's ContactSection (UX-WHATSAPP-INSTITUTION-CONTACT-A).
+   * 'alert' — inter-institution material ALERT wording
+   * (UX-WHATSAPP-ALERT-CONTACT-WIRING-A). Omitting this field preserves the
+   * original 'status' output byte-for-byte.
+   */
+  context?: 'status' | 'alert';
 }
 
 /**
  * Builds a professional, non-clinical, bilingual follow-up message.
  * Only fields that are actually present in `input` are included — never
- * invents a field, never adds a diagnosis/clinical recommendation. The
- * generated text still requires the user to press Send inside WhatsApp.
+ * invents a field, never adds a diagnosis/clinical recommendation, never
+ * includes a raw id/UUID. The generated text still requires the user to
+ * press Send inside WhatsApp.
  */
 export function buildMaterialContactMessage(input: MaterialContactMessageInput, lang: Lang): string {
   const hasQty = input.quantity !== undefined && input.quantity !== null && input.quantity !== '';
+  const isAlert = input.context === 'alert';
 
   const fieldLines: string[] = [];
   if (lang === 'ar') {
     if (input.material) fieldLines.push(`المادة: ${input.material}`);
     if (input.status) fieldLines.push(`الحالة: ${input.status}`);
     if (input.institution) fieldLines.push(`المؤسسة: ${input.institution}`);
+    if (input.sourceInstitution) fieldLines.push(`المؤسسة المرسلة: ${input.sourceInstitution}`);
+    if (input.targetInstitution) fieldLines.push(`المؤسسة المستلمة: ${input.targetInstitution}`);
     if (input.outlet) fieldLines.push(`المنفذ: ${input.outlet}`);
     if (hasQty) fieldLines.push(`الكمية: ${input.quantity}`);
     if (input.expiryDate) fieldLines.push(`تاريخ الانتهاء: ${input.expiryDate}`);
@@ -66,7 +82,9 @@ export function buildMaterialContactMessage(input: MaterialContactMessageInput, 
 
     return [
       'السلام عليكم،',
-      'نود التواصل بخصوص حالة مادة ضمن نظام MediStock Phoenix.',
+      isAlert
+        ? 'نود التواصل بخصوص تنبيه مادة ضمن نظام MediStock Phoenix.'
+        : 'نود التواصل بخصوص حالة مادة ضمن نظام MediStock Phoenix.',
       ...(fieldLines.length ? ['', ...fieldLines] : []),
       '',
       'يرجى مراجعة الحالة والتنسيق عند الإمكان.',
@@ -76,6 +94,8 @@ export function buildMaterialContactMessage(input: MaterialContactMessageInput, 
   if (input.material) fieldLines.push(`Material: ${input.material}`);
   if (input.status) fieldLines.push(`Status: ${input.status}`);
   if (input.institution) fieldLines.push(`Institution: ${input.institution}`);
+  if (input.sourceInstitution) fieldLines.push(`Source institution: ${input.sourceInstitution}`);
+  if (input.targetInstitution) fieldLines.push(`Target institution: ${input.targetInstitution}`);
   if (input.outlet) fieldLines.push(`Outlet: ${input.outlet}`);
   if (hasQty) fieldLines.push(`Quantity: ${input.quantity}`);
   if (input.expiryDate) fieldLines.push(`Expiry date: ${input.expiryDate}`);
@@ -83,7 +103,9 @@ export function buildMaterialContactMessage(input: MaterialContactMessageInput, 
 
   return [
     'Hello,',
-    'We would like to follow up regarding a material status in MediStock Phoenix.',
+    isAlert
+      ? 'We would like to follow up regarding a material alert in MediStock Phoenix.'
+      : 'We would like to follow up regarding a material status in MediStock Phoenix.',
     ...(fieldLines.length ? ['', ...fieldLines] : []),
     '',
     'Please review and coordinate when possible.',

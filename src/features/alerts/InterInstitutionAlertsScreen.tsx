@@ -8,6 +8,9 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
+import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
+import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
+import { getOrgStatusContactsForOrgs, type OrgContactRow } from '@/shared/supabase/services/users.service';
 import {
   getLiveInterInstitutionAlertsWithState,
   updateInterOrgAlertState,
@@ -114,6 +117,50 @@ function pointName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'
   return v || t('common_notSpecified', lang);
 }
 
+/**
+ * UX-WHATSAPP-ALERT-CONTACT-WIRING-A: which institution(s) a WhatsApp button
+ * should target for this alert, relative to the current actor.
+ *
+ * migration 036/039's RPCs guarantee that for any NON-super actor, their own
+ * organization is always either the source or the target of every alert they
+ * are allowed to see — so exactly one "other institution" always exists for
+ * them. super_admin (or an actor with no org scope) may see alerts where
+ * neither side is their own org, so both counterparts are offered instead.
+ * Never returns the current actor's own organization as a contact target.
+ */
+interface AlertContactTarget {
+  key: 'source' | 'target';
+  orgId: string;
+  orgName: string;
+  labelKey: string;
+}
+
+function resolveAlertContactTargets(
+  a: LiveInterInstitutionAlertWithState,
+  activeOrgId: string | null,
+  isSuper: boolean,
+  lang: 'ar' | 'en',
+): AlertContactTarget[] {
+  const srcName = orgName(a.sourceOrganizationName, a.sourceOrganizationNameAr, lang);
+  const tgtName = orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang);
+
+  if (isSuper || !activeOrgId) {
+    return [
+      { key: 'source', orgId: a.sourceOrganizationId, orgName: srcName, labelKey: 'wa_alert_contact_source' },
+      { key: 'target', orgId: a.targetOrganizationId, orgName: tgtName, labelKey: 'wa_alert_contact_target' },
+    ];
+  }
+  if (activeOrgId === a.sourceOrganizationId) {
+    return [{ key: 'target', orgId: a.targetOrganizationId, orgName: tgtName, labelKey: 'wa_alert_contact_other_institution' }];
+  }
+  if (activeOrgId === a.targetOrganizationId) {
+    return [{ key: 'source', orgId: a.sourceOrganizationId, orgName: srcName, labelKey: 'wa_alert_contact_other_institution' }];
+  }
+  // Neither side matches the actor's own org — should not happen given the
+  // RPC's scoping guarantee, but never guess: show no contact target.
+  return [];
+}
+
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
   border: '1px solid var(--brd)', background: 'var(--s)',
@@ -160,8 +207,12 @@ function sortAlerts(list: LiveInterInstitutionAlertWithState[], mode: SortMode):
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function InterInstitutionAlertsScreen() {
-  const { lang, myPermissions } = useApp();
+  const { lang, myPermissions, activeOrgId, role } = useApp();
   const isMobile = window.innerWidth < 768;
+  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A: decides whether both alert
+  // counterparts are offered as contact targets, or just the one "other
+  // institution" relative to the actor's own org (see resolveAlertContactTargets).
+  const isSuper = role === 'super_admin';
 
   // F-03: lifecycleStatus decides which action is RELEVANT; effective
   // permission decides whether it is VISIBLE at all.
@@ -182,6 +233,29 @@ export function InterInstitutionAlertsScreen() {
   const rpcError = result.data?.error;
   const forbidden = rpcError === 'FORBIDDEN';
   const allAlerts = result.data?.alerts ?? [];
+
+  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A: batched, read-only contact lookup for
+  // every organization id appearing in the already-loaded alerts — reuses
+  // organization_status_contacts (migration 008) via the existing
+  // getOrgStatusContactsForOrgs service, no new SQL/RPC/migration. RLS scopes
+  // this to the actor's own org unless super_admin; a missing entry for a
+  // given org id is treated as "no contact available" — never substituted
+  // with an invented number.
+  const alertOrgIds = useMemo(
+    () => Array.from(new Set(allAlerts.flatMap(a => [a.sourceOrganizationId, a.targetOrganizationId]))),
+    [allAlerts],
+  );
+  const contactsResult = useAsync(
+    () => alertOrgIds.length ? getOrgStatusContactsForOrgs(alertOrgIds) : Promise.resolve([]),
+    [alertOrgIds],
+  );
+  const contactsByOrg = useMemo(() => {
+    const map = new Map<string, OrgContactRow>();
+    for (const c of contactsResult.data ?? []) {
+      if (!map.has(c.organization_id)) map.set(c.organization_id, c);
+    }
+    return map;
+  }, [contactsResult.data]);
 
   const summaryTotal = allAlerts.length;
   const summaryHigh = allAlerts.filter(a => a.severity === 'high').length;
@@ -447,6 +521,9 @@ export function InterInstitutionAlertsScreen() {
                 canTransition={canTransition}
                 onAction={to => setAction({ alert: a, to })}
                 onHistory={() => setHistoryAlert(a)}
+                activeOrgId={activeOrgId}
+                isSuper={isSuper}
+                contactsByOrg={contactsByOrg}
               />
             ))}
           </div>
@@ -467,6 +544,9 @@ export function InterInstitutionAlertsScreen() {
                       canTransition={canTransition}
                       onAction={to => setAction({ alert: a, to })}
                       onHistory={() => setHistoryAlert(a)}
+                      activeOrgId={activeOrgId}
+                      isSuper={isSuper}
+                      contactsByOrg={contactsByOrg}
                     />
                   ))}
                 </div>
@@ -509,13 +589,17 @@ function CriticalAlertCard({ a, lang }: { a: LiveInterInstitutionAlertWithState;
 
 // ─── Alert card ───────────────────────────────────────────────────────────────
 
-function AlertCard({ a, lang, canTransition, onAction, onHistory }: {
+function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, isSuper, contactsByOrg }: {
   a: LiveInterInstitutionAlertWithState;
   lang: 'ar' | 'en';
   /** F-03: true when the current user holds the server-required permission for this target status. */
   canTransition: (to: AlertLifecycleStatus) => boolean;
   onAction: (to: AlertLifecycleStatus) => void;
   onHistory: () => void;
+  /** UX-WHATSAPP-ALERT-CONTACT-WIRING-A */
+  activeOrgId: string | null;
+  isSuper: boolean;
+  contactsByOrg: Map<string, OrgContactRow>;
 }) {
   const borderColor = SEVERITY_BORDER[a.severity] ?? 'var(--brd)';
   const severityVariant = a.severity === 'high' ? 'err' as const : 'warn' as const;
@@ -523,6 +607,7 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory }: {
 
   const srcPoint = pointName(a.sourceDistributionPointName, a.sourceDistributionPointNameAr, lang);
   const tgtPoint = pointName(a.targetDistributionPointName, a.targetDistributionPointNameAr, lang);
+  const contactTargets = resolveAlertContactTargets(a, activeOrgId, isSuper, lang);
 
   return (
     <PhoenixCard padding="16px" style={{ borderInlineStart: `3px solid ${borderColor}` }}>
@@ -610,6 +695,34 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory }: {
         )}
         <ActionButton onClick={onHistory} label={t('alertLifecycle_action_viewHistory', lang)} />
       </div>
+
+      {/* UX-WHATSAPP-ALERT-CONTACT-WIRING-A: read-only WhatsApp contact —
+          never bypasses/duplicates the action handlers above; phone comes
+          only from the already-fetched contactsByOrg map (real
+          organization_status_contacts data, honest empty state otherwise). */}
+      {contactTargets.length > 0 && (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+          {contactTargets.map(target => (
+            <WhatsAppContactButton
+              key={target.key}
+              phone={contactsByOrg.get(target.orgId)?.phone}
+              lang={lang}
+              label={`${t(target.labelKey, lang)}: ${target.orgName}`}
+              message={buildMaterialContactMessage({
+                material: a.scientificName,
+                status: t(statusLabelKey(a.targetStatus), lang),
+                sourceInstitution: orgName(a.sourceOrganizationName, a.sourceOrganizationNameAr, lang),
+                targetInstitution: orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang),
+                outlet: tgtPoint,
+                quantity: a.sourceQuantity > 0 ? a.sourceQuantity : undefined,
+                expiryDate: a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryDate : undefined,
+                lastUpdate: new Date(a.computedAt).toLocaleString(lang === 'ar' ? 'ar' : 'en'),
+                context: 'alert',
+              }, lang)}
+            />
+          ))}
+        </div>
+      )}
     </PhoenixCard>
   );
 }

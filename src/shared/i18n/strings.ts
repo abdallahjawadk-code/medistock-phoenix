@@ -1119,6 +1119,11 @@ export const T: Dict = {
   wa_number_missing:       { ar: 'رقم واتساب غير مدخل',              en: 'WhatsApp number not configured' },
   wa_invalid_number:       { ar: 'رقم واتساب غير صالح',              en: 'Invalid WhatsApp number' },
   wa_open:                 { ar: 'فتح واتساب',                       en: 'Open WhatsApp' },
+
+  /* ── UX-WHATSAPP-ALERT-CONTACT-WIRING-A: per-alert WhatsApp contact labels ── */
+  wa_alert_contact_source:            { ar: 'تواصل مع المؤسسة المرسلة',   en: 'Contact source institution' },
+  wa_alert_contact_target:            { ar: 'تواصل مع المؤسسة المستلمة',  en: 'Contact target institution' },
+  wa_alert_contact_other_institution: { ar: 'تواصل مع المؤسسة الأخرى',    en: 'Contact the other institution' },
 };
 
 export function t(key: string, lang: Lang): string {

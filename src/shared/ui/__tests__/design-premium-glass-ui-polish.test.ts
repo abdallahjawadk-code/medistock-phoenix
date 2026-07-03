@@ -109,12 +109,16 @@ describe('5. Mobile print fallback remains present', () => {
 });
 
 describe('6. User management function invocations remain unchanged', () => {
-  it('users.service.ts was not touched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/shared/supabase/services/users.service.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  it('users.service.ts still exports the same user-lifecycle functions (later phases may add read-only helpers additively, e.g. UX-WHATSAPP-ALERT-CONTACT-WIRING-A\'s getOrgStatusContactsForOrgs, without touching this logic)', () => {
+    for (const fn of [
+      'export async function listUsers', 'export async function getEffectivePermissions',
+      'export async function assignProfilePermissions', 'export async function resetProfilePermissions',
+      'export async function createUserViaEdge', 'export async function disableUserViaEdge',
+      'export async function enableUserViaEdge', 'export async function recycleUserViaEdge',
+      'export async function rotatePasswordViaEdge', 'export async function getOrgStatusContacts(',
+    ]) {
+      expect(usersService).toContain(fn);
+    }
   });
 
   it('UserManagementScreen.tsx still invokes the same user-management functions (later phases may add UI additively, e.g. UX-WHATSAPP-INSTITUTION-CONTACT-A\'s ContactSection button, without touching this logic)', () => {

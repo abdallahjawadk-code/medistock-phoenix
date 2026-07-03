@@ -138,8 +138,8 @@ describe('F-04: role defaults mirror migration 038', () => {
 // F-03: alert lifecycle action buttons are permission-gated
 // ============================================================================
 describe('F-03: lifecycle action buttons gated by effective permissions', () => {
-  it('screen reads myPermissions from useApp', () => {
-    expect(screen).toMatch(/const \{ lang, myPermissions \} = useApp\(\)/);
+  it('screen reads myPermissions from useApp (later phases may destructure additional fields additively, e.g. UX-WHATSAPP-ALERT-CONTACT-WIRING-A\'s activeOrgId/role)', () => {
+    expect(screen).toMatch(/const \{ lang, myPermissions[^}]*\} = useApp\(\)/);
   });
 
   it('defines the server-mirroring TRANSITION_PERMISSION map (migration 039 exact keys)', () => {

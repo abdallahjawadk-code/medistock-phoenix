@@ -176,18 +176,23 @@ describe('No exchange-request UI or Service-D files were added in this phase', (
 });
 
 describe('No WhatsApp/Google Drive/chat code was added', () => {
-  const files = [alertsScreen, publicQr, editorScreen, dashboardScreen, statusCenter];
+  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A later approved a real, safe wa.me
+  // WhatsApp contact button specifically inside InterInstitutionAlertsScreen
+  // (see src/features/alerts/__tests__/whatsapp-alert-contact-wiring.test.ts
+  // for its full safety coverage) — excluded from the "no WhatsApp" files
+  // below on purpose; every other screen here must still have none.
+  const files = [publicQr, editorScreen, dashboardScreen, statusCenter];
 
-  it('no WhatsApp integration', () => {
+  it('no WhatsApp integration outside the approved InterInstitutionAlertsScreen wiring', () => {
     files.forEach(f => expect(f.toLowerCase()).not.toMatch(/wa\.me|whatsapp/));
   });
 
   it('no Google Drive integration', () => {
-    files.forEach(f => expect(f.toLowerCase()).not.toMatch(/googleapis|google drive|drive\.google|gapi/));
+    [alertsScreen, ...files].forEach(f => expect(f.toLowerCase()).not.toMatch(/googleapis|google drive|drive\.google|gapi/));
   });
 
   it('no chat widget/module', () => {
-    files.forEach(f => expect(f.toLowerCase()).not.toMatch(/livechat|chatwidget|intercom|zendesk chat/));
+    [alertsScreen, ...files].forEach(f => expect(f.toLowerCase()).not.toMatch(/livechat|chatwidget|intercom|zendesk chat/));
   });
 });
 
