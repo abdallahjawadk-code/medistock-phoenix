@@ -36,7 +36,11 @@ describe('Material remove action: visible in the outlet material list', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
     expect(fnBody).toContain("t('avail_remove_from_outlet', lang)");
-    expect(fnBody).toMatch(/canRemove\s*&&\s*!alreadyRemoved/);
+    // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: already-removed (quantity 0 +
+    // condition 'missing') rows are now filtered out of `rows` entirely
+    // before rendering, so the per-row button gate simplifies to canRemove
+    // alone — there is no longer a row in the list for which it could apply.
+    expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
   });
 
   it('the remove button has a minimum touch target size (mobile-reachable)', () => {
@@ -122,23 +126,23 @@ describe('Material remove: proves this is a safe deactivate, not a blind hard de
     expect(fnBody).toMatch(/removeTarget\.quantity !== 0/);
   });
 
-  it('already-removed rows (quantity 0 + missing) hide the remove button instead of re-showing a stale action', () => {
+  it('BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: already-removed rows (quantity 0 + missing) are filtered out of the outlet contents list entirely, not just their remove button hidden', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
-    expect(fnBody).toMatch(/const alreadyRemoved = r\.quantity === 0 && r\.condition === 'missing'/);
+    expect(fnBody).toMatch(/\.filter\(r => !\(r\.quantity === 0 && r\.condition === 'missing'\)\)/);
   });
 });
 
 describe('Outlet disable/archive action: visible, confirmed, and now honest about failure', () => {
   it('PortCard still renders the archive/disable action, now gated by canArchivePortsEffective', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toMatch(/canArchivePortsEffective &&[\s\S]{0,250}t\('port_disable_action', lang\)/);
   });
 
   it('the archive button no longer reuses the "Archived" status-word label', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     // Only the status badge (point.status === 'active' ? ... : statusLabel(...)) may
     // reference the raw 'archived' concept; the action buttons must use the new key.
     expect(cardBody).not.toMatch(/setConfirmAction\('archive'\)[\s\S]{0,80}t\('archived', lang\)/);
@@ -147,7 +151,7 @@ describe('Outlet disable/archive action: visible, confirmed, and now honest abou
 
   it('has a confirmation dialog before archiving (destructive-adjacent action)', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toContain("confirmAction === 'archive'");
     expect(cardBody).toContain('onClick={onArchivePort}');
   });
@@ -206,14 +210,14 @@ describe('Outlet archive: success refreshes the outlet/port list', () => {
 describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: Edit outlet action', () => {
   it('is visible in the outlet card, gated by canEditPorts (the same permission already used for material add)', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toMatch(/canEditPorts &&[\s\S]{0,40}<PhoenixButton[\s\S]{0,80}onClick=\{openEdit\}/);
     expect(cardBody).toContain("t('port_edit', lang)");
   });
 
   it('the edit button is inside the same shared Actions row as the other mobile-reachable port actions (no desktop-only container)', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     const actionsIdx = cardBody.indexOf('{/* Actions */}');
     const editIdx = cardBody.indexOf('canEditPorts &&', actionsIdx);
     expect(editIdx).toBeGreaterThan(actionsIdx);
@@ -359,7 +363,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
   it('the remove button in PortAvailabilitySection is gated by the canRemove prop (fed by the effective permission), not by canMutate', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
-    expect(fnBody).toMatch(/canRemove\s*&&\s*!alreadyRemoved/);
+    expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
     // canMutate is still used, but only for the separate "+ Add" action, not remove
     expect(fnBody).toMatch(/canMutate\s*&&\s*!showAdd/);
   });
@@ -402,7 +406,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
 
   it('the archive button and Actions-row container both use canArchivePortsEffective, not the raw permission alone', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toMatch(/canEditPorts \|\| canGenerateQr \|\| canRevokeQr \|\| canArchivePortsEffective/);
   });
 
@@ -428,7 +432,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
 
   it('edit outlet is unchanged: still gated by ports.edit on both UI and backend (RLS), no effective-permission split needed', () => {
     const cardStart = screen.indexOf('function PortCard');
-    const cardBody = screen.slice(cardStart, cardStart + 17000);
+    const cardBody = screen.slice(cardStart, screen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toMatch(/canEditPorts &&[\s\S]{0,80}<PhoenixButton[\s\S]{0,80}onClick=\{openEdit\}/);
     expect(screen).toContain('updateDistributionPoint(point.id,');
   });

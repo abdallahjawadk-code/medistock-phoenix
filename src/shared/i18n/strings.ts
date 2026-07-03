@@ -239,6 +239,10 @@ export const T: Dict = {
   /* ── AVAILABILITY-MOVEMENT-REPORTS-PRINT-A: Quantity Movement Report ── */
   mvmt_report_title:              { ar: 'تقرير حركات الكمية',                        en: 'Quantity Movement Report' },
   mvmt_report_sub:                { ar: 'تصفية وطباعة وتصدير حركات الكمية المسجلة', en: 'Filter, print, and export recorded quantity movements' },
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: clarifies that hiding cleared
+  // materials from active outlet contents never deletes their movement
+  // history — this report is where that history remains fully visible.
+  mvmt_report_history_preserved_note: { ar: 'سجل الحركات محفوظ لأغراض التتبع ولا يُحذف عند حذف مواد المنفذ.', en: 'Movement history is retained for traceability and is not deleted when outlet materials are cleared.' },
   mvmt_report_no_permission:      { ar: 'لا تملك صلاحية عرض تقرير حركات الكمية',    en: 'You do not have permission to view the quantity movement report.' },
   mvmt_report_date_from:          { ar: 'من تاريخ',                                  en: 'From date' },
   mvmt_report_date_to:            { ar: 'إلى تاريخ',                                 en: 'To date' },
@@ -487,6 +491,8 @@ export const T: Dict = {
   avail_remove_from_outlet: { ar: 'إزالة من المنفذ',                                            en: 'Remove from outlet' },
   avail_remove_confirm:     { ar: 'سيتم تعطيل المادة في هذا المنفذ (الكمية = صفر) دون حذف السجل التاريخي أو سجل الحركات.', en: 'This deactivates the material in this outlet (quantity set to 0) without deleting its movement history.' },
   avail_removed_from_outlet:{ ar: 'تمت إزالة المادة من المنفذ',                                 en: 'Material removed from outlet' },
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A
+  avail_outlet_disabled_empty: { ar: 'تم تعطيل هذا المنفذ، ولا توجد مواد فعالة معروضة.', en: 'This outlet is disabled; no active materials are displayed.' },
   cond_available:     { ar: 'متوفر',                             en: 'Available' },
   cond_low_stock:     { ar: 'شحيح',                              en: 'Low stock' },
   cond_missing:       { ar: 'مفقود',                             en: 'Missing' },
@@ -918,7 +924,10 @@ export const T: Dict = {
   dw_users_count:     { ar: 'مستخدمون',                          en: 'Users' },
   dw_ready:           { ar: 'جاهز للأرشفة',                      en: 'Ready to archive' },
   dw_blocked:         { ar: 'محظور — يجب حذف التبعيات أولاً',    en: 'Blocked — clear dependencies first' },
-  dw_cleared:         { ar: 'تم حذف مواد المنفذ بنجاح',          en: 'Port items cleared successfully' },
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: honest wording — clear_port_availability
+  // (migration 042) zeroes quantity/condition rather than deleting rows, so
+  // the success message must not imply a destructive delete.
+  dw_cleared:         { ar: 'تم إخفاء مواد المنفذ من المحتويات الفعالة مع حفظ سجل الحركات.', en: 'Outlet materials were removed from active contents while preserving movement history.' },
   dw_org_archived:    { ar: 'تم أرشفة المؤسسة بنجاح',            en: 'Organization archived successfully' },
   dw_wh_archived:     { ar: 'تم أرشفة المذخر بنجاح',             en: 'Warehouse archived successfully' },
   // BUGFIX-REPORTS-DATES-PORT-CLEAR-A: clear_port_availability (migration 007)

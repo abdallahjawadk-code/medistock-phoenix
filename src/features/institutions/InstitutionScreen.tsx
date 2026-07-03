@@ -929,6 +929,11 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
   const [qrSrc, setQrSrc] = useState<string | null>(null);
   const [qrSrcErr, setQrSrcErr] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: bumped after a successful "Clear
+  // port items" so the sibling PortAvailabilitySection (a separate useAsync
+  // instance keyed only on pointId) refreshes and stops showing pre-clear
+  // quantities.
+  const [availRefreshKey, setAvailRefreshKey] = useState(0);
 
   // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: "Edit outlet" — uses the existing
   // updateDistributionPoint() service (a direct PostgREST update, RLS-gated
@@ -1188,6 +1193,8 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
         canMutate={canEditPorts}
         canRemove={canRemoveOutletMaterial}
         onToast={onToast}
+        pointStatus={point.status}
+        refreshKey={availRefreshKey}
       />
 
       {/* Port cleanup wizard — deletion_wizard.clear_port_items is a separate
@@ -1195,7 +1202,12 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
           scope for this permission-matrix fix, which targets only the
           archive_entity-backed "Disable outlet" button above). */}
       {canArchivePorts && (
-        <PortCleanupWizard pointId={point.id} lang={lang} onDone={onReload} onToast={onToast} />
+        <PortCleanupWizard
+          pointId={point.id}
+          lang={lang}
+          onDone={() => { onReload(); setAvailRefreshKey(k => k + 1); }}
+          onToast={onToast}
+        />
       )}
 
       {/* Confirmation dialogs */}
@@ -1456,7 +1468,7 @@ function centralOf(row: LocalRow | AvailRow['local_items']): { name: string; nam
   return Array.isArray(c) ? c[0] ?? null : c;
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, onToast }: {
+function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, onToast, pointStatus, refreshKey }: {
   pointId: string;
   orgId: string;
   lang: 'ar' | 'en';
@@ -1470,10 +1482,24 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
   // availability.update/create alongside ports.edit.
   canRemove: boolean;
   onToast: (msg: string) => void;
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: the outlet's own status — a
+  // disabled/archived outlet shows no active contents at all.
+  pointStatus: string;
+  // Bumped by PortCard when "Clear port items" (PortCleanupWizard) succeeds,
+  // so this sibling component's own materials list refreshes too — it owns
+  // a separate useAsync instance keyed only on pointId, which wouldn't
+  // otherwise know the underlying rows just changed.
+  refreshKey: number;
 }) {
-  const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId]);
+  const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId, refreshKey]);
   const [showAdd, setShowAdd] = useState(false);
-  const rows = (avail.data ?? []) as unknown as AvailRow[];
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: clear_port_availability (migration
+  // 042) and onConfirmRemove below both zero quantity + set condition =
+  // 'missing' instead of deleting the row (preserves item_availability_movements
+  // FK / audit trail) — hide those cleared rows from the active outlet
+  // contents list entirely, not just their now-redundant "Remove" button.
+  const rows = ((avail.data ?? []) as unknown as AvailRow[])
+    .filter(r => !(r.quantity === 0 && r.condition === 'missing'));
 
   // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: "Remove from outlet" — no hard
   // DELETE exists (or is allowed) for item_availability rows tied to movement
@@ -1525,6 +1551,19 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
     }
   }
 
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: a disabled/archived outlet shows no
+  // active materials at all — the underlying rows are preserved (nothing is
+  // deleted), only the "active contents" display is suppressed.
+  if (pointStatus !== 'active') {
+    return (
+      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
+        <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '10px' }} dir="auto">
+          🚫 {t('avail_outlet_disabled_empty', lang)}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -1566,7 +1605,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
             const itemName = lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar);
             const condKey = CONDITION_LABEL_KEY[r.condition];
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
-            const alreadyRemoved = r.quantity === 0 && r.condition === 'missing';
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
                 <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
@@ -1578,7 +1616,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
                   {r.expiry_date && r.condition === 'near_expiry' && (
                     <span style={{ fontSize: '9.5px', color: 'var(--warn)' }} dir="ltr">{r.expiry_date}</span>
                   )}
-                  {canRemove && !alreadyRemoved && (
+                  {canRemove && (
                     <button
                       onClick={() => { setRemoveError(null); setRemoveTarget(r); }}
                       aria-label={t('avail_remove_from_outlet', lang)}

@@ -475,7 +475,7 @@ export async function getAvailabilityByOrg(orgId: string) {
     .select(`
       id, scientific_name, trade_name, dosage_form, concentration, price,
       quantity, condition, batch_number, expiry_date, notes, supply_type, updated_at,
-      distribution_points ( id, name, name_ar )
+      distribution_points ( id, name, name_ar, status )
     `)
     .eq('organization_id', orgId)
     .order('updated_at', { ascending: false });

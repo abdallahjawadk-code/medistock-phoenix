@@ -243,6 +243,9 @@ export function MovementReportSection() {
         <div>
           <div style={{ fontSize: '15px', fontWeight: 800 }}>📊 {t('mvmt_report_title', lang)}</div>
           <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('mvmt_report_sub', lang)}</div>
+          <div style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+            🔒 {t('mvmt_report_history_preserved_note', lang)}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {canExportCsv && (

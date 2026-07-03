@@ -82,7 +82,7 @@ interface LiveAvailRow {
   raw_condition?: string;
   effective_status?: CanonicalStatus;
   expiry_bucket?: string | null;
-  distribution_points: { id: string; name: string; name_ar: string } | null;
+  distribution_points: { id: string; name: string; name_ar: string; status?: string } | null;
 }
 
 function effOf(r: LiveAvailRow): CanonicalStatus {
@@ -160,6 +160,20 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
   const rows = useMemo(() => {
     let list = allRows;
+    // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: clear_port_availability (migration
+    // 042) and "Remove from outlet" both zero quantity + set condition =
+    // 'missing' instead of deleting the row (preserves the movement ledger's
+    // FK / audit trail). Hide those cleared rows from the default active-
+    // contents view — they're indistinguishable at the data level from a
+    // genuinely reported "out of stock" item, so an explicit "missing" status
+    // filter still shows them (keeps that filter meaningful for real
+    // restocking-alert use, rather than always returning zero rows).
+    if (filterStatus !== 'missing') {
+      list = list.filter(r => !(r.quantity === 0 && r.condition === 'missing'));
+    }
+    // A disabled/archived outlet has no active contents at all, regardless
+    // of what its individual rows' condition/quantity happen to be.
+    list = list.filter(r => !r.distribution_points?.status || r.distribution_points.status === 'active');
     if (filterStatus) list = list.filter(r => effOf(r) === filterStatus);
     if (filterSupply) list = list.filter(r => normalizeSupplyType(r.supply_type) === filterSupply);
     if (search.trim()) {
