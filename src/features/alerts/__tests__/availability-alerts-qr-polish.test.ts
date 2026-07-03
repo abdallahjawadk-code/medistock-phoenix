@@ -208,9 +208,9 @@ describe('No migrations touched, no package/lockfile changes', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no migration newer than 042 exists (this phase did not add one — 042 itself was added separately by BUGFIX-CLEAR-PORT-AVAILABILITY-RPC-A)', () => {
+  it('no migration newer than 043 exists (this phase did not add one — 042 and 043 were each added separately by later, unrelated bugfix phases)', () => {
     const migrationsDir = join(ROOT, 'supabase/migrations');
-    const matches = readdirSync(migrationsDir).filter(f => /^0(4[3-9]|[5-9][0-9])_/.test(f));
+    const matches = readdirSync(migrationsDir).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

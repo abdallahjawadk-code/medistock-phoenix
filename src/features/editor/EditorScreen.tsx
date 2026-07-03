@@ -126,6 +126,14 @@ export function EditorScreen() {
       setToast(t('apply_success', lang));
       setTimeout(() => setToast(null), 3000);
       setBatch(''); setNotes('');
+      // Refresh the point's saved rows so a just-added material is picked up
+      // as an existing row (isEditMode/existingRow) on the very next submit —
+      // without this, a second Apply for the same material would still look
+      // like a brand-new row locally and could resend a stale quantity.
+      // useAsync.reload() isolates its own failure internally (logs to
+      // console, sets its own error state) — it never throws back here, so a
+      // reload hiccup can't overwrite this success toast with a false error.
+      pointAvailability.reload();
     } catch (e) {
       console.error('[phoenix] availability upsert failed:', e);
       setShowConfirm(false);

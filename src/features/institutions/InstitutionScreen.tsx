@@ -43,6 +43,7 @@ import {
   upsertAvailability,
   applyAvailabilityMovement,
   classifyAvailabilityMovementError,
+  classifyAvailabilitySaveError,
 } from '@/shared/supabase/services/availability.service';
 import { getLocalItems } from '@/shared/supabase/services/registry.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
@@ -1655,7 +1656,11 @@ function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
       });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('load_error', lang));
+      // Developer-safe console log; user sees a classified, translated
+      // message only (mirrors EditorScreen.tsx's doApply, instead of the
+      // previous raw/untranslated e.message fallback).
+      console.error('[phoenix] availability quick-add failed:', e);
+      setError(t(classifyAvailabilitySaveError(e), lang));
     } finally {
       setBusy(false);
     }
