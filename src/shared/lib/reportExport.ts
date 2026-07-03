@@ -175,6 +175,14 @@ export function buildPrintDocument<T>(opts: PrintDocumentOptions<T>): string {
  * window.open is called synchronously by the caller's onClick handler (never
  * after an intervening await) — Safari's user-gesture heuristics silently
  * block window.open once a microtask/await boundary has been crossed.
+ *
+ * BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: this is a DESKTOP-ONLY primitive.
+ * On mobile browsers/PWA/webview contexts, `window.open('', '_blank')` +
+ * `window.print()` can switch to a native print UI, open an external tab, or
+ * otherwise make the app appear to exit. Callers must check
+ * `isLikelyMobilePrintContext()` first and route mobile users through the
+ * in-app fallback (see `MobilePrintFallbackModal`) instead of calling this
+ * directly.
  */
 export function openPrintWindow(html: string): boolean {
   const win = window.open('', '_blank');
@@ -185,4 +193,57 @@ export function openPrintWindow(html: string): boolean {
   win.print();
   win.close();
   return true;
+}
+
+/**
+ * BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A
+ *
+ * Best-effort, defensive detection of a "mobile print is risky" context.
+ * Any one of the three signals is enough to treat the context as mobile:
+ *  - narrow viewport (<=768px) — matches the app's existing isMobile checks;
+ *  - a mobile-indicating User-Agent substring;
+ *  - standalone/PWA display-mode (installed home-screen app), where
+ *    `window.open` most commonly breaks out of the app shell entirely.
+ *
+ * Never throws: every browser API touched here is optional/inconsistently
+ * supported, so each check is wrapped defensively and any failure is treated
+ * as "not mobile" (falls back to the existing desktop print behavior rather
+ * than blocking it).
+ */
+export function isLikelyMobilePrintContext(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+
+    let narrow = false;
+    try {
+      narrow = typeof window.innerWidth === 'number' && window.innerWidth <= 768;
+    } catch { /* ignore */ }
+
+    let uaMobile = false;
+    try {
+      const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+      uaMobile = /Android|iPhone|iPad|iPod|Mobile|IEMobile|BlackBerry|webOS|Opera Mini/i.test(ua);
+    } catch { /* ignore */ }
+
+    let standalone = false;
+    try {
+      standalone = typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches;
+    } catch { /* ignore */ }
+
+    return narrow || uaMobile || standalone;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Downloads the already-built print/report HTML as a standalone `.html`
+ * file the user can open/share/print later from their own file manager or
+ * browser — the mobile-safe alternative to immediately calling
+ * `window.print()`. This is plain HTML, never a real PDF; callers must label
+ * it accordingly (e.g. "Download printable HTML" / "تحميل نسخة HTML قابلة
+ * للطباعة") and never claim it is a `.pdf`.
+ */
+export function downloadPrintableHtml(html: string, fileNameBase: string, when: Date = new Date()): boolean {
+  return downloadTextFile(buildStableFileName(fileNameBase, 'html', when), html, 'text/html;charset=utf-8;');
 }

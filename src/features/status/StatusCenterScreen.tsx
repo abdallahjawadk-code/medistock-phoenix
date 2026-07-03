@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
+import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
@@ -12,6 +13,7 @@ import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
 import { MovementHistoryModal } from './MovementHistoryModal';
 import { MovementReportSection } from './MovementReportSection';
@@ -153,6 +155,10 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canViewMovementHistory = myPermissions.has('availability.movements.view');
   const [historyRow, setHistoryRow] = useState<AdjustQuantityRow | null>(null);
 
+  // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
+  // here instead of calling window.open/window.print directly.
+  const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+
   const live = useAsync(
     () => effectiveOrgId ? getAvailabilityByOrg(effectiveOrgId) : Promise.resolve([]),
     [effectiveOrgId],
@@ -276,6 +282,14 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
   function printReport() {
     if (rows.length === 0) return;
+    // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: mobile/PWA/webview contexts
+    // route to the in-app fallback modal instead of window.open/window.print
+    // — those can switch to a native print UI or open an external tab,
+    // making the app appear to exit. Desktop keeps the original popup flow.
+    if (isLikelyMobilePrintContext()) {
+      setMobilePrintHtml(buildReportHtml());
+      return;
+    }
     const win = window.open('', '_blank');
     if (!win) {
       setMovementToast(t('print_popup_blocked', lang));
@@ -533,6 +547,14 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         onClose={() => setHistoryRow(null)}
       />
       {movementToast && <PhoenixToast message={movementToast} />}
+      <MobilePrintFallbackModal
+        open={mobilePrintHtml !== null}
+        html={mobilePrintHtml ?? ''}
+        title={t('sc_report_title', lang)}
+        fileNameBase={`medistock-status${orgName ? '-' + orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) : ''}`}
+        lang={lang}
+        onClose={() => setMobilePrintHtml(null)}
+      />
 
       {/* AVAILABILITY-MOVEMENT-REPORTS-PRINT-A: read-only, filterable
           quantity-movement report — hides itself when the caller lacks

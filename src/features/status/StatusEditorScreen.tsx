@@ -8,6 +8,7 @@ import {
   buildPrintDocument,
   buildStableFileName,
   downloadTextFile,
+  isLikelyMobilePrintContext,
   openPrintWindow,
   type ReportColumn,
 } from '@/shared/lib/reportExport';
@@ -17,6 +18,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 
 interface PointRow { id: string; name: string; name_ar: string; }
 
@@ -51,6 +53,9 @@ export function StatusEditorScreen() {
   const [filterStatus, setFilterStatus] = useState('');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
+  // here instead of calling openPrintWindow (window.open/window.print) directly.
+  const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -138,6 +143,14 @@ export function StatusEditorScreen() {
       footerText: t('report_footer_generated_by', lang),
       emptyMessage: t('se_no_records', lang),
     });
+    // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: mobile/PWA/webview contexts
+    // route to the in-app fallback modal instead of openPrintWindow — that
+    // can switch to a native print UI or open an external tab, making the
+    // app appear to exit. Desktop keeps the original popup flow.
+    if (isLikelyMobilePrintContext()) {
+      setMobilePrintHtml(html);
+      return;
+    }
     const ok = openPrintWindow(html);
     if (!ok) showToast(t('print_popup_blocked', lang));
   }
@@ -223,6 +236,14 @@ export function StatusEditorScreen() {
         </>
       )}
       {toast && <PhoenixToast message={toast} />}
+      <MobilePrintFallbackModal
+        open={mobilePrintHtml !== null}
+        html={mobilePrintHtml ?? ''}
+        title={t('nav_status_editor', lang)}
+        fileNameBase="medistock-status-editor"
+        lang={lang}
+        onClose={() => setMobilePrintHtml(null)}
+      />
     </div>
   );
 }

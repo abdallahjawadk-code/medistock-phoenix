@@ -12,6 +12,7 @@ import {
   buildStableFileName,
   buildCsvContent,
   buildPrintDocument,
+  isLikelyMobilePrintContext,
   REPORT_BRAND,
   type ReportColumn,
 } from '@/shared/lib/reportExport';
@@ -161,6 +162,43 @@ describe('buildPrintDocument', () => {
     expect(html).toContain('@media print');
     expect(html).toContain('page-break-inside: avoid');
     expect(html).toContain('thead { display: table-header-group; }');
+  });
+});
+
+describe('isLikelyMobilePrintContext (BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A)', () => {
+  it('never throws and returns false when window is undefined (this Node test env)', () => {
+    expect(() => isLikelyMobilePrintContext()).not.toThrow();
+    expect(isLikelyMobilePrintContext()).toBe(false);
+  });
+
+  it('checks a narrow viewport (<=768px), a mobile User-Agent, and standalone/PWA display-mode', () => {
+    const fn = moduleSrc.slice(moduleSrc.indexOf('export function isLikelyMobilePrintContext'));
+    expect(fn).toContain('window.innerWidth <= 768');
+    expect(fn).toMatch(/Android\|iPhone\|iPad\|iPod\|Mobile/);
+    expect(fn).toContain("window.matchMedia('(display-mode: standalone)').matches");
+  });
+
+  it('is defensive: every browser API access is wrapped in try/catch so it can never crash the app', () => {
+    const fn = moduleSrc.slice(
+      moduleSrc.indexOf('export function isLikelyMobilePrintContext'),
+      moduleSrc.indexOf('export function downloadPrintableHtml'),
+    );
+    expect((fn.match(/try\s*{/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(fn).toContain('catch {');
+  });
+});
+
+describe('downloadPrintableHtml (BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A)', () => {
+  it('uses a stable .html filename (never mislabels the file as a real PDF)', () => {
+    const fn = moduleSrc.slice(moduleSrc.indexOf('export function downloadPrintableHtml'));
+    expect(fn).toContain("buildStableFileName(fileNameBase, 'html', when)");
+    expect(fn).not.toMatch(/\.pdf/i);
+  });
+
+  it('downloads via the same downloadTextFile primitive used by CSV export (text/html mime)', () => {
+    const fn = moduleSrc.slice(moduleSrc.indexOf('export function downloadPrintableHtml'));
+    expect(fn).toContain('downloadTextFile(');
+    expect(fn).toContain('text/html;charset=utf-8;');
   });
 });
 

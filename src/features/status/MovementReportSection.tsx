@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
+import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAvailabilityMovementsReport,
@@ -13,6 +14,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 
 /**
  * AVAILABILITY-MOVEMENT-REPORTS-PRINT-A
@@ -97,6 +99,9 @@ export function MovementReportSection() {
   const [materialSearch, setMaterialSearch] = useState('');
   const [actorSearch, setActorSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
+  // here instead of calling window.open/window.print directly.
+  const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -208,6 +213,14 @@ export function MovementReportSection() {
 
   function printReport() {
     if (rows.length === 0) return;
+    // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: mobile/PWA/webview contexts
+    // route to the in-app fallback modal instead of window.open/window.print
+    // — those can switch to a native print UI or open an external tab,
+    // making the app appear to exit. Desktop keeps the original popup flow.
+    if (isLikelyMobilePrintContext()) {
+      setMobilePrintHtml(buildReportHtml());
+      return;
+    }
     const win = window.open('', '_blank');
     if (!win) {
       showToast(t('print_popup_blocked', lang));
@@ -359,6 +372,14 @@ export function MovementReportSection() {
         </>
       )}
       {toast && <PhoenixToast message={toast} />}
+      <MobilePrintFallbackModal
+        open={mobilePrintHtml !== null}
+        html={mobilePrintHtml ?? ''}
+        title={t('mvmt_report_title', lang)}
+        fileNameBase="medistock-movements"
+        lang={lang}
+        onClose={() => setMobilePrintHtml(null)}
+      />
     </PhoenixCard>
   );
 }
