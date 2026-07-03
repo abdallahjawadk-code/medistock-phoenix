@@ -1088,6 +1088,19 @@ export const T: Dict = {
   mobile_print_download_failed:{ ar: 'تعذر تحميل نسخة HTML. يرجى المحاولة مرة أخرى.', en: 'Failed to download the HTML copy. Please try again.' },
   mobile_print_open_failed:    { ar: 'تعذر فتح طباعة النظام. يرجى المحاولة مرة أخرى.', en: 'Failed to open system print. Please try again.' },
   mobile_print_download_ok:    { ar: 'تم تحميل نسخة HTML القابلة للطباعة', en: 'Printable HTML copy downloaded' },
+
+  /* ── UX-COMMAND-CENTER-SMART-A: Command Palette (Ctrl+K / Cmd+K) ── */
+  cc_palette_open:        { ar: 'فتح لوحة الأوامر',              en: 'Open command palette' },
+  cc_palette_title:        { ar: 'لوحة الأوامر',                  en: 'Command Palette' },
+  cc_palette_placeholder: { ar: 'ابحث عن صفحة أو إجراء...',      en: 'Search for a page or action…' },
+  cc_palette_no_results:  { ar: 'لا توجد نتائج مطابقة',           en: 'No matching results' },
+  cc_palette_hint:        { ar: 'Ctrl/Cmd + K للفتح، Esc للإغلاق', en: 'Ctrl/Cmd + K to open, Esc to close' },
+
+  /* ── UX-COMMAND-CENTER-SMART-A: Quick Actions + Activity Feed ── */
+  cc_quick_actions_sub: { ar: 'انتقل مباشرة إلى الشاشات الأكثر استخدامًا', en: 'Jump straight to the screens you use most' },
+  cc_activity_title:    { ar: 'آخر العمليات',                                en: 'Recent Activity' },
+  cc_activity_empty:    { ar: 'ستظهر هنا آخر العمليات بعد بدء استخدام النظام.', en: 'Recent activity will appear here after the system is used.' },
+  cc_activity_updated:  { ar: 'محدث',                                       en: 'updated' },
 };
 
 export function t(key: string, lang: Lang): string {

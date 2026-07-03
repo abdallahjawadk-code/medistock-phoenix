@@ -6,6 +6,7 @@ import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
 import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
+import { CommandPalette } from './CommandPalette';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
 // longer has an entry — App.tsx redirects it to Status Center, so the
@@ -89,6 +90,11 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
       )}
 
       <PwaInstallPrompt isMobile={isMobile} />
+
+      {/* UX-COMMAND-CENTER-SMART-A: global Ctrl+K/Cmd+K command palette —
+          navigates via the same onNavigate screen-switch already passed
+          down; no new routes, no new backend reads. */}
+      <CommandPalette onNavigate={onNavigate} />
     </div>
   );
 }

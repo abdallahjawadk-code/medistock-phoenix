@@ -21,6 +21,8 @@ import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services
 import { computeInternalAlerts } from './internalAlerts';
 import { InternalAlertsSection } from './InternalAlertsSection';
 import { OutletMaterialGroups } from './OutletMaterialGroups';
+import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
+import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -131,7 +133,7 @@ function csvSafeCell(v: string): string {
 }
 
 export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
-  const { lang, activeOrgId, myPermissions } = useApp();
+  const { lang, activeOrgId, myPermissions, role } = useApp();
   const isMobile = window.innerWidth < 768;
 
   const effectiveOrgId = activeOrgId ?? undefined;
@@ -218,6 +220,41 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // independent of the table's current search/status filter, since this is
   // a whole-organization summary, not a filtered view.
   const internalAlerts = useMemo(() => computeInternalAlerts(allRows), [allRows]);
+
+  // UX-COMMAND-CENTER-SMART-A: Quick Actions — navigate via the existing
+  // onNavigate screen-switch only, mirroring the sidebar/drawer's unconditional
+  // visibility, except User Management which mirrors that screen's own
+  // users.view/super_admin gate so the tile never offers an entry point the
+  // destination screen would otherwise hide.
+  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
+  const quickActions: QuickAction[] = useMemo(() => {
+    const actions: QuickAction[] = [
+      { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
+      { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
+      { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
+      { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
+      { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+    ];
+    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: '👥', labelKey: 'nav_users' });
+    return actions;
+  }, [canSeeUsers]);
+
+  // UX-COMMAND-CENTER-SMART-A: honest "recent activity" strip — reuses the
+  // already-loaded live availability rows (no new Supabase read), sorted by
+  // their real updated_at timestamp. Empty state shown when there is nothing
+  // to report yet.
+  const activityEntries: ActivityFeedEntry[] = useMemo(() => {
+    return [...allRows]
+      .filter(r => r.updated_at)
+      .sort((a, b) => new Date(b.updated_at as string).getTime() - new Date(a.updated_at as string).getTime())
+      .slice(0, 5)
+      .map(r => ({
+        id: r.id,
+        title: (lang === 'ar' ? r.scientific_name : r.trade_name || r.scientific_name) || r.trade_name || r.scientific_name || '—',
+        subtitle: `${dpNameOf(r, lang)} · ${t('cond_' + effOf(r), lang)}`,
+        timestamp: formatStableDate(r.updated_at, lang),
+      }));
+  }, [allRows, lang]);
 
   const generatedAt = () => formatStableDateTime(new Date(), lang);
 
@@ -366,6 +403,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         <PhoenixOrgScope />
       </div>
 
+      {/* Quick Actions — UX-COMMAND-CENTER-SMART-A */}
+      <div style={{ marginBottom: '16px' }}>
+        <h3 className="premium-section-header" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>{t('quick', lang)}</h3>
+        <p style={{ fontSize: '11px', color: 'var(--t2)', marginBottom: '10px' }}>{t('cc_quick_actions_sub', lang)}</p>
+        <QuickActionGrid actions={quickActions} onNavigate={onNavigate} />
+      </div>
+
       {/* Notice: reporting only — no auto-transfer (safety disclaimer) */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         ℹ️ {t('sc_no_exchange', lang)}
@@ -396,6 +440,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       {/* AVAILABILITY-ALERTS-QR-POLISH-B: internal (same-institution) alerts —
           read-only, computed client-side from the rows already loaded above. */}
       {!live.loading && !live.error && <InternalAlertsSection matches={internalAlerts} />}
+
+      {/* Recent Activity — UX-COMMAND-CENTER-SMART-A, real data only */}
+      <div style={{ marginBottom: '16px' }}>
+        <h3 className="premium-section-header" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>{t('cc_activity_title', lang)}</h3>
+        {!live.loading && !live.error && <CommandCenterActivityFeed entries={activityEntries} />}
+      </div>
 
       {/* Filters + export/print actions */}
       <PhoenixCard padding="14px" style={{ marginBottom: '16px' }}>
