@@ -1468,6 +1468,30 @@ function centralOf(row: LocalRow | AvailRow['local_items']): { name: string; nam
   return Array.isArray(c) ? c[0] ?? null : c;
 }
 
+/**
+ * BUGFIX-OUTLET-MATERIAL-NAME-NOT-SHOWN-A
+ *
+ * The current write path (phoenix_upsert_availability, migrations 030/031)
+ * inserts item_availability rows with local_item_id = NULL and the material
+ * identity denormalized directly onto the row (scientific_name/trade_name/
+ * concentration/dosage_form) — the legacy local_items -> central_items join
+ * is never populated for these rows. Displaying only `centralOf(r.local_items)`
+ * therefore showed nothing for every material added through the current
+ * flow. Direct fields are the primary source; the legacy join is now only a
+ * fallback for old rows that still carry a local_item_id, and a translated
+ * placeholder is the final fallback — never a bare "—" when a material
+ * genuinely exists.
+ */
+function outletMaterialTitle(r: AvailRow, ci: { name: string; name_ar: string } | null, lang: 'ar' | 'en'): string {
+  return (
+    r.scientific_name?.trim()
+    || r.trade_name?.trim()
+    || (lang === 'ar' ? (ci?.name_ar || ci?.name) : (ci?.name || ci?.name_ar))
+    || r.local_items?.local_code?.trim()
+    || t('avail_unnamed_material', lang)
+  );
+}
+
 function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, onToast, pointStatus, refreshKey }: {
   pointId: string;
   orgId: string;
@@ -1593,8 +1617,8 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
       {avail.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
 
       {!avail.loading && rows.length === 0 && !showAdd && (
-        <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '8px' }}>
-          {t('empty_avail', lang)}
+        <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '8px' }} dir="auto">
+          {t('avail_outlet_active_empty', lang)}
         </div>
       )}
 
@@ -1602,18 +1626,29 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {rows.map(r => {
             const ci = centralOf(r.local_items);
-            const itemName = lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar);
+            const title = outletMaterialTitle(r, ci, lang);
+            // Only show trade_name as secondary text when it isn't already the title
+            // (i.e. scientific_name was present and used as the title).
+            const secondary = r.trade_name?.trim() && r.trade_name.trim() !== title ? r.trade_name.trim() : null;
+            const meta = [r.concentration?.trim(), r.dosage_form?.trim()].filter(Boolean).join(' · ');
             const condKey = CONDITION_LABEL_KEY[r.condition];
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
-                <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>
-                  {itemName ?? '—'}
+                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} dir="auto">
+                    {title}
+                  </div>
+                  {(secondary || meta) && (
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px', color: 'var(--t2)' }} dir="auto">
+                      {[secondary, meta].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
                   <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
-                  {r.expiry_date && r.condition === 'near_expiry' && (
+                  {r.expiry_date && (
                     <span style={{ fontSize: '9.5px', color: 'var(--warn)' }} dir="ltr">{r.expiry_date}</span>
                   )}
                   {canRemove && (

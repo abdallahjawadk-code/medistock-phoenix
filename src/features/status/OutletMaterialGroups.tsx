@@ -39,6 +39,16 @@ function effOf(r: OutletGroupRow): CanonicalStatus {
   return (r.effective_status ?? (r.condition as CanonicalStatus | undefined) ?? 'available');
 }
 
+/**
+ * BUGFIX-OUTLET-MATERIAL-NAME-NOT-SHOWN-A: scientific_name is the primary
+ * identity field on item_availability (the current write path always sets
+ * it), but fall back to trade_name and a translated placeholder rather than
+ * a bare "—" for the rare row where even that is missing.
+ */
+function outletGroupRowTitle(r: OutletGroupRow, lang: 'ar' | 'en'): string {
+  return r.scientific_name?.trim() || r.trade_name?.trim() || t('avail_unnamed_material', lang);
+}
+
 interface Props {
   rows: OutletGroupRow[];
 }
@@ -93,7 +103,7 @@ export function OutletMaterialGroups({ rows }: Props) {
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingBottom: '8px', borderBottom: i < g.rows.length - 1 ? '1px solid var(--brd)' : 'none' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
-                        {r.scientific_name || '—'}
+                        {outletGroupRowTitle(r, lang)}
                       </div>
                       <div style={{ fontSize: '10.5px', color: 'var(--t2)' }}>
                         {[r.concentration, r.dosage_form].filter(Boolean).join(' · ') || '—'}

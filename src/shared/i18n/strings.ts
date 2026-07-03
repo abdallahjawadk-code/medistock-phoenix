@@ -493,6 +493,9 @@ export const T: Dict = {
   avail_removed_from_outlet:{ ar: 'تمت إزالة المادة من المنفذ',                                 en: 'Material removed from outlet' },
   // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A
   avail_outlet_disabled_empty: { ar: 'تم تعطيل هذا المنفذ، ولا توجد مواد فعالة معروضة.', en: 'This outlet is disabled; no active materials are displayed.' },
+  // BUGFIX-OUTLET-MATERIAL-NAME-NOT-SHOWN-A
+  avail_outlet_active_empty: { ar: 'لا توجد مواد فعالة في هذا المنفذ.', en: 'No active materials in this outlet.' },
+  avail_unnamed_material:    { ar: 'مادة غير مسماة',                  en: 'Unnamed material' },
   cond_available:     { ar: 'متوفر',                             en: 'Available' },
   cond_low_stock:     { ar: 'شحيح',                              en: 'Low stock' },
   cond_missing:       { ar: 'مفقود',                             en: 'Missing' },
