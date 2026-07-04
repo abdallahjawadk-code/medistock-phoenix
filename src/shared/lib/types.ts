@@ -64,6 +64,8 @@ export interface AvailabilityRecord {
   price?: number | null;
   /** Official product/registration code, distinct from batch_number (migration 049). */
   national_code?: string | null;
+  /** Batch/lot number — the actual item_availability.batch_number column. */
+  batch_number?: string | null;
 }
 
 export interface QrToken {

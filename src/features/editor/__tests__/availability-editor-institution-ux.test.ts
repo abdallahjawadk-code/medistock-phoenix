@@ -183,30 +183,13 @@ describe('National code is a real, independent field (not reused batch_number st
   });
 });
 
-describe('National code duplicate/conflict safety guard', () => {
-  it('computes a conflict only when edit mode + both values non-empty + values differ', () => {
+describe('National code duplicate/conflict safety guard (folded into the generalized similar-match guard)', () => {
+  it('computes a per-field conflict only when edit mode + both values non-empty + values differ', () => {
     expect(editor).toContain('const nationalCodeConflict = isEditMode');
     expect(editor).toContain("normalizedSubmittedNationalCode !== ''");
     expect(editor).toContain("normalizedExistingNationalCode !== ''");
-    expect(editor).toContain('normalizedSubmittedNationalCode !== normalizedExistingNationalCode');
-  });
-
-  it('conflict disables the submit button (canSubmit factors in nationalCodeConflict)', () => {
-    const canSubmitLine = editor.slice(editor.indexOf('const canSubmit ='), editor.indexOf('const canSubmit =') + 300);
-    expect(canSubmitLine).toContain('!nationalCodeConflict');
-  });
-
-  it('doApply re-checks the conflict and returns before calling upsertAvailability when blocked', () => {
-    const doApplyBlock = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('await upsertAvailability'));
-    expect(doApplyBlock).toContain('if (nationalCodeConflict)');
-    expect(doApplyBlock).toContain('return;');
-  });
-
-  it('blocking warning uses the bilingual avail_national_code_conflict key', () => {
-    expect(editor).toContain("t('avail_national_code_conflict', lang)");
-    expect(strings).toContain('avail_national_code_conflict');
-    expect(strings).toContain('توجد مادة مطابقة حالياً برمز وطني مختلف');
-    expect(strings).toContain('A matching material already exists with a different national code');
+    expect(editor).toContain('&& nationalCodeDiffers;');
+    expect(editor).toContain('const nationalCodeDiffers = normalizedExistingNationalCode !== normalizedSubmittedNationalCode;');
   });
 
   it('blank submitted national code never triggers a conflict (only omits the parameter)', () => {
@@ -217,6 +200,129 @@ describe('National code duplicate/conflict safety guard', () => {
 
   it('a save never sends nationalCode as an intentional blank clear (omits via `|| undefined`)', () => {
     expect(editor).toContain('nationalCode: normalizedSubmittedNationalCode || undefined');
+  });
+
+  it('bilingual avail_national_code_conflict key still exists (superseded by the generalized message, kept for compatibility)', () => {
+    expect(strings).toContain('avail_national_code_conflict');
+    expect(strings).toContain('توجد مادة مطابقة حالياً برمز وطني مختلف');
+    expect(strings).toContain('A matching material already exists with a different national code');
+  });
+});
+
+// ============================================================================
+// AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A: generalized similar-material
+// comparison panel + blocking guard, covering national_code, batch_number,
+// expiry_date, supply_type, and price — the current DB matching key
+// (distribution_point_id + scientific_name + concentration + dosage_form)
+// includes none of these, so a matched row's values in any of them could
+// otherwise be silently overwritten.
+// ============================================================================
+
+describe('Similar-material comparison panel: per-field diff detection', () => {
+  it('batch_number diff/conflict computed the same way as national_code', () => {
+    expect(editor).toContain('const batchNumberDiffers = normalizedExistingBatchNumber !== normalizedSubmittedBatchNumber;');
+    expect(editor).toContain('const batchNumberConflict = isEditMode');
+  });
+
+  it('expiry_date diff/conflict computed the same way as national_code', () => {
+    expect(editor).toContain('const expiryDateDiffers = normalizedExistingExpiryDate !== normalizedSubmittedExpiryDate;');
+    expect(editor).toContain('const expiryDateConflict = isEditMode');
+  });
+
+  it('supply_type diff/conflict computed the same way as national_code', () => {
+    expect(editor).toContain('const supplyTypeDiffers = normalizedExistingSupplyType !== normalizedSubmittedSupplyType;');
+    expect(editor).toContain('const supplyTypeConflict = isEditMode');
+  });
+
+  it('price diff/conflict compares numerically, not as raw strings', () => {
+    expect(editor).toContain('const priceDiffers =');
+    expect(editor).toContain('const priceConflict = isEditMode');
+    expect(editor).toContain('existingPriceNum !== submittedPriceNum');
+  });
+
+  it('aggregate similarMatchBlocked ORs every per-field conflict', () => {
+    expect(editor).toContain('const similarMatchBlocked = isEditMode');
+    expect(editor).toContain('nationalCodeConflict || batchNumberConflict || expiryDateConflict || supplyTypeConflict || priceConflict');
+  });
+
+  it('hasSimilarMatchDifference ORs every per-field "differs" (not just conflicts) to decide panel visibility', () => {
+    expect(editor).toContain('const hasSimilarMatchDifference = isEditMode');
+    expect(editor).toContain('nationalCodeDiffers || batchNumberDiffers || expiryDateDiffers || supplyTypeDiffers || priceDiffers');
+  });
+});
+
+describe('Similar-material comparison panel: UI', () => {
+  it('panel only renders when hasSimilarMatchDifference is true', () => {
+    expect(editor).toContain('{hasSimilarMatchDifference && (');
+  });
+
+  it('panel shows the bilingual title', () => {
+    expect(editor).toContain("t('avail_similar_match_title', lang)");
+    expect(strings).toContain('avail_similar_match_title');
+    expect(strings).toContain('توجد مادة مشابهة مسجلة مسبقاً');
+    expect(strings).toContain('Similar material already exists');
+  });
+
+  it('panel shows existing vs entered values for each differing field', () => {
+    expect(editor).toContain("t('avail_existing_value', lang)");
+    expect(editor).toContain("t('avail_entered_value', lang)");
+    expect(strings).toContain('avail_existing_value');
+    expect(strings).toContain('avail_entered_value');
+  });
+
+  it('each of the 5 fields has its own conditional row in the panel', () => {
+    expect(editor).toContain('{nationalCodeDiffers && (');
+    expect(editor).toContain('{batchNumberDiffers && (');
+    expect(editor).toContain('{expiryDateDiffers && (');
+    expect(editor).toContain('{supplyTypeDiffers && (');
+    expect(editor).toContain('{priceDiffers && (');
+  });
+
+  it('blocking warning only renders when similarMatchBlocked is true, using the generalized message', () => {
+    expect(editor).toContain('{similarMatchBlocked && (');
+    expect(editor).toContain("t('avail_similar_match_conflict', lang)");
+    expect(strings).toContain('avail_similar_match_conflict');
+    expect(strings).toContain('توجد مادة مشابهة مسجلة بتفاصيل هوية أو دفعة مختلفة');
+    expect(strings).toContain('A similar material already exists with different identity or batch details');
+  });
+
+  it('bilingual forward-looking note is present near the panel', () => {
+    expect(editor).toContain("t('avail_similar_match_note', lang)");
+    expect(strings).toContain('avail_similar_match_note');
+    expect(strings).toContain('سيتم تفعيل السجلات المستقلة');
+    expect(strings).toContain('Independent rows for different national codes');
+  });
+});
+
+describe('Similar-material guard: save blocking behavior', () => {
+  it('canSubmit factors in similarMatchBlocked (folds the old nationalCodeConflict-only check)', () => {
+    const canSubmitLine = editor.slice(editor.indexOf('const canSubmit ='), editor.indexOf('const canSubmit =') + 300);
+    expect(canSubmitLine).toContain('!similarMatchBlocked');
+  });
+
+  it('doApply re-checks similarMatchBlocked and returns before calling upsertAvailability when blocked', () => {
+    const doApplyBlock = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('await upsertAvailability'));
+    expect(doApplyBlock).toContain('if (similarMatchBlocked)');
+    expect(doApplyBlock).toContain('return;');
+    expect(doApplyBlock).toContain("t('avail_similar_match_conflict', lang)");
+  });
+
+  it('an exact match (no differing field) never blocks — similarMatchBlocked requires isEditMode plus at least one per-field conflict', () => {
+    expect(editor).toContain('const similarMatchBlocked = isEditMode\n    && (nationalCodeConflict || batchNumberConflict || expiryDateConflict || supplyTypeConflict || priceConflict);');
+  });
+});
+
+describe('Similar-material guard: no silent clearing of batch_number/expiry_date/supply_type/price', () => {
+  it('the existing-row auto-populate effect seeds batch_number, expiry_date, supply_type, and price (not just national_code)', () => {
+    expect(editor).toContain("setBatch(existingRow.batch_number ?? '')");
+    expect(editor).toContain("setExpiry(existingRow.expiry_date ?? '')");
+    expect(editor).toContain("setSupplyType(existingRow.supply_type ?? '')");
+    expect(editor).toContain('setPrice(existingRow.price != null ? String(existingRow.price) : \'\')');
+  });
+
+  it('auto-populate is keyed on the matched row id only (does not clobber in-progress typing on unrelated re-renders)', () => {
+    const effectBlock = editor.slice(editor.indexOf('setNationalCode(existingRow.national_code'), editor.indexOf('setNationalCode(existingRow.national_code') + 400);
+    expect(effectBlock).toContain('[existingRow?.id]');
   });
 });
 

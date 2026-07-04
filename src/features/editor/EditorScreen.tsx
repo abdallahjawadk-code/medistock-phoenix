@@ -93,49 +93,114 @@ export function EditorScreen() {
   }, [pointAvailability.data, scientificName, dosageForm, concentrationVal]);
   const isEditMode = !!existingRow;
 
-  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: populate the national code
-  // field from the matched row when a match is first detected, so the user
-  // can see/edit the value already stored server-side. Keyed on the matched
-  // row's id (not the whole existingRow object) so this does not clobber
+  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A / AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A:
+  // populate national_code, batch_number, expiry_date, supply_type, and price
+  // from the matched row when a match is first detected, so the user sees
+  // (and can knowingly change) the values already stored server-side. This
+  // also prevents a latent silent-clear: phoenix_upsert_availability
+  // (migration 050) unconditionally overwrites batch_number/expiry_date/
+  // supply_type/price from whatever is submitted (only national_code is
+  // guarded via COALESCE) — leaving these fields blank in the form would
+  // otherwise wipe out existing values on save. Keyed on the matched row's
+  // id (not the whole existingRow object) so this does not clobber
   // in-progress typing on every unrelated re-render (e.g. a background
   // pointAvailability reload) — it only re-syncs when the matched row itself
   // changes to a different id.
   useEffect(() => {
     if (existingRow) {
       setNationalCode(existingRow.national_code ?? '');
+      setBatch(existingRow.batch_number ?? '');
+      setExpiry(existingRow.expiry_date ?? '');
+      setSupplyType(existingRow.supply_type ?? '');
+      setPrice(existingRow.price != null ? String(existingRow.price) : '');
     }
   }, [existingRow?.id]);
 
-  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A safety guard: the DB matching
-  // key (distribution_point_id + scientific_name + concentration + dosage_form)
-  // still does not include national_code, so a matched row's national_code
-  // could otherwise be silently overwritten by whatever the user types here.
-  // Blank submitted values never conflict (they simply omit p_national_code
-  // and preserve the existing value via migration 050's RPC behavior) —
-  // only a genuinely different non-empty value blocks the save.
+  // AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A: the DB matching key
+  // (distribution_point_id + scientific_name + concentration + dosage_form)
+  // still does not include national_code, batch_number, expiry_date,
+  // supply_type, or price, so a matched row's values in any of these fields
+  // could otherwise be silently overwritten by whatever the user types.
+  // Per-field "differs" is used for the similar-match panel (any change is
+  // shown, even filling a previously-blank field); per-field "conflict" is
+  // narrower and only true when BOTH the existing and submitted values are
+  // non-empty and different — that narrower condition is what blocks the
+  // save. A blank submitted value never conflicts: national_code simply
+  // omits p_national_code (migration 050 preserves the existing value via
+  // COALESCE); batch_number/expiry_date/supply_type/price are protected
+  // instead by the auto-populate effect above, which resends the existing
+  // value unless the user explicitly changes it.
   const normalizedSubmittedNationalCode = nationalCode.trim();
   const normalizedExistingNationalCode = (existingRow?.national_code ?? '').trim();
+  const nationalCodeDiffers = normalizedExistingNationalCode !== normalizedSubmittedNationalCode;
   const nationalCodeConflict = isEditMode
     && normalizedSubmittedNationalCode !== ''
     && normalizedExistingNationalCode !== ''
-    && normalizedSubmittedNationalCode !== normalizedExistingNationalCode;
+    && nationalCodeDiffers;
+
+  const normalizedSubmittedBatchNumber = batch.trim();
+  const normalizedExistingBatchNumber = (existingRow?.batch_number ?? '').trim();
+  const batchNumberDiffers = normalizedExistingBatchNumber !== normalizedSubmittedBatchNumber;
+  const batchNumberConflict = isEditMode
+    && normalizedSubmittedBatchNumber !== ''
+    && normalizedExistingBatchNumber !== ''
+    && batchNumberDiffers;
+
+  const normalizedSubmittedExpiryDate = expiry.trim();
+  const normalizedExistingExpiryDate = (existingRow?.expiry_date ?? '').trim();
+  const expiryDateDiffers = normalizedExistingExpiryDate !== normalizedSubmittedExpiryDate;
+  const expiryDateConflict = isEditMode
+    && normalizedSubmittedExpiryDate !== ''
+    && normalizedExistingExpiryDate !== ''
+    && expiryDateDiffers;
+
+  const normalizedSubmittedSupplyType = supplyType.trim();
+  const normalizedExistingSupplyType = (existingRow?.supply_type ?? '').trim();
+  const supplyTypeDiffers = normalizedExistingSupplyType !== normalizedSubmittedSupplyType;
+  const supplyTypeConflict = isEditMode
+    && normalizedSubmittedSupplyType !== ''
+    && normalizedExistingSupplyType !== ''
+    && supplyTypeDiffers;
+
+  const existingPriceNum = existingRow?.price ?? null;
+  const submittedPriceTrim = price.trim();
+  const submittedPriceNum = submittedPriceTrim === '' ? null : Number(submittedPriceTrim);
+  const priceDiffers = (existingPriceNum === null ? '' : String(existingPriceNum)) !== (submittedPriceNum === null ? '' : String(submittedPriceNum));
+  const priceConflict = isEditMode
+    && existingPriceNum !== null
+    && submittedPriceNum !== null
+    && !Number.isNaN(submittedPriceNum)
+    && existingPriceNum !== submittedPriceNum;
+
+  // Aggregate guard — blocks the save when ANY field has a genuine
+  // non-empty-vs-non-empty conflict. Folds (does not weaken) the original
+  // national-code-only guard from AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A.
+  const similarMatchBlocked = isEditMode
+    && (nationalCodeConflict || batchNumberConflict || expiryDateConflict || supplyTypeConflict || priceConflict);
+
+  // Whether to show the "similar material" comparison panel at all — any
+  // difference (even a non-blocking one, like filling a previously-blank
+  // field) is surfaced so the user always sees what's about to change.
+  const hasSimilarMatchDifference = isEditMode
+    && (nationalCodeDiffers || batchNumberDiffers || expiryDateDiffers || supplyTypeDiffers || priceDiffers);
 
   const qtyInvalid = !isEditMode && qty < 0;
   const noPorts = !points.loading && (points.data ?? []).length === 0;
   // Attempt is allowed with either create or update — the RPC (migration 032)
   // determines whether the row is new (needs availability.create) or existing
   // (needs availability.update) and denies accordingly; see doApply's catch.
-  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid && !nationalCodeConflict;
+  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid && !similarMatchBlocked;
 
   async function doApply() {
     if (!activeOrgId) return;
-    // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A safety guard, re-checked here
+    // AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A safety guard, re-checked here
     // (defense in depth alongside the canSubmit/button-disable check above):
     // never call the RPC when a matched existing row has a different,
-    // non-empty national_code already stored.
-    if (nationalCodeConflict) {
+    // non-empty value in national_code, batch_number, expiry_date,
+    // supply_type, or price already stored.
+    if (similarMatchBlocked) {
       setShowConfirm(false);
-      setToast(t('avail_national_code_conflict', lang));
+      setToast(t('avail_similar_match_conflict', lang));
       setTimeout(() => setToast(null), 4000);
       return;
     }
@@ -342,11 +407,6 @@ export function EditorScreen() {
                     background: nationalCodeConflict ? 'var(--err2)' : 'var(--s)',
                   }}
                 />
-                {nationalCodeConflict && (
-                  <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }} dir="auto">
-                    ⚠ {t('avail_national_code_conflict', lang)}
-                  </p>
-                )}
                 <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
                   {t('avail_national_code_now_separate_note', lang)}
                 </p>
@@ -357,20 +417,54 @@ export function EditorScreen() {
                   AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A). */}
               <div>
                 <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('batch_no', lang)}</label>
-                <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_batch_no_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
+                <input
+                  id="ed-batch"
+                  type="text"
+                  dir="ltr"
+                  value={batch}
+                  onChange={e => setBatch(e.target.value)}
+                  placeholder={t('avail_batch_no_ph', lang)}
+                  style={{
+                    ...fieldStyle,
+                    fontFamily: 'monospace',
+                    border: `1px solid ${batchNumberConflict ? 'var(--err)' : 'var(--brd)'}`,
+                    background: batchNumberConflict ? 'var(--err2)' : 'var(--s)',
+                  }}
+                />
               </div>
 
               {/* Expiry */}
               <div>
                 <label htmlFor="ed-exp" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('expiry', lang)}</label>
-                <input id="ed-exp" type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={fieldStyle} />
+                <input
+                  id="ed-exp"
+                  type="date"
+                  value={expiry}
+                  onChange={e => setExpiry(e.target.value)}
+                  style={{
+                    ...fieldStyle,
+                    border: `1px solid ${expiryDateConflict ? 'var(--err)' : 'var(--brd)'}`,
+                    background: expiryDateConflict ? 'var(--err2)' : 'var(--s)',
+                  }}
+                />
               </div>
 
               {/* Supply type — institution-private */}
               <div>
                 <label htmlFor="ed-supply" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_supply_type', lang)}</label>
-                <input id="ed-supply" type="text" dir="auto" value={supplyType} onChange={e => setSupplyType(e.target.value)}
-                  placeholder={t('avail_supply_type_ph', lang)} style={fieldStyle} />
+                <input
+                  id="ed-supply"
+                  type="text"
+                  dir="auto"
+                  value={supplyType}
+                  onChange={e => setSupplyType(e.target.value)}
+                  placeholder={t('avail_supply_type_ph', lang)}
+                  style={{
+                    ...fieldStyle,
+                    border: `1px solid ${supplyTypeConflict ? 'var(--err)' : 'var(--brd)'}`,
+                    background: supplyTypeConflict ? 'var(--err2)' : 'var(--s)',
+                  }}
+                />
               </div>
 
               {/* Notes */}
@@ -380,6 +474,66 @@ export function EditorScreen() {
               </div>
             </div>
           </PhoenixCard>
+
+          {/* AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A: similar-material
+              comparison panel. Shown whenever the matched existing row (same
+              DB key: distribution_point_id + scientific_name + concentration
+              + dosage_form) differs from what's currently entered in
+              national_code, batch_number, expiry_date, supply_type, or
+              price — the current DB matching key does not include any of
+              these, so this panel is the only thing standing between the
+              user and an accidental cross-batch overwrite until a later,
+              separately designed batch-identity DB phase exists. It never
+              creates an independent row itself — it only informs, and blocks
+              the save when a difference is a genuine non-empty-vs-non-empty
+              conflict (similarMatchBlocked). */}
+          {hasSimilarMatchDifference && (
+            <PhoenixCard padding="16px" style={{ marginBottom: '16px', border: `1px solid ${similarMatchBlocked ? 'var(--err)' : 'var(--brd)'}` }}>
+              <p style={{ fontSize: '14px', fontWeight: 700, color: similarMatchBlocked ? 'var(--err)' : 'var(--t)', marginBottom: '10px' }} dir="auto">
+                {t('avail_similar_match_title', lang)}
+              </p>
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {nationalCodeDiffers && (
+                  <div style={{ fontSize: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{t('avail_national_code', lang)}: </span>
+                    <span dir="auto">{t('avail_existing_value', lang)} “{normalizedExistingNationalCode || '—'}” · {t('avail_entered_value', lang)} “{normalizedSubmittedNationalCode || '—'}”</span>
+                  </div>
+                )}
+                {batchNumberDiffers && (
+                  <div style={{ fontSize: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{t('batch_no', lang)}: </span>
+                    <span dir="auto">{t('avail_existing_value', lang)} “{normalizedExistingBatchNumber || '—'}” · {t('avail_entered_value', lang)} “{normalizedSubmittedBatchNumber || '—'}”</span>
+                  </div>
+                )}
+                {expiryDateDiffers && (
+                  <div style={{ fontSize: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{t('expiry', lang)}: </span>
+                    <span dir="auto">{t('avail_existing_value', lang)} “{normalizedExistingExpiryDate || '—'}” · {t('avail_entered_value', lang)} “{normalizedSubmittedExpiryDate || '—'}”</span>
+                  </div>
+                )}
+                {supplyTypeDiffers && (
+                  <div style={{ fontSize: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{t('avail_supply_type', lang)}: </span>
+                    <span dir="auto">{t('avail_existing_value', lang)} “{normalizedExistingSupplyType || '—'}” · {t('avail_entered_value', lang)} “{normalizedSubmittedSupplyType || '—'}”</span>
+                  </div>
+                )}
+                {priceDiffers && (
+                  <div style={{ fontSize: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{t('avail_price', lang)}: </span>
+                    <span dir="auto">{t('avail_existing_value', lang)} “{existingPriceNum ?? '—'}” · {t('avail_entered_value', lang)} “{submittedPriceNum ?? '—'}”</span>
+                  </div>
+                )}
+              </div>
+              {similarMatchBlocked && (
+                <p style={{ fontSize: '11.5px', color: 'var(--err)', marginTop: '10px' }} dir="auto">
+                  ⚠ {t('avail_similar_match_conflict', lang)}
+                </p>
+              )}
+              <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '10px' }} dir="auto">
+                {t('avail_similar_match_note', lang)}
+              </p>
+            </PhoenixCard>
+          )}
 
           {canAttemptSave ? (
             <>
