@@ -260,17 +260,21 @@ describe('19-22. Safety guards', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no migrations changed or created', () => {
+  it('no existing migration SQL changed, and no unreviewed migration SQL created — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync("git diff -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
     let status = '';
     try {
-      status = execSync('git status --porcelain -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      status = execSync("git status --porcelain -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(status.trim()).toBe('');
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
   });
 
   it('no Service-D / inter_org_exchange UI added to the touched files', () => {

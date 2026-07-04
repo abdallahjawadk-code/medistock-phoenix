@@ -173,17 +173,21 @@ describe('10. No package/lockfile/migration changes', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no migration file was modified or created', () => {
+  it('no existing migration SQL was modified, and no unreviewed migration SQL was created — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync("git diff -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let status = '';
     try {
-      status = execSync('git status --porcelain -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      status = execSync("git status --porcelain -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(status.trim()).toBe('');
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
   });
 
   it('no docs/ changes', () => {

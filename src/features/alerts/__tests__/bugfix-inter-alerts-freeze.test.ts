@@ -142,11 +142,11 @@ describe('11. No SQL/migrations/RPC/Edge Function added by this fix', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no migration/package/lockfile files changed', () => {
+  it('no migration SQL/package/lockfile files changed (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock supabase/migrations/',
+        "git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock 'supabase/migrations/*.sql'",
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

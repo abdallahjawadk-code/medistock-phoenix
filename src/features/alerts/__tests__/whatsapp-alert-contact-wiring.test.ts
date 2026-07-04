@@ -121,23 +121,27 @@ describe('9. No wipe tooling restored', () => {
 });
 
 describe('10. No package/lockfile/migration changes', () => {
-  it('git diff for package/lockfiles/migrations is empty', () => {
+  it('git diff for package/lockfiles/migration SQL files is empty (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock supabase/migrations/',
+        "git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock 'supabase/migrations/*.sql'",
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
 
-  it('no new migration files were created', () => {
+  it('no unreviewed migration SQL files were created — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let status = '';
     try {
-      status = execSync('git status --porcelain -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      status = execSync("git status --porcelain -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(status.trim()).toBe('');
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
   });
 });
 
@@ -333,14 +337,16 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no new top-level migration files exist beyond 043', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed above it', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     const topLevel = files.split('\n').filter(f => /^supabase\/migrations\/\d{3}_/.test(f));
     const nums = topLevel.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(43);
+    const beyond043 = topLevel.filter((_, i) => nums[i] > 43);
+    expect(beyond043).toEqual(['supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql']);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(44);
   });
 });
 

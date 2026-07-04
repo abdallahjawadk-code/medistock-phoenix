@@ -197,10 +197,10 @@ describe('No WhatsApp/Google Drive/chat code was added', () => {
 });
 
 describe('No migrations touched, no package/lockfile changes', () => {
-  it('no migration file was modified (checked via git diff, working tree only)', () => {
+  it('no migration SQL file was modified (checked via git diff, working tree only; test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync("git diff -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
@@ -213,10 +213,10 @@ describe('No migrations touched, no package/lockfile changes', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no migration newer than 043 exists (this phase did not add one — 042 and 043 were each added separately by later, unrelated bugfix phases)', () => {
+  it('no migration newer than 043 was added by this phase — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed beyond it', () => {
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql']);
   });
 });
 

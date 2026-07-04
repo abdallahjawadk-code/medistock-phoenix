@@ -277,11 +277,11 @@ describe('9. No wipe tooling restored', () => {
 });
 
 describe('10. No package/lockfile/migration changes', () => {
-  it('git diff for package/lockfiles/migrations is empty', () => {
+  it('git diff for package/lockfiles/migration SQL files is empty (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock supabase/migrations/',
+        "git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock 'supabase/migrations/*.sql'",
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

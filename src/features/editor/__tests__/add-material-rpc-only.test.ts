@@ -224,11 +224,11 @@ describe('Guards: no Service-D/inter_org_exchange changes, no wipe tooling resto
     expect(institutions).not.toMatch(/phoenix-wipe-execute|FULL_PUBLIC_APP_WIPE_APPROVED|full_wipe/i);
   });
 
-  it('this file\'s own frontend changes (EditorScreen.tsx / InstitutionScreen.tsx reload + error-classification fixes) added no migration newer than 043 — 043 itself was added separately once the real DB-level root cause was found', () => {
+  it('this file\'s own frontend changes (EditorScreen.tsx / InstitutionScreen.tsx reload + error-classification fixes) added no migration newer than 043 — 043 itself was added separately once the real DB-level root cause was found (only the separately-reviewed migration 044, DB-MY-ACCOUNT-WHATSAPP-PHONE-A, is allowed beyond 043)', () => {
     const ROOT = join(__dirname, '../../../../');
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter((f: string) => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql']);
   });
 });
 

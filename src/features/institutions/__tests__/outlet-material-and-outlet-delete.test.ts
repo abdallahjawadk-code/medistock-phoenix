@@ -471,10 +471,10 @@ describe('Safety: no service_role/auth.admin, no raw ids exposed, no exchange wo
     });
   });
 
-  it('no new migrations were added for this fix', () => {
+  it('no existing migration SQL was modified for this fix (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- supabase/migrations/', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync("git diff -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
