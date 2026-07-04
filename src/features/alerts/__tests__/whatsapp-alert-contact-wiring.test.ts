@@ -140,6 +140,8 @@ describe('10. No package/lockfile/migration changes', () => {
     const ALLOWED_UNTRACKED = new Set([
       '?? supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
       'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+      '?? supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
+      'A  supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -338,7 +340,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) and 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) are allowed above it (045 may still be untracked/unstaged at review time — this check only constrains what IS tracked, not when it lands)', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), and 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
@@ -347,6 +349,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const allowedBeyond043 = new Set([
       'supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
       'supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+      'supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -355,7 +358,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(45);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(46);
   });
 });
 

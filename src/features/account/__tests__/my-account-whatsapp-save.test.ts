@@ -179,6 +179,8 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
     const ALLOWED_UNTRACKED = new Set([
       '?? supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
       'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+      '?? supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
+      'A  supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

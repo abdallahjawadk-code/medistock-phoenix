@@ -55,9 +55,9 @@ describe('Migration 044 exists exactly once', () => {
     expect(migration044).toContain('ASSERT');
   });
 
-  it('only the reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) exists beyond 044 — any other migration beyond 044 still fails this check', () => {
+  it('only the reviewed migrations 045/046 (DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A) exist beyond 044 — any other migration beyond 044 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[5-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql']);
+    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql']);
   });
 });
 

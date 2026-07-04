@@ -228,7 +228,7 @@ describe('Guards: no Service-D/inter_org_exchange changes, no wipe tooling resto
     const ROOT = join(__dirname, '../../../../');
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter((f: string) => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql']);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql']);
   });
 });
 
