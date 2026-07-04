@@ -87,12 +87,12 @@ describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: quantity field behavior', ()
 
 describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: save never sends a changed quantity for existing rows', () => {
   it('doApply sends existingRow quantity (not local qty state) when isEditMode is true', () => {
-    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 1200);
+    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 2000);
     expect(applyFn).toMatch(/quantity:\s*isEditMode \? existingRow!\.quantity : qty/);
   });
 
   it('save still sends the locally-typed qty for brand-new rows', () => {
-    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 1200);
+    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 2000);
     expect(applyFn).toContain(': qty,');
   });
 });

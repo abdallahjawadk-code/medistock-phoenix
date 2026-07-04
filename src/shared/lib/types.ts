@@ -62,6 +62,8 @@ export interface AvailabilityRecord {
   dosage_form?: string | null;
   concentration?: string | null;
   price?: number | null;
+  /** Official product/registration code, distinct from batch_number (migration 049). */
+  national_code?: string | null;
 }
 
 export interface QrToken {

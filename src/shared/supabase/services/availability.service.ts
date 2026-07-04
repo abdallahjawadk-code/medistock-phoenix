@@ -73,6 +73,15 @@ export interface UpsertAvailabilityInput {
   notes?: string;
   /** Free-text "نوع التجهيز" (Supply type) — institution-private (migration 019). */
   supplyType?: string;
+  /**
+   * Official product/registration code (migration 049's national_code column,
+   * migration 050's phoenix_upsert_availability p_national_code parameter).
+   * A blank/undefined value is never sent to the RPC as an explicit clear —
+   * see upsertAvailability() below, which omits p_national_code entirely in
+   * that case so the RPC's own COALESCE-preserve behavior keeps any existing
+   * value on the row untouched (AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A).
+   */
+  nationalCode?: string | null;
 }
 
 export async function getAvailabilityByPoint(
@@ -83,7 +92,7 @@ export async function getAvailabilityByPoint(
   const { data, error } = await supabase
     .from('item_availability')
     .select(`
-      id, quantity, condition, batch_number, expiry_date, notes, updated_at,
+      id, quantity, condition, batch_number, national_code, expiry_date, notes, updated_at,
       port_name, supply_type,
       scientific_name, trade_name, dosage_form, concentration, price,
       local_items ( id, local_code,
@@ -114,6 +123,15 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
     throw new Error('upsertAvailability requires scientificName');
   }
 
+  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: p_national_code (migration 050)
+  // is only ever included when a trimmed, non-empty value is supplied. A
+  // blank/undefined nationalCode omits the key entirely rather than sending
+  // an explicit null/empty string, so the RPC's own DEFAULT NULL +
+  // COALESCE(v_national_code, ia.national_code) preserve-if-absent behavior
+  // keeps any existing national_code on the row untouched — this call site
+  // never intentionally clears it.
+  const normalizedNationalCode = input.nationalCode?.trim();
+
   const { error } = await supabase.rpc('phoenix_upsert_availability', {
     p_distribution_point_id: input.distributionPointId,
     p_scientific_name:       input.scientificName.trim(),
@@ -127,6 +145,7 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
     p_notes:                 input.notes ?? null,
     p_supply_type:           input.supplyType ?? null,
     p_price:                 input.price ?? null,
+    ...(normalizedNationalCode ? { p_national_code: normalizedNationalCode } : {}),
   });
   if (error) throw error;
 }
@@ -474,7 +493,7 @@ export async function getAvailabilityByOrg(orgId: string) {
     .from('item_availability')
     .select(`
       id, scientific_name, trade_name, dosage_form, concentration, price,
-      quantity, condition, batch_number, expiry_date, notes, supply_type, updated_at,
+      quantity, condition, batch_number, national_code, expiry_date, notes, supply_type, updated_at,
       distribution_points ( id, name, name_ar, status )
     `)
     .eq('organization_id', orgId)

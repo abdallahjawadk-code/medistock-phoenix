@@ -195,21 +195,13 @@ describe('14. Does not modify older migrations or package/lockfiles', () => {
   });
 });
 
-describe('15. Frontend changes are label-only (no RPC/service/type wiring to national_code)', () => {
-  it('availability.service.ts has no national_code reference', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/shared/supabase/services/availability.service.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
-  });
-
-  it('shared/lib/types.ts has no national_code reference added', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/shared/lib/types.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+describe('15. Frontend changes at this phase were label-only; RPC/service/type wiring is a later, separately-reviewed phase (AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A)', () => {
+  it('this migration itself does not reference availability.service.ts/types.ts wiring (it is a pure SQL file)', () => {
+    // Migration 049's own SQL content never references frontend files at all —
+    // this is a stronger, phase-agnostic guarantee than diffing the working
+    // tree, which legitimately changes once AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A
+    // wires availability.service.ts/types.ts to actually send/read national_code.
+    expect(active049).not.toMatch(/availability\.service\.ts|shared\/lib\/types\.ts/);
   });
 
   it('QR, export/print, and user-management files are untouched', () => {

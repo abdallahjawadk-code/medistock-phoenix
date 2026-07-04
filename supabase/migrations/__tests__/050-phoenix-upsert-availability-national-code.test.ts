@@ -290,11 +290,18 @@ describe('24. Does not change package/lockfiles', () => {
     expect(active050).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/i);
   });
 
-  it('no frontend production file has a working-tree diff from this phase', () => {
+  it('this migration itself does not reference frontend files at all (it is a pure SQL file); QR/user-management/auth files specifically remain untouched by any phase in this lineage', () => {
+    // availability.service.ts/EditorScreen.tsx/types.ts wiring is explicitly
+    // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A's job (a later, separately
+    // reviewed phase) — diffing them here would be stale the moment that
+    // phase lands, so this migration's own guarantee is narrower: it never
+    // references any frontend path itself, and QR/user-management/auth stay
+    // untouched by every phase in this lineage.
+    expect(active050).not.toMatch(/availability\.service\.ts|EditorScreen\.tsx|shared\/lib\/types\.ts/);
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/availability.service.ts src/features/editor/EditorScreen.tsx src/shared/lib/types.ts src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

@@ -141,6 +141,8 @@ export const T: Dict = {
   avail_national_code_ph:  { ar: 'أدخل الرمز الوطني',                      en: 'Enter national code' },
   avail_batch_no_ph:       { ar: 'أدخل رقم الدفعة',                        en: 'Enter batch number' },
   avail_national_code_separation_note: { ar: 'سيتم فصل الرمز الوطني عن رقم الدفعة في مرحلة لاحقة', en: 'National code will be separated from batch number in a later phase' },
+  avail_national_code_now_separate_note: { ar: 'أصبح الرمز الوطني محفوظاً بشكل مستقل عن رقم الدفعة. سيتم لاحقاً تفعيل فصل الرموز الوطنية أو دفعات النفاد المختلفة كسجلات مستقلة.', en: 'National code is now stored separately from batch number. Different national codes or expiry batches will become independently resolvable in a later phase.' },
+  avail_national_code_conflict: { ar: 'توجد مادة مطابقة حالياً برمز وطني مختلف. لم يتم تفعيل فصل المواد/الدفعات المستقلة بعد. يرجى المراجعة أو الإلغاء.', en: 'A matching material already exists with a different national code. Independent material/batch resolution is not enabled yet. Please review or cancel.' },
   avail_material_status:   { ar: 'موقف المادة',                            en: 'Material status' },
   avail_supply_type:       { ar: 'نوع التجهيز',                            en: 'Supply type' },
   avail_supply_type_ph:    { ar: 'اكتب نوع التجهيز',                       en: 'Enter supply type' },

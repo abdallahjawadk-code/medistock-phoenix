@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -63,6 +63,7 @@ export function EditorScreen() {
   const [qty, setQty]           = useState(0);
   const [condition, setCondition] = useState<AvailabilityCondition>('available');
   const [batch, setBatch]       = useState('');
+  const [nationalCode, setNationalCode] = useState('');
   const [expiry, setExpiry]     = useState('');
   const [notes, setNotes]       = useState('');
   const [supplyType, setSupplyType] = useState('');
@@ -92,15 +93,52 @@ export function EditorScreen() {
   }, [pointAvailability.data, scientificName, dosageForm, concentrationVal]);
   const isEditMode = !!existingRow;
 
+  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: populate the national code
+  // field from the matched row when a match is first detected, so the user
+  // can see/edit the value already stored server-side. Keyed on the matched
+  // row's id (not the whole existingRow object) so this does not clobber
+  // in-progress typing on every unrelated re-render (e.g. a background
+  // pointAvailability reload) — it only re-syncs when the matched row itself
+  // changes to a different id.
+  useEffect(() => {
+    if (existingRow) {
+      setNationalCode(existingRow.national_code ?? '');
+    }
+  }, [existingRow?.id]);
+
+  // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A safety guard: the DB matching
+  // key (distribution_point_id + scientific_name + concentration + dosage_form)
+  // still does not include national_code, so a matched row's national_code
+  // could otherwise be silently overwritten by whatever the user types here.
+  // Blank submitted values never conflict (they simply omit p_national_code
+  // and preserve the existing value via migration 050's RPC behavior) —
+  // only a genuinely different non-empty value blocks the save.
+  const normalizedSubmittedNationalCode = nationalCode.trim();
+  const normalizedExistingNationalCode = (existingRow?.national_code ?? '').trim();
+  const nationalCodeConflict = isEditMode
+    && normalizedSubmittedNationalCode !== ''
+    && normalizedExistingNationalCode !== ''
+    && normalizedSubmittedNationalCode !== normalizedExistingNationalCode;
+
   const qtyInvalid = !isEditMode && qty < 0;
   const noPorts = !points.loading && (points.data ?? []).length === 0;
   // Attempt is allowed with either create or update — the RPC (migration 032)
   // determines whether the row is new (needs availability.create) or existing
   // (needs availability.update) and denies accordingly; see doApply's catch.
-  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid;
+  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid && !nationalCodeConflict;
 
   async function doApply() {
     if (!activeOrgId) return;
+    // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A safety guard, re-checked here
+    // (defense in depth alongside the canSubmit/button-disable check above):
+    // never call the RPC when a matched existing row has a different,
+    // non-empty national_code already stored.
+    if (nationalCodeConflict) {
+      setShowConfirm(false);
+      setToast(t('avail_national_code_conflict', lang));
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
     setBusy(true);
     try {
       await upsertAvailability({
@@ -121,11 +159,15 @@ export function EditorScreen() {
         expiryDate: expiry || undefined,
         notes: notes || undefined,
         supplyType: supplyType || undefined,
+        // Blank/whitespace-only never clears an existing national_code — see
+        // upsertAvailability(), which omits p_national_code entirely in that
+        // case.
+        nationalCode: normalizedSubmittedNationalCode || undefined,
       });
       setShowConfirm(false);
       setToast(t('apply_success', lang));
       setTimeout(() => setToast(null), 3000);
-      setBatch(''); setNotes('');
+      setBatch(''); setNotes(''); setNationalCode('');
       // Refresh the point's saved rows so a just-added material is picked up
       // as an existing row (isEditMode/existingRow) on the very next submit —
       // without this, a second Apply for the same material would still look
@@ -279,16 +321,43 @@ export function EditorScreen() {
                 </p>
               </div>
 
-              {/* Batch number (DATA-MODEL-NATIONAL-CODE-SEPARATION-A: this field is the
-                  batch_number column; it is no longer labeled "National code" here because
-                  that concept is being split into its own column in a later, separately
-                  wired phase — see migration 049). */}
+              {/* National code (AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: a real,
+                  independent field backed by item_availability.national_code —
+                  migration 049 added the column, migration 050 taught
+                  phoenix_upsert_availability to save it. Separate from the
+                  Batch No. field below; never reuses batch_number storage. */}
+              <div>
+                <label htmlFor="ed-national-code" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_national_code', lang)}</label>
+                <input
+                  id="ed-national-code"
+                  type="text"
+                  dir="ltr"
+                  value={nationalCode}
+                  onChange={e => setNationalCode(e.target.value)}
+                  placeholder={t('avail_national_code_ph', lang)}
+                  style={{
+                    ...fieldStyle,
+                    fontFamily: 'monospace',
+                    border: `1px solid ${nationalCodeConflict ? 'var(--err)' : 'var(--brd)'}`,
+                    background: nationalCodeConflict ? 'var(--err2)' : 'var(--s)',
+                  }}
+                />
+                {nationalCodeConflict && (
+                  <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }} dir="auto">
+                    ⚠ {t('avail_national_code_conflict', lang)}
+                  </p>
+                )}
+                <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+                  {t('avail_national_code_now_separate_note', lang)}
+                </p>
+              </div>
+
+              {/* Batch number — the batch_number column, kept fully separate from
+                  national_code above (DATA-MODEL-NATIONAL-CODE-SEPARATION-A /
+                  AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A). */}
               <div>
                 <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('batch_no', lang)}</label>
                 <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_batch_no_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
-                <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
-                  {t('avail_national_code_separation_note', lang)}
-                </p>
               </div>
 
               {/* Expiry */}

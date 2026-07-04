@@ -135,32 +135,88 @@ describe('Material identity fields in editor', () => {
 });
 
 // ============================================================================
-// Batch number label restored pending national_code separation
-// (DATA-MODEL-NATIONAL-CODE-SEPARATION-A: the batch_number field is no longer
-// labeled "National code" in the editor, since that concept is being split
-// into its own column — see migration 049 — and the editor has no
-// national_code wiring yet. The avail_national_code/_ph i18n keys remain
-// defined for a later, separately reviewed wiring phase.)
+// National code wired as a real, independent field
+// (AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: migration 049 added
+// item_availability.national_code, migration 050 taught
+// phoenix_upsert_availability to save it. This phase wires a real, separate
+// editor field for it — no longer just a reserved/unused i18n key pair, and
+// never sharing storage with batch_number.)
 // ============================================================================
 
-describe('Batch number label restored pending national_code separation', () => {
-  it('batch_no key (not avail_national_code) used for the batch input label in editor', () => {
+describe('National code is a real, independent field (not reused batch_number storage)', () => {
+  it('avail_national_code key is used for a dedicated national code input, distinct from the batch_no-labeled batch input', () => {
+    expect(editor).toContain("t('avail_national_code', lang)");
     expect(editor).toContain("t('batch_no', lang)");
-    expect(editor).not.toContain("t('avail_national_code', lang)");
   });
 
-  it('editor shows a temporary separation note next to the batch input', () => {
-    expect(editor).toContain('avail_national_code_separation_note');
+  it('national code input is a separate controlled field (own id/state), not bound to the batch input', () => {
+    expect(editor).toContain('id="ed-national-code"');
+    expect(editor).toContain('value={nationalCode}');
+    expect(editor).toContain('id="ed-batch"');
+    expect(editor).toContain('value={batch}');
   });
 
-  it('avail_national_code/_ph i18n keys still exist (unused by editor, reserved for later wiring)', () => {
-    expect(strings).toContain('avail_national_code:');
-    expect(strings).toContain('avail_national_code_ph:');
+  it('national code input is LTR/monospace like a code field', () => {
+    const fieldBlock = editor.slice(editor.indexOf('id="ed-national-code"') - 200, editor.indexOf('id="ed-national-code"') + 400);
+    expect(fieldBlock).toContain('dir="ltr"');
+    expect(fieldBlock).toContain("fontFamily: 'monospace'");
   });
 
-  it('bilingual separation-note strings exist', () => {
-    expect(strings).toContain('سيتم فصل الرمز الوطني عن رقم الدفعة في مرحلة لاحقة');
-    expect(strings).toContain('National code will be separated from batch number in a later phase');
+  it('editor no longer stores the national code concept in the batch_number-bound batch state', () => {
+    // The batch input's value/onChange is still `batch`/`setBatch` — never
+    // renamed to imply it now holds national code.
+    expect(editor).toContain('onChange={e => setBatch(e.target.value)}');
+    expect(editor).toContain('onChange={e => setNationalCode(e.target.value)}');
+  });
+
+  it('national code populates from an existing matched row via a keyed useEffect', () => {
+    expect(editor).toContain('useEffect(() => {');
+    expect(editor).toContain('setNationalCode(existingRow.national_code ?? \'\')');
+    expect(editor).toContain('[existingRow?.id]');
+  });
+
+  it('bilingual "now separate" note strings exist and are rendered', () => {
+    expect(editor).toContain('avail_national_code_now_separate_note');
+    expect(strings).toContain('avail_national_code_now_separate_note');
+    expect(strings).toContain('أصبح الرمز الوطني محفوظاً بشكل مستقل عن رقم الدفعة');
+    expect(strings).toContain('National code is now stored separately from batch number');
+  });
+});
+
+describe('National code duplicate/conflict safety guard', () => {
+  it('computes a conflict only when edit mode + both values non-empty + values differ', () => {
+    expect(editor).toContain('const nationalCodeConflict = isEditMode');
+    expect(editor).toContain("normalizedSubmittedNationalCode !== ''");
+    expect(editor).toContain("normalizedExistingNationalCode !== ''");
+    expect(editor).toContain('normalizedSubmittedNationalCode !== normalizedExistingNationalCode');
+  });
+
+  it('conflict disables the submit button (canSubmit factors in nationalCodeConflict)', () => {
+    const canSubmitLine = editor.slice(editor.indexOf('const canSubmit ='), editor.indexOf('const canSubmit =') + 300);
+    expect(canSubmitLine).toContain('!nationalCodeConflict');
+  });
+
+  it('doApply re-checks the conflict and returns before calling upsertAvailability when blocked', () => {
+    const doApplyBlock = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('await upsertAvailability'));
+    expect(doApplyBlock).toContain('if (nationalCodeConflict)');
+    expect(doApplyBlock).toContain('return;');
+  });
+
+  it('blocking warning uses the bilingual avail_national_code_conflict key', () => {
+    expect(editor).toContain("t('avail_national_code_conflict', lang)");
+    expect(strings).toContain('avail_national_code_conflict');
+    expect(strings).toContain('توجد مادة مطابقة حالياً برمز وطني مختلف');
+    expect(strings).toContain('A matching material already exists with a different national code');
+  });
+
+  it('blank submitted national code never triggers a conflict (only omits the parameter)', () => {
+    // normalizedSubmittedNationalCode !== '' is required for a conflict, so a
+    // blank/whitespace-only field can never trigger the block.
+    expect(editor).toContain("normalizedSubmittedNationalCode !== ''\n    && normalizedExistingNationalCode !== ''");
+  });
+
+  it('a save never sends nationalCode as an intentional blank clear (omits via `|| undefined`)', () => {
+    expect(editor).toContain('nationalCode: normalizedSubmittedNationalCode || undefined');
   });
 });
 
@@ -1652,6 +1708,50 @@ describe('FIX-AVAILABILITY-RPC-A: upsertAvailability uses RPC not PostgREST .ups
 });
 
 // ============================================================================
+// AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: p_national_code (migration 050)
+// is only ever included when a normalized, non-empty value is supplied — a
+// blank/undefined nationalCode omits the key entirely (never sends an
+// explicit clear), preserving compatibility with every existing caller and
+// with migration 050's own COALESCE-preserve-if-absent RPC behavior.
+// ============================================================================
+
+describe('Service: upsertAvailability p_national_code handling (migration 050)', () => {
+  const upsertFn = service.slice(service.indexOf('async function upsertAvailability'), service.indexOf('export function classifyAvailabilitySaveError'));
+
+  it('nationalCode is trimmed before being considered for the RPC call', () => {
+    expect(upsertFn).toContain('input.nationalCode?.trim()');
+  });
+
+  it('p_national_code is only spread into the RPC payload when normalizedNationalCode is truthy (non-empty)', () => {
+    expect(upsertFn).toContain('...(normalizedNationalCode ? { p_national_code: normalizedNationalCode } : {})');
+  });
+
+  it('does not unconditionally include p_national_code in the base RPC object (no destructive-clear default)', () => {
+    // The 12 original params are listed as fixed keys; p_national_code must
+    // NOT be one of them — it only appears via the conditional spread above.
+    const baseObjectEnd = upsertFn.indexOf('...(normalizedNationalCode');
+    const baseObject = upsertFn.slice(upsertFn.indexOf('p_distribution_point_id:'), baseObjectEnd);
+    expect(baseObject).not.toContain('p_national_code:');
+  });
+
+  it('UpsertAvailabilityInput type declares nationalCode as optional/nullable', () => {
+    const typeBlock = service.slice(service.indexOf('export interface UpsertAvailabilityInput'), service.indexOf('export async function getAvailabilityByPoint'));
+    expect(typeBlock).toContain('nationalCode?: string | null');
+  });
+
+  it('existing callers without nationalCode remain compatible (input.nationalCode is optional, not required)', () => {
+    expect(upsertFn).not.toMatch(/if \(!input\.nationalCode/);
+  });
+
+  it('getAvailabilityByPoint and getAvailabilityByOrg select national_code so the editor can read existing values', () => {
+    const byPoint = service.slice(service.indexOf('export async function getAvailabilityByPoint'), service.indexOf('export async function upsertAvailability'));
+    expect(byPoint).toContain('national_code');
+    const byOrg = service.slice(service.indexOf('export async function getAvailabilityByOrg'));
+    expect(byOrg).toContain('national_code');
+  });
+});
+
+// ============================================================================
 // FIX-AVAILABILITY-RPC-PORT-NAME-GIT-SYNC-A (migration 031)
 //   Syncs the live hotfix that made phoenix_upsert_availability derive and
 //   insert port_name, satisfying item_availability_identity_chk.
@@ -2145,6 +2245,57 @@ describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effect
 
   it('no RLS/policy statements introduced by this phase\'s frontend files', () => {
     expect(editor).not.toMatch(/CREATE POLICY|DROP POLICY|ROW LEVEL SECURITY/i);
+  });
+
+  it('premium-preview.html remains untracked (only "??" status if present)', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', { cwd: PHOENIX, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    if (status.trim()) {
+      expect(status.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('supabase/.temp/ was not staged by this phase', () => {
+    const status = execSync('git status --porcelain', { cwd: PHOENIX, encoding: 'utf8' });
+    const tempLine = status.split('\n').find(l => l.includes('supabase/.temp'));
+    if (tempLine) {
+      expect(tempLine.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('Service-D stash (paused inter-org exchange service work) remains untouched', () => {
+    const stashList = execSync('git stash list', { cwd: PHOENIX, encoding: 'utf8' });
+    expect(stashList).toContain('paused Service-D inter-org exchange service work');
+  });
+});
+
+// ============================================================================
+// AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A safety guards
+// ============================================================================
+
+describe('AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: no SQL/migration/package side effects', () => {
+  it('no migration 051 (or higher) was created by this frontend-only phase', () => {
+    const migsDir = join(PHOENIX, 'supabase/migrations');
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[1-9]|[6-9][0-9])_/.test(f));
+    expect(matches).toEqual([]);
+  });
+
+  it('migrations 001-050 have no working-tree diff (this phase is frontend-only)', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- "supabase/migrations/0[0-3][0-9]_*.sql" "supabase/migrations/0[4-5][0-9]_*.sql"', { cwd: PHOENIX, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no package/lockfile diff from this phase', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: PHOENIX, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
   });
 
   it('premium-preview.html remains untracked (only "??" status if present)', () => {
