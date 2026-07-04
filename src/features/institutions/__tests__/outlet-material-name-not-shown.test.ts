@@ -243,9 +243,8 @@ describe('QR generation, creation/update RPCs, and permission checks are untouch
     expect(section).not.toMatch(/qr_targets|qr_tokens|generateQr|revokeQr/i);
   });
 
-  it('canMutate/canRemove permission props are still threaded through unchanged', () => {
+  it('canRemove permission prop is still threaded through unchanged (canMutate was removed by UI-HIDE-PORT-ADD-ITEM-A once its only use, the "+ Add" button, was hidden)', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
-    expect(section).toContain('canMutate');
     expect(section).toContain('canRemove');
   });
 });

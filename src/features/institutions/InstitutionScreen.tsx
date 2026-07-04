@@ -1190,7 +1190,6 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
         pointId={point.id}
         orgId={point.organizationId}
         lang={lang}
-        canMutate={canEditPorts}
         canRemove={canRemoveOutletMaterial}
         onToast={onToast}
         pointStatus={point.status}
@@ -1492,16 +1491,14 @@ function outletMaterialTitle(r: AvailRow, ci: { name: string; name_ar: string } 
   );
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, onToast, pointStatus, refreshKey }: {
+function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, pointStatus, refreshKey }: {
   pointId: string;
   orgId: string;
   lang: 'ar' | 'en';
-  canMutate: boolean;
   // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A (permission-matrix fix): separate
-  // from canMutate (which only reflects ports.edit, gating the "+ Add"
-  // button) because "Remove from outlet" writes through TWO additional
-  // permission-checked RPCs (phoenix_apply_availability_movement then
-  // phoenix_upsert_availability) — see canRemoveOutletMaterial in
+  // from ports.edit because "Remove from outlet" writes through TWO
+  // additional permission-checked RPCs (phoenix_apply_availability_movement
+  // then phoenix_upsert_availability) — see canRemoveOutletMaterial in
   // OrgDetailView, which already folds in availability.quantity.set and
   // availability.update/create alongside ports.edit.
   canRemove: boolean;
@@ -1594,14 +1591,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canMutate, canRemove, o
         <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)' }}>
           💊 {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
         </span>
-        {canMutate && !showAdd && (
-          <button
-            onClick={() => setShowAdd(true)}
-            style={{ fontSize: '11px', color: 'var(--p)', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', padding: '2px 6px' }}
-          >
-            + {t('avail_add', lang)}
-          </button>
-        )}
       </div>
 
       {showAdd && (

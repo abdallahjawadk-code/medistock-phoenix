@@ -360,12 +360,14 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
     expect(superAdminPerms.has('availability.quantity.set')).toBe(true);
   });
 
-  it('the remove button in PortAvailabilitySection is gated by the canRemove prop (fed by the effective permission), not by canMutate', () => {
+  it('the remove button in PortAvailabilitySection is gated by the canRemove prop (fed by the effective permission)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
     expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
-    // canMutate is still used, but only for the separate "+ Add" action, not remove
-    expect(fnBody).toMatch(/canMutate\s*&&\s*!showAdd/);
+    // UI-HIDE-PORT-ADD-ITEM-A: the separate "+ Add" action (previously gated
+    // by a canMutate prop) was intentionally hidden from this card — canMutate
+    // no longer exists on this component at all.
+    expect(fnBody).not.toContain('canMutate');
   });
 
   it('onConfirmRemove still catches and honestly reports backend errors if permissions change mid-session (defense in depth — UI gating is not the only safety net)', () => {
