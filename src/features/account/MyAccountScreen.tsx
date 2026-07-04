@@ -97,6 +97,19 @@ export function MyAccountScreen() {
     const phoneToSave = trimmed === '' ? null : normalizeWhatsappPhone(trimmed);
     setWaBusy(true);
     try {
+      // BUGFIX-MY-ACCOUNT-CLEAR-WHATSAPP-DISABLES-OFFICIAL-CONTACT-A: clearing
+      // the personal number must not leave a stale official organization
+      // contact behind (organization_status_contacts.phone would otherwise
+      // still hold the just-deleted number). phoenix_set_my_org_whatsapp_contact
+      // (migration 046) only checks role/org/status when DISABLING — never
+      // profiles.whatsapp_phone — so it is always safe to call here, before
+      // the phone itself is cleared. Best-effort: if the caller was never
+      // eligible or never had a contact row, the RPC no-ops/raises harmlessly
+      // and is ignored — the user's primary action (clearing their own
+      // number) must not be blocked by it.
+      if (phoneToSave === null) {
+        await setMyOrgWhatsappContact(false).catch(() => undefined);
+      }
       const res = await updateMyWhatsappPhone(phoneToSave);
       if (res.ok) {
         setWaNumber(phoneToSave ?? '');
