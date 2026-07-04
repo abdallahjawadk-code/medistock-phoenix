@@ -153,12 +153,17 @@ describe('10. No migrations created or modified by this fix', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no new untracked migration SQL file was created by this fix', () => {
+  it('no new untracked migration SQL file was created by this fix — only the separately-reviewed migration 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A) is allowed as an untracked addition', () => {
     let status = '';
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(status.trim()).toBe('');
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+      'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
   });
 });
 

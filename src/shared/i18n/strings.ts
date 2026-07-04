@@ -507,6 +507,9 @@ export const T: Dict = {
   cond_surplus:       { ar: 'فائض',                             en: 'Surplus' },
   cond_near_expiry:   { ar: 'قريب النفاذ',                       en: 'Near expiry' },
   cond_expired:       { ar: 'منتهي الصلاحية',                    en: 'Expired' },
+  // STATUS-EDITOR-CLEANUP-A: 'near_expiry' removed from the manual condition
+  // dropdown (EditorScreen.tsx) — shown next to it as an explanatory note.
+  avail_near_expiry_auto_note: { ar: 'قريب النفاذ يُحسب تلقائياً من تاريخ النفاذ', en: 'Near expiry is calculated automatically from the expiry date' },
   public_empty_port:  { ar: 'لا توجد مواد مدخلة لهذا المنفذ حالياً', en: 'No items have been entered for this port yet.' },
   public_expiry_warn: { ar: 'ينتهي بتاريخ',                      en: 'Expires' },
   public_search:      { ar: 'بحث عن صنف...',                     en: 'Search items...' },

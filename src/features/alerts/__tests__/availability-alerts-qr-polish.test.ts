@@ -219,7 +219,7 @@ describe('No migrations touched, no package/lockfile changes', () => {
   it('no migration newer than 043 was added by this phase — only the separately-reviewed migrations 044/045 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A) are allowed beyond it', () => {
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql', '047_phoenix_live_alerts_contact_fields.sql']);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql', '047_phoenix_live_alerts_contact_fields.sql', '048_live_alerts_expiry_risk_tiers.sql']);
   });
 });
 

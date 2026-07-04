@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { execSync } from 'child_process';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -179,7 +180,7 @@ describe('Status localization', () => {
 // FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: surplus / near_expiry separated
 // ============================================================================
 
-describe('FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: editor condition options', () => {
+describe('FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A / STATUS-EDITOR-CLEANUP-A: editor condition options', () => {
   // CONDITION_OPTIONS is module-private to EditorScreen; assert against source.
   const editorSrc = readSrc('features/editor/EditorScreen.tsx');
   const optsBlock = editorSrc.slice(
@@ -187,21 +188,30 @@ describe('FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: editor condition options', () => 
     editorSrc.indexOf('];', editorSrc.indexOf('const CONDITION_OPTIONS')),
   );
 
-  it('(A1) editor exposes available, low_stock, missing, surplus, near_expiry', () => {
+  it('(A1) editor exposes exactly available, low_stock, missing, surplus as manual options', () => {
     expect(optsBlock).toContain("value: 'available'");
     expect(optsBlock).toContain("value: 'low_stock'");
     expect(optsBlock).toContain("value: 'missing'");
     expect(optsBlock).toContain("value: 'surplus'");
-    expect(optsBlock).toContain("value: 'near_expiry'");
   });
 
   it('(A2) editor does NOT expose expired as a manual option in this phase', () => {
     expect(optsBlock).not.toContain("value: 'expired'");
   });
 
-  it('(A3) near_expiry is mapped to cond_near_expiry, not cond_surplus', () => {
-    expect(optsBlock).toMatch(/value:\s*'near_expiry',\s*labelKey:\s*'cond_near_expiry'/);
-    expect(optsBlock).not.toMatch(/value:\s*'near_expiry',\s*labelKey:\s*'cond_surplus'/);
+  it('(A3) STATUS-EDITOR-CLEANUP-A: near_expiry is NOT manually selectable in the editor dropdown', () => {
+    expect(optsBlock).not.toContain("value: 'near_expiry'");
+  });
+
+  it('(A4) no manual editor option is added for critical_3m/warning_6m/watch_9m (those are derived expiry-risk tiers, not saved conditions)', () => {
+    expect(optsBlock).not.toContain('critical_3m');
+    expect(optsBlock).not.toContain('warning_6m');
+    expect(optsBlock).not.toContain('watch_9m');
+  });
+
+  it('(A5) an explanatory note that near_expiry is auto-derived is shown next to the dropdown', () => {
+    expect(editorSrc).toContain('avail_near_expiry_auto_note');
+    expect(strings).toMatch(/avail_near_expiry_auto_note:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
 
   it('(B4) Arabic cond_surplus and cond_near_expiry are distinct', () => {
@@ -228,7 +238,7 @@ describe('FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A: editor condition options', () => 
     expect(strings).toMatch(/cond_expired:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
 
-  it('(C8) selecting near_expiry sends condition through unchanged to the save call', () => {
+  it('(C8) selected condition is sent through unchanged to the save call', () => {
     // The editor binds `condition` state directly to the option value and
     // passes it straight to upsertAvailability — no surplus remap.
     expect(editorSrc).toContain('condition,');
@@ -1996,5 +2006,152 @@ describe('PORT-CARD-QR-PREVIEW-PRINT-UX-A: QR preview and print in port cards', 
       expect(content).not.toMatch(/import.*OcrImport/i);
       expect(content).not.toMatch(/import.*ExcelImport/i);
     });
+  });
+});
+
+// ============================================================================
+// STATUS-EDITOR-CLEANUP-A: near_expiry removed from manual editor dropdown,
+// kept everywhere else (types, filters, display, RPC/migration compatibility).
+// ============================================================================
+
+describe('STATUS-EDITOR-CLEANUP-A: near_expiry legacy/display/RPC compatibility', () => {
+  const types = readSrc('shared/lib/types.ts');
+  const canonical = readSrc('shared/lib/status/canonical.ts');
+  const statusEditor = readSrc('features/status/StatusEditorScreen.tsx');
+  const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
+  const expiryRisk = readSrc('shared/lib/expiry-risk.ts');
+
+  it('AvailabilityCondition type still includes near_expiry (saved-data compatibility)', () => {
+    const typeBlock = types.slice(types.indexOf('AvailabilityCondition ='), types.indexOf('AvailabilityCondition =') + 200);
+    expect(typeBlock).toContain("'near_expiry'");
+  });
+
+  it('canonical status helpers still recognize near_expiry (computeEffectiveStatus precedence unchanged)', () => {
+    expect(canonical).toContain("'near_expiry'");
+  });
+
+  it('cond_near_expiry label remains defined for legacy row display', () => {
+    expect(strings).toMatch(/cond_near_expiry:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
+  });
+
+  it('StatusEditorScreen filter dropdown still offers near_expiry (filters unaffected — dropdown-only removal was scoped to the manual EditorScreen save form)', () => {
+    const optsBlock = statusEditor.slice(
+      statusEditor.indexOf('const CONDITION_OPTIONS'),
+      statusEditor.indexOf('as const', statusEditor.indexOf('const CONDITION_OPTIONS')),
+    );
+    expect(optsBlock).toContain("'near_expiry'");
+  });
+
+  it('StatusEditorScreen filter dropdown row renders condition = near_expiry rows without special-casing/crashing', () => {
+    expect(statusEditor).toContain("r.condition ? t('cond_' + r.condition, lang) : '—'");
+  });
+
+  it('StatusCenterScreen near_expiry filter chip still present (legacy filter compatibility)', () => {
+    expect(statusCenter).toContain("key: 'near_expiry'");
+    expect(statusCenter).toContain("labelKey: 'cond_near_expiry'");
+  });
+
+  it('EditorScreen never overwrites an existing row solely by opening the form — no field is pre-filled from existingRow except the locked/read-only quantity display', () => {
+    // existingRow is only used to (a) detect a duplicate match and (b) lock/display
+    // the current DB quantity; condition/scientificName/etc. are never seeded from
+    // existingRow, so a legacy near_expiry row is never silently touched merely by
+    // opening this screen — only an explicit user submission for that exact material
+    // can change its stored condition.
+    expect(editor).not.toMatch(/setCondition\(existingRow/);
+    expect(editor).not.toMatch(/condition:\s*existingRow/);
+  });
+
+  it('the 9/6/3 expiry-risk-tier helper (visual source of truth) is untouched by this phase — still derives tiers from expiry_date only', () => {
+    expect(expiryRisk).toContain("'critical_3m'");
+    expect(expiryRisk).toContain("'warning_6m'");
+    expect(expiryRisk).toContain("'watch_9m'");
+    expect(expiryRisk).toContain('export function getExpiryRiskTier');
+  });
+
+  it('no manual condition option (EditorScreen CONDITION_OPTIONS) exists for critical_3m/warning_6m/watch_9m — those are derived tiers, never saved condition values', () => {
+    const optsBlock = editor.slice(
+      editor.indexOf('const CONDITION_OPTIONS'),
+      editor.indexOf('];', editor.indexOf('const CONDITION_OPTIONS')),
+    );
+    expect(optsBlock).not.toContain('critical_3m');
+    expect(optsBlock).not.toContain('warning_6m');
+    expect(optsBlock).not.toContain('watch_9m');
+  });
+});
+
+// ============================================================================
+// STATUS-EDITOR-CLEANUP-A: migration 048 still preserved by this phase
+// ============================================================================
+
+describe('STATUS-EDITOR-CLEANUP-A: migration 048 preserved (not discarded by this phase)', () => {
+  const migration048Path = join(PHOENIX, 'supabase/migrations/048_live_alerts_expiry_risk_tiers.sql');
+
+  it('048_live_alerts_expiry_risk_tiers.sql still exists', () => {
+    expect(existsSync(migration048Path)).toBe(true);
+  });
+
+  it('still exposes source_expiry_risk_tier and source_expiry_days_remaining', () => {
+    const sql = readFile(migration048Path);
+    expect(sql).toContain("'source_expiry_risk_tier',");
+    expect(sql).toContain("'source_expiry_days_remaining',");
+  });
+
+  it('still preserves alert_key stability (src:tgt:alert_type, no tier component)', () => {
+    const sql = readFile(migration048Path);
+    expect(sql).toContain(
+      "(m.src_availability_id::text || ':' || m.tgt_availability_id::text || ':' || m.alert_type) AS alert_key",
+    );
+  });
+
+  it('still preserves condition = near_expiry RPC compatibility branch', () => {
+    const sql = readFile(migration048Path);
+    expect(sql).toContain("WHEN ia.condition = 'near_expiry' THEN 'near_expiry'");
+  });
+});
+
+// ============================================================================
+// STATUS-EDITOR-CLEANUP-A: safety guards for this phase only
+// ============================================================================
+
+describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effects from the frontend dropdown change', () => {
+  it('no SQL was applied and no supabase db push was run as part of this phase (no new migration file beyond 048)', () => {
+    const migsDir = join(PHOENIX, 'supabase/migrations');
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
+    expect(matches).toEqual([]);
+  });
+
+  it('no package/lockfile diff from this phase', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: PHOENIX, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no RLS/policy statements introduced by this phase\'s frontend files', () => {
+    expect(editor).not.toMatch(/CREATE POLICY|DROP POLICY|ROW LEVEL SECURITY/i);
+  });
+
+  it('premium-preview.html remains untracked (only "??" status if present)', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', { cwd: PHOENIX, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    if (status.trim()) {
+      expect(status.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('supabase/.temp/ was not staged by this phase', () => {
+    const status = execSync('git status --porcelain', { cwd: PHOENIX, encoding: 'utf8' });
+    const tempLine = status.split('\n').find(l => l.includes('supabase/.temp'));
+    if (tempLine) {
+      expect(tempLine.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('Service-D stash (paused inter-org exchange service work) remains untouched', () => {
+    const stashList = execSync('git stash list', { cwd: PHOENIX, encoding: 'utf8' });
+    expect(stashList).toContain('paused Service-D inter-org exchange service work');
   });
 });

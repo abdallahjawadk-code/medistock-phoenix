@@ -17,22 +17,22 @@ interface PointRow { id: string; name: string; name_ar: string; }
 
 /**
  * Material status options.
- * 'surplus' and 'near_expiry' are distinct, separately selectable conditions
- * (FIX-CONDITION-OPTIONS-NEAR-EXPIRY-A). Selecting 'near_expiry' stores the
- * value 'near_expiry' exactly — it is no longer merged into 'surplus'. Their
- * i18n labels (cond_surplus / cond_near_expiry) are also distinct, see
- * strings.ts.
  * 'expired' is intentionally NOT offered as a manual editor option in this
  * phase — it may be derived from expiry_date, and full canonicalization is
  * deferred to STATUS-LOGIC-CANONICALIZATION-A. Historical 'expired' rows are
  * unaffected and still display correctly in status/QR/filter views.
+ * 'near_expiry' is also intentionally NOT offered here (STATUS-EDITOR-CLEANUP-A):
+ * it is now derived automatically from expiry_date via the 9/6/3-month expiry
+ * risk tiers (see src/shared/lib/expiry-risk.ts), so it is no longer a
+ * manually chosen condition. The value remains a valid AvailabilityCondition
+ * for legacy rows, DB/RPC compatibility, filters, and display — only manual
+ * selection in this dropdown is removed.
  */
 const CONDITION_OPTIONS: { value: AvailabilityCondition; labelKey: string }[] = [
   { value: 'available',   labelKey: 'cond_available' },
   { value: 'low_stock',   labelKey: 'cond_low_stock' },
   { value: 'missing',     labelKey: 'cond_missing' },
   { value: 'surplus',     labelKey: 'cond_surplus' },
-  { value: 'near_expiry', labelKey: 'cond_near_expiry' },
 ];
 
 export function EditorScreen() {
@@ -274,6 +274,9 @@ export function EditorScreen() {
                 <select id="ed-cond" value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
                   {CONDITION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{t(opt.labelKey, lang)}</option>)}
                 </select>
+                <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+                  {t('avail_near_expiry_auto_note', lang)}
+                </p>
               </div>
 
               {/* National code (renamed from Batch No.; storage unchanged: batch_number column) */}
