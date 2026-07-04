@@ -974,6 +974,16 @@ export const T: Dict = {
   ma_password_updated: { ar: 'تم تحديث كلمة المرور بنجاح',            en: 'Password updated successfully' },
   ma_security_note:    { ar: 'لا يمكن تغيير كلمة مرور مستخدم آخر. إدارة كلمات المرور تتم عبر بريدك فقط.', en: 'You cannot change another user\'s password. Password management is through your own email only.' },
 
+  /* ── My Account contact info (UX-MY-ACCOUNT-WHATSAPP-SAVE-A) — personal
+     WhatsApp number, saved to profiles.whatsapp_phone (migration 044).
+     Never used by inter-institution alerts in this phase. ── */
+  ma_contact_info_title: { ar: 'بيانات التواصل',                          en: 'Contact Information' },
+  ma_whatsapp_label:     { ar: 'رقم واتسابي',                             en: 'My WhatsApp number' },
+  ma_whatsapp_hint:       { ar: 'اكتب الرقم بصيغة دولية مثل 9647XXXXXXXXX', en: 'Use international format, e.g. 9647XXXXXXXXX' },
+  ma_whatsapp_save:       { ar: 'حفظ رقم واتساب',                         en: 'Save WhatsApp number' },
+  ma_whatsapp_save_success: { ar: 'تم حفظ رقم واتساب بنجاح',              en: 'WhatsApp number saved successfully' },
+  ma_whatsapp_save_error:   { ar: 'تعذر حفظ رقم واتساب',                  en: 'Could not save WhatsApp number' },
+
   /* ── Smart Material Alerts (SMART-MATERIAL-ALERTS-AND-INTERINSTITUTION-UX-LEAP-A) ── */
   smart_material_alerts:            { ar: 'التنبيهات الذكية للمواد',                         en: 'Smart Material Alerts' },
   material_exchange_command_center: { ar: 'مركز تبادل المواد بين المؤسسات',                 en: 'Material Exchange Command Center' },

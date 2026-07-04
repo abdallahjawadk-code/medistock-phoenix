@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
-import { markPasswordChanged } from '@/shared/supabase/services/auth.service';
+import { markPasswordChanged, updateMyWhatsappPhone } from '@/shared/supabase/services/auth.service';
+import { normalizeWhatsappPhone, isValidWhatsappPhone } from '@/shared/lib/whatsapp';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -24,6 +25,13 @@ export function MyAccountScreen() {
   const [confirmPw, setConfirmPw] = useState('');
   const [showPw, setShowPw]     = useState(false);
   const [pwBusy, setPwBusy]     = useState(false);
+
+  // UX-MY-ACCOUNT-WHATSAPP-SAVE-A: real persistence to profiles.whatsapp_phone
+  // (migration 044). Empty input is a valid "clear the number" state, not an
+  // invalid one — only non-empty input is checked against isValidWhatsappPhone.
+  const [waNumber, setWaNumber] = useState(() => profile?.whatsapp_phone ?? '');
+  const [waBusy, setWaBusy]     = useState(false);
+  const waValid = waNumber.trim() === '' || isValidWhatsappPhone(waNumber);
 
   const isLocal = profile?.login_mode === 'local';
   const email = session?.user?.email ?? '';
@@ -69,6 +77,27 @@ export function MyAccountScreen() {
     }
   }
 
+  async function onSaveWhatsapp() {
+    if (!waValid) return;
+    const trimmed = waNumber.trim();
+    const phoneToSave = trimmed === '' ? null : normalizeWhatsappPhone(trimmed);
+    setWaBusy(true);
+    try {
+      const res = await updateMyWhatsappPhone(phoneToSave);
+      if (res.ok) {
+        setWaNumber(phoneToSave ?? '');
+        await reloadProfile();
+        showToast(t('ma_whatsapp_save_success', lang));
+      } else {
+        showToast(t('ma_whatsapp_save_error', lang));
+      }
+    } catch {
+      showToast(t('ma_whatsapp_save_error', lang));
+    } finally {
+      setWaBusy(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: '640px', animation: 'fs .3s ease' }}>
       <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>{t('ma_title', lang)}</h2>
@@ -93,6 +122,34 @@ export function MyAccountScreen() {
               label={profile?.status === 'active' ? t('um_active', lang) : t('um_suspended', lang)}
             />
           </InfoRow>
+        </div>
+      </PhoenixCard>
+
+      {/* Contact information — WhatsApp number (UX-MY-ACCOUNT-WHATSAPP-SAVE-A).
+          Saves to the real profiles.whatsapp_phone column (migration 044).
+          Empty input clears the number (saves NULL) — never treated as invalid.
+          Never read by inter-institution alerts in this phase. */}
+      <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('ma_contact_info_title', lang)}</h3>
+        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+          {t('ma_whatsapp_label', lang)}
+        </label>
+        <input
+          type="tel"
+          inputMode="tel"
+          value={waNumber}
+          onChange={e => setWaNumber(e.target.value)}
+          placeholder="9647XXXXXXXXX"
+          dir="ltr"
+          style={{ ...fieldStyle, maxWidth: '100%', borderColor: waNumber.trim() && !waValid ? 'var(--err)' : undefined }}
+        />
+        <p style={{ fontSize: '11px', color: waNumber.trim() && !waValid ? 'var(--err)' : 'var(--t2)', margin: '6px 0 0' }} dir="auto">
+          {t('ma_whatsapp_hint', lang)}
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+          <PhoenixButton variant="primary" size="md" loading={waBusy} disabled={!waValid} onClick={onSaveWhatsapp}>
+            {t('ma_whatsapp_save', lang)}
+          </PhoenixButton>
         </div>
       </PhoenixCard>
 

@@ -25,6 +25,15 @@ export interface Profile {
   contact_email: string | null;
   /** True until a local user changes their temporary password. */
   must_change_password: boolean;
+  /**
+   * UX-MY-ACCOUNT-WHATSAPP-SAVE-A: the user's own WhatsApp contact number
+   * (migration 044_phoenix_profiles_whatsapp_phone.sql). Nullable — most
+   * rows have never set one. Digits-only, 8-15 chars when present (enforced
+   * by the DB CHECK constraint and mirrored client-side by
+   * isValidWhatsappPhone). Never used by inter-institution alerts in this
+   * phase — that remains a separate, later reviewed integration.
+   */
+  whatsapp_phone: string | null;
 }
 
 export interface SignInResult {
@@ -143,7 +152,7 @@ export async function getMyProfile(): Promise<Profile | null> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password')
+    .select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password, whatsapp_phone')
     .eq('id', uid)
     .single();
 
@@ -164,5 +173,32 @@ export async function markPasswordChanged(): Promise<SignInResult> {
   if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
   const { error } = await supabase.rpc('phoenix_mark_password_changed');
   if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/**
+ * UX-MY-ACCOUNT-WHATSAPP-SAVE-A: updates ONLY the current session's own
+ * profiles.whatsapp_phone — never another user's row, never role/status/
+ * organization_id/full_name. Pass null to clear a previously-saved number.
+ *
+ * Server-side RPC only, matching markPasswordChanged() above — this project's
+ * profiles-table write guardrail (phoenix-guardrails.test.ts) requires every
+ * self-service profiles mutation to go through a SECURITY DEFINER RPC scoped
+ * to auth.uid(), never a direct client-side table update call.
+ *
+ * IMPORTANT — DEPLOYMENT PREREQUISITE: this calls
+ * `phoenix_update_my_whatsapp_phone(p_phone text)`, provided by migration
+ * 045_phoenix_update_my_whatsapp_phone_rpc.sql (companion to 044). That
+ * migration must be manually applied in the Supabase SQL Editor before this
+ * function will succeed — until it is applied, calling this function
+ * surfaces an honest failure (function not found), never a fake success.
+ */
+export async function updateMyWhatsappPhone(phone: string | null): Promise<SignInResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const { error } = await supabase.rpc('phoenix_update_my_whatsapp_phone', { p_phone: phone });
+  if (error) {
+    console.error('[phoenix] whatsapp phone update failed:', error);
+    return { ok: false, error: error.message };
+  }
   return { ok: true };
 }

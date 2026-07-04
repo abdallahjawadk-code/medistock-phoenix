@@ -125,20 +125,21 @@ describe('10. No package/lockfile/migration changes', () => {
     let diff = '';
     try {
       diff = execSync(
-        "git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock 'supabase/migrations/*.sql'",
+        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock "supabase/migrations/*.sql"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
 
-  it('no unreviewed migration SQL files were created — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  it('no unreviewed migration SQL files were created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
     let status = '';
     try {
-      status = execSync("git status --porcelain -- 'supabase/migrations/*.sql'", { cwd: ROOT, encoding: 'utf8' });
+      status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     const ALLOWED_UNTRACKED = new Set([
-      '?? supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
+      '?? supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+      'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -337,16 +338,24 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) is allowed above it', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) and 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) are allowed above it (045 may still be untracked/unstaged at review time — this check only constrains what IS tracked, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    const topLevel = files.split('\n').filter(f => /^supabase\/migrations\/\d{3}_/.test(f));
-    const nums = topLevel.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    const beyond043 = topLevel.filter((_, i) => nums[i] > 43);
-    expect(beyond043).toEqual(['supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql']);
-    expect(Math.max(...nums)).toBeLessThanOrEqual(44);
+    const trackedMigrationFiles = files.split('\n').filter(f => /^supabase\/migrations\/\d{3}_/.test(f));
+    const allowedBeyond043 = new Set([
+      'supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
+      'supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+    ]);
+    const beyond043 = trackedMigrationFiles.filter(f => {
+      const match = f.match(/\/(\d{3})_/);
+      return match ? Number(match[1]) > 43 : false;
+    });
+    const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
+    expect(unexpected).toEqual([]);
+    const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
+    expect(Math.max(...nums)).toBeLessThanOrEqual(45);
   });
 });
 

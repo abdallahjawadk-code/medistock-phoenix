@@ -252,10 +252,10 @@ describe('Guards: no Service-D/inter_org_exchange, no wipe tooling, no migration
     }
   });
 
-  it('no new migration was added for this phase — display-only fix, no backend/data change required (only the separately-reviewed migration 044, DB-MY-ACCOUNT-WHATSAPP-PHONE-A, is allowed beyond 043)', () => {
+  it('no new migration was added for this phase — display-only fix, no backend/data change required (only the separately-reviewed migrations 044/045, DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A, are allowed beyond 043)', () => {
     const ROOT = join(__dirname, '../../../../');
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter((f: string) => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql']);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql']);
   });
 });

@@ -146,7 +146,7 @@ describe('11. No SQL/migrations/RPC/Edge Function added by this fix', () => {
     let diff = '';
     try {
       diff = execSync(
-        "git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock 'supabase/migrations/*.sql'",
+        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock "supabase/migrations/*.sql"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

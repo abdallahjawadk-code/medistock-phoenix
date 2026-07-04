@@ -55,9 +55,9 @@ describe('Migration 044 exists exactly once', () => {
     expect(migration044).toContain('ASSERT');
   });
 
-  it('no migration newer than 044 exists yet', () => {
+  it('only the reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) exists beyond 044 — any other migration beyond 044 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[5-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql']);
   });
 });
 
@@ -112,17 +112,30 @@ describe('5. Does not modify alert lifecycle / QR / export / user-management log
   });
 });
 
-describe('6. No frontend reads or writes whatsapp_phone yet', () => {
-  it('MyAccountScreen.tsx does not reference whatsapp_phone', () => {
+describe('6. Frontend access to whatsapp_phone stays within the reviewed My Account write path (UX-MY-ACCOUNT-WHATSAPP-SAVE-A)', () => {
+  it('MyAccountScreen.tsx reads/writes whatsapp_phone only through the app profile state and updateMyWhatsappPhone service, never a raw table call', () => {
     const myAccount = readSrc('features/account/MyAccountScreen.tsx');
-    expect(myAccount).not.toContain('whatsapp_phone');
+    expect(myAccount).toContain('profile?.whatsapp_phone');
+    expect(myAccount).toContain('updateMyWhatsappPhone');
+    expect(myAccount).not.toMatch(/from\(['"]profiles['"]\)/);
   });
 
-  it('no service file in src/ references whatsapp_phone', () => {
-    const usersService = readSrc('shared/supabase/services/users.service.ts');
+  it('auth.service.ts exposes whatsapp_phone only via the Profile type, getMyProfile\'s read-only select, and the RPC-based updateMyWhatsappPhone — never a raw .update() on profiles', () => {
     const authService = readSrc('shared/supabase/services/auth.service.ts');
+    expect(authService).toContain('whatsapp_phone: string | null');
+    expect(authService).toContain("select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password, whatsapp_phone')");
+    expect(authService).toContain("supabase.rpc('phoenix_update_my_whatsapp_phone'");
+    expect(authService).not.toMatch(/from\(['"]profiles['"]\)\s*\.\s*update\s*\(/);
+  });
+
+  it('no other service file (organization contacts, users) was given whatsapp_phone access — official org-contact integration remains a later, separate phase', () => {
+    const usersService = readSrc('shared/supabase/services/users.service.ts');
     expect(usersService).not.toContain('whatsapp_phone');
-    expect(authService).not.toContain('whatsapp_phone');
+  });
+
+  it('InterInstitutionAlertsScreen does not read the personal whatsapp_phone column — inter-institution alert contact wiring is unaffected by this phase', () => {
+    const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
+    expect(alertsScreen).not.toContain('whatsapp_phone');
   });
 });
 

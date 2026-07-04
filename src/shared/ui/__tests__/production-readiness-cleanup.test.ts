@@ -156,7 +156,7 @@ describe('PRODUCTION-READINESS-CLEANUP-A: safety guards', () => {
   it('no migration SQL touched, no package/lockfile changes (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync("git diff -- 'supabase/migrations/*.sql' package.json package-lock.json pnpm-lock.yaml yarn.lock", { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });

@@ -1,0 +1,348 @@
+/**
+ * UX-MY-ACCOUNT-WHATSAPP-SAVE-A
+ * Run: npm test -- --run
+ *
+ * Static + behavioral tests proving My Account can now really save a
+ * personal WhatsApp number to profiles.whatsapp_phone (migration 044,
+ * already manually applied), through the project's existing SECURITY
+ * DEFINER-RPC-only write pattern for profiles (never a raw
+ * `.from('profiles').update(...)`, which phoenix-guardrails.test.ts forbids
+ * everywhere in frontend code) — and that this was done without touching
+ * alert lifecycle, permission gates, the contactOrgKey freeze fix, QR,
+ * export/print, or user-management logic.
+ *
+ * IMPORTANT — deployment prerequisite documented here, not hidden: the RPC
+ * `phoenix_update_my_whatsapp_phone(p_phone text)` this phase's service
+ * calls does not exist yet. It must be added by a separate, reviewed
+ * migration (companion to 044) before Save actually persists anything —
+ * until then, calling it surfaces an honest failure (function not found),
+ * never a fake success. This test suite proves the frontend contract only;
+ * it does not require a live database.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { normalizeWhatsappPhone, isValidWhatsappPhone } from '@/shared/lib/whatsapp';
+import { T } from '@/shared/i18n/strings';
+
+const SRC = join(__dirname, '../../../');
+const ROOT = join(__dirname, '../../../../');
+const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
+
+const myAccount = readSrc('features/account/MyAccountScreen.tsx');
+const authService = readSrc('shared/supabase/services/auth.service.ts');
+const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
+const app = readSrc('app/App.tsx');
+const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
+const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
+const userManagementScreen = readSrc('features/users/UserManagementScreen.tsx');
+
+describe('1. My Account includes Contact Information / بيانات التواصل', () => {
+  it('renders the ma_contact_info_title section', () => {
+    expect(myAccount).toContain("t('ma_contact_info_title', lang)");
+    expect(T.ma_contact_info_title.ar).toBe('بيانات التواصل');
+    expect(T.ma_contact_info_title.en).toBe('Contact Information');
+  });
+});
+
+describe('2. My Account has My WhatsApp number / رقم واتسابي', () => {
+  it('renders the ma_whatsapp_label field label', () => {
+    expect(myAccount).toContain("t('ma_whatsapp_label', lang)");
+    expect(T.ma_whatsapp_label.ar).toBe('رقم واتسابي');
+    expect(T.ma_whatsapp_label.en).toBe('My WhatsApp number');
+  });
+});
+
+describe('3. Uses existing normalizeWhatsappPhone/isValidWhatsappPhone helpers', () => {
+  it('MyAccountScreen imports both from the shared whatsapp helper, not a hand-rolled regex', () => {
+    expect(myAccount).toContain("from '@/shared/lib/whatsapp'");
+    expect(myAccount).toContain('isValidWhatsappPhone(waNumber)');
+    expect(myAccount).toContain('normalizeWhatsappPhone(trimmed)');
+  });
+});
+
+describe('4. Empty input saves NULL / is handled as clear', () => {
+  it('trimmed empty input maps to null, not to isValidWhatsappPhone rejection', () => {
+    const block = myAccount.slice(myAccount.indexOf('async function onSaveWhatsapp'), myAccount.indexOf('async function onSaveWhatsapp') + 400);
+    expect(block).toContain("trimmed === '' ? null : normalizeWhatsappPhone(trimmed)");
+  });
+
+  it('waValid treats empty/whitespace input as valid (never blocks clearing)', () => {
+    expect(myAccount).toContain("waNumber.trim() === '' || isValidWhatsappPhone(waNumber)");
+  });
+
+  it('sanity: the real helper agrees empty string is not itself a "valid phone", confirming the OR-short-circuit is intentional, not redundant', () => {
+    expect(isValidWhatsappPhone('')).toBe(false);
+  });
+});
+
+describe('5. Invalid phone cannot be saved', () => {
+  it('save button is disabled whenever waValid is false', () => {
+    expect(myAccount).toContain('disabled={!waValid}');
+  });
+
+  it('onSaveWhatsapp returns early (no service call) when invalid', () => {
+    const block = myAccount.slice(myAccount.indexOf('async function onSaveWhatsapp'), myAccount.indexOf('async function onSaveWhatsapp') + 150);
+    expect(block).toContain('if (!waValid) return;');
+  });
+
+  it('sanity: a non-empty garbage string is rejected by the real helper', () => {
+    expect(isValidWhatsappPhone('abc')).toBe(false);
+    expect(isValidWhatsappPhone('123')).toBe(false);
+  });
+});
+
+describe('6. Valid phone is normalized before save', () => {
+  it('phoneToSave is normalizeWhatsappPhone(trimmed), not the raw input', () => {
+    expect(myAccount).toContain('const phoneToSave = ');
+    expect(myAccount).toContain('normalizeWhatsappPhone(trimmed)');
+  });
+
+  it('sanity: the real helper strips separators/spaces to digits-only', () => {
+    expect(normalizeWhatsappPhone('964 700 123 4567')).toBe('9647001234567');
+  });
+});
+
+describe('7. Save is explicit click only', () => {
+  it('onSaveWhatsapp is only wired to a button onClick, never a useEffect', () => {
+    expect(myAccount).toContain('onClick={onSaveWhatsapp}');
+    expect(myAccount).not.toContain('useEffect');
+  });
+});
+
+describe('8/9/10. Service updates only the caller\'s own whatsapp_phone, never role/status/organization_id', () => {
+  it('updateMyWhatsappPhone calls an RPC scoped by auth.uid() server-side, no client-passed profile id', () => {
+    const block = authService.slice(authService.indexOf('export async function updateMyWhatsappPhone('));
+    expect(block).toContain("supabase.rpc('phoenix_update_my_whatsapp_phone'");
+    expect(block).not.toContain('.eq(');
+    expect(block).not.toMatch(/profileId|profile_id|targetId/i);
+  });
+
+  it('the function signature only accepts a phone value, never a role/status/organization_id parameter', () => {
+    expect(authService).toContain('export async function updateMyWhatsappPhone(phone: string | null)');
+    expect(authService).not.toMatch(/updateMyWhatsappPhone\([^)]*role/i);
+    expect(authService).not.toMatch(/updateMyWhatsappPhone\([^)]*status/i);
+    expect(authService).not.toMatch(/updateMyWhatsappPhone\([^)]*organization/i);
+  });
+
+  it('no raw .update() on profiles anywhere in this service file (matches the project-wide guardrail)', () => {
+    expect(authService).not.toMatch(/from\(['"]profiles['"]\)\s*\.\s*update\s*\(/);
+  });
+});
+
+describe('11. No service_role/auth.admin', () => {
+  it('auth.service.ts and MyAccountScreen never reference service_role or auth.admin', () => {
+    for (const src of [authService, myAccount]) {
+      expect(src).not.toMatch(/service_role/i);
+      expect(src).not.toContain('auth.admin');
+    }
+  });
+});
+
+describe('12. No WhatsApp API/tokens/automation/automatic sending', () => {
+  it('no Cloud API/token/Bearer/sendMessage references, no auto-send', () => {
+    for (const src of [authService, myAccount]) {
+      expect(src).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com/i);
+      expect(src).not.toContain('Bearer ');
+      expect(src).not.toContain('wa.me');
+      expect(src).not.toContain('.click()');
+    }
+  });
+});
+
+describe('13. No fake phone numbers', () => {
+  it('no hardcoded phone constant in the new code', () => {
+    for (const src of [authService, myAccount]) {
+      expect(src).not.toMatch(/['"`]\+?\d{8,15}['"`]/);
+    }
+  });
+});
+
+describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCOUNT-WHATSAPP-SAVE-A) — the RPC itself is a separately-reviewed later phase, DB-MY-ACCOUNT-WHATSAPP-RPC-A', () => {
+  it('no existing migration SQL was modified', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock "supabase/migrations/*.sql"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no unreviewed migration SQL files were created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A, adding the RPC this screen\'s service already calls) is allowed as an untracked addition', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+      'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
+  });
+});
+
+describe('15. No package/lockfile changes', () => {
+  it('package.json/lockfiles empty diff', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+});
+
+describe('16. MyAccountScreen changed only for contact UI', () => {
+  it('existing password reset/change sections and InfoRow helper remain present, untouched in structure', () => {
+    expect(myAccount).toContain("t('ma_change_pw', lang)");
+    expect(myAccount).toContain("t('ma_reset_btn', lang)");
+    expect(myAccount).toContain('function InfoRow(');
+    expect(myAccount).toContain('markPasswordChanged');
+  });
+});
+
+describe('17. InterInstitutionAlertsScreen contactOrgKey freeze fix remains', () => {
+  it('stable string key still drives the contact-fetch effect', () => {
+    expect(alertsScreen).toContain('const contactOrgKey = useMemo(');
+    expect(alertsScreen).toContain(".sort().join('|')");
+    expect(alertsScreen).toContain('}, [contactOrgKey]);');
+    expect(alertsScreen).not.toContain('alertOrgIds');
+  });
+
+  it('InterInstitutionAlertsScreen.tsx was not modified by this phase', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('personal whatsapp_phone is not read anywhere in the alerts screen (org-contact integration is a later phase)', () => {
+    expect(alertsScreen).not.toContain('whatsapp_phone');
+  });
+});
+
+describe('18. Alert lifecycle handlers/permission gates unchanged', () => {
+  it('acknowledge/start-processing/resolve/dismiss/reopen/history buttons remain wired', () => {
+    expect(alertsScreen).toContain("onClick={() => onAction('acknowledged')}");
+    expect(alertsScreen).toContain("onClick={() => onAction('in_progress')}");
+    expect(alertsScreen).toContain("onClick={() => onAction('resolved')}");
+    expect(alertsScreen).toContain("onClick={() => onAction('dismissed')}");
+    expect(alertsScreen).toContain("onClick={() => onAction('open')}");
+    expect(alertsScreen).toContain('onClick={onHistory}');
+  });
+
+  it('TRANSITION_PERMISSION map and canTransition gating are untouched', () => {
+    expect(alertsScreen).toContain("open:         'inter_institution_alerts.manage'");
+    expect(alertsScreen).toContain("acknowledged: 'inter_institution_alerts.acknowledge'");
+    expect(alertsScreen).toContain("in_progress:  'inter_institution_alerts.manage'");
+    expect(alertsScreen).toContain("resolved:     'inter_institution_alerts.resolve'");
+    expect(alertsScreen).toContain("dismissed:    'inter_institution_alerts.dismiss'");
+  });
+});
+
+describe('19. QR routes unchanged', () => {
+  it('App.tsx still bypasses auth entirely for ?qid=/?token=; PublicQrScreen untouched', () => {
+    expect(app).toContain('publicQrId');
+    expect(app).toContain('PublicQrScreen');
+    expect(publicQr).not.toContain('whatsapp_phone');
+  });
+
+  it('App.tsx / PublicQrScreen.tsx were not modified by this phase', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/app/App.tsx src/features/qr/PublicQrScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+});
+
+describe('20. Export/print unchanged', () => {
+  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function csvSafeCell');
+    expect(statusCenter).toContain('function exportCsv');
+    expect(statusCenter).toContain('function printReport');
+    expect(statusCenter).toContain('MobilePrintFallbackModal');
+  });
+
+  it('MyAccountScreen was not given any export/print logic', () => {
+    expect(myAccount).not.toContain('exportCsv');
+    expect(myAccount).not.toContain('printReport');
+    expect(myAccount).not.toContain('window.print');
+  });
+});
+
+describe('21. User-management lifecycle unchanged', () => {
+  it('UserManagementScreen still calls the same lifecycle functions', () => {
+    for (const fn of [
+      'createUserViaEdge', 'disableUserViaEdge', 'enableUserViaEdge',
+      'recycleUserViaEdge', 'rotatePasswordViaEdge',
+      'assignProfilePermissions', 'resetProfilePermissions', 'listUsers', 'getEffectivePermissions',
+    ]) {
+      expect(userManagementScreen).toContain(fn);
+    }
+  });
+
+  it('UserManagementScreen.tsx was not modified by this phase', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+});
+
+describe('22. i18n Arabic and English strings exist', () => {
+  it('all new My Account WhatsApp-save strings have the exact required bilingual text', () => {
+    expect(T.ma_contact_info_title).toEqual({ ar: 'بيانات التواصل', en: 'Contact Information' });
+    expect(T.ma_whatsapp_label).toEqual({ ar: 'رقم واتسابي', en: 'My WhatsApp number' });
+    expect(T.ma_whatsapp_hint).toEqual({ ar: 'اكتب الرقم بصيغة دولية مثل 9647XXXXXXXXX', en: 'Use international format, e.g. 9647XXXXXXXXX' });
+    expect(T.ma_whatsapp_save).toEqual({ ar: 'حفظ رقم واتساب', en: 'Save WhatsApp number' });
+    expect(T.ma_whatsapp_save_success).toEqual({ ar: 'تم حفظ رقم واتساب بنجاح', en: 'WhatsApp number saved successfully' });
+    expect(T.ma_whatsapp_save_error).toEqual({ ar: 'تعذر حفظ رقم واتساب', en: 'Could not save WhatsApp number' });
+  });
+});
+
+describe('23. Mobile-safe / no horizontal overflow', () => {
+  it('the WhatsApp input uses width:100% / maxWidth:100%, matching the rest of the form fields (no fixed oversized width)', () => {
+    const block = myAccount.slice(myAccount.indexOf('type="tel"'), myAccount.indexOf('type="tel"') + 400);
+    expect(block).toContain("maxWidth: '100%'");
+  });
+
+  it('the screen container caps width and the field reuses the shared fieldStyle used by password inputs (consistent, tested mobile layout)', () => {
+    expect(myAccount).toContain("maxWidth: '640px'");
+    expect(myAccount).toContain('...fieldStyle');
+  });
+});
+
+describe('24. premium-preview.html untouched', () => {
+  it('remains untracked only', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    if (status.trim()) {
+      expect(status.trim().startsWith('??')).toBe(true);
+    }
+  });
+});
+
+describe('25. supabase/.temp unstaged', () => {
+  it('no staged entry for supabase/.temp', () => {
+    let staged = '';
+    try {
+      staged = execSync('git diff --cached --name-only -- supabase/.temp', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(staged.trim()).toBe('');
+  });
+});
+
+describe('26. Service-D stash untouched', () => {
+  it('stash@{0} (paused Service-D work) was not popped or applied', () => {
+    const stashList = execSync('git stash list', { cwd: ROOT, encoding: 'utf8' });
+    expect(stashList).toContain('paused Service-D inter-org exchange service work');
+  });
+});

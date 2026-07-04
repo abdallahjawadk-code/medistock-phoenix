@@ -86,9 +86,9 @@ describe('Migration 043: does not modify migrations 001-042', () => {
     }
   });
 
-  it('only the reviewed migration 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A) exists beyond 043 — any other migration beyond 043 still fails this check', () => {
+  it('only the reviewed migrations 044/045 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql']);
+    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql']);
   });
 });
 
