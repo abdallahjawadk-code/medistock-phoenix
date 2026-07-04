@@ -16,6 +16,25 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 interface PointRow { id: string; name: string; name_ar: string; }
 
 /**
+ * AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-FEATURE-GATE-A
+ *
+ * Feature gate for the post-migration-051 frontend behavior prepared in
+ * AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A (7-column Option A
+ * identity key + independent-row candidate flow). Defaults to OFF whenever
+ * the env var is unset/anything other than the literal string 'true' — this
+ * is a build-time Vite env flag only; it must NEVER be inferred from a live
+ * DB/RPC check (no Supabase connection, no runtime migration-status probe).
+ *
+ * This behavior must only be enabled (set to 'true') with/after the manual
+ * SQL apply of migration 051 (051_material_batch_identity_option_a.sql).
+ * While OFF, the editor matches the OLD 4-column DB key (scientific_name +
+ * concentration + dosage_form, within the selected point) so it stays fully
+ * compatible with the currently-live DB/RPC — migration 051 is committed but
+ * NOT applied.
+ */
+const BATCH_IDENTITY_051_ENABLED = import.meta.env.VITE_PHOENIX_BATCH_IDENTITY_051_ENABLED === 'true';
+
+/**
  * Material status options.
  * 'expired' is intentionally NOT offered as a manual editor option in this
  * phase — it may be derived from expiry_date, and full canonicalization is
@@ -75,14 +94,15 @@ export function EditorScreen() {
   // the in-progress entry matches an existing row (EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A).
   const pointAvailability = useAsync(() => pointId ? getAvailabilityByPoint(pointId) : Promise.resolve([]), [pointId]);
 
-  // Detect whether the in-progress entry matches an already-saved row for this
-  // point (EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A). Mirrors the exact 4-column
-  // match key of the DB partial unique index (migration 029) and the RPC's
-  // UPDATE-then-INSERT lookup (migration 030): distribution_point_id + scientific_name
-  // (exact) + COALESCE(concentration,'') + COALESCE(dosage_form,'') — so this
-  // never disagrees with what the server will actually do.
+  // EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A / AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A:
+  // the OLD (currently still live) 4-column DB matching key — distribution_point_id
+  // (implicit — pointAvailability is already scoped to the selected point) +
+  // scientific_name (exact) + COALESCE(concentration,'') + COALESCE(dosage_form,'').
+  // This is always computed and is exactly what runs when BATCH_IDENTITY_051_ENABLED
+  // is OFF (the default) — it must stay byte-for-byte compatible with the live
+  // DB/RPC (migration 030) regardless of gate state.
   const normKey = (v: string) => v.trim();
-  const existingRow = useMemo(() => {
+  const legacyProductExistingRow = useMemo(() => {
     const name = scientificName.trim();
     if (!name) return null;
     return (pointAvailability.data ?? []).find(r =>
@@ -91,7 +111,70 @@ export function EditorScreen() {
       normKey(r.dosage_form ?? '') === normKey(dosageForm)
     ) ?? null;
   }, [pointAvailability.data, scientificName, dosageForm, concentrationVal]);
+
+  // AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A / FEATURE-GATE-A:
+  // the future 7-column Option A key from migration 051 — only ever used when
+  // BATCH_IDENTITY_051_ENABLED is explicitly turned on (see gate comment at
+  // top of file). Must only be deployed/enabled with/after migration 051
+  // manual apply. Mirrors migration 051's widened partial unique index / RPC
+  // existing-row lookup key: distribution_point_id (implicit) + scientific_name
+  // (exact) + COALESCE(concentration,'') + COALESCE(dosage_form,'') +
+  // COALESCE(national_code,'') + COALESCE(batch_number,'') + COALESCE(expiry_date,'').
+  const strictExactExistingRow = useMemo(() => {
+    const name = scientificName.trim();
+    if (!name) return null;
+    return (pointAvailability.data ?? []).find(r =>
+      (r.scientific_name ?? '') === name &&
+      normKey(r.concentration ?? '') === normKey(concentrationVal) &&
+      normKey(r.dosage_form ?? '') === normKey(dosageForm) &&
+      normKey(r.national_code ?? '') === normKey(nationalCode) &&
+      normKey(r.batch_number ?? '') === normKey(batch) &&
+      normKey(r.expiry_date ?? '') === normKey(expiry)
+    ) ?? null;
+  }, [pointAvailability.data, scientificName, dosageForm, concentrationVal, nationalCode, batch, expiry]);
+
+  // Gate switch: OFF keeps the currently-live 4-column behavior; ON adopts the
+  // future 7-column Option A key. No runtime DB check is ever consulted here.
+  const exactExistingRow = BATCH_IDENTITY_051_ENABLED ? strictExactExistingRow : legacyProductExistingRow;
+  // Backward-compatible alias: `existingRow`/`isEditMode` are the long-standing
+  // names used throughout this file (auto-populate effect, quantity lock,
+  // doApply's resent quantity) and in EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A /
+  // AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A. Every existing caller keeps
+  // working unchanged, now against whichever key the gate selects.
+  const existingRow = exactExistingRow;
   const isEditMode = !!existingRow;
+
+  // similarProductRows: rows sharing the same product (scientific_name +
+  // concentration + dosage_form) as exactExistingRow's key, but excluded from
+  // the exact match itself — i.e. differing in national_code, batch_number,
+  // and/or expiry_date. Gated: while BATCH_IDENTITY_051_ENABLED is OFF, this
+  // always stays empty — there must be no independent-row path while the live
+  // DB still only understands the old 4-column key (migration 051 not applied).
+  const similarProductRows = useMemo(() => {
+    if (!BATCH_IDENTITY_051_ENABLED) return [];
+    const name = scientificName.trim();
+    if (!name) return [];
+    return (pointAvailability.data ?? []).filter(r =>
+      (r.scientific_name ?? '') === name &&
+      normKey(r.concentration ?? '') === normKey(concentrationVal) &&
+      normKey(r.dosage_form ?? '') === normKey(dosageForm) &&
+      r.id !== exactExistingRow?.id
+    );
+  }, [pointAvailability.data, scientificName, dosageForm, concentrationVal, exactExistingRow]);
+  // primarySimilarRow: the most relevant similar row to surface in the
+  // independent-row comparison panel below.
+  const primarySimilarRow = similarProductRows[0] ?? null;
+  // A candidate for a new, independent material/batch row: same product, but
+  // no exact identity match — only reachable when the gate is ON and
+  // isEditMode is false, so this never overlaps with the exact-match quantity
+  // lock/save path, and never activates at all while the gate is OFF.
+  const hasIndependentRowCandidate = BATCH_IDENTITY_051_ENABLED && !isEditMode && !!primarySimilarRow;
+  // Required explicit confirmation before an independent-row candidate may be
+  // submitted (Part 2C). Resets whenever the candidate row itself changes.
+  const [independentRowConfirmed, setIndependentRowConfirmed] = useState(false);
+  useEffect(() => {
+    setIndependentRowConfirmed(false);
+  }, [primarySimilarRow?.id]);
 
   // AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A / AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A:
   // populate national_code, batch_number, expiry_date, supply_type, and price
@@ -189,7 +272,8 @@ export function EditorScreen() {
   // Attempt is allowed with either create or update — the RPC (migration 032)
   // determines whether the row is new (needs availability.create) or existing
   // (needs availability.update) and denies accordingly; see doApply's catch.
-  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid && !similarMatchBlocked;
+  const canSubmit = canAttemptSave && !!activeOrgId && !!pointId && !!scientificName.trim() && !qtyInvalid && !similarMatchBlocked
+    && (!hasIndependentRowCandidate || independentRowConfirmed);
 
   async function doApply() {
     if (!activeOrgId) return;
@@ -201,6 +285,16 @@ export function EditorScreen() {
     if (similarMatchBlocked) {
       setShowConfirm(false);
       setToast(t('avail_similar_match_conflict', lang));
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
+    // AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A safety guard, re-checked
+    // here (defense in depth alongside the canSubmit/button-disable check
+    // above): never call the RPC for an independent-row candidate without
+    // explicit user confirmation.
+    if (hasIndependentRowCandidate && !independentRowConfirmed) {
+      setShowConfirm(false);
+      setToast(t('avail_independent_row_confirm_required', lang));
       setTimeout(() => setToast(null), 4000);
       return;
     }
@@ -232,7 +326,7 @@ export function EditorScreen() {
       setShowConfirm(false);
       setToast(t('apply_success', lang));
       setTimeout(() => setToast(null), 3000);
-      setBatch(''); setNotes(''); setNationalCode('');
+      setBatch(''); setNotes(''); setNationalCode(''); setIndependentRowConfirmed(false);
       // Refresh the point's saved rows so a just-added material is picked up
       // as an existing row (isEditMode/existingRow) on the very next submit —
       // without this, a second Apply for the same material would still look
@@ -532,6 +626,34 @@ export function EditorScreen() {
               <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '10px' }} dir="auto">
                 {t('avail_similar_match_note', lang)}
               </p>
+            </PhoenixCard>
+          )}
+
+          {/* AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: independent-row
+              candidate panel. Shown when the same product (scientific_name +
+              concentration + dosage_form) already has a row at this point, but
+              none of those rows share this entry's national_code, batch_number,
+              AND expiry_date (no exactExistingRow) — i.e. a different batch of
+              the same product. Requires explicit confirmation before submit is
+              allowed. Must only be deployed with/after migration 051 manual
+              apply — until then, the live RPC still matches on the old
+              4-column key and will not actually insert an independent row. */}
+          {hasIndependentRowCandidate && (
+            <PhoenixCard padding="16px" style={{ marginBottom: '16px', border: '1px solid var(--brd)' }}>
+              <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--t)', marginBottom: '10px' }} dir="auto">
+                {t('avail_independent_row_title', lang)}
+              </p>
+              <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '10px' }} dir="auto">
+                {t('avail_independent_row_note', lang)}
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', cursor: 'pointer' }} dir="auto">
+                <input
+                  type="checkbox"
+                  checked={independentRowConfirmed}
+                  onChange={e => setIndependentRowConfirmed(e.target.checked)}
+                />
+                {t('avail_independent_row_confirm_label', lang)}
+              </label>
             </PhoenixCard>
           )}
 

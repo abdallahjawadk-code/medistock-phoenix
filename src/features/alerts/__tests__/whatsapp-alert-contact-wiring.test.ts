@@ -388,7 +388,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A), 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), and 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A), 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A), and 051 (DB-MATERIAL-BATCH-IDENTITY-051-A, manual-apply-only, not yet applied) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
@@ -402,6 +402,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       'supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       'supabase/migrations/049_add_national_code_to_item_availability.sql',
       'supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
+      'supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -410,7 +411,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(50);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(51);
   });
 });
 

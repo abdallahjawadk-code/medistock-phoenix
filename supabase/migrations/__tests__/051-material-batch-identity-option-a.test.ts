@@ -322,11 +322,11 @@ describe('35. Does not change package/lockfiles', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no frontend production file has a working-tree diff from this phase', () => {
+  it('no frontend production file has a working-tree diff from this phase (excluding EditorScreen.tsx/strings.ts, which the separately-reviewed, explicitly-planned-for AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B frontend-sync phase — see this migration\'s own header — is expected to modify)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/availability.service.ts src/features/editor/EditorScreen.tsx src/shared/lib/types.ts src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/shared/supabase/services/availability.service.ts src/shared/lib/types.ts src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
