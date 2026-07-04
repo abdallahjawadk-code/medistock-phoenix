@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
-import { markPasswordChanged, updateMyWhatsappPhone } from '@/shared/supabase/services/auth.service';
+import { markPasswordChanged, updateMyWhatsappPhone, setMyOrgWhatsappContact } from '@/shared/supabase/services/auth.service';
 import { normalizeWhatsappPhone, isValidWhatsappPhone } from '@/shared/lib/whatsapp';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -14,6 +14,12 @@ const fieldStyle = {
   border: '1px solid var(--brd)', background: 'var(--s)',
   color: 'var(--t)', fontSize: '12.5px',
 } as const;
+
+// UX-OFFICIAL-ORG-WHATSAPP-CONTACT-TOGGLE-A: client-side eligibility check is
+// a UX convenience only (hide/disable the action for obviously-ineligible
+// profiles) — phoenix_set_my_org_whatsapp_contact (migration 046) re-checks
+// role/status/organization_id server-side and is the final authority.
+const ORG_CONTACT_ELIGIBLE_ROLES = ['institution_admin', 'hospital_admin', 'monthly_status_officer'];
 
 export function MyAccountScreen() {
   const { lang, profile, session, requestPasswordReset, updatePassword, reloadProfile } = useApp();
@@ -32,6 +38,14 @@ export function MyAccountScreen() {
   const [waNumber, setWaNumber] = useState(() => profile?.whatsapp_phone ?? '');
   const [waBusy, setWaBusy]     = useState(false);
   const waValid = waNumber.trim() === '' || isValidWhatsappPhone(waNumber);
+
+  // UX-OFFICIAL-ORG-WHATSAPP-CONTACT-TOGGLE-A
+  const [orgContactBusy, setOrgContactBusy] = useState(false);
+  const hasSavedWhatsapp = !!(profile?.whatsapp_phone && profile.whatsapp_phone.trim() !== '');
+  const isOrgContactEligible =
+    !!profile?.organization_id &&
+    profile?.status === 'active' &&
+    ORG_CONTACT_ELIGIBLE_ROLES.includes((profile?.role as string | undefined) ?? '');
 
   const isLocal = profile?.login_mode === 'local';
   const email = session?.user?.email ?? '';
@@ -98,6 +112,40 @@ export function MyAccountScreen() {
     }
   }
 
+  async function onEnableOrgContact() {
+    if (!isOrgContactEligible || !hasSavedWhatsapp || orgContactBusy) return;
+    setOrgContactBusy(true);
+    try {
+      const res = await setMyOrgWhatsappContact(true);
+      if (res.ok) {
+        showToast(t('ma_org_contact_enable_success', lang));
+      } else {
+        showToast(t('ma_org_contact_error', lang));
+      }
+    } catch {
+      showToast(t('ma_org_contact_error', lang));
+    } finally {
+      setOrgContactBusy(false);
+    }
+  }
+
+  async function onDisableOrgContact() {
+    if (!isOrgContactEligible || orgContactBusy) return;
+    setOrgContactBusy(true);
+    try {
+      const res = await setMyOrgWhatsappContact(false);
+      if (res.ok) {
+        showToast(t('ma_org_contact_disable_success', lang));
+      } else {
+        showToast(t('ma_org_contact_error', lang));
+      }
+    } catch {
+      showToast(t('ma_org_contact_error', lang));
+    } finally {
+      setOrgContactBusy(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: '640px', animation: 'fs .3s ease' }}>
       <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>{t('ma_title', lang)}</h2>
@@ -151,6 +199,38 @@ export function MyAccountScreen() {
             {t('ma_whatsapp_save', lang)}
           </PhoenixButton>
         </div>
+      </PhoenixCard>
+
+      {/* Official organization WhatsApp contact (UX-OFFICIAL-ORG-WHATSAPP-CONTACT-TOGGLE-A).
+          Publishes/withdraws the caller's OWN already-saved profiles.whatsapp_phone as
+          organization_status_contacts.phone via phoenix_set_my_org_whatsapp_contact
+          (migration 046, manually applied). Never sends a phone/profile/org id — the
+          RPC resolves everything from auth.uid() and is the final eligibility authority.
+          Two explicit actions (not a single toggle) because this screen has no reliable
+          read model for whether the contact is currently active. */}
+      <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('ma_org_contact_title', lang)}</h3>
+        {isOrgContactEligible ? (
+          <>
+            {!hasSavedWhatsapp && (
+              <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 10px' }} dir="auto">
+                {t('ma_org_contact_phone_required', lang)}
+              </p>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-end' }}>
+              <PhoenixButton variant="ghost" size="md" loading={orgContactBusy} disabled={orgContactBusy} onClick={onDisableOrgContact}>
+                {t('ma_org_contact_disable', lang)}
+              </PhoenixButton>
+              <PhoenixButton variant="primary" size="md" loading={orgContactBusy} disabled={orgContactBusy || !hasSavedWhatsapp} onClick={onEnableOrgContact}>
+                {t('ma_org_contact_enable', lang)}
+              </PhoenixButton>
+            </div>
+          </>
+        ) : (
+          <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: 0 }} dir="auto">
+            {t('ma_org_contact_ineligible', lang)}
+          </p>
+        )}
       </PhoenixCard>
 
       {/* Password reset: email link for email-mode accounts, admin-assisted note for local accounts */}

@@ -202,3 +202,27 @@ export async function updateMyWhatsappPhone(phone: string | null): Promise<SignI
   }
   return { ok: true };
 }
+
+/**
+ * UX-OFFICIAL-ORG-WHATSAPP-CONTACT-TOGGLE-A: publishes (or withdraws) the
+ * CURRENT user's own already-saved profiles.whatsapp_phone as their
+ * organization's official WhatsApp contact in organization_status_contacts.
+ * Never accepts a phone value or a profile/user/organization id — the RPC
+ * resolves everything from auth.uid() server-side and is the sole authority
+ * on eligibility (role/status/organization_id), exactly like
+ * updateMyWhatsappPhone() above.
+ *
+ * IMPORTANT — DEPLOYMENT PREREQUISITE: this calls
+ * `phoenix_set_my_org_whatsapp_contact(p_enabled boolean)`, provided by
+ * migration 046_phoenix_set_my_org_whatsapp_contact_rpc.sql. That migration
+ * must be manually applied in the Supabase SQL Editor before this succeeds.
+ */
+export async function setMyOrgWhatsappContact(enabled: boolean): Promise<SignInResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const { error } = await supabase.rpc('phoenix_set_my_org_whatsapp_contact', { p_enabled: enabled });
+  if (error) {
+    console.error('[phoenix] org whatsapp contact update failed:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}

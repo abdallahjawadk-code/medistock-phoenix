@@ -984,6 +984,20 @@ export const T: Dict = {
   ma_whatsapp_save_success: { ar: 'تم حفظ رقم واتساب بنجاح',              en: 'WhatsApp number saved successfully' },
   ma_whatsapp_save_error:   { ar: 'تعذر حفظ رقم واتساب',                  en: 'Could not save WhatsApp number' },
 
+  /* ── My Account official organization WhatsApp contact
+     (UX-OFFICIAL-ORG-WHATSAPP-CONTACT-TOGGLE-A) — publishes the user's own
+     already-saved profiles.whatsapp_phone as organization_status_contacts.phone
+     via phoenix_set_my_org_whatsapp_contact (migration 046). Client-side
+     eligibility is a UX convenience only; the RPC is the final authority. ── */
+  ma_org_contact_title:           { ar: 'جهة اتصال المؤسسة الرسمية',                                            en: 'Official organization contact' },
+  ma_org_contact_enable:          { ar: 'استخدام رقمي كرقم تواصل رسمي للمؤسسة',                                  en: 'Use my number as official organization contact' },
+  ma_org_contact_disable:         { ar: 'إلغاء استخدام رقمي كرقم تواصل رسمي',                                    en: 'Stop using my number as official organization contact' },
+  ma_org_contact_phone_required:  { ar: 'يجب حفظ رقم واتسابي أولاً قبل استخدامه كرقم تواصل رسمي للمؤسسة',        en: 'Save my WhatsApp number first before using it as the official organization contact' },
+  ma_org_contact_enable_success:  { ar: 'تم تفعيل رقمك كرقم تواصل رسمي للمؤسسة',                                 en: 'Your number was enabled as the official organization contact' },
+  ma_org_contact_disable_success: { ar: 'تم إلغاء تفعيل رقمك كرقم تواصل رسمي للمؤسسة',                           en: 'Your number was disabled as the official organization contact' },
+  ma_org_contact_error:           { ar: 'تعذر تحديث رقم التواصل الرسمي للمؤسسة',                                 en: 'Could not update official organization contact' },
+  ma_org_contact_ineligible:      { ar: 'متاح لمسؤول المؤسسة ومسؤول المواقف الشهرية فقط',                        en: 'Available only to institution managers and monthly status officers' },
+
   /* ── Smart Material Alerts (SMART-MATERIAL-ALERTS-AND-INTERINSTITUTION-UX-LEAP-A) ── */
   smart_material_alerts:            { ar: 'التنبيهات الذكية للمواد',                         en: 'Smart Material Alerts' },
   material_exchange_command_center: { ar: 'مركز تبادل المواد بين المؤسسات',                 en: 'Material Exchange Command Center' },
