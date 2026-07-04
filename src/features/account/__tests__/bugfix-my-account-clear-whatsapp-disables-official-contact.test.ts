@@ -163,11 +163,14 @@ describe('10. No migrations created or modified by this fix', () => {
 });
 
 describe('11. No QR/export/print/user-management/auth/RLS/permissions files changed', () => {
-  it('empty diff on App.tsx, PublicQrScreen.tsx, StatusCenterScreen.tsx, UserManagementScreen.tsx, auth.service.ts, AppContext.tsx', () => {
+  // StatusCenterScreen.tsx is intentionally excluded here as of EXPIRY-RISK-TIERS-A,
+  // a later, separately-reviewed phase that adds a purely-additive ExpiryRiskBadge
+  // next to its expiry-date table cell (see expiry-risk-badge-wiring.test.ts).
+  it('empty diff on App.tsx, PublicQrScreen.tsx, UserManagementScreen.tsx, auth.service.ts, AppContext.tsx', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/app/App.tsx src/features/qr/PublicQrScreen.tsx src/features/status/StatusCenterScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
+        'git diff -- src/app/App.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

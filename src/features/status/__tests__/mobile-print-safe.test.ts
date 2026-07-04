@@ -236,16 +236,15 @@ describe('BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: safety guards', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('package.json changes are limited to the approved exceljs dependency addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
+  it('package.json has no uncommitted changes — the approved exceljs dependency (EXPORT-PROFESSIONAL-XLSX-PDF-B) is already committed on HEAD, and no later phase (including EXPIRY-RISK-TIERS-A) added anything further', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
-    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
-    const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
-    expect(removedLines.length).toBe(0);
-    expect(addedLines.length).toBe(1);
-    expect(addedLines[0]).toMatch(/"exceljs":\s*"\^?[\d.]+"/);
+    expect(diff.trim()).toBe('');
+
+    const pkg = readFileSync(join(ROOT, 'package.json'), 'utf8');
+    expect(pkg).toMatch(/"exceljs":\s*"\^?[\d.]+"/);
   });
 
   it('no other lockfile (pnpm/yarn) was introduced — this project uses package-lock.json (npm)', () => {

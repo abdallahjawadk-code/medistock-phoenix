@@ -283,12 +283,15 @@ describe('20. Export/print unchanged', () => {
     expect(myAccount).not.toContain('window.print');
   });
 
-  it('StatusCenterScreen.tsx was not modified by this phase', () => {
+  it('StatusCenterScreen.tsx export/print functions are unchanged (the only later diff is EXPIRY-RISK-TIERS-A\'s additive ExpiryRiskBadge next to the expiry-date cell — see expiry-risk-badge-wiring.test.ts)', () => {
+    expect(statusCenter).toContain('function csvSafeCell');
+    expect(statusCenter).toContain('function exportCsv');
+    expect(statusCenter).toContain('function printReport');
     let diff = '';
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    expect(diff).not.toMatch(/^[+-].*function (exportCsv|printReport|csvSafeCell)/m);
   });
 });
 

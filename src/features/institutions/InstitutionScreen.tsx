@@ -50,6 +50,7 @@ import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
@@ -1641,8 +1642,9 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
                   <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
                   <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
                   {r.expiry_date && (
-                    <span style={{ fontSize: '9.5px', color: 'var(--warn)' }} dir="ltr">{r.expiry_date}</span>
+                    <span style={{ fontSize: '9.5px', color: 'var(--t2)' }} dir="ltr">{r.expiry_date}</span>
                   )}
+                  <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
                   {canRemove && (
                     <button
                       onClick={() => { setRemoveError(null); setRemoveTarget(r); }}

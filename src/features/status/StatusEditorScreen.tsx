@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate } from '@/shared/lib/date';
+import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
 import {
   exportProfessionalXlsx,
   triggerProfessionalPrint,
@@ -14,6 +15,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 
 interface PointRow { id: string; name: string; name_ar: string; }
@@ -93,6 +95,9 @@ export function StatusEditorScreen() {
     { key: 'status', label: t('avail_material_status', lang), value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
     { key: 'batch',  label: t('batch_no', lang),               value: r => r.batch_number ?? '—', ltr: true },
     { key: 'expiry', label: t('expiry', lang),                 value: r => formatStableDate(r.expiry_date, lang), ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
+    // EXPIRY-RISK-TIERS-A: derived, read-only label from the shared expiry-risk
+    // helper — UI/report classification only, never written back, never a new alert.
+    { key: 'expiryRisk', label: t('expiry_risk_column', lang),  value: r => getExpiryRiskLabel(getExpiryRiskTier(r.expiry_date), lang) },
     { key: 'supply', label: t('avail_supply_type', lang),      value: r => r.supply_type ?? '—' },
     { key: 'price',  label: t('avail_price', lang),            value: r => r.price != null ? String(r.price) : '—', ltr: true, numeric: true, excelValue: r => r.price ?? undefined },
   ];
@@ -227,7 +232,16 @@ export function StatusEditorScreen() {
                 <tbody>
                   {filtered.map((r: OrgAvailRow) => (
                     <tr key={r.id}>
-                      {columns.map(c => <td key={c.key} style={tdStyle} dir={c.ltr ? 'ltr' : 'auto'}>{c.value(r)}</td>)}
+                      {columns.map(c => (
+                        <td key={c.key} style={tdStyle} dir={c.ltr ? 'ltr' : 'auto'}>
+                          {c.key === 'expiry' ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                              <span>{c.value(r)}</span>
+                              <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
+                            </div>
+                          ) : c.value(r)}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>

@@ -130,6 +130,7 @@ export const T: Dict = {
   unit:           { ar: 'الوحدة',                             en: 'Unit' },
   batch_no:       { ar: 'رقم الدفعة',                         en: 'Batch No.' },
   expiry:         { ar: 'تاريخ الانتهاء',                     en: 'Expiry Date' },
+  expiry_risk_column: { ar: 'مستوى مخاطر الانتهاء',           en: 'Expiry Risk Level' },
   notes:          { ar: 'ملاحظات',                            en: 'Notes' },
 
   /* ── Availability Editor institution UX ── */

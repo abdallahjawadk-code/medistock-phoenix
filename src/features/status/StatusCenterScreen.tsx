@@ -9,6 +9,7 @@ import { getOrganizations } from '@/shared/supabase/services/organizations.servi
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
@@ -634,7 +635,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td} dir="auto">{r.supply_type || '—'}</td>
                     <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
-                    <td style={td} dir="ltr">{expiryDisplay(r, lang)}</td>
+                    <td style={td} dir="ltr">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                        <span>{expiryDisplay(r, lang)}</span>
+                        <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
+                      </div>
+                    </td>
                     <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
                     {(canAdjustQuantity || canViewMovementHistory) && (
                       <td style={td}>
