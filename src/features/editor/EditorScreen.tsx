@@ -279,10 +279,16 @@ export function EditorScreen() {
                 </p>
               </div>
 
-              {/* National code (renamed from Batch No.; storage unchanged: batch_number column) */}
+              {/* Batch number (DATA-MODEL-NATIONAL-CODE-SEPARATION-A: this field is the
+                  batch_number column; it is no longer labeled "National code" here because
+                  that concept is being split into its own column in a later, separately
+                  wired phase — see migration 049). */}
               <div>
-                <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('avail_national_code', lang)}</label>
-                <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_national_code_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
+                <label htmlFor="ed-batch" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('batch_no', lang)}</label>
+                <input id="ed-batch" type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('avail_batch_no_ph', lang)} style={{ ...fieldStyle, fontFamily: 'monospace' }} />
+                <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
+                  {t('avail_national_code_separation_note', lang)}
+                </p>
               </div>
 
               {/* Expiry */}

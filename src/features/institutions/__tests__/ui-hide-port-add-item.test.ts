@@ -137,6 +137,8 @@ describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
     const ALLOWED_UNTRACKED = new Set([
       '?? supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+      '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
+      'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

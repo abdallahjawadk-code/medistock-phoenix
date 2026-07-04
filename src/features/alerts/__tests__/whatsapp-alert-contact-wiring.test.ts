@@ -152,6 +152,8 @@ describe('10. No package/lockfile/migration changes', () => {
       'A  supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
       '?? supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+      '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
+      'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -382,7 +384,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), and 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A), 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), and 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
@@ -393,6 +395,8 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       'supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
       'supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
       'supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
+      'supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+      'supabase/migrations/049_add_national_code_to_item_availability.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -401,7 +405,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(47);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(49);
   });
 });
 

@@ -135,17 +135,32 @@ describe('Material identity fields in editor', () => {
 });
 
 // ============================================================================
-// National code label remains
+// Batch number label restored pending national_code separation
+// (DATA-MODEL-NATIONAL-CODE-SEPARATION-A: the batch_number field is no longer
+// labeled "National code" in the editor, since that concept is being split
+// into its own column — see migration 049 — and the editor has no
+// national_code wiring yet. The avail_national_code/_ph i18n keys remain
+// defined for a later, separately reviewed wiring phase.)
 // ============================================================================
 
-describe('National code label remains', () => {
-  it('avail_national_code key used in editor', () => {
-    expect(editor).toContain('avail_national_code');
+describe('Batch number label restored pending national_code separation', () => {
+  it('batch_no key (not avail_national_code) used for the batch input label in editor', () => {
+    expect(editor).toContain("t('batch_no', lang)");
+    expect(editor).not.toContain("t('avail_national_code', lang)");
   });
 
-  it('bilingual national code labels exist', () => {
-    expect(strings).toContain('الرمز الوطني');
-    expect(strings).toContain('National code');
+  it('editor shows a temporary separation note next to the batch input', () => {
+    expect(editor).toContain('avail_national_code_separation_note');
+  });
+
+  it('avail_national_code/_ph i18n keys still exist (unused by editor, reserved for later wiring)', () => {
+    expect(strings).toContain('avail_national_code:');
+    expect(strings).toContain('avail_national_code_ph:');
+  });
+
+  it('bilingual separation-note strings exist', () => {
+    expect(strings).toContain('سيتم فصل الرمز الوطني عن رقم الدفعة في مرحلة لاحقة');
+    expect(strings).toContain('National code will be separated from batch number in a later phase');
   });
 });
 
@@ -2114,10 +2129,10 @@ describe('STATUS-EDITOR-CLEANUP-A: migration 048 preserved (not discarded by thi
 // ============================================================================
 
 describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effects from the frontend dropdown change', () => {
-  it('no SQL was applied and no supabase db push was run as part of this phase (no new migration file beyond 048)', () => {
+  it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 049, a later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A addition)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
     const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql']);
   });
 
   it('no package/lockfile diff from this phase', () => {

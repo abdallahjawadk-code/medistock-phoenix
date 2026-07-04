@@ -139,6 +139,8 @@ export const T: Dict = {
   avail_point_select:      { ar: 'اختر المنفذ',                             en: 'Select port' },
   avail_national_code:     { ar: 'الرمز الوطني',                            en: 'National code' },
   avail_national_code_ph:  { ar: 'أدخل الرمز الوطني',                      en: 'Enter national code' },
+  avail_batch_no_ph:       { ar: 'أدخل رقم الدفعة',                        en: 'Enter batch number' },
+  avail_national_code_separation_note: { ar: 'سيتم فصل الرمز الوطني عن رقم الدفعة في مرحلة لاحقة', en: 'National code will be separated from batch number in a later phase' },
   avail_material_status:   { ar: 'موقف المادة',                            en: 'Material status' },
   avail_supply_type:       { ar: 'نوع التجهيز',                            en: 'Supply type' },
   avail_supply_type_ph:    { ar: 'اكتب نوع التجهيز',                       en: 'Enter supply type' },

@@ -278,13 +278,18 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     expect(diff.trim()).toBe('');
   });
 
-  it('the only strings.ts diff (if any) is the expected STATUS-EDITOR-CLEANUP-A near-expiry-note addition, not a migration-048-related frontend wiring change', () => {
+  it('any strings.ts diff is unrelated to migration 048 (no source_expiry_risk_tier/source_expiry_days_remaining wiring)', () => {
+    // strings.ts is intentionally excluded from the frontend-file diff guard
+    // above: separately-reviewed phases (STATUS-EDITOR-CLEANUP-A, and later
+    // DATA-MODEL-NATIONAL-CODE-SEPARATION-A's batch/national-code label
+    // realignment) legitimately add i18n keys there. This migration (048)
+    // itself adds no frontend reference, so the only thing this guard checks
+    // is that whatever diff exists is NOT migration-048 frontend wiring.
     let diff = '';
     try {
       diff = execSync('git diff -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toContain('avail_near_expiry_auto_note');
       expect(diff).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/);
     }
   });
@@ -325,8 +330,8 @@ describe('21. Does not modify older migrations', () => {
   });
 });
 
-describe('22. Migration ceiling: allows exactly 044-048, 049+ still fails', () => {
-  it('exactly five reviewed migrations exist beyond 043', () => {
+describe('22. Migration ceiling: allows exactly 044-049, 050+ still fails', () => {
+  it('exactly six reviewed migrations exist beyond 043', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -334,11 +339,12 @@ describe('22. Migration ceiling: allows exactly 044-048, 049+ still fails', () =
       '046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
       '047_phoenix_live_alerts_contact_fields.sql',
       '048_live_alerts_expiry_risk_tiers.sql',
+      '049_add_national_code_to_item_availability.sql',
     ]);
   });
 
-  it('no 049_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
+  it('no 050_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

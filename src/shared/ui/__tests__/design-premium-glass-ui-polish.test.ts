@@ -201,6 +201,8 @@ describe('10. No package/lockfile/migration changes', () => {
       'A  supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
       '?? supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
+      '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
+      'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
