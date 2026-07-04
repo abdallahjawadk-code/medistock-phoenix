@@ -2129,10 +2129,10 @@ describe('STATUS-EDITOR-CLEANUP-A: migration 048 preserved (not discarded by thi
 // ============================================================================
 
 describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effects from the frontend dropdown change', () => {
-  it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 049, a later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A addition)', () => {
+  it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 050, later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A additions)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
     const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql']);
+    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql']);
   });
 
   it('no package/lockfile diff from this phase', () => {

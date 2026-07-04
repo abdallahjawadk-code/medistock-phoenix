@@ -215,8 +215,8 @@ describe('19/20. No SQL applied locally, supabase db push not run', () => {
   });
 });
 
-describe('21/22. Migration ceiling allows exactly 044/045/046/047/048/049, future 050+ still fails', () => {
-  it('exactly six reviewed migrations exist beyond 043', () => {
+describe('21/22. Migration ceiling allows exactly 044/045/046/047/048/049/050, future 051+ still fails', () => {
+  it('exactly seven reviewed migrations exist beyond 043', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -225,11 +225,12 @@ describe('21/22. Migration ceiling allows exactly 044/045/046/047/048/049, futur
       '047_phoenix_live_alerts_contact_fields.sql',
       '048_live_alerts_expiry_risk_tiers.sql',
       '049_add_national_code_to_item_availability.sql',
+      '050_phoenix_upsert_availability_national_code.sql',
     ]);
   });
 
-  it('no 050_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[0-9]|[6-9][0-9])_/.test(f));
+  it('no 051_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[1-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

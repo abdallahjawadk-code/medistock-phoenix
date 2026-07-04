@@ -153,7 +153,7 @@ describe('10. No migrations created or modified by this fix', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no new untracked migration SQL file was created by this fix — only the separately-reviewed migrations 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A) and 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A) are allowed as untracked additions', () => {
+  it('no new untracked migration SQL file was created by this fix — only the separately-reviewed migrations 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), and 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A) are allowed as untracked additions', () => {
     let status = '';
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
@@ -163,6 +163,8 @@ describe('10. No migrations created or modified by this fix', () => {
       'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
       'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
+      '?? supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
+      'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

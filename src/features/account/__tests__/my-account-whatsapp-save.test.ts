@@ -184,6 +184,8 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
       'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
       '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
       'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
+      '?? supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
+      'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

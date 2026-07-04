@@ -167,14 +167,13 @@ describe('12. Does not add WhatsApp API/tokens/automation', () => {
   });
 });
 
-describe('13. Does not apply migration 048 or create migration 050', () => {
+describe('13. Does not apply migration 048; 050 (if it exists) is a later, separately-reviewed phase', () => {
   it('does not reference or redefine anything specific to migration 048', () => {
     expect(active049).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/i);
   });
 
-  it('no 050_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[0-9]|[6-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+  it('this migration itself does not reference phoenix_upsert_availability national_code wiring (that is migration 050, DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A)', () => {
+    expect(active049).not.toMatch(/p_national_code/i);
   });
 });
 
@@ -225,8 +224,8 @@ describe('15. Frontend changes are label-only (no RPC/service/type wiring to nat
   });
 });
 
-describe('16. Migration ceiling: allows exactly 044-049, 050+ still fails', () => {
-  it('exactly six reviewed migrations exist beyond 043', () => {
+describe('16. Migration ceiling as of this phase: 044-049 exist; 050 (if present) is a later, separately-reviewed phase', () => {
+  it('exactly six migrations from this phase and earlier exist beyond 043 (044-049)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -238,8 +237,8 @@ describe('16. Migration ceiling: allows exactly 044-049, 050+ still fails', () =
     ]);
   });
 
-  it('no 050_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[0-9]|[6-9][0-9])_/.test(f));
+  it('no 051_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[1-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });
