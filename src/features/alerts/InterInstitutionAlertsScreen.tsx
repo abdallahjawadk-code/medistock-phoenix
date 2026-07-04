@@ -10,6 +10,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
+import { getExpiryRiskLabel, getExpiryRiskTone, type ExpiryRiskTier } from '@/shared/lib/expiry-risk';
 import {
   getLiveInterInstitutionAlertsWithState,
   updateInterOrgAlertState,
@@ -114,6 +115,28 @@ function orgName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'):
 function pointName(name: string | null, nameAr: string | null, lang: 'ar' | 'en'): string {
   const v = lang === 'ar' ? (nameAr || name) : (name || nameAr);
   return v || t('common_notSpecified', lang);
+}
+
+/**
+ * ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A: migration 048's
+ * source_expiry_risk_tier is a plain string off the RPC — validate against
+ * the known tier vocabulary (shared with the existing frontend-only
+ * EXPIRY-RISK-TIERS-A helper) before handing it to getExpiryRiskLabel/
+ * getExpiryRiskTone, so an unexpected/future value never crashes the badge —
+ * it's simply omitted instead.
+ */
+const KNOWN_EXPIRY_RISK_TIERS: readonly ExpiryRiskTier[] = ['expired', 'critical_3m', 'warning_6m', 'watch_9m', 'normal', 'unknown'];
+function asExpiryRiskTier(value: string | null | undefined): ExpiryRiskTier | null {
+  return (KNOWN_EXPIRY_RISK_TIERS as readonly string[]).includes(value ?? '') ? (value as ExpiryRiskTier) : null;
+}
+
+/** Bilingual "N days remaining" / "Expired N days ago" line for migration 048's source_expiry_days_remaining. */
+function formatExpiryDaysRemaining(days: number, lang: 'ar' | 'en'): string {
+  if (days < 0) {
+    const n = Math.abs(days);
+    return lang === 'ar' ? `منتهي منذ ${n} يوم` : `Expired ${n} days ago`;
+  }
+  return lang === 'ar' ? `بقي ${days} يوم` : `${days} days remaining`;
 }
 
 /**
@@ -627,6 +650,8 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
           tradeName={a.sourceTradeName}
           quantity={a.sourceQuantity}
           expiryDate={a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryDate : null}
+          expiryRiskTier={a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryRiskTier : null}
+          expiryDaysRemaining={a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryDaysRemaining : null}
           lang={lang}
         />
         <div className="institution-flow__connector" aria-hidden="true">→</div>
@@ -820,7 +845,7 @@ function AlertHistoryDialog({ alert, lang, onClose }: { alert: LiveInterInstitut
 
 // ─── Party block ──────────────────────────────────────────────────────────────
 
-function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, statusVar, orgLabel, pointLabel, tradeName, quantity, expiryDate, lang }: {
+function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, statusVar, orgLabel, pointLabel, tradeName, quantity, expiryDate, expiryRiskTier, expiryDaysRemaining, lang }: {
   roleLabel: string;
   pointRoleLabel: string;
   statusLabelKey: string;
@@ -830,8 +855,12 @@ function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, stat
   tradeName: string | null;
   quantity: number;
   expiryDate: string | null;
+  /** ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A: migration 048 fields, only ever passed for the near-expiry source party. */
+  expiryRiskTier?: string | null;
+  expiryDaysRemaining?: number | null;
   lang: 'ar' | 'en';
 }) {
+  const riskTier = asExpiryRiskTier(expiryRiskTier);
   return (
     <div className="institution-card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
@@ -852,6 +881,23 @@ function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, stat
       {expiryDate && (
         <div style={{ fontSize: '11px', color: 'var(--warn)', marginTop: '2px' }} dir="ltr">
           ⏱ {t('expiry', lang)}: {expiryDate}
+        </div>
+      )}
+      {/* ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A: migration 048's
+          source_expiry_risk_tier/source_expiry_days_remaining, rendered only
+          alongside the existing expiry date line above (i.e. only for the
+          near-expiry source party) — reuses the existing frontend-only
+          EXPIRY-RISK-TIERS-A tier vocabulary/labels/tones for visual
+          consistency. Absent/unrecognized tier or non-numeric days simply
+          omits these lines; never crashes, never blocks rendering. */}
+      {expiryDate && riskTier && (
+        <div style={{ marginTop: '4px' }}>
+          <PhoenixStatusBadge variant={getExpiryRiskTone(riskTier)} label={getExpiryRiskLabel(riskTier, lang)} />
+        </div>
+      )}
+      {expiryDate && typeof expiryDaysRemaining === 'number' && (
+        <div style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '2px' }} dir="auto">
+          {formatExpiryDaysRemaining(expiryDaysRemaining, lang)}
         </div>
       )}
     </div>

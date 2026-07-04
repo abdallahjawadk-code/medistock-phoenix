@@ -108,11 +108,15 @@ describe('Existing filters/backend/lifecycle/QR/WhatsApp remain unchanged', () =
     expect(statusEditor).toContain('if (filterStatus) list = list.filter');
   });
 
+  // REFRESH-ALERT-UI-DIFF-GUARDS-A: features/alerts/inter-org-alert-lifecycle.service.ts
+  // is excluded from this loop because a later, separately-reviewed phase
+  // (ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A) legitimately extends it with
+  // sourceExpiryRiskTier/sourceExpiryDaysRemaining mapping — every other
+  // file in this list remains fully guarded (zero diff required).
   it('no backend/service/RLS/auth/permission files changed', () => {
     for (const rel of [
       'shared/supabase/services/users.service.ts',
       'shared/supabase/services/auth.service.ts',
-      'features/alerts/inter-org-alert-lifecycle.service.ts',
       'features/alerts/inter-institution-alerts.service.ts',
       'features/alerts/live-inter-institution-alerts.service.ts',
     ]) {

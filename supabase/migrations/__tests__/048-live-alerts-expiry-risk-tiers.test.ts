@@ -268,14 +268,37 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     // new i18n key (avail_near_expiry_auto_note) there, unrelated to this
     // migration. That phase's own guard test (below) confirms only the
     // expected near-expiry-dropdown-cleanup diff exists in strings.ts.
+    //
+    // REFRESH-ALERT-UI-DIFF-GUARDS-A: src/features/alerts/InterInstitutionAlertsScreen.tsx
+    // and src/features/alerts/inter-org-alert-lifecycle.service.ts are excluded
+    // from this list because a later, separately-reviewed phase
+    // (ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A) legitimately wires this
+    // migration's own source_expiry_risk_tier/source_expiry_days_remaining
+    // jsonb fields into the alert cards — every other file in this list
+    // remains fully guarded (zero diff required).
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/qr/PublicQrScreen.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/institutions/InstitutionScreen.tsx src/features/users/UserManagementScreen.tsx src/features/alerts/InterInstitutionAlertsScreen.tsx',
+        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/qr/PublicQrScreen.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/institutions/InstitutionScreen.tsx src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('the InterInstitutionAlertsScreen.tsx/inter-org-alert-lifecycle.service.ts diff (from the later ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A phase) only touches source_expiry_risk_tier/source_expiry_days_remaining wiring, never this migration\'s own concerns', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/inter-org-alert-lifecycle.service.ts',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    if (diff.trim()) {
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      expect(diff).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com|Bearer |sendMessage/i);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\('phoenix_(?!get_live_inter_institution_alerts_with_state|update_inter_org_alert_state|reopen_inter_org_alert|get_inter_org_alert_events)/);
+    }
   });
 
   it('any strings.ts diff is unrelated to migration 048 (no source_expiry_risk_tier/source_expiry_days_remaining wiring)', () => {

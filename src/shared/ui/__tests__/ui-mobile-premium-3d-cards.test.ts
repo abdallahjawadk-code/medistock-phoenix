@@ -178,12 +178,17 @@ describe('11. Alert lifecycle buttons remain present and unchanged', () => {
     }
   });
 
-  it('inter-org-alert-lifecycle.service.ts was not touched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/alerts/inter-org-alert-lifecycle.service.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // REFRESH-ALERT-UI-DIFF-GUARDS-A: inter-org-alert-lifecycle.service.ts is no
+  // longer expected to have zero diff — a later, separately-reviewed phase
+  // (ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A) legitimately extends it with
+  // sourceExpiryRiskTier/sourceExpiryDaysRemaining mapping. The invariant
+  // this test actually guards (the four lifecycle RPC wrapper functions
+  // still exist, unrenamed/unremoved) is checked directly instead.
+  it('inter-org-alert-lifecycle.service.ts core lifecycle functions remain present and unchanged in name/shape', () => {
+    expect(alertLifecycleService).toContain('export async function getLiveInterInstitutionAlertsWithState(');
+    expect(alertLifecycleService).toContain('export async function updateInterOrgAlertState(');
+    expect(alertLifecycleService).toContain('export async function reopenInterOrgAlert(');
+    expect(alertLifecycleService).toContain('export async function getInterOrgAlertEvents(');
     expect(alertLifecycleService.length).toBeGreaterThan(0);
   });
 });
@@ -205,11 +210,15 @@ describe('12. Existing routes/links are not changed', () => {
 });
 
 describe('13. No backend/service/RLS/auth/permission files changed', () => {
+  // REFRESH-ALERT-UI-DIFF-GUARDS-A: src/features/alerts/inter-org-alert-lifecycle.service.ts
+  // is excluded from this loop because a later, separately-reviewed phase
+  // (ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A) legitimately extends it with
+  // sourceExpiryRiskTier/sourceExpiryDaysRemaining mapping — every other
+  // file in this list remains fully guarded (zero diff required).
   it('no diff in permission/service/RLS-adjacent files touched historically by this feature', () => {
     for (const rel of [
       'src/shared/supabase/services/users.service.ts',
       'src/shared/supabase/services/auth.service.ts',
-      'src/features/alerts/inter-org-alert-lifecycle.service.ts',
       'src/features/alerts/inter-institution-alerts.service.ts',
       'src/features/alerts/live-inter-institution-alerts.service.ts',
     ]) {

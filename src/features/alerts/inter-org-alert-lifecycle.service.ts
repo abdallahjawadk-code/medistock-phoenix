@@ -49,6 +49,15 @@ export interface LiveInterInstitutionAlertWithState {
   targetQuantity: number;
   sourceExpiryDate: string | null;
   /**
+   * ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A: mirrors migration 048's
+   * source_expiry_risk_tier/source_expiry_days_remaining jsonb fields,
+   * computed server-side from the same source_expiry_date already carried
+   * above. Optional/nullable so this stays backward-compatible with any
+   * cached/pre-048 payload shape — absent or null must never crash the UI.
+   */
+  sourceExpiryRiskTier?: 'unknown' | 'expired' | 'critical_3m' | 'warning_6m' | 'watch_9m' | 'normal' | string | null;
+  sourceExpiryDaysRemaining?: number | null;
+  /**
    * UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: the source/target organization's
    * official WhatsApp contact phone, resolved SERVER-SIDE by migration 047
    * (organization_status_contacts, is_active + prefers is_primary, bypasses
@@ -138,6 +147,8 @@ interface RawLiveAlertWithStateRow {
   source_quantity: number;
   target_quantity: number;
   source_expiry_date: string | null;
+  source_expiry_risk_tier?: string | null;
+  source_expiry_days_remaining?: number | null;
   source_contact_phone?: string | null;
   target_contact_phone?: string | null;
   computed_at: string;
@@ -197,6 +208,8 @@ function mapRow(r: RawLiveAlertWithStateRow): LiveInterInstitutionAlertWithState
     sourceQuantity: r.source_quantity,
     targetQuantity: r.target_quantity,
     sourceExpiryDate: r.source_expiry_date,
+    sourceExpiryRiskTier: r.source_expiry_risk_tier ?? null,
+    sourceExpiryDaysRemaining: r.source_expiry_days_remaining ?? null,
     sourceContactPhone: r.source_contact_phone ?? null,
     targetContactPhone: r.target_contact_phone ?? null,
     computedAt: r.computed_at,
