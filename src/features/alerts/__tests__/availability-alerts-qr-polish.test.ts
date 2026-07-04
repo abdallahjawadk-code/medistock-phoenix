@@ -197,10 +197,14 @@ describe('No WhatsApp/Google Drive/chat code was added', () => {
 });
 
 describe('No migrations touched, no package/lockfile changes', () => {
-  it('no migration SQL file was modified (checked via git diff, working tree only; test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded because a later, separately-reviewed phase (FIX-MIGRATION-051-
+  // IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it in-place before its
+  // first successful manual apply.
+  it('no migration SQL file was modified other than the already-approved 051 immutable-expiry-date fix (checked via git diff, working tree only; test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });

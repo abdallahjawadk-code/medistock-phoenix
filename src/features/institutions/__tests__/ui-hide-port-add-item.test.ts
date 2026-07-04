@@ -118,11 +118,16 @@ describe('6. Safe-delete handler remains visible and unchanged', () => {
 });
 
 describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
-  it('empty diff on migrations, auth.service.ts, AppContext.tsx, permissions.ts', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded because a later, separately-reviewed phase (FIX-MIGRATION-051-
+  // IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it in-place before its
+  // first successful manual apply; auth/AppContext/permissions remain fully
+  // guarded.
+  it('empty diff on migrations (other than the already-approved 051 immutable-expiry-date fix), auth.service.ts, AppContext.tsx, permissions.ts', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "supabase/migrations/*.sql" src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx src/shared/lib/permissions.ts',
+        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx src/shared/lib/permissions.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
@@ -143,6 +148,10 @@ describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
       'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
       '?? supabase/migrations/051_material_batch_identity_option_a.sql',
       'A  supabase/migrations/051_material_batch_identity_option_a.sql',
+      // Trimmed forms of " M ..." (unstaged modify) / "M  ..." (staged modify) —
+      // status.split('\n').map(l => l.trim()) strips only the leading char.
+      'M supabase/migrations/051_material_batch_identity_option_a.sql',
+      'M  supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

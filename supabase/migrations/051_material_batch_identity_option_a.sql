@@ -43,6 +43,28 @@
 --      UPDATE (see "Identity-field UPDATE behavior" below).
 --   C. Verification block.
 --
+-- FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A (applied to this file before any
+-- manual apply attempt succeeded):
+--   The first draft of this migration used COALESCE(expiry_date::text, '')
+--   for the expiry_date identity component, both in the CREATE UNIQUE INDEX
+--   expression and in the RPC's v_expiry_date_key/matching WHERE clause. A
+--   manual SQL Editor apply attempt failed with:
+--     ERROR: 42P17: functions in index expression must be marked IMMUTABLE
+--   because date-to-text casting depends on the session's DateStyle setting
+--   and is therefore not IMMUTABLE, which Postgres requires for any
+--   expression used in an index. That attempt did NOT succeed — the DB was
+--   left on the OLD index (item_availability_dp_sci_conc_form_uniq) and the
+--   new index was never created; no partial/inconsistent state resulted.
+--   This file now uses an immutable date-sentinel expression instead:
+--     COALESCE(expiry_date, DATE '0001-01-01')
+--   both in the index and in the RPC (v_expiry_date_key is now `date`, not
+--   `text`) — DATE arithmetic/equality has no locale/session dependency, so
+--   this is safely IMMUTABLE. This changes only the expiry_date identity
+--   expression's type/representation; the set of rows the index/RPC treat as
+--   "the same identity" is unaffected (NULL expiry_date still collapses to a
+--   single sentinel value either way, and any real expiry_date maps 1:1
+--   whether compared as text or as date).
+--
 -- What this migration does NOT do:
 --   - Does NOT modify migrations 001-050 in any way.
 --   - Does NOT touch item_availability_local_item_id_distribution_point_id_key
@@ -156,11 +178,17 @@
 --   Concretely: v_national_code / v_batch_number are computed once as
 --   NULLIF(btrim(p_xxx), '') (may be NULL — this is the STORED form,
 --   matching migrations 049/050's convention), and separately
---   v_national_code_key / v_batch_number_key / v_expiry_date_key are
---   COALESCE(..., '') forms used ONLY inside the WHERE-clause comparison
---   (matching the COALESCE(ia.xxx, '') pattern already used for
---   concentration/dosage_form since migration 029) — never written to a
---   column.
+--   v_national_code_key / v_batch_number_key are COALESCE(..., '') text
+--   forms used ONLY inside the WHERE-clause comparison (matching the
+--   COALESCE(ia.xxx, '') pattern already used for concentration/dosage_form
+--   since migration 029) — never written to a column. v_expiry_date_key is
+--   the odd one out: it is a `date` (not `text`), computed as
+--   COALESCE(p_expiry_date, DATE '0001-01-01') — see
+--   FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A above for why a text/::text
+--   cast cannot be used here (it is not IMMUTABLE, which Postgres requires
+--   for index expressions). DATE '0001-01-01' is used purely as an
+--   impossible-in-practice sentinel to stand in for "no expiry_date", the
+--   same role '' plays for the two text keys.
 --
 -- Duplicate/conflict safety before applying:
 --   Because the new unique index is narrower than "any row could exist" (it
@@ -189,7 +217,8 @@
 --   SELECT indexname, indexdef FROM pg_indexes
 --   WHERE tablename = 'item_availability'
 --     AND indexname = 'item_availability_dp_sci_conc_form_nat_batch_exp_uniq';
---   -- expect: 1 row, indexdef mentions national_code, batch_number, expiry_date
+--   -- expect: 1 row, indexdef mentions national_code, batch_number, expiry_date,
+--   -- and DATE '0001-01-01' (NOT expiry_date::text)
 --
 --   SELECT indexname FROM pg_indexes
 --   WHERE tablename = 'item_availability'
@@ -220,6 +249,12 @@
 
 DROP INDEX IF EXISTS public.item_availability_dp_sci_conc_form_uniq;
 
+-- NOTE (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A): the expiry_date
+-- component below uses the immutable date-sentinel form
+-- COALESCE(expiry_date, DATE '0001-01-01'), NOT expiry_date::text —
+-- date-to-text casting is not IMMUTABLE (it depends on DateStyle) and
+-- Postgres rejects non-IMMUTABLE expressions in index definitions
+-- (ERROR 42P17: functions in index expression must be marked IMMUTABLE).
 CREATE UNIQUE INDEX IF NOT EXISTS item_availability_dp_sci_conc_form_nat_batch_exp_uniq
 ON public.item_availability (
   distribution_point_id,
@@ -228,7 +263,7 @@ ON public.item_availability (
   COALESCE(dosage_form, ''),
   COALESCE(national_code, ''),
   COALESCE(batch_number, ''),
-  COALESCE(expiry_date::text, '')
+  COALESCE(expiry_date, DATE '0001-01-01')
 )
 WHERE scientific_name IS NOT NULL;
 
@@ -273,7 +308,10 @@ DECLARE
   v_batch_number       text := NULLIF(btrim(p_batch_number), '');
   v_national_code_key  text := COALESCE(NULLIF(btrim(p_national_code), ''), '');
   v_batch_number_key   text := COALESCE(NULLIF(btrim(p_batch_number), ''), '');
-  v_expiry_date_key    text := COALESCE(p_expiry_date::text, '');
+  -- FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A: `date`, not `text` — must
+  -- match the immutable index expression above exactly (a text/::text
+  -- cast is not IMMUTABLE and is rejected by CREATE UNIQUE INDEX).
+  v_expiry_date_key    date := COALESCE(p_expiry_date, DATE '0001-01-01');
   v_id                 uuid;
   v_is_super           boolean;
   v_in_scope           boolean;
@@ -326,19 +364,23 @@ BEGIN
   --    the new partial unique index above: distribution_point_id +
   --    scientific_name + COALESCE(concentration,'') + COALESCE(dosage_form,'')
   --    + COALESCE(national_code,'') + COALESCE(batch_number,'') +
-  --    COALESCE(expiry_date::text,''). supply_type and price are
+  --    COALESCE(expiry_date, DATE '0001-01-01'). supply_type and price are
   --    intentionally NOT part of this match — they remain UI-mediated
   --    metadata (AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-A's panel), not DB
-  --    identity, per the Option A design decision.
+  --    identity, per the Option A design decision. expiry_date is compared
+  --    as `date` (not text) per FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A —
+  --    must match the index expression exactly for the RPC's INSERT-on-
+  --    no-match / UPDATE-on-match branching to agree with what the unique
+  --    index will actually accept.
   SELECT ia.id, ia.quantity INTO v_existing_id, v_existing_quantity
   FROM public.item_availability AS ia
   WHERE ia.distribution_point_id = p_distribution_point_id
     AND ia.scientific_name       = p_scientific_name
-    AND COALESCE(ia.concentration, '')     = v_conc
-    AND COALESCE(ia.dosage_form,  '')      = v_dosage
-    AND COALESCE(ia.national_code, '')     = v_national_code_key
-    AND COALESCE(ia.batch_number, '')      = v_batch_number_key
-    AND COALESCE(ia.expiry_date::text, '') = v_expiry_date_key;
+    AND COALESCE(ia.concentration, '')                 = v_conc
+    AND COALESCE(ia.dosage_form,  '')                   = v_dosage
+    AND COALESCE(ia.national_code, '')                  = v_national_code_key
+    AND COALESCE(ia.batch_number, '')                   = v_batch_number_key
+    AND COALESCE(ia.expiry_date, DATE '0001-01-01')     = v_expiry_date_key;
 
   IF v_existing_id IS NOT NULL THEN
     -- 4. UPDATE path — requires availability.update (super_admin always allowed).
@@ -474,6 +516,15 @@ BEGIN
   ASSERT v_new_idx_def LIKE '%expiry_date%',
     'VERIFY FAILED: new unique index does not reference expiry_date';
 
+  -- 3b. FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A: the expiry_date
+  --     component must use the immutable date-sentinel form, NOT the
+  --     non-IMMUTABLE ::text cast that caused the original apply attempt
+  --     to fail with 42P17.
+  ASSERT v_new_idx_def LIKE '%0001-01-01%',
+    'VERIFY FAILED: new unique index does not use the DATE ''0001-01-01'' sentinel for expiry_date';
+  ASSERT v_new_idx_def NOT LIKE '%expiry_date::text%',
+    'VERIFY FAILED: new unique index still uses the non-IMMUTABLE expiry_date::text expression';
+
   -- 4. New index does NOT include supply_type or price
   ASSERT v_new_idx_def NOT LIKE '%supply_type%',
     'VERIFY FAILED: new unique index unexpectedly references supply_type';
@@ -515,9 +566,18 @@ BEGIN
   ASSERT v_fn_src LIKE '%COALESCE(ia.batch_number, %'
      AND v_fn_src LIKE '%v_batch_number_key%',
     'VERIFY FAILED: matching WHERE clause does not include batch_number';
-  ASSERT v_fn_src LIKE '%COALESCE(ia.expiry_date::text, %'
+  ASSERT v_fn_src LIKE '%COALESCE(ia.expiry_date, DATE ''0001-01-01'')%'
      AND v_fn_src LIKE '%v_expiry_date_key%',
     'VERIFY FAILED: matching WHERE clause does not include expiry_date';
+
+  -- 10b. FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A: v_expiry_date_key must
+  --      be declared `date`, and the WHERE clause must never fall back to
+  --      the non-IMMUTABLE ::text cast that caused the original apply
+  --      attempt to fail with 42P17.
+  ASSERT v_fn_src LIKE '%v_expiry_date_key%date%',
+    'VERIFY FAILED: v_expiry_date_key is not declared as date';
+  ASSERT v_fn_src NOT LIKE '%expiry_date::text%',
+    'VERIFY FAILED: phoenix_upsert_availability still uses the non-IMMUTABLE expiry_date::text expression';
 
   -- 11. Matching key does NOT include supply_type/price in the WHERE lookup
   --     (scope the check to the SELECT ... INTO v_existing_id lookup only —

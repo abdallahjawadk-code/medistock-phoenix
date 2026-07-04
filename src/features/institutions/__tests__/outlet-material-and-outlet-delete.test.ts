@@ -473,10 +473,14 @@ describe('Safety: no service_role/auth.admin, no raw ids exposed, no exchange wo
     });
   });
 
-  it('no existing migration SQL was modified for this fix (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded because a later, separately-reviewed phase (FIX-MIGRATION-051-
+  // IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it in-place before its
+  // first successful manual apply.
+  it('no existing migration SQL was modified for this fix, other than the already-approved 051 immutable-expiry-date fix (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });

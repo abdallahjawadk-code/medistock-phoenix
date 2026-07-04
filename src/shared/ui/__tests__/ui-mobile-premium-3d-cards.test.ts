@@ -230,10 +230,14 @@ describe('13. No backend/service/RLS/auth/permission files changed', () => {
 });
 
 describe('14. No migrations created or modified', () => {
-  it('no diff/new file under supabase/migrations', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded because a later, separately-reviewed phase (FIX-MIGRATION-051-
+  // IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it in-place before its
+  // first successful manual apply.
+  it('no diff/new file under supabase/migrations other than the already-approved 051 immutable-expiry-date fix', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

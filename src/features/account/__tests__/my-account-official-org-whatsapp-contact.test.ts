@@ -184,10 +184,14 @@ describe('14. No fake phone numbers', () => {
 });
 
 describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is already committed/applied, this phase only adds the UI/service call site', () => {
-  it('no existing migration SQL was modified, and no new migration SQL file was created', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded from the diff check because a later, separately-reviewed
+  // phase (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) legitimately corrects
+  // it in-place before its first successful manual apply.
+  it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix), and no new migration SQL file was created', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let status = '';
@@ -208,6 +212,10 @@ describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is 
       'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
       '?? supabase/migrations/051_material_batch_identity_option_a.sql',
       'A  supabase/migrations/051_material_batch_identity_option_a.sql',
+      // Trimmed forms of " M ..." (unstaged modify) / "M  ..." (staged modify) —
+      // status.split('\n').map(l => l.trim()) strips only the leading char.
+      'M supabase/migrations/051_material_batch_identity_option_a.sql',
+      'M  supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

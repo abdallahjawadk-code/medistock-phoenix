@@ -145,15 +145,20 @@ describe('9. No WhatsApp API/Graph API/token/automation introduced', () => {
 });
 
 describe('10. No migrations created or modified by this fix', () => {
-  it('no working-tree diff on any migration SQL file', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded from this check because a later, separately-reviewed phase
+  // (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it
+  // in-place before its first successful manual apply — 052+ and every other
+  // migration file remain fully guarded below.
+  it('no working-tree diff on any migration SQL file other than the already-approved 051 immutable-expiry-date fix', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
 
-  it('no new untracked migration SQL file was created by this fix — only the separately-reviewed migrations 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A), and 051 (DB-MATERIAL-BATCH-IDENTITY-051-A) are allowed as untracked additions', () => {
+  it('no new untracked migration SQL file was created by this fix — only the separately-reviewed migrations 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A), and 051 (DB-MATERIAL-BATCH-IDENTITY-051-A, including its later in-place immutable-expiry-date correction) are allowed as untracked/modified additions', () => {
     let status = '';
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
@@ -167,6 +172,10 @@ describe('10. No migrations created or modified by this fix', () => {
       'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
       '?? supabase/migrations/051_material_batch_identity_option_a.sql',
       'A  supabase/migrations/051_material_batch_identity_option_a.sql',
+      // Trimmed forms of " M ..." (unstaged modify) / "M  ..." (staged modify) —
+      // status.split('\n').map(l => l.trim()) strips only the leading char.
+      'M supabase/migrations/051_material_batch_identity_option_a.sql',
+      'M  supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

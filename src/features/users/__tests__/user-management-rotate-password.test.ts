@@ -263,10 +263,14 @@ describe('19-22. Safety guards', () => {
     expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 
-  it('no existing migration SQL changed, and no unreviewed migration SQL created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded from the diff check because a later, separately-reviewed
+  // phase (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) legitimately corrects
+  // it in-place before its first successful manual apply.
+  it('no existing migration SQL changed (other than the already-approved 051 immutable-expiry-date fix), and no unreviewed migration SQL created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
     let status = '';
@@ -288,6 +292,10 @@ describe('19-22. Safety guards', () => {
       'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
       '?? supabase/migrations/051_material_batch_identity_option_a.sql',
       'A  supabase/migrations/051_material_batch_identity_option_a.sql',
+      // Trimmed forms of " M ..." (unstaged modify) / "M  ..." (staged modify) —
+      // status.split('\n').map(l => l.trim()) strips only the leading char.
+      'M supabase/migrations/051_material_batch_identity_option_a.sql',
+      'M  supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

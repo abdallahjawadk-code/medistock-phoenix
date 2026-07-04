@@ -95,8 +95,9 @@ describe('6-11. New unique index column list', () => {
     expect(idxStmt).toContain('COALESCE(batch_number, \'\')');
   });
 
-  it('includes expiry_date', () => {
-    expect(idxStmt).toContain('COALESCE(expiry_date::text, \'\')');
+  it('includes expiry_date using the immutable date-sentinel form (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A: expiry_date::text is not IMMUTABLE and is rejected by CREATE UNIQUE INDEX with 42P17)', () => {
+    expect(idxStmt).toContain("COALESCE(expiry_date, DATE '0001-01-01')");
+    expect(idxStmt).not.toContain('expiry_date::text');
   });
 
   it('includes distribution_point_id, scientific_name, concentration, dosage_form', () => {
@@ -182,9 +183,67 @@ describe('16-18. Matching WHERE clause includes national_code, batch_number, exp
     expect(whereClause).toContain('v_batch_number_key');
   });
 
-  it('includes COALESCE(ia.expiry_date::text, \'\') = v_expiry_date_key', () => {
-    expect(whereClause).toContain("COALESCE(ia.expiry_date::text, '')");
+  it('includes COALESCE(ia.expiry_date, DATE \'0001-01-01\') = v_expiry_date_key (not the non-IMMUTABLE ::text form)', () => {
+    expect(whereClause).toContain("COALESCE(ia.expiry_date, DATE '0001-01-01')");
     expect(whereClause).toContain('v_expiry_date_key');
+    expect(whereClause).not.toContain('expiry_date::text');
+  });
+});
+
+describe('FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A: v_expiry_date_key is declared as date, not text', () => {
+  it('DECLARE block declares v_expiry_date_key as date, computed via the DATE \'0001-01-01\' sentinel', () => {
+    expect(active051).toContain("v_expiry_date_key    date := COALESCE(p_expiry_date, DATE '0001-01-01');");
+    expect(active051).not.toContain('v_expiry_date_key    text');
+  });
+
+  it('no occurrence of the non-IMMUTABLE expiry_date::text expression remains as an actual SQL expression (only the verification block\'s NOT LIKE guard strings are allowed to still mention it, as the literal text they check FOR THE ABSENCE of)', () => {
+    const idxStmt = active051.slice(
+      active051.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS item_availability_dp_sci_conc_form_nat_batch_exp_uniq'),
+      active051.indexOf('WHERE scientific_name IS NOT NULL;') + 40,
+    );
+    const whereClause = active051.slice(
+      active051.indexOf('SELECT ia.id, ia.quantity INTO'),
+      active051.indexOf('IF v_existing_id IS NOT NULL THEN'),
+    );
+    const declareBlock = active051.slice(active051.indexOf('DECLARE'), active051.indexOf('BEGIN'));
+    expect(idxStmt).not.toContain('expiry_date::text');
+    expect(whereClause).not.toContain('expiry_date::text');
+    expect(declareBlock).not.toContain('expiry_date::text');
+    // Everything before the verification DO $$ block (index + function
+    // definition + grants) must be completely free of the old expression —
+    // only the verification block itself is allowed to still mention it, as
+    // the literal text its NOT LIKE guards check for the absence of.
+    const verifyBlockStart = active051.indexOf('DO $$');
+    const beforeVerify = active051.slice(0, verifyBlockStart);
+    expect(beforeVerify).not.toContain('expiry_date::text');
+  });
+
+  it('CREATE UNIQUE INDEX statement uses the immutable date-sentinel expression', () => {
+    const idxStmt = active051.slice(
+      active051.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS item_availability_dp_sci_conc_form_nat_batch_exp_uniq'),
+      active051.indexOf('WHERE scientific_name IS NOT NULL;') + 40,
+    );
+    expect(idxStmt).toContain("COALESCE(expiry_date, DATE '0001-01-01')");
+  });
+
+  it('verification block asserts the new index uses the date sentinel and not ::text', () => {
+    expect(migration051).toContain("v_new_idx_def LIKE '%0001-01-01%'");
+    expect(migration051).toContain("v_new_idx_def NOT LIKE '%expiry_date::text%'");
+  });
+
+  it('verification block asserts the RPC matching WHERE clause uses the date sentinel and not ::text', () => {
+    expect(migration051).toContain("COALESCE(ia.expiry_date, DATE ''0001-01-01'')");
+    expect(migration051).toContain("v_fn_src NOT LIKE '%expiry_date::text%'");
+  });
+
+  it('verification block asserts v_expiry_date_key is declared as date', () => {
+    expect(migration051).toContain("v_fn_src LIKE '%v_expiry_date_key%date%'");
+  });
+
+  it('header documents the root cause (42P17) and the fix', () => {
+    expect(migration051).toContain('FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A');
+    expect(migration051).toContain('42P17');
+    expect(migration051).toContain('IMMUTABLE');
   });
 });
 
@@ -314,10 +373,10 @@ describe('35. Does not change package/lockfiles', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('migrations 001-050 have no working-tree diff', () => {
+  it('migrations 001-050 have no working-tree diff (051 itself is excluded from this check — FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A legitimately corrects 051 before its first successful manual apply, per this task\'s own instructions; the original glob "0[4-5][0-9]_*.sql" incorrectly matched 040-059 and so accidentally covered 051 too)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/0[0-3][0-9]_*.sql" "supabase/migrations/0[4-5][0-9]_*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/0[0-3][0-9]_*.sql" "supabase/migrations/04[0-9]_*.sql" "supabase/migrations/050_*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

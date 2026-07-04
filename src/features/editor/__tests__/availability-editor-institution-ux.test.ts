@@ -2388,10 +2388,15 @@ describe('AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: no SQL/migration/package s
     expect(matches).toEqual([]);
   });
 
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051 is excluded from this 001-050
+  // check (it was never in scope: 051 is a later, separately-reviewed
+  // migration correctable in-place before its first successful manual apply
+  // by FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) — the original glob
+  // "0[4-5][0-9]_*.sql" matched 040-059 and so accidentally covered 051 too.
   it('migrations 001-050 have no working-tree diff (this phase is frontend-only)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/0[0-3][0-9]_*.sql" "supabase/migrations/0[4-5][0-9]_*.sql"', { cwd: PHOENIX, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/0[0-3][0-9]_*.sql" "supabase/migrations/04[0-9]_*.sql" "supabase/migrations/050_*.sql"', { cwd: PHOENIX, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

@@ -124,10 +124,14 @@ describe('Existing filters/backend/lifecycle/QR/WhatsApp remain unchanged', () =
     }
   });
 
-  it('no migration SQL changed, no package/lockfile changes', () => {
+  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
+  // is excluded because a later, separately-reviewed phase (FIX-MIGRATION-051-
+  // IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it in-place before its
+  // first successful manual apply; package/lockfiles remain fully guarded.
+  it('no migration SQL changed other than the already-approved 051 immutable-expiry-date fix, no package/lockfile changes', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
