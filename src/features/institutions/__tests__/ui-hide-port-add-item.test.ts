@@ -141,6 +141,8 @@ describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
       'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
       '?? supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
       'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
+      '?? supabase/migrations/051_material_batch_identity_option_a.sql',
+      'A  supabase/migrations/051_material_batch_identity_option_a.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

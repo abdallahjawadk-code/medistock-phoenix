@@ -86,7 +86,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
     }
   });
 
-  it('only the reviewed migrations 044/045/046/047/048/049/050 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
+  it('only the reviewed migrations 044/045/046/047/048/049/050/051 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -96,6 +96,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
       '048_live_alerts_expiry_risk_tiers.sql',
       '049_add_national_code_to_item_availability.sql',
       '050_phoenix_upsert_availability_national_code.sql',
+      '051_material_batch_identity_option_a.sql',
     ]);
   });
 });
