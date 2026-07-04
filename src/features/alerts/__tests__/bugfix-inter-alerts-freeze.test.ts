@@ -1,22 +1,31 @@
 /**
- * BUGFIX-INTER-ALERTS-FREEZE-A
+ * BUGFIX-INTER-ALERTS-FREEZE-A (superseded by UX-ALERTS-LIVE-WHATSAPP-
+ * CONTACT-WIRING-A's simpler fix — see below)
  * Run: npm test -- --run
  *
- * Root cause: `allAlerts = result.data?.alerts ?? []` produced a brand-new
- * array reference on every render while the main alert fetch was still
- * loading (`result.data` was null). The old contact-lookup wiring derived an
- * *array* (`alertOrgIds`) from `allAlerts` and used that array as the
- * dependency of a second `useAsync` call — a new array reference every
+ * Original root cause: `allAlerts = result.data?.alerts ?? []` produced a
+ * brand-new array reference on every render while the main alert fetch was
+ * still loading (`result.data` was null). The old contact-lookup wiring
+ * derived an *array* (`alertOrgIds`) from `allAlerts` and used that array as
+ * the dependency of a second `useAsync` call — a new array reference every
  * render meant the effect re-fired every render, resolved a new promise on
  * the next microtask, called `setData` with a new array reference, and
  * triggered another render, forever. That tight microtask loop starved the
  * event loop and froze the tab while the primary alert list was loading.
  *
- * Fix: derive a content-stable *string* key (`contactOrgKey`) instead of an
- * array, and drive a manual cancellable effect off that string. Identical
- * organization sets always produce the identical string, so the effect only
- * re-runs when the actual set of organizations changes — not on every
- * render.
+ * First fix (this file's original intent): derive a content-stable *string*
+ * key (`contactOrgKey`) instead of an array, and drive a manual cancellable
+ * effect off that string.
+ *
+ * UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A then found a better fix for the
+ * underlying problem this contact lookup existed to solve: migration 047
+ * now resolves source_contact_phone/target_contact_phone SERVER-SIDE inside
+ * the same RPC that already computes the alert list, bypassing
+ * organization_status_contacts' RLS entirely. That means the SEPARATE
+ * contact-fetch effect — and therefore contactOrgKey, contactsByOrg, and any
+ * possibility of the original freeze recurring — is no longer needed at
+ * all, not just fixed. This file's tests now prove that entire lookup path
+ * is gone, rather than that its dependency array was stable.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -30,65 +39,44 @@ const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
 const usersService = readSrc('shared/supabase/services/users.service.ts');
 
-describe('1. Contact lookup uses a stable string dependency key, not a raw array dependency', () => {
-  it('derives contactOrgKey as a joined/sorted string, not an array', () => {
-    expect(alertsScreen).toContain('const contactOrgKey = useMemo(');
-    expect(alertsScreen).toContain(".sort().join('|')");
+describe('1. The unstable-dependency freeze mechanism no longer exists at all', () => {
+  it('contactOrgKey (the stable-string-key fix) is gone — there is no separate contact-lookup memo/effect left to have an unstable dependency', () => {
+    expect(alertsScreen).not.toContain('contactOrgKey');
   });
 
-  it('the contact-fetch effect depends only on [contactOrgKey], never on a freshly-created array', () => {
-    const block = alertsScreen.slice(
-      alertsScreen.indexOf('useEffect(() => {\n    let cancelled = false;'),
-      alertsScreen.indexOf('useEffect(() => {\n    let cancelled = false;') + 900,
-    );
-    expect(block).toContain('}, [contactOrgKey]);');
+  it('contactsByOrg (the fetched-contact-map state) is gone — phone now comes directly off each alert row', () => {
+    expect(alertsScreen).not.toContain('contactsByOrg');
   });
 
-  it('the old array-typed alertOrgIds dependency is gone', () => {
+  it('the old array-typed alertOrgIds dependency remains gone (never reintroduced)', () => {
     expect(alertsScreen).not.toContain('alertOrgIds');
     expect(alertsScreen).not.toContain('contactsResult');
   });
+
+  it('there is no second useEffect deriving/depending on any per-render-recomputed array or object from allAlerts', () => {
+    // allAlerts itself may still be read (for filters/summaries), but no
+    // effect anywhere keys off of it or off a value derived from it.
+    expect(alertsScreen).not.toMatch(/useEffect\([^)]*allAlerts/);
+  });
 });
 
-describe('2/3. Contact lookup failure does not prevent alert rendering — optional/non-blocking', () => {
-  it('the contact effect catches errors and falls back to an empty map instead of throwing/propagating', () => {
-    const block = alertsScreen.slice(
-      alertsScreen.indexOf('void getOrgStatusContactsForOrgs(ids)'),
-      alertsScreen.indexOf('void getOrgStatusContactsForOrgs(ids)') + 500,
-    );
-    expect(block).toContain('.catch(() => {');
-    expect(block).toContain('setContactsByOrg(new Map())');
+describe('2/3/4. No separate contact-fetch effect remains — nothing to gate rendering on, nothing to batch, nothing to fail', () => {
+  it('useEffect is no longer imported by this screen — there is no effect left that fetches contacts', () => {
+    expect(alertsScreen).not.toMatch(/import \{[^}]*useEffect[^}]*\} from 'react'/);
   });
 
-  it('the effect uses a cancellation flag to avoid setting state after unmount', () => {
-    const block = alertsScreen.slice(
-      alertsScreen.indexOf('useEffect(() => {\n    let cancelled = false;'),
-      alertsScreen.indexOf('useEffect(() => {\n    let cancelled = false;') + 900,
-    );
-    expect(block).toContain('let cancelled = false;');
-    expect(block).toContain('if (cancelled) return;');
-    expect(block).toContain('cancelled = true;');
-  });
-
-  it('the main alert-rendering gate depends only on result.loading/result.error/ok/filtered — never on contactsByOrg or contact loading state', () => {
+  it('the main alert-rendering gate depends only on result.loading/result.error/ok/filtered — never on any contacts-specific loading/error state', () => {
     expect(alertsScreen).toContain("!result.loading && !result.error && ok && filtered.length > 0");
-    // No loading/error branch anywhere is gated on a contacts-specific loading/error flag.
     expect(alertsScreen).not.toMatch(/contactsByOrg\.(loading|error)/);
     expect(alertsScreen).not.toMatch(/contactsLoading|contactsError/);
   });
-});
 
-describe('4. No N+1 / no repeated per-render batched query', () => {
-  it('getOrgStatusContactsForOrgs is called exactly once per effect run (batched ids), not inside a per-alert map/loop', () => {
-    expect(alertsScreen).toContain('getOrgStatusContactsForOrgs(ids)');
-    // AlertCard (the per-alert component) must never call the fetcher itself.
+  it('AlertCard (the per-alert component) never calls a contact fetcher — phone is a plain field read off its own alert prop', () => {
     const cardStart = alertsScreen.indexOf('function AlertCard(');
-    const cardBlock = alertsScreen.slice(cardStart, cardStart + 4000);
+    const cardBlock = alertsScreen.slice(cardStart, cardStart + 9000);
     expect(cardBlock).not.toContain('getOrgStatusContactsForOrgs');
-  });
-
-  it('contactsByOrg is passed down as a prop (fetched once at screen level), not re-fetched per card', () => {
-    expect(alertsScreen).toContain('contactsByOrg={contactsByOrg}');
+    expect(cardBlock).toContain('a.sourceContactPhone');
+    expect(cardBlock).toContain('a.targetContactPhone');
   });
 });
 
@@ -129,9 +117,10 @@ describe('8/9. No WhatsApp API/tokens/automation, no automatic sending', () => {
 });
 
 describe('10. No raw UUIDs displayed in UI', () => {
-  it('WhatsApp button phone/label still sourced from contactsByOrg map and resolved org name, not ids', () => {
+  it('WhatsApp button phone is sourced from the alert row\'s contact fields and its label from the resolved org name, never an id', () => {
     const block = alertsScreen.slice(alertsScreen.indexOf('<WhatsAppContactButton'), alertsScreen.indexOf('<WhatsAppContactButton') + 300);
-    expect(block).toContain('contactsByOrg.get(target.orgId)?.phone');
+    expect(block).toContain("phone={target.key === 'source' ? a.sourceContactPhone : a.targetContactPhone}");
+    expect(block).not.toContain('target.orgId');
   });
 });
 

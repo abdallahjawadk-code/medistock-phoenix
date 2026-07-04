@@ -55,9 +55,9 @@ describe('Migration 044 exists exactly once', () => {
     expect(migration044).toContain('ASSERT');
   });
 
-  it('only the reviewed migrations 045/046 (DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A) exist beyond 044 — any other migration beyond 044 still fails this check', () => {
+  it('only the reviewed migrations 045/046/047 (DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A) exist beyond 044 — any other migration beyond 044 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[5-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql']);
+    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql', '047_phoenix_live_alerts_contact_fields.sql']);
   });
 });
 
@@ -139,12 +139,9 @@ describe('6. Frontend access to whatsapp_phone stays within the reviewed My Acco
   });
 });
 
-describe('7. contactOrgKey freeze fix remains in InterInstitutionAlertsScreen', () => {
-  it('stable string contactOrgKey drives the effect, not a raw array', () => {
+describe('7. InterInstitutionAlertsScreen freeze safety (no unstable per-render dependency)', () => {
+  it('the old array-typed alertOrgIds dependency was never reintroduced (contactOrgKey itself was later superseded and removed entirely by UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A, once contact phones moved server-side)', () => {
     const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
-    expect(alertsScreen).toContain('const contactOrgKey = useMemo(');
-    expect(alertsScreen).toContain(".sort().join('|')");
-    expect(alertsScreen).toContain('}, [contactOrgKey]);');
     expect(alertsScreen).not.toContain('alertOrgIds');
   });
 });

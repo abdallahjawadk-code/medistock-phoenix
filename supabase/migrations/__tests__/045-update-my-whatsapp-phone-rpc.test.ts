@@ -165,21 +165,10 @@ describe('15. Does not add WhatsApp API/tokens/automation', () => {
   });
 });
 
-describe('16. Does not modify InterInstitutionAlertsScreen', () => {
-  it('alerts screen retains the contactOrgKey freeze fix, untouched by this migration phase', () => {
+describe('16. InterInstitutionAlertsScreen freeze safety (as of this migration-045 phase)', () => {
+  it('no unstable array-typed dependency was ever reintroduced (contactOrgKey itself was later superseded and removed entirely by UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A, once contact phones moved server-side)', () => {
     const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
-    expect(alertsScreen).toContain('const contactOrgKey = useMemo(');
-    expect(alertsScreen).toContain(".sort().join('|')");
-    expect(alertsScreen).toContain('}, [contactOrgKey]);');
     expect(alertsScreen).not.toContain('alertOrgIds');
-  });
-
-  it('InterInstitutionAlertsScreen.tsx has no working-tree diff from this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
   });
 });
 

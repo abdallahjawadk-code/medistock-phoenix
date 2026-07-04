@@ -244,21 +244,10 @@ describe('22. Does not add WhatsApp API/tokens/automation', () => {
   });
 });
 
-describe('23. Does not modify InterInstitutionAlertsScreen', () => {
-  it('alerts screen retains the contactOrgKey freeze fix, untouched by this migration phase', () => {
+describe('23. InterInstitutionAlertsScreen freeze safety (as of this migration-046 phase)', () => {
+  it('no unstable array-typed dependency was ever reintroduced (contactOrgKey itself was later superseded and removed entirely by UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A, once contact phones moved server-side)', () => {
     const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
-    expect(alertsScreen).toContain('const contactOrgKey = useMemo(');
-    expect(alertsScreen).toContain(".sort().join('|')");
-    expect(alertsScreen).toContain('}, [contactOrgKey]);');
     expect(alertsScreen).not.toContain('alertOrgIds');
-  });
-
-  it('InterInstitutionAlertsScreen.tsx has no working-tree diff from this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
   });
 });
 
@@ -300,18 +289,19 @@ describe('26/27. No SQL applied locally, supabase db push not run', () => {
   });
 });
 
-describe('28/29. Migration ceiling allows exactly 044/045/046, future 047+ still fails', () => {
-  it('exactly three reviewed migrations exist beyond 043', () => {
+describe('28/29. Migration ceiling allows exactly 044/045/046/047, future 048+ still fails', () => {
+  it('exactly four reviewed migrations exist beyond 043', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
       '045_phoenix_update_my_whatsapp_phone_rpc.sql',
       '046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
+      '047_phoenix_live_alerts_contact_fields.sql',
     ]);
   });
 
-  it('no 047_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[7-9]|[5-9][0-9])_/.test(f));
+  it('no 048_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[8-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

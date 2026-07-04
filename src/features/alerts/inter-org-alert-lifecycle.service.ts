@@ -48,6 +48,16 @@ export interface LiveInterInstitutionAlertWithState {
   sourceQuantity: number;
   targetQuantity: number;
   sourceExpiryDate: string | null;
+  /**
+   * UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: the source/target organization's
+   * official WhatsApp contact phone, resolved SERVER-SIDE by migration 047
+   * (organization_status_contacts, is_active + prefers is_primary, bypasses
+   * that table's RLS via SECURITY DEFINER) — never fetched by a separate
+   * client-side query. Null/absent means no active contact is configured;
+   * never substituted with a fake/placeholder number.
+   */
+  sourceContactPhone?: string | null;
+  targetContactPhone?: string | null;
   computedAt: string;
   /** Deterministic lifecycle key: sourceItemAvailabilityId:targetItemAvailabilityId:alertType. */
   alertKey: string;
@@ -128,6 +138,8 @@ interface RawLiveAlertWithStateRow {
   source_quantity: number;
   target_quantity: number;
   source_expiry_date: string | null;
+  source_contact_phone?: string | null;
+  target_contact_phone?: string | null;
   computed_at: string;
   alert_key: string;
   lifecycle_status: AlertLifecycleStatus;
@@ -185,6 +197,8 @@ function mapRow(r: RawLiveAlertWithStateRow): LiveInterInstitutionAlertWithState
     sourceQuantity: r.source_quantity,
     targetQuantity: r.target_quantity,
     sourceExpiryDate: r.source_expiry_date,
+    sourceContactPhone: r.source_contact_phone ?? null,
+    targetContactPhone: r.target_contact_phone ?? null,
     computedAt: r.computed_at,
     alertKey: r.alert_key,
     lifecycleStatus: r.lifecycle_status,

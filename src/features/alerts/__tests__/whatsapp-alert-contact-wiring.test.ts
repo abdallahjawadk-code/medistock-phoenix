@@ -142,6 +142,8 @@ describe('10. No package/lockfile/migration changes', () => {
       'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
       '?? supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
       'A  supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
+      '?? supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
+      'A  supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -159,25 +161,57 @@ describe('11. Alert WhatsApp wiring uses WhatsAppContactButton', () => {
   });
 });
 
-describe('12. Alert WhatsApp wiring uses real contact phone fields or organization_status_contacts service data only', () => {
-  it('screen fetches contacts via the existing getOrgStatusContactsForOrgs service (organization_status_contacts, migration 008), not a new table/RPC', () => {
-    expect(alertsScreen).toContain('getOrgStatusContactsForOrgs');
+describe('12. UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: phone comes directly off the alert row, not a separate RLS-limited query', () => {
+  it('screen no longer imports or calls getOrgStatusContactsForOrgs — the RLS-limited direct-table lookup is fully removed from this screen', () => {
+    expect(alertsScreen).not.toContain('getOrgStatusContactsForOrgs');
+    expect(alertsScreen).not.toContain('OrgContactRow');
+    expect(alertsScreen).not.toContain('contactsByOrg');
+    expect(alertsScreen).not.toContain('contactOrgKey');
+  });
+
+  it('screen still makes no direct supabase.from()/supabase.rpc() call of its own — all reads go through the lifecycle service', () => {
     expect(alertsScreen).not.toContain('supabase.from(');
     expect(alertsScreen).not.toContain('supabase.rpc(');
   });
 
-  it('getOrgStatusContactsForOrgs reads the same organization_status_contacts table/columns as the existing getOrgStatusContacts', () => {
-    const block = usersService.slice(
-      usersService.indexOf('export async function getOrgStatusContactsForOrgs('),
-    );
-    expect(block).toContain("from('organization_status_contacts')");
-    expect(block).toContain('display_name, phone, is_primary, is_active');
-    expect(block).toContain(".in('organization_id', ids)");
+  it('the WhatsApp button phone prop is sourced directly from the alert row: sourceContactPhone for the source target, targetContactPhone for the target target', () => {
+    const block = alertsScreen.slice(alertsScreen.indexOf('<WhatsAppContactButton'), alertsScreen.indexOf('<WhatsAppContactButton') + 300);
+    expect(block).toContain("phone={target.key === 'source' ? a.sourceContactPhone : a.targetContactPhone}");
   });
 
-  it('the WhatsApp button phone prop is sourced only from the fetched contactsByOrg map', () => {
-    const block = alertsScreen.slice(alertsScreen.indexOf('<WhatsAppContactButton'), alertsScreen.indexOf('<WhatsAppContactButton') + 300);
-    expect(block).toContain('phone={contactsByOrg.get(target.orgId)?.phone}');
+  it('getOrgStatusContactsForOrgs itself is left in place in users.service.ts (not removed globally) since it is a generic service, only its call site in this screen was removed', () => {
+    expect(usersService).toContain('export async function getOrgStatusContactsForOrgs(');
+  });
+});
+
+describe('12b. inter-org-alert-lifecycle.service.ts: type + mapper accept the new RPC contact fields', () => {
+  const lifecycleService = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
+
+  it('LiveInterInstitutionAlertWithState declares sourceContactPhone/targetContactPhone', () => {
+    const typeBlock = lifecycleService.slice(
+      lifecycleService.indexOf('export interface LiveInterInstitutionAlertWithState'),
+      lifecycleService.indexOf('export interface LiveInterInstitutionAlertsWithStateResult'),
+    );
+    expect(typeBlock).toContain('sourceContactPhone?: string | null');
+    expect(typeBlock).toContain('targetContactPhone?: string | null');
+  });
+
+  it('the raw RPC row type declares the snake_case source fields', () => {
+    const rawBlock = lifecycleService.slice(
+      lifecycleService.indexOf('interface RawLiveAlertWithStateRow'),
+      lifecycleService.indexOf('interface RawAlertEventRow'),
+    );
+    expect(rawBlock).toContain('source_contact_phone?: string | null');
+    expect(rawBlock).toContain('target_contact_phone?: string | null');
+  });
+
+  it('mapRow maps source_contact_phone/target_contact_phone to camelCase, defaulting a missing value to null (never undefined, never a fake number)', () => {
+    const mapBlock = lifecycleService.slice(
+      lifecycleService.indexOf('function mapRow('),
+      lifecycleService.indexOf('function mapEvent('),
+    );
+    expect(mapBlock).toContain('sourceContactPhone: r.source_contact_phone ?? null');
+    expect(mapBlock).toContain('targetContactPhone: r.target_contact_phone ?? null');
   });
 });
 
@@ -292,10 +326,10 @@ describe('20. Missing/invalid phone state is honest', () => {
     expect(whatsappButton).toContain('wa_invalid_number');
   });
 
-  it('the alert card never substitutes a fake number when contactsByOrg has no entry for an org id', () => {
+  it('the alert card never substitutes a fake number when the alert row has no contact phone — it passes the field through as-is (null/undefined), never a fallback string', () => {
     const block = alertsScreen.slice(alertsScreen.indexOf('<WhatsAppContactButton'), alertsScreen.indexOf('<WhatsAppContactButton') + 300);
-    // optional chaining means an absent map entry yields undefined, not a fallback string
-    expect(block).toContain('contactsByOrg.get(target.orgId)?.phone');
+    expect(block).toContain("phone={target.key === 'source' ? a.sourceContactPhone : a.targetContactPhone}");
+    expect(block).not.toMatch(/\|\|\s*['"`]\+?\d/);
   });
 });
 
@@ -340,7 +374,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), and 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), and 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
@@ -350,6 +384,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       'supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
       'supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
       'supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
+      'supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -358,7 +393,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(46);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(47);
   });
 });
 

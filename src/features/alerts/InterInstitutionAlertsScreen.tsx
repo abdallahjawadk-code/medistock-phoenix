@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -10,7 +10,6 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
-import { getOrgStatusContactsForOrgs, type OrgContactRow } from '@/shared/supabase/services/users.service';
 import {
   getLiveInterInstitutionAlertsWithState,
   updateInterOrgAlertState,
@@ -234,58 +233,12 @@ export function InterInstitutionAlertsScreen() {
   const forbidden = rpcError === 'FORBIDDEN';
   const allAlerts = result.data?.alerts ?? [];
 
-  // UX-WHATSAPP-ALERT-CONTACT-WIRING-A / BUGFIX-INTER-ALERTS-FREEZE-A:
-  // batched, read-only contact lookup for every organization id appearing in
-  // the already-loaded alerts — reuses organization_status_contacts
-  // (migration 008) via the existing getOrgStatusContactsForOrgs service, no
-  // new SQL/RPC/migration. RLS scopes this to the actor's own org unless
-  // super_admin; a missing entry for a given org id is treated as "no
-  // contact available" — never substituted with an invented number.
-  //
-  // `allAlerts` is a fresh `[]` on every render while `result.data` is still
-  // null (loading), so deriving an *array* from it and using that array as
-  // an effect dependency re-fires the effect every render, forever (the
-  // freeze root cause). `contactOrgKey` collapses that into a content-stable
-  // string — identical org sets always produce the identical string, so the
-  // effect below only re-runs when the actual set of organizations changes.
-  const contactOrgKey = useMemo(() => {
-    const ids = new Set<string>();
-    for (const a of allAlerts) {
-      if (a.sourceOrganizationId) ids.add(a.sourceOrganizationId);
-      if (a.targetOrganizationId) ids.add(a.targetOrganizationId);
-    }
-    return Array.from(ids).sort().join('|');
-  }, [allAlerts]);
-
-  const [contactsByOrg, setContactsByOrg] = useState<Map<string, OrgContactRow>>(new Map());
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!contactOrgKey) {
-      setContactsByOrg(new Map());
-      return;
-    }
-
-    const ids = contactOrgKey.split('|').filter(Boolean);
-
-    void getOrgStatusContactsForOrgs(ids)
-      .then((contacts) => {
-        if (cancelled) return;
-        const next = new Map<string, OrgContactRow>();
-        for (const c of contacts) {
-          if (!next.has(c.organization_id)) next.set(c.organization_id, c);
-        }
-        setContactsByOrg(next);
-      })
-      .catch(() => {
-        if (!cancelled) setContactsByOrg(new Map());
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [contactOrgKey]);
+  // UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: contact phones now come
+  // straight off each alert row (alert.sourceContactPhone/targetContactPhone),
+  // resolved server-side by migration 047 inside the same SECURITY DEFINER
+  // RPC that already computes the alert — no separate client-side
+  // organization_status_contacts query, so no RLS dependency and no risk of
+  // reintroducing the unstable-dependency freeze the old lookup effect had.
 
   const summaryTotal = allAlerts.length;
   const summaryHigh = allAlerts.filter(a => a.severity === 'high').length;
@@ -553,7 +506,6 @@ export function InterInstitutionAlertsScreen() {
                 onHistory={() => setHistoryAlert(a)}
                 activeOrgId={activeOrgId}
                 isSuper={isSuper}
-                contactsByOrg={contactsByOrg}
               />
             ))}
           </div>
@@ -576,7 +528,6 @@ export function InterInstitutionAlertsScreen() {
                       onHistory={() => setHistoryAlert(a)}
                       activeOrgId={activeOrgId}
                       isSuper={isSuper}
-                      contactsByOrg={contactsByOrg}
                     />
                   ))}
                 </div>
@@ -619,7 +570,7 @@ function CriticalAlertCard({ a, lang }: { a: LiveInterInstitutionAlertWithState;
 
 // ─── Alert card ───────────────────────────────────────────────────────────────
 
-function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, isSuper, contactsByOrg }: {
+function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, isSuper }: {
   a: LiveInterInstitutionAlertWithState;
   lang: 'ar' | 'en';
   /** F-03: true when the current user holds the server-required permission for this target status. */
@@ -629,7 +580,6 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
   /** UX-WHATSAPP-ALERT-CONTACT-WIRING-A */
   activeOrgId: string | null;
   isSuper: boolean;
-  contactsByOrg: Map<string, OrgContactRow>;
 }) {
   const borderColor = SEVERITY_BORDER[a.severity] ?? 'var(--brd)';
   const severityVariant = a.severity === 'high' ? 'err' as const : 'warn' as const;
@@ -726,16 +676,18 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
         <ActionButton onClick={onHistory} label={t('alertLifecycle_action_viewHistory', lang)} />
       </div>
 
-      {/* UX-WHATSAPP-ALERT-CONTACT-WIRING-A: read-only WhatsApp contact —
+      {/* UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: read-only WhatsApp contact —
           never bypasses/duplicates the action handlers above; phone comes
-          only from the already-fetched contactsByOrg map (real
-          organization_status_contacts data, honest empty state otherwise). */}
+          directly off this alert row (source_contact_phone/target_contact_phone,
+          resolved server-side by migration 047 inside the same RPC that
+          computed the alert), never a separate client-side query, honest
+          empty state otherwise. */}
       {contactTargets.length > 0 && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
           {contactTargets.map(target => (
             <WhatsAppContactButton
               key={target.key}
-              phone={contactsByOrg.get(target.orgId)?.phone}
+              phone={target.key === 'source' ? a.sourceContactPhone : a.targetContactPhone}
               lang={lang}
               label={`${t(target.labelKey, lang)}: ${target.orgName}`}
               message={buildMaterialContactMessage({
