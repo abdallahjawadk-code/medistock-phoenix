@@ -1097,7 +1097,10 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
   }
 
   return (
-    <PhoenixCard padding="14px">
+    <PhoenixCard
+      padding="14px"
+      className={`premium-mobile-card premium-mobile-pressable premium-mobile-enter${point.status !== 'active' ? ' premium-mobile-card-warning' : ' premium-mobile-card-success'}`}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

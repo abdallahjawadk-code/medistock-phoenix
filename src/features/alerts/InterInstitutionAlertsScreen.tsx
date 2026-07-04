@@ -590,7 +590,11 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
   const contactTargets = resolveAlertContactTargets(a, activeOrgId, isSuper, lang);
 
   return (
-    <PhoenixCard padding="16px" style={{ borderInlineStart: `3px solid ${borderColor}` }}>
+    <PhoenixCard
+      padding="16px"
+      style={{ borderInlineStart: `3px solid ${borderColor}` }}
+      className={`premium-mobile-card premium-mobile-enter${a.severity === 'high' ? ' premium-mobile-card-critical' : ' premium-mobile-card-warning'}`}
+    >
       {/* Title + alert type + severity */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
         <div style={{ minWidth: 0 }}>

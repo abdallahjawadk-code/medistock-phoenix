@@ -241,6 +241,7 @@ export function DashboardScreen({ onNavigate }: Props) {
                 const sevKey       = a.severity === 'critical' ? 'critical' : a.severity === 'urgent' ? 'urgent' : a.severity === 'high' ? 'high' : 'watch';
                 return (
                   <PhoenixCard key={a.id} padding="10px 14px" hover onClick={() => onNavigate(13)}
+                    className={`premium-mobile-card premium-mobile-pressable premium-mobile-enter${(a.severity === 'critical' || a.severity === 'urgent') ? ' premium-mobile-card-critical' : a.severity === 'high' ? ' premium-mobile-card-warning' : ''}`}
                     style={{ borderInlineStart: `3px solid ${borderColor}` }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -289,6 +290,7 @@ export function DashboardScreen({ onNavigate }: Props) {
                 hover
                 padding="16px"
                 border={warn ? '1px solid var(--warn)' : '1px solid var(--brd)'}
+                className={`premium-mobile-card premium-mobile-pressable premium-mobile-enter${warn ? ' premium-mobile-card-warning' : ' premium-mobile-card-success'}`}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '11px' }}>
                   <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: warn ? 'var(--warn)' : 'var(--ok)', flexShrink: 0 }} />

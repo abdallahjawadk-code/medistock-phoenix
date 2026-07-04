@@ -512,6 +512,75 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   .premium-login__card { padding: 22px 18px !important; }
 }
 
+/* ─── UI-MOBILE-PREMIUM-3D-CARDS-A ───────────────────────────────────────────
+   Mobile-only 2.5D card polish: layered depth, glass, gradient border and
+   touch-press feedback for high-impact card surfaces (institution/port cards,
+   inter-institution alert cards, dashboard summary cards). Scoped to the
+   existing mobile breakpoint (max-width: 767px) so desktop is untouched.
+   Additive classNames only — no structure/props/handlers changed by callers.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .premium-mobile-card {
+    position: relative;
+    border-radius: var(--r4);
+    /* !important on background/box-shadow only: PhoenixCard sets both inline
+       (baseStyle), which always outranks a plain class rule regardless of
+       specificity — without !important these would be silently inert. Border
+       color/width is intentionally left alone so pre-existing per-severity
+       accent borders (e.g. AlertCard's borderInlineStart, the dashboard
+       institution card's conditional `border` prop) are not overridden. */
+    background: linear-gradient(155deg, var(--glass-strong), color-mix(in srgb, var(--s2) 88%, transparent)) !important;
+    box-shadow: 0 10px 24px rgba(15,43,79,.10), 0 3px 8px rgba(15,43,79,.06), inset 0 1px 0 var(--highlight) !important;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+  .premium-mobile-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    border-radius: var(--r4) var(--r4) 0 0;
+    background: linear-gradient(90deg, transparent, var(--highlight), transparent);
+    pointer-events: none;
+  }
+  .premium-mobile-card-critical {
+    box-shadow: 0 10px 24px rgba(220,38,38,.14), 0 3px 8px rgba(15,43,79,.06), inset 0 1px 0 var(--highlight) !important;
+  }
+  .premium-mobile-card-warning {
+    box-shadow: 0 10px 24px rgba(217,119,6,.13), 0 3px 8px rgba(15,43,79,.06), inset 0 1px 0 var(--highlight) !important;
+  }
+  .premium-mobile-card-success {
+    box-shadow: 0 10px 24px rgba(5,150,105,.12), 0 3px 8px rgba(15,43,79,.06), inset 0 1px 0 var(--highlight) !important;
+  }
+  .premium-mobile-glass {
+    background: var(--glass) !important;
+    -webkit-backdrop-filter: blur(9px) saturate(120%);
+    backdrop-filter: blur(9px) saturate(120%);
+  }
+  .premium-mobile-pressable { -webkit-tap-highlight-color: transparent; }
+  .premium-mobile-pressable:active {
+    transform: translateY(1px) scale(.99);
+    box-shadow: 0 5px 14px rgba(15,43,79,.09), inset 0 1px 0 var(--highlight) !important;
+  }
+  .premium-mobile-enter { animation: premiumMobileEnter .28s ease both; }
+  /* Subtle, single-purpose pulse — intended for critical cards only, never
+     applied broadly across a list (see PMC-* usage guards in tests). */
+  .premium-mobile-subtle-glow { animation: premiumMobileGlow 2.6s ease-in-out infinite; }
+}
+@keyframes premiumMobileEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes premiumMobileGlow {
+  0%, 100% { box-shadow: 0 10px 24px rgba(220,38,38,.14), 0 3px 8px rgba(15,43,79,.06), inset 0 1px 0 var(--highlight); }
+  50%      { box-shadow: 0 10px 28px rgba(220,38,38,.24), 0 3px 10px rgba(15,43,79,.07), inset 0 1px 0 var(--highlight); }
+}
+/* Reduced motion: static premium styling only, no entrance/pulse/press motion.
+   (Layered on top of the existing global "*, *::before, *::after" reduced-
+   motion rule above, which already collapses all animation/transition
+   durations — these rules make the intent explicit for this class set.) */
+@media (prefers-reduced-motion: reduce) {
+  .premium-mobile-enter { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .premium-mobile-subtle-glow { animation: none !important; }
+  .premium-mobile-pressable:active { transform: none !important; }
+}
+
 /* Animations */
 @keyframes fs   { from { opacity: 0; transform: translateY(8px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes su   { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
