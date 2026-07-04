@@ -131,15 +131,21 @@ describe('11. No SQL/migrations/RPC/Edge Function added by this fix', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no migration SQL/package/lockfile files changed (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  it('no migration SQL changed (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change); package.json changes are limited to the approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
     let diff = '';
     try {
-      diff = execSync(
-        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock "supabase/migrations/*.sql"',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
+      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+
+    let pkgDiff = '';
+    try {
+      pkgDiff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = pkgDiff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = pkgDiff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 });
 

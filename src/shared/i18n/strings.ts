@@ -159,7 +159,7 @@ export const T: Dict = {
   avail_price_ph:          { ar: 'أدخل السعر',                              en: 'Enter price' },
   nav_status_editor:       { ar: 'محرر المواقف',                       en: 'Status Editor' },
   se_sub:                  { ar: 'عرض موحد لمواد المؤسسة عبر المنافذ',  en: 'Unified view of institution materials across ports' },
-  se_export_excel:         { ar: 'تصدير CSV متوافق مع Excel',          en: 'Export CSV (Excel-compatible)' },
+  se_export_excel:         { ar: 'تصدير Excel (.xlsx)',                en: 'Export Excel (.xlsx)' },
   se_export_pdf:           { ar: 'تصدير PDF',                          en: 'Export PDF' },
   se_print:                { ar: 'طباعة',                              en: 'Print' },
   se_filter_port:          { ar: 'تصفية حسب المنفذ',                   en: 'Filter by port' },

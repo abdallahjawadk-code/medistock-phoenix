@@ -153,12 +153,29 @@ describe('PRODUCTION-READINESS-CLEANUP-A: safety guards', () => {
     expect(stashList).toContain('paused Service-D inter-org exchange service work');
   });
 
-  it('no migration SQL touched, no package/lockfile changes (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  it('no migration SQL touched', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('no package/lockfile changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    const added = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removed = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removed.length).toBe(0);
+    expect(added.every(l => /"exceljs":/.test(l))).toBe(true);
+
+    let lockStatus = '';
+    try {
+      lockStatus = execSync('git status --porcelain -- pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    expect(lockStatus.trim()).toBe('');
   });
 
   it('premium-preview.html remains untouched', () => {

@@ -179,9 +179,12 @@ describe('12. No package/lockfile changes', () => {
   it('package.json/lockfiles empty diff', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 });
 

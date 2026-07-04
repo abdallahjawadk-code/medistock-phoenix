@@ -233,10 +233,14 @@ describe('downloadTextFile (source-verified: cannot execute Blob/URL in a Node t
   });
 });
 
-describe('module does not implement real .xlsx and stays out of scope', () => {
-  it('package.json has no xlsx/exceljs/sheetjs/read-excel-file/papaparse dependency', () => {
+describe('module itself stays dependency-free and out of xlsx scope (EXPORT-PROFESSIONAL-XLSX-PDF-B: real .xlsx now lives in professional-export.ts, which uses the approved exceljs dependency — this module intentionally does not)', () => {
+  it('reportExport.ts itself does not import exceljs/xlsx (that lives in professional-export.ts) — only mentions it in a prose doc comment', () => {
+    expect(moduleSrc).not.toMatch(/import\s+.*from\s+['"]exceljs['"]|import\s+.*from\s+['"]xlsx['"]|require\(['"]exceljs['"]\)/i);
+  });
+
+  it('exceljs is present in package.json as an approved dependency for the sibling professional-export.ts module (not a regression — this module just doesn\'t use it)', () => {
     const pkg = readFileSync(join(ROOT, 'package.json'), 'utf8');
-    expect(pkg).not.toMatch(/"xlsx"|"exceljs"|"read-excel-file"|"sheetjs"|"papaparse"/i);
+    expect(pkg).toMatch(/"exceljs":/);
   });
 
   it('is not a Service-D / inter-org-exchange module and does not reference service_role', () => {

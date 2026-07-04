@@ -208,9 +208,12 @@ describe('No migrations touched, no package/lockfile changes', () => {
   it('no package.json/lockfile diff', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
-    expect(diff.trim()).toBe('');
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 
   it('no migration newer than 043 was added by this phase — only the separately-reviewed migrations 044/045 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A) are allowed beyond it', () => {

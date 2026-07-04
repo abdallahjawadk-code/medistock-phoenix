@@ -364,10 +364,10 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json dependency changes (checked structurally, not just diff)', () => {
+  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B), checked structurally, not just diff', () => {
     const pkg = JSON.parse(readRoot('package.json'));
     expect(Object.keys(pkg.dependencies)).toEqual([
-      '@supabase/supabase-js', 'qrcode', 'react', 'react-dom', 'react-router-dom',
+      '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
     ]);
   });
 });

@@ -2,16 +2,12 @@ import { useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
-import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
+import { formatStableDate } from '@/shared/lib/date';
 import {
-  buildCsvContent,
-  buildPrintDocument,
-  buildStableFileName,
-  downloadTextFile,
-  isLikelyMobilePrintContext,
-  openPrintWindow,
-  type ReportColumn,
-} from '@/shared/lib/reportExport';
+  exportProfessionalXlsx,
+  triggerProfessionalPrint,
+  type ProfessionalReportColumn,
+} from '@/shared/lib/professional-export';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -56,6 +52,9 @@ export function StatusEditorScreen() {
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling openPrintWindow (window.open/window.print) directly.
   const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+  // EXPORT-PROFESSIONAL-XLSX-PDF-B: workbook generation is async (ExcelJS
+  // writeBuffer); guard against double-clicks while a download is in flight.
+  const [xlsxBusy, setXlsxBusy] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -84,18 +83,18 @@ export function StatusEditorScreen() {
   }
 
   // Shared column definitions for table / CSV / print — single source of truth.
-  const columns: ReportColumn<OrgAvailRow>[] = [
+  const columns: ProfessionalReportColumn<OrgAvailRow>[] = [
     { key: 'port',   label: t('se_filter_port', lang),        value: dpName },
     { key: 'sci',    label: t('avail_scientific_name', lang), value: r => r.scientific_name ?? '—' },
     { key: 'trade',  label: t('avail_trade_name', lang),      value: r => r.trade_name ?? '—' },
     { key: 'dosage', label: t('avail_dosage_form', lang),     value: r => r.dosage_form ?? '—' },
     { key: 'conc',   label: t('avail_concentration', lang),   value: r => r.concentration ?? '—' },
-    { key: 'qty',    label: t('qty', lang),                   value: r => String(r.quantity ?? 0) },
+    { key: 'qty',    label: t('qty', lang),                   value: r => String(r.quantity ?? 0), numeric: true, excelValue: r => r.quantity ?? 0 },
     { key: 'status', label: t('avail_material_status', lang), value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
     { key: 'batch',  label: t('batch_no', lang),               value: r => r.batch_number ?? '—', ltr: true },
-    { key: 'expiry', label: t('expiry', lang),                 value: r => formatStableDate(r.expiry_date, lang), ltr: true },
+    { key: 'expiry', label: t('expiry', lang),                 value: r => formatStableDate(r.expiry_date, lang), ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
     { key: 'supply', label: t('avail_supply_type', lang),      value: r => r.supply_type ?? '—' },
-    { key: 'price',  label: t('avail_price', lang),            value: r => r.price != null ? String(r.price) : '—', ltr: true },
+    { key: 'price',  label: t('avail_price', lang),            value: r => r.price != null ? String(r.price) : '—', ltr: true, numeric: true, excelValue: r => r.price ?? undefined },
   ];
 
   const selectedFiltersText = useMemo(() => {
@@ -109,49 +108,51 @@ export function StatusEditorScreen() {
     return parts.length ? parts.join(' · ') : t('sc_all', lang);
   }, [filterPort, filterStatus, search, pointsAsync.data, lang]);
 
-  function exportCsv() {
+  // Single source of truth for both CSV and print/PDF exports (EXPORT-PROFESSIONAL-XLSX-PDF-A).
+  function exportConfig() {
+    return {
+      reportTitle: t('nav_status_editor', lang),
+      generatedAt: new Date(),
+      filtersSummary: selectedFiltersText,
+      columns,
+      rows: filtered,
+      lang,
+      fileNameBase: 'medistock-status-editor',
+      emptyMessage: t('se_no_records', lang),
+      footerText: t('report_footer_generated_by', lang),
+      rowAccent: (r: OrgAvailRow) => (r.condition === 'missing' || r.condition === 'expired' ? 'err' as const
+        : r.condition === 'low_stock' || r.condition === 'near_expiry' ? 'warn' as const
+        : r.condition === 'available' || r.condition === 'surplus' ? 'ok' as const
+        : undefined),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
     try {
-      const metadataLines = [
-        `${t('nav_status_editor', lang)}`,
-        `${t('sc_selected_filters', lang)}: ${selectedFiltersText}`,
-        `${t('sc_generated_at', lang)}: ${formatStableDateTime(new Date(), lang)}`,
-        `${t('sc_total_rows', lang)}: ${filtered.length}`,
-      ];
-      const csv = buildCsvContent(columns, filtered, metadataLines);
-      const ok = downloadTextFile(
-        buildStableFileName('medistock-status-editor', 'csv'),
-        csv,
-        'text/csv;charset=utf-8;',
-      );
+      const ok = await exportProfessionalXlsx(exportConfig());
       if (!ok) showToast(t('csv_export_failed', lang));
-    } catch {
-      showToast(t('csv_export_failed', lang));
+    } finally {
+      setXlsxBusy(false);
     }
   }
 
   function printReport() {
-    const html = buildPrintDocument({
-      lang,
-      title: t('nav_status_editor', lang),
-      metaLines: [
-        { label: t('sc_selected_filters', lang), value: selectedFiltersText },
-        { label: t('sc_generated_at', lang), value: formatStableDateTime(new Date(), lang), ltr: true },
-        { label: t('sc_total_rows', lang), value: String(filtered.length) },
-      ],
-      columns,
-      rows: filtered,
-      footerText: t('report_footer_generated_by', lang),
-      emptyMessage: t('se_no_records', lang),
-    });
     // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: mobile/PWA/webview contexts
     // route to the in-app fallback modal instead of openPrintWindow — that
     // can switch to a native print UI or open an external tab, making the
     // app appear to exit. Desktop keeps the original popup flow.
-    if (isLikelyMobilePrintContext()) {
-      setMobilePrintHtml(html);
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) {
+      setMobilePrintHtml(mobileHtml);
       return;
     }
-    const ok = openPrintWindow(html);
     if (!ok) showToast(t('print_popup_blocked', lang));
   }
 
@@ -197,8 +198,8 @@ export function StatusEditorScreen() {
               {/* Mobile-friendly, wrapping action bar — export/print stay reachable
                   above the (potentially horizontally scrollable) table below. */}
               <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-                <button onClick={exportCsv} disabled={filtered.length === 0} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
-                  📄 {t('se_export_excel', lang)}
+                <button onClick={exportXlsx} disabled={filtered.length === 0 || xlsxBusy} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
+                  📊 {t('se_export_excel', lang)}
                 </button>
                 <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_export_pdf', lang)} style={actionBtnStyle}>
                   📑 {t('se_export_pdf', lang)}

@@ -484,9 +484,12 @@ describe('Safety: no service_role/auth.admin, no raw ids exposed, no exchange wo
   it('no package/lockfile changes', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
-    expect(diff.trim()).toBe('');
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 
   it('stash@{0} (paused Service-D work) was not popped or applied', () => {

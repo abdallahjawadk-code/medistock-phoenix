@@ -91,25 +91,30 @@ describe('StatusCenterScreen: mobile-safe print', () => {
 });
 
 describe('StatusEditorScreen: mobile-safe print', () => {
+  // EXPORT-PROFESSIONAL-XLSX-PDF-A migrated this screen's mobile/desktop
+  // print branching from a local isLikelyMobilePrintContext()/openPrintWindow
+  // call into the shared professional-export.ts helper
+  // (triggerProfessionalPrint), which performs the exact same branch
+  // internally (see professional-export.test.ts for that guarantee) and
+  // returns { ok, mobileHtml } instead of the screen doing the branching
+  // itself. MobilePrintFallbackModal wiring is unchanged.
   const fn = statusEditor.slice(statusEditor.indexOf('function printReport'), statusEditor.indexOf('const fieldStyle'));
 
-  it('imports isLikelyMobilePrintContext and MobilePrintFallbackModal', () => {
-    expect(statusEditor).toContain('isLikelyMobilePrintContext');
+  it('imports triggerProfessionalPrint and MobilePrintFallbackModal', () => {
+    expect(statusEditor).toContain('triggerProfessionalPrint');
     expect(statusEditor).toContain("import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal'");
   });
 
-  it('checks isLikelyMobilePrintContext() and returns before reaching openPrintWindow on the mobile branch', () => {
-    const mobileBranchIdx = fn.indexOf('if (isLikelyMobilePrintContext())');
-    const openPrintIdx = fn.indexOf('const ok = openPrintWindow(html)');
-    expect(mobileBranchIdx).toBeGreaterThan(-1);
-    expect(openPrintIdx).toBeGreaterThan(mobileBranchIdx);
-    const mobileBlock = fn.slice(mobileBranchIdx, fn.indexOf('return;', mobileBranchIdx) + 'return;'.length);
-    expect(mobileBlock).toContain('setMobilePrintHtml(html)');
-    expect(mobileBlock).not.toContain('openPrintWindow(');
+  it('delegates mobile/desktop print branching to triggerProfessionalPrint and routes mobileHtml to the fallback modal', () => {
+    expect(fn).toContain('triggerProfessionalPrint(exportConfig())');
+    expect(fn).toContain('mobileHtml');
+    expect(fn).toContain('setMobilePrintHtml(mobileHtml)');
+    expect(fn).not.toContain('openPrintWindow(');
+    expect(fn).not.toContain('window.open(');
   });
 
-  it('desktop path (after the mobile early-return) still uses openPrintWindow', () => {
-    expect(fn).toContain('openPrintWindow(html)');
+  it('shows a translated popup-blocked toast when triggerProfessionalPrint reports failure', () => {
+    expect(fn).toContain("t('print_popup_blocked', lang)");
   });
 
   it('renders MobilePrintFallbackModal wired to the mobilePrintHtml state', () => {
@@ -202,14 +207,18 @@ describe('i18n: mobile print strings exist bilingually (Arabic + English)', () =
   });
 });
 
-describe('CSV export behavior unchanged by this phase', () => {
-  it('MovementReportSection/StatusCenterScreen/StatusEditorScreen still export CSV with BOM + csvSafeCell (untouched by the print fix)', () => {
+describe('Excel/CSV export behavior unchanged/upgraded by this phase', () => {
+  it('MovementReportSection/StatusCenterScreen still export CSV with BOM + csvSafeCell (untouched by this phase — see phase report for why these two were left as-is)', () => {
     for (const src of [movementReport, statusCenter]) {
       const csvFn = src.slice(src.indexOf('function exportCsv'), src.indexOf('function exportCsv') + 900);
       expect(csvFn).toContain('﻿');
       expect(csvFn).toContain('csvSafeCell');
     }
-    expect(statusEditor).toContain('buildCsvContent(columns, filtered, metadataLines)');
+  });
+
+  it('StatusEditorScreen now delegates Excel export to the shared exportProfessionalXlsx helper (real .xlsx via ExcelJS — BOM/csvSafeCell no longer apply; formula-safety/UUID-guard are enforced inside professional-export.ts — see that module\'s tests)', () => {
+    expect(statusEditor).toContain('await exportProfessionalXlsx(exportConfig())');
+    expect(statusEditor).not.toContain('exportProfessionalCsv');
   });
 });
 
@@ -219,12 +228,32 @@ describe('BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: safety guards', () => {
     expect(stashList).toContain('paused Service-D inter-org exchange service work');
   });
 
-  it('no migration SQL touched, no package/lockfile changes (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  it('no migration SQL touched', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('package.json changes are limited to the approved exceljs dependency addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0]).toMatch(/"exceljs":\s*"\^?[\d.]+"/);
+  });
+
+  it('no other lockfile (pnpm/yarn) was introduced — this project uses package-lock.json (npm)', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    expect(status.trim()).toBe('');
   });
 
   it('premium-preview.html remains untouched', () => {

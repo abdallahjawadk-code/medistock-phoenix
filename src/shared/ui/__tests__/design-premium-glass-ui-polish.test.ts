@@ -165,12 +165,21 @@ describe('9. No wipe tooling restored', () => {
 });
 
 describe('10. No package/lockfile/migration changes', () => {
-  it('no package/lockfile diff', () => {
+  it('no package/lockfile diff beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    const added = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removed = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removed.length).toBe(0);
+    expect(added.every(l => /"exceljs":/.test(l))).toBe(true);
+
+    let lockStatus = '';
+    try {
+      lockStatus = execSync('git status --porcelain -- pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(lockStatus.trim()).toBe('');
   });
 
   it('no existing migration SQL was modified, and no unreviewed migration SQL was created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {

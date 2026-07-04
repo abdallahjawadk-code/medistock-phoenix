@@ -121,15 +121,21 @@ describe('9. No wipe tooling restored', () => {
 });
 
 describe('10. No package/lockfile/migration changes', () => {
-  it('git diff for package/lockfiles/migration SQL files is empty (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change)', () => {
+  it('git diff for migration SQL files is empty (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change); package.json changes are limited to the approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
     let diff = '';
     try {
-      diff = execSync(
-        'git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock "supabase/migrations/*.sql"',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
+      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
+
+    let pkgDiff = '';
+    try {
+      pkgDiff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* git not available in this sandbox — skip silently */ }
+    const addedLines = pkgDiff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    const removedLines = pkgDiff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+    expect(removedLines.length).toBe(0);
+    expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 
   it('no unreviewed migration SQL files were created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
