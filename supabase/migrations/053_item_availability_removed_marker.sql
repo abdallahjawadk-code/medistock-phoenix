@@ -1321,6 +1321,21 @@ DO $$
 DECLARE
   v_col_exists   boolean;
   v_fn_def       text;
+  -- FIX-MIGRATION-053-EXTERNAL-API-VERIFY-PROFESSIONAL-A: sanitized copy of
+  -- v_fn_def with `--` line comments stripped, used ONLY for the
+  -- security-negative (dangerous-pattern-absence) checks in the loop below.
+  -- pg_get_functiondef() reproduces a function's source verbatim, including
+  -- its comments — e.g. phoenix_apply_availability_movement's own step-3
+  -- comment ("Lock the target row before any authorization/math ...") and
+  -- phoenix_get_live_inter_institution_alerts_with_state's preserved
+  -- migration-047 WhatsApp-contact-fields comments both contain ordinary
+  -- English prose that happens to match a raw substring ban (`authorization`,
+  -- `whatsapp`) despite being inert comment text, not executable code. Every
+  -- other ASSERT in this file that checks for the PRESENCE of an expected
+  -- structural marker (removed_from_outlet, alert_key, source_contact_phone,
+  -- ia.removed_at is null, etc.) still reads the raw v_fn_def, since matching
+  -- there is exactly what's wanted whether the marker is comment or code.
+  v_fn_active    text;
 BEGIN
   -- V1: item_availability has the three new columns
   SELECT EXISTS (
@@ -1441,34 +1456,47 @@ BEGIN
       'phoenix_get_live_inter_institution_alerts_with_state'
     )
   LOOP
-    ASSERT v_fn_def NOT ILIKE '%service_role%',
+    -- FIX-MIGRATION-053-EXTERNAL-API-VERIFY-PROFESSIONAL-A: strip `--` line
+    -- comments before running any dangerous-pattern (security-negative)
+    -- check below. This migration contains no block comments (`/* */`), so
+    -- a single line-comment strip is sufficient and exact — verified by
+    -- inspection of every CREATE OR REPLACE FUNCTION body in this file.
+    -- The regex removes from `--` to end-of-line (CR or LF), leaving string
+    -- literals, identifiers, and real SQL/PLpgSQL untouched; it does not
+    -- touch `-` inside identifiers or numbers since it requires two
+    -- consecutive dashes.
+    v_fn_active := regexp_replace(v_fn_def, '--[^\r\n]*', '', 'g');
+
+    ASSERT v_fn_active NOT ILIKE '%service_role%',
       'VERIFY FAILED: service_role reference found in a modified function';
-    ASSERT v_fn_def NOT ILIKE '%auth.admin%',
+    ASSERT v_fn_active NOT ILIKE '%auth.admin%',
       'VERIFY FAILED: auth.admin reference found in a modified function';
-    -- FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A: a raw '%whatsapp%' ban is a
-    -- false positive here — pg_get_functiondef() reproduces the function body
-    -- verbatim, including its comments, and
-    -- phoenix_get_live_inter_institution_alerts_with_state legitimately
-    -- carries two migration-047 comments referencing
-    -- DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A alongside the preserved
-    -- source_contact_phone/target_contact_phone fields. The word "WhatsApp"
-    -- in a historical comment is not a dangerous external API/token call —
-    -- so this guard checks for the actual dangerous patterns (outbound HTTP,
-    -- bearer/access tokens, Authorization headers, Postgres HTTP extensions)
-    -- instead of banning the word itself.
-    ASSERT v_fn_def NOT ILIKE '%graph.facebook%'
-       AND v_fn_def NOT ILIKE '%bearer%'
-       AND v_fn_def NOT ILIKE '%access_token%'
-       AND v_fn_def NOT ILIKE '%authorization%'
-       AND v_fn_def NOT ILIKE '%https://%'
-       AND v_fn_def NOT ILIKE '%http://%'
-       AND v_fn_def NOT ILIKE '%pg_net%'
-       AND v_fn_def NOT ILIKE '%net.http%',
+    -- FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A / -EXTERNAL-API-VERIFY-
+    -- PROFESSIONAL-A: a raw substring ban on the RAW function definition is
+    -- a false positive generator — pg_get_functiondef() reproduces the
+    -- function body verbatim, including its comments, and this migration's
+    -- own comments legitimately contain ordinary prose that collides with
+    -- these substrings (e.g. phoenix_apply_availability_movement's step-3
+    -- comment "Lock the target row before any authorization/math ..." matches
+    -- '%authorization%'; phoenix_get_live_inter_institution_alerts_with_state's
+    -- preserved migration-047 DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A
+    -- comments matched the older '%whatsapp%' ban). Checking v_fn_active
+    -- (comments stripped) instead of v_fn_def keeps these checks meaningful:
+    -- they now only fire on the pattern appearing in real, executable
+    -- SQL/PLpgSQL source or a string literal, not in inert prose.
+    ASSERT v_fn_active NOT ILIKE '%graph.facebook%'
+       AND v_fn_active NOT ILIKE '%bearer%'
+       AND v_fn_active NOT ILIKE '%access_token%'
+       AND v_fn_active NOT ILIKE '%authorization%'
+       AND v_fn_active NOT ILIKE '%https://%'
+       AND v_fn_active NOT ILIKE '%http://%'
+       AND v_fn_active NOT ILIKE '%pg_net%'
+       AND v_fn_active NOT ILIKE '%net.http%',
       'VERIFY FAILED: external API/token reference found in a modified function';
-    ASSERT v_fn_def NOT ILIKE '%DROP TABLE%' AND v_fn_def NOT ILIKE '%TRUNCATE%',
+    ASSERT v_fn_active NOT ILIKE '%DROP TABLE%' AND v_fn_active NOT ILIKE '%TRUNCATE%',
       'VERIFY FAILED: DROP TABLE/TRUNCATE found in a modified function';
-    ASSERT v_fn_def NOT ILIKE '%DELETE FROM item_availability %'
-       AND v_fn_def NOT ILIKE '%delete from item_availability %',
+    ASSERT v_fn_active NOT ILIKE '%DELETE FROM item_availability %'
+       AND v_fn_active NOT ILIKE '%delete from item_availability %',
       'VERIFY FAILED: DELETE FROM item_availability found in a modified function';
   END LOOP;
 

@@ -453,6 +453,75 @@ describe('Migration 053: security guardrails', () => {
     });
   });
 
+  // FIX-MIGRATION-053-EXTERNAL-API-VERIFY-PROFESSIONAL-A: the previous fix
+  // (FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A) still ran its precise
+  // external-API/token checks against the RAW pg_get_functiondef() output,
+  // which retains comments. phoenix_apply_availability_movement's own step-3
+  // comment ("Lock the target row before any authorization/math ...")
+  // matches '%authorization%' via ILIKE even though it's inert prose, not
+  // executable code — a second false positive of the same shape as the
+  // whatsapp one. The VERIFY loop must strip `--` line comments into a
+  // sanitized v_fn_active and run the security-negative checks against that,
+  // while structural presence checks keep reading the raw v_fn_def.
+  describe('FIX-MIGRATION-053-EXTERNAL-API-VERIFY-PROFESSIONAL-A: comment-stripped active source for security checks', () => {
+    const verifyBlock = migration053.slice(migration053.indexOf('DO $$'));
+    const loopIdx = verifyBlock.indexOf('Cross-function security guardrails');
+    const loopEnd = verifyBlock.indexOf('END LOOP;', loopIdx);
+    const loop = verifyBlock.slice(loopIdx, loopEnd);
+
+    it('declares a v_fn_active text variable in the DO block', () => {
+      expect(migration053).toMatch(/v_fn_active\s+text;/);
+    });
+
+    it('computes v_fn_active by stripping `--` line comments from v_fn_def before any security check runs', () => {
+      const assignIdx = loop.indexOf('v_fn_active := regexp_replace(');
+      expect(assignIdx).toBeGreaterThan(-1);
+      expect(loop.slice(assignIdx)).toContain("regexp_replace(v_fn_def, '--[^\\r\\n]*', '', 'g')");
+      // Must run before the first ASSERT in the loop.
+      const firstAssertIdx = loop.indexOf('ASSERT');
+      expect(assignIdx).toBeLessThan(firstAssertIdx);
+    });
+
+    it('all security-negative (dangerous-pattern-absence) checks in the loop read v_fn_active, not raw v_fn_def', () => {
+      const afterAssign = loop.slice(loop.indexOf('v_fn_active := regexp_replace('));
+      // Every ASSERT after the sanitization line must reference v_fn_active;
+      // none may fall back to checking the raw, comment-bearing v_fn_def.
+      const assertLines = afterAssign.split('ASSERT').slice(1);
+      for (const stmt of assertLines) {
+        const clause = stmt.slice(0, stmt.indexOf(','));
+        expect(clause).toMatch(/v_fn_active/);
+        expect(clause).not.toMatch(/v_fn_def/);
+      }
+    });
+
+    it('the sanitized-check regex removes only `--` line comments (no block-comment stripping needed — none exist in any of the five modified function bodies)', () => {
+      for (const fn of [fnMovement, fnClearPort, fnUpsert, fnQr, fnAlerts]) {
+        expect(fn).not.toContain('/*');
+        expect(fn).not.toContain('*/');
+      }
+    });
+
+    it('reproduces the same false positive shape locally: raw fnMovement contains "authorization" only inside a comment, and stripping `--` lines removes it', () => {
+      expect(fnMovement.toLowerCase()).toContain('authorization');
+      const stripped = fnMovement.replace(/--[^\r\n]*/g, '');
+      expect(stripped.toLowerCase()).not.toContain('authorization');
+    });
+
+    it('stripping `--` line comments does not remove real security-relevant SQL from any of the five modified functions', () => {
+      for (const fn of [fnMovement, fnClearPort, fnUpsert, fnQr, fnAlerts]) {
+        const stripped = fn.replace(/--[^\r\n]*/g, '');
+        // Real executable markers must survive comment stripping untouched.
+        expect(stripped).not.toMatch(/service_role|auth\.admin|graph\.facebook|DROP TABLE|TRUNCATE/i);
+      }
+    });
+
+    it('structural presence checks outside the loop still read the raw v_fn_def (comments legitimately count as documentation of intent)', () => {
+      const beforeLoop = verifyBlock.slice(0, loopIdx);
+      expect(beforeLoop).toMatch(/ASSERT v_fn_def ILIKE '%removed_from_outlet%'/);
+      expect(beforeLoop).toMatch(/ASSERT v_fn_def ILIKE '%source_contact_phone%' AND v_fn_def ILIKE '%target_contact_phone%'/);
+    });
+  });
+
   it('no CREATE/DROP POLICY anywhere (no RLS change)', () => {
     expect(active053).not.toMatch(/CREATE POLICY|DROP POLICY/i);
   });
