@@ -532,26 +532,50 @@ describe('Migration 053: security guardrails', () => {
 });
 
 describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend/service files changed', () => {
-  it('no working-tree diff on any frontend production file', () => {
+  // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: this migration was DB-only at the
+  // time it was written and applied — no frontend file was touched by 053
+  // itself. A later, separately-reviewed phase (after 053 was confirmed
+  // applied in Supabase) legitimately wires the new removed_at column into
+  // live-current frontend reads: dashboard.service.ts / availability.service.ts /
+  // InstitutionScreen.tsx / shared/lib/types.ts. Those four files are
+  // excluded from the blanket "no frontend diff" guards below; the dedicated
+  // describe block further down scopes their diff to exactly that change.
+  it('no working-tree diff on any frontend production file (excluding the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A files)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
 
-  it('no working-tree diff on availability.service.ts, dashboard.service.ts, qr.service.ts, InstitutionScreen.tsx, or PublicQrScreen.tsx specifically', () => {
+  it('no working-tree diff on qr.service.ts or PublicQrScreen.tsx (unaffected by this migration or its frontend follow-up)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/availability.service.ts src/shared/supabase/services/dashboard.service.ts src/shared/supabase/services/qr.service.ts src/features/institutions/InstitutionScreen.tsx src/features/qr/PublicQrScreen.tsx',
+        'git diff -- src/shared/supabase/services/qr.service.ts src/features/qr/PublicQrScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('the dashboard.service.ts/availability.service.ts/InstitutionScreen.tsx/types.ts diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches removed_at wiring, no DB/RPC/RLS/permission/alert-lifecycle/WhatsApp change', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/shared/supabase/services/dashboard.service.ts src/shared/supabase/services/availability.service.ts src/features/institutions/InstitutionScreen.tsx src/shared/lib/types.ts',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    if (diff.trim()) {
+      expect(diff).toContain('removed_at');
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      expect(diff).not.toMatch(/graph\.facebook|access_token|whatsapp|Bearer /i);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\(|CREATE POLICY|DROP POLICY/);
+    }
   });
 
   it('no package/lockfile diff', () => {

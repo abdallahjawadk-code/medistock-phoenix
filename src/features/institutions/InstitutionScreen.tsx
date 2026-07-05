@@ -1448,6 +1448,9 @@ interface AvailRow {
   concentration?: string | null;
   price?: number | null;
   supply_type?: string | null;
+  // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: migration 053's intentional-removal
+  // marker — getAvailabilityByPoint now selects it (see availability.service.ts).
+  removed_at?: string | null;
   local_items: {
     id: string;
     local_code: string | null;
@@ -1518,13 +1521,19 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
 }) {
   const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId, refreshKey]);
   const [showAdd, setShowAdd] = useState(false);
-  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: clear_port_availability (migration
-  // 042) and onConfirmRemove below both zero quantity + set condition =
-  // 'missing' instead of deleting the row (preserves item_availability_movements
-  // FK / audit trail) — hide those cleared rows from the active outlet
-  // contents list entirely, not just their now-redundant "Remove" button.
+  // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A / FRONTEND-LIVE-REMOVED-AT-FILTERS-A:
+  // clear_port_availability (migration 042) and onConfirmRemove below both
+  // zero quantity + set condition = 'missing' instead of deleting the row
+  // (preserves item_availability_movements FK / audit trail) — hide those
+  // cleared/removed rows from the active outlet contents list entirely, not
+  // just their now-redundant "Remove" button. Originally this filtered on
+  // the blunt quantity===0/condition==='missing' heuristic, which also hid
+  // genuine, still-open shortages (a real stockout with no removal marker) —
+  // migration 053 added an explicit removed_at marker precisely so this list
+  // can distinguish "intentionally removed" from "genuinely missing" and
+  // keep the latter visible.
   const rows = ((avail.data ?? []) as unknown as AvailRow[])
-    .filter(r => !(r.quantity === 0 && r.condition === 'missing'));
+    .filter(r => r.removed_at == null);
 
   // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: "Remove from outlet" — no hard
   // DELETE exists (or is allowed) for item_availability rows tied to movement

@@ -126,10 +126,10 @@ describe('Material remove: proves this is a safe deactivate, not a blind hard de
     expect(fnBody).toMatch(/removeTarget\.quantity !== 0/);
   });
 
-  it('BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: already-removed rows (quantity 0 + missing) are filtered out of the outlet contents list entirely, not just their remove button hidden', () => {
+  it('BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A / FRONTEND-LIVE-REMOVED-AT-FILTERS-A: already-removed rows are filtered out of the outlet contents list entirely (via removed_at), not just their remove button hidden', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
-    expect(fnBody).toMatch(/\.filter\(r => !\(r\.quantity === 0 && r\.condition === 'missing'\)\)/);
+    expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
   });
 });
 

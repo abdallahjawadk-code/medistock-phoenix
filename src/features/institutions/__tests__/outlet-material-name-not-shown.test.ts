@@ -48,7 +48,7 @@ describe('1. Outlet material row uses item_availability direct fields as the pri
   });
 
   it('getAvailabilityByPoint already selects the direct identity fields used here', () => {
-    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 700);
+    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 1400);
     expect(fn).toContain('scientific_name');
     expect(fn).toContain('trade_name');
     expect(fn).toContain('dosage_form');
@@ -117,10 +117,10 @@ describe('4. "—" is never the sole material title when a material exists', () 
   });
 });
 
-describe('5. quantity=0 + condition=missing rows remain hidden from active outlet contents', () => {
-  it('PortAvailabilitySection still filters cleared rows before rendering (pre-existing behavior, unmodified)', () => {
+describe('5. intentionally-removed rows remain hidden from active outlet contents', () => {
+  it('PortAvailabilitySection filters on the removed_at marker before rendering (FRONTEND-LIVE-REMOVED-AT-FILTERS-A: replaced the old blunt quantity=0+missing heuristic, which also hid genuine still-open shortages)', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
-    expect(section).toContain("filter(r => !(r.quantity === 0 && r.condition === 'missing'))");
+    expect(section).toContain('filter(r => r.removed_at == null)');
   });
 });
 
@@ -161,7 +161,7 @@ describe('8. No DB/RPC write path was changed by this fix', () => {
   });
 
   it('getAvailabilityByPoint itself is unchanged (still a plain SELECT, no new RPC/table)', () => {
-    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 700);
+    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 1400);
     expect(fn).toContain(".from('item_availability')");
     expect(fn).not.toContain('.rpc(');
     expect(fn).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);

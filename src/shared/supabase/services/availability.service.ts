@@ -89,11 +89,18 @@ export async function getAvailabilityByPoint(
 ): Promise<(AvailabilityRecord & EffectiveAvailabilityFields)[]> {
   if (!supabaseConfigured) return [];
 
+  // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: this read is shared by both
+  // EditorScreen (identity-matching an existing/removed row so
+  // phoenix_upsert_availability can reactivate it) and InstitutionScreen's
+  // PortAvailabilitySection (the live outlet material list) — it must NOT
+  // filter removed_at itself, since EditorScreen needs removed rows visible
+  // to find and reactivate them. removed_at is selected so each consumer can
+  // decide for itself whether to display or hide a removed row.
   const { data, error } = await supabase
     .from('item_availability')
     .select(`
       id, quantity, condition, batch_number, national_code, expiry_date, notes, updated_at,
-      port_name, supply_type,
+      port_name, supply_type, removed_at,
       scientific_name, trade_name, dosage_form, concentration, price,
       local_items ( id, local_code,
         central_items ( id, name, name_ar, unit, barcode )
@@ -469,6 +476,11 @@ export async function getAvailabilityMovementsReport(
 export async function getLowStockItems(orgId: string) {
   if (!supabaseConfigured) return [];
 
+  // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: this is a live shortage report (feeds
+  // ReportsScreen's low-stock/missing tabs) — a removed row is forced to
+  // condition='missing' but is not a genuine shortage that needs a resupply,
+  // so it must not appear here. Unlike getAvailabilityByPoint, nothing
+  // downstream of this function needs to see removed rows.
   const { data, error } = await supabase
     .from('item_availability')
     .select(`
@@ -478,6 +490,7 @@ export async function getLowStockItems(orgId: string) {
     `)
     .eq('organization_id', orgId)
     .in('condition', ['low_stock', 'missing', 'near_expiry', 'expired'])
+    .is('removed_at', null)
     .order('condition');
 
   if (error) throw error;

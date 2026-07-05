@@ -52,7 +52,13 @@ export async function getDashboardMetrics(orgId?: string): Promise<DashboardMetr
     supabase.from('distribution_points').select('id', { count: 'exact', head: true }).neq('status', 'archived').match(orgMatch),
     supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'active').match(orgMatch),
     supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'disabled').match(orgMatch),
-    supabase.from('item_availability').select('condition').match(orgMatch),
+    // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: an intentionally removed outlet
+    // material (migration 053's removed_at marker) is forced to
+    // condition='missing' but is not a real shortage — exclude it from the
+    // live dashboard tiles the same way get_public_qr_payload and
+    // phoenix_get_live_inter_institution_alerts_with_state already exclude
+    // it at the DB/RPC layer.
+    supabase.from('item_availability').select('condition').match(orgMatch).is('removed_at', null),
   ]);
 
   const conditions = (availRes.data ?? []) as { condition: string }[];
@@ -112,7 +118,10 @@ export async function getInstitutionOverviews(): Promise<InstitutionOverview[]> 
       .select('id, name, name_ar, code, status, city')
       .eq('status', 'active')
       .order('name_ar'),
-    supabase.from('item_availability').select('organization_id, condition'),
+    // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: same removed_at exclusion as
+    // getDashboardMetrics above — a removed row must not inflate an
+    // institution's "missing" badge count.
+    supabase.from('item_availability').select('organization_id, condition').is('removed_at', null),
   ]);
 
   if (orgsRes.error) throw orgsRes.error;

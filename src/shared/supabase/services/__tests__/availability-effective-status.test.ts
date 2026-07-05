@@ -148,7 +148,7 @@ describe('Regression: read-layer change is non-destructive', () => {
   it('all three read functions append effective status', () => {
     for (const fn of ['getAvailabilityByPoint', 'getLowStockItems', 'getAvailabilityByOrg']) {
       const start = svc.indexOf(`function ${fn}`);
-      const tail = svc.slice(start, start + 1200);
+      const tail = svc.slice(start, start + 1800);
       expect(tail).toContain('withEffectiveAvailabilityStatus');
     }
   });

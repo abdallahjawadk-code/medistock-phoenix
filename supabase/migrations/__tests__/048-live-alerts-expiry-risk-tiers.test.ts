@@ -280,14 +280,38 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: src/features/qr/PublicQrScreen.tsx
     // is also excluded — a later, separately-reviewed phase that hides
     // non-available items from the public QR list, unrelated to this migration.
+    //
+    // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: src/features/institutions/InstitutionScreen.tsx
+    // is also excluded — a later, separately-reviewed phase (after migration
+    // 053 was applied) that replaced PortAvailabilitySection's blunt
+    // quantity=0/condition='missing' heuristic with an explicit removed_at
+    // filter, unrelated to this migration. That phase's own guard test
+    // (below) confirms the diff is scoped to exactly that change.
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/institutions/InstitutionScreen.tsx src/features/users/UserManagementScreen.tsx',
+        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('the InstitutionScreen.tsx diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches the removed_at outlet-list filter, never this migration\'s own concerns', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/features/institutions/InstitutionScreen.tsx',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    if (diff.trim()) {
+      expect(diff).toContain('removed_at');
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      expect(diff).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com|Bearer |sendMessage/i);
+      expect(diff).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\(/);
+    }
   });
 
   it('the InterInstitutionAlertsScreen.tsx/inter-org-alert-lifecycle.service.ts diff (from the later ALERT-CARDS-EXPIRY-RISK-BADGES-UI-A phase) only touches source_expiry_risk_tier/source_expiry_days_remaining wiring, never this migration\'s own concerns', () => {

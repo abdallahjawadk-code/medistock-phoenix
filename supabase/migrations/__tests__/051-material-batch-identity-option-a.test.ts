@@ -381,15 +381,36 @@ describe('35. Does not change package/lockfiles', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no frontend production file has a working-tree diff from this phase (excluding EditorScreen.tsx/strings.ts, which the separately-reviewed, explicitly-planned-for AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B frontend-sync phase — see this migration\'s own header — is expected to modify; PublicQrScreen.tsx is also excluded, modified by the later, separately-reviewed QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase)', () => {
+  it('no frontend production file has a working-tree diff from this phase (excluding EditorScreen.tsx/strings.ts, which the separately-reviewed, explicitly-planned-for AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B frontend-sync phase — see this migration\'s own header — is expected to modify; PublicQrScreen.tsx is also excluded, modified by the later, separately-reviewed QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase; availability.service.ts/types.ts are also excluded — the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase, after migration 053 was applied, adds a removed_at column/select/filter there)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/availability.service.ts src/shared/lib/types.ts src/features/qr/QrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('the availability.service.ts/types.ts diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches removed_at wiring, never this migration\'s own identity-match concerns', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/shared/supabase/services/availability.service.ts src/shared/lib/types.ts',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    if (diff.trim()) {
+      expect(diff).toContain('removed_at');
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\(/);
+      // No added/removed line touches this migration's own identity-match
+      // concerns (only context lines may legitimately mention them).
+      const changedLines = diff.split('\n').filter(l => /^[+-][^+-]/.test(l));
+      for (const line of changedLines) {
+        expect(line).not.toMatch(/national_code|batch_number|expiry_date_key/);
+      }
+    }
   });
 });
 

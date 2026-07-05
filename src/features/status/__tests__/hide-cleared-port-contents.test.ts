@@ -93,8 +93,8 @@ describe('PortAvailabilitySection: cleared materials are removed from the outlet
   const fnStart = institutions.indexOf('function PortAvailabilitySection');
   const fnBody = institutions.slice(fnStart, institutions.indexOf('function QuickAvailForm'));
 
-  it('filters rows to exclude quantity=0 + condition=missing before rendering (not merely hiding a button on a still-visible row)', () => {
-    expect(fnBody).toMatch(/\.filter\(r => !\(r\.quantity === 0 && r\.condition === 'missing'\)\)/);
+  it('filters rows on the explicit removed_at marker before rendering, not merely hiding a button on a still-visible row (FRONTEND-LIVE-REMOVED-AT-FILTERS-A: superseded the old blunt quantity=0+missing heuristic, which also hid genuine still-open shortages)', () => {
+    expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
   });
 
   it('the item count in the section header reflects the filtered (active) rows, not the raw fetched set', () => {

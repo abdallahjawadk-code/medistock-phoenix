@@ -66,6 +66,8 @@ export interface AvailabilityRecord {
   national_code?: string | null;
   /** Batch/lot number — the actual item_availability.batch_number column. */
   batch_number?: string | null;
+  /** Intentional-removal marker (migration 053) — set when the material was removed from the outlet, not merely out of stock. Null for active/never-removed rows. */
+  removed_at?: string | null;
 }
 
 export interface QrToken {
