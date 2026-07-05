@@ -52,9 +52,12 @@ describe('History action visibility is permission-gated on availability.movement
     expect(strings).toMatch(/mvmt_history_action:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
 
+  // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: for a non-removed row the
+  // Adjust Quantity button is still gated on canAdjustQuantity alone,
+  // unchanged — only removed rows now show Reactivate in this slot instead.
   it('Adjust Quantity button remains independently gated (unchanged)', () => {
     expect(statusCenter).toContain('canAdjustQuantity');
-    expect(statusCenter).toMatch(/\{canAdjustQuantity && \(/);
+    expect(statusCenter).toMatch(/canAdjustQuantity && \(/);
   });
 });
 

@@ -49,8 +49,12 @@ describe('Adjust Quantity button visibility is permission-gated', () => {
     // AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: the shared actions column/header
     // now also shows for canViewMovementHistory (a separate action in the
     // same cell), but the Adjust Quantity button specifically is still
-    // wrapped in its own `{canAdjustQuantity && (...)}` guard.
-    expect(statusCenter).toMatch(/\{canAdjustQuantity && \(/);
+    // gated on canAdjustQuantity.
+    // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: for a removed row, this
+    // slot now shows Reactivate instead (canAdjustQuantity alone is
+    // insufficient — see the isRemoved ternary), but the non-removed branch
+    // still requires `canAdjustQuantity && (` unchanged.
+    expect(statusCenter).toMatch(/canAdjustQuantity && \(/);
   });
 
   it('button uses the sc_adjust_qty label (bilingual)', () => {

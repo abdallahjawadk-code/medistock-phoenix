@@ -21,6 +21,7 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
+import { ReactivateMaterialModal, REACTIVATE_PERMISSION_KEYS, type ReactivateRow } from './ReactivateMaterialModal';
 import { MovementHistoryModal } from './MovementHistoryModal';
 import { MovementReportSection } from './MovementReportSection';
 import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
@@ -111,6 +112,15 @@ interface LiveAvailRow {
   notes?: string | null;
   actor_name_snapshot?: string | null;
   removed_at?: string | null;
+  // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: removal_reason (migration
+  // 053's free-text removal label) is now shown to the user via a friendly
+  // bilingual mapping. national_code/price are already selected by
+  // getAvailabilityByOrg — needed here so ReactivateMaterialModal can pass
+  // every identity/data field back to upsertAvailability unchanged, exactly
+  // as they were before removal (only quantity/condition are user-chosen).
+  removal_reason?: string | null;
+  national_code?: string | null;
+  price?: number | null;
 }
 
 function effOf(r: LiveAvailRow): CanonicalStatus {
@@ -121,6 +131,16 @@ function dpNameOf(r: LiveAvailRow, lang: 'ar' | 'en'): string {
   const dp = r.distribution_points;
   if (!dp) return '—';
   return lang === 'ar' ? (dp.name_ar || dp.name) : dp.name;
+}
+
+// PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: removal_reason (migration
+// 053's free-text label) mapped to a friendly bilingual string — never
+// rendered raw, and any unrecognized/future reason value falls back to a
+// safe generic "Removed" label instead of showing the raw DB string.
+function removalReasonLabel(reason: string | null | undefined, lang: 'ar' | 'en'): string {
+  if (reason === 'removed_from_outlet') return t('sc_removal_reason_removed_from_outlet', lang);
+  if (reason === 'clear_port_availability') return t('sc_removal_reason_clear_port_availability', lang);
+  return t('sc_removal_reason_unknown', lang);
 }
 
 // BUGFIX-REPORTS-DATES-PORT-CLEAR-A follow-up: expiry_date must go through
@@ -191,6 +211,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canAdjustQuantity = QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key));
   const [adjustRow, setAdjustRow] = useState<AdjustQuantityRow | null>(null);
   const [movementToast, setMovementToast] = useState<string | null>(null);
+
+  // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: row-level "Reactivate" action,
+  // shown only for rows already marked removed_at != null. Visibility is
+  // UX-only — phoenix_apply_availability_movement and phoenix_upsert_availability
+  // independently re-enforce the same permission matrix server-side.
+  const canReactivate = REACTIVATE_PERMISSION_KEYS.every(key => myPermissions.has(key));
+  const [reactivateRow, setReactivateRow] = useState<ReactivateRow | null>(null);
 
   // AVAILABILITY-MOVEMENT-HISTORY-VIEW-A: row-level "History" action.
   // Visibility is UX-only — avail_mvmt_select_perm RLS (migration 033)
@@ -525,6 +552,18 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     live.reload();
   }
 
+  // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: reloads the same live
+  // availability data source used everywhere else on this screen — the
+  // reactivated row's removed_at is now null, so it naturally loses the
+  // Removed badge and becomes eligible for every live/current view (which
+  // filter on removed_at independently at their own read layer) without any
+  // extra wiring here.
+  function handleReactivateSuccess() {
+    setMovementToast(t('sc_reactivate_success', lang));
+    setTimeout(() => setMovementToast(null), 3000);
+    live.reload();
+  }
+
   const btnStyle = {
     padding: '9px 14px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
     background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
@@ -679,14 +718,16 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('avail_supply_type', lang)}</th>
                 <th style={th}>{t('sc_raw_condition', lang)}</th>
                 <th style={th}>{t('sc_effective_status', lang)}</th>
+                <th style={th}>{t('sc_removed_badge', lang)}</th>
                 <th style={th}>{t('expiry', lang)}</th>
                 <th style={th}>{t('last_upd', lang)}</th>
-                {(canAdjustQuantity || canViewMovementHistory) && <th style={th}></th>}
+                {(canAdjustQuantity || canReactivate || canViewMovementHistory) && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
               {rows.map(r => {
                 const eff = effOf(r);
+                const isRemoved = r.removed_at != null;
                 return (
                   <tr key={r.id}>
                     <td style={td} dir="auto">{dpNameOf(r, lang)}</td>
@@ -698,6 +739,29 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td} dir="auto">{r.supply_type || '—'}</td>
                     <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
+                    <td style={td}>
+                      {/* PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: removed-row
+                          marker — badge + compact, safe removal details. Never
+                          shows removed_by's raw uuid; actor_name_snapshot is the
+                          only "who" field surfaced, as an already-resolved
+                          display name. */}
+                      {isRemoved ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <PhoenixStatusBadge variant="err" label={`🚫 ${t('sc_removed_badge', lang)}`} />
+                          <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
+                            {removalReasonLabel(r.removal_reason, lang)}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="ltr">
+                            {t('sc_removed_at_label', lang)}: {formatStableDate(r.removed_at, lang)}
+                          </span>
+                          {r.actor_name_snapshot && (
+                            <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
+                              {t('sc_last_action_by', lang)}: {r.actor_name_snapshot}
+                            </span>
+                          )}
+                        </div>
+                      ) : '—'}
+                    </td>
                     <td style={td} dir="ltr">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                         <span>{expiryDisplay(r, lang)}</span>
@@ -705,17 +769,36 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                       </div>
                     </td>
                     <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
-                    {(canAdjustQuantity || canViewMovementHistory) && (
+                    {(canAdjustQuantity || canReactivate || canViewMovementHistory) && (
                       <td style={td}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
-                          {canAdjustQuantity && (
-                            <button
-                              onClick={() => setAdjustRow(r)}
-                              aria-label={t('sc_adjust_qty', lang)}
-                              style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                            >
-                              ✏️ {t('sc_adjust_qty', lang)}
-                            </button>
+                          {/* PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: a
+                              removed row offers Reactivate INSTEAD of Adjust
+                              Quantity — adjusting quantity alone would never
+                              clear removed_at (only reason='removed_from_outlet'
+                              or phoenix_upsert_availability's v_reactivates
+                              branch do), which would leave a confusing
+                              quantity>0-but-still-hidden row. */}
+                          {isRemoved ? (
+                            canReactivate && (
+                              <button
+                                onClick={() => setReactivateRow(r as unknown as ReactivateRow)}
+                                aria-label={t('sc_reactivate_action', lang)}
+                                style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--ok)', background: 'var(--s)', color: 'var(--ok)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                ↩ {t('sc_reactivate_action', lang)}
+                              </button>
+                            )
+                          ) : (
+                            canAdjustQuantity && (
+                              <button
+                                onClick={() => setAdjustRow(r)}
+                                aria-label={t('sc_adjust_qty', lang)}
+                                style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                ✏️ {t('sc_adjust_qty', lang)}
+                              </button>
+                            )
                           )}
                           {canViewMovementHistory && (
                             <button
@@ -744,6 +827,15 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         myPermissions={myPermissions}
         onClose={() => setAdjustRow(null)}
         onSuccess={handleMovementSuccess}
+      />
+      <ReactivateMaterialModal
+        open={reactivateRow !== null}
+        row={reactivateRow}
+        lang={lang}
+        organizationId={effectiveOrgId ?? ''}
+        myPermissions={myPermissions}
+        onClose={() => setReactivateRow(null)}
+        onSuccess={handleReactivateSuccess}
       />
       <MovementHistoryModal
         open={historyRow !== null}
