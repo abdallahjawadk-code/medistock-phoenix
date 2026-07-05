@@ -1535,14 +1535,30 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
   const rows = ((avail.data ?? []) as unknown as AvailRow[])
     .filter(r => r.removed_at == null);
 
-  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A: "Remove from outlet" — no hard
-  // DELETE exists (or is allowed) for item_availability rows tied to movement
-  // history/audit, so this performs the same safe pattern already used by the
-  // Status Center's quantity-movement UI: zero the quantity via the audited
-  // phoenix_apply_availability_movement RPC (the only permitted quantity-write
-  // path — migration 035's hard guard blocks direct quantity writes), then
-  // mark condition = 'missing' via the existing upsert RPC now that the
-  // stored quantity matches. History/reports/QR audit trail are untouched.
+  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A / REMOVE-BUTTON-MARKS-REMOVED-AT-A:
+  // "Remove from outlet" — no hard DELETE exists (or is allowed) for
+  // item_availability rows tied to movement history/audit, so this calls the
+  // single audited phoenix_apply_availability_movement RPC (the only
+  // permitted quantity-write path — migration 035's hard guard blocks direct
+  // quantity writes) with reason='removed_from_outlet'. Migration 053's own
+  // branch on that exact reason forces quantity=0, condition='missing',
+  // removed_at=now(), removed_by=auth.uid(), removal_reason=
+  // 'removed_from_outlet' on the row in one atomic write — history/reports/
+  // QR audit trail are untouched.
+  //
+  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: this RPC call used to be guarded by
+  // `if (removeTarget.quantity !== 0)`, skipping it entirely whenever the row
+  // was already at quantity 0 — the exact case a user pressing "Remove from
+  // outlet" on an already-out-of-stock material hits. Since only this RPC
+  // call (never the plain upsertAvailability call that used to follow it)
+  // sets removed_at/removed_by/removal_reason, skipping it meant the row was
+  // left at quantity=0/condition='missing'/removed_at=NULL — indistinguishable
+  // from a genuine ongoing shortage, and invisible to nothing (it stayed in
+  // every live view). set_exact with amount=0 is valid and idempotent even
+  // when the current quantity is already 0, so the guard and the subsequent
+  // upsertAvailability call (which was redundant — the RPC branch above
+  // already sets condition='missing' itself) are both removed: this is now
+  // the single, unconditional call for every remove action.
   const [removeTarget, setRemoveTarget] = useState<AvailRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -1552,28 +1568,11 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     setRemoveBusy(true);
     setRemoveError(null);
     try {
-      if (removeTarget.quantity !== 0) {
-        await applyAvailabilityMovement({
-          itemAvailabilityId: removeTarget.id,
-          movementType: 'set_exact',
-          amount: 0,
-          reason: 'removed_from_outlet',
-        });
-      }
-      await upsertAvailability({
-        distributionPointId: pointId,
-        organizationId: orgId,
-        scientificName: removeTarget.scientific_name ?? '',
-        tradeName: removeTarget.trade_name ?? undefined,
-        dosageForm: removeTarget.dosage_form ?? undefined,
-        concentrationValue: removeTarget.concentration ?? undefined,
-        price: removeTarget.price ?? undefined,
-        quantity: 0,
-        condition: 'missing',
-        batchNumber: removeTarget.batch_number ?? undefined,
-        expiryDate: removeTarget.expiry_date ?? undefined,
-        notes: removeTarget.notes ?? undefined,
-        supplyType: removeTarget.supply_type ?? undefined,
+      await applyAvailabilityMovement({
+        itemAvailabilityId: removeTarget.id,
+        movementType: 'set_exact',
+        amount: 0,
+        reason: 'removed_from_outlet',
       });
       setRemoveTarget(null);
       onToast(t('avail_removed_from_outlet', lang));

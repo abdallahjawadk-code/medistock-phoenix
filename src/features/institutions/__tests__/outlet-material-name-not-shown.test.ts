@@ -152,12 +152,23 @@ describe('7. Empty state appears with the required translated copy when all rows
 });
 
 describe('8. No DB/RPC write path was changed by this fix', () => {
-  it('PortAvailabilitySection still only reads via getAvailabilityByPoint and writes via the existing audited RPCs', () => {
+  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: PortAvailabilitySection's own
+  // onConfirmRemove now only calls applyAvailabilityMovement (the follow-up
+  // upsertAvailability call was removed — see that phase's own tests).
+  // upsertAvailability is still used elsewhere in this file (QuickAvailForm,
+  // a sibling function rendered by PortAvailabilitySection, uses it to add a
+  // new material), so it remains a valid RPC for the whole file's writes.
+  it('PortAvailabilitySection still only reads via getAvailabilityByPoint and removes materials via the existing audited movement RPC', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
     expect(section).toContain('getAvailabilityByPoint(pointId)');
     expect(section).toContain('applyAvailabilityMovement(');
-    expect(section).toContain('upsertAvailability(');
     expect(section).not.toMatch(/\.rpc\(\s*['"](?!phoenix_apply_availability_movement|phoenix_upsert_availability)/);
+  });
+
+  it('upsertAvailability is still used in this file only by QuickAvailForm (adding a material), not by the remove path', () => {
+    expect(screen).toContain('upsertAvailability(');
+    const quickAvailForm = screen.slice(screen.indexOf('function QuickAvailForm'));
+    expect(quickAvailForm).toContain('upsertAvailability(');
   });
 
   it('getAvailabilityByPoint itself is unchanged (still a plain SELECT, no new RPC/table)', () => {

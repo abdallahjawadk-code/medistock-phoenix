@@ -66,19 +66,26 @@ describe('Material remove action: calls the correct existing service/RPC path', 
     expect(screen).toContain("from '@/shared/supabase/services/availability.service'");
   });
 
-  it('onConfirmRemove zeroes quantity via the audited movement RPC, not a direct write', () => {
+  it('onConfirmRemove zeroes quantity AND marks the removed_from_outlet reason via the single audited movement RPC, not a direct write', () => {
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
     expect(fnBody).toContain("movementType: 'set_exact'");
     expect(fnBody).toContain('amount: 0');
+    expect(fnBody).toContain("reason: 'removed_from_outlet'");
     expect(fnBody).not.toMatch(/\.update\(|\.delete\(|DELETE FROM/);
   });
 
-  it('onConfirmRemove marks condition as missing via the existing upsert RPC after quantity matches', () => {
+  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: the follow-up upsertAvailability call
+  // was removed — phoenix_apply_availability_movement's own
+  // reason='removed_from_outlet' branch (migration 053) already sets
+  // condition='missing' (alongside quantity=0/removed_at/removed_by/
+  // removal_reason) in the same atomic write, so a second RPC call was both
+  // redundant and, via the quantity!==0 guard it depended on, the actual
+  // root cause of removed_at never being set for already-zero rows.
+  it('onConfirmRemove does not call upsertAvailability at all (the single movement RPC call already sets condition=missing)', () => {
     const fnStart = screen.indexOf('async function onConfirmRemove');
-    const fnBody = screen.slice(fnStart, fnStart + 1500);
-    expect(fnBody).toContain('upsertAvailability');
-    expect(fnBody).toContain("condition: 'missing'");
+    const fnBody = screen.slice(fnStart, fnStart + 900);
+    expect(fnBody).not.toContain('upsertAvailability');
   });
 
   it('does not call any hard-delete RPC/table method for item_availability', () => {
@@ -120,10 +127,25 @@ describe('Material remove: proves this is a safe deactivate, not a blind hard de
     expect(fnBody).not.toContain("from('item_availability')");
   });
 
-  it('quantity is only zeroed through the audited movement RPC when it is not already 0 (idempotent, no unnecessary writes)', () => {
+  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: the previous behavior — skipping the
+  // movement RPC call when removeTarget.quantity was already 0 — was the
+  // actual bug: a user pressing "Remove from outlet" on an already-out-of-
+  // stock row got quantity=0/condition='missing'/removed_at=NULL, i.e. no
+  // different from a genuine ongoing shortage. set_exact with amount=0 is a
+  // valid, idempotent no-op on the quantity itself even when it is already
+  // 0 — its real job now is unconditionally marking removed_at/removed_by/
+  // removal_reason, so the call must never be skipped.
+  it('the movement RPC call is unconditional — no quantity!==0 guard gates it, so pressing remove on an already-zero-quantity row still marks removed_at', () => {
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 500);
-    expect(fnBody).toMatch(/removeTarget\.quantity !== 0/);
+    expect(fnBody).not.toMatch(/removeTarget\.quantity !== 0/);
+    expect(fnBody).not.toMatch(/if \(removeTarget\.quantity/);
+  });
+
+  it('does not use a subtract-0 movement (subtract requires amount > 0 per migration 034 and is the wrong movement type for a remove action)', () => {
+    const fnStart = screen.indexOf('async function onConfirmRemove');
+    const fnBody = screen.slice(fnStart, fnStart + 900);
+    expect(fnBody).not.toContain("movementType: 'subtract'");
   });
 
   it('BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A / FRONTEND-LIVE-REMOVED-AT-FILTERS-A: already-removed rows are filtered out of the outlet contents list entirely (via removed_at), not just their remove button hidden', () => {

@@ -109,10 +109,19 @@ describe('5. Edit/disable port actions remain visible and unchanged', () => {
 });
 
 describe('6. Safe-delete handler remains visible and unchanged', () => {
-  it('onConfirmRemove still performs the safe (quantity-zeroing) update, not a hard delete, and still classifies errors honestly', () => {
+  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: onConfirmRemove now makes a single
+  // phoenix_apply_availability_movement call (set_exact/amount=0/
+  // reason='removed_from_outlet') instead of a movement call followed by a
+  // separate upsertAvailability({ quantity: 0, condition: 'missing' }) call —
+  // the RPC's own migration-053 branch on that reason already sets
+  // condition='missing' (and removed_at/removed_by/removal_reason) in one
+  // atomic write, so the literal 'quantity: 0'/"condition: 'missing'" object
+  // keys this test used to assert on no longer appear (amount: 0 is what
+  // remains).
+  it('onConfirmRemove still performs the safe (quantity-zeroing) movement, not a hard delete, and still classifies errors honestly', () => {
     const onConfirmRemove = screen.slice(screen.indexOf('async function onConfirmRemove'), screen.indexOf('async function onConfirmRemove') + 1400);
-    expect(onConfirmRemove).toContain('quantity: 0');
-    expect(onConfirmRemove).toContain("condition: 'missing'");
+    expect(onConfirmRemove).toContain('amount: 0');
+    expect(onConfirmRemove).toContain("reason: 'removed_from_outlet'");
     expect(onConfirmRemove).toContain('classifyAvailabilityMovementError');
   });
 });
