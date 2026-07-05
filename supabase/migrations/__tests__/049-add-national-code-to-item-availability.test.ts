@@ -232,8 +232,8 @@ describe('16. Migration ceiling as of this phase: 044-049 exist; 050 (if present
     ]);
   });
 
-  it('no 053_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[3-9]|[6-9][0-9])_/.test(f));
+  it('no 054_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[4-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

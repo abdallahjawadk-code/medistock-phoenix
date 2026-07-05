@@ -200,6 +200,10 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
       // prepared but not yet applied/committed.
       '?? supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
       'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
+      // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/053_item_availability_removed_marker.sql',
+      'A  supabase/migrations/053_item_availability_removed_marker.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

@@ -2335,10 +2335,10 @@ describe('STATUS-EDITOR-CLEANUP-A: migration 048 preserved (not discarded by thi
 // ============================================================================
 
 describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effects from the frontend dropdown change', () => {
-  it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 051, later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A additions)', () => {
+  it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 051, later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A additions)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
     const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql']);
+    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql', '053_item_availability_removed_marker.sql']);
   });
 
   it('no package/lockfile diff from this phase', () => {
@@ -2382,9 +2382,9 @@ describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effect
 // ============================================================================
 
 describe('AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: no SQL/migration/package side effects', () => {
-  it('no migration 053 (or higher) exists (052 is a later, separately-reviewed QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A addition)', () => {
+  it('no migration 054 (or higher) exists (052/053 are later, separately-reviewed QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A additions)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
-    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[3-9]|[6-9][0-9])_/.test(f));
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[4-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 

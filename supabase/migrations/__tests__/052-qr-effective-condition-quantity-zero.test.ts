@@ -47,8 +47,11 @@ describe('Migration 052 exists exactly once', () => {
     expect(matches).toEqual(['052_qr_effective_condition_quantity_zero.sql']);
   });
 
-  it('does not create migration 053', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('053_'));
+  // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: migration 053 is a later,
+  // separately-reviewed phase (removed_at/removed_by/removal_reason marker)
+  // — this migration's own scope is unaffected by its existence.
+  it('does not create migration 054 (053 is a later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('054_'));
     expect(matches).toEqual([]);
   });
 
