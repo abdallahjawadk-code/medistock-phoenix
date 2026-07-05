@@ -167,11 +167,15 @@ describe('8. No QR generation/cancel/recreate logic changed, no export/print/use
   // check as of EXPIRY-RISK-TIERS-A, a later, separately-reviewed phase that
   // adds a purely-additive ExpiryRiskBadge next to its expiry-date table
   // cell (see expiry-risk-badge-wiring.test.ts for that phase's own guards).
-  it('empty diff on QR screen/service and user-management screens', () => {
+  // PublicQrScreen.tsx is also excluded — a later, separately-reviewed
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase that hides
+  // non-available items from the public QR list; qr.service.ts (the RPC
+  // call site) remains fully guarded.
+  it('empty diff on QR service (qr.service.ts) and user-management screens', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx',
+        'git diff -- src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

@@ -298,10 +298,13 @@ describe('24. Does not change package/lockfiles', () => {
     // references any frontend path itself, and QR/user-management/auth stay
     // untouched by every phase in this lineage.
     expect(active050).not.toMatch(/availability\.service\.ts|EditorScreen\.tsx|shared\/lib\/types\.ts/);
+    // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: PublicQrScreen.tsx is
+    // excluded below — a later, separately-reviewed phase, unrelated to
+    // this migration's lineage.
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

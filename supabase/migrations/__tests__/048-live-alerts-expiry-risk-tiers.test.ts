@@ -276,10 +276,14 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     // migration's own source_expiry_risk_tier/source_expiry_days_remaining
     // jsonb fields into the alert cards — every other file in this list
     // remains fully guarded (zero diff required).
+    //
+    // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: src/features/qr/PublicQrScreen.tsx
+    // is also excluded — a later, separately-reviewed phase that hides
+    // non-available items from the public QR list, unrelated to this migration.
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/qr/PublicQrScreen.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/institutions/InstitutionScreen.tsx src/features/users/UserManagementScreen.tsx',
+        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/status/StatusCenterScreen.tsx src/features/status/StatusEditorScreen.tsx src/features/institutions/InstitutionScreen.tsx src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

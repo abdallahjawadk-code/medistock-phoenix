@@ -79,6 +79,33 @@ function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {
   return item.name ?? item.name_ar ?? item.point_name ?? item.point_name_ar ?? '—';
 }
 
+/**
+ * QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A
+ *
+ * The public QR page is an "available medicines" list, not a full internal
+ * status report. `condition` here is already the RPC's effective_condition
+ * (migration 052 folds quantity <= 0 into 'missing' server-side) — this
+ * helper only decides which effective statuses are publicly listed as
+ * available stock.
+ *
+ * Conservative default for any condition not explicitly recognized here
+ * (including a missing/undefined condition): hide it. An unrecognized status
+ * is exactly the case where showing it as "available" would be most likely
+ * to mislead the public, so the safe default is to hide rather than guess.
+ */
+export function isPubliclyAvailableQrItem(item: PublicItem): boolean {
+  if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return false;
+  switch (item.condition) {
+    case 'available':
+    case 'near_expiry':
+    case 'surplus':
+    case 'low_stock':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function PublicQrScreen({ publicId }: Props) {
   const { lang, toggleLang } = useApp();
   const [search, setSearch] = useState('');
@@ -99,28 +126,40 @@ export function PublicQrScreen({ publicId }: Props) {
     (payload?.points as PublicItem[] | undefined) ??
     [];
 
-  // Status-summary counts derived entirely from the already-loaded rawItems
-  // — no new fetch, only conditions already present in the loaded items.
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: the public "available
+  // medicines" list only ever shows items that are actually available stock
+  // — removed/zeroed/expired/missing rows never reach the visible list or
+  // the item count, even though the RPC payload (rawItems) still carries
+  // them for now. Everything below (summary chips, search, item cards,
+  // empty state) is derived from this visible set, not rawItems.
+  const visibleItems = useMemo(
+    () => rawItems.filter(isPubliclyAvailableQrItem),
+    [rawItems],
+  );
+
+  // Status-summary counts derived entirely from the already-loaded visibleItems
+  // — no new fetch. Only conditions that can appear among visible (available)
+  // items are ever counted here, so 'missing'/'expired' never show a count.
   const summaryCounts = useMemo(() => {
     const counts: Partial<Record<string, number>> = {};
-    for (const item of rawItems) {
+    for (const item of visibleItems) {
       if (!item.condition) continue;
       counts[item.condition] = (counts[item.condition] ?? 0) + 1;
     }
     return SUMMARY_CONDITIONS
       .filter(c => (counts[c] ?? 0) > 0)
       .map(c => ({ condition: c, count: counts[c]! }));
-  }, [rawItems]);
+  }, [visibleItems]);
 
   const filteredItems = search
-    ? rawItems.filter(item => {
+    ? visibleItems.filter(item => {
         const q = search.toLowerCase();
         return (item.name ?? '').toLowerCase().includes(q) ||
                (item.name_ar ?? '').includes(search) ||
                (item.point_name ?? '').toLowerCase().includes(q) ||
                (item.point_name_ar ?? '').includes(search);
       })
-    : rawItems;
+    : visibleItems;
 
   return (
     <div className="premium-qr-public-shell" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
@@ -166,9 +205,9 @@ export function PublicQrScreen({ publicId }: Props) {
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
                 )}
-                {rawItems.length > 0 && (
+                {visibleItems.length > 0 && (
                   <div style={{ fontSize: '11px', color: 'var(--pd)', marginTop: '6px', opacity: 0.8 }}>
-                    {t('public_items_count', lang)}: {rawItems.length}
+                    {t('public_items_count', lang)}: {visibleItems.length}
                   </div>
                 )}
               </div>
@@ -193,7 +232,7 @@ export function PublicQrScreen({ publicId }: Props) {
             )}
 
             {/* Search */}
-            {rawItems.length > 3 && (
+            {visibleItems.length > 3 && (
               <div style={{ position: 'relative', marginBottom: '12px' }}>
                 <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
                 <input
@@ -214,7 +253,12 @@ export function PublicQrScreen({ publicId }: Props) {
                   {t('public_empty_port', lang)}
                 </div>
               )}
-              {filteredItems.length === 0 && rawItems.length > 0 && search && (
+              {rawItems.length > 0 && visibleItems.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('public_no_available_now', lang)}
+                </div>
+              )}
+              {visibleItems.length > 0 && filteredItems.length === 0 && search && (
                 <div style={{ textAlign: 'center', padding: '20px', color: 'var(--t2)', fontSize: '12.5px' }}>
                   {t('empty_items', lang)}
                 </div>

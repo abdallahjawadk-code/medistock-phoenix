@@ -97,9 +97,14 @@ describe('Public QR page exposes only safe display fields', () => {
 });
 
 describe('AVAILABILITY-ALERTS-QR-POLISH-D: public QR status-summary chips', () => {
-  it('computes summary counts from rawItems only (no new fetch/field)', () => {
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: summary counts now iterate
+  // visibleItems (rawItems filtered to publicly-available stock), not
+  // rawItems directly — still no new fetch, still the same rawItems-derived
+  // data, just filtered before counting so a hidden 'missing'/'expired' item
+  // is never counted in a summary chip either.
+  it('computes summary counts from visibleItems (rawItems filtered to publicly-available stock; still no new fetch/field)', () => {
     expect(publicQr).toContain('summaryCounts');
-    expect(publicQr).toMatch(/for \(const item of rawItems\)/);
+    expect(publicQr).toMatch(/for \(const item of visibleItems\)/);
   });
 
   it('only uses conditions already present in the existing CONDITION_VARIANT/CONDITION_LABEL set', () => {

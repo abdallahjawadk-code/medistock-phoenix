@@ -204,11 +204,14 @@ describe('15. Frontend changes at this phase were label-only; RPC/service/type w
     expect(active049).not.toMatch(/availability\.service\.ts|shared\/lib\/types\.ts/);
   });
 
-  it('QR, export/print, and user-management files are untouched', () => {
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: PublicQrScreen.tsx is
+  // excluded below — a later, separately-reviewed phase that hides
+  // non-available items from the public QR list, unrelated to this migration.
+  it('QR (excluding PublicQrScreen.tsx), export/print, and user-management files are untouched', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/QrScreen.tsx src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

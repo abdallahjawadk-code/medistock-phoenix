@@ -159,11 +159,15 @@ describe('12. Routes unchanged', () => {
   });
 });
 
-describe('13. QR unchanged', () => {
-  it('PublicQrScreen not touched by this fix', () => {
+// QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: PublicQrScreen.tsx is later
+// modified by a separately-reviewed phase that hides non-available items
+// from the public QR list — this fix's own scope never touched QR, so the
+// narrower qr.service.ts (RPC call site) check below remains a valid guard.
+describe('13. QR unchanged (as of this fix; PublicQrScreen.tsx later modified by QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A)', () => {
+  it('qr.service.ts (RPC call site) not touched by this fix', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/qr/PublicQrScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- src/shared/supabase/services/qr.service.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

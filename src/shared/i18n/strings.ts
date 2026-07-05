@@ -524,6 +524,7 @@ export const T: Dict = {
   // dropdown (EditorScreen.tsx) — shown next to it as an explanatory note.
   avail_near_expiry_auto_note: { ar: 'قريب النفاذ يُحسب تلقائياً من تاريخ النفاذ', en: 'Near expiry is calculated automatically from the expiry date' },
   public_empty_port:  { ar: 'لا توجد مواد مدخلة لهذا المنفذ حالياً', en: 'No items have been entered for this port yet.' },
+  public_no_available_now: { ar: 'لا توجد أدوية متوفرة حالياً',  en: 'No available medicines right now' },
   public_expiry_warn: { ar: 'ينتهي بتاريخ',                      en: 'Expires' },
   public_search:      { ar: 'بحث عن صنف...',                     en: 'Search items...' },
   public_items_count: { ar: 'عدد الأصناف',                       en: 'Items count' },

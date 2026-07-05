@@ -264,10 +264,12 @@ describe('19. QR routes unchanged', () => {
     expect(publicQr).not.toContain('whatsapp_phone');
   });
 
-  it('App.tsx / PublicQrScreen.tsx were not modified by this phase', () => {
+  // PublicQrScreen.tsx is excluded below — a later, separately-reviewed
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase, unrelated to this one.
+  it('App.tsx was not modified by this phase', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/app/App.tsx src/features/qr/PublicQrScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- src/app/App.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
