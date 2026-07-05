@@ -187,7 +187,7 @@ describe('9. No package/lockfile/migration changes', () => {
   it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix), and no unreviewed migration SQL was created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let status = '';
@@ -221,6 +221,11 @@ describe('9. No package/lockfile/migration changes', () => {
       // prepared but not yet applied/committed.
       '?? supabase/migrations/053_item_availability_removed_marker.sql',
       'A  supabase/migrations/053_item_availability_removed_marker.sql',
+      // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 corrected in-place before its
+      // first successful manual apply (removed_by FK creation/verification
+      // fix), same pattern as the 051 immutable-expiry-date correction.
+      'M supabase/migrations/053_item_availability_removed_marker.sql',
+      'M  supabase/migrations/053_item_availability_removed_marker.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

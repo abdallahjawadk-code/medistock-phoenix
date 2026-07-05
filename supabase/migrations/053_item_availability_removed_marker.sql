@@ -53,13 +53,17 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --   Add three nullable columns to public.item_availability:
 --     • removed_at      timestamptz NULL — when the row was marked removed.
---     • removed_by      uuid NULL — who removed it. References auth.users(id),
---       matching item_availability's OWN existing actor-tracking column
---       (last_updated_by, migration 001) exactly — NOT profiles(id). This
---       repo uses both patterns elsewhere (organizations/qr_tokens/profiles'
---       disabled_by use profiles(id); item_availability.last_updated_by uses
---       auth.users(id)) — for a sibling column on the SAME table, consistency
---       with the table's own existing pattern takes precedence.
+--     • removed_by      uuid NULL — who removed it. References auth.users(id)
+--       via an explicitly named, idempotent FK constraint
+--       (item_availability_removed_by_fkey, added in its own DO block —
+--       FIX-MIGRATION-053-REMOVED-BY-FK-A — rather than an inline REFERENCES
+--       clause), matching item_availability's OWN existing actor-tracking
+--       column (last_updated_by, migration 001) exactly — NOT profiles(id).
+--       This repo uses both patterns elsewhere (organizations/qr_tokens/
+--       profiles' disabled_by use profiles(id); item_availability.
+--       last_updated_by uses auth.users(id)) — for a sibling column on the
+--       SAME table, consistency with the table's own existing pattern takes
+--       precedence.
 --     • removal_reason  text NULL — free-text label, e.g. 'removed_from_outlet'
 --       or 'clear_port_availability' (mirrors item_availability_movements.reason,
 --       which is also a free-text nullable column with no CHECK constraint —
@@ -156,10 +160,45 @@ begin;
 -- SCHEMA: add removed_at / removed_by / removal_reason to item_availability
 -- =============================================================================
 
+-- FIX-MIGRATION-053-REMOVED-BY-FK-A: removed_by is added WITHOUT an inline
+-- REFERENCES clause here. An inline "ADD COLUMN IF NOT EXISTS col ...
+-- REFERENCES ..." is syntactically valid and does create the FK, but it
+-- gives the constraint an auto-generated name and no way to check for its
+-- existence independent of the column — this migration's own VERIFY block
+-- (see below) previously tried to detect that inline FK via
+-- information_schema.constraint_column_usage joined on table_schema, which
+-- is a self-defeating check for a cross-schema reference (constraint_column_
+-- usage.table_schema reports the REFERENCED table's schema, i.e. 'auth', not
+-- the constrained table's schema 'public' — the join's own WHERE clause could
+-- never match, so the ASSERT failed even when the FK existed). Adding the
+-- column bare here and creating a NAMED constraint explicitly below makes
+-- both creation and verification independently idempotent and correct.
 alter table public.item_availability
   add column if not exists removed_at      timestamptz null,
-  add column if not exists removed_by      uuid        null references auth.users(id) on delete set null,
+  add column if not exists removed_by      uuid        null,
   add column if not exists removal_reason  text        null;
+
+-- FIX-MIGRATION-053-REMOVED-BY-FK-A: create the removed_by -> auth.users(id)
+-- foreign key as an explicitly named, idempotent constraint. Checking
+-- pg_constraint by conname (rather than relying on ADD COLUMN's inline
+-- REFERENCES) means this block can be safely re-run: it only adds the
+-- constraint if a constraint with this exact name doesn't already exist on
+-- this table.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.item_availability'::regclass
+      and contype = 'f'
+      and conname = 'item_availability_removed_by_fkey'
+  ) then
+    alter table public.item_availability
+      add constraint item_availability_removed_by_fkey
+      foreign key (removed_by)
+      references auth.users(id)
+      on delete set null;
+  end if;
+end $$;
 
 create index if not exists item_avail_removed_at_idx on public.item_availability(removed_at);
 
@@ -1305,18 +1344,30 @@ BEGIN
   ) INTO v_col_exists;
   ASSERT v_col_exists, 'VERIFY FAILED: item_availability.removal_reason column missing';
 
-  -- V2: removed_by has an FK to auth.users (matching last_updated_by's pattern)
+  -- V2: removed_by has an FK to auth.users (matching last_updated_by's pattern).
+  --
+  -- FIX-MIGRATION-053-REMOVED-BY-FK-A: rewritten to use pg_constraint/
+  -- pg_attribute directly instead of the information_schema view trio used
+  -- previously. The prior check joined
+  -- information_schema.table_constraints/key_column_usage/
+  -- constraint_column_usage on "tc.table_schema = ccu.table_schema" — but
+  -- constraint_column_usage.table_schema reports the schema of the
+  -- REFERENCED table (here, 'auth'), not the constrained table ('public'),
+  -- so that join condition can never be satisfied for a cross-schema FK and
+  -- the ASSERT failed unconditionally, rolling back this entire migration
+  -- even when the FK had been created successfully. This version compares
+  -- conrelid/confrelid via regclass (schema-qualified, unambiguous) and
+  -- resolves the constrained column name from conkey via pg_attribute —
+  -- exactly the robust pattern this migration needs.
   ASSERT EXISTS (
     SELECT 1
-    FROM information_schema.table_constraints tc
-    JOIN information_schema.key_column_usage kcu
-      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-    JOIN information_schema.constraint_column_usage ccu
-      ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-    WHERE tc.table_schema = 'public' AND tc.table_name = 'item_availability'
-      AND tc.constraint_type = 'FOREIGN KEY'
-      AND kcu.column_name = 'removed_by'
-      AND ccu.table_name = 'users'
+    FROM pg_constraint c
+    JOIN unnest(c.conkey) AS k(attnum) ON true
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+    WHERE c.conrelid  = 'public.item_availability'::regclass
+      AND c.contype   = 'f'
+      AND c.confrelid = 'auth.users'::regclass
+      AND a.attname   = 'removed_by'
   ), 'VERIFY FAILED: item_availability.removed_by is not FK''d to auth.users';
 
   -- V3: all five modified functions still exist

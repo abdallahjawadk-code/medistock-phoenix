@@ -167,7 +167,7 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
   it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
@@ -204,6 +204,11 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
       // prepared but not yet applied/committed.
       '?? supabase/migrations/053_item_availability_removed_marker.sql',
       'A  supabase/migrations/053_item_availability_removed_marker.sql',
+      // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 corrected in-place before its
+      // first successful manual apply (removed_by FK creation/verification
+      // fix), same pattern as the 051 immutable-expiry-date correction.
+      'M supabase/migrations/053_item_availability_removed_marker.sql',
+      'M  supabase/migrations/053_item_availability_removed_marker.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

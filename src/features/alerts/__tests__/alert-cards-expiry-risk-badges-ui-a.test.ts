@@ -180,10 +180,17 @@ describe('No regression: alert sorting/filtering/lifecycle/WhatsApp behavior unc
 });
 
 describe('Safety: no DB/migration/package/protected-file side effects from this phase', () => {
-  it('no migration SQL file has a working-tree diff', () => {
+  // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 is excluded below — corrected
+  // in-place before its first successful manual apply (removed_by FK
+  // creation/verification fix), same pattern as the 051 immutable-expiry-date
+  // correction elsewhere in this repo.
+  it('no migration SQL file has a working-tree diff (other than the already-approved 053 removed_by-FK fix)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync(
+        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
@@ -198,6 +205,10 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
       'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
       '?? supabase/migrations/053_item_availability_removed_marker.sql',
       'A  supabase/migrations/053_item_availability_removed_marker.sql',
+      // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 corrected in-place before its
+      // first successful manual apply.
+      'M supabase/migrations/053_item_availability_removed_marker.sql',
+      'M  supabase/migrations/053_item_availability_removed_marker.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

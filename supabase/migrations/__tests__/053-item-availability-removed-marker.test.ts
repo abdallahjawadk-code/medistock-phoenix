@@ -87,8 +87,14 @@ describe('Migration 053: schema — adds removed_at/removed_by/removal_reason', 
     expect(active053).toMatch(/add column if not exists removed_at\s+timestamptz\s+null/i);
   });
 
-  it('adds removed_by uuid null, FK to auth.users(id) — matching last_updated_by\'s existing pattern', () => {
-    expect(active053).toMatch(/add column if not exists removed_by\s+uuid\s+null\s+references auth\.users\(id\)/i);
+  // FIX-MIGRATION-053-REMOVED-BY-FK-A: removed_by is added as a bare column
+  // (no inline REFERENCES) — the FK is created separately as an explicitly
+  // named, idempotent constraint (see the next describe block). This avoids
+  // the original inline-REFERENCES approach, whose auto-generated constraint
+  // name gave the VERIFY block no reliable way to check for its existence.
+  it('adds removed_by uuid null WITHOUT an inline REFERENCES clause', () => {
+    expect(active053).toMatch(/add column if not exists removed_by\s+uuid\s+null,/i);
+    expect(active053).not.toMatch(/add column if not exists removed_by\s+uuid\s+null\s+references/i);
   });
 
   it('adds removal_reason text null', () => {
@@ -120,6 +126,65 @@ describe('Migration 053: schema — adds removed_at/removed_by/removal_reason', 
 
   it('has no DROP TABLE anywhere in the migration body (excluding the VERIFY block\'s own absence-check prose)', () => {
     expect(activeSqlPreVerify).not.toMatch(/DROP TABLE/i);
+  });
+});
+
+describe('FIX-MIGRATION-053-REMOVED-BY-FK-A: removed_by FK is created as a named, idempotent constraint', () => {
+  it('adds a DO block that checks pg_constraint for item_availability_removed_by_fkey before creating it', () => {
+    const idx = active053.indexOf("conname = 'item_availability_removed_by_fkey'");
+    expect(idx).toBeGreaterThan(-1);
+    const block = active053.slice(active053.lastIndexOf('do $$', idx), active053.indexOf('end $$;', idx) + 'end $$;'.length);
+    expect(block).toContain('if not exists');
+    expect(block).toContain("conrelid = 'public.item_availability'::regclass");
+    expect(block).toContain("contype = 'f'");
+  });
+
+  it('the FK constraint targets auth.users(id) with ON DELETE SET NULL, on the removed_by column', () => {
+    const idx = active053.indexOf('add constraint item_availability_removed_by_fkey');
+    expect(idx).toBeGreaterThan(-1);
+    const stmt = active053.slice(idx, active053.indexOf(';', idx));
+    expect(stmt).toMatch(/foreign key \(removed_by\)/i);
+    expect(stmt).toMatch(/references auth\.users\(id\)/i);
+    expect(stmt).toMatch(/on delete set null/i);
+  });
+
+  it('the FK-creation DO block runs before the removed_at index and before any function replacement', () => {
+    const fkIdx = active053.indexOf("conname = 'item_availability_removed_by_fkey'");
+    const idxIdx = active053.indexOf('create index if not exists item_avail_removed_at_idx');
+    const firstFnIdx = active053.search(/CREATE OR REPLACE FUNCTION/i);
+    expect(fkIdx).toBeGreaterThan(-1);
+    expect(fkIdx).toBeLessThan(idxIdx);
+    expect(idxIdx).toBeLessThan(firstFnIdx);
+  });
+});
+
+describe('FIX-MIGRATION-053-REMOVED-BY-FK-A: VERIFY block uses a robust pg_constraint/pg_attribute check', () => {
+  const verifyBlock = migration053.slice(migration053.indexOf('DO $$'));
+  // Scoped to active SQL only — the block's own explanatory comment
+  // legitimately quotes the old broken join condition (prose describing why
+  // it was wrong), which is not itself active SQL.
+  const activeVerifyBlock = activeSql(verifyBlock);
+
+  it('no longer uses the broken information_schema.constraint_column_usage join (table_schema mismatch for cross-schema FKs)', () => {
+    expect(activeVerifyBlock).not.toContain('information_schema.constraint_column_usage');
+    expect(activeVerifyBlock).not.toMatch(/tc\.table_schema\s*=\s*ccu\.table_schema/);
+  });
+
+  it('the FK check uses pg_constraint with conrelid/confrelid regclass comparisons', () => {
+    expect(verifyBlock).toMatch(/FROM pg_constraint c/);
+    expect(verifyBlock).toContain("c.conrelid  = 'public.item_availability'::regclass");
+    expect(verifyBlock).toContain("c.confrelid = 'auth.users'::regclass");
+    expect(verifyBlock).toContain("c.contype   = 'f'");
+  });
+
+  it('resolves the constrained column name via pg_attribute joined on conkey, checking for removed_by', () => {
+    expect(verifyBlock).toMatch(/JOIN unnest\(c\.conkey\) AS k\(attnum\) ON true/);
+    expect(verifyBlock).toMatch(/JOIN pg_attribute a ON a\.attrelid = c\.conrelid AND a\.attnum = k\.attnum/);
+    expect(verifyBlock).toContain("a.attname   = 'removed_by'");
+  });
+
+  it('the same VERIFY FAILED message is preserved for continuity', () => {
+    expect(verifyBlock).toContain("'VERIFY FAILED: item_availability.removed_by is not FK''d to auth.users'");
   });
 });
 
