@@ -215,6 +215,10 @@ describe('10. No package/lockfile/migration changes', () => {
       // status.split('\n').map(l => l.trim()) strips only the leading char.
       'M supabase/migrations/051_material_batch_identity_option_a.sql',
       'M  supabase/migrations/051_material_batch_identity_option_a.sql',
+      // QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
+      'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

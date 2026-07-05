@@ -393,8 +393,8 @@ describe('35. Does not change package/lockfiles', () => {
   });
 });
 
-describe('36. Migration ceiling: allows exactly 044-051, 052+ still fails', () => {
-  it('exactly eight reviewed migrations exist beyond 043', () => {
+describe('36. Migration ceiling: allows exactly 044-052, 053+ still fails', () => {
+  it('exactly nine reviewed migrations exist beyond 043', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -405,11 +405,12 @@ describe('36. Migration ceiling: allows exactly 044-051, 052+ still fails', () =
       '049_add_national_code_to_item_availability.sql',
       '050_phoenix_upsert_availability_national_code.sql',
       '051_material_batch_identity_option_a.sql',
+      '052_qr_effective_condition_quantity_zero.sql',
     ]);
   });
 
-  it('no 052_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[2-9]|[6-9][0-9])_/.test(f));
+  it('no 053_* (or higher) migration file exists yet', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[3-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

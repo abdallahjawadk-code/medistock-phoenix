@@ -188,12 +188,17 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
     expect(diff.trim()).toBe('');
   });
 
-  it('no new untracked migration SQL file was created (no migration 052)', () => {
+  it('no new untracked migration SQL file was created by this phase — only the separately-reviewed migration 052 (QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A) is allowed as an untracked addition', () => {
     let status = '';
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(status.trim()).toBe('');
+    const ALLOWED_UNTRACKED = new Set([
+      '?? supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
+      'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
+    ]);
+    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
+    expect(unexpected).toEqual([]);
   });
 
   it('no package/lockfile diff', () => {
