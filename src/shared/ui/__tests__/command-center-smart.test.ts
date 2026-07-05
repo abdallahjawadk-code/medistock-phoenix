@@ -78,9 +78,12 @@ describe('3. QR public route remains present', () => {
 });
 
 describe('4/5. Export/print handlers + mobile print fallback remain unchanged', () => {
-  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export with a real styled
+  // .xlsx workbook (exportXlsx) — unrelated to this Command Center phase.
+  // printReport and the mobile print fallback are untouched.
+  it('StatusCenterScreen still has exportXlsx, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     expect(statusCenter).toContain('isLikelyMobilePrintContext');
     expect(statusCenter).toContain('MobilePrintFallbackModal');
@@ -207,8 +210,10 @@ describe('17. Mobile layout classes/wrapping exist', () => {
 });
 
 describe('18. Existing button handlers remain connected', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the export button's onClick now calls
+  // exportXlsx instead of the old exportCsv — same button, same location.
   it('StatusCenterScreen export/print/adjust/history buttons still call their original handlers', () => {
-    expect(statusCenter).toContain('onClick={exportCsv}');
+    expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
     expect(statusCenter).toContain('onClick={() => setAdjustRow(r)}');
     expect(statusCenter).toContain('onClick={() => setHistoryRow(r)}');

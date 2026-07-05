@@ -93,25 +93,34 @@ describe('No permanent fake "Demo Data" badge shown to real users', () => {
   });
 });
 
-describe('CSV export: Arabic-safe, injection-safe, clean filename', () => {
-  it('includes a UTF-8 BOM', () => {
-    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
-    expect(fn).toContain('﻿');
-    expect(fn).toContain('text/csv;charset=utf-8');
+// SAFE-PROFESSIONAL-XLSX-EXPORT-A: this describe block originally locked in
+// StatusCenterScreen's hand-rolled CSV export (BOM/csvSafeCell/manual
+// timestamp). A later, separately-reviewed phase replaced it with a real
+// styled .xlsx workbook via exportAvailabilityXlsx (shared professional-
+// export.ts module) — formula-injection safety is now handled there by
+// neutralizeFormulaValue (a superset of the old csvSafeCell), and the
+// timestamp/extension are appended by buildStableFileName. The underlying
+// safety properties (Arabic-safe, injection-safe, stable/dated filename) are
+// preserved, just implemented in the shared module instead of inline here.
+describe('Excel export: Arabic-safe, injection-safe, clean filename', () => {
+  it('no longer uses CSV (BOM/text-csv Blob) — replaced by a real .xlsx workbook', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('async function exportXlsx'), statusCenter.indexOf('function handleMovementSuccess'));
+    expect(fn).not.toContain('﻿');
+    expect(fn).not.toContain('text/csv;charset=utf-8');
+    expect(fn).toContain('exportAvailabilityXlsx');
   });
 
-  it('escapes cells that could be interpreted as spreadsheet formulas (CSV injection protection)', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    const guardFn = statusCenter.slice(statusCenter.indexOf('function csvSafeCell'), statusCenter.indexOf('function csvSafeCell') + 300);
-    expect(guardFn).toContain('/^[=+\\-@]/');
-    const exportFn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
-    expect(exportFn).toContain('csvSafeCell');
+  it('formula-injection protection is enforced by the shared professional-export module (neutralizeFormulaValue), not a local csvSafeCell', () => {
+    expect(statusCenter).not.toContain('function csvSafeCell');
+    const exportModule = readFileSync(join(SRC, 'shared/lib/professional-export.ts'), 'utf8');
+    expect(exportModule).toContain('function neutralizeFormulaValue');
+    expect(exportModule).toContain("/^[=+\\-@\\t]|^[\\x00-\\x1F]/");
   });
 
-  it('uses a medistock-status-prefixed, stable report-name_YYYY-MM-DD_HH-mm filename (FINAL-EXPORT-REPORTS-PRO-A)', () => {
-    const fn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
+  it('uses a medistock-status-prefixed filename base, with the timestamp/extension appended by the shared buildStableFileName helper', () => {
+    const fn = statusCenter.slice(statusCenter.indexOf('async function exportXlsx'), statusCenter.indexOf('function handleMovementSuccess'));
     expect(fn).toContain('medistock-status');
-    expect(fn).toMatch(/\$\{now\.getFullYear\(\)\}-\$\{pad2\(now\.getMonth\(\) \+ 1\)\}-\$\{pad2\(now\.getDate\(\)\)\}_\$\{pad2\(now\.getHours\(\)\)\}-\$\{pad2\(now\.getMinutes\(\)\)\}/);
+    expect(fn).toContain('fileNameBase:');
   });
 
   it('does not export raw ids, alert_key, exchange_request_id, or supply_type technical keys', () => {

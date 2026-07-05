@@ -57,7 +57,10 @@ describe('MovementReportSection: mobile-safe print', () => {
 });
 
 describe('StatusCenterScreen: mobile-safe print', () => {
-  const fn = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('function exportCsv'));
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: exportCsv (which used to bound this
+  // slice) was replaced by exportXlsx — a later, separately-reviewed phase,
+  // unrelated to this mobile-print-safety fix.
+  const fn = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('async function exportXlsx'));
 
   it('imports isLikelyMobilePrintContext and MobilePrintFallbackModal', () => {
     expect(statusCenter).toContain("isLikelyMobilePrintContext } from '@/shared/lib/reportExport'");
@@ -208,12 +211,20 @@ describe('i18n: mobile print strings exist bilingually (Arabic + English)', () =
 });
 
 describe('Excel/CSV export behavior unchanged/upgraded by this phase', () => {
-  it('MovementReportSection/StatusCenterScreen still export CSV with BOM + csvSafeCell (untouched by this phase — see phase report for why these two were left as-is)', () => {
-    for (const src of [movementReport, statusCenter]) {
-      const csvFn = src.slice(src.indexOf('function exportCsv'), src.indexOf('function exportCsv') + 900);
-      expect(csvFn).toContain('﻿');
-      expect(csvFn).toContain('csvSafeCell');
-    }
+  it('MovementReportSection still exports CSV with BOM + csvSafeCell (untouched by this phase — movement history export is explicitly out of scope for SAFE-PROFESSIONAL-XLSX-EXPORT-A)', () => {
+    const csvFn = movementReport.slice(movementReport.indexOf('function exportCsv'), movementReport.indexOf('function exportCsv') + 900);
+    expect(csvFn).toContain('﻿');
+    expect(csvFn).toContain('csvSafeCell');
+  });
+
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export (BOM/csvSafeCell) with a
+  // real styled .xlsx workbook via exportAvailabilityXlsx — unrelated to
+  // this mobile-print-safety fix, which only ever touched printReport.
+  it('StatusCenterScreen now delegates Excel export to the shared exportAvailabilityXlsx helper (real .xlsx via ExcelJS — BOM/csvSafeCell no longer apply; formula-safety/UUID-guard are enforced inside professional-export.ts — see that module\'s tests)', () => {
+    expect(statusCenter).toContain('await exportAvailabilityXlsx(');
+    expect(statusCenter).not.toContain('function csvSafeCell');
+    expect(statusCenter).not.toContain('function exportCsv');
   });
 
   it('StatusEditorScreen now delegates Excel export to the shared exportProfessionalXlsx helper (real .xlsx via ExcelJS — BOM/csvSafeCell no longer apply; formula-safety/UUID-guard are enforced inside professional-export.ts — see that module\'s tests)', () => {

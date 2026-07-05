@@ -80,9 +80,10 @@ describe('StatusCenter: print and export', () => {
     expect(screen).toContain('.print()');
   });
 
-  it('(8) Excel export button exists', () => {
+  it('(8) Excel export button exists and now calls a real .xlsx export, not CSV', () => {
     expect(screen).toContain('sc_export_excel');
-    expect(screen).toContain('function exportCsv');
+    expect(screen).toContain('function exportXlsx');
+    expect(screen).not.toContain('function exportCsv');
   });
 
   it('(9) PDF button exists and uses print/save-as-PDF flow (no PDF lib)', () => {
@@ -93,37 +94,52 @@ describe('StatusCenter: print and export', () => {
     expect(around).toContain('printReport');
   });
 
-  it('CSV export includes a UTF-8 BOM for Arabic and a medistock-status filename', () => {
-    const fn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function handleMovementSuccess'));
-    expect(fn).toContain('﻿');
-    expect(fn).toContain('text/csv;charset=utf-8');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the hand-rolled CSV export (BOM,
+  // csvSafeCell formula-injection escaping, text/csv Blob) was replaced by
+  // exportAvailabilityXlsx, a real styled .xlsx workbook. Formula-injection
+  // safety is now handled by professional-export.ts's own
+  // neutralizeFormulaValue (a superset of the old csvSafeCell — also guards
+  // tabs/control characters), reused inside exportAvailabilityXlsx.
+  it('CSV-specific helpers (csvSafeCell, BOM, text/csv Blob) no longer exist — replaced by the shared XLSX export module', () => {
+    expect(screen).not.toContain('function csvSafeCell');
+    expect(screen).not.toContain('text/csv;charset=utf-8');
+    expect(screen).not.toContain('﻿');
+  });
+
+  it('exportXlsx uses the shared professional-export module and includes a medistock-status filename base', () => {
+    const fn = screen.slice(screen.indexOf('async function exportXlsx'), screen.indexOf('function handleMovementSuccess'));
+    expect(fn).toContain('exportAvailabilityXlsx');
     expect(fn).toContain('medistock-status');
   });
 
-  it('CSV export escapes cells that could be interpreted as spreadsheet formulas', () => {
-    expect(screen).toContain('function csvSafeCell');
-    const fn = screen.slice(screen.indexOf('function csvSafeCell'), screen.indexOf('function csvSafeCell') + 300);
-    expect(fn).toContain('/^[=+\\-@]/');
-    const exportFn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function handleMovementSuccess'));
-    expect(exportFn).toContain('csvSafeCell');
+  it('exportXlsx excludes removed_at rows and keeps genuine missing rows (removed_at null)', () => {
+    const fn = screen.slice(screen.indexOf('async function exportXlsx'), screen.indexOf('function handleMovementSuccess'));
+    expect(fn).toMatch(/\.filter\(r => r\.removed_at == null\)/);
+    expect(fn).not.toMatch(/condition === 'missing'/);
   });
 
-  it('CSV export is wrapped in error handling and shows a translated failure toast', () => {
-    const exportFn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function handleMovementSuccess'));
-    expect(exportFn).toContain('try {');
-    expect(exportFn).toContain("t('csv_export_failed', lang)");
+  it('exportXlsx never exports raw ids/removed_by/auth ids — only display fields', () => {
+    const fn = screen.slice(screen.indexOf('async function exportXlsx'), screen.indexOf('function handleMovementSuccess'));
+    expect(fn).not.toMatch(/\bremoved_by\b/);
+    expect(fn).not.toMatch(/\bid:\s*r\.id\b/);
+    expect(fn).not.toMatch(/organization_id|distribution_point_id/);
   });
 
-  it('CSV export includes report metadata (title, filters, generated-at, row count)', () => {
-    const exportFn = screen.slice(screen.indexOf('function exportCsv'), screen.indexOf('function handleMovementSuccess'));
-    expect(exportFn).toContain('metadataLines');
-    expect(exportFn).toContain('sc_selected_filters');
-    expect(exportFn).toContain('sc_generated_at');
-    expect(exportFn).toContain('sc_total_rows');
+  it('exportXlsx is wrapped in error handling and shows a translated failure toast on failure', () => {
+    const fn = screen.slice(screen.indexOf('async function exportXlsx'), screen.indexOf('function handleMovementSuccess'));
+    expect(fn).toContain('try {');
+    expect(fn).toContain("t('csv_export_failed', lang)");
+  });
+
+  it('exportXlsx includes report metadata (title, filters, generated-at, row count) passed to the shared export module', () => {
+    const fn = screen.slice(screen.indexOf('async function exportXlsx'), screen.indexOf('function handleMovementSuccess'));
+    expect(fn).toContain('filtersSummary: selectedFiltersText');
+    expect(fn).toContain("t('sc_report_title', lang)");
+    expect(fn).toContain('generatedAt: new Date()');
   });
 
   it('print window is closed after printing (no orphaned popup windows)', () => {
-    const fn = screen.slice(screen.indexOf('function printReport'), screen.indexOf('function exportCsv'));
+    const fn = screen.slice(screen.indexOf('function printReport'), screen.indexOf('async function exportXlsx'));
     expect(fn).toContain('win.close()');
   });
 

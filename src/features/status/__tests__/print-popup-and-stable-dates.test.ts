@@ -25,7 +25,9 @@ const movementHistory = readSrc('features/status/MovementHistoryModal.tsx');
 
 describe('StatusCenterScreen: print popup-blocked handling', () => {
   it('printReport shows print_popup_blocked instead of a silent return when window.open fails', () => {
-    const fnBody = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('function exportCsv'));
+    // SAFE-PROFESSIONAL-XLSX-EXPORT-A: exportCsv (the previous slice bound)
+    // was replaced by exportXlsx.
+    const fnBody = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('async function exportXlsx'));
     expect(fnBody).toMatch(/if \(!win\) \{/);
     expect(fnBody).toContain("t('print_popup_blocked', lang)");
     expect(fnBody).not.toMatch(/if \(!win\) return;/);

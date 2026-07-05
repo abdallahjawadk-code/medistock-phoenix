@@ -540,11 +540,19 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
   // InstitutionScreen.tsx / shared/lib/types.ts. Those four files are
   // excluded from the blanket "no frontend diff" guards below; the dedicated
   // describe block further down scopes their diff to exactly that change.
-  it('no working-tree diff on any frontend production file (excluding the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A files)', () => {
+  //
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a further, separately-reviewed phase
+  // replaces StatusCenterScreen's ad-hoc CSV export with a real styled
+  // .xlsx (via a new addition to professional-export.ts), which needs
+  // getAvailabilityByOrg (already excluded above) to also select
+  // actor_name_snapshot/removed_at — also excluding
+  // src/features/status/StatusCenterScreen.tsx, src/shared/lib/professional-export.ts,
+  // and src/shared/i18n/strings.ts (one corrected export-button label) here.
+  it('no working-tree diff on any frontend production file (excluding the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A / SAFE-PROFESSIONAL-XLSX-EXPORT-A files)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

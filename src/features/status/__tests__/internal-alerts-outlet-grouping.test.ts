@@ -200,9 +200,12 @@ describe('StatusCenterScreen: new sections wired in additively', () => {
     expect(screen).toContain('<OutletMaterialGroups rows={rows} />');
   });
 
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: exportCsv() was replaced by
+  // exportXlsx() (a later, separately-reviewed phase) — unrelated to this
+  // outlet-grouping view-mode toggle. printReport is untouched.
   it('the existing table view still renders by default and export/print are unaffected', () => {
     expect(screen).toContain("useState<'table' | 'outlet'>('table')");
-    expect(screen).toContain('function exportCsv()');
+    expect(screen).toContain('async function exportXlsx()');
     expect(screen).toContain('function printReport()');
   });
 

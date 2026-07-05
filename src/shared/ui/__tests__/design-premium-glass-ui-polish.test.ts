@@ -289,8 +289,10 @@ describe('13. Mobile action bars wrap/stack and do not hide export/print buttons
 });
 
 describe('14. Existing button handlers remain connected', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the export button's onClick now calls
+  // exportXlsx instead of the old exportCsv — same button, same location.
   it('onClick handlers for export/print/remove actions are unchanged in the touched files', () => {
-    expect(statusCenter).toContain('onClick={exportCsv}');
+    expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
     expect(institution).toContain('onClick={() => { setRemoveError(null); setRemoveTarget(r); }}');
   });

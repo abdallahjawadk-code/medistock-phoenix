@@ -502,11 +502,20 @@ export async function getLowStockItems(orgId: string) {
 export async function getAvailabilityByOrg(orgId: string) {
   if (!supabaseConfigured) return [];
 
+  // Added actor_name_snapshot (a plain display-name text column, migration
+  // 013/014 — never the raw last_updated_by auth uuid) and removed_at
+  // (migration 053's intentional-removal marker) to this already-existing
+  // select. Both are already-present, non-sensitive columns on
+  // item_availability; no new query source, no schema change. Status
+  // Center itself remains intentionally unfiltered by removed_at
+  // (operations/reactivation context) — only the Excel export built from
+  // these rows excludes removed_at rows.
   const { data, error } = await supabase
     .from('item_availability')
     .select(`
       id, scientific_name, trade_name, dosage_form, concentration, price,
       quantity, condition, batch_number, national_code, expiry_date, notes, supply_type, updated_at,
+      actor_name_snapshot, removed_at,
       distribution_points ( id, name, name_ar, status )
     `)
     .eq('organization_id', orgId)

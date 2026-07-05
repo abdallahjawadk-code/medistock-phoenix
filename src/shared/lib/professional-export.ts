@@ -468,3 +468,367 @@ export function triggerProfessionalPrint<T>(config: ProfessionalExportConfig<T>)
   }
   return { ok: openPrintWindow(html) };
 }
+
+/**
+ * SAFE-PROFESSIONAL-XLSX-EXPORT-A: multi-sheet "Availability Export" workbook
+ * (Summary / Availability Export / Data Dictionary), used to replace
+ * StatusCenterScreen's ad-hoc hand-rolled CSV export with a real, styled
+ * `.xlsx`. Purely ADDITIVE to this file — does not modify, rename, or remove
+ * `buildProfessionalWorkbook`/`exportProfessionalXlsx`/`exportProfessionalCsv`,
+ * which StatusEditorScreen already depends on.
+ *
+ * Header/sheet-name/dictionary text is fixed bilingual (English / Arabic
+ * together in one string), per this phase's explicit "bilingual headers"
+ * requirement — independent of the viewer's current app language. Only the
+ * worksheet's reading direction (RTL/LTR) and per-row data alignment follow
+ * `config.lang`, since the underlying institution/material names in the data
+ * itself may be Arabic or English regardless of header language.
+ *
+ * All per-row display strings (conditionLabel, expiryRiskLabel, institution,
+ * outlet, lastUpdatedBy, notes, etc.) are supplied already-localized by the
+ * caller — this module never imports i18n/canonical-status modules, keeping
+ * it a pure rendering layer, exactly like the existing ProfessionalExportConfig
+ * design above.
+ */
+
+export interface AvailabilityExportRow {
+  no: number;
+  institution: string;
+  outlet: string;
+  scientificName: string;
+  tradeName: string;
+  dosageForm: string;
+  concentration: string;
+  batchNumber: string;
+  quantity: number;
+  /** Raw/effective condition key (e.g. 'missing', 'low_stock') — used ONLY for row styling + Summary-sheet grouping, never rendered directly. */
+  conditionKey: string;
+  /** Already-localized (bilingual) display text for the Condition column. */
+  conditionLabel: string;
+  expiryDate: Date | null;
+  /** Whole days until expiry (negative if already expired); null when expiryDate is null. */
+  daysToExpiry: number | null;
+  /** Already-localized (bilingual) display text for the Expiry Risk column. */
+  expiryRiskLabel: string;
+  lastUpdatedBy: string;
+  lastUpdatedAt: Date | null;
+  notes: string;
+}
+
+export interface AvailabilityExportConfig {
+  reportTitle: string;
+  moduleName?: string;
+  generatedAt: Date;
+  lang: 'ar' | 'en';
+  fileNameBase: string;
+  filtersSummary: string;
+  footerText: string;
+  emptyMessage: string;
+  /** Bilingual display label per conditionKey, in the stable order the Summary sheet's totals should list them. */
+  conditionLabels: Record<string, string>;
+  rows: AvailabilityExportRow[];
+}
+
+/** Fixed bilingual column headers — exact wording from the SAFE-PROFESSIONAL-XLSX-EXPORT-A spec. */
+const AVAIL_EXPORT_HEADERS = {
+  no:            'No. / الرقم',
+  institution:   'Institution / المؤسسة',
+  outlet:        'Outlet / المنفذ',
+  scientificName:'Scientific Name / الاسم العلمي',
+  tradeName:     'Trade Name / الاسم التجاري',
+  dosageForm:    'Dosage Form / الشكل',
+  concentration: 'Concentration / التركيز',
+  batchNumber:   'Batch No. / رقم الوجبة',
+  quantity:      'Quantity / الكمية',
+  condition:     'Condition / الحالة',
+  expiryDate:    'Expiry Date / تاريخ النفاد',
+  daysToExpiry:  'Days to Expiry / أيام النفاد',
+  expiryRisk:    'Expiry Risk / خطورة النفاد',
+  lastUpdatedBy: 'Last Updated By / آخر محدث',
+  lastUpdatedAt: 'Last Updated At / وقت التحديث',
+  notes:         'Notes / ملاحظات',
+} as const;
+
+const AVAIL_META_LABELS = {
+  generatedAt:    'Generated At / تاريخ الإنشاء',
+  filters:        'Filters / الفلاتر المطبقة',
+  totalRows:      'Total Rows / إجمالي الصفوف',
+  summaryTitle:   'Summary / الملخص',
+  condition:      'Condition / الحالة',
+  count:          'Count / العدد',
+  dictionaryTitle:'Data Dictionary / قاموس البيانات',
+  field:          'Field / الحقل',
+  description:    'Description / الوصف',
+} as const;
+
+/** Excel sheet tab names — plain (not bilingual), matching this phase's literal required sheet names exactly, within the 31-char Excel sheet-name limit. */
+const AVAIL_SHEET_NAMES = {
+  summary: 'Summary',
+  data: 'Availability Export',
+  dictionary: 'Data Dictionary',
+} as const;
+
+/** Column-name / description pairs for the Data Dictionary sheet, bilingual. */
+const AVAIL_EXPORT_DICTIONARY: { field: string; description: string }[] = [
+  { field: AVAIL_EXPORT_HEADERS.no, description: 'Sequential row number within this export. / رقم تسلسلي للصف ضمن هذا التصدير.' },
+  { field: AVAIL_EXPORT_HEADERS.institution, description: 'The institution/organization this outlet belongs to. / المؤسسة التي يتبع لها هذا المنفذ.' },
+  { field: AVAIL_EXPORT_HEADERS.outlet, description: 'The distribution point (outlet/port) within the institution. / نقطة التوزيع (المنفذ) داخل المؤسسة.' },
+  { field: AVAIL_EXPORT_HEADERS.scientificName, description: 'The material\'s scientific (generic) name. / الاسم العلمي (الجنيس) للمادة.' },
+  { field: AVAIL_EXPORT_HEADERS.tradeName, description: 'The material\'s trade (brand) name, if recorded. / الاسم التجاري للمادة، إن وُجد.' },
+  { field: AVAIL_EXPORT_HEADERS.dosageForm, description: 'The pharmaceutical dosage form (tablet, syrup, injection, etc.). / الشكل الدوائي (أقراص، شراب، حقن، إلخ).' },
+  { field: AVAIL_EXPORT_HEADERS.concentration, description: 'The material\'s strength/concentration. / تركيز أو قوة المادة.' },
+  { field: AVAIL_EXPORT_HEADERS.batchNumber, description: 'The recorded batch/lot number, if any. / رقم الوجبة/الدفعة المسجل، إن وُجد.' },
+  { field: AVAIL_EXPORT_HEADERS.quantity, description: 'Current recorded quantity on hand. / الكمية الحالية المسجلة.' },
+  { field: AVAIL_EXPORT_HEADERS.condition, description: 'The material\'s current status: Available, Low Stock, Missing, Surplus, Near Expiry, or Expired. / حالة المادة الحالية: متوفر، منخفض، مفقود، فائض، قريب الانتهاء، أو منتهي الصلاحية.' },
+  { field: AVAIL_EXPORT_HEADERS.expiryDate, description: 'The material\'s recorded expiry date (yyyy-mm-dd), if any. / تاريخ انتهاء صلاحية المادة المسجل، إن وُجد.' },
+  { field: AVAIL_EXPORT_HEADERS.daysToExpiry, description: 'Whole days remaining until expiry as of the generation date (negative if already expired). / عدد الأيام المتبقية حتى انتهاء الصلاحية بتاريخ إنشاء هذا التصدير (رقم سالب إذا كانت منتهية بالفعل).' },
+  { field: AVAIL_EXPORT_HEADERS.expiryRisk, description: 'Risk tier derived from the expiry date: Expired, Critical (≤3 months), Warning (≤6 months), Watch (≤9 months), or Normal. / مستوى الخطورة المشتق من تاريخ الانتهاء: منتهي، حرج (خلال 3 أشهر)، تحذير (خلال 6 أشهر)، مراقبة (خلال 9 أشهر)، أو طبيعي.' },
+  { field: AVAIL_EXPORT_HEADERS.lastUpdatedBy, description: 'Display name of the user who last updated this record (never a raw user ID). / اسم آخر مستخدم قام بتحديث هذا السجل (وليس معرّف المستخدم الخام).' },
+  { field: AVAIL_EXPORT_HEADERS.lastUpdatedAt, description: 'Date and time this record was last updated. / تاريخ ووقت آخر تحديث لهذا السجل.' },
+  { field: AVAIL_EXPORT_HEADERS.notes, description: 'Free-text notes recorded against this material, if any. / ملاحظات نصية حرة مسجلة على هذه المادة، إن وُجدت.' },
+  { field: 'Scope / النطاق', description: 'This export excludes materials intentionally removed from an outlet (removed_at marker) — only active and genuinely out-of-stock/shortage materials are listed. / يستثني هذا التصدير المواد التي تمت إزالتها عمداً من المنفذ (علامة removed_at) — يتم إدراج المواد الفعالة والنواقص الحقيقية فقط.' },
+];
+
+/** Condition → row style (fill/border/font) used on the Availability Export sheet's data rows and the Summary sheet's totals. */
+const AVAIL_CONDITION_STYLE: Record<string, { fill: string; border: string; font: string }> = {
+  missing:     { fill: 'FFFCE8E8', border: 'FFDC2626', font: 'FF991B1B' }, // red
+  expired:     { fill: 'FFFCE8E8', border: 'FFDC2626', font: 'FF991B1B' }, // red
+  low_stock:   { fill: 'FFFFF3E0', border: 'FFD97706', font: 'FF92400E' }, // amber
+  near_expiry: { fill: 'FFFFE8D1', border: 'FFEA580C', font: 'FF9A3412' }, // orange
+  surplus:     { fill: 'FFE6F4EA', border: 'FF059669', font: 'FF065F46' }, // green
+  available:   { fill: 'FFF1FBF5', border: 'FF10B981', font: 'FF065F46' }, // green/neutral
+};
+
+const AVAIL_THIN_BORDER = { style: 'thin' as const, color: { argb: BRAND_BORDER } };
+const AVAIL_ALL_BORDERS = { top: AVAIL_THIN_BORDER, bottom: AVAIL_THIN_BORDER, left: AVAIL_THIN_BORDER, right: AVAIL_THIN_BORDER };
+
+interface AvailExportColumnDef {
+  key: keyof typeof AVAIL_EXPORT_HEADERS;
+  width: number;
+  kind: 'numeric' | 'text' | 'date' | 'datetime' | 'ltr-text';
+}
+
+const AVAIL_EXPORT_COLUMNS: AvailExportColumnDef[] = [
+  { key: 'no', width: 6, kind: 'numeric' },
+  { key: 'institution', width: 22, kind: 'text' },
+  { key: 'outlet', width: 22, kind: 'text' },
+  { key: 'scientificName', width: 24, kind: 'text' },
+  { key: 'tradeName', width: 22, kind: 'text' },
+  { key: 'dosageForm', width: 16, kind: 'text' },
+  { key: 'concentration', width: 16, kind: 'text' },
+  { key: 'batchNumber', width: 16, kind: 'ltr-text' },
+  { key: 'quantity', width: 12, kind: 'numeric' },
+  { key: 'condition', width: 26, kind: 'text' },
+  { key: 'expiryDate', width: 16, kind: 'date' },
+  { key: 'daysToExpiry', width: 14, kind: 'numeric' },
+  { key: 'expiryRisk', width: 30, kind: 'text' },
+  { key: 'lastUpdatedBy', width: 22, kind: 'text' },
+  { key: 'lastUpdatedAt', width: 20, kind: 'datetime' },
+  { key: 'notes', width: 30, kind: 'text' },
+];
+
+function availExportCellValue(row: AvailabilityExportRow, key: AvailExportColumnDef['key']): string | number | Date {
+  switch (key) {
+    case 'no': return row.no;
+    case 'institution': return neutralizeFormulaValue(row.institution || '—');
+    case 'outlet': return neutralizeFormulaValue(row.outlet || '—');
+    case 'scientificName': return neutralizeFormulaValue(row.scientificName || '—');
+    case 'tradeName': return neutralizeFormulaValue(row.tradeName || '—');
+    case 'dosageForm': return neutralizeFormulaValue(row.dosageForm || '—');
+    case 'concentration': return neutralizeFormulaValue(row.concentration || '—');
+    case 'batchNumber': return neutralizeFormulaValue(row.batchNumber || '—');
+    case 'quantity': return row.quantity;
+    case 'condition': return neutralizeFormulaValue(row.conditionLabel || '—');
+    case 'expiryDate': return row.expiryDate ?? '—';
+    case 'daysToExpiry': return row.daysToExpiry ?? '—';
+    case 'expiryRisk': return neutralizeFormulaValue(row.expiryRiskLabel || '—');
+    case 'lastUpdatedBy': return neutralizeFormulaValue(row.lastUpdatedBy || '—');
+    case 'lastUpdatedAt': return row.lastUpdatedAt ?? '—';
+    case 'notes': return neutralizeFormulaValue(row.notes || '—');
+    default: return '—';
+  }
+}
+
+/**
+ * Builds the 3-sheet (Summary / Availability Export / Data Dictionary)
+ * ExcelJS workbook. Does not download anything — see exportAvailabilityXlsx.
+ */
+export async function buildAvailabilityExportWorkbook(config: AvailabilityExportConfig): Promise<ExcelJS.Workbook> {
+  const ExcelJSRuntime = await loadExcelJS();
+  const isRtl = config.lang === 'ar';
+
+  const wb = new ExcelJSRuntime.Workbook();
+  wb.creator = 'MediStock Phoenix';
+  wb.created = config.generatedAt;
+  wb.modified = config.generatedAt;
+
+  // ── Summary sheet ──────────────────────────────────────────────────────
+  const summaryWs = wb.addWorksheet(safeSheetName(AVAIL_SHEET_NAMES.summary), { views: [{ rightToLeft: isRtl }] });
+  summaryWs.columns = [{ key: 'label', width: 36 }, { key: 'value', width: 26 }];
+
+  const summaryTitleRow = summaryWs.addRow([AVAIL_META_LABELS.summaryTitle]);
+  summaryWs.mergeCells(summaryTitleRow.number, 1, summaryTitleRow.number, 2);
+  summaryTitleRow.getCell(1).font = { bold: true, size: 15, color: { argb: BRAND_NAVY } };
+  summaryTitleRow.height = 22;
+
+  const summaryReportRow = summaryWs.addRow([config.reportTitle]);
+  summaryWs.mergeCells(summaryReportRow.number, 1, summaryReportRow.number, 2);
+  summaryReportRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+
+  const summaryBrandRow = summaryWs.addRow([REPORT_BRAND]);
+  summaryWs.mergeCells(summaryBrandRow.number, 1, summaryBrandRow.number, 2);
+  summaryBrandRow.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF666666' } };
+
+  summaryWs.addRow([AVAIL_META_LABELS.generatedAt, formatStableDateTime(config.generatedAt, config.lang)]);
+  summaryWs.addRow([AVAIL_META_LABELS.filters, config.filtersSummary]);
+  summaryWs.addRow([AVAIL_META_LABELS.totalRows, config.rows.length]);
+  summaryWs.addRow([]);
+
+  const summaryHeaderRow = summaryWs.addRow([AVAIL_META_LABELS.condition, AVAIL_META_LABELS.count]);
+  summaryHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  const conditionCounts: Record<string, number> = {};
+  for (const r of config.rows) conditionCounts[r.conditionKey] = (conditionCounts[r.conditionKey] ?? 0) + 1;
+
+  for (const key of Object.keys(config.conditionLabels)) {
+    const row = summaryWs.addRow([config.conditionLabels[key], conditionCounts[key] ?? 0]);
+    const style = AVAIL_CONDITION_STYLE[key];
+    row.eachCell(cell => {
+      cell.border = AVAIL_ALL_BORDERS;
+      if (style) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
+    });
+  }
+
+  summaryWs.views = [{ rightToLeft: isRtl }];
+
+  // ── Availability Export sheet ──────────────────────────────────────────
+  const dataWs = wb.addWorksheet(safeSheetName(AVAIL_SHEET_NAMES.data), { views: [{ rightToLeft: isRtl }] });
+  const colCount = AVAIL_EXPORT_COLUMNS.length;
+  dataWs.columns = AVAIL_EXPORT_COLUMNS.map(c => ({ key: c.key, width: c.width }));
+
+  const dataTitleRow = dataWs.addRow([config.reportTitle]);
+  dataWs.mergeCells(dataTitleRow.number, 1, dataTitleRow.number, colCount);
+  dataTitleRow.getCell(1).font = { bold: true, size: 15, color: { argb: BRAND_NAVY } };
+  dataTitleRow.height = 22;
+
+  if (config.moduleName) {
+    const moduleRow = dataWs.addRow([config.moduleName]);
+    dataWs.mergeCells(moduleRow.number, 1, moduleRow.number, colCount);
+    moduleRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+  }
+
+  const dataBrandRow = dataWs.addRow([REPORT_BRAND]);
+  dataWs.mergeCells(dataBrandRow.number, 1, dataBrandRow.number, colCount);
+  dataBrandRow.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF666666' } };
+
+  const metaPairs: [string, string][] = [
+    [AVAIL_META_LABELS.generatedAt, formatStableDateTime(config.generatedAt, config.lang)],
+    [AVAIL_META_LABELS.filters, config.filtersSummary],
+    [AVAIL_META_LABELS.totalRows, String(config.rows.length)],
+  ];
+  for (const [label, value] of metaPairs) {
+    const row = dataWs.addRow([`${label}: ${value}`]);
+    dataWs.mergeCells(row.number, 1, row.number, colCount);
+    row.getCell(1).font = { size: 10, color: { argb: 'FF333333' } };
+  }
+  dataWs.addRow([]);
+
+  const dataHeaderRow = dataWs.addRow(AVAIL_EXPORT_COLUMNS.map(c => AVAIL_EXPORT_HEADERS[c.key]));
+  dataHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  config.rows.forEach((r, i) => {
+    const rowValues = AVAIL_EXPORT_COLUMNS.map(c => availExportCellValue(r, c.key));
+    const dataRow = dataWs.addRow(rowValues);
+    const style = AVAIL_CONDITION_STYLE[r.conditionKey];
+    const altFill = i % 2 === 1 ? BRAND_ALT_ROW : undefined;
+
+    dataRow.eachCell((cell, colNumber) => {
+      const col = AVAIL_EXPORT_COLUMNS[colNumber - 1];
+      if (col.kind === 'date' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd';
+      if (col.kind === 'datetime' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd hh:mm';
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: col.kind === 'numeric' ? 'right'
+          : (col.kind === 'date' || col.kind === 'datetime') ? 'center'
+          : (isRtl ? 'right' : 'left'),
+        wrapText: col.kind === 'text',
+      };
+      const fillColor = style?.fill ?? altFill;
+      if (fillColor) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+      cell.border = AVAIL_ALL_BORDERS;
+      if (col.key === 'condition' && style) {
+        cell.font = { bold: true, color: { argb: style.font } };
+      }
+    });
+  });
+
+  if (config.rows.length === 0) {
+    const emptyRow = dataWs.addRow([config.emptyMessage || '—']);
+    dataWs.mergeCells(emptyRow.number, 1, emptyRow.number, colCount);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
+  } else {
+    const lastRow = dataHeaderRow.number + config.rows.length;
+    dataWs.autoFilter = { from: { row: dataHeaderRow.number, column: 1 }, to: { row: lastRow, column: colCount } };
+  }
+
+  dataWs.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: dataHeaderRow.number }];
+
+  // ── Data Dictionary sheet ──────────────────────────────────────────────
+  const dictWs = wb.addWorksheet(safeSheetName(AVAIL_SHEET_NAMES.dictionary), { views: [{ rightToLeft: isRtl }] });
+  dictWs.columns = [{ key: 'field', width: 28 }, { key: 'description', width: 70 }];
+
+  const dictTitleRow = dictWs.addRow([AVAIL_META_LABELS.dictionaryTitle]);
+  dictWs.mergeCells(dictTitleRow.number, 1, dictTitleRow.number, 2);
+  dictTitleRow.getCell(1).font = { bold: true, size: 14, color: { argb: BRAND_NAVY } };
+  dictTitleRow.height = 22;
+
+  const dictHeaderRow = dictWs.addRow([AVAIL_META_LABELS.field, AVAIL_META_LABELS.description]);
+  dictHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  AVAIL_EXPORT_DICTIONARY.forEach((entry, i) => {
+    const row = dictWs.addRow([entry.field, entry.description]);
+    const altFill = i % 2 === 1 ? BRAND_ALT_ROW : undefined;
+    row.eachCell((cell, colNumber) => {
+      cell.alignment = { vertical: 'top', horizontal: isRtl ? 'right' : 'left', wrapText: colNumber === 2 };
+      cell.border = AVAIL_ALL_BORDERS;
+      if (altFill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: altFill } };
+    });
+    row.getCell(1).font = { bold: true };
+  });
+
+  dictWs.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: dictHeaderRow.number }];
+
+  return wb;
+}
+
+/**
+ * Builds the 3-sheet availability workbook and downloads it as a true
+ * `.xlsx` file. Returns false (never throws) on failure — mirrors
+ * exportProfessionalXlsx's error-handling contract.
+ */
+export async function exportAvailabilityXlsx(config: AvailabilityExportConfig): Promise<boolean> {
+  try {
+    const wb = await buildAvailabilityExportWorkbook(config);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    return await downloadBlob(buildStableFileName(config.fileNameBase, 'xlsx'), blob);
+  } catch {
+    return false;
+  }
+}

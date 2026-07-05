@@ -606,7 +606,10 @@ export const T: Dict = {
   sc_report_title:      { ar: 'تقرير موقف التوفر الحي للمواد',     en: 'Live Material Availability Status Report' },
   sc_report_sub:        { ar: 'تقرير حي مبني على سجل التوفر · تصفية وطباعة وتصدير', en: 'Live report from item availability · filter, print & export' },
   sc_print_report:      { ar: 'طباعة التقرير',                     en: 'Print report' },
-  sc_export_excel:      { ar: 'تصدير CSV متوافق مع Excel',         en: 'Export CSV (Excel-compatible)' },
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: this button now downloads a real
+  // .xlsx workbook (exportAvailabilityXlsx), not a CSV — wording corrected
+  // to match. Same key, same button/aria-label call site, unchanged.
+  sc_export_excel:      { ar: 'تصدير Excel (.xlsx)',                en: 'Export Excel (.xlsx)' },
   sc_print_pdf:         { ar: 'طباعة / حفظ PDF',                   en: 'Print / Save as PDF' },
   print_popup_blocked:  { ar: 'يبدو أن المتصفح منع فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم إعادة المحاولة.', en: 'Your browser appears to have blocked the print window. Please allow pop-ups for this site and try again.' },
   sc_all_statuses:      { ar: 'كل الحالات',                        en: 'All statuses' },

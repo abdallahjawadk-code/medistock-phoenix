@@ -4,6 +4,11 @@ import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
 import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
+import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
+import {
+  exportAvailabilityXlsx,
+  type AvailabilityExportRow,
+} from '@/shared/lib/professional-export';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
@@ -96,6 +101,16 @@ interface LiveAvailRow {
   effective_status?: CanonicalStatus;
   expiry_bucket?: string | null;
   distribution_points: { id: string; name: string; name_ar: string; status?: string } | null;
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: already selected by getAvailabilityByOrg
+  // (availability.service.ts) — batch_number/notes are pre-existing columns;
+  // actor_name_snapshot is a display-name text column (never the raw
+  // last_updated_by auth uuid); removed_at is migration 053's
+  // intentional-removal marker, read here ONLY to exclude removed rows from
+  // the XLSX export (the on-screen table itself stays unfiltered by it).
+  batch_number?: string | null;
+  notes?: string | null;
+  actor_name_snapshot?: string | null;
+  removed_at?: string | null;
 }
 
 function effOf(r: LiveAvailRow): CanonicalStatus {
@@ -130,15 +145,27 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/**
- * PRODUCTION-READINESS-CLEANUP-A: CSV injection protection — a cell value
- * beginning with =, +, -, or @ can be interpreted as a formula by
- * Excel/Sheets when the file is opened. Prefixing with a leading apostrophe
- * (the standard mitigation) forces spreadsheet apps to treat it as plain
- * text while keeping the value itself unchanged.
- */
-function csvSafeCell(v: string): string {
-  return /^[=+\-@]/.test(v) ? `'${v}` : v;
+// SAFE-PROFESSIONAL-XLSX-EXPORT-A: bilingual condition labels for the XLSX
+// export (Availability Export sheet + Summary sheet totals) — headers/labels
+// in this export are always bilingual regardless of the app's current
+// language, per this phase's explicit requirement. The on-screen table
+// itself is untouched and still uses the existing lang-switched `t()` labels.
+const AVAIL_EXPORT_CONDITION_LABELS: Record<CanonicalStatus, string> = {
+  available:   'Available / متوفر',
+  low_stock:   'Low Stock / منخفض',
+  missing:     'Missing / مفقود',
+  surplus:     'Surplus / فائض',
+  near_expiry: 'Near Expiry / قريب الانتهاء',
+  expired:     'Expired / منتهي الصلاحية',
+};
+
+/** Whole days from `now` until `expiryDate` (negative if already past) — null when unparseable/missing. */
+function daysUntilExpiry(expiryDate: string | null, now: Date = new Date()): number | null {
+  if (!expiryDate) return null;
+  const d = new Date(expiryDate);
+  if (isNaN(d.getTime())) return null;
+  const dateOnly = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  return Math.round((dateOnly(d).getTime() - dateOnly(now).getTime()) / 86_400_000);
 }
 
 export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
@@ -175,6 +202,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling window.open/window.print directly.
   const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: workbook generation is async (ExcelJS
+  // writeBuffer, dynamically imported on first use) — guard against
+  // double-clicks while a download is in flight, matching StatusEditorScreen's
+  // existing xlsxBusy pattern.
+  const [xlsxBusy, setXlsxBusy] = useState(false);
 
   const live = useAsync(
     () => effectiveOrgId ? getAvailabilityByOrg(effectiveOrgId) : Promise.resolve([]),
@@ -420,37 +453,67 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     win.close();
   }
 
-  function exportCsv() {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: replaces the previous hand-rolled CSV
+  // export with a real, styled `.xlsx` workbook (Summary / Availability
+  // Export / Data Dictionary sheets) via exportAvailabilityXlsx. Same button
+  // location, same user flow, same `rows` (i.e. the same filters currently
+  // applied on screen — status/supply/smart-filter chips/search) as the old
+  // exportCsv — the ONLY additional exclusion is removed_at rows, which the
+  // on-screen table itself intentionally does NOT filter (operations/
+  // reactivation context), but which must never appear in this "live/current"
+  // export. Genuine missing rows (removed_at null) are unaffected and remain
+  // included, exactly like every other still-open shortage.
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
     try {
-      const bom = '﻿';
-      const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
-      const metadataLines = [
-        t('sc_report_title', lang),
-        `${t('sc_selected_filters', lang)}: ${selectedFiltersText}`,
-        `${t('sc_generated_at', lang)}: ${generatedAt()}`,
-        `${t('sc_total_rows', lang)}: ${rows.length}`,
-      ];
-      const lines = [
-        ...metadataLines.map(m => cell(m)),
-        '',
-        columns.map(c => cell(c.label)).join(','),
-        ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
-      ];
-      const csv = bom + lines.join('\r\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+      const exportRows: AvailabilityExportRow[] = rows
+        .filter(r => r.removed_at == null)
+        .map((r, i) => {
+          const status = effOf(r);
+          const tier = getExpiryRiskTier(r.expiry_date);
+          return {
+            no: i + 1,
+            institution: orgName || '—',
+            outlet: dpNameOf(r, lang),
+            scientificName: r.scientific_name || '—',
+            tradeName: r.trade_name || '—',
+            dosageForm: r.dosage_form || '—',
+            concentration: r.concentration || '—',
+            batchNumber: r.batch_number || '—',
+            quantity: r.quantity ?? 0,
+            conditionKey: status,
+            conditionLabel: AVAIL_EXPORT_CONDITION_LABELS[status] ?? status,
+            expiryDate: r.expiry_date ? new Date(r.expiry_date) : null,
+            daysToExpiry: daysUntilExpiry(r.expiry_date),
+            expiryRiskLabel: `${getExpiryRiskLabel(tier, 'en')} / ${getExpiryRiskLabel(tier, 'ar')}`,
+            lastUpdatedBy: r.actor_name_snapshot || '—',
+            lastUpdatedAt: r.updated_at ? new Date(r.updated_at) : null,
+            notes: r.notes || '—',
+          };
+        });
+
       const safeOrg = orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
-      const pad2 = (n: number) => String(n).padStart(2, '0');
-      const now = new Date();
-      const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `medistock-status${safeOrg ? '-' + safeOrg : ''}-${stamp}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const ok = await exportAvailabilityXlsx({
+        reportTitle: t('sc_report_title', lang),
+        generatedAt: new Date(),
+        lang,
+        fileNameBase: `medistock-status${safeOrg ? '-' + safeOrg : ''}`,
+        filtersSummary: selectedFiltersText,
+        footerText: t('report_footer_generated_by', lang),
+        emptyMessage: t('se_no_records', lang),
+        conditionLabels: AVAIL_EXPORT_CONDITION_LABELS,
+        rows: exportRows,
+      });
+      if (!ok) {
+        setMovementToast(t('csv_export_failed', lang));
+        setTimeout(() => setMovementToast(null), 3000);
+      }
     } catch {
       setMovementToast(t('csv_export_failed', lang));
       setTimeout(() => setMovementToast(null), 3000);
+    } finally {
+      setXlsxBusy(false);
     }
   }
 
@@ -543,7 +606,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
+            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
             <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
             <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
           </div>

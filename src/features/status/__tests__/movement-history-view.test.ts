@@ -280,9 +280,12 @@ describe('Existing features remain intact', () => {
     expect(existsSync(join(PHOENIX, 'supabase/migrations/036_phoenix_movement_history_view.sql'))).toBe(false);
   });
 
-  it('does not add Excel import', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // intentionally wires a real .xlsx export into StatusCenterScreen —
+  // unrelated to this phase, which only added MovementHistoryModal.tsx
+  // (still Excel-free, as this phase left it).
+  it('MovementHistoryModal.tsx (this phase\'s own file) does not add Excel import', () => {
     expect(modal).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
-    expect(statusCenter).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
   it('does not reference service_role or auth.admin anywhere in the new files', () => {

@@ -264,10 +264,12 @@ describe('Guards for this UI-only phase', () => {
     });
   });
 
-  it('does not introduce Excel import (no xlsx/exceljs/read-excel-file usage)', () => {
-    [modal, statusCenter].forEach(src => {
-      expect(src).not.toMatch(/xlsx|exceljs|read-excel-file|import.*excel/i);
-    });
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // intentionally wires a real .xlsx export into StatusCenterScreen —
+  // unrelated to this phase, which only added AdjustQuantityModal.tsx (still
+  // Excel-free, as this phase left it).
+  it('AdjustQuantityModal.tsx (this phase\'s own file) does not introduce Excel import (no xlsx/exceljs/read-excel-file usage)', () => {
+    expect(modal).not.toMatch(/xlsx|exceljs|read-excel-file|import.*excel/i);
   });
 
   it('EditorScreen.tsx is unchanged in this phase (no movement wiring introduced)', () => {

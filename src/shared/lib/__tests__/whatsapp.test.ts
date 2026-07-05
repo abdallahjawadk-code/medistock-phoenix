@@ -222,9 +222,12 @@ describe('3. QR public route remains present', () => {
 // ─── 4/5: export/print + mobile print fallback ─────────────────────────────
 
 describe('4/5. Export/print handlers + mobile print fallback remain unchanged', () => {
-  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export with a real styled
+  // .xlsx workbook (exportXlsx) — unrelated to this phase's WhatsApp
+  // concerns. printReport and the mobile print fallback are untouched.
+  it('StatusCenterScreen still has exportXlsx, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     expect(statusCenter).toContain('MobilePrintFallbackModal');
   });
@@ -302,8 +305,11 @@ describe('10. No package/lockfile/migration changes', () => {
 // ─── 23/24: existing handlers remain connected ─────────────────────────────
 
 describe('23. Existing export/print handlers remain connected', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the export button's onClick now calls
+  // exportXlsx (real .xlsx via exportAvailabilityXlsx) instead of the old
+  // exportCsv — same button, same location, unrelated to this WhatsApp phase.
   it('StatusCenterScreen export/print buttons still call their original handlers', () => {
-    expect(statusCenter).toContain('onClick={exportCsv}');
+    expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
   });
 });

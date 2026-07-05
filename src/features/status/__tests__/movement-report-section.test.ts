@@ -348,9 +348,13 @@ describe('Guards: no unrelated changes, existing features intact', () => {
     expect(statusCenter).toContain('canViewMovementHistory');
   });
 
-  it('does not add Excel import anywhere in the new files', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // intentionally wires a real .xlsx export into StatusCenterScreen
+  // (exportAvailabilityXlsx) — unrelated to this movement-reports phase,
+  // whose own MovementReportSection.tsx (`section`) remains CSV-only, no
+  // Excel library, exactly as this phase left it.
+  it('does not add Excel import to MovementReportSection.tsx (the file this phase added)', () => {
     expect(section).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
-    expect(statusCenter).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
   it('does not reference service_role or auth.admin anywhere in the new files', () => {

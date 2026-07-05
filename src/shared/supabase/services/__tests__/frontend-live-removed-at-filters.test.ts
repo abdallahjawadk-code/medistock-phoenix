@@ -128,16 +128,32 @@ describe('D) EditorScreen reactivation path is not broken', () => {
 describe('E) getAvailabilityByOrg (Status Center / operations context) remains unfiltered by design', () => {
   it('no .is(\'removed_at\', null) was added to getAvailabilityByOrg — migration 053\'s own header states staff need to see removed rows to manage/reactivate them', () => {
     const start = availabilityService.indexOf('export async function getAvailabilityByOrg');
-    const body = availabilityService.slice(start, start + 900);
+    const body = availabilityService.slice(start, start + 1400);
     expect(body).not.toContain(".is('removed_at', null)");
   });
 
-  it('StatusCenterScreen (the consumer) is untouched by this phase', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase adds
+  // actor_name_snapshot/removed_at to this same SELECT (both already-existing,
+  // non-sensitive columns) so StatusCenterScreen's XLSX export can show a
+  // "Last Updated By" display name and exclude removed_at rows from the
+  // export — the query itself still applies no removed_at filter, so this
+  // file's own guard above still holds.
+  it('getAvailabilityByOrg additionally selects actor_name_snapshot and removed_at (read-only, no new query source, no filter added)', () => {
+    const start = availabilityService.indexOf('export async function getAvailabilityByOrg');
+    const body = availabilityService.slice(start, start + 1400);
+    expect(body).toContain('actor_name_snapshot, removed_at');
+  });
+
+  it('StatusCenterScreen (the consumer) is untouched by this phase, except the later, separately-reviewed SAFE-PROFESSIONAL-XLSX-EXPORT-A CSV-to-XLSX export replacement', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    if (diff.trim()) {
+      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at/);
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION/);
+    }
   });
 });
 

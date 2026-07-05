@@ -301,28 +301,36 @@ describe('19. QR routes unchanged', () => {
 });
 
 describe('20. Export/print unchanged', () => {
-  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export (csvSafeCell/exportCsv)
+  // with a real styled .xlsx workbook (exportXlsx/exportAvailabilityXlsx) —
+  // unrelated to this phase's WhatsApp contact concerns. printReport and the
+  // mobile print fallback are untouched by that phase.
+  it('StatusCenterScreen still has exportXlsx, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     expect(statusCenter).toContain('MobilePrintFallbackModal');
   });
 
   it('MyAccountScreen was not given any export/print logic', () => {
     expect(myAccount).not.toContain('exportCsv');
+    expect(myAccount).not.toContain('exportXlsx');
     expect(myAccount).not.toContain('printReport');
     expect(myAccount).not.toContain('window.print');
   });
 
-  it('StatusCenterScreen.tsx export/print functions are unchanged (the only later diff is EXPIRY-RISK-TIERS-A\'s additive ExpiryRiskBadge next to the expiry-date cell — see expiry-risk-badge-wiring.test.ts)', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  it('StatusCenterScreen.tsx print function is unchanged; the export diff (from the later SAFE-PROFESSIONAL-XLSX-EXPORT-A phase) is scoped to the CSV-to-XLSX replacement only', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     let diff = '';
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff).not.toMatch(/^[+-].*function (exportCsv|printReport|csvSafeCell)/m);
+    expect(diff).not.toMatch(/^[+-].*function printReport/m);
+    if (diff.trim()) {
+      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at/);
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+    }
   });
 });
 

@@ -63,20 +63,22 @@ describe('3. QR public route remains present', () => {
 });
 
 describe('4/5. Export/print handlers + mobile print fallback remain unchanged', () => {
-  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export with a real styled
+  // .xlsx workbook (exportXlsx) — unrelated to this smart-filters/timeline
+  // phase. printReport and the mobile print fallback are untouched.
+  it('StatusCenterScreen still has exportXlsx, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     expect(statusCenter).toContain('isLikelyMobilePrintContext');
     expect(statusCenter).toContain('MobilePrintFallbackModal');
   });
 
-  it('exportCsv/printReport function bodies are unchanged (still keyed on the same `rows` + csvSafeCell/BOM pattern)', () => {
-    const exportFn = statusCenter.slice(statusCenter.indexOf('function exportCsv'), statusCenter.indexOf('function handleMovementSuccess'));
-    expect(exportFn).toContain('﻿');
-    expect(exportFn).toContain('csvSafeCell');
-    expect(exportFn).toContain('rows.map');
-    const printFn = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('function exportCsv'));
+  it('exportXlsx still reads the same filtered `rows` this phase\'s smart filters produce; printReport is unchanged', () => {
+    const exportFn = statusCenter.slice(statusCenter.indexOf('async function exportXlsx'), statusCenter.indexOf('function handleMovementSuccess'));
+    expect(exportFn).toContain('rows');
+    expect(exportFn).toContain('exportAvailabilityXlsx');
+    const printFn = statusCenter.slice(statusCenter.indexOf('function printReport'), statusCenter.indexOf('async function exportXlsx'));
     expect(printFn).toContain('isLikelyMobilePrintContext');
     expect(printFn).toContain('buildReportHtml');
   });
@@ -217,8 +219,10 @@ describe('17. Timeline has Arabic and English strings', () => {
 });
 
 describe('18. Existing export/print handlers remain connected', () => {
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the export button's onClick now calls
+  // exportXlsx instead of the old exportCsv — same button, same location.
   it('StatusCenterScreen export/print buttons still call their original handlers', () => {
-    expect(statusCenter).toContain('onClick={exportCsv}');
+    expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
   });
 });

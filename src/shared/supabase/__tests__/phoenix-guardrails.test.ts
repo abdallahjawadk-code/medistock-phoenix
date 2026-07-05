@@ -995,10 +995,28 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     expect(content).not.toContain('actor_identity_version');
   });
 
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: StatusCenterScreen.tsx now reads
+  // actor_name_snapshot (already selected read-only by availability.service.ts's
+  // getAvailabilityByOrg, exempted above) purely to display a "Last Updated
+  // By" name in its live table and Excel export — never as an outbound
+  // rpc/insert argument. Same carve-out reasoning as the two dedicated tests
+  // above.
+  it('features/status/StatusCenterScreen.tsx only READS actor_name_snapshot (display use), never writes it', () => {
+    const content = readSrc('features/status/StatusCenterScreen.tsx');
+    expect(content).not.toMatch(/p_actor_name_snapshot\s*:/);
+    expect(content).not.toMatch(/\.insert\([^)]*actor_name_snapshot/s);
+    expect(content).not.toMatch(/\.rpc\([^)]*actor_name_snapshot/s);
+    expect(content).not.toContain('actor_email_snapshot');
+    expect(content).not.toContain('actor_role_snapshot');
+    expect(content).not.toContain('actor_org_snapshot');
+    expect(content).not.toContain('actor_identity_version');
+  });
+
   it('no frontend .ts file outside __tests__ passes snapshot fields to supabase, except the documented read-only movement history / alert event history queries', () => {
     const files = allTsxFiles('')
       .filter(path => !path.endsWith(join('services', 'availability.service.ts')))
-      .filter(path => !path.endsWith(join('alerts', 'inter-org-alert-lifecycle.service.ts')));
+      .filter(path => !path.endsWith(join('alerts', 'inter-org-alert-lifecycle.service.ts')))
+      .filter(path => !path.endsWith(join('status', 'StatusCenterScreen.tsx')));
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {

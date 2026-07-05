@@ -285,15 +285,19 @@ describe('19. QR routes unchanged', () => {
 });
 
 describe('20. Export/print unchanged', () => {
-  it('StatusCenterScreen still has csvSafeCell, exportCsv, printReport, and the mobile print fallback modal', () => {
-    expect(statusCenter).toContain('function csvSafeCell');
-    expect(statusCenter).toContain('function exportCsv');
+  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
+  // replaced StatusCenterScreen's ad-hoc CSV export with a real styled
+  // .xlsx workbook (exportXlsx) — unrelated to this phase's WhatsApp save
+  // concerns. printReport and the mobile print fallback are untouched.
+  it('StatusCenterScreen still has exportXlsx, printReport, and the mobile print fallback modal', () => {
+    expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     expect(statusCenter).toContain('MobilePrintFallbackModal');
   });
 
   it('MyAccountScreen was not given any export/print logic', () => {
     expect(myAccount).not.toContain('exportCsv');
+    expect(myAccount).not.toContain('exportXlsx');
     expect(myAccount).not.toContain('printReport');
     expect(myAccount).not.toContain('window.print');
   });
