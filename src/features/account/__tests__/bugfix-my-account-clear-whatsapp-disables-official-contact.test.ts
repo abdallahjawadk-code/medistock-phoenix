@@ -150,10 +150,15 @@ describe('10. No migrations created or modified by this fix', () => {
   // (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) legitimately corrects it
   // in-place before its first successful manual apply — 052+ and every other
   // migration file remain fully guarded below.
+  // PHASE2-ALLOW-054-INPLACE-HARDENING-GUARDS-A: 054_dashboard_condition_counts_rpcs.sql
+  // is also excluded — HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A legitimately
+  // corrects it in-place (COALESCE(v_role = 'super_admin', false)) before its
+  // first successful manual apply, the same pattern as 051/053. Every other
+  // migration file (001-053, 055+) remains fully guarded.
   it('no working-tree diff on any migration SQL file other than the already-approved 051 immutable-expiry-date fix', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
@@ -193,6 +198,12 @@ describe('10. No migrations created or modified by this fix', () => {
       // prepared but not yet applied/committed.
       '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: 054 corrected in-place
+      // before its first successful manual apply (COALESCE(v_role =
+      // 'super_admin', false) NULL-role fail-closed fix), same pattern as
+      // the 051/053 in-place corrections above.
+      'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

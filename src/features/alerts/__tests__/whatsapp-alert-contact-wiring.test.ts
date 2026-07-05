@@ -133,7 +133,7 @@ describe('10. No package/lockfile/migration changes', () => {
   it('git diff for migration SQL files is empty other than the already-approved 051 immutable-expiry-date fix (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change); package.json changes are limited to the approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
 
@@ -188,6 +188,10 @@ describe('10. No package/lockfile/migration changes', () => {
       // prepared but not yet applied/committed.
       '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: 054 corrected in-place
+      // before its first successful manual apply, same pattern as 051/053.
+      'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -418,7 +422,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     expect(block).not.toContain('functions.invoke');
   });
 
-  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A), 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A), 051 (DB-MATERIAL-BATCH-IDENTITY-051-A, manual-apply-only, not yet applied), 052 (QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A, manually applied and verified), and 053 (DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A, manual-apply-only, not yet applied) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
+  it('no unreviewed top-level migration file exists beyond 043 — only the separately-reviewed migrations 044 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A), 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A), 046 (DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A), 047 (DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A), 048 (DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A), 049 (DATA-MODEL-NATIONAL-CODE-SEPARATION-A), 050 (DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A), 051 (DB-MATERIAL-BATCH-IDENTITY-051-A, manual-apply-only, not yet applied), 052 (QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A, manually applied and verified), 053 (DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A, manual-apply-only, not yet applied), and 054 (PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, manual-apply-only, not yet applied) are allowed above it (any of these may still be untracked/unstaged at review time — this check only constrains what IS tracked/staged, not when it lands)', () => {
     let files = '';
     try {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
@@ -435,6 +439,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       'supabase/migrations/051_material_batch_identity_option_a.sql',
       'supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
       'supabase/migrations/053_item_availability_removed_marker.sql',
+      'supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -443,7 +448,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(53);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(54);
   });
 });
 

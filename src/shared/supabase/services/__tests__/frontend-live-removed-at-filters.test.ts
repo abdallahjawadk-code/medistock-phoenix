@@ -273,10 +273,14 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     expect(listing).not.toMatch(/055_/);
   });
 
-  it('no migration SQL file has a working-tree diff', () => {
+  // PHASE2-ALLOW-054-INPLACE-HARDENING-GUARDS-A: 054_dashboard_condition_counts_rpcs.sql
+  // is excluded because HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A legitimately
+  // corrects it in-place before its first successful manual apply, the same
+  // pattern as the 051/053 in-place corrections elsewhere in this repo.
+  it('no migration SQL file has a working-tree diff (other than the already-approved 054 NULL-role fail-closed fix)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

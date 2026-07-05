@@ -336,6 +336,82 @@ describe('HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A: non-super callers with NU
   });
 });
 
+describe('HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: NULL phoenix_my_role() is treated as non-super', () => {
+  it('dashboard RPC computes v_is_super via COALESCE(v_role = \'super_admin\', false)', () => {
+    expect(fnDashboard).toMatch(/v_is_super\s*:=\s*COALESCE\s*\(\s*v_role\s*=\s*'super_admin'\s*,\s*false\s*\)/);
+  });
+
+  it('institution RPC computes v_is_super via COALESCE(v_role = \'super_admin\', false)', () => {
+    expect(fnInstitution).toMatch(/v_is_super\s*:=\s*COALESCE\s*\(\s*v_role\s*=\s*'super_admin'\s*,\s*false\s*\)/);
+  });
+
+  it('dashboard RPC no longer uses the bare, non-coalesced v_is_super assignment', () => {
+    expect(fnDashboard).not.toMatch(/v_is_super\s*:=\s*\(v_role\s*=\s*'super_admin'\)\s*;/);
+  });
+
+  it('institution RPC no longer uses the bare, non-coalesced v_is_super assignment', () => {
+    expect(fnInstitution).not.toMatch(/v_is_super\s*:=\s*\(v_role\s*=\s*'super_admin'\)\s*;/);
+  });
+
+  it('dashboard RPC computes v_is_super before the NULL-org fail-closed guard, so a NULL role cannot skip it', () => {
+    const assignIdx = fnDashboard.search(/COALESCE\s*\(\s*v_role\s*=\s*'super_admin'/);
+    const guardIdx = fnDashboard.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeLessThan(guardIdx);
+  });
+
+  it('institution RPC computes v_is_super before the NULL-org fail-closed guard, so a NULL role cannot skip it', () => {
+    const assignIdx = fnInstitution.search(/COALESCE\s*\(\s*v_role\s*=\s*'super_admin'/);
+    const guardIdx = fnInstitution.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeLessThan(guardIdx);
+  });
+
+  it('a NULL-role, NULL-org dashboard caller cannot fall into the all-org branch (guard precedes v_effective_org assignment, and v_is_super is a real boolean, never NULL)', () => {
+    // COALESCE guarantees v_is_super is boolean (never NULL), so `NOT v_is_super`
+    // reliably evaluates to TRUE for a NULL/non-super role, tripping the guard
+    // before v_effective_org (and its "IS NULL -> all orgs" semantics) is ever computed.
+    const coalesceIdx = fnDashboard.search(/COALESCE\s*\(\s*v_role\s*=\s*'super_admin'/);
+    const guardIdx = fnDashboard.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    const assignIdx = fnDashboard.indexOf('v_effective_org := CASE WHEN v_is_super');
+    expect(coalesceIdx).toBeLessThan(guardIdx);
+    expect(guardIdx).toBeLessThan(assignIdx);
+  });
+
+  it('a NULL-role, NULL-org institution caller returns no rows (guard precedes RETURN QUERY, and v_is_super is a real boolean, never NULL)', () => {
+    const coalesceIdx = fnInstitution.search(/COALESCE\s*\(\s*v_role\s*=\s*'super_admin'/);
+    const guardIdx = fnInstitution.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    const queryIdx = fnInstitution.indexOf('RETURN QUERY');
+    expect(coalesceIdx).toBeLessThan(guardIdx);
+    expect(guardIdx).toBeLessThan(queryIdx);
+  });
+
+  it('super_admin behavior remains allowed (COALESCE only changes the NULL case; a real \'super_admin\' role still yields v_is_super = true)', () => {
+    expect(fnDashboard).toMatch(/COALESCE\s*\(\s*v_role\s*=\s*'super_admin'\s*,\s*false\s*\)/);
+    expect(fnDashboard).toContain('v_effective_org IS NULL OR organization_id = v_effective_org');
+  });
+
+  it('removed_at IS NULL remains present in both RPCs after the role hardening', () => {
+    expect(fnDashboard).toMatch(/removed_at\s+is\s+null/i);
+    expect(fnInstitution).toMatch(/ia\.removed_at\s+is\s+null/i);
+  });
+
+  it('genuine missing rows remain counted in both RPCs after the role hardening', () => {
+    expect(fnDashboard).toMatch(/condition = 'missing'/);
+    expect(fnInstitution).toMatch(/condition IN \('missing', 'expired'\)/);
+  });
+
+  it('the VERIFY block asserts both functions use COALESCE(v_role = \'super_admin\', false), with non-brittle whitespace matching', () => {
+    expect(verifyBlock).toMatch(/COALESCE\\s\*\\\(\\s\*v_role\\s\*=\\s\*''super_admin''\\s\*,\\s\*false\\s\*\\\)/);
+  });
+
+  it('the VERIFY block asserts the COALESCE-hardened assignment runs before each fail-closed guard', () => {
+    expect(verifyBlock).toContain("POSITION('COALESCE(v_role = ''super_admin''' IN v_fn_def)");
+  });
+});
+
 describe('Migration 054: security guardrails', () => {
   it('no service_role reference in the migration body', () => {
     expect(activeSqlPreVerify).not.toMatch(/service_role/i);

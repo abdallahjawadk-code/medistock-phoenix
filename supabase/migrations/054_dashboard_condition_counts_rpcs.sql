@@ -81,6 +81,19 @@
 --   NULL) — its guard is added for explicitness/testability, not because
 --   the prior behavior was wrong.
 --
+--   HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: both RPCs also treat a NULL
+--   phoenix_my_role() (a broken/incomplete profile with no role assigned) as
+--   NOT super_admin. `v_is_super := COALESCE(v_role = 'super_admin', false)`
+--   replaces a bare `v_is_super := (v_role = 'super_admin')` — under SQL
+--   three-valued logic, `NULL = 'super_admin'` evaluates to NULL, not false,
+--   which would make `v_is_super` itself NULL. Since PL/pgSQL's `IF NOT
+--   v_is_super AND v_my_org IS NULL THEN` only executes on a TRUE condition
+--   (never on NULL), a NULL v_is_super would silently skip the NULL-org
+--   fail-closed guard above instead of tripping it. COALESCing to false
+--   guarantees `v_is_super` is always a real boolean, so the fail-closed
+--   guard reliably fires for any caller who is not affirmatively confirmed
+--   as super_admin.
+--
 -- ─────────────────────────────────────────────────────────────────────────────
 -- WHAT IS NOT CHANGED IN THIS PHASE
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +141,15 @@ BEGIN
 
   v_role     := phoenix_my_role();
   v_my_org   := phoenix_my_org();
-  v_is_super := (v_role = 'super_admin');
+  -- HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: COALESCE(..., false) instead
+  -- of a bare boolean expression. A broken/incomplete profile with no role at
+  -- all (phoenix_my_role() returns NULL) must be treated as NOT super_admin.
+  -- Without the COALESCE, `v_role = 'super_admin'` on a NULL v_role evaluates
+  -- to NULL (SQL three-valued logic), so v_is_super becomes NULL rather than
+  -- false — and `NOT v_is_super` below is then also NULL, not TRUE, which
+  -- would let a NULL-role caller silently skip the very next fail-closed
+  -- guard (step 2) instead of tripping it.
+  v_is_super := COALESCE(v_role = 'super_admin', false);
 
   -- 2. HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A: a non-super caller whose
   --    profile has no organization_id (a broken/incomplete profile state)
@@ -216,7 +237,15 @@ BEGIN
 
   v_role     := phoenix_my_role();
   v_my_org   := phoenix_my_org();
-  v_is_super := (v_role = 'super_admin');
+  -- HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: COALESCE(..., false) instead
+  -- of a bare boolean expression. A broken/incomplete profile with no role at
+  -- all (phoenix_my_role() returns NULL) must be treated as NOT super_admin.
+  -- Without the COALESCE, `v_role = 'super_admin'` on a NULL v_role evaluates
+  -- to NULL (SQL three-valued logic), so v_is_super becomes NULL rather than
+  -- false — and `NOT v_is_super` below is then also NULL, not TRUE, which
+  -- would let a NULL-role caller silently skip the very next fail-closed
+  -- guard (step 2) instead of tripping it.
+  v_is_super := COALESCE(v_role = 'super_admin', false);
 
   -- 2. HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A: a non-super caller whose
   --    profile has no organization_id (a broken/incomplete profile state)
@@ -363,6 +392,31 @@ BEGIN
        < POSITION('RETURN QUERY' IN v_fn_def),
     'VERIFY FAILED: phoenix_get_institution_condition_counts fail-closed guard does not run before RETURN QUERY';
 
+  -- V3c: HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A — both functions must
+  -- compute v_is_super via COALESCE(v_role = 'super_admin', false), not a
+  -- bare boolean expression, so a NULL phoenix_my_role() (broken/incomplete
+  -- profile) is coerced to false rather than propagating NULL through the
+  -- three-valued-logic `NOT v_is_super` guard above. Regex uses \s* so
+  -- reformatting whitespace inside the COALESCE call does not break this
+  -- check.
+  SELECT pg_get_functiondef(p.oid) INTO v_fn_def
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'phoenix_get_dashboard_condition_counts';
+  ASSERT v_fn_def ~* 'COALESCE\s*\(\s*v_role\s*=\s*''super_admin''\s*,\s*false\s*\)',
+    'VERIFY FAILED: phoenix_get_dashboard_condition_counts does not treat NULL role as non-super via COALESCE(v_role = ''super_admin'', false)';
+  ASSERT POSITION('COALESCE(v_role = ''super_admin''' IN v_fn_def)
+       < POSITION('NOT v_is_super AND v_my_org IS NULL' IN v_fn_def),
+    'VERIFY FAILED: phoenix_get_dashboard_condition_counts COALESCE-hardened v_is_super assignment does not run before the NULL-org fail-closed guard';
+
+  SELECT pg_get_functiondef(p.oid) INTO v_fn_def
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'phoenix_get_institution_condition_counts';
+  ASSERT v_fn_def ~* 'COALESCE\s*\(\s*v_role\s*=\s*''super_admin''\s*,\s*false\s*\)',
+    'VERIFY FAILED: phoenix_get_institution_condition_counts does not treat NULL role as non-super via COALESCE(v_role = ''super_admin'', false)';
+  ASSERT POSITION('COALESCE(v_role = ''super_admin''' IN v_fn_def)
+       < POSITION('NOT v_is_super AND v_my_org IS NULL' IN v_fn_def),
+    'VERIFY FAILED: phoenix_get_institution_condition_counts COALESCE-hardened v_is_super assignment does not run before the NULL-org fail-closed guard';
+
   -- V4: functional smoke test — dashboard RPC returns all five keys with
   -- integer-ish (numeric jsonb) values, even against an empty/no-auth-safe
   -- default. Called directly (bypassing the auth.uid() check is not
@@ -501,7 +555,7 @@ BEGIN
       AND column_name IN ('removed_at', 'removed_by', 'removal_reason')
   ) = 3, 'VERIFY FAILED: item_availability removed_at/removed_by/removal_reason columns missing (unexpected schema drift)';
 
-  RAISE NOTICE 'Migration 054 verification passed: phoenix_get_dashboard_condition_counts and phoenix_get_institution_condition_counts created, both SECURITY DEFINER with search_path=public, both filter removed_at IS NULL while still counting genuine missing rows, both scoped to super_admin (all orgs) vs non-super (own org only) matching avail_select_org, both fail CLOSED (zero counts / no rows) for a non-super caller with NULL organization_id, no anon/PUBLIC grants, authenticated has EXECUTE, no schema change, no data mutation.';
+  RAISE NOTICE 'Migration 054 verification passed: phoenix_get_dashboard_condition_counts and phoenix_get_institution_condition_counts created, both SECURITY DEFINER with search_path=public, both filter removed_at IS NULL while still counting genuine missing rows, both scoped to super_admin (all orgs) vs non-super (own org only) matching avail_select_org, both fail CLOSED (zero counts / no rows) for a non-super OR NULL-role caller with NULL organization_id (v_is_super computed via COALESCE(v_role = ''super_admin'', false)), no anon/PUBLIC grants, authenticated has EXECUTE, no schema change, no data mutation.';
 END $$;
 
 commit;
@@ -541,6 +595,17 @@ commit;
 --    account, never in production data):
 --    SELECT phoenix_get_dashboard_condition_counts();
 --    -- Expected: {"available":0,"low_stock":0,"missing":0,"near_expiry":0,"surplus":0}
+--    SELECT * FROM phoenix_get_institution_condition_counts();
+--    -- Expected: zero rows.
+--
+-- 7. HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: as a caller whose profile
+--    has BOTH role and organization_id set to NULL (temporarily UPDATE
+--    profiles SET role = NULL, organization_id = NULL WHERE id = '<test
+--    user>' in a throwaway test account, never in production data):
+--    SELECT phoenix_get_dashboard_condition_counts();
+--    -- Expected: {"available":0,"low_stock":0,"missing":0,"near_expiry":0,"surplus":0}
+--    -- (NOT all-organization counts — proves v_is_super was coerced to
+--    -- false rather than remaining NULL and short-circuiting the guard.)
 --    SELECT * FROM phoenix_get_institution_condition_counts();
 --    -- Expected: zero rows.
 --

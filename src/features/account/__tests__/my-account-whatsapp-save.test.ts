@@ -167,7 +167,7 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
   it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
@@ -213,6 +213,10 @@ describe('14. No SQL/migration/RPC/Edge Function added by this phase (UX-MY-ACCO
       // prepared but not yet applied/committed.
       '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: 054 corrected in-place
+      // before its first successful manual apply, same pattern as 051/053.
+      'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
