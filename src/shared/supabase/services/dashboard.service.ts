@@ -46,27 +46,26 @@ export async function getDashboardMetrics(orgId?: string): Promise<DashboardMetr
 
   const orgMatch = orgId ? { organization_id: orgId } : {};
 
-  const [orgsRes, whRes, dpRes, qrActiveRes, qrDisabledRes, availRes] = await Promise.all([
+  // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: condition counts are now computed
+  // DB-side by phoenix_get_dashboard_condition_counts (migration 054) instead
+  // of fetching every item_availability row and counting in JS. The RPC
+  // itself applies removed_at IS NULL and enforces org scoping (super_admin
+  // vs own-org-only), matching the removed_at exclusion this file previously
+  // did client-side.
+  const [orgsRes, whRes, dpRes, qrActiveRes, qrDisabledRes, countsRes] = await Promise.all([
     supabase.from('organizations').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('warehouses').select('id', { count: 'exact', head: true }).neq('status', 'archived').match(orgMatch),
     supabase.from('distribution_points').select('id', { count: 'exact', head: true }).neq('status', 'archived').match(orgMatch),
     supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'active').match(orgMatch),
     supabase.from('qr_tokens').select('id', { count: 'exact', head: true }).eq('status', 'disabled').match(orgMatch),
-    // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: an intentionally removed outlet
-    // material (migration 053's removed_at marker) is forced to
-    // condition='missing' but is not a real shortage — exclude it from the
-    // live dashboard tiles the same way get_public_qr_payload and
-    // phoenix_get_live_inter_institution_alerts_with_state already exclude
-    // it at the DB/RPC layer.
-    supabase.from('item_availability').select('condition').match(orgMatch).is('removed_at', null),
+    supabase.rpc('phoenix_get_dashboard_condition_counts', { p_org_id: orgId ?? null }),
   ]);
 
-  const conditions = (availRes.data ?? []) as { condition: string }[];
-  const available  = conditions.filter(r => r.condition === 'available').length;
-  const lowStock   = conditions.filter(r => r.condition === 'low_stock').length;
-  const missing    = conditions.filter(r => r.condition === 'missing').length;
-  const nearExpiry = conditions.filter(r => r.condition === 'near_expiry').length;
-  const surplus    = conditions.filter(r => r.condition === 'surplus').length;
+  if (countsRes.error) throw countsRes.error;
+
+  const counts = (countsRes.data ?? {}) as Partial<{
+    available: number; low_stock: number; missing: number; near_expiry: number; surplus: number;
+  }>;
 
   return {
     activeInstitutions: orgsRes.count ?? 0,
@@ -74,11 +73,11 @@ export async function getDashboardMetrics(orgId?: string): Promise<DashboardMetr
     activePorts:        dpRes.count ?? 0,
     activeQrCodes:      qrActiveRes.count ?? 0,
     disabledQrCodes:    qrDisabledRes.count ?? 0,
-    availableItems:     available,
-    lowStockCount:      lowStock,
-    missingCount:       missing,
-    nearExpiryCount:    nearExpiry,
-    surplusCount:       surplus,
+    availableItems:     counts.available ?? 0,
+    lowStockCount:      counts.low_stock ?? 0,
+    missingCount:       counts.missing ?? 0,
+    nearExpiryCount:    counts.near_expiry ?? 0,
+    surplusCount:       counts.surplus ?? 0,
     lastUpdated:        new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
   };
 }
@@ -113,36 +112,33 @@ export async function getStatusReportCounts(orgId?: string): Promise<StatusRepor
 export async function getInstitutionOverviews(): Promise<InstitutionOverview[]> {
   if (!supabaseConfigured) return [];
 
-  const [orgsRes, availRes] = await Promise.all([
+  // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: per-org condition counts are now
+  // computed DB-side by phoenix_get_institution_condition_counts (migration
+  // 054) instead of fetching every item_availability row across every
+  // organization and grouping in JS. The RPC applies removed_at IS NULL and
+  // enforces org scoping (super_admin sees all orgs; a non-super caller only
+  // ever gets their own org's row) — the organizations select below is kept
+  // for name/status/city metadata the RPC does not return.
+  const [orgsRes, countsRes] = await Promise.all([
     supabase.from('organizations')
       .select('id, name, name_ar, code, status, city')
       .eq('status', 'active')
       .order('name_ar'),
-    // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: same removed_at exclusion as
-    // getDashboardMetrics above — a removed row must not inflate an
-    // institution's "missing" badge count.
-    supabase.from('item_availability').select('organization_id, condition').is('removed_at', null),
+    supabase.rpc('phoenix_get_institution_condition_counts'),
   ]);
 
   if (orgsRes.error) throw orgsRes.error;
-  if (availRes.error) throw availRes.error;
+  if (countsRes.error) throw countsRes.error;
 
-  const rows = (availRes.data ?? []) as { organization_id: string; condition: string }[];
-  const byOrg = new Map<string, { available: number; low: number; missing: number }>();
-  for (const r of rows) {
-    const acc = byOrg.get(r.organization_id) ?? { available: 0, low: 0, missing: 0 };
-    if (r.condition === 'available' || r.condition === 'surplus') acc.available += 1;
-    else if (r.condition === 'low_stock' || r.condition === 'near_expiry') acc.low += 1;
-    else if (r.condition === 'missing' || r.condition === 'expired') acc.missing += 1;
-    byOrg.set(r.organization_id, acc);
-  }
+  const counts = (countsRes.data ?? []) as { organization_id: string; available: number; low: number; missing: number }[];
+  const byOrg = new Map(counts.map(c => [c.organization_id, c]));
 
   return (orgsRes.data ?? []).map(o => {
-    const c = byOrg.get(o.id) ?? { available: 0, low: 0, missing: 0 };
+    const c = byOrg.get(o.id);
     return {
       id: o.id, name: o.name, name_ar: o.name_ar, code: o.code,
       status: o.status, city: o.city ?? '',
-      available: c.available, low: c.low, missing: c.missing,
+      available: c?.available ?? 0, low: c?.low ?? 0, missing: c?.missing ?? 0,
     };
   });
 }

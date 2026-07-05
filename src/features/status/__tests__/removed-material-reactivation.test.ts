@@ -233,11 +233,17 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
 });
 
 describe('J) Live/current views still hide removed rows; genuine missing rows preserved', () => {
-  it('InstitutionScreen.tsx outlet list filter and dashboard.service.ts removed_at filters were not touched by this phase', () => {
+  // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: dashboard.service.ts is excluded
+  // from this check — a later, separately-reviewed phase legitimately
+  // switches getDashboardMetrics/getInstitutionOverviews to call migration
+  // 054's RPCs instead of reading item_availability directly. That RPC
+  // switch does not change this phase's own scope (InstitutionScreen.tsx's
+  // outlet list filter remains untouched).
+  it('InstitutionScreen.tsx outlet list filter was not touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/institutions/InstitutionScreen.tsx src/shared/supabase/services/dashboard.service.ts',
+        'git diff -- src/features/institutions/InstitutionScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

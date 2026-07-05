@@ -38,28 +38,35 @@ const interOrgAlertLifecycleService = readSrc('features/alerts/inter-org-alert-l
 const types = readFileSync(join(ROOT, 'src/shared/lib/types.ts'), 'utf8');
 
 describe('A) Dashboard: live stock counts ignore removed_at rows', () => {
-  it('getDashboardMetrics filters .is(\'removed_at\', null) on its item_availability read', () => {
+  // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: getDashboardMetrics/
+  // getInstitutionOverviews no longer fetch item_availability rows directly
+  // and filter removed_at client-side — that filtering (and the condition
+  // bucketing) now happens inside migration 054's
+  // phoenix_get_dashboard_condition_counts / phoenix_get_institution_
+  // condition_counts RPCs, which both apply `removed_at IS NULL` internally
+  // (see supabase/migrations/054_dashboard_condition_counts_rpcs.sql). These
+  // tests are updated to assert the RPC call sites instead of a raw
+  // .is('removed_at', null) client-side filter, which no longer exists here.
+  it('getDashboardMetrics delegates condition counting to phoenix_get_dashboard_condition_counts (which applies removed_at IS NULL internally)', () => {
     const start = dashboardService.indexOf('export async function getDashboardMetrics');
     const end = dashboardService.indexOf('export async function getStatusReportCounts');
     const body = dashboardService.slice(start, end);
-    const line = body.split('\n').find(l => l.includes("from('item_availability')"));
-    expect(line).toBeDefined();
-    expect(line).toContain(".is('removed_at', null)");
+    expect(body).toContain("supabase.rpc('phoenix_get_dashboard_condition_counts'");
+    expect(body).not.toMatch(/from\('item_availability'\)/);
   });
 
-  it('getInstitutionOverviews filters .is(\'removed_at\', null) on its item_availability read', () => {
+  it('getInstitutionOverviews delegates condition counting to phoenix_get_institution_condition_counts (which applies removed_at IS NULL internally)', () => {
     const start = dashboardService.indexOf('export async function getInstitutionOverviews');
-    const body = dashboardService.slice(start, start + 800);
-    const line = body.split('\n').find(l => l.includes("from('item_availability')"));
-    expect(line).toBeDefined();
-    expect(line).toContain(".is('removed_at', null)");
+    const body = dashboardService.slice(start, start + 1200);
+    expect(body).toContain("supabase.rpc('phoenix_get_institution_condition_counts')");
+    expect(body).not.toMatch(/from\('item_availability'\)/);
   });
 
-  it('does not globally hide missing/shortage rows — only the removed_at filter was added, condition-bucketing logic is untouched', () => {
+  it('does not globally hide missing/shortage rows — the dashboard RPC still returns a genuine missing count (verified in migration 054, not this file)', () => {
     const start = dashboardService.indexOf('export async function getDashboardMetrics');
     const end = dashboardService.indexOf('export async function getStatusReportCounts');
     const body = dashboardService.slice(start, end);
-    expect(body).toContain("r.condition === 'missing'");
+    expect(body).toContain('counts.missing');
   });
 });
 

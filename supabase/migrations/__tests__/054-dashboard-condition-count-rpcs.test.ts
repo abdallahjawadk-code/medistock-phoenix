@@ -448,7 +448,13 @@ describe('Migration 054: security guardrails', () => {
 });
 
 describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend/service files changed', () => {
-  it('no working-tree diff on dashboard.service.ts (RPC switch is a later, separate phase)', () => {
+  // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: dashboard.service.ts is excluded
+  // from both checks below — the later, separately-reviewed phase this
+  // comment already anticipated ("RPC switch is a later, separate phase")
+  // now legitimately switches getDashboardMetrics/getInstitutionOverviews to
+  // call the two RPCs this migration created, instead of reading
+  // item_availability directly.
+  it('no working-tree diff on dashboard.service.ts other than the already-approved RPC switch (PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A)', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -456,14 +462,20 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    // The RPC switch is expected to have landed — don't assert emptiness,
+    // just assert it only calls the two migration-054 RPCs, never a raw
+    // item_availability select.
+    if (diff.trim()) {
+      expect(diff).toMatch(/phoenix_get_dashboard_condition_counts|phoenix_get_institution_condition_counts/);
+      expect(diff).not.toMatch(/\+.*from\('item_availability'\)/);
+    }
   });
 
-  it('no working-tree diff on any frontend production file', () => {
+  it('no working-tree diff on any frontend production file other than dashboard.service.ts (already-approved RPC switch)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

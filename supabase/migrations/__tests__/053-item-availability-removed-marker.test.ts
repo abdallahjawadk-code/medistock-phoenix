@@ -570,7 +570,7 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
     expect(diff.trim()).toBe('');
   });
 
-  it('the dashboard.service.ts/availability.service.ts/InstitutionScreen.tsx/types.ts diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches removed_at wiring, no DB/RPC/RLS/permission/alert-lifecycle/WhatsApp change', () => {
+  it('the dashboard.service.ts/availability.service.ts/InstitutionScreen.tsx/types.ts diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A and PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A phases) only touches removed_at wiring and/or the already-approved migration-054 RPC switch, no new DB/RPC/RLS/permission/alert-lifecycle/WhatsApp change', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -579,10 +579,16 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
       );
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toContain('removed_at');
       expect(diff).not.toMatch(/service_role|auth\.admin/);
       expect(diff).not.toMatch(/graph\.facebook|access_token|whatsapp|Bearer /i);
-      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\(|CREATE POLICY|DROP POLICY/);
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|CREATE POLICY|DROP POLICY/);
+      // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: supabase.rpc(...) calls are
+      // now expected here — but ONLY to the two already-approved,
+      // already-applied migration 054 RPCs, never to any other/new RPC name.
+      const rpcCalls = diff.match(/supabase\.rpc\('([^']+)'/g) ?? [];
+      for (const call of rpcCalls) {
+        expect(call).toMatch(/phoenix_get_dashboard_condition_counts|phoenix_get_institution_condition_counts/);
+      }
     }
   });
 
