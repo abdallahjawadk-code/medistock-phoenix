@@ -399,14 +399,58 @@ describe('Migration 053: security guardrails', () => {
     expect(activeSqlPreVerify).not.toMatch(/auth\.admin/i);
   });
 
-  it('no WhatsApp / Graph API / Bearer token reference in the migration body', () => {
-    expect(activeSqlPreVerify).not.toMatch(/whatsapp|graph\.facebook|bearer/i);
+  it('no Graph API / Bearer token reference in the migration body (outside preserved 047 comments/contact fields)', () => {
+    expect(activeSqlPreVerify).not.toMatch(/graph\.facebook|bearer/i);
   });
 
-  it('the VERIFY block itself asserts absence of service_role/auth.admin/whatsapp/bearer in the five modified functions', () => {
+  it('the VERIFY block itself asserts absence of service_role/auth.admin in the five modified functions', () => {
     expect(migration053).toMatch(/NOT ILIKE '%service_role%'/);
     expect(migration053).toMatch(/NOT ILIKE '%auth\.admin%'/);
-    expect(migration053).toMatch(/NOT ILIKE '%whatsapp%'/);
+  });
+
+  // FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A: pg_get_functiondef() reproduces
+  // a function's body verbatim, including its comments.
+  // phoenix_get_live_inter_institution_alerts_with_state legitimately carries
+  // two migration-047 comments naming DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A
+  // alongside the preserved source_contact_phone/target_contact_phone fields
+  // — a raw `NOT ILIKE '%whatsapp%'` guard is a false positive against that
+  // historical comment text, not a real external API/token call, and rolls
+  // back the whole migration on every apply. The guard must check for actual
+  // dangerous patterns instead.
+  describe('FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A: precise external API/token guard (no raw whatsapp ban)', () => {
+    const verifyBlock = migration053.slice(migration053.indexOf('DO $$'));
+
+    it('does not use a raw %whatsapp% text ban anywhere in the VERIFY block', () => {
+      expect(verifyBlock).not.toMatch(/NOT ILIKE '%whatsapp%'/i);
+    });
+
+    it('still blocks graph.facebook, bearer, and access_token references', () => {
+      expect(verifyBlock).toContain("NOT ILIKE '%graph.facebook%'");
+      expect(verifyBlock).toContain("NOT ILIKE '%bearer%'");
+      expect(verifyBlock).toContain("NOT ILIKE '%access_token%'");
+    });
+
+    it('still blocks Authorization header references', () => {
+      expect(verifyBlock).toContain("NOT ILIKE '%authorization%'");
+    });
+
+    it('still blocks outbound HTTP(S) call patterns and Postgres HTTP extensions', () => {
+      expect(verifyBlock).toContain("NOT ILIKE '%https://%'");
+      expect(verifyBlock).toContain("NOT ILIKE '%http://%'");
+      expect(verifyBlock).toContain("NOT ILIKE '%pg_net%'");
+      expect(verifyBlock).toContain("NOT ILIKE '%net.http%'");
+    });
+
+    it('the cross-function guardrail loop still checks service_role/auth.admin/DROP TABLE/TRUNCATE/DELETE FROM item_availability', () => {
+      const loopIdx = verifyBlock.indexOf('Cross-function security guardrails');
+      const loopEnd = verifyBlock.indexOf('END LOOP;', loopIdx);
+      const loop = verifyBlock.slice(loopIdx, loopEnd);
+      expect(loop).toContain("NOT ILIKE '%service_role%'");
+      expect(loop).toContain("NOT ILIKE '%auth.admin%'");
+      expect(loop).toContain("NOT ILIKE '%DROP TABLE%'");
+      expect(loop).toContain("NOT ILIKE '%TRUNCATE%'");
+      expect(loop.toLowerCase()).toContain('delete from item_availability');
+    });
   });
 
   it('no CREATE/DROP POLICY anywhere (no RLS change)', () => {

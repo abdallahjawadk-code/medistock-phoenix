@@ -1445,8 +1445,26 @@ BEGIN
       'VERIFY FAILED: service_role reference found in a modified function';
     ASSERT v_fn_def NOT ILIKE '%auth.admin%',
       'VERIFY FAILED: auth.admin reference found in a modified function';
-    ASSERT v_fn_def NOT ILIKE '%whatsapp%' AND v_fn_def NOT ILIKE '%graph.facebook%' AND v_fn_def NOT ILIKE '%bearer%',
-      'VERIFY FAILED: WhatsApp/Graph API/Bearer token reference found in a modified function';
+    -- FIX-MIGRATION-053-WHATSAPP-VERIFY-GUARD-A: a raw '%whatsapp%' ban is a
+    -- false positive here — pg_get_functiondef() reproduces the function body
+    -- verbatim, including its comments, and
+    -- phoenix_get_live_inter_institution_alerts_with_state legitimately
+    -- carries two migration-047 comments referencing
+    -- DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A alongside the preserved
+    -- source_contact_phone/target_contact_phone fields. The word "WhatsApp"
+    -- in a historical comment is not a dangerous external API/token call —
+    -- so this guard checks for the actual dangerous patterns (outbound HTTP,
+    -- bearer/access tokens, Authorization headers, Postgres HTTP extensions)
+    -- instead of banning the word itself.
+    ASSERT v_fn_def NOT ILIKE '%graph.facebook%'
+       AND v_fn_def NOT ILIKE '%bearer%'
+       AND v_fn_def NOT ILIKE '%access_token%'
+       AND v_fn_def NOT ILIKE '%authorization%'
+       AND v_fn_def NOT ILIKE '%https://%'
+       AND v_fn_def NOT ILIKE '%http://%'
+       AND v_fn_def NOT ILIKE '%pg_net%'
+       AND v_fn_def NOT ILIKE '%net.http%',
+      'VERIFY FAILED: external API/token reference found in a modified function';
     ASSERT v_fn_def NOT ILIKE '%DROP TABLE%' AND v_fn_def NOT ILIKE '%TRUNCATE%',
       'VERIFY FAILED: DROP TABLE/TRUNCATE found in a modified function';
     ASSERT v_fn_def NOT ILIKE '%DELETE FROM item_availability %'
