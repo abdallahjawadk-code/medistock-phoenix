@@ -250,12 +250,12 @@ describe('J) Live/current views still hide removed rows; genuine missing rows pr
 });
 
 describe('Guards: no SQL/migration/package change, safety files untouched', () => {
-  it('no migration 054 was created', () => {
+  it('no migration 055 was created (054, PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, is a later, separately-reviewed addition)', () => {
     let listing = '';
     try {
       listing = execSync('git status --porcelain -- supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(listing).not.toMatch(/054_/);
+    expect(listing).not.toMatch(/055_/);
   });
 
   it('no migration SQL file has a working-tree diff', () => {

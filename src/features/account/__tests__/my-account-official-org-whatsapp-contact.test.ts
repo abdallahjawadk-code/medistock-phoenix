@@ -229,6 +229,10 @@ describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is 
       // fix), same pattern as the 051 immutable-expiry-date correction.
       'M supabase/migrations/053_item_availability_removed_marker.sql',
       'M  supabase/migrations/053_item_availability_removed_marker.sql',
+      // PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

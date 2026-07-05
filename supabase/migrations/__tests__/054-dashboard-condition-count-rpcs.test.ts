@@ -1,0 +1,438 @@
+/**
+ * PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A
+ * Run: npm test -- --run 054
+ *
+ * Static source-code tests for migration 054: adds two DB-side counting
+ * RPCs (phoenix_get_dashboard_condition_counts, phoenix_get_institution_
+ * condition_counts) so a future frontend phase can stop fetching every
+ * item_availability row just to count conditions in JS. No live DB is used —
+ * these are text/shape assertions against the SQL file, mirroring the
+ * 028/042/051/052/053 tests' conventions.
+ *
+ * This phase is DB migration creation only: dashboard.service.ts is NOT
+ * switched to call either RPC yet, and the SQL itself is not applied.
+ */
+import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync, readdirSync } from 'fs';
+import { execSync } from 'child_process';
+import { join } from 'path';
+
+const MIGRATIONS_DIR = join(__dirname, '../');
+const ROOT = join(__dirname, '../../../');
+const MIGRATION_054_PATH = join(MIGRATIONS_DIR, '054_dashboard_condition_counts_rpcs.sql');
+
+function readMigration(rel: string) {
+  return readFileSync(join(MIGRATIONS_DIR, rel), 'utf8');
+}
+
+/** Strip `--` comment lines, leaving only active SQL for whole-file guardrails. */
+function activeSql(sql: string): string {
+  return sql.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n');
+}
+
+function extractFunction(sql: string, name: string): string {
+  const marker = new RegExp(`create or replace function (public\\.)?${name}\\(`, 'i');
+  const match = marker.exec(sql);
+  expect(match).not.toBeNull();
+  const start = match!.index;
+  const lowerSql = sql.toLowerCase();
+  const asIdx = lowerSql.indexOf('as $$', start);
+  expect(asIdx).toBeGreaterThan(-1);
+  const afterStart = asIdx + 'as $$'.length;
+  const end = sql.indexOf('\n$$;', afterStart);
+  return sql.slice(start, end);
+}
+
+const migration054 = readMigration('054_dashboard_condition_counts_rpcs.sql');
+const active054 = activeSql(migration054);
+// Scoped to everything before the VERIFY block's own DO $$ — that block
+// legitimately contains the literal strings 'TRUNCATE'/'DROP TABLE'/
+// 'DELETE FROM item_availability'/'service_role'/'auth.admin' as part of the
+// ASSERT checks proving those strings are absent, same pattern as migration
+// 028/052/053's own tests.
+const verifyStart = migration054.indexOf('DO $$');
+const activeSqlPreVerify = activeSql(migration054.slice(0, verifyStart));
+const verifyBlock = migration054.slice(verifyStart);
+
+const fnDashboard = extractFunction(migration054, 'phoenix_get_dashboard_condition_counts');
+const fnInstitution = extractFunction(migration054, 'phoenix_get_institution_condition_counts');
+
+describe('Migration 054 exists exactly once', () => {
+  it('054_dashboard_condition_counts_rpcs.sql exists', () => {
+    expect(existsSync(MIGRATION_054_PATH)).toBe(true);
+  });
+
+  it('is the only file named 054_*', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('054_'));
+    expect(matches).toEqual(['054_dashboard_condition_counts_rpcs.sql']);
+  });
+
+  it('does not create migration 055', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('055_'));
+    expect(matches).toEqual([]);
+  });
+
+  it('does not modify any existing migration file 001-053', () => {
+    let diff = '';
+    try {
+      diff = execSync('git status --porcelain -- supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const touchedExisting = diff
+      .split('\n')
+      .filter(l => l.trim())
+      .some(l => {
+        const path = l.slice(3).trim();
+        const file = path.split('/').pop() ?? '';
+        return /^0(0[1-9]|[1-4]\d|5[0-3])_/.test(file);
+      });
+    expect(touchedExisting).toBe(false);
+  });
+
+  it('is manual-apply-only (no supabase db push)', () => {
+    expect(migration054).toContain('MANUAL APPLY ONLY');
+    expect(migration054).toContain('supabase db push');
+  });
+
+  it('is wrapped in begin/commit', () => {
+    expect(active054).toMatch(/^\s*begin;/i);
+    expect(active054.trim()).toMatch(/commit;\s*$/i);
+  });
+
+  it('has a DO $$ ... VERIFY block with ASSERT statements', () => {
+    expect(migration054).toContain('DO $$');
+    expect(migration054).toMatch(/ASSERT /);
+  });
+});
+
+describe('Migration 054: no schema/data changes', () => {
+  it('has no ALTER TABLE / CREATE TABLE / ADD COLUMN', () => {
+    expect(active054).not.toMatch(/ALTER TABLE|CREATE TABLE|ADD COLUMN/i);
+  });
+
+  it('has no CREATE/DROP POLICY (no RLS change)', () => {
+    expect(active054).not.toMatch(/CREATE POLICY|DROP POLICY/i);
+  });
+
+  it('has no CREATE TRIGGER / DROP TRIGGER', () => {
+    expect(active054).not.toMatch(/CREATE TRIGGER|DROP TRIGGER/i);
+  });
+
+  it('has no DELETE or TRUNCATE anywhere in the migration body (excluding the VERIFY block\'s own absence-check prose)', () => {
+    expect(activeSqlPreVerify).not.toMatch(/DELETE FROM/i);
+    expect(activeSqlPreVerify).not.toMatch(/TRUNCATE/i);
+  });
+
+  it('has no DROP TABLE anywhere in the migration body (excluding the VERIFY block\'s own absence-check prose)', () => {
+    expect(activeSqlPreVerify).not.toMatch(/DROP TABLE/i);
+  });
+
+  it('creates exactly two new functions', () => {
+    const matches = active054.match(/CREATE OR REPLACE FUNCTION/gi) ?? [];
+    expect(matches.length).toBe(2);
+  });
+});
+
+describe('Migration 054: RPC 1 — phoenix_get_dashboard_condition_counts', () => {
+  it('has the expected signature: p_org_id uuid DEFAULT NULL, RETURNS jsonb', () => {
+    expect(migration054).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.phoenix_get_dashboard_condition_counts\(\s*p_org_id uuid DEFAULT NULL\s*\)\s*\nRETURNS jsonb/,
+    );
+  });
+
+  it('is SECURITY DEFINER with SET search_path = public', () => {
+    expect(fnDashboard).toMatch(/SECURITY DEFINER/);
+    const header = migration054.slice(
+      migration054.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts'),
+      migration054.indexOf('AS $$', migration054.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts')),
+    );
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = public/);
+  });
+
+  it('requires authentication', () => {
+    expect(fnDashboard).toMatch(/IF v_actor IS NULL THEN/);
+    expect(fnDashboard).toContain("'not_authenticated'");
+  });
+
+  it('applies removed_at IS NULL when counting', () => {
+    expect(fnDashboard).toMatch(/removed_at\s+is\s+null/i);
+  });
+
+  it('counts genuine missing rows (condition = \'missing\') without a global exclusion', () => {
+    expect(fnDashboard).toMatch(/condition = 'missing'/);
+    // The only exclusion applied is removed_at IS NULL, not a missing-specific filter.
+    expect(fnDashboard).not.toMatch(/condition\s*<>\s*'missing'/);
+  });
+
+  it('scopes non-super callers to their own org, ignoring p_org_id (no cross-org leak)', () => {
+    expect(fnDashboard).toMatch(/v_effective_org\s*:=\s*CASE WHEN v_is_super THEN p_org_id ELSE v_my_org END/);
+  });
+
+  it('allows a super_admin to optionally narrow by p_org_id or span all orgs', () => {
+    expect(fnDashboard).toContain('v_effective_org IS NULL OR organization_id = v_effective_org');
+  });
+
+  it('returns exactly the five required dashboard keys', () => {
+    for (const key of ['available', 'low_stock', 'missing', 'near_expiry', 'surplus']) {
+      expect(fnDashboard).toContain(`'${key}'`);
+    }
+  });
+
+  it('grants: no anon/PUBLIC, authenticated only', () => {
+    expect(migration054).toContain('REVOKE ALL ON FUNCTION public.phoenix_get_dashboard_condition_counts(uuid) FROM PUBLIC, anon;');
+    expect(migration054).toContain('GRANT EXECUTE ON FUNCTION public.phoenix_get_dashboard_condition_counts(uuid) TO authenticated;');
+  });
+
+  it('does not return removed_by, item ids, or auth uuids', () => {
+    expect(fnDashboard).not.toContain('removed_by');
+    expect(fnDashboard).not.toMatch(/'id'/);
+    expect(fnDashboard).not.toContain('auth.uid()::text');
+  });
+});
+
+describe('Migration 054: RPC 2 — phoenix_get_institution_condition_counts', () => {
+  it('has the expected signature: no params, RETURNS TABLE(organization_id uuid, available integer, low integer, missing integer)', () => {
+    expect(migration054).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.phoenix_get_institution_condition_counts\(\)\s*\nRETURNS TABLE\(\s*organization_id uuid,\s*available\s+integer,\s*low\s+integer,\s*missing\s+integer\s*\)/,
+    );
+  });
+
+  it('is SECURITY DEFINER with SET search_path = public', () => {
+    expect(fnInstitution).toMatch(/SECURITY DEFINER/);
+    const header = migration054.slice(
+      migration054.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts'),
+      migration054.indexOf('AS $$', migration054.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts')),
+    );
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = public/);
+  });
+
+  it('requires authentication', () => {
+    expect(fnInstitution).toMatch(/IF v_actor IS NULL THEN/);
+    expect(fnInstitution).toContain("'not_authenticated'");
+  });
+
+  it('applies removed_at IS NULL when counting', () => {
+    expect(fnInstitution).toMatch(/ia\.removed_at\s+is\s+null/i);
+  });
+
+  it('counts genuine missing rows via the missing bucket without a global exclusion', () => {
+    expect(fnInstitution).toMatch(/condition IN \('missing', 'expired'\)/);
+  });
+
+  it('uses the required bucket logic: available IN (available, surplus); low IN (low_stock, near_expiry)', () => {
+    expect(fnInstitution).toContain("condition IN ('available', 'surplus')");
+    expect(fnInstitution).toContain("condition IN ('low_stock', 'near_expiry')");
+  });
+
+  it('scopes non-super callers to only their own organization row', () => {
+    expect(fnInstitution).toMatch(/WHERE o\.status = 'active'\s*\n\s*AND \(v_is_super OR o\.id = v_my_org\)/);
+  });
+
+  it('only exposes organization_id/available/low/missing — no other org fields', () => {
+    expect(fnInstitution).not.toMatch(/o\.name\b/);
+    expect(fnInstitution).not.toMatch(/o\.code\b/);
+    expect(fnInstitution).not.toContain('removed_by');
+  });
+
+  it('grants: no anon/PUBLIC, authenticated only', () => {
+    expect(migration054).toContain('REVOKE ALL ON FUNCTION public.phoenix_get_institution_condition_counts() FROM PUBLIC, anon;');
+    expect(migration054).toContain('GRANT EXECUTE ON FUNCTION public.phoenix_get_institution_condition_counts() TO authenticated;');
+  });
+});
+
+describe('HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A: non-super callers with NULL organization_id fail closed', () => {
+  it('dashboard RPC has an explicit NOT v_is_super AND v_my_org IS NULL fail-closed guard', () => {
+    expect(fnDashboard).toMatch(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+  });
+
+  it('dashboard RPC guard returns an all-zero-count jsonb object (not the COALESCE aggregate return)', () => {
+    const guardStart = fnDashboard.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    expect(guardStart).toBeGreaterThan(-1);
+    const guardEnd = fnDashboard.indexOf('END IF;', guardStart);
+    const guardBlock = fnDashboard.slice(guardStart, guardEnd);
+    expect(guardBlock).toMatch(/'available'\s*,\s*0/);
+    expect(guardBlock).toMatch(/'low_stock'\s*,\s*0/);
+    expect(guardBlock).toMatch(/'missing'\s*,\s*0/);
+    expect(guardBlock).toMatch(/'near_expiry'\s*,\s*0/);
+    expect(guardBlock).toMatch(/'surplus'\s*,\s*0/);
+    expect(guardBlock).not.toContain('COALESCE');
+  });
+
+  it('dashboard RPC fail-closed guard runs before the org-scoping v_effective_org assignment', () => {
+    const guardIdx = fnDashboard.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    const assignIdx = fnDashboard.indexOf('v_effective_org := CASE WHEN v_is_super');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeLessThan(assignIdx);
+  });
+
+  it('institution RPC has an explicit NOT v_is_super AND v_my_org IS NULL fail-closed guard', () => {
+    expect(fnInstitution).toMatch(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+  });
+
+  it('institution RPC guard returns with no rows (a bare RETURN, distinct from RETURN QUERY)', () => {
+    const guardStart = fnInstitution.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    expect(guardStart).toBeGreaterThan(-1);
+    const guardEnd = fnInstitution.indexOf('END IF;', guardStart);
+    const guardBlock = fnInstitution.slice(guardStart, guardEnd);
+    expect(guardBlock).toMatch(/RETURN\s*;/);
+    expect(guardBlock).not.toContain('RETURN QUERY');
+  });
+
+  it('institution RPC fail-closed guard runs before RETURN QUERY', () => {
+    const guardIdx = fnInstitution.search(/IF\s+NOT\s+v_is_super\s+AND\s+v_my_org\s+IS\s+NULL\s+THEN/i);
+    const queryIdx = fnInstitution.indexOf('RETURN QUERY');
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(queryIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeLessThan(queryIdx);
+  });
+
+  it('super_admin all-organization behavior is still allowed (p_org_id NULL -> no org filter applied)', () => {
+    expect(fnDashboard).toContain('v_effective_org IS NULL OR organization_id = v_effective_org');
+    expect(fnDashboard).toMatch(/v_effective_org\s*:=\s*CASE WHEN v_is_super THEN p_org_id ELSE v_my_org END/);
+  });
+
+  it('super_admin can still narrow to one org via p_org_id, or omit it to span all orgs', () => {
+    // CASE WHEN v_is_super THEN p_org_id proves p_org_id is honored only for super_admin.
+    expect(fnDashboard).toMatch(/CASE WHEN v_is_super THEN p_org_id/);
+  });
+
+  it('non-super callers still cannot use p_org_id to probe another org (p_org_id ignored, forced to v_my_org)', () => {
+    expect(fnDashboard).toMatch(/CASE WHEN v_is_super THEN p_org_id ELSE v_my_org END/);
+  });
+
+  it('institution RPC still scopes non-super callers to only their own organization row', () => {
+    expect(fnInstitution).toMatch(/WHERE o\.status = 'active'\s*\n\s*AND \(v_is_super OR o\.id = v_my_org\)/);
+  });
+
+  it('removed_at IS NULL logic remains present in both RPCs after hardening', () => {
+    expect(fnDashboard).toMatch(/removed_at\s+is\s+null/i);
+    expect(fnInstitution).toMatch(/ia\.removed_at\s+is\s+null/i);
+  });
+
+  it('genuine missing rows remain counted in both RPCs after hardening', () => {
+    expect(fnDashboard).toMatch(/condition = 'missing'/);
+    expect(fnInstitution).toMatch(/condition IN \('missing', 'expired'\)/);
+  });
+
+  it('the VERIFY block asserts both fail-closed guards exist, using non-brittle \\s+ whitespace matching', () => {
+    expect(verifyBlock).toMatch(/NOT\\s\+v_is_super\\s\+AND\\s\+v_my_org\\s\+IS\\s\+NULL/);
+  });
+
+  it('the VERIFY block asserts the dashboard guard returns an all-zero jsonb object', () => {
+    expect(verifyBlock).toMatch(/'available''\\s\*,\\s\*0/);
+    expect(verifyBlock).toMatch(/'surplus''\\s\*,\\s\*0/);
+  });
+
+  it('the VERIFY block asserts the institution guard returns with no rows (bare RETURN)', () => {
+    expect(verifyBlock).toMatch(/RETURN\\s\*;/);
+  });
+
+  it('the VERIFY block asserts each guard runs before its respective org-scoping logic (POSITION ordering checks)', () => {
+    expect(verifyBlock).toMatch(/POSITION\('NOT v_is_super AND v_my_org IS NULL' IN v_fn_def\)/);
+    expect(verifyBlock).toContain("POSITION('v_effective_org := CASE WHEN v_is_super' IN v_fn_def)");
+    expect(verifyBlock).toContain("POSITION('RETURN QUERY' IN v_fn_def)");
+  });
+});
+
+describe('Migration 054: security guardrails', () => {
+  it('no service_role reference in the migration body', () => {
+    expect(activeSqlPreVerify).not.toMatch(/service_role/i);
+  });
+
+  it('no auth.admin reference in the migration body', () => {
+    expect(activeSqlPreVerify).not.toMatch(/auth\.admin/i);
+  });
+
+  it('no external URL/http/net/pg_net reference in the migration body', () => {
+    expect(activeSqlPreVerify).not.toMatch(/https?:\/\/|pg_net|net\.http|bearer|access_token/i);
+  });
+
+  it('the VERIFY block asserts absence of service_role/auth.admin/external network patterns using comment-stripped source', () => {
+    expect(verifyBlock).toMatch(/v_fn_active\s*:=\s*regexp_replace\(v_fn_def, '--\[\^\\r\\n\]\*', '', 'g'\)/);
+    expect(verifyBlock).toMatch(/NOT ILIKE '%service_role%'/);
+    expect(verifyBlock).toMatch(/NOT ILIKE '%auth\.admin%'/);
+    expect(verifyBlock).toMatch(/NOT ILIKE '%pg_net%'/);
+  });
+
+  it('the VERIFY block checks no anon/PUBLIC grants and authenticated EXECUTE for both functions', () => {
+    expect(verifyBlock).toContain("grantee IN ('anon', 'PUBLIC')");
+    expect(verifyBlock).toMatch(/grantee = 'authenticated' AND privilege_type = 'EXECUTE'/);
+  });
+
+  it('the VERIFY block checks no DELETE/TRUNCATE in either function body', () => {
+    expect(verifyBlock).toContain("NOT ILIKE '%DELETE FROM item_availability%'");
+    expect(verifyBlock).toContain("NOT ILIKE '%TRUNCATE%'");
+  });
+
+  it('no React/TSX component syntax (SQL-only file)', () => {
+    expect(migration054).not.toMatch(/import React|useState|useEffect|<div/);
+  });
+});
+
+describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend/service files changed', () => {
+  it('no working-tree diff on dashboard.service.ts (RPC switch is a later, separate phase)', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/shared/supabase/services/dashboard.service.ts',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no working-tree diff on any frontend production file', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* git not available in this sandbox — skip silently */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no working-tree diff on qr.service.ts, alert/exchange lifecycle files, or navigation/auth files', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/shared/supabase/services/qr.service.ts src/shared/supabase/services/availability.service.ts',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('no package/lockfile diff', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- package.json package-lock.json pnpm-lock.yaml yarn.lock', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('premium-preview.html remains untracked (only "??" status if present)', () => {
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    if (status.trim()) {
+      expect(status.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('supabase/.temp/ was not staged', () => {
+    const status = execSync('git status --porcelain', { cwd: ROOT, encoding: 'utf8' });
+    const tempLine = status.split('\n').find(l => l.includes('supabase/.temp'));
+    if (tempLine) {
+      expect(tempLine.trim().startsWith('??')).toBe(true);
+    }
+  });
+
+  it('Service-D stash (paused inter-org exchange service work) remains untouched', () => {
+    const stashList = execSync('git stash list', { cwd: ROOT, encoding: 'utf8' });
+    expect(stashList).toContain('paused Service-D inter-org exchange service work');
+  });
+});

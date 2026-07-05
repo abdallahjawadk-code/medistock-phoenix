@@ -265,12 +265,12 @@ describe('J) AvailabilityRecord type gains an optional removed_at field only', (
 });
 
 describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unrelated production files touched', () => {
-  it('no migration 054 was created', () => {
+  it('no migration 055 was created (054, PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, is a later, separately-reviewed addition)', () => {
     let listing = '';
     try {
       listing = execSync('git status --porcelain -- supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(listing).not.toMatch(/054_/);
+    expect(listing).not.toMatch(/055_/);
   });
 
   it('no migration SQL file has a working-tree diff', () => {

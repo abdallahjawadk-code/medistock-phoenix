@@ -86,7 +86,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
     }
   });
 
-  it('only the reviewed migrations 044/045/046/047/048/049/050/051/052/053 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
+  it('only the reviewed migrations 044/045/046/047/048/049/050/051/052/053/054 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -99,6 +99,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
       '051_material_batch_identity_option_a.sql',
       '052_qr_effective_condition_quantity_zero.sql',
       '053_item_availability_removed_marker.sql',
+      '054_dashboard_condition_counts_rpcs.sql',
     ]);
   });
 });

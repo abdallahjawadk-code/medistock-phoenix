@@ -50,8 +50,8 @@ describe('Migration 052 exists exactly once', () => {
   // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: migration 053 is a later,
   // separately-reviewed phase (removed_at/removed_by/removal_reason marker)
   // — this migration's own scope is unaffected by its existence.
-  it('does not create migration 054 (053 is a later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('054_'));
+  it('does not create migration 055 (053/054 are later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A additions)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('055_'));
     expect(matches).toEqual([]);
   });
 

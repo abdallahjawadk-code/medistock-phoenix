@@ -66,8 +66,8 @@ describe('Migration 053 exists exactly once', () => {
     expect(matches).toEqual(['053_item_availability_removed_marker.sql']);
   });
 
-  it('does not create migration 054', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('054_'));
+  it('does not create migration 055 (054, PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, is a later, separately-reviewed addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('055_'));
     expect(matches).toEqual([]);
   });
 

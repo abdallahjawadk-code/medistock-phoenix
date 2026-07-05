@@ -179,9 +179,9 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
 
   // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: migration 053 is a later,
   // separately-reviewed phase — this phase's own scope is unaffected.
-  it('no migration 054 (or higher) file was created (053 is a later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A addition)', () => {
+  it('no migration 055 (or higher) file was created (053/054 are later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A additions)', () => {
     const migsDir = join(ROOT, 'supabase/migrations');
-    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[4-9]|[6-9][0-9])_/.test(f));
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[5-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 
