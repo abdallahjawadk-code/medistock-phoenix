@@ -20,6 +20,33 @@ interface Props {
 }
 
 /**
+ * Safe-to-render technical error detail. Only ever populated from Supabase/
+ * PostgREST error fields (code/message/details/hint) or an RPC business
+ * error code (e.g. INVALID_CONFIRMATION) — never from auth tokens, headers,
+ * or env vars, none of which flow through these sources.
+ */
+interface TechnicalErrorDetail {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
+function toTechnicalErrorDetail(err: unknown): TechnicalErrorDetail {
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    return {
+      code: typeof e.code === 'string' ? e.code : undefined,
+      message: typeof e.message === 'string' ? e.message : undefined,
+      details: typeof e.details === 'string' ? e.details : undefined,
+      hint: typeof e.hint === 'string' ? e.hint : undefined,
+    };
+  }
+  if (typeof err === 'string') return { message: err };
+  return {};
+}
+
+/**
  * Super Admin-only maintenance wizard for phoenix_clean_availability_data
  * (migration 055, PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A). Physically deletes
  * item_availability, item_availability_movements, and linked inter-org
@@ -43,6 +70,7 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
   const [confirmationText, setConfirmationText] = useState('');
   const [executeBusy, setExecuteBusy] = useState(false);
   const [executeError, setExecuteError] = useState<string | null>(null);
+  const [executeErrorDetail, setExecuteErrorDetail] = useState<TechnicalErrorDetail | null>(null);
   const [executeResult, setExecuteResult] = useState<AvailabilityDeepCleanCounts | null>(null);
 
   if (!isSuper) return null;
@@ -74,18 +102,33 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
     if (!canExecute) return;
     setExecuteBusy(true);
     setExecuteError(null);
+    setExecuteErrorDetail(null);
     try {
       const res = await executeAvailabilityDeepClean(confirmationText);
       if (!res.ok) {
+        // Business-rule rejection from the RPC itself (e.g.
+        // INVALID_CONFIRMATION, INSUFFICIENT_ROLE, NOT_AUTHENTICATED) — the
+        // RPC's own error code is the "technical detail" here, no Supabase
+        // error object involved.
         setExecuteError(res.error);
+        setExecuteErrorDetail({ code: res.error });
         return;
       }
       setExecuteResult(res.rowsDeletedByTable);
       setDryRunCounts(null);
       setBackupAcknowledged(false);
       setConfirmationText('');
-    } catch {
+    } catch (err) {
+      // A thrown Supabase/PostgREST error (network failure or a genuine
+      // Postgres exception raised inside the RPC — FK violation, RLS denial,
+      // permission error, etc.). Capture its safe, well-known fields
+      // (code/message/details/hint) so the real cause is diagnosable instead
+      // of being replaced by a single generic string. These fields never
+      // carry auth tokens, headers, or env vars — Supabase's PostgrestError
+      // shape only ever contains this exact set.
+      console.error('phoenix_clean_availability_data execute failed:', err);
       setExecuteError('NETWORK_ERROR');
+      setExecuteErrorDetail(toTechnicalErrorDetail(err));
     } finally {
       setExecuteBusy(false);
     }
@@ -160,9 +203,28 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
             </div>
 
             {executeError && (
-              <p style={{ fontSize: '12px', color: 'var(--err)', marginTop: '10px' }} dir="auto">
-                {t('acw_execute_failed', lang)}
-              </p>
+              <div style={{ marginTop: '10px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--err)' }} dir="auto">
+                  {t('acw_execute_failed', lang)}
+                </p>
+                {executeErrorDetail && (executeErrorDetail.code || executeErrorDetail.message || executeErrorDetail.details || executeErrorDetail.hint) && (
+                  <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', fontSize: '11px', color: 'var(--t2)' }} dir="ltr">
+                    <div style={{ fontWeight: 700, marginBottom: '4px' }} dir="auto">{t('acw_technical_details', lang)}</div>
+                    {executeErrorDetail.code && (
+                      <div><strong>{t('acw_error_code', lang)}:</strong> {executeErrorDetail.code}</div>
+                    )}
+                    {executeErrorDetail.message && (
+                      <div><strong>{t('acw_error_message', lang)}:</strong> {executeErrorDetail.message}</div>
+                    )}
+                    {executeErrorDetail.details && (
+                      <div><strong>{t('acw_error_details', lang)}:</strong> {executeErrorDetail.details}</div>
+                    )}
+                    {executeErrorDetail.hint && (
+                      <div><strong>{t('acw_error_hint', lang)}:</strong> {executeErrorDetail.hint}</div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             <div style={{ marginTop: '14px' }}>

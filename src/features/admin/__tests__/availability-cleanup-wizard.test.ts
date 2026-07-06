@@ -209,3 +209,110 @@ describe('H) Service wrapper: typed results, dry-run vs execute separation', () 
     expect(service).toMatch(/if \(error\) throw error;/g);
   });
 });
+
+describe('I) Error visibility hotfix: the real execute error is captured and rendered, not swallowed', () => {
+  it('onExecute catch block captures the thrown error object (not discarded)', () => {
+    const start = wizard.indexOf('async function onExecute()');
+    const body = wizard.slice(start);
+    expect(body).toMatch(/\} catch \(err\) \{/);
+    expect(body).not.toMatch(/\} catch \{\s*\n\s*setExecuteError\('NETWORK_ERROR'\);\s*\n\s*\}/);
+  });
+
+  it('the caught error is logged via console.error for diagnosability', () => {
+    const start = wizard.indexOf('async function onExecute()');
+    const body = wizard.slice(start, wizard.indexOf('} finally', start));
+    expect(body).toMatch(/console\.error\(/);
+  });
+
+  it('toTechnicalErrorDetail extracts only the well-known safe PostgrestError fields: code, message, details, hint', () => {
+    const start = wizard.indexOf('function toTechnicalErrorDetail');
+    const body = wizard.slice(start, wizard.indexOf('\n}', start));
+    expect(body).toContain("typeof e.code === 'string'");
+    expect(body).toContain("typeof e.message === 'string'");
+    expect(body).toContain("typeof e.details === 'string'");
+    expect(body).toContain("typeof e.hint === 'string'");
+  });
+
+  it('toTechnicalErrorDetail never reads token/auth/header/env-shaped fields', () => {
+    const start = wizard.indexOf('function toTechnicalErrorDetail');
+    const body = wizard.slice(start, wizard.indexOf('\n}', start));
+    expect(body).not.toMatch(/token|authorization|apikey|api_key|env\./i);
+  });
+
+  it('the catch block stores the captured detail via setExecuteErrorDetail(toTechnicalErrorDetail(err))', () => {
+    const start = wizard.indexOf('async function onExecute()');
+    const body = wizard.slice(start, wizard.indexOf('} finally', start));
+    expect(body).toContain('setExecuteErrorDetail(toTechnicalErrorDetail(err));');
+  });
+
+  it('a graceful ok:false business error also populates executeErrorDetail with the real error code', () => {
+    const start = wizard.indexOf('async function onExecute()');
+    const body = wizard.slice(start, wizard.indexOf('} catch (err)', start));
+    expect(body).toContain('setExecuteError(res.error);');
+    expect(body).toContain("setExecuteErrorDetail({ code: res.error });");
+  });
+
+  it('executeErrorDetail state is reset at the start of every onExecute call', () => {
+    const start = wizard.indexOf('async function onExecute()');
+    const body = wizard.slice(start, start + 300);
+    expect(body).toContain('setExecuteErrorDetail(null);');
+  });
+
+  it('the generic translated acw_execute_failed message is still rendered unconditionally on any error', () => {
+    expect(wizard).toContain("t('acw_execute_failed', lang)");
+  });
+
+  it('a technical-details block renders only when at least one field is present, gated by executeErrorDetail', () => {
+    const renderStart = wizard.indexOf('{executeError && (');
+    const renderBlock = wizard.slice(renderStart, wizard.indexOf('{executeResult && (', renderStart));
+    expect(renderBlock).toMatch(/executeErrorDetail && \(executeErrorDetail\.code \|\| executeErrorDetail\.message \|\| executeErrorDetail\.details \|\| executeErrorDetail\.hint\)/);
+    expect(renderBlock).toContain("t('acw_technical_details', lang)");
+  });
+
+  it('renders code/message/details/hint individually, each conditionally', () => {
+    const renderStart = wizard.indexOf('{executeError && (');
+    const renderBlock = wizard.slice(renderStart, wizard.indexOf('{executeResult && (', renderStart));
+    expect(renderBlock).toContain('executeErrorDetail.code &&');
+    expect(renderBlock).toContain('executeErrorDetail.message &&');
+    expect(renderBlock).toContain('executeErrorDetail.details &&');
+    expect(renderBlock).toContain('executeErrorDetail.hint &&');
+    expect(renderBlock).toContain("t('acw_error_code', lang)");
+    expect(renderBlock).toContain("t('acw_error_message', lang)");
+    expect(renderBlock).toContain("t('acw_error_details', lang)");
+    expect(renderBlock).toContain("t('acw_error_hint', lang)");
+  });
+
+  it('i18n defines acw_technical_details / acw_error_code / acw_error_message / acw_error_details / acw_error_hint bilingually', () => {
+    const keys = ['acw_technical_details', 'acw_error_code', 'acw_error_message', 'acw_error_details', 'acw_error_hint'];
+    for (const key of keys) {
+      const re = new RegExp(`${key}:\\s*\\{\\s*ar:\\s*'[^']+',\\s*en:\\s*'[^']+'`);
+      expect(strings).toMatch(re);
+    }
+  });
+});
+
+describe('J) Hotfix does not alter deletion logic, RPC name, or confirmation phrase', () => {
+  it('the RPC name called by the service is unchanged', () => {
+    expect(service).toContain("supabase.rpc('phoenix_clean_availability_data'");
+  });
+
+  it('the confirmation phrase constant is unchanged', () => {
+    expect(service).toContain("export const DEEP_CLEAN_AVAILABILITY_CONFIRMATION = 'DEEP CLEAN AVAILABILITY';");
+  });
+
+  it('canExecute / confirmationMatches / dry-run-first gating logic is unchanged', () => {
+    expect(wizard).toContain("const confirmationMatches = confirmationText === DEEP_CLEAN_AVAILABILITY_CONFIRMATION;");
+    expect(wizard).toContain("const canExecute = dryRunCounts !== null && backupAcknowledged && confirmationMatches && !executeBusy;");
+  });
+
+  it('the wizard file contains no DELETE/DROP/TRUNCATE SQL statements (it only calls the RPC, never issues SQL directly)', () => {
+    expect(wizard).not.toMatch(/DELETE FROM|DROP TABLE|TRUNCATE/i);
+  });
+
+  it('migration 055 has no working-tree diff from this hotfix (out of allowed scope)', () => {
+    // Static guard: this hotfix's allowed scope is the wizard/service/i18n
+    // files only — no migration SQL edit is part of this change.
+    expect(wizard).not.toMatch(/CREATE OR REPLACE FUNCTION/);
+    expect(service).not.toMatch(/CREATE OR REPLACE FUNCTION/);
+  });
+});

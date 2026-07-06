@@ -1258,6 +1258,11 @@ export const T: Dict = {
   acw_execute_button:             { ar: 'تنفيذ التنظيف العميق',                                                                             en: 'Execute Deep Clean' },
   acw_execute_failed:             { ar: 'فشل تنفيذ التنظيف العميق',                                                                         en: 'Deep clean execution failed' },
   acw_execute_success:            { ar: 'تم تنفيذ التنظيف العميق بنجاح',                                                                    en: 'Deep clean executed successfully' },
+  acw_technical_details:          { ar: 'التفاصيل التقنية',                                                                                 en: 'Technical details' },
+  acw_error_code:                 { ar: 'الرمز',                                                                                            en: 'Code' },
+  acw_error_message:              { ar: 'الرسالة',                                                                                          en: 'Message' },
+  acw_error_details:              { ar: 'التفاصيل',                                                                                         en: 'Details' },
+  acw_error_hint:                 { ar: 'الاقتراح',                                                                                         en: 'Hint' },
 };
 
 export function t(key: string, lang: Lang): string {
