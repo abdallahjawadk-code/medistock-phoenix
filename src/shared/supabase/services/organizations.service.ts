@@ -18,24 +18,57 @@ export interface OrgProfileRow {
   status: string;
 }
 
+/**
+ * DB-PRESSURE-QUICK-WINS-A: the full org list is fetched identically (no
+ * params) by Status Center, Editor, Institution, User Management, and the
+ * Platform Broadcast admin panel — it changes rarely, so a simple in-memory
+ * cache + in-flight dedup avoids refetching it every time one of those
+ * screens mounts. Only successful responses are cached (a failed fetch never
+ * poisons the cache); createOrganization/updateOrganization invalidate it on
+ * success so mutations are always reflected on the next read. This is
+ * process-memory-only — it resets on a full page reload — and never changes
+ * the returned data shape.
+ */
+let orgsCache: OrgRow[] | null = null;
+let orgsInFlight: Promise<OrgRow[]> | null = null;
+
+/** Drops the cached org list; the next getOrganizations() call refetches. */
+export function invalidateOrganizationsCache(): void {
+  orgsCache = null;
+  orgsInFlight = null;
+}
+
 export async function getOrganizations(): Promise<OrgRow[]> {
   if (!supabaseConfigured) return [];
+  if (orgsCache) return orgsCache;
+  if (orgsInFlight) return orgsInFlight;
 
-  const { data, error } = await supabase
-    .from('organizations')
-    .select('id, name, name_ar, code, status, city, contact_email')
-    .order('name_ar');
+  orgsInFlight = (async () => {
+    const { data, error } = await supabase
+      .from('organizations')
+      .select('id, name, name_ar, code, status, city, contact_email')
+      .order('name_ar');
 
-  if (error) throw error;
-  return (data ?? []).map(r => ({
-    id:      r.id,
-    name:    r.name,
-    name_ar: r.name_ar,
-    code:    r.code,
-    status:  r.status,
-    city:    r.city ?? '',
-    contact_email: r.contact_email ?? '',
-  }));
+    if (error) {
+      orgsInFlight = null;
+      throw error;
+    }
+
+    const rows = (data ?? []).map(r => ({
+      id:      r.id,
+      name:    r.name,
+      name_ar: r.name_ar,
+      code:    r.code,
+      status:  r.status,
+      city:    r.city ?? '',
+      contact_email: r.contact_email ?? '',
+    }));
+    orgsCache = rows;
+    orgsInFlight = null;
+    return rows;
+  })();
+
+  return orgsInFlight;
 }
 
 export async function getOrganization(id: string): Promise<OrgRow | null> {
@@ -81,6 +114,7 @@ export async function createOrganization(input: {
     .single();
 
   if (error) throw error;
+  invalidateOrganizationsCache();
   return {
     id: data.id, name: data.name, name_ar: data.name_ar,
     code: data.code, status: data.status,
@@ -107,6 +141,7 @@ export async function updateOrganization(
     .eq('id', id);
 
   if (error) throw error;
+  invalidateOrganizationsCache();
 }
 
 export async function getProfilesByOrg(orgId: string): Promise<OrgProfileRow[]> {

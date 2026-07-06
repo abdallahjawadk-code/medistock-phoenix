@@ -32,9 +32,8 @@ function LoadingFallback() {
   );
 }
 
-function AppInner() {
+function AppInner({ qid }: { qid: string | null }) {
   // ── Anon public QR scan view — bypasses auth entirely, own lazy chunk ──
-  const qid = publicQrId();
   if (qid) {
     return (
       <Suspense fallback={<LoadingFallback />}>
@@ -53,9 +52,13 @@ function AppInner() {
 }
 
 export function App() {
+  // Read once per render, before AppProvider decides whether to run its
+  // auth-bootstrap effect (DB-PRESSURE-QUICK-WINS-A) — same detection logic
+  // as before, just hoisted one level so AppProvider can see it too.
+  const qid = publicQrId();
   return (
-    <AppProvider>
-      <AppInner />
+    <AppProvider skipAuthBootstrap={!!qid}>
+      <AppInner qid={qid} />
     </AppProvider>
   );
 }

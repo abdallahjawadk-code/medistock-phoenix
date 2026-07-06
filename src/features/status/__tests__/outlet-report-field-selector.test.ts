@@ -393,10 +393,12 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
 
   // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
   // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
   it('auth/session/permissions files unchanged', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

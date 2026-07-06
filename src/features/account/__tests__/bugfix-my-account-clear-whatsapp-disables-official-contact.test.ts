@@ -239,11 +239,13 @@ describe('11. No QR/export/print/user-management/auth/RLS/permissions files chan
   // non-available items from the public QR list.
   // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
   // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
-  it('empty diff on auth.service.ts, AppContext.tsx; UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
+  it('empty diff on auth.service.ts; UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
+        'git diff -- src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

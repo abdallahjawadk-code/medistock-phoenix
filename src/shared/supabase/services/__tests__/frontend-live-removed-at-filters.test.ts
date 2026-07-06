@@ -251,12 +251,14 @@ describe('I) lifecycle.service.ts (org delete-impact count) is untouched — rem
     expect(lifecycleService).not.toMatch(/removed_at/);
   });
 
-  it('lifecycle.service.ts has no working-tree diff from this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/shared/supabase/services/lifecycle.service.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds an invalidateOrganizationsCache() call to archiveOrganization here
+  // (org-list cache invalidation on mutation) — unrelated to removed_at
+  // filtering, which the sibling test above already re-confirms is absent.
+  it('lifecycle.service.ts: only the org-list cache-invalidation import/call was added by later phases; archiveOrganization behavior is otherwise unchanged', () => {
+    expect(lifecycleService).toContain("import { invalidateOrganizationsCache } from './organizations.service';");
+    expect(lifecycleService).toContain("update({ status: 'inactive' })");
+    expect(lifecycleService).toContain(".eq('id', orgId);");
   });
 });
 
@@ -328,11 +330,13 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     }
   });
 
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
   it('no WhatsApp/auth/session/permission file was touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx',
+        'git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

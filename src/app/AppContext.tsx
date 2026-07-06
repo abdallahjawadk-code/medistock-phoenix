@@ -64,7 +64,21 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
+interface AppProviderProps {
+  children: ReactNode;
+  /**
+   * DB-PRESSURE-QUICK-WINS-A: when true, the auth-bootstrap effect below
+   * (getSession + onAuthChange subscription + loadProfile/loadPermissions)
+   * never runs — authReady is set true immediately, session/profile stay
+   * null. For the anonymous public QR route, which only ever reads
+   * lang/toggleLang off this context (see App.tsx), that bootstrap is pure
+   * unused Supabase overhead. Authenticated routes never pass this prop, so
+   * their bootstrap sequence is byte-for-byte unchanged.
+   */
+  skipAuthBootstrap?: boolean;
+}
+
+export function AppProvider({ children, skipAuthBootstrap = false }: AppProviderProps) {
   const [lang, setLangState]   = useState<Lang>('ar');
   const [theme, setThemeState] = useState<Theme>('light');
 
@@ -171,7 +185,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // AppContext just needs to mark passwordRecovery=true so App.tsx renders it.
   useEffect(() => {
     let active = true;
-    if (!supabaseConfigured) {
+    if (!supabaseConfigured || skipAuthBootstrap) {
       setAuthReady(true);
       return;
     }
@@ -206,7 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     return () => { active = false; unsub(); };
-  }, [loadProfile]);
+  }, [loadProfile, skipAuthBootstrap]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const res = await authSignIn(email, password);

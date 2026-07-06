@@ -221,11 +221,14 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
   // "PublicQrScreen.tsx untouched" assertions to admit this phase, the same
   // established convention used when migration 052 itself landed) are
   // expected and are not alert lifecycle/WhatsApp/editor/movement behavior.
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds cache-invalidation to archiveOrganization in
+  // src/shared/supabase/services/lifecycle.service.ts — excluded here.
   it('no alert lifecycle/WhatsApp/editor/movement production files changed', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/materialAlertEngine.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/lifecycle.service.ts src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
+        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/materialAlertEngine.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

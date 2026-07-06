@@ -222,11 +222,13 @@ describe('Guards: no SQL/migration/package/permission change, safety files untou
     expect(diff.trim()).toBe('');
   });
 
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
   it('no auth/session/permissions/alert-lifecycle/WhatsApp file was touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx src/features/alerts/inter-org-alert-lifecycle.service.ts',
+        'git diff -- src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/features/alerts/inter-org-alert-lifecycle.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

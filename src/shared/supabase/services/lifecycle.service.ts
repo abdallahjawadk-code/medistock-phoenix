@@ -1,5 +1,6 @@
 import { supabase, supabaseConfigured } from '../client';
 import type { PurgeImpact } from '../../lib/types';
+import { invalidateOrganizationsCache } from './organizations.service';
 
 type AllowlistedType = 'warehouse' | 'distribution_point' | 'local_item';
 
@@ -104,6 +105,7 @@ export async function archiveOrganization(orgId: string): Promise<void> {
     .eq('id', orgId);
 
   if (error) throw error;
+  invalidateOrganizationsCache();
 }
 
 export async function getEntityPurgeImpact(

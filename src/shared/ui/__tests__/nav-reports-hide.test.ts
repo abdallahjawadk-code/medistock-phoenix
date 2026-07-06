@@ -297,11 +297,13 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
   // restructures src/app/App.tsx (route-level lazy loading) — excluded here,
   // same precedent as the migration exclusions above.
+  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
+  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
   it('no QR/alert-lifecycle/movement-history/auth/permissions/dashboard-service file was touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx src/shared/supabase/services/dashboard.service.ts',
+        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx src/shared/supabase/services/dashboard.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
