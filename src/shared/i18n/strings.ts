@@ -530,6 +530,13 @@ export const T: Dict = {
   // BUGFIX-OUTLET-MATERIAL-NAME-NOT-SHOWN-A
   avail_outlet_active_empty: { ar: 'لا توجد مواد فعالة في هذا المنفذ.', en: 'No active materials in this outlet.' },
   avail_unnamed_material:    { ar: 'مادة غير مسماة',                  en: 'Unnamed material' },
+  /* ── PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: read-only availability item
+     details modal — inventory data already present in the system only, never
+     clinical/pharmacological information. ── */
+  avail_details_title:         { ar: 'تفاصيل المادة',                  en: 'Item Details' },
+  avail_details_outlet_label:  { ar: 'المنفذ',                         en: 'Outlet' },
+  avail_details_days_to_expiry:{ ar: 'الأيام المتبقية للنفاد',         en: 'Days to Expiry' },
+  avail_details_early_monitoring: { ar: 'المراقبة المبكرة',            en: 'Early Monitoring' },
   cond_available:     { ar: 'متوفر',                             en: 'Available' },
   cond_low_stock:     { ar: 'شحيح',                              en: 'Low stock' },
   cond_missing:       { ar: 'مفقود',                             en: 'Missing' },

@@ -128,7 +128,7 @@ describe('6. Existing edit/disable/remove/safe-delete actions remain present and
     expect(institution).toContain("setConfirmAction('archive')");
     expect(institution).toContain("setConfirmAction('edit')");
     expect(institution).toContain('canRemoveOutletMaterial');
-    expect(institution).toContain("onClick={() => { setRemoveError(null); setRemoveTarget(r); }}");
+    expect(institution).toContain("onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}");
   });
 });
 

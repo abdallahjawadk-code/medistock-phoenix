@@ -293,6 +293,13 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     // its ad-hoc CSV export with a real styled .xlsx workbook, unrelated to
     // this migration. That phase's own guard test (below) confirms the diff
     // is scoped to exactly that change.
+    //
+    // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: src/features/institutions/InstitutionScreen.tsx
+    // is also excluded — a still later, separately-reviewed phase that adds a
+    // read-only availability item details modal, unrelated to this migration.
+    // That phase's own guard test confirms the diff never touches this
+    // migration's own source_expiry_risk_tier/source_expiry_days_remaining
+    // concerns (see the relaxed InstitutionScreen.tsx diff check just below).
     let diff = '';
     try {
       diff = execSync(
@@ -303,7 +310,7 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     expect(diff.trim()).toBe('');
   });
 
-  it('the InstitutionScreen.tsx diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches the removed_at outlet-list filter, never this migration\'s own concerns', () => {
+  it('the InstitutionScreen.tsx diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A and PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A phases) never touches this migration\'s own concerns', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -312,7 +319,6 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
       );
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toContain('removed_at');
       expect(diff).not.toMatch(/service_role|auth\.admin/);
       expect(diff).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com|Bearer |sendMessage/i);
       expect(diff).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/);

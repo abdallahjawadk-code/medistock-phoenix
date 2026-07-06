@@ -302,7 +302,7 @@ describe('14. Existing button handlers remain connected', () => {
   it('onClick handlers for export/print/remove actions are unchanged in the touched files', () => {
     expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
-    expect(institution).toContain('onClick={() => { setRemoveError(null); setRemoveTarget(r); }}');
+    expect(institution).toContain('onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}');
   });
 
   it('PhoenixEmptyState action button still calls action.onClick', () => {

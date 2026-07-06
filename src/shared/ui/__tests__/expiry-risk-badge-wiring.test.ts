@@ -98,7 +98,7 @@ describe('InstitutionScreen: expiry risk wiring (port availability list)', () =>
   });
 
   it('does not change the remove-from-outlet or safe-delete flow', () => {
-    expect(institution).toContain("onClick={() => { setRemoveError(null); setRemoveTarget(r); }}");
+    expect(institution).toContain("onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}");
   });
 });
 

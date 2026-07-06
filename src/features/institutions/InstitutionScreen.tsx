@@ -56,6 +56,7 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { AvailabilityItemDetailsModal } from './AvailabilityItemDetailsModal';
 
 // Display legacy DB roles with the official role labels (no old labels in UI).
 const ROLE_LABEL_KEY: Record<Role, string> = {
@@ -1198,6 +1199,8 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
         onToast={onToast}
         pointStatus={point.status}
         refreshKey={availRefreshKey}
+        pointName={lang === 'ar' ? (point.name_ar || point.name) : (point.name || point.name_ar)}
+        orgName={orgName}
       />
 
       {/* Port cleanup wizard — deletion_wizard.clear_port_items is a separate
@@ -1431,7 +1434,11 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
 
 /* ── Port Availability Section ── */
 
-interface AvailRow {
+// PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: exported (previously module-local)
+// so AvailabilityItemDetailsModal.tsx can type its `row` prop against the
+// exact same shape PortAvailabilitySection already fetches — no new query,
+// no new fields added to the interface itself.
+export interface AvailRow {
   id: string;
   quantity: number;
   condition: string;
@@ -1498,7 +1505,7 @@ function outletMaterialTitle(r: AvailRow, ci: { name: string; name_ar: string } 
   );
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, pointStatus, refreshKey }: {
+function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, pointStatus, refreshKey, pointName, orgName }: {
   pointId: string;
   orgId: string;
   lang: 'ar' | 'en';
@@ -1518,9 +1525,17 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
   // a separate useAsync instance keyed only on pointId, which wouldn't
   // otherwise know the underlying rows just changed.
   refreshKey: number;
+  // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: display-only labels (already
+  // known by the parent PortCard) passed through purely so the read-only
+  // details modal can show "Outlet"/"Institution" — no new query.
+  pointName?: string;
+  orgName?: string;
 }) {
   const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId, refreshKey]);
   const [showAdd, setShowAdd] = useState(false);
+  // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: the row whose read-only details
+  // modal is open, or null when closed. Purely local UI state — no data write.
+  const [detailsRow, setDetailsRow] = useState<AvailRow | null>(null);
   // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A / FRONTEND-LIVE-REMOVED-AT-FILTERS-A:
   // clear_port_availability (migration 042) and onConfirmRemove below both
   // zero quantity + set condition = 'missing' instead of deleting the row
@@ -1635,7 +1650,15 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
             const condKey = CONDITION_LABEL_KEY[r.condition];
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
             return (
-              <div key={r.id} className="premium-material-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px' }}>
+              <div
+                key={r.id}
+                className="premium-material-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailsRow(r)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailsRow(r); } }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 8px', borderRadius: 'var(--r2)', background: 'var(--s2)', fontSize: '11.5px', cursor: 'pointer' }}
+              >
                 <div style={{ minWidth: 0, overflow: 'hidden' }}>
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} dir="auto">
                     {title}
@@ -1655,7 +1678,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
                   <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
                   {canRemove && (
                     <button
-                      onClick={() => { setRemoveError(null); setRemoveTarget(r); }}
+                      onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}
                       aria-label={t('avail_remove_from_outlet', lang)}
                       style={{ fontSize: '10.5px', color: 'var(--err)', border: '1px solid var(--err)', background: 'transparent', borderRadius: 'var(--r1)', padding: '3px 8px', cursor: 'pointer', minHeight: '28px' }}
                     >
@@ -1687,6 +1710,15 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
           </PhoenixButton>
         </div>
       </PhoenixDialog>
+
+      <AvailabilityItemDetailsModal
+        open={detailsRow !== null}
+        onClose={() => setDetailsRow(null)}
+        row={detailsRow}
+        lang={lang}
+        pointName={pointName}
+        orgName={orgName}
+      />
     </div>
   );
 }

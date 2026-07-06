@@ -31,6 +31,7 @@ const statusEditor = readSrc('features/status/StatusEditorScreen.tsx');
 const movementHistoryModal = readSrc('features/status/MovementHistoryModal.tsx');
 const movementReportSection = readSrc('features/status/MovementReportSection.tsx');
 const professionalExport = readSrc('shared/lib/professional-export.ts');
+const institutionScreen = readSrc('features/institutions/InstitutionScreen.tsx');
 
 describe('A) getAvailabilityByOrg now selects removal_reason (already selected removed_at/actor_name_snapshot)', () => {
   it('selects removal_reason alongside the pre-existing removed_at/actor_name_snapshot columns', () => {
@@ -248,15 +249,17 @@ describe('J) Live/current views still hide removed rows; genuine missing rows pr
   // 054's RPCs instead of reading item_availability directly. That RPC
   // switch does not change this phase's own scope (InstitutionScreen.tsx's
   // outlet list filter remains untouched).
-  it('InstitutionScreen.tsx outlet list filter was not touched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync(
-        'git diff -- src/features/institutions/InstitutionScreen.tsx',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  //
+  // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: a still later, separately-
+  // reviewed phase adds a read-only availability item details modal to
+  // InstitutionScreen.tsx (row click handler, stopPropagation on the Remove
+  // button, a new import), so this test no longer requires a byte-for-byte
+  // empty diff — it instead confirms the removed_at outlet-list filter this
+  // phase actually cares about is still present and unchanged.
+  it('InstitutionScreen.tsx outlet list filter (removed_at) was not touched by this phase', () => {
+    const fnStart = institutionScreen.indexOf('function PortAvailabilitySection');
+    const fnBody = institutionScreen.slice(fnStart, institutionScreen.indexOf('function QuickAvailForm'));
+    expect(fnBody).toContain('.filter(r => r.removed_at == null)');
   });
 
   it('Status Center itself remains unfiltered by removed_at for the on-screen table (operations context) — rows still come from the same unfiltered `rows` memo', () => {
