@@ -132,25 +132,30 @@ describe('Migration 055: dry-run branch is fully read-only', () => {
 });
 
 describe('Migration 055: physical DELETE in the exact required order', () => {
-  it('DELETE statements appear for all six tables', () => {
-    expect(fnBody).toContain('DELETE FROM public.inter_org_exchange_events;');
-    expect(fnBody).toContain('DELETE FROM public.inter_org_exchange_requests;');
-    expect(fnBody).toContain('DELETE FROM public.inter_org_alert_events;');
-    expect(fnBody).toContain('DELETE FROM public.inter_org_alert_states;');
-    expect(fnBody).toContain('DELETE FROM public.item_availability_movements;');
-    expect(fnBody).toContain('DELETE FROM public.item_availability;');
+  // FIX-MIGRATION-055-DELETE-REQUIRES-WHERE-A: this project's Postgres
+  // connection rejects a bare full-table DELETE with error 21000 ("DELETE
+  // requires a WHERE clause"), even one that is fully intentional and
+  // already gated behind super_admin + dry-run + typed confirmation. Every
+  // DELETE below therefore carries an explicit `WHERE id IS NOT NULL` —
+  // always true for every row (each table has a NOT NULL uuid primary key
+  // `id`), so it changes which rows are deleted in no way whatsoever.
+  const DELETE_STATEMENTS = [
+    'DELETE FROM public.inter_org_exchange_events WHERE id IS NOT NULL;',
+    'DELETE FROM public.inter_org_exchange_requests WHERE id IS NOT NULL;',
+    'DELETE FROM public.inter_org_alert_events WHERE id IS NOT NULL;',
+    'DELETE FROM public.inter_org_alert_states WHERE id IS NOT NULL;',
+    'DELETE FROM public.item_availability_movements WHERE id IS NOT NULL;',
+    'DELETE FROM public.item_availability WHERE id IS NOT NULL;',
+  ];
+
+  it('DELETE statements appear for all six tables, each with an explicit WHERE clause', () => {
+    for (const stmt of DELETE_STATEMENTS) {
+      expect(fnBody).toContain(stmt);
+    }
   });
 
   it('the DELETE order is exactly: exchange_events -> exchange_requests -> alert_events -> alert_states -> movements -> item_availability', () => {
-    const order = [
-      'DELETE FROM public.inter_org_exchange_events;',
-      'DELETE FROM public.inter_org_exchange_requests;',
-      'DELETE FROM public.inter_org_alert_events;',
-      'DELETE FROM public.inter_org_alert_states;',
-      'DELETE FROM public.item_availability_movements;',
-      'DELETE FROM public.item_availability;',
-    ];
-    const positions = order.map(stmt => fnBody.indexOf(stmt));
+    const positions = DELETE_STATEMENTS.map(stmt => fnBody.indexOf(stmt));
     for (const p of positions) expect(p).toBeGreaterThan(-1);
     for (let i = 1; i < positions.length; i++) {
       expect(positions[i]).toBeGreaterThan(positions[i - 1]);
@@ -160,9 +165,26 @@ describe('Migration 055: physical DELETE in the exact required order', () => {
   it('all six DELETEs occur after the confirmation check (never in the dry-run branch)', () => {
     const dryRunEnd = fnBody.indexOf('END IF;', fnBody.indexOf('IF p_dry_run THEN'));
     const confirmCheckIdx = fnBody.indexOf('INVALID_CONFIRMATION');
-    const firstDeleteIdx = fnBody.indexOf('DELETE FROM public.inter_org_exchange_events;');
+    const firstDeleteIdx = fnBody.indexOf(DELETE_STATEMENTS[0]);
     expect(confirmCheckIdx).toBeGreaterThan(dryRunEnd);
     expect(firstDeleteIdx).toBeGreaterThan(confirmCheckIdx);
+  });
+
+  it('no DELETE statement in the function body lacks a WHERE clause (root cause of the 21000 "DELETE requires a WHERE clause" error)', () => {
+    // Matches "DELETE FROM public.<table>;" with nothing but optional
+    // whitespace between the table name and the terminating semicolon —
+    // i.e. no WHERE clause at all. Checked against the comment-stripped
+    // source so a prose comment can never accidentally satisfy or defeat it.
+    const bareDeleteRe = /DELETE FROM public\.\w+\s*;/i;
+    expect(activeSql(fnBody)).not.toMatch(bareDeleteRe);
+  });
+
+  it('every DELETE uses the exact WHERE id IS NOT NULL predicate (not some other WHERE clause)', () => {
+    const deleteLines = fnBody.split('\n').filter(l => /^\s*DELETE FROM public\./.test(l));
+    expect(deleteLines.length).toBe(6);
+    for (const line of deleteLines) {
+      expect(line).toMatch(/WHERE id IS NOT NULL;\s*$/);
+    }
   });
 
   it('records rows deleted per table via GET DIAGNOSTICS', () => {
@@ -245,7 +267,7 @@ describe('Migration 055: audit logging (execute path only)', () => {
   it('the audit INSERT occurs only after all six DELETEs (execute path), never in the dry-run branch', () => {
     const dryRunIdx = fnBody.indexOf('IF p_dry_run THEN');
     const dryRunEnd = fnBody.indexOf('END IF;', dryRunIdx);
-    const lastDeleteIdx = fnBody.indexOf('DELETE FROM public.item_availability;');
+    const lastDeleteIdx = fnBody.indexOf('DELETE FROM public.item_availability WHERE id IS NOT NULL;');
     const insertIdx = fnBody.indexOf('INSERT INTO public.audit_logs');
     expect(insertIdx).toBeGreaterThan(dryRunEnd);
     expect(insertIdx).toBeGreaterThan(lastDeleteIdx);

@@ -196,22 +196,34 @@ BEGIN
   --    whole-table-clearing SQL command is deliberately not used anywhere in
   --    this function (see the migration header for why). Never touches any
   --    protected table listed in the header.
-  DELETE FROM public.inter_org_exchange_events;
+  --
+  --    FIX-MIGRATION-055-DELETE-REQUIRES-WHERE-A: this project's Postgres
+  --    connection enforces a safety setting that rejects a DELETE with no
+  --    WHERE clause at all (error 21000, "DELETE requires a WHERE clause"),
+  --    even when it is fully intentional and gated behind super_admin +
+  --    dry-run + typed confirmation the way every DELETE below already is.
+  --    Every DELETE therefore carries an explicit `WHERE id IS NOT NULL` —
+  --    each of these six tables has a NOT NULL uuid primary key `id` column
+  --    (migrations 033/038/040), so this predicate is always true for every
+  --    row and changes which rows are deleted in no way whatsoever; it exists
+  --    purely to satisfy the safety-setting's syntactic requirement for an
+  --    explicit WHERE clause on a full-table delete.
+  DELETE FROM public.inter_org_exchange_events WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_exchange_events_deleted = ROW_COUNT;
 
-  DELETE FROM public.inter_org_exchange_requests;
+  DELETE FROM public.inter_org_exchange_requests WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_exchange_requests_deleted = ROW_COUNT;
 
-  DELETE FROM public.inter_org_alert_events;
+  DELETE FROM public.inter_org_alert_events WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_alert_events_deleted = ROW_COUNT;
 
-  DELETE FROM public.inter_org_alert_states;
+  DELETE FROM public.inter_org_alert_states WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_alert_states_deleted = ROW_COUNT;
 
-  DELETE FROM public.item_availability_movements;
+  DELETE FROM public.item_availability_movements WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_movements_deleted = ROW_COUNT;
 
-  DELETE FROM public.item_availability;
+  DELETE FROM public.item_availability WHERE id IS NOT NULL;
   GET DIAGNOSTICS v_availability_deleted = ROW_COUNT;
 
   v_rows_deleted := jsonb_build_object(
@@ -310,7 +322,7 @@ BEGIN
      AND position('DELETE FROM public.inter_org_alert_states' in v_fn_src)
        < position('DELETE FROM public.item_availability_movements' in v_fn_src)
      AND position('DELETE FROM public.item_availability_movements' in v_fn_src)
-       < position('DELETE FROM public.item_availability;' in v_fn_src),
+       < position('DELETE FROM public.item_availability WHERE' in v_fn_src),
     'VERIFY FAILED: DELETE order is not exactly exchange_events -> exchange_requests -> alert_events -> alert_states -> movements -> item_availability';
 
   -- Checked against the comment-stripped source, not v_fn_src directly — a
@@ -318,6 +330,27 @@ BEGIN
   -- must never trip this check; only an actual TRUNCATE statement may.
   ASSERT v_active_sql NOT ILIKE '%TRUNCATE%',
     'VERIFY FAILED: TRUNCATE must never be used, only DELETE';
+
+  -- FIX-MIGRATION-055-DELETE-REQUIRES-WHERE-A: every DELETE must carry an
+  -- explicit WHERE clause (this project's Postgres connection rejects a
+  -- bare full-table DELETE with error 21000). Checked against the comment-
+  -- stripped source so this can never be defeated by prose mentioning the
+  -- word "DELETE" without a WHERE in a comment.
+  ASSERT v_active_sql !~ 'DELETE FROM public\.inter_org_exchange_events\s*;'
+     AND v_active_sql !~ 'DELETE FROM public\.inter_org_exchange_requests\s*;'
+     AND v_active_sql !~ 'DELETE FROM public\.inter_org_alert_events\s*;'
+     AND v_active_sql !~ 'DELETE FROM public\.inter_org_alert_states\s*;'
+     AND v_active_sql !~ 'DELETE FROM public\.item_availability_movements\s*;'
+     AND v_active_sql !~ 'DELETE FROM public\.item_availability\s*;',
+    'VERIFY FAILED: a DELETE statement has no WHERE clause';
+
+  ASSERT v_fn_src LIKE '%DELETE FROM public.inter_org_exchange_events WHERE id IS NOT NULL%'
+     AND v_fn_src LIKE '%DELETE FROM public.inter_org_exchange_requests WHERE id IS NOT NULL%'
+     AND v_fn_src LIKE '%DELETE FROM public.inter_org_alert_events WHERE id IS NOT NULL%'
+     AND v_fn_src LIKE '%DELETE FROM public.inter_org_alert_states WHERE id IS NOT NULL%'
+     AND v_fn_src LIKE '%DELETE FROM public.item_availability_movements WHERE id IS NOT NULL%'
+     AND v_fn_src LIKE '%DELETE FROM public.item_availability WHERE id IS NOT NULL%',
+    'VERIFY FAILED: all six DELETEs must use the explicit WHERE id IS NOT NULL predicate';
 
   ASSERT v_fn_src NOT ILIKE '%DELETE FROM public.organizations%'
      AND v_fn_src NOT ILIKE '%DELETE FROM public.warehouses%'
