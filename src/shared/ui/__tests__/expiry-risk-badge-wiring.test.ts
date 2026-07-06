@@ -140,10 +140,13 @@ describe('Existing filters/backend/lifecycle/QR/WhatsApp remain unchanged', () =
     expect(diff.trim()).toBe('');
   });
 
-  it('QR generation/cancel/recreate and user-management/WhatsApp screens are untouched', () => {
+  it('QR generation/cancel/recreate and WhatsApp screens are untouched', () => {
+    // UserManagementScreen.tsx is intentionally excluded here as of
+    // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A, a later, separately-reviewed
+    // phase that additively wires in the Super Admin-only
+    // AvailabilityCleanupWizard at the end of that screen.
     for (const rel of [
       'features/qr/QrScreen.tsx',
-      'features/users/UserManagementScreen.tsx',
       'shared/ui/WhatsAppContactButton.tsx',
     ]) {
       let diff = '';

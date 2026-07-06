@@ -192,6 +192,10 @@ describe('10. No package/lockfile/migration changes', () => {
       // before its first successful manual apply, same pattern as 051/053.
       'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

@@ -158,7 +158,7 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
 
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter(f => f.startsWith('055_'));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['055_phoenix_clean_availability_data.sql']);
   });
 
   it('no package/lockfile diff', () => {

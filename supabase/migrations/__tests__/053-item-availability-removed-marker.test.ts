@@ -68,7 +68,7 @@ describe('Migration 053 exists exactly once', () => {
 
   it('does not create migration 055 (054, PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, is a later, separately-reviewed addition)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('055_'));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['055_phoenix_clean_availability_data.sql']);
   });
 
   it('is manual-apply-only (no supabase db push)', () => {
@@ -557,11 +557,15 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
   // PHASE2-EXPORT-FIELD-SELECTOR-A: OutletAvailabilityReportModal.tsx is
   // also excluded here — a still later, separately-reviewed phase that adds
   // an export/print field selector to it, unrelated to this migration.
+  // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: UserManagementScreen.tsx is also
+  // excluded here — a still later, separately-reviewed phase that additively
+  // wires in the Super Admin-only AvailabilityCleanupWizard, unrelated to
+  // this migration's own removed_at concerns.
   it('no working-tree diff on any frontend production file (excluding the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A / SAFE-PROFESSIONAL-XLSX-EXPORT-A files)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

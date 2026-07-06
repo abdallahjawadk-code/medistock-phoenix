@@ -1236,6 +1236,28 @@ export const T: Dict = {
   wa_alert_contact_source:            { ar: 'تواصل مع المؤسسة المرسلة',   en: 'Contact source institution' },
   wa_alert_contact_target:            { ar: 'تواصل مع المؤسسة المستلمة',  en: 'Contact target institution' },
   wa_alert_contact_other_institution: { ar: 'تواصل مع المؤسسة الأخرى',    en: 'Contact the other institution' },
+
+  /* ── PHASE3-CLEAN-AVAILABILITY-DATA-A: Availability Cleanup Wizard (Super Admin only) ── */
+  acw_title:                      { ar: 'تنظيف عميق لبيانات التوفر',                                                                        en: 'Deep Clean Availability Data' },
+  acw_delete_materials_warning:   { ar: 'سيتم حذف مواد التوفر المُدخلة في المنافذ نهائيًا من قاعدة البيانات التشغيلية ولا يمكن استرجاعها.', en: 'Entered outlet availability materials will be permanently and physically deleted from the operational database and cannot be recovered.' },
+  acw_delete_movements_warning:   { ar: 'سيتم حذف سجل حركات المخزون بالكامل نهائيًا ولا يمكن استرجاعه.',                                    en: 'Movement history (item_availability_movements) will be entirely and permanently deleted and cannot be recovered.' },
+  acw_delete_alert_exchange_note: { ar: 'سيتم أيضًا حذف صفوف التنبيهات والتبادل بين المؤسسات المرتبطة بمواد التوفر (إن وُجدت).',            en: 'Any inter-org alert and exchange rows linked to availability materials will also be cleared, if present.' },
+  acw_preserved_data_explainer:   { ar: 'لن يتم حذف المؤسسات أو المنافذ أو روابط/رموز QR أو المستخدمين أو الصلاحيات أو بيانات المواد الرئيسية (local_items/central_items).', en: 'Institutions, outlets, QR links/tokens, users, permissions, and material master data (local_items/central_items) are never deleted.' },
+  acw_post_cleanup_effect_note:   { ar: 'بعد التنفيذ، ستظل روابط QR تعمل لكن بلا مواد متاحة، وستظهر لوحة التحكم/مركز الحالة/سجل الحركات بحالة فارغة/صفرية.', en: 'After execution, QR links will still open but show no available materials, and the Dashboard/Status Center/Movement History will show empty/zero states.' },
+  acw_dry_run_button:             { ar: 'تشغيل تجريبي (بدون تعديل)',                                                                        en: 'Dry Run (no changes)' },
+  acw_dry_run_failed:             { ar: 'فشل التشغيل التجريبي',                                                                             en: 'Dry run failed' },
+  acw_counts_title:               { ar: 'الأثر المتوقع',                                                                                    en: 'Expected impact' },
+  acw_count_availability:         { ar: 'صفوف التوفر (سيتم حذفها)',                                                                          en: 'Availability rows (will be deleted)' },
+  acw_count_movements:            { ar: 'سجلات الحركة (سيتم حذفها)',                                                                        en: 'Movement records (will be deleted)' },
+  acw_count_alert_states:         { ar: 'حالات تنبيه بين المؤسسات (سيتم حذفها)',                                                            en: 'Inter-org alert states (will be deleted)' },
+  acw_count_alert_events:         { ar: 'أحداث تنبيه بين المؤسسات (سيتم حذفها)',                                                            en: 'Inter-org alert events (will be deleted)' },
+  acw_count_exchange_requests:    { ar: 'طلبات تبادل بين المؤسسات (سيتم حذفها)',                                                            en: 'Inter-org exchange requests (will be deleted)' },
+  acw_count_exchange_events:      { ar: 'أحداث تبادل بين المؤسسات (سيتم حذفها)',                                                            en: 'Inter-org exchange events (will be deleted)' },
+  acw_backup_ack_label:           { ar: 'أقر بأنني قمت بتصدير/نسخ احتياطي للبيانات قبل المتابعة.',                                          en: 'I confirm I have exported/backed up the data before proceeding.' },
+  acw_confirmation_label:         { ar: 'اكتب DEEP CLEAN AVAILABILITY للتأكيد',                                                             en: 'Type DEEP CLEAN AVAILABILITY to confirm' },
+  acw_execute_button:             { ar: 'تنفيذ التنظيف العميق',                                                                             en: 'Execute Deep Clean' },
+  acw_execute_failed:             { ar: 'فشل تنفيذ التنظيف العميق',                                                                         en: 'Deep clean execution failed' },
+  acw_execute_success:            { ar: 'تم تنفيذ التنظيف العميق بنجاح',                                                                    en: 'Deep clean executed successfully' },
 };
 
 export function t(key: string, lang: Lang): string {

@@ -300,20 +300,32 @@ describe('24. Does not change package/lockfiles', () => {
     expect(active050).not.toMatch(/availability\.service\.ts|EditorScreen\.tsx|shared\/lib\/types\.ts/);
     // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: PublicQrScreen.tsx is
     // excluded below — a later, separately-reviewed phase, unrelated to
-    // this migration's lineage.
+    // this migration's lineage. UserManagementScreen.tsx is also excluded —
+    // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A, a later, separately-reviewed
+    // phase, checked separately below.
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/QrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
+
+  it('UserManagementScreen.tsx diff is limited to the later AvailabilityCleanupWizard addition', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
+  });
 });
 
 describe('25. Migration ceiling: allows exactly 044-054, 055+ still fails', () => {
-  it('exactly eleven reviewed migrations exist beyond 043', () => {
+  it('exactly twelve reviewed migrations exist beyond 043 (044-055)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -327,11 +339,12 @@ describe('25. Migration ceiling: allows exactly 044-054, 055+ still fails', () =
       '052_qr_effective_condition_quantity_zero.sql',
       '053_item_availability_removed_marker.sql',
       '054_dashboard_condition_counts_rpcs.sql',
+      '055_phoenix_clean_availability_data.sql',
     ]);
   });
 
-  it('no 055_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[5-9]|[6-9][0-9])_/.test(f));
+  it('no migration 056 (or higher) exists yet (055 is this reviewed PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[6-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

@@ -381,15 +381,25 @@ describe('35. Does not change package/lockfiles', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('no frontend production file has a working-tree diff from this phase (excluding EditorScreen.tsx/strings.ts, which the separately-reviewed, explicitly-planned-for AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B frontend-sync phase — see this migration\'s own header — is expected to modify; PublicQrScreen.tsx is also excluded, modified by the later, separately-reviewed QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase; availability.service.ts/types.ts are also excluded — the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase, after migration 053 was applied, adds a removed_at column/select/filter there)', () => {
+  it('no frontend production file has a working-tree diff from this phase (excluding EditorScreen.tsx/strings.ts, which the separately-reviewed, explicitly-planned-for AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B frontend-sync phase — see this migration\'s own header — is expected to modify; PublicQrScreen.tsx is also excluded, modified by the later, separately-reviewed QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase; availability.service.ts/types.ts are also excluded — the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase, after migration 053 was applied, adds a removed_at column/select/filter there; UserManagementScreen.tsx is also excluded, checked separately below — PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/QrScreen.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('UserManagementScreen.tsx diff is limited to the later AvailabilityCleanupWizard addition', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
   });
 
   it('the availability.service.ts/types.ts diff (from the later FRONTEND-LIVE-REMOVED-AT-FILTERS-A phase) only touches removed_at wiring, never this migration\'s own identity-match concerns', () => {
@@ -415,7 +425,7 @@ describe('35. Does not change package/lockfiles', () => {
 });
 
 describe('36. Migration ceiling: allows exactly 044-054, 055+ still fails', () => {
-  it('exactly eleven reviewed migrations exist beyond 043', () => {
+  it('exactly twelve reviewed migrations exist beyond 043 (044-055)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -429,11 +439,12 @@ describe('36. Migration ceiling: allows exactly 044-054, 055+ still fails', () =
       '052_qr_effective_condition_quantity_zero.sql',
       '053_item_availability_removed_marker.sql',
       '054_dashboard_condition_counts_rpcs.sql',
+      '055_phoenix_clean_availability_data.sql',
     ]);
   });
 
-  it('no 055_* (or higher) migration file exists yet', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[5-9]|[6-9][0-9])_/.test(f));
+  it('no migration 056 (or higher) exists yet (055 is this reviewed PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[6-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

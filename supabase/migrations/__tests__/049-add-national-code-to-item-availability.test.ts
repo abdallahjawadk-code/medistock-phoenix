@@ -207,15 +207,29 @@ describe('15. Frontend changes at this phase were label-only; RPC/service/type w
   // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: PublicQrScreen.tsx is
   // excluded below — a later, separately-reviewed phase that hides
   // non-available items from the public QR list, unrelated to this migration.
-  it('QR (excluding PublicQrScreen.tsx), export/print, and user-management files are untouched', () => {
+  // UserManagementScreen.tsx is intentionally excluded here as of
+  // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A, a later, separately-reviewed
+  // phase that additively wires in the Super Admin-only
+  // AvailabilityCleanupWizard, checked separately below.
+  it('QR (excluding PublicQrScreen.tsx), export/print, and auth files are untouched', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts',
+        'git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/qr.service.ts src/shared/supabase/services/auth.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+  });
+
+  it('UserManagementScreen.tsx diff is limited to the later AvailabilityCleanupWizard addition', () => {
+    let diff = '';
+    try {
+      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
   });
 });
 
@@ -232,8 +246,8 @@ describe('16. Migration ceiling as of this phase: 044-049 exist; 050 (if present
     ]);
   });
 
-  it('no 055_* (or higher) migration file exists yet (050-054 are later, separately-reviewed phases)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[5-9]|[6-9][0-9])_/.test(f));
+  it('no migration 056 (or higher) exists yet (050-055 are later, separately-reviewed phases)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[6-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

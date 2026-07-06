@@ -284,7 +284,7 @@ describe('M) Safety: no SQL/migration/package changes; dashboard RPC switch unto
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     const matches = readdirSync(join(ROOT, 'supabase/migrations')).filter(f => f.startsWith('055_'));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['055_phoenix_clean_availability_data.sql']);
   });
 
   it('no package/lockfile diff', () => {

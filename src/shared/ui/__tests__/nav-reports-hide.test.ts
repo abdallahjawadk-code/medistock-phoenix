@@ -260,13 +260,18 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     try {
       listing = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(listing.trim()).toBe('');
+    // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration 055,
+    // prepared but not yet applied/committed, is the only allowed entry here.
+    const unexpectedListing = listing.split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean)
+      .filter(l => l !== '?? supabase/migrations/055_phoenix_clean_availability_data.sql'
+                 && l !== 'A  supabase/migrations/055_phoenix_clean_availability_data.sql');
+    expect(unexpectedListing).toEqual([]);
   });
 
-  it('no migration 055 was created', () => {
+  it('no migration 055 was created, other than the later, separately-reviewed PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A addition', () => {
     const migrationsDir = join(ROOT, 'supabase/migrations');
     const matches = readdirSync(migrationsDir).filter((f: string) => /^055_/.test(f));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['055_phoenix_clean_availability_data.sql']);
   });
 
   it('no package/lockfile diff', () => {

@@ -182,6 +182,10 @@ describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
       // before its first successful manual apply, same pattern as 051/053.
       'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -197,15 +201,20 @@ describe('8. No QR generation/cancel/recreate logic changed, no export/print/use
   // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase that hides
   // non-available items from the public QR list; qr.service.ts (the RPC
   // call site) remains fully guarded.
-  it('empty diff on QR service (qr.service.ts) and user-management screens', () => {
+  it('empty diff on QR service (qr.service.ts); UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
-      diff = execSync(
-        'git diff -- src/shared/supabase/services/qr.service.ts src/features/users/UserManagementScreen.tsx',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
+      diff = execSync('git diff -- src/shared/supabase/services/qr.service.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+
+    let userMgmtDiff = '';
+    try {
+      userMgmtDiff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = userMgmtDiff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
   });
 });
 

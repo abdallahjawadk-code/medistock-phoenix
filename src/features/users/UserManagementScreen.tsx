@@ -28,6 +28,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
+import { AvailabilityCleanupWizard } from '@/features/admin/AvailabilityCleanupWizard';
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -335,6 +336,11 @@ export function UserManagementScreen() {
       {/* Hard delete UI intentionally not shown — pending USER-LIFECYCLE-DISABLE-DELETE-A finalization.
           The admin-user-lifecycle Edge Function must be deployed and email-based confirmation
           must be wired before the delete flow is exposed in the UI. */}
+
+      {/* PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: Super Admin-only maintenance wizard.
+          Renders null internally for any non-super_admin role — this screen
+          is already the safest existing super_admin-oriented admin area. */}
+      <AvailabilityCleanupWizard lang={lang} role={role} />
     </div>
   );
 }

@@ -204,6 +204,10 @@ describe('10. No migrations created or modified by this fix', () => {
       // the 051/053 in-place corrections above.
       'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -217,15 +221,23 @@ describe('11. No QR/export/print/user-management/auth/RLS/permissions files chan
   // PublicQrScreen.tsx is also excluded — a later, separately-reviewed
   // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase that hides
   // non-available items from the public QR list.
-  it('empty diff on App.tsx, UserManagementScreen.tsx, auth.service.ts, AppContext.tsx', () => {
+  it('empty diff on App.tsx, auth.service.ts, AppContext.tsx; UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/app/App.tsx src/features/users/UserManagementScreen.tsx src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
+        'git diff -- src/app/App.tsx src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
+
+    let userMgmtDiff = '';
+    try {
+      userMgmtDiff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    const addedLines = userMgmtDiff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
   });
 });
 

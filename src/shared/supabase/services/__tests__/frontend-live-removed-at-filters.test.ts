@@ -282,7 +282,18 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     try {
       listing = execSync('git status --porcelain -- supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(listing).not.toMatch(/055_/);
+    // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration 055 and
+    // its test file are the only allowed 055_ occurrences; anything else
+    // still fails this guard.
+    const allowed055 = new Set([
+      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      '?? supabase/migrations/__tests__/055-phoenix-clean-availability-data.test.ts',
+      'A  supabase/migrations/__tests__/055-phoenix-clean-availability-data.test.ts',
+    ]);
+    const unexpected055 = listing.split('\n').map(l => l.trim()).filter(Boolean)
+      .filter(l => l.includes('055_') && !allowed055.has(l));
+    expect(unexpected055).toEqual([]);
   });
 
   // PHASE2-ALLOW-054-INPLACE-HARDENING-GUARDS-A: 054_dashboard_condition_counts_rpcs.sql

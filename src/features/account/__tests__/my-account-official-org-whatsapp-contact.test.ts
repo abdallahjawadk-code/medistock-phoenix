@@ -237,6 +237,10 @@ describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is 
       // before its first successful manual apply, same pattern as 051/053.
       'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
       'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
+      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -353,12 +357,14 @@ describe('21. User-management lifecycle unchanged', () => {
     }
   });
 
-  it('UserManagementScreen.tsx was not modified by this phase', () => {
+  it('UserManagementScreen.tsx was not modified by this phase, other than the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    expect(unexpected).toEqual([]);
   });
 });
 

@@ -100,6 +100,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
       '052_qr_effective_condition_quantity_zero.sql',
       '053_item_availability_removed_marker.sql',
       '054_dashboard_condition_counts_rpcs.sql',
+      '055_phoenix_clean_availability_data.sql',
     ]);
   });
 });

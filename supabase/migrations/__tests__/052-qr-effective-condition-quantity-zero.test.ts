@@ -52,7 +52,7 @@ describe('Migration 052 exists exactly once', () => {
   // — this migration's own scope is unaffected by its existence.
   it('does not create migration 055 (053/054 are later, separately-reviewed DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A additions)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('055_'));
-    expect(matches).toEqual([]);
+    expect(matches).toEqual(['055_phoenix_clean_availability_data.sql']);
   });
 
   it('is manual-apply-only (no supabase db push)', () => {
