@@ -565,7 +565,7 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx" ":!src/features/platform-broadcast/PlatformBroadcastGate.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

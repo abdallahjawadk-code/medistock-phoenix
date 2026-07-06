@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import {
@@ -46,26 +46,58 @@ export function PlatformBroadcastGate() {
   const { authReady, session, profile, activeOrgId, lang } = useApp();
 
   const [queue, setQueue] = useState<PendingBroadcast[]>([]);
-  const [fetched, setFetched] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
   const [ackError, setAckError] = useState(false);
 
-  const ready = authReady && !!session && !!profile && !!activeOrgId;
+  // FIX-PLATFORM-BROADCAST-GATE-NOT-FETCHING-A: the fetch-guard lives in a
+  // ref, not React state. A state-based guard (`fetched` set via
+  // setFetched(true) inside the same effect that reads it) can only be
+  // trusted to prevent a second fetch — it does nothing to guarantee the
+  // FIRST fetch fires, since that still depends on the effect's dependency
+  // array actually re-running when profile/activeOrgId resolve. Keying the
+  // effect off the individual primitives below (rather than a single
+  // pre-computed `ready` boolean recomputed inline every render) makes the
+  // "did the inputs that matter change" check unambiguous, and the ref
+  // guard is synchronous — no risk of two effect runs in the same tick both
+  // seeing a stale "not yet fetched" state.
+  const hasFetchedRef = useRef(false);
+
+  const sessionUserId = session?.user?.id ?? null;
+  const profileId = profile?.id ?? null;
+  const ready = authReady && !!sessionUserId && !!profileId && !!activeOrgId;
 
   useEffect(() => {
-    if (!ready || fetched) return;
+    if (!authReady || !sessionUserId) return;
+
+    // DIAGNOSTIC-VISIBLE-BEHAVIOR-A: profile has loaded but this
+    // non-super_admin account has no organization_id — the gate will never
+    // fetch for this session, and that is a real, actionable condition
+    // (an unattached profile), not silent "nothing to show".
+    if (profileId && profile && profile.role !== 'super_admin' && !activeOrgId) {
+      console.warn(
+        '[phoenix] PlatformBroadcastGate: profile has no organization_id — pending broadcasts will never be fetched for this account.',
+        { profileId, role: profile.role },
+      );
+    }
+
+    if (!ready || hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+
     let active = true;
-    setFetched(true);
     getPendingPlatformBroadcasts()
       .then(res => {
         if (!active) return;
-        if (res.ok) setQueue(res.broadcasts);
+        if (res.ok) {
+          setQueue(res.broadcasts);
+        } else {
+          console.error('[phoenix] getPendingPlatformBroadcasts returned ok=false:', res.error);
+        }
       })
       .catch((err: unknown) => {
         console.error('[phoenix] getPendingPlatformBroadcasts failed:', err);
       });
     return () => { active = false; };
-  }, [ready, fetched]);
+  }, [authReady, sessionUserId, profileId, activeOrgId, ready, profile]);
 
   if (!ready || queue.length === 0) return null;
 

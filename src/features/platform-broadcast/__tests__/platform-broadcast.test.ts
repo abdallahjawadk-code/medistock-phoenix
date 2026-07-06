@@ -124,19 +124,38 @@ describe('E) Admin list renders ack counts', () => {
 });
 
 describe('F) PlatformBroadcastGate: waits for auth/profile/org resolution', () => {
-  it('ready requires authReady, session, profile, and activeOrgId all truthy', () => {
-    expect(gate).toMatch(/const ready = authReady && !!session && !!profile && !!activeOrgId;/);
+  it('ready requires authReady, sessionUserId, profileId, and activeOrgId all truthy', () => {
+    expect(gate).toMatch(/const ready = authReady && !!sessionUserId && !!profileId && !!activeOrgId;/);
+  });
+
+  it('sessionUserId/profileId are derived from session.user.id / profile.id (not just truthiness of the object references)', () => {
+    expect(gate).toContain('const sessionUserId = session?.user?.id ?? null;');
+    expect(gate).toContain('const profileId = profile?.id ?? null;');
   });
 
   it('returns null when not ready or the queue is empty', () => {
     expect(gate).toMatch(/if \(!ready \|\| queue\.length === 0\) return null;/);
   });
 
-  it('the fetch effect is gated on `ready` and only fires once (fetched flag prevents re-fetching)', () => {
+  it('FIX-PLATFORM-BROADCAST-GATE-NOT-FETCHING-A: the fetch-guard is a ref (hasFetchedRef), not React state, so the guard itself can never delay or skip the first legitimate fetch', () => {
+    expect(gate).toContain('const hasFetchedRef = useRef(false);');
     const start = gate.indexOf('useEffect(() => {');
-    const body = gate.slice(start, gate.indexOf('}, [ready, fetched]);'));
-    expect(body).toMatch(/if \(!ready \|\| fetched\) return;/);
-    expect(body).toContain('setFetched(true);');
+    const body = gate.slice(start, gate.indexOf('}, [authReady, sessionUserId, profileId, activeOrgId, ready, profile]);'));
+    expect(body).toMatch(/if \(!ready \|\| hasFetchedRef\.current\) return;/);
+    expect(body).toContain('hasFetchedRef.current = true;');
+    expect(body).not.toContain('setFetched(');
+  });
+
+  it('the fetch effect depends on the granular primitives (authReady, sessionUserId, profileId, activeOrgId), not only a single derived boolean', () => {
+    expect(gate).toContain('}, [authReady, sessionUserId, profileId, activeOrgId, ready, profile]);');
+  });
+
+  it('warns clearly when a non-super_admin profile has resolved but has no organization_id (the pending fetch can never fire for this account)', () => {
+    const start = gate.indexOf('useEffect(() => {');
+    const body = gate.slice(start, gate.indexOf('}, [authReady, sessionUserId, profileId, activeOrgId, ready, profile]);'));
+    expect(body).toMatch(/if \(profileId && profile && profile\.role !== 'super_admin' && !activeOrgId\) \{/);
+    expect(body).toContain('console.warn(');
+    expect(body).toMatch(/no organization_id/);
   });
 
   it('never mounts on the public QR page — only ever rendered inside PhoenixAppShell, which PublicQrScreen does not use', () => {
@@ -149,7 +168,11 @@ describe('F) PlatformBroadcastGate: waits for auth/profile/org resolution', () =
 describe('G) Gate fetches pending broadcasts', () => {
   it('calls getPendingPlatformBroadcasts and populates the queue from the result', () => {
     expect(gate).toContain('getPendingPlatformBroadcasts()');
-    expect(gate).toMatch(/if \(res\.ok\) setQueue\(res\.broadcasts\);/);
+    expect(gate).toMatch(/setQueue\(res\.broadcasts\);/);
+  });
+
+  it('logs a clear error when the RPC returns ok=false (business-rule rejection, not just a thrown exception)', () => {
+    expect(gate).toMatch(/console\.error\('\[phoenix\] getPendingPlatformBroadcasts returned ok=false:', res\.error\);/);
   });
 
   it('logs (does not throw unhandled) on a failed fetch', () => {
