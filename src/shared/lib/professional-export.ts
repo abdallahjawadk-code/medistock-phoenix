@@ -501,6 +501,14 @@ export interface AvailabilityExportRow {
   concentration: string;
   batchNumber: string;
   quantity: number;
+  /**
+   * PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: the existing,
+   * user-entered availability `price` field only (never calculated/inferred/
+   * overwritten by this module). null/undefined means no price was entered;
+   * an actual entered 0 is a distinct, real value — see availExportCellValue,
+   * which exports null/undefined as blank ("—") but a real 0 as 0.00.
+   */
+  enteredPrice: number | null;
   /** Raw/effective condition key (e.g. 'missing', 'low_stock') — used ONLY for row styling + Summary-sheet grouping, never rendered directly. */
   conditionKey: string;
   /** Already-localized (bilingual) display text for the Condition column. */
@@ -540,6 +548,7 @@ const AVAIL_EXPORT_HEADERS = {
   concentration: 'Concentration / التركيز',
   batchNumber:   'Batch No. / رقم الوجبة',
   quantity:      'Quantity / الكمية',
+  enteredPrice:  'Entered Price / السعر المدخل',
   condition:     'Condition / الحالة',
   expiryDate:    'Expiry Date / تاريخ النفاد',
   daysToExpiry:  'Days to Expiry / أيام النفاد',
@@ -579,6 +588,7 @@ const AVAIL_EXPORT_DICTIONARY: { field: string; description: string }[] = [
   { field: AVAIL_EXPORT_HEADERS.concentration, description: 'The material\'s strength/concentration. / تركيز أو قوة المادة.' },
   { field: AVAIL_EXPORT_HEADERS.batchNumber, description: 'The recorded batch/lot number, if any. / رقم الوجبة/الدفعة المسجل، إن وُجد.' },
   { field: AVAIL_EXPORT_HEADERS.quantity, description: 'Current recorded quantity on hand. / الكمية الحالية المسجلة.' },
+  { field: AVAIL_EXPORT_HEADERS.enteredPrice, description: 'The user-entered price already recorded in the Availability/Status Editor (not a market price, and never calculated automatically) — blank if no price was entered. / السعر الذي أدخله المستخدم مسبقًا في محرر التوفر/الحالة (وليس سعر السوق، ولا يُحتسب تلقائيًا) — يترك فارغًا إذا لم يُدخل سعر.' },
   { field: AVAIL_EXPORT_HEADERS.condition, description: 'The material\'s current status: Available, Low Stock, Missing, Surplus, Near Expiry, or Expired. / حالة المادة الحالية: متوفر، منخفض، مفقود، فائض، قريب الانتهاء، أو منتهي الصلاحية.' },
   { field: AVAIL_EXPORT_HEADERS.expiryDate, description: 'The material\'s recorded expiry date (yyyy-mm-dd), if any. / تاريخ انتهاء صلاحية المادة المسجل، إن وُجد.' },
   { field: AVAIL_EXPORT_HEADERS.daysToExpiry, description: 'Whole days remaining until expiry as of the generation date (negative if already expired). / عدد الأيام المتبقية حتى انتهاء الصلاحية بتاريخ إنشاء هذا التصدير (رقم سالب إذا كانت منتهية بالفعل).' },
@@ -605,7 +615,7 @@ const AVAIL_ALL_BORDERS = { top: AVAIL_THIN_BORDER, bottom: AVAIL_THIN_BORDER, l
 interface AvailExportColumnDef {
   key: keyof typeof AVAIL_EXPORT_HEADERS;
   width: number;
-  kind: 'numeric' | 'text' | 'date' | 'datetime' | 'ltr-text';
+  kind: 'numeric' | 'text' | 'date' | 'datetime' | 'ltr-text' | 'price';
 }
 
 const AVAIL_EXPORT_COLUMNS: AvailExportColumnDef[] = [
@@ -618,6 +628,9 @@ const AVAIL_EXPORT_COLUMNS: AvailExportColumnDef[] = [
   { key: 'concentration', width: 16, kind: 'text' },
   { key: 'batchNumber', width: 16, kind: 'ltr-text' },
   { key: 'quantity', width: 12, kind: 'numeric' },
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: placed right after
+  // Quantity, before Condition, per the task's explicit placement preference.
+  { key: 'enteredPrice', width: 14, kind: 'price' },
   { key: 'condition', width: 26, kind: 'text' },
   { key: 'expiryDate', width: 16, kind: 'date' },
   { key: 'daysToExpiry', width: 14, kind: 'numeric' },
@@ -638,6 +651,13 @@ function availExportCellValue(row: AvailabilityExportRow, key: AvailExportColumn
     case 'concentration': return neutralizeFormulaValue(row.concentration || '—');
     case 'batchNumber': return neutralizeFormulaValue(row.batchNumber || '—');
     case 'quantity': return row.quantity;
+    // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: EXPORT CHOICE
+    // (documented per task): null/undefined price exports as blank ("—"),
+    // matching every other absent-value column in this sheet. An actual
+    // entered 0 is a distinct, real value and exports as a real numeric 0
+    // (formatted 0.00 by the numFmt applied below) — never blanked, never
+    // calculated/inferred/overwritten.
+    case 'enteredPrice': return typeof row.enteredPrice === 'number' && Number.isFinite(row.enteredPrice) ? row.enteredPrice : '—';
     case 'condition': return neutralizeFormulaValue(row.conditionLabel || '—');
     case 'expiryDate': return row.expiryDate ?? '—';
     case 'daysToExpiry': return row.daysToExpiry ?? '—';
@@ -756,9 +776,13 @@ export async function buildAvailabilityExportWorkbook(config: AvailabilityExport
       const col = AVAIL_EXPORT_COLUMNS[colNumber - 1];
       if (col.kind === 'date' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd';
       if (col.kind === 'datetime' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd hh:mm';
+      // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: only apply the
+      // 2-decimal numFmt when the cell actually holds a real number (a blank
+      // "—" for a null/undefined price must not get a numeric format).
+      if (col.kind === 'price' && typeof cell.value === 'number') cell.numFmt = '0.00';
       cell.alignment = {
         vertical: 'middle',
-        horizontal: col.kind === 'numeric' ? 'right'
+        horizontal: (col.kind === 'numeric' || col.kind === 'price') ? 'right'
           : (col.kind === 'date' || col.kind === 'datetime') ? 'center'
           : (isRtl ? 'right' : 'left'),
         wrapText: col.kind === 'text',

@@ -320,7 +320,7 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     }
   });
 
-  it('the StatusCenterScreen.tsx diff (from the later SAFE-PROFESSIONAL-XLSX-EXPORT-A phase) only touches the CSV-to-XLSX export replacement, never this migration\'s own concerns', () => {
+  it('the StatusCenterScreen.tsx diff (from the later SAFE-PROFESSIONAL-XLSX-EXPORT-A and PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A phases) only touches the CSV-to-XLSX export replacement / entered-price filter addition, never this migration\'s own concerns', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -329,7 +329,7 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
       );
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at/);
+      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at|enteredPrice|priceFilterMode/);
       expect(diff).not.toMatch(/service_role|auth\.admin/);
       expect(diff).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com|Bearer |sendMessage/i);
       expect(diff).not.toMatch(/source_expiry_risk_tier|source_expiry_days_remaining/);

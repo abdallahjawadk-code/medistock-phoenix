@@ -609,6 +609,21 @@ export const T: Dict = {
   sc_lm_port:           { ar: 'المنفذ',                           en: 'Port' },
   sc_lm_material:       { ar: 'المادة',                           en: 'Material' },
   sc_lm_org:            { ar: 'المؤسسة',                          en: 'Organization' },
+  /* ── PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: user-entered price
+     column (row.price only — never calculated/inferred) + its filter. ── */
+  sc_entered_price:            { ar: 'السعر المدخل',                 en: 'Entered Price' },
+  sc_price_filter_label:       { ar: 'فلتر السعر المدخل',            en: 'Entered price filter' },
+  sc_price_filter_all:         { ar: 'كل الأسعار',                   en: 'All prices' },
+  sc_price_filter_no_entered:  { ar: 'بدون سعر مدخل',                en: 'No entered price' },
+  sc_price_filter_has_entered: { ar: 'يوجد سعر مدخل',                en: 'Has entered price' },
+  sc_price_filter_less_than:   { ar: 'أقل من',                       en: 'Less than' },
+  sc_price_filter_greater_than:{ ar: 'أكبر من',                      en: 'Greater than' },
+  sc_price_filter_between:     { ar: 'بين',                          en: 'Between' },
+  sc_price_value_ph:           { ar: 'أدخل قيمة السعر',              en: 'Enter price value' },
+  sc_price_min_ph:             { ar: 'الحد الأدنى',                  en: 'Min' },
+  sc_price_max_ph:             { ar: 'الحد الأقصى',                  en: 'Max' },
+  sc_price_invalid:            { ar: 'قيمة سعر غير صالحة (يجب أن تكون رقمًا غير سالب)', en: 'Invalid price value (must be a non-negative number)' },
+  sc_price_range_invalid:      { ar: 'يجب إدخال الحد الأدنى والحد الأقصى، والحد الأدنى يجب ألا يتجاوز الحد الأقصى — لا تظهر نتائج حتى يتم تصحيح ذلك', en: 'Min and max are both required, and min must not exceed max — no rows match until this is corrected' },
   /* ── Internal (same-institution) alerts + outlet grouping (AVAILABILITY-ALERTS-QR-POLISH-B) ──
      Computed entirely client-side from the same live availability rows this
      screen already loads — no new RPC/SQL. Reporting-only, same as the rest

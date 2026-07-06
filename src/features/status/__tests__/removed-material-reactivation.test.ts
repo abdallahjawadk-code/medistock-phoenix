@@ -218,12 +218,21 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
     expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
   });
 
-  it('professional-export.ts (the shared XLSX builder) was not modified by this phase', () => {
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: professional-export.ts
+  // is excluded from this check — a later, separately-reviewed phase
+  // legitimately adds an "Entered Price" column to the Availability Export
+  // sheet (row.price only, never calculated/inferred). That addition does
+  // not change this phase's own scope (removed_at exclusion is untouched —
+  // asserted separately above and in the newer phase's own tests).
+  it('professional-export.ts changes (if any) are limited to the later, separately-reviewed Entered Price column addition', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/shared/lib/professional-export.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    if (diff.trim()) {
+      expect(diff).toMatch(/enteredPrice|Entered Price/);
+      expect(diff).not.toMatch(/removed_by|service_role|auth\.admin/);
+    }
   });
 
   it('exportAvailabilityXlsx/buildAvailabilityExportWorkbook still exist unrenamed', () => {

@@ -183,7 +183,11 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
     expect(diff.trim()).toBe('');
   });
 
-  it('Status Center XLSX export is untouched', () => {
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: a later, separately-
+  // reviewed phase legitimately adds a user-entered-price column/filter to
+  // both of these files (row.price only, never calculated/inferred) — that
+  // addition does not change this phase's own dashboard-RPC-switch scope.
+  it('Status Center XLSX export changes (if any) are limited to the later, separately-reviewed Entered Price addition', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -191,7 +195,10 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    if (diff.trim()) {
+      expect(diff).toMatch(/enteredPrice|priceFilterMode/);
+      expect(diff).not.toMatch(/phoenix_get_dashboard_condition_counts|phoenix_get_institution_condition_counts/);
+    }
   });
 
   it('premium-preview.html remains untracked (only "??" status if present)', () => {

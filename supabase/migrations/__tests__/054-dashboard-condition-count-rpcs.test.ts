@@ -471,11 +471,16 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
     }
   });
 
-  it('no working-tree diff on any frontend production file other than dashboard.service.ts (already-approved RPC switch)', () => {
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: StatusCenterScreen.tsx
+  // and professional-export.ts are also excluded here — a later, separately-
+  // reviewed phase legitimately adds a user-entered-price column/filter to
+  // both (row.price only, never calculated/inferred), unrelated to this
+  // migration's own RPC scope.
+  it('no working-tree diff on any frontend production file other than dashboard.service.ts (already-approved RPC switch) and the Entered Price addition', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

@@ -61,6 +61,31 @@ const RECENTLY_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type QuantityFilter = 'all' | 'has_quantity' | 'zero_quantity';
 
+// PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: the six required price
+// filter modes, matching the task's exact literal names.
+type PriceFilterMode =
+  | 'all'
+  | 'no_entered_price'
+  | 'has_entered_price'
+  | 'entered_price_less_than'
+  | 'entered_price_greater_than'
+  | 'entered_price_between';
+
+/**
+ * Parses a free-text numeric input into a validated, non-negative number, or
+ * null when the input is empty, non-numeric, or negative. Never throws — an
+ * invalid/negative value is simply treated as "not provided" so the UI can
+ * decide how to react (see priceFilterInvalid/priceRangeInvalid below)
+ * instead of crashing on bad input.
+ */
+function parsePriceInput(v: string): number | null {
+  const trimmed = v.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
 type SupplyCategory = 'purchases' | 'kimadia' | 'donations' | 'aid';
 
 const SUPPLY_CATEGORIES: { value: SupplyCategory; labelKey: string }[] = [
@@ -153,6 +178,19 @@ function expiryDisplay(r: LiveAvailRow, lang: 'ar' | 'en'): string {
   return '—';
 }
 
+// PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: on-screen display of the
+// existing, user-entered `price` field only — never calculated, inferred, or
+// overwritten here. DISPLAY CHOICE (documented per task): null/undefined AND
+// an actual 0 all render as "—" on screen (a quick-glance table has no way to
+// distinguish "never entered" from "entered as zero", and both mean "nothing
+// meaningful to show" for a fast scan) — a real 2-decimal value is shown
+// otherwise. This intentionally differs from the XLSX export below, which
+// keeps 0 as a real numeric 0.00 (see enteredPriceExportValue).
+function priceDisplay(price: number | null | undefined): string {
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return '—';
+  return price.toFixed(2);
+}
+
 const fieldStyle = {
   padding: '8px 12px', borderRadius: 'var(--r2)',
   border: '1px solid var(--brd)', background: 'var(--s)',
@@ -204,6 +242,17 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // all operate on already-loaded rows only, no new reads.
   const [quantityFilter, setQuantityFilter] = useState<QuantityFilter>('all');
   const [recentOnly, setRecentOnly] = useState(false);
+
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: price filter state.
+  // priceValue is used by both single-threshold modes (less_than/greater_than);
+  // priceMin/priceMax are used only by entered_price_between. All three are
+  // kept as raw text so the input can show exactly what the user typed
+  // (including a transient invalid value) — parsePriceInput() only runs when
+  // computing `rows` below, it never mutates this raw text state.
+  const [priceFilterMode, setPriceFilterMode] = useState<PriceFilterMode>('all');
+  const [priceValue, setPriceValue] = useState('');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
 
   // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
   // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
@@ -288,8 +337,54 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         (r.distribution_points?.name_ar ?? '').includes(search.trim())
       );
     }
+    // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: price filter — combines
+    // with every filter above using AND logic (it only ever narrows `list`
+    // further, never replaces it). Source is row.price only — never
+    // calculated/inferred/overwritten. null/undefined price is treated as 0
+    // ONLY for the purposes of no_entered_price/has_entered_price (never
+    // mutates the row itself).
+    if (priceFilterMode === 'no_entered_price') {
+      list = list.filter(r => !(typeof r.price === 'number' && r.price > 0));
+    } else if (priceFilterMode === 'has_entered_price') {
+      list = list.filter(r => typeof r.price === 'number' && r.price > 0);
+    } else if (priceFilterMode === 'entered_price_less_than') {
+      const threshold = parsePriceInput(priceValue);
+      // Invalid/negative/empty threshold: filter has no effect yet (documented
+      // choice) — the user sees an inline validation hint (rendered below)
+      // instead of the table silently emptying while they are still typing.
+      if (threshold !== null) list = list.filter(r => typeof r.price === 'number' && r.price < threshold);
+    } else if (priceFilterMode === 'entered_price_greater_than') {
+      const threshold = parsePriceInput(priceValue);
+      if (threshold !== null) list = list.filter(r => typeof r.price === 'number' && r.price > threshold);
+    } else if (priceFilterMode === 'entered_price_between') {
+      const min = parsePriceInput(priceMin);
+      const max = parsePriceInput(priceMax);
+      // entered_price_between REQUIRES both min and max (task spec). Documented
+      // choice: missing/invalid min or max, OR min > max, safely returns NO
+      // ROWS rather than throwing or silently ignoring the filter — the inline
+      // validation hint (rendered below) explains why the table is empty.
+      if (min === null || max === null || min > max) {
+        list = [];
+      } else {
+        list = list.filter(r => typeof r.price === 'number' && r.price >= min && r.price <= max);
+      }
+    }
     return list;
-  }, [allRows, filterStatus, filterSupply, search, quantityFilter, recentOnly]);
+  }, [allRows, filterStatus, filterSupply, search, quantityFilter, recentOnly, priceFilterMode, priceValue, priceMin, priceMax]);
+
+  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: inline validation hints
+  // for the price filter UI — purely derived, never blocks other filters.
+  const priceValueInvalid = useMemo(
+    () => (priceFilterMode === 'entered_price_less_than' || priceFilterMode === 'entered_price_greater_than')
+      && priceValue.trim() !== '' && parsePriceInput(priceValue) === null,
+    [priceFilterMode, priceValue],
+  );
+  const priceRangeInvalid = useMemo(() => {
+    if (priceFilterMode !== 'entered_price_between') return false;
+    const min = parsePriceInput(priceMin);
+    const max = parsePriceInput(priceMax);
+    return min === null || max === null || min > max;
+  }, [priceFilterMode, priceMin, priceMax]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -353,8 +448,15 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     if (quantityFilter === 'zero_quantity') parts.push(t('sf_zero_quantity', lang));
     if (recentOnly) parts.push(t('sf_recently_updated', lang));
     if (search.trim()) parts.push(`${t('search', lang)}: ${search.trim()}`);
+    // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: reflect the price
+    // filter in the same summary shown on screen and passed into export/print.
+    if (priceFilterMode === 'no_entered_price') parts.push(t('sc_price_filter_no_entered', lang));
+    else if (priceFilterMode === 'has_entered_price') parts.push(t('sc_price_filter_has_entered', lang));
+    else if (priceFilterMode === 'entered_price_less_than') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_less_than', lang)} ${priceValue.trim()}`);
+    else if (priceFilterMode === 'entered_price_greater_than') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_greater_than', lang)} ${priceValue.trim()}`);
+    else if (priceFilterMode === 'entered_price_between') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_between', lang)} ${priceMin.trim()}–${priceMax.trim()}`);
     return parts.length ? parts.join(' · ') : t('sc_all', lang);
-  }, [filterStatus, filterSupply, quantityFilter, recentOnly, search, lang]);
+  }, [filterStatus, filterSupply, quantityFilter, recentOnly, search, priceFilterMode, priceValue, priceMin, priceMax, lang]);
 
   // UX-SMART-FILTERS-TIMELINE-A: smart-filter chip definitions — every chip
   // only toggles the client-side state above; no new reads, no backend calls.
@@ -415,6 +517,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     { key: 'conc',    label: t('avail_concentration', lang),value: r => r.concentration || '—' },
     { key: 'dosage',  label: t('avail_dosage_form', lang),  value: r => r.dosage_form || '—' },
     { key: 'qty',     label: t('qty', lang),                value: r => String(r.quantity ?? 0) },
+    { key: 'price',   label: t('sc_entered_price', lang),   value: r => priceDisplay(r.price) },
     { key: 'supply',  label: t('avail_supply_type', lang),  value: r => r.supply_type || '—' },
     { key: 'raw',     label: t('sc_raw_condition', lang),   value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
     { key: 'eff',     label: t('sc_effective_status', lang),value: r => t('cond_' + effOf(r), lang) },
@@ -509,6 +612,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             concentration: r.concentration || '—',
             batchNumber: r.batch_number || '—',
             quantity: r.quantity ?? 0,
+            // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: the same
+            // user-entered row.price already used for the on-screen column
+            // above — never calculated/inferred/overwritten. `rows` is
+            // already fully filtered (status/supply/search/quantity/smart
+            // filters AND the new price filter), so exportXlsx exports
+            // exactly what is currently on screen, same as every other field.
+            enteredPrice: typeof r.price === 'number' ? r.price : null,
             conditionKey: status,
             conditionLabel: AVAIL_EXPORT_CONDITION_LABELS[status] ?? status,
             expiryDate: r.expiry_date ? new Date(r.expiry_date) : null,
@@ -686,6 +796,65 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           ))}
         </div>
 
+        {/* PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: entered-price
+            filter — combines with every filter above via AND logic in the
+            `rows` memo. */}
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            <select
+              value={priceFilterMode}
+              onChange={e => setPriceFilterMode(e.target.value as PriceFilterMode)}
+              style={{ ...fieldStyle, minWidth: '170px', appearance: 'none', cursor: 'pointer' }}
+              aria-label={t('sc_price_filter_label', lang)}
+            >
+              <option value="all">{t('sc_price_filter_all', lang)}</option>
+              <option value="no_entered_price">{t('sc_price_filter_no_entered', lang)}</option>
+              <option value="has_entered_price">{t('sc_price_filter_has_entered', lang)}</option>
+              <option value="entered_price_less_than">{t('sc_price_filter_less_than', lang)}</option>
+              <option value="entered_price_greater_than">{t('sc_price_filter_greater_than', lang)}</option>
+              <option value="entered_price_between">{t('sc_price_filter_between', lang)}</option>
+            </select>
+
+            {(priceFilterMode === 'entered_price_less_than' || priceFilterMode === 'entered_price_greater_than') && (
+              <input
+                type="number" min="0" step="0.01" dir="ltr"
+                value={priceValue}
+                onChange={e => setPriceValue(e.target.value)}
+                placeholder={t('sc_price_value_ph', lang)}
+                aria-label={t('sc_price_value_ph', lang)}
+                style={{ ...fieldStyle, minWidth: '120px' }}
+              />
+            )}
+
+            {priceFilterMode === 'entered_price_between' && (
+              <>
+                <input
+                  type="number" min="0" step="0.01" dir="ltr"
+                  value={priceMin}
+                  onChange={e => setPriceMin(e.target.value)}
+                  placeholder={t('sc_price_min_ph', lang)}
+                  aria-label={t('sc_price_min_ph', lang)}
+                  style={{ ...fieldStyle, minWidth: '100px' }}
+                />
+                <input
+                  type="number" min="0" step="0.01" dir="ltr"
+                  value={priceMax}
+                  onChange={e => setPriceMax(e.target.value)}
+                  placeholder={t('sc_price_max_ph', lang)}
+                  aria-label={t('sc_price_max_ph', lang)}
+                  style={{ ...fieldStyle, minWidth: '100px' }}
+                />
+              </>
+            )}
+          </div>
+          {priceValueInvalid && (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginTop: '6px' }}>{t('sc_price_invalid', lang)}</div>
+          )}
+          {priceRangeInvalid && (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginTop: '6px' }}>{t('sc_price_range_invalid', lang)}</div>
+          )}
+        </div>
+
         <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '10px' }}>
           {t('sc_selected_filters', lang)}: {selectedFiltersText}
         </div>
@@ -715,6 +884,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('avail_concentration', lang)}</th>
                 <th style={th}>{t('avail_dosage_form', lang)}</th>
                 <th style={th}>{t('qty', lang)}</th>
+                <th style={th}>{t('sc_entered_price', lang)}</th>
                 <th style={th}>{t('avail_supply_type', lang)}</th>
                 <th style={th}>{t('sc_raw_condition', lang)}</th>
                 <th style={th}>{t('sc_effective_status', lang)}</th>
@@ -736,6 +906,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                     <td style={td} dir="auto">{r.concentration || '—'}</td>
                     <td style={td} dir="auto">{r.dosage_form || '—'}</td>
                     <td style={td}>{r.quantity}</td>
+                    <td style={td} dir="ltr">{priceDisplay(r.price)}</td>
                     <td style={td} dir="auto">{r.supply_type || '—'}</td>
                     <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
                     <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>

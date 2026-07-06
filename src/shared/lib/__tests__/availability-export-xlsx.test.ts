@@ -42,6 +42,7 @@ function row(overrides: Partial<AvailabilityExportRow> = {}): AvailabilityExport
     concentration: '500mg',
     batchNumber: 'B123',
     quantity: 40,
+    enteredPrice: 12.5,
     conditionKey: 'available',
     conditionLabel: CONDITION_LABELS.available,
     expiryDate: new Date('2027-01-01'),
@@ -105,7 +106,7 @@ describe('Availability Export sheet: bilingual headers', () => {
       'No. / الرقم', 'Institution / المؤسسة', 'Outlet / المنفذ',
       'Scientific Name / الاسم العلمي', 'Trade Name / الاسم التجاري',
       'Dosage Form / الشكل', 'Concentration / التركيز', 'Batch No. / رقم الوجبة',
-      'Quantity / الكمية', 'Condition / الحالة', 'Expiry Date / تاريخ النفاد',
+      'Quantity / الكمية', 'Entered Price / السعر المدخل', 'Condition / الحالة', 'Expiry Date / تاريخ النفاد',
       'Days to Expiry / أيام النفاد', 'Expiry Risk / خطورة النفاد',
       'Last Updated By / آخر محدث', 'Last Updated At / وقت التحديث', 'Notes / ملاحظات',
     ];
@@ -139,8 +140,11 @@ describe('Availability Export sheet: data rows, dates, and condition-based styli
     const ws = wb.getWorksheet('Availability Export')!;
     let dataRow: ExcelJS.Row | undefined;
     ws.eachRow(r => { if (r.getCell(4).value === 'Paracetamol') dataRow = r; });
-    const expiryCell = dataRow!.getCell(11);
-    const updatedCell = dataRow!.getCell(15);
+    // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: column indices shifted
+    // by +1 after Entered Price was inserted between Quantity (9) and
+    // Condition (now 11, was 10).
+    const expiryCell = dataRow!.getCell(12);
+    const updatedCell = dataRow!.getCell(16);
     expect(expiryCell.value).toBeInstanceOf(Date);
     expect(expiryCell.numFmt).toBe('yyyy-mm-dd');
     expect(updatedCell.value).toBeInstanceOf(Date);
@@ -152,9 +156,36 @@ describe('Availability Export sheet: data rows, dates, and condition-based styli
     const ws = wb.getWorksheet('Availability Export')!;
     let dataRow: ExcelJS.Row | undefined;
     ws.eachRow(r => { if (r.getCell(4).value === 'Paracetamol') dataRow = r; });
-    expect(dataRow!.getCell(11).value).toBe('—');
-    expect(dataRow!.getCell(15).value).toBe('—');
-    expect(String(dataRow!.getCell(11).value)).not.toContain('Invalid Date');
+    expect(dataRow!.getCell(12).value).toBe('—');
+    expect(dataRow!.getCell(16).value).toBe('—');
+    expect(String(dataRow!.getCell(12).value)).not.toContain('Invalid Date');
+  });
+
+  it('enteredPrice cell is a real 2-decimal-formatted number when a price was entered, and blank "—" when null', async () => {
+    const wb = await buildAvailabilityExportWorkbook(baseConfig({
+      rows: [row({ scientificName: 'PricedDrug', enteredPrice: 3.5 }), row({ scientificName: 'NoPriceDrug', enteredPrice: null })],
+    }));
+    const ws = wb.getWorksheet('Availability Export')!;
+    let pricedRow: ExcelJS.Row | undefined;
+    let noPriceRow: ExcelJS.Row | undefined;
+    ws.eachRow(r => {
+      if (r.getCell(4).value === 'PricedDrug') pricedRow = r;
+      if (r.getCell(4).value === 'NoPriceDrug') noPriceRow = r;
+    });
+    // Entered Price is column 10 (right after Quantity at 9, before Condition at 11).
+    expect(pricedRow!.getCell(10).value).toBe(3.5);
+    expect(pricedRow!.getCell(10).numFmt).toBe('0.00');
+    expect(noPriceRow!.getCell(10).value).toBe('—');
+    expect(noPriceRow!.getCell(10).numFmt).toBeUndefined();
+  });
+
+  it('an entered price of exactly 0 exports as a real numeric 0.00, not blank', async () => {
+    const wb = await buildAvailabilityExportWorkbook(baseConfig({ rows: [row({ enteredPrice: 0 })] }));
+    const ws = wb.getWorksheet('Availability Export')!;
+    let dataRow: ExcelJS.Row | undefined;
+    ws.eachRow(r => { if (r.getCell(4).value === 'Paracetamol') dataRow = r; });
+    expect(dataRow!.getCell(10).value).toBe(0);
+    expect(dataRow!.getCell(10).numFmt).toBe('0.00');
   });
 
   it('a "missing" row gets a red fill and bold red condition text; an "available" row gets a green/neutral fill', async () => {
@@ -175,7 +206,8 @@ describe('Availability Export sheet: data rows, dates, and condition-based styli
     const okFill = (okRow!.getCell(4).fill as ExcelJS.FillPattern).fgColor?.argb;
     expect(missingFill).toBe('FFFCE8E8');
     expect(okFill).toBe('FFF1FBF5');
-    const missingConditionCell = missingRow!.getCell(10);
+    // Condition is column 11 (was 10 before Entered Price was inserted at 10).
+    const missingConditionCell = missingRow!.getCell(11);
     expect(missingConditionCell.font?.bold).toBe(true);
     expect(missingConditionCell.font?.color?.argb).toBe('FF991B1B');
   });
@@ -243,6 +275,18 @@ describe('Data Dictionary sheet', () => {
     for (const label of ['No. / الرقم', 'Institution / المؤسسة', 'Notes / ملاحظات']) {
       expect(fieldNames).toContain(label);
     }
+  });
+
+  it('includes an "Entered Price / السعر المدخل" entry describing it as the user-entered editor price, never calculated', async () => {
+    const wb = await buildAvailabilityExportWorkbook(baseConfig());
+    const ws = wb.getWorksheet('Data Dictionary')!;
+    let description = '';
+    ws.eachRow(r => {
+      if (String(r.getCell(1).value) === 'Entered Price / السعر المدخل') description = String(r.getCell(2).value);
+    });
+    expect(description).toMatch(/user-entered/i);
+    expect(description).toMatch(/not a market price/i);
+    expect(description).toMatch(/never calculated automatically/i);
   });
 
   it('mentions that removed materials are excluded from the export scope', async () => {
