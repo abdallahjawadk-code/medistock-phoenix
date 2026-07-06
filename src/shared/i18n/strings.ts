@@ -661,6 +661,14 @@ export const T: Dict = {
   sc_outlet_report_export:      { ar: 'تصدير Excel',                          en: 'Export Excel' },
   sc_outlet_report_active_label:{ ar: 'نشط',                                  en: 'Active' },
   sc_outlet_report_no_outlet:   { ar: 'لم يتم اختيار منفذ',                    en: 'No outlet selected' },
+  /* ── PHASE2-EXPORT-FIELD-SELECTOR-A: field selector for the outlet report
+     modal's Excel export and print/PDF — column selection only, never a row
+     filter. ── */
+  sc_outlet_report_fields_title:          { ar: 'أعمدة التصدير',                        en: 'Export Columns' },
+  sc_outlet_report_fields_select_all:     { ar: 'تحديد الكل',                           en: 'Select all' },
+  sc_outlet_report_fields_clear_all:      { ar: 'إلغاء تحديد الكل',                     en: 'Clear all' },
+  sc_outlet_report_fields_restore_default:{ ar: 'استعادة الافتراضي',                    en: 'Restore default' },
+  sc_outlet_report_fields_none_selected:  { ar: 'يجب اختيار عمود واحد على الأقل قبل التصدير أو الطباعة', en: 'Select at least one column before exporting or printing' },
   /* ── Live availability report / print / export (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A) ── */
   sc_report_title:      { ar: 'تقرير موقف التوفر الحي للمواد',     en: 'Live Material Availability Status Report' },
   sc_report_sub:        { ar: 'تقرير حي مبني على سجل التوفر · تصفية وطباعة وتصدير', en: 'Live report from item availability · filter, print & export' },

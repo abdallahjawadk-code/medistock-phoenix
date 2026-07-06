@@ -105,6 +105,86 @@ function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
   return Math.round((dateOnly(d).getTime() - dateOnly(new Date()).getTime()) / 86_400_000);
 }
 
+/**
+ * PHASE2-EXPORT-FIELD-SELECTOR-A
+ *
+ * Field (column) selector for this modal's Excel export and print/PDF —
+ * controls WHICH COLUMNS appear in the output, never which rows (row
+ * filtering above is completely untouched and independent). Exactly the 16
+ * non-sensitive fields listed below are selectable; nothing ID/UUID/
+ * removed_by/actor_id/entity_id/token/payload-shaped is ever offered here.
+ *
+ * `key` doubles as: (a) the printColumns entry key below, and (b)
+ * (via FIELD_TO_EXCEL_COLUMN_KEY) the OUTLET_REPORT_COLUMNS key in
+ * professional-export.ts, so one selection applies identically to both
+ * Excel and print — never two separate selection states.
+ */
+interface FieldDefinition {
+  key: string;
+  labelKey: string;
+}
+
+const FIELD_DEFINITIONS: FieldDefinition[] = [
+  { key: 'institution', labelKey: 'avail_inst_label' },
+  { key: 'outlet', labelKey: 'avail_details_outlet_label' },
+  { key: 'scientificName', labelKey: 'avail_scientific_name' },
+  { key: 'tradeName', labelKey: 'avail_trade_name' },
+  { key: 'dosageForm', labelKey: 'avail_dosage_form' },
+  { key: 'concentration', labelKey: 'avail_concentration' },
+  { key: 'quantity', labelKey: 'qty' },
+  { key: 'condition', labelKey: 'avail_condition' },
+  { key: 'enteredPrice', labelKey: 'sc_entered_price' },
+  { key: 'supplyType', labelKey: 'avail_supply_type' },
+  { key: 'batchNumber', labelKey: 'batch_no' },
+  { key: 'expiryDate', labelKey: 'expiry' },
+  { key: 'daysToExpiry', labelKey: 'avail_details_days_to_expiry' },
+  { key: 'notes', labelKey: 'sc_notes' },
+  { key: 'lastUpdated', labelKey: 'last_upd' },
+  { key: 'removedStatus', labelKey: 'sc_removed_badge' },
+];
+
+const DEFAULT_SELECTED_FIELD_KEYS = FIELD_DEFINITIONS.map(f => f.key);
+
+/** Maps the 16 selectable field keys above to their OUTLET_REPORT_COLUMNS key in professional-export.ts (identical for 14 of them; only lastUpdated/removedStatus differ from their Excel column key names). */
+const FIELD_TO_EXCEL_COLUMN_KEY: Record<string, string> = {
+  institution: 'institution', outlet: 'outlet', scientificName: 'scientificName', tradeName: 'tradeName',
+  dosageForm: 'dosageForm', concentration: 'concentration', quantity: 'quantity', condition: 'condition',
+  enteredPrice: 'enteredPrice', supplyType: 'supplyType', batchNumber: 'batchNumber', expiryDate: 'expiryDate',
+  daysToExpiry: 'daysToExpiry', notes: 'notes', lastUpdated: 'lastUpdatedAt', removedStatus: 'removed',
+};
+
+const FIELD_SELECTOR_STORAGE_KEY = 'phoenix_outlet_report_selected_fields';
+
+/**
+ * Reads the persisted field selection from localStorage, falling back
+ * safely to the full default set whenever the value is missing, corrupt,
+ * not valid JSON, not an array, empty, or contains no recognized field key
+ * (localStorage unavailable — private mode/blocked — also falls back here).
+ * Never throws.
+ */
+function loadSelectedFields(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(FIELD_SELECTOR_STORAGE_KEY);
+    if (!raw) return new Set(DEFAULT_SELECTED_FIELD_KEYS);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_SELECTED_FIELD_KEYS);
+    const validKeys = new Set(FIELD_DEFINITIONS.map(f => f.key));
+    const restored = parsed.filter((k): k is string => typeof k === 'string' && validKeys.has(k));
+    return restored.length > 0 ? new Set(restored) : new Set(DEFAULT_SELECTED_FIELD_KEYS);
+  } catch {
+    return new Set(DEFAULT_SELECTED_FIELD_KEYS);
+  }
+}
+
+/** Persists the current field selection — never throws (localStorage unavailable/blocked is simply a non-fatal no-op, matching usePwaInstallPrompt.ts's established pattern). */
+function saveSelectedFields(keys: Set<string>): void {
+  try {
+    window.localStorage.setItem(FIELD_SELECTOR_STORAGE_KEY, JSON.stringify(Array.from(keys)));
+  } catch {
+    /* non-fatal — selection simply won't persist across reloads */
+  }
+}
+
 type QuantityFilter = 'all' | 'has_quantity' | 'zero_quantity';
 type PriceFilterMode =
   | 'all'
@@ -151,6 +231,33 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
   const [xlsxBusy, setXlsxBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+
+  // PHASE2-EXPORT-FIELD-SELECTOR-A: column (field) selection for Excel/print —
+  // completely independent of the row filters above. Lazily initialized from
+  // localStorage (falls back to "all 16 fields" — the pre-existing behavior —
+  // on first load or any read failure).
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(() => loadSelectedFields());
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+
+  function updateSelectedFields(next: Set<string>) {
+    setSelectedFields(next);
+    saveSelectedFields(next);
+  }
+  function toggleField(key: string) {
+    const next = new Set(selectedFields);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    updateSelectedFields(next);
+  }
+  function selectAllFields() {
+    updateSelectedFields(new Set(DEFAULT_SELECTED_FIELD_KEYS));
+  }
+  function clearAllFields() {
+    updateSelectedFields(new Set());
+  }
+  function restoreDefaultFields() {
+    updateSelectedFields(new Set(DEFAULT_SELECTED_FIELD_KEYS));
+  }
+  const noFieldsSelected = selectedFields.size === 0;
 
   function showToast(msg: string) {
     setToast(msg);
@@ -282,15 +389,25 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
         lastUpdatedAt: r.updated_at ? new Date(r.updated_at) : null,
         notes: r.notes || '—',
         removedLabel: r.removed_at != null ? 'Removed / مُزالة' : 'Active / نشط',
+        // PHASE2-EXPORT-FIELD-SELECTOR-A: raw supply_type text, same value already shown on screen and in printColumns — never calculated/inferred.
+        supplyType: r.supply_type || '—',
       };
     });
   }
 
   async function exportXlsx() {
-    if (xlsxBusy) return;
+    if (xlsxBusy || noFieldsSelected) return;
     setXlsxBusy(true);
     try {
       const safeOutlet = (outletName || 'outlet').replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
+      // PHASE2-EXPORT-FIELD-SELECTOR-A: translate the modal's canonical
+      // field keys to their OUTLET_REPORT_COLUMNS key names. selectedFields
+      // always has all 16 keys by default, so selectedColumnKeys is
+      // populated the same as before for any user who never touches the
+      // selector — buildOutletReportWorkbook still exports every column.
+      const selectedColumnKeys = new Set(
+        Array.from(selectedFields).map(k => FIELD_TO_EXCEL_COLUMN_KEY[k]).filter(Boolean),
+      );
       const ok = await exportOutletReportXlsx({
         reportTitle: t('sc_outlet_report_title', lang),
         moduleName: outletName,
@@ -304,6 +421,7 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
         institutionName,
         summary,
         rows: buildExportRows(),
+        selectedColumnKeys,
       });
       if (!ok) showToast(t('csv_export_failed', lang));
     } catch {
@@ -317,24 +435,39 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
   // (triggerProfessionalPrint/buildPremiumPrintHtml) — dependency-free
   // browser print-to-PDF, exactly like every other screen's print button.
   // No new PDF library was added.
+  // PHASE2-EXPORT-FIELD-SELECTOR-A: `key` on every entry below now matches
+  // FIELD_DEFINITIONS' canonical field keys exactly (previously abbreviated
+  // internal names like 'sci'/'conc'/'updated') — these keys are only ever
+  // used internally (React iteration key, column identification inside
+  // buildPremiumPrintHtml) and are not asserted on by any existing test, so
+  // this rename is safe. institution/outlet are NEW here (this print output
+  // never had per-row institution/outlet columns before — they were only
+  // shown in the header); both are constants, not per-row lookups.
   const printColumns: ProfessionalReportColumn<LiveAvailRow>[] = [
-    { key: 'sci', label: t('avail_scientific_name', lang), value: r => r.scientific_name || '—' },
-    { key: 'trade', label: t('avail_trade_name', lang), value: r => r.trade_name || '—' },
-    { key: 'dosage', label: t('avail_dosage_form', lang), value: r => r.dosage_form || '—' },
-    { key: 'conc', label: t('avail_concentration', lang), value: r => r.concentration || '—' },
-    { key: 'qty', label: t('qty', lang), value: r => String(r.quantity ?? 0), numeric: true },
+    { key: 'institution', label: t('avail_inst_label', lang), value: () => institutionName || '—' },
+    { key: 'outlet', label: t('avail_details_outlet_label', lang), value: () => outletName || '—' },
+    { key: 'scientificName', label: t('avail_scientific_name', lang), value: r => r.scientific_name || '—' },
+    { key: 'tradeName', label: t('avail_trade_name', lang), value: r => r.trade_name || '—' },
+    { key: 'dosageForm', label: t('avail_dosage_form', lang), value: r => r.dosage_form || '—' },
+    { key: 'concentration', label: t('avail_concentration', lang), value: r => r.concentration || '—' },
+    { key: 'quantity', label: t('qty', lang), value: r => String(r.quantity ?? 0), numeric: true },
     { key: 'condition', label: t('avail_condition', lang), value: r => t('cond_' + effOf(r), lang) },
-    { key: 'price', label: t('sc_entered_price', lang), value: r => priceDisplay(r.price), numeric: true },
-    { key: 'supply', label: t('avail_supply_type', lang), value: r => r.supply_type || '—' },
-    { key: 'batch', label: t('batch_no', lang), value: r => r.batch_number || '—', ltr: true },
-    { key: 'expiry', label: t('expiry', lang), value: r => formatStableDate(r.expiry_date, lang), ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
+    { key: 'enteredPrice', label: t('sc_entered_price', lang), value: r => priceDisplay(r.price), numeric: true },
+    { key: 'supplyType', label: t('avail_supply_type', lang), value: r => r.supply_type || '—' },
+    { key: 'batchNumber', label: t('batch_no', lang), value: r => r.batch_number || '—', ltr: true },
+    { key: 'expiryDate', label: t('expiry', lang), value: r => formatStableDate(r.expiry_date, lang), ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
     { key: 'daysToExpiry', label: t('avail_details_days_to_expiry', lang), value: r => { const d = daysUntilExpiry(r.expiry_date); return d === null ? '—' : String(d); }, numeric: true },
     { key: 'notes', label: t('sc_notes', lang), value: r => r.notes || '—' },
-    { key: 'updated', label: t('last_upd', lang), value: r => formatStableDate(r.updated_at, lang), ltr: true, dateColumn: 'date', excelValue: r => r.updated_at },
-    { key: 'removed', label: t('sc_removed_badge', lang), value: r => r.removed_at != null ? t('sc_removed_badge', lang) : t('sc_outlet_report_active_label', lang) },
+    { key: 'lastUpdated', label: t('last_upd', lang), value: r => formatStableDate(r.updated_at, lang), ltr: true, dateColumn: 'date', excelValue: r => r.updated_at },
+    { key: 'removedStatus', label: t('sc_removed_badge', lang), value: r => r.removed_at != null ? t('sc_removed_badge', lang) : t('sc_outlet_report_active_label', lang) },
   ];
 
   function printReport() {
+    if (noFieldsSelected) return;
+    // PHASE2-EXPORT-FIELD-SELECTOR-A: same selectedFields set as Excel —
+    // one selection, applied identically to both surfaces. Default (all 16
+    // selected) keeps every printColumns entry, unchanged from before.
+    const columns = printColumns.filter(c => selectedFields.has(c.key));
     const config = {
       reportTitle: t('sc_outlet_report_title', lang),
       moduleName: `${outletName}${institutionName ? ' — ' + institutionName : ''}`,
@@ -344,7 +477,7 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
       filtersSummary: selectedFiltersText,
       footerText: t('report_footer_generated_by', lang),
       emptyMessage: t('se_no_records', lang),
-      columns: printColumns,
+      columns,
       rows: filteredRows,
       rowAccent: (r: LiveAvailRow) => {
         const eff = effOf(r);
@@ -457,11 +590,47 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
           {priceValueInvalid && <div style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '8px' }}>{t('sc_price_invalid', lang)}</div>}
           {priceRangeInvalid && <div style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '8px' }}>{t('sc_price_range_invalid', lang)}</div>}
 
+          {/* PHASE2-EXPORT-FIELD-SELECTOR-A: inline collapsible field
+              selector — controls WHICH COLUMNS Excel/print include, never
+              which rows (row filters above are untouched). Collapsed by
+              default; selection itself still defaults to all 16 fields
+              regardless of whether this section has ever been opened. */}
+          <div style={{ marginBottom: '10px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)' }}>
+            <button
+              type="button"
+              onClick={() => setFieldsOpen(v => !v)}
+              style={{ ...fieldStyle, width: '100%', textAlign: 'start', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', background: 'transparent' }}
+            >
+              <span>🧩 {t('sc_outlet_report_fields_title', lang)} ({selectedFields.size}/{FIELD_DEFINITIONS.length})</span>
+              <span>{fieldsOpen ? '▲' : '▼'}</span>
+            </button>
+            {fieldsOpen && (
+              <div style={{ padding: '10px', borderTop: '1px solid var(--brd)' }}>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                  <PhoenixButton variant="ghost" size="sm" onClick={selectAllFields}>{t('sc_outlet_report_fields_select_all', lang)}</PhoenixButton>
+                  <PhoenixButton variant="ghost" size="sm" onClick={clearAllFields}>{t('sc_outlet_report_fields_clear_all', lang)}</PhoenixButton>
+                  <PhoenixButton variant="ghost" size="sm" onClick={restoreDefaultFields}>{t('sc_outlet_report_fields_restore_default', lang)}</PhoenixButton>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '6px' }}>
+                  {FIELD_DEFINITIONS.map(f => (
+                    <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={selectedFields.has(f.key)} onChange={() => toggleField(f.key)} />
+                      <span dir="auto">{t(f.labelKey, lang)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {noFieldsSelected && (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '8px' }}>{t('sc_outlet_report_fields_none_selected', lang)}</div>
+          )}
+
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <PhoenixButton variant="secondary" size="sm" loading={xlsxBusy} disabled={xlsxBusy} onClick={exportXlsx}>
+            <PhoenixButton variant="secondary" size="sm" loading={xlsxBusy} disabled={xlsxBusy || noFieldsSelected} onClick={exportXlsx}>
               📊 {t('sc_outlet_report_export', lang)}
             </PhoenixButton>
-            <PhoenixButton variant="ghost" size="sm" disabled={filteredRows.length === 0} onClick={printReport}>
+            <PhoenixButton variant="ghost" size="sm" disabled={filteredRows.length === 0 || noFieldsSelected} onClick={printReport}>
               📄 {t('sc_print_pdf', lang)}
             </PhoenixButton>
           </div>

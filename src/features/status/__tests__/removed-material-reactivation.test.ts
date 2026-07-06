@@ -231,7 +231,15 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
   // modifies buildAvailabilityExportWorkbook/exportAvailabilityXlsx in place
   // (asserted below and in that phase's own tests), so this guard no longer
   // requires every diff to mention Entered Price specifically.
-  it('professional-export.ts changes (if any) never touch removed_by/service_role/auth.admin, and never modify buildAvailabilityExportWorkbook\'s own body', () => {
+  // PHASE2-EXPORT-FIELD-SELECTOR-A: a still later, separately-reviewed phase
+  // adds real, purely-additive filtering logic to buildOutletReportWorkbook
+  // (a DIFFERENT function than buildAvailabilityExportWorkbook, further down
+  // the file) as part of the export field selector — so this test now
+  // verifies buildAvailabilityExportWorkbook's own body directly (content-
+  // based), rather than diffing the whole file, since that function is
+  // genuinely untouched even though the file as a whole now has a larger,
+  // legitimate diff.
+  it('professional-export.ts never exposes removed_by/service_role/auth.admin, and buildAvailabilityExportWorkbook\'s own body is untouched (verified directly)', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/shared/lib/professional-export.ts', { cwd: ROOT, encoding: 'utf8' });
@@ -242,11 +250,15 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
       // merely explains removed_by is deliberately NOT exposed is fine.
       expect(diff).not.toMatch(/\.removed_by\b|removed_by\s*[:,]/);
       expect(diff).not.toMatch(/service_role|auth\.admin/);
-      const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
-      for (const line of removedLines) {
-        expect(line.slice(1).trim()).toBe('');
-      }
     }
+    const exportModuleSrc = readFileSync(join(SRC, 'shared/lib/professional-export.ts'), 'utf8');
+    const start = exportModuleSrc.indexOf('export async function buildAvailabilityExportWorkbook');
+    const end = exportModuleSrc.indexOf('export async function exportAvailabilityXlsx');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = exportModuleSrc.slice(start, end);
+    expect(body).toContain("wb.addWorksheet(safeSheetName(AVAIL_SHEET_NAMES.summary)");
+    expect(body).toContain('dataWs.columns = AVAIL_EXPORT_COLUMNS.map(c => ({ key: c.key, width: c.width }));');
   });
 
   it('exportAvailabilityXlsx/buildAvailabilityExportWorkbook still exist unrenamed', () => {

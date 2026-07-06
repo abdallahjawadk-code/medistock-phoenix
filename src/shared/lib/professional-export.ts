@@ -877,6 +877,14 @@ export async function exportAvailabilityXlsx(config: AvailabilityExportConfig): 
 export interface OutletReportRow extends AvailabilityExportRow {
   /** Already-localized "Active / نشط" or "Removed / مُزالة" label — never a raw removed_by uuid. */
   removedLabel: string;
+  /**
+   * PHASE2-EXPORT-FIELD-SELECTOR-A: the raw supply_type text value (already
+   * displayed on-screen and in the modal's print columns), added here so the
+   * Excel export can include it too. Additive to OutletReportRow only — NOT
+   * added to AvailabilityExportRow, so Status Center's main export (which
+   * has never included a Supply Type column) is completely unaffected.
+   */
+  supplyType: string;
 }
 
 export interface OutletReportSummary {
@@ -904,12 +912,31 @@ export interface OutletReportConfig {
   institutionName: string;
   summary: OutletReportSummary;
   rows: OutletReportRow[];
+  /**
+   * PHASE2-EXPORT-FIELD-SELECTOR-A: optional column allowlist, keyed by the
+   * SAME OutletReportColumnKey names as OUTLET_REPORT_COLUMNS below.
+   * DEFAULT-PRESERVING: omitted/undefined (every existing caller before this
+   * phase, and any future caller that doesn't opt in) still exports every
+   * column, exactly as before. The three columns not exposed to the field
+   * selector UI ('no', 'expiryRisk', 'lastUpdatedBy') are ALWAYS included
+   * regardless of this set — see NON_FILTERABLE_OUTLET_COLUMNS below.
+   */
+  selectedColumnKeys?: Set<string>;
 }
 
 const OUTLET_REPORT_HEADERS = {
   ...AVAIL_EXPORT_HEADERS,
+  supplyType: 'Supply Type / نوع التجهيز',
   removed: 'Removed Status / حالة الإزالة',
 } as const;
+
+/**
+ * PHASE2-EXPORT-FIELD-SELECTOR-A: columns never offered by the field
+ * selector UI and therefore always exported regardless of
+ * config.selectedColumnKeys — 'no' (row index) and the two Excel-only
+ * columns the task explicitly protects (Expiry Risk, Last Updated By).
+ */
+const NON_FILTERABLE_OUTLET_COLUMNS = new Set<OutletReportColumnKey>(['no', 'expiryRisk', 'lastUpdatedBy']);
 
 const OUTLET_REPORT_META_LABELS = {
   ...AVAIL_META_LABELS,
@@ -935,17 +962,22 @@ type OutletReportColumnKey = keyof typeof OUTLET_REPORT_HEADERS;
 
 const OUTLET_REPORT_COLUMNS: { key: OutletReportColumnKey; width: number; kind: AvailExportColumnDef['kind'] }[] = [
   ...AVAIL_EXPORT_COLUMNS,
+  // PHASE2-EXPORT-FIELD-SELECTOR-A: Supply Type, additive — not present on
+  // the shared AvailabilityExportRow/main export, only on OutletReportRow.
+  { key: 'supplyType', width: 18, kind: 'text' },
   { key: 'removed', width: 18, kind: 'text' },
 ];
 
-/** Extra Data Dictionary entries for the outlet-report-only "Removed" column, plus a corrected Scope note (this report CAN include removed rows, unlike the main export). */
+/** Extra Data Dictionary entries for the outlet-report-only "Supply Type"/"Removed" columns, plus a corrected Scope note (this report CAN include removed rows, unlike the main export). */
 const OUTLET_REPORT_DICTIONARY: { field: string; description: string }[] = [
   ...AVAIL_EXPORT_DICTIONARY.slice(0, -1), // drop the main export's "excludes removed materials" Scope line — replaced below
+  { field: OUTLET_REPORT_HEADERS.supplyType, description: 'Free-text supply/procurement category recorded for this material (e.g. purchases, Kimadia, donations, aid), if any. / تصنيف نصي حر لمصدر/طريقة تجهيز هذه المادة (مثل مشتريات، كيماديا، هبات، مساعدات)، إن وُجد.' },
   { field: OUTLET_REPORT_HEADERS.removed, description: 'Whether this material is currently active at the outlet or was intentionally removed (removed_at marker) — never a raw removed-by user id. / يوضح ما إذا كانت هذه المادة فعالة حالياً في المنفذ أو تمت إزالتها عمداً (علامة removed_at) — لا يعرض معرّف المستخدم الخام لمن قام بالإزالة.' },
   { field: 'Scope / النطاق', description: 'This is an outlet operations report: it includes removed materials only when the modal\'s "Removed status" filter is set to show them, and every such row is clearly labeled Removed above. / هذا تقرير تشغيلي للمنفذ: يتضمن المواد المُزالة فقط عند ضبط فلتر "حالة الإزالة" في النافذة لعرضها، ويتم وسم كل صف من هذا النوع بوضوح كمُزال أعلاه.' },
 ];
 
 function outletReportCellValue(row: OutletReportRow, key: OutletReportColumnKey): string | number | Date {
+  if (key === 'supplyType') return neutralizeFormulaValue(row.supplyType || '—');
   if (key === 'removed') return neutralizeFormulaValue(row.removedLabel || '—');
   return availExportCellValue(row, key as AvailExportColumnDef['key']);
 }
@@ -1017,9 +1049,17 @@ export async function buildOutletReportWorkbook(config: OutletReportConfig): Pro
   summaryWs.views = [{ rightToLeft: isRtl }];
 
   // ── Outlet Availability sheet ──────────────────────────────────────────
+  // PHASE2-EXPORT-FIELD-SELECTOR-A: when config.selectedColumnKeys is
+  // provided, narrow OUTLET_REPORT_COLUMNS down to just those keys plus the
+  // always-included NON_FILTERABLE_OUTLET_COLUMNS (no/expiryRisk/
+  // lastUpdatedBy). Omitted (undefined) — the default, every pre-existing
+  // caller's behavior — keeps every column, unchanged from before this phase.
+  const dataColumns = config.selectedColumnKeys
+    ? OUTLET_REPORT_COLUMNS.filter(c => NON_FILTERABLE_OUTLET_COLUMNS.has(c.key) || config.selectedColumnKeys!.has(c.key))
+    : OUTLET_REPORT_COLUMNS;
   const dataWs = wb.addWorksheet(safeSheetName(OUTLET_REPORT_SHEET_NAMES.data), { views: [{ rightToLeft: isRtl }] });
-  const colCount = OUTLET_REPORT_COLUMNS.length;
-  dataWs.columns = OUTLET_REPORT_COLUMNS.map(c => ({ key: c.key, width: c.width }));
+  const colCount = dataColumns.length;
+  dataWs.columns = dataColumns.map(c => ({ key: c.key, width: c.width }));
 
   const dataTitleRow = dataWs.addRow([config.reportTitle]);
   dataWs.mergeCells(dataTitleRow.number, 1, dataTitleRow.number, colCount);
@@ -1050,7 +1090,7 @@ export async function buildOutletReportWorkbook(config: OutletReportConfig): Pro
   }
   dataWs.addRow([]);
 
-  const dataHeaderRow = dataWs.addRow(OUTLET_REPORT_COLUMNS.map(c => OUTLET_REPORT_HEADERS[c.key]));
+  const dataHeaderRow = dataWs.addRow(dataColumns.map(c => OUTLET_REPORT_HEADERS[c.key]));
   dataHeaderRow.eachCell(cell => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
@@ -1059,13 +1099,13 @@ export async function buildOutletReportWorkbook(config: OutletReportConfig): Pro
   });
 
   config.rows.forEach((r, i) => {
-    const rowValues = OUTLET_REPORT_COLUMNS.map(c => outletReportCellValue(r, c.key));
+    const rowValues = dataColumns.map(c => outletReportCellValue(r, c.key));
     const dataRow = dataWs.addRow(rowValues);
     const style = AVAIL_CONDITION_STYLE[r.conditionKey];
     const altFill = i % 2 === 1 ? BRAND_ALT_ROW : undefined;
 
     dataRow.eachCell((cell, colNumber) => {
-      const col = OUTLET_REPORT_COLUMNS[colNumber - 1];
+      const col = dataColumns[colNumber - 1];
       if (col.kind === 'date' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd';
       if (col.kind === 'datetime' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd hh:mm';
       if (col.kind === 'price' && typeof cell.value === 'number') cell.numFmt = '0.00';
