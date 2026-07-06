@@ -1016,7 +1016,14 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     const files = allTsxFiles('')
       .filter(path => !path.endsWith(join('services', 'availability.service.ts')))
       .filter(path => !path.endsWith(join('alerts', 'inter-org-alert-lifecycle.service.ts')))
-      .filter(path => !path.endsWith(join('status', 'StatusCenterScreen.tsx')));
+      .filter(path => !path.endsWith(join('status', 'StatusCenterScreen.tsx')))
+      // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: the outlet report modal
+      // reads r.actor_name_snapshot from the SAME already-fetched rows
+      // StatusCenterScreen.tsx passes it (getAvailabilityByOrg's existing
+      // read), purely to display "Last Updated By" in the export/print — it
+      // never queries Supabase itself and never passes the field back to any
+      // write call.
+      .filter(path => !path.endsWith(join('status', 'OutletAvailabilityReportModal.tsx')));
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {

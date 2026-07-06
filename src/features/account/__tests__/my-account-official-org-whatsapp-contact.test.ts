@@ -327,7 +327,7 @@ describe('20. Export/print unchanged', () => {
     expect(myAccount).not.toContain('window.print');
   });
 
-  it('StatusCenterScreen.tsx print function is unchanged; the export diff (from the later SAFE-PROFESSIONAL-XLSX-EXPORT-A and PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A phases) is scoped to the CSV-to-XLSX replacement / entered-price filter addition only', () => {
+  it('StatusCenterScreen.tsx print function is unchanged; the export diff (from the later SAFE-PROFESSIONAL-XLSX-EXPORT-A, PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A, and PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A phases) is scoped to the CSV-to-XLSX replacement / entered-price filter / outlet-report-modal wiring only', () => {
     expect(statusCenter).toContain('function exportXlsx');
     expect(statusCenter).toContain('function printReport');
     let diff = '';
@@ -336,7 +336,7 @@ describe('20. Export/print unchanged', () => {
     } catch { /* ignore */ }
     expect(diff).not.toMatch(/^[+-].*function printReport/m);
     if (diff.trim()) {
-      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at|enteredPrice|priceFilterMode/);
+      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at|enteredPrice|priceFilterMode|OutletAvailabilityReportModal|outletOptions/);
       expect(diff).not.toMatch(/service_role|auth\.admin/);
     }
   });

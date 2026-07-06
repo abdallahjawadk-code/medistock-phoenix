@@ -644,6 +644,23 @@ export const T: Dict = {
   sc_outlet_empty:          { ar: 'لا توجد مواد لهذا المنفذ',                     en: 'No materials for this outlet' },
   sc_outlet_items_count:    { ar: 'مادة',                                        en: 'items' },
   sc_outlet_needs_attention:{ ar: 'يحتاج انتباه',                                en: 'Needs attention' },
+  /* ── PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: outlet selector + read-only
+     outlet availability report modal, opened from "عرض حسب المنفذ". ── */
+  sc_outlet_report_title:        { ar: 'تقرير مواد المنفذ',                    en: 'Outlet Availability Report' },
+  sc_outlet_report_select:       { ar: 'اختر منفذاً لعرض التقرير',             en: 'Select outlet to view report' },
+  sc_outlet_report_summary_total_items:  { ar: 'إجمالي الأصناف',               en: 'Total Items' },
+  sc_outlet_report_summary_total_qty:    { ar: 'إجمالي الكمية',                en: 'Total Quantity' },
+  sc_outlet_report_summary_priced_items: { ar: 'عدد الأصناف المسعّرة',         en: 'Priced Items' },
+  sc_outlet_report_filter_removed_label:   { ar: 'حالة الإزالة',              en: 'Removed status' },
+  sc_outlet_report_filter_removed_active:  { ar: 'نشط فقط',                    en: 'Active only' },
+  sc_outlet_report_filter_removed_removed: { ar: 'مُزالة فقط',                 en: 'Removed only' },
+  sc_outlet_report_filter_expiry_label:   { ar: 'حالة الانتهاء',               en: 'Expiry status' },
+  sc_outlet_report_filter_expiry_near:    { ar: 'قريب الانتهاء',               en: 'Near expiry' },
+  sc_outlet_report_filter_expiry_expired: { ar: 'منتهي الصلاحية',              en: 'Expired' },
+  sc_outlet_report_filter_expiry_valid:   { ar: 'ضمن الصلاحية',                en: 'Valid' },
+  sc_outlet_report_export:      { ar: 'تصدير Excel',                          en: 'Export Excel' },
+  sc_outlet_report_active_label:{ ar: 'نشط',                                  en: 'Active' },
+  sc_outlet_report_no_outlet:   { ar: 'لم يتم اختيار منفذ',                    en: 'No outlet selected' },
   /* ── Live availability report / print / export (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A) ── */
   sc_report_title:      { ar: 'تقرير موقف التوفر الحي للمواد',     en: 'Live Material Availability Status Report' },
   sc_report_sub:        { ar: 'تقرير حي مبني على سجل التوفر · تصفية وطباعة وتصدير', en: 'Live report from item availability · filter, print & export' },

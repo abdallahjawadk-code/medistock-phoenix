@@ -856,3 +856,292 @@ export async function exportAvailabilityXlsx(config: AvailabilityExportConfig): 
     return false;
   }
 }
+
+/**
+ * PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A
+ *
+ * Purely ADDITIVE sibling of AvailabilityExportRow/Config/
+ * buildAvailabilityExportWorkbook/exportAvailabilityXlsx above — does not
+ * modify, rename, or remove any of them, so Status Center's existing main
+ * XLSX export is completely unaffected. Backs the read-only outlet
+ * availability report modal opened from Status Center's outlet-selector
+ * dropdown.
+ *
+ * Unlike the main export (which always excludes removed_at rows — see
+ * AVAIL_EXPORT_DICTIONARY's Scope note above), this is documented as an
+ * OPERATIONS report: it may include intentionally-removed rows, but only
+ * when the modal's own "removed status" filter is set to include them, and
+ * every such row is clearly labeled via `removedLabel` (never a raw
+ * `removed_by` uuid — that field is never part of this row shape at all).
+ */
+export interface OutletReportRow extends AvailabilityExportRow {
+  /** Already-localized "Active / نشط" or "Removed / مُزالة" label — never a raw removed_by uuid. */
+  removedLabel: string;
+}
+
+export interface OutletReportSummary {
+  totalItems: number;
+  availableCount: number;
+  lowStockCount: number;
+  missingCount: number;
+  nearExpiryCount: number;
+  surplusCount: number;
+  totalQuantity: number;
+  /** Count of rows with a real, positive entered price — deliberately NOT a monetary total (no existing app concept of inventory value to sum against). */
+  pricedItemsCount: number;
+}
+
+export interface OutletReportConfig {
+  reportTitle: string;
+  moduleName?: string;
+  generatedAt: Date;
+  lang: 'ar' | 'en';
+  fileNameBase: string;
+  filtersSummary: string;
+  footerText: string;
+  emptyMessage: string;
+  outletName: string;
+  institutionName: string;
+  summary: OutletReportSummary;
+  rows: OutletReportRow[];
+}
+
+const OUTLET_REPORT_HEADERS = {
+  ...AVAIL_EXPORT_HEADERS,
+  removed: 'Removed Status / حالة الإزالة',
+} as const;
+
+const OUTLET_REPORT_META_LABELS = {
+  ...AVAIL_META_LABELS,
+  outlet: 'Outlet / المنفذ',
+  institution: 'Institution / المؤسسة',
+  totalItems: 'Total Items / إجمالي الأصناف',
+  availableCount: 'Available / متوفر',
+  lowStockCount: 'Low Stock / منخفض',
+  missingCount: 'Missing / مفقود',
+  nearExpiryCount: 'Near Expiry / قريب الانتهاء',
+  surplusCount: 'Surplus / فائض',
+  totalQuantity: 'Total Quantity / إجمالي الكمية',
+  pricedItemsCount: 'Priced Items Count / عدد الأصناف المسعّرة',
+} as const;
+
+const OUTLET_REPORT_SHEET_NAMES = {
+  summary: 'Summary',
+  data: 'Outlet Availability',
+  dictionary: 'Data Dictionary',
+} as const;
+
+type OutletReportColumnKey = keyof typeof OUTLET_REPORT_HEADERS;
+
+const OUTLET_REPORT_COLUMNS: { key: OutletReportColumnKey; width: number; kind: AvailExportColumnDef['kind'] }[] = [
+  ...AVAIL_EXPORT_COLUMNS,
+  { key: 'removed', width: 18, kind: 'text' },
+];
+
+/** Extra Data Dictionary entries for the outlet-report-only "Removed" column, plus a corrected Scope note (this report CAN include removed rows, unlike the main export). */
+const OUTLET_REPORT_DICTIONARY: { field: string; description: string }[] = [
+  ...AVAIL_EXPORT_DICTIONARY.slice(0, -1), // drop the main export's "excludes removed materials" Scope line — replaced below
+  { field: OUTLET_REPORT_HEADERS.removed, description: 'Whether this material is currently active at the outlet or was intentionally removed (removed_at marker) — never a raw removed-by user id. / يوضح ما إذا كانت هذه المادة فعالة حالياً في المنفذ أو تمت إزالتها عمداً (علامة removed_at) — لا يعرض معرّف المستخدم الخام لمن قام بالإزالة.' },
+  { field: 'Scope / النطاق', description: 'This is an outlet operations report: it includes removed materials only when the modal\'s "Removed status" filter is set to show them, and every such row is clearly labeled Removed above. / هذا تقرير تشغيلي للمنفذ: يتضمن المواد المُزالة فقط عند ضبط فلتر "حالة الإزالة" في النافذة لعرضها، ويتم وسم كل صف من هذا النوع بوضوح كمُزال أعلاه.' },
+];
+
+function outletReportCellValue(row: OutletReportRow, key: OutletReportColumnKey): string | number | Date {
+  if (key === 'removed') return neutralizeFormulaValue(row.removedLabel || '—');
+  return availExportCellValue(row, key as AvailExportColumnDef['key']);
+}
+
+/**
+ * Builds the 3-sheet (Summary / Outlet Availability / Data Dictionary)
+ * ExcelJS workbook for the outlet report modal. Does not download anything —
+ * see exportOutletReportXlsx. Does not touch buildAvailabilityExportWorkbook
+ * or any of its module-scope helpers beyond reading them (styling constants,
+ * availExportCellValue, AVAIL_EXPORT_DICTIONARY) — Status Center's own main
+ * export path is untouched.
+ */
+export async function buildOutletReportWorkbook(config: OutletReportConfig): Promise<ExcelJS.Workbook> {
+  const ExcelJSRuntime = await loadExcelJS();
+  const isRtl = config.lang === 'ar';
+
+  const wb = new ExcelJSRuntime.Workbook();
+  wb.creator = 'MediStock Phoenix';
+  wb.created = config.generatedAt;
+  wb.modified = config.generatedAt;
+
+  // ── Summary sheet ──────────────────────────────────────────────────────
+  const summaryWs = wb.addWorksheet(safeSheetName(OUTLET_REPORT_SHEET_NAMES.summary), { views: [{ rightToLeft: isRtl }] });
+  summaryWs.columns = [{ key: 'label', width: 36 }, { key: 'value', width: 26 }];
+
+  const summaryTitleRow = summaryWs.addRow([OUTLET_REPORT_META_LABELS.summaryTitle]);
+  summaryWs.mergeCells(summaryTitleRow.number, 1, summaryTitleRow.number, 2);
+  summaryTitleRow.getCell(1).font = { bold: true, size: 15, color: { argb: BRAND_NAVY } };
+  summaryTitleRow.height = 22;
+
+  const summaryReportRow = summaryWs.addRow([config.reportTitle]);
+  summaryWs.mergeCells(summaryReportRow.number, 1, summaryReportRow.number, 2);
+  summaryReportRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+
+  const summaryBrandRow = summaryWs.addRow([REPORT_BRAND]);
+  summaryWs.mergeCells(summaryBrandRow.number, 1, summaryBrandRow.number, 2);
+  summaryBrandRow.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF666666' } };
+
+  summaryWs.addRow([OUTLET_REPORT_META_LABELS.institution, config.institutionName || '—']);
+  summaryWs.addRow([OUTLET_REPORT_META_LABELS.outlet, config.outletName || '—']);
+  summaryWs.addRow([OUTLET_REPORT_META_LABELS.generatedAt, formatStableDateTime(config.generatedAt, config.lang)]);
+  summaryWs.addRow([OUTLET_REPORT_META_LABELS.filters, config.filtersSummary]);
+  summaryWs.addRow([OUTLET_REPORT_META_LABELS.totalRows, config.rows.length]);
+  summaryWs.addRow([]);
+
+  const summaryHeaderRow = summaryWs.addRow([OUTLET_REPORT_META_LABELS.summaryTitle, OUTLET_REPORT_META_LABELS.count]);
+  summaryHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  const summaryTotals: [string, number][] = [
+    [OUTLET_REPORT_META_LABELS.totalItems, config.summary.totalItems],
+    [OUTLET_REPORT_META_LABELS.availableCount, config.summary.availableCount],
+    [OUTLET_REPORT_META_LABELS.lowStockCount, config.summary.lowStockCount],
+    [OUTLET_REPORT_META_LABELS.missingCount, config.summary.missingCount],
+    [OUTLET_REPORT_META_LABELS.nearExpiryCount, config.summary.nearExpiryCount],
+    [OUTLET_REPORT_META_LABELS.surplusCount, config.summary.surplusCount],
+    [OUTLET_REPORT_META_LABELS.totalQuantity, config.summary.totalQuantity],
+    [OUTLET_REPORT_META_LABELS.pricedItemsCount, config.summary.pricedItemsCount],
+  ];
+  for (const [label, value] of summaryTotals) {
+    const row = summaryWs.addRow([label, value]);
+    row.eachCell(cell => { cell.border = AVAIL_ALL_BORDERS; });
+  }
+
+  summaryWs.views = [{ rightToLeft: isRtl }];
+
+  // ── Outlet Availability sheet ──────────────────────────────────────────
+  const dataWs = wb.addWorksheet(safeSheetName(OUTLET_REPORT_SHEET_NAMES.data), { views: [{ rightToLeft: isRtl }] });
+  const colCount = OUTLET_REPORT_COLUMNS.length;
+  dataWs.columns = OUTLET_REPORT_COLUMNS.map(c => ({ key: c.key, width: c.width }));
+
+  const dataTitleRow = dataWs.addRow([config.reportTitle]);
+  dataWs.mergeCells(dataTitleRow.number, 1, dataTitleRow.number, colCount);
+  dataTitleRow.getCell(1).font = { bold: true, size: 15, color: { argb: BRAND_NAVY } };
+  dataTitleRow.height = 22;
+
+  if (config.moduleName) {
+    const moduleRow = dataWs.addRow([config.moduleName]);
+    dataWs.mergeCells(moduleRow.number, 1, moduleRow.number, colCount);
+    moduleRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+  }
+
+  const dataBrandRow = dataWs.addRow([REPORT_BRAND]);
+  dataWs.mergeCells(dataBrandRow.number, 1, dataBrandRow.number, colCount);
+  dataBrandRow.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF666666' } };
+
+  const metaPairs: [string, string][] = [
+    [OUTLET_REPORT_META_LABELS.outlet, config.outletName || '—'],
+    [OUTLET_REPORT_META_LABELS.institution, config.institutionName || '—'],
+    [OUTLET_REPORT_META_LABELS.generatedAt, formatStableDateTime(config.generatedAt, config.lang)],
+    [OUTLET_REPORT_META_LABELS.filters, config.filtersSummary],
+    [OUTLET_REPORT_META_LABELS.totalRows, String(config.rows.length)],
+  ];
+  for (const [label, value] of metaPairs) {
+    const row = dataWs.addRow([`${label}: ${value}`]);
+    dataWs.mergeCells(row.number, 1, row.number, colCount);
+    row.getCell(1).font = { size: 10, color: { argb: 'FF333333' } };
+  }
+  dataWs.addRow([]);
+
+  const dataHeaderRow = dataWs.addRow(OUTLET_REPORT_COLUMNS.map(c => OUTLET_REPORT_HEADERS[c.key]));
+  dataHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  config.rows.forEach((r, i) => {
+    const rowValues = OUTLET_REPORT_COLUMNS.map(c => outletReportCellValue(r, c.key));
+    const dataRow = dataWs.addRow(rowValues);
+    const style = AVAIL_CONDITION_STYLE[r.conditionKey];
+    const altFill = i % 2 === 1 ? BRAND_ALT_ROW : undefined;
+
+    dataRow.eachCell((cell, colNumber) => {
+      const col = OUTLET_REPORT_COLUMNS[colNumber - 1];
+      if (col.kind === 'date' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd';
+      if (col.kind === 'datetime' && cell.value instanceof Date) cell.numFmt = 'yyyy-mm-dd hh:mm';
+      if (col.kind === 'price' && typeof cell.value === 'number') cell.numFmt = '0.00';
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: (col.kind === 'numeric' || col.kind === 'price') ? 'right'
+          : (col.kind === 'date' || col.kind === 'datetime') ? 'center'
+          : (isRtl ? 'right' : 'left'),
+        wrapText: col.kind === 'text',
+      };
+      const fillColor = style?.fill ?? altFill;
+      if (fillColor) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+      cell.border = AVAIL_ALL_BORDERS;
+      if (col.key === 'condition' && style) {
+        cell.font = { bold: true, color: { argb: style.font } };
+      }
+    });
+  });
+
+  if (config.rows.length === 0) {
+    const emptyRow = dataWs.addRow([config.emptyMessage || '—']);
+    dataWs.mergeCells(emptyRow.number, 1, emptyRow.number, colCount);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
+  } else {
+    const lastRow = dataHeaderRow.number + config.rows.length;
+    dataWs.autoFilter = { from: { row: dataHeaderRow.number, column: 1 }, to: { row: lastRow, column: colCount } };
+  }
+
+  dataWs.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: dataHeaderRow.number }];
+
+  // ── Data Dictionary sheet ──────────────────────────────────────────────
+  const dictWs = wb.addWorksheet(safeSheetName(OUTLET_REPORT_SHEET_NAMES.dictionary), { views: [{ rightToLeft: isRtl }] });
+  dictWs.columns = [{ key: 'field', width: 28 }, { key: 'description', width: 70 }];
+
+  const dictTitleRow = dictWs.addRow([OUTLET_REPORT_META_LABELS.dictionaryTitle]);
+  dictWs.mergeCells(dictTitleRow.number, 1, dictTitleRow.number, 2);
+  dictTitleRow.getCell(1).font = { bold: true, size: 14, color: { argb: BRAND_NAVY } };
+  dictTitleRow.height = 22;
+
+  const dictHeaderRow = dictWs.addRow([OUTLET_REPORT_META_LABELS.field, OUTLET_REPORT_META_LABELS.description]);
+  dictHeaderRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TEAL } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = AVAIL_ALL_BORDERS;
+  });
+
+  OUTLET_REPORT_DICTIONARY.forEach((entry, i) => {
+    const row = dictWs.addRow([entry.field, entry.description]);
+    const altFill = i % 2 === 1 ? BRAND_ALT_ROW : undefined;
+    row.eachCell((cell, colNumber) => {
+      cell.alignment = { vertical: 'top', horizontal: isRtl ? 'right' : 'left', wrapText: colNumber === 2 };
+      cell.border = AVAIL_ALL_BORDERS;
+      if (altFill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: altFill } };
+    });
+    row.getCell(1).font = { bold: true };
+  });
+
+  dictWs.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: dictHeaderRow.number }];
+
+  return wb;
+}
+
+/**
+ * Builds the outlet report workbook and downloads it as a true `.xlsx` file.
+ * Returns false (never throws) on failure — mirrors exportAvailabilityXlsx's
+ * error-handling contract.
+ */
+export async function exportOutletReportXlsx(config: OutletReportConfig): Promise<boolean> {
+  try {
+    const wb = await buildOutletReportWorkbook(config);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    return await downloadBlob(buildStableFileName(config.fileNameBase, 'xlsx'), blob);
+  } catch {
+    return false;
+  }
+}

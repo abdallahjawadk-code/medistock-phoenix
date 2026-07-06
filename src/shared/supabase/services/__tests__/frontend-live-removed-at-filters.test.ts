@@ -156,13 +156,13 @@ describe('E) getAvailabilityByOrg (Status Center / operations context) remains u
   // StatusCenterScreen (row.price only, never calculated/inferred). This
   // guard is widened to also allow that phase's own diff signature, while
   // still blocking any SQL/RPC/service_role/auth-admin sneaking in.
-  it('StatusCenterScreen (the consumer) is untouched by this phase, except the later, separately-reviewed SAFE-PROFESSIONAL-XLSX-EXPORT-A CSV-to-XLSX export replacement and PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A price filter addition', () => {
+  it('StatusCenterScreen (the consumer) is untouched by this phase, except the later, separately-reviewed SAFE-PROFESSIONAL-XLSX-EXPORT-A CSV-to-XLSX export replacement, PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A price filter addition, and PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A outlet-report-modal wiring', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at|priceFilterMode|enteredPrice/);
+      expect(diff).toMatch(/exportAvailabilityXlsx|removed_at|priceFilterMode|enteredPrice|OutletAvailabilityReportModal|outletOptions/);
       expect(diff).not.toMatch(/service_role|auth\.admin/);
       expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION/);
     }

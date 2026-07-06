@@ -225,14 +225,27 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
   // sheet (row.price only, never calculated/inferred). That addition does
   // not change this phase's own scope (removed_at exclusion is untouched —
   // asserted separately above and in the newer phase's own tests).
-  it('professional-export.ts changes (if any) are limited to the later, separately-reviewed Entered Price column addition', () => {
+  // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: a still later, separately-
+  // reviewed phase adds a new, purely-additive OutletReport* type/function
+  // family to this file for the outlet report modal's XLSX export — it never
+  // modifies buildAvailabilityExportWorkbook/exportAvailabilityXlsx in place
+  // (asserted below and in that phase's own tests), so this guard no longer
+  // requires every diff to mention Entered Price specifically.
+  it('professional-export.ts changes (if any) never touch removed_by/service_role/auth.admin, and never modify buildAvailabilityExportWorkbook\'s own body', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- src/shared/lib/professional-export.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toMatch(/enteredPrice|Entered Price/);
-      expect(diff).not.toMatch(/removed_by|service_role|auth\.admin/);
+      // Only flags an actual removed_by FIELD/property reference (e.g.
+      // `row.removed_by` or a `removed_by:` object key) — a doc comment that
+      // merely explains removed_by is deliberately NOT exposed is fine.
+      expect(diff).not.toMatch(/\.removed_by\b|removed_by\s*[:,]/);
+      expect(diff).not.toMatch(/service_role|auth\.admin/);
+      const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+      for (const line of removedLines) {
+        expect(line.slice(1).trim()).toBe('');
+      }
     }
   });
 

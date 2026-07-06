@@ -28,6 +28,7 @@ import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services
 import { computeInternalAlerts } from './internalAlerts';
 import { InternalAlertsSection } from './InternalAlertsSection';
 import { OutletMaterialGroups } from './OutletMaterialGroups';
+import { OutletAvailabilityReportModal } from './OutletAvailabilityReportModal';
 import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
 import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
 import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
@@ -111,8 +112,13 @@ function normalizeSupplyType(v?: string | null): SupplyCategory | null {
   return null;
 }
 
-/** A live item_availability row enriched with derived fields by the service layer. */
-interface LiveAvailRow {
+/**
+ * A live item_availability row enriched with derived fields by the service
+ * layer. Exported (PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A) so
+ * OutletAvailabilityReportModal.tsx can type its `rows` prop against the
+ * exact same shape — no new query, no new fields added to the interface.
+ */
+export interface LiveAvailRow {
   id: string;
   scientific_name: string | null;
   trade_name: string | null;
@@ -236,6 +242,11 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const [filterSupply, setFilterSupply] = useState<SupplyCategory | ''>('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'outlet'>('table');
+
+  // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: the outlet report modal's
+  // selected outlet, or null when closed. Purely local UI state — no data
+  // write, no new fetch (the modal reads the same already-filtered `rows`).
+  const [reportOutlet, setReportOutlet] = useState<{ id: string; name: string; nameAr: string } | null>(null);
 
   // UX-SMART-FILTERS-TIMELINE-A: additional smart-filter dimensions, combined
   // safely with the existing filterStatus/filterSupply/search filters below —
@@ -392,6 +403,21 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     for (const r of rows) { const s = effOf(r); c[s] = (c[s] ?? 0) + 1; }
     return c;
   }, [rows]);
+
+  // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: outlet options for the
+  // "عرض حسب المنفذ" selector dropdown — derived from the SAME already-
+  // filtered `rows` the table/outlet-grouped view render (no new fetch),
+  // so the dropdown's item counts always match what's currently on screen.
+  const outletOptions = useMemo(() => {
+    const byPoint = new Map<string, { id: string; name: string; nameAr: string; count: number }>();
+    for (const r of rows) {
+      const dp = r.distribution_points;
+      if (!dp) continue;
+      if (!byPoint.has(dp.id)) byPoint.set(dp.id, { id: dp.id, name: dp.name, nameAr: dp.name_ar, count: 0 });
+      byPoint.get(dp.id)!.count++;
+    }
+    return Array.from(byPoint.values()).sort((a, b) => (lang === 'ar' ? a.nameAr : a.name).localeCompare(lang === 'ar' ? b.nameAr : b.name));
+  }, [rows, lang]);
 
   // AVAILABILITY-ALERTS-QR-POLISH-B: same-institution alerts, computed
   // client-side from the full (unfiltered) live rows already loaded above —
@@ -786,6 +812,35 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           </button>
         </div>
 
+        {/* PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: outlet selector — only
+            shown in outlet-grouped view, purely additive to it (the existing
+            OutletMaterialGroups card grid below keeps working unchanged).
+            Selecting an outlet opens the read-only report modal; the select
+            itself always resets to the placeholder afterward (it's a picker,
+            not a persistent filter). */}
+        {viewMode === 'outlet' && (
+          <div style={{ marginTop: '10px' }}>
+            <select
+              value=""
+              onChange={e => {
+                const id = e.target.value;
+                if (!id) return;
+                const o = outletOptions.find(x => x.id === id);
+                if (o) setReportOutlet({ id: o.id, name: o.name, nameAr: o.nameAr });
+              }}
+              style={{ ...fieldStyle, minWidth: '220px', appearance: 'none', cursor: 'pointer' }}
+              aria-label={t('sc_outlet_report_select', lang)}
+            >
+              <option value="">{t('sc_outlet_report_select', lang)}</option>
+              {outletOptions.map(o => (
+                <option key={o.id} value={o.id}>
+                  {(lang === 'ar' ? o.nameAr : o.name) || '—'} ({o.count} {t('sc_outlet_items_count', lang)})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Supply-type quick chips */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
           <button onClick={() => setFilterSupply('')} style={{ ...btnStyle, padding: '5px 12px', background: filterSupply === '' ? 'var(--p2)' : 'var(--s)', color: filterSupply === '' ? 'var(--pd)' : 'var(--t)' }}>{t('sc_all_supply_types', lang)}</button>
@@ -1013,6 +1068,15 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         row={historyRow}
         lang={lang}
         onClose={() => setHistoryRow(null)}
+      />
+      <OutletAvailabilityReportModal
+        open={reportOutlet !== null}
+        onClose={() => setReportOutlet(null)}
+        outletId={reportOutlet?.id ?? null}
+        outletName={reportOutlet ? (lang === 'ar' ? (reportOutlet.nameAr || reportOutlet.name) : (reportOutlet.name || reportOutlet.nameAr)) : ''}
+        institutionName={orgName}
+        lang={lang}
+        rows={rows}
       />
       {movementToast && <PhoenixToast message={movementToast} />}
       <MobilePrintFallbackModal

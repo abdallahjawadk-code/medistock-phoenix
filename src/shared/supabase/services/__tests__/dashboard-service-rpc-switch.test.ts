@@ -187,7 +187,7 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
   // reviewed phase legitimately adds a user-entered-price column/filter to
   // both of these files (row.price only, never calculated/inferred) — that
   // addition does not change this phase's own dashboard-RPC-switch scope.
-  it('Status Center XLSX export changes (if any) are limited to the later, separately-reviewed Entered Price addition', () => {
+  it('Status Center XLSX export changes (if any) are limited to the later, separately-reviewed Entered Price / Outlet Report Modal additions', () => {
     let diff = '';
     try {
       diff = execSync(
@@ -196,7 +196,7 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
       );
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toMatch(/enteredPrice|priceFilterMode/);
+      expect(diff).toMatch(/enteredPrice|priceFilterMode|OutletAvailabilityReportModal|outletOptions|OutletReportRow/);
       expect(diff).not.toMatch(/phoenix_get_dashboard_condition_counts|phoenix_get_institution_condition_counts/);
     }
   });
