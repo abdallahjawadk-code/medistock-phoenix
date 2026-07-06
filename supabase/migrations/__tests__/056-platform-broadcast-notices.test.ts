@@ -410,3 +410,49 @@ describe('Migration 056: security guardrails', () => {
     expect(migration056).not.toMatch(/DELETE FROM public\.organizations|DROP TABLE.*organizations|ALTER TABLE public\.organizations DROP/i);
   });
 });
+
+// FIX-MIGRATION-056-SEARCH-PATH-VERIFY-FALSE-POSITIVE-A: the VERIFY block's
+// original search_path check ran a literal '%SET search_path = public%' text
+// search against pg_get_functiondef() output. Postgres reconstructs a
+// function's SET clause in its own canonical GUC-assignment form — `SET
+// search_path TO 'public'` (TO + quoted value) — not the `= public` (equals +
+// unquoted) form these CREATE FUNCTION statements are written with. The
+// literal text search therefore never matched the reconstructed definition
+// and failed manual apply in Supabase SQL Editor even though every function
+// was correctly configured. These tests guard against that exact class of
+// bug recurring.
+describe('Migration 056: search_path VERIFY check is robust to pg_get_functiondef reconstruction format', () => {
+  const verifyBlock = migration056.slice(migration056.indexOf('-- 5. RPCs exist, SECURITY DEFINER, search_path public'));
+
+  it('the VERIFY block does not use a literal pg_get_functiondef text match for search_path (the fragile, since-removed check)', () => {
+    expect(verifyBlock).not.toMatch(/ASSERT v_src LIKE '%SET search_path = public%'/);
+  });
+
+  it('the VERIFY block checks pg_proc.proconfig directly instead — immune to SET-clause re-rendering differences', () => {
+    expect(verifyBlock).toContain('unnest(COALESCE(proconfig, \'{}\')) AS cfg WHERE cfg ILIKE \'search_path=%public%\'');
+  });
+
+  it('the proconfig check still covers all five RPCs by name', () => {
+    const names = ['phoenix_create_platform_broadcast', 'phoenix_deactivate_platform_broadcast',
+      'phoenix_list_platform_broadcasts_admin', 'phoenix_get_pending_platform_broadcasts',
+      'phoenix_ack_platform_broadcast'];
+    const proconfigCheckStart = verifyBlock.indexOf('ASSERT NOT EXISTS (');
+    const proconfigCheck = verifyBlock.slice(proconfigCheckStart, verifyBlock.indexOf('VERIFY FAILED: an RPC is missing SET search_path = public', proconfigCheckStart));
+    for (const name of names) {
+      expect(proconfigCheck).toContain(name);
+    }
+  });
+
+  it('the SECURITY DEFINER check (which pg_get_functiondef renders literally and reliably) is unchanged', () => {
+    expect(verifyBlock).toContain("ASSERT v_src LIKE '%SECURITY DEFINER%', 'VERIFY FAILED: an RPC is missing SECURITY DEFINER';");
+  });
+
+  it('every CREATE FUNCTION statement still has the source-level SET search_path = public (unrelated to the VERIFY-block bug — this is the actual function definition, not its runtime reconstruction)', () => {
+    // Matches only a standalone `SET search_path = public` clause line (the
+    // actual function definitions) — not the VERIFY block's own error
+    // message string, which contains the same phrase as prose, not a SQL
+    // clause.
+    const count = (migration056.match(/^SET search_path = public$/gm) ?? []).length;
+    expect(count).toBe(5);
+  });
+});

@@ -220,7 +220,7 @@ describe('Guards: no SQL/migration/package change, safety files untouched', () =
   it('no migration .sql file was created or modified by this phase (this phase\'s own test-file updates to existing migration guard tests are expected and out of scope here)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let listing = '';
@@ -235,7 +235,9 @@ describe('Guards: no SQL/migration/package change, safety files untouched', () =
                  && l !== 'M supabase/migrations/055_phoenix_clean_availability_data.sql'
                  && l !== 'M  supabase/migrations/055_phoenix_clean_availability_data.sql'
                  && l !== '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== 'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql');
+                 && l !== 'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
+                 && l !== 'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
+                 && l !== 'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql');
     expect(unexpectedListing).toEqual([]);
   });
 

@@ -581,6 +581,21 @@ BEGIN
   ) = 0, 'VERIFY FAILED: an INSERT/UPDATE/DELETE policy exists on a broadcast table — writes must be RPC-only';
 
   -- 5. RPCs exist, SECURITY DEFINER, search_path public
+  --
+  -- FIX-MIGRATION-056-SEARCH-PATH-VERIFY-FALSE-POSITIVE-A: the SECURITY
+  -- DEFINER check is still safe to do via pg_get_functiondef() text (Postgres
+  -- always reconstructs that keyword literally). The search_path check is
+  -- NOT — pg_get_functiondef() reconstructs a function's SET clause using
+  -- Postgres' own canonical GUC-assignment form, which is
+  -- `SET search_path TO 'public'` (TO + quoted value), not the `SET
+  -- search_path = public` (= + unquoted) form this migration's CREATE
+  -- FUNCTION statements are written with below. A literal '%SET search_path
+  -- = public%' text search therefore never matches the reconstructed
+  -- definition and fails on a function that is actually configured
+  -- correctly — this was the real cause of the manual-apply error. Checked
+  -- directly against pg_proc.proconfig (the actual stored GUC array) instead
+  -- of a re-rendered text form, which is immune to this formatting
+  -- difference entirely.
   FOR v_src IN
     SELECT pg_get_functiondef(oid) FROM pg_proc
     WHERE proname IN (
@@ -590,8 +605,19 @@ BEGIN
     )
   LOOP
     ASSERT v_src LIKE '%SECURITY DEFINER%', 'VERIFY FAILED: an RPC is missing SECURITY DEFINER';
-    ASSERT v_src LIKE '%SET search_path = public%', 'VERIFY FAILED: an RPC is missing SET search_path = public';
   END LOOP;
+
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE proname IN (
+      'phoenix_create_platform_broadcast', 'phoenix_deactivate_platform_broadcast',
+      'phoenix_list_platform_broadcasts_admin', 'phoenix_get_pending_platform_broadcasts',
+      'phoenix_ack_platform_broadcast'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM unnest(COALESCE(proconfig, '{}')) AS cfg WHERE cfg ILIKE 'search_path=%public%'
+    )
+  ), 'VERIFY FAILED: an RPC is missing SET search_path = public';
 
   ASSERT (
     SELECT count(*) FROM pg_proc

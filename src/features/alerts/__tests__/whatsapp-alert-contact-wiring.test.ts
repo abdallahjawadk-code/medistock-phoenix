@@ -133,7 +133,7 @@ describe('10. No package/lockfile/migration changes', () => {
   it('git diff for migration SQL files is empty other than the already-approved 051 immutable-expiry-date fix (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change); package.json changes are limited to the approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
 
@@ -205,6 +205,11 @@ describe('10. No package/lockfile/migration changes', () => {
       // prepared but not yet applied/committed.
       '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
       'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      // FIX-MIGRATION-056-SEARCH-PATH-VERIFY-FALSE-POSITIVE-A: 056 corrected
+      // in-place before its first successful manual apply, same pattern as
+      // 051/053/054/055.
+      'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -456,6 +461,9 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration, now
       // tracked/committed.
       'supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration, now
+      // tracked/committed.
+      'supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -464,7 +472,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(55);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(56);
   });
 });
 
