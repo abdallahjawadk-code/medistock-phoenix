@@ -548,11 +548,17 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
   // actor_name_snapshot/removed_at — also excluding
   // src/features/status/StatusCenterScreen.tsx, src/shared/lib/professional-export.ts,
   // and src/shared/i18n/strings.ts (one corrected export-button label) here.
+  // PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: ReportsScreen.tsx,
+  // PhoenixSidebar.tsx, and PhoenixMobileDrawer.tsx are also excluded here —
+  // a still later, separately-reviewed phase that hides the Reports nav
+  // entry and moves its Audit Log tab into Status Center, unrelated to this
+  // migration's own removed_at concerns. AuditLogSection.tsx is a brand-new
+  // untracked file, so it never appears in `git diff` output at all.
   it('no working-tree diff on any frontend production file (excluding the later, separately-reviewed FRONTEND-LIVE-REMOVED-AT-FILTERS-A / SAFE-PROFESSIONAL-XLSX-EXPORT-A files)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

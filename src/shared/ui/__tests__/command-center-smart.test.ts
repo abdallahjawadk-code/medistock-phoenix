@@ -162,10 +162,12 @@ describe('11. Command Center uses no fake dashboard data', () => {
 
 describe('12. Quick Actions navigate only to existing screens', () => {
   it('QuickActionGrid items in StatusCenterScreen use known screen numbers only', () => {
+    // screen 9 (nav_reports) was removed from this list (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — Reports is now hidden from all nav entry points; its Audit Log content is reachable via Status Center's own new Audit Log tab instead.
     const block = statusCenter.slice(statusCenter.indexOf('const quickActions'), statusCenter.indexOf('const activityEntries'));
-    for (const n of [11, 13, 9, 6, 15, 14]) {
+    for (const n of [11, 13, 6, 15, 14]) {
       expect(block).toContain(`screen: ${n}`);
     }
+    expect(block).not.toContain('screen: 9');
   });
 });
 

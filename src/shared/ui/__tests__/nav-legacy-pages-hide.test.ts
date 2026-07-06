@@ -20,7 +20,11 @@ const mobileDrawer    = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
 const mobileBottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
 const app             = readSrc('app/App.tsx');
 
-const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor'];
+// PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports now joins
+// the hidden-from-nav list too (see nav-reports-hide.test.ts for the
+// dedicated, fully-documented test suite for that specific change — the
+// "Reports remains visible" describe block below is updated accordingly).
+const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor', 'nav_reports'];
 
 // ============================================================================
 // 1. Desktop sidebar no longer lists the hidden nav items
@@ -36,10 +40,6 @@ describe('Desktop sidebar hides legacy pages', () => {
     it(`NAV_ITEMS does not contain '${key}'`, () => {
       expect(navItemsBlock).not.toContain(`'${key}'`);
     });
-  });
-
-  it('NAV_ITEMS still contains nav_reports (must remain visible)', () => {
-    expect(navItemsBlock).toContain("'nav_reports'");
   });
 
   it('NAV_ITEMS still contains the core unaffected pages', () => {
@@ -76,10 +76,6 @@ describe('Mobile drawer hides legacy pages', () => {
     expect(allNavBlock).not.toContain("'nav_status_editor'");
   });
 
-  it('ALL_NAV still contains nav_reports (must remain visible)', () => {
-    expect(allNavBlock).toContain("'nav_reports'");
-  });
-
   it('ALL_NAV still contains the core unaffected pages', () => {
     // nav_editor is restored (RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A).
     // nav_intake is intentionally excluded here — it is the page the owner
@@ -102,16 +98,21 @@ describe('Mobile bottom nav does not reintroduce legacy pages', () => {
 });
 
 // ============================================================================
-// 4. Reports (nav_reports) remains visible everywhere it was before
+// 4. Reports (nav_reports) is now ALSO hidden from nav
+//    (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — see
+//    nav-reports-hide.test.ts for the full, dedicated test suite covering
+//    the route/page preservation and the new Status Center Audit Log tab.
 // ============================================================================
 
-describe('Reports remains visible in this phase', () => {
-  it('nav_reports is still present in the desktop sidebar', () => {
-    expect(sidebar).toContain("'nav_reports'");
+describe('Reports is now hidden from nav in this phase (see nav-reports-hide.test.ts for details)', () => {
+  it('nav_reports is no longer present in the desktop sidebar NAV_ITEMS/SECONDARY_ITEMS', () => {
+    const navBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const ROLE_MAP'));
+    expect(navBlock).not.toContain("'nav_reports'");
   });
 
-  it('nav_reports is still present in the mobile drawer', () => {
-    expect(mobileDrawer).toContain("'nav_reports'");
+  it('nav_reports is no longer present in the mobile drawer ALL_NAV/SECONDARY_NAV', () => {
+    const drawerBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
+    expect(drawerBlock).not.toContain("'nav_reports'");
   });
 });
 

@@ -32,6 +32,7 @@ import { OutletAvailabilityReportModal } from './OutletAvailabilityReportModal';
 import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
 import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
 import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
+import { AuditLogSection } from '@/features/reports/AuditLogSection';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -243,6 +244,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'outlet'>('table');
 
+  // PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: top-level Status
+  // Center tab — 'live' is the existing, unmodified availability
+  // reporting UI (everything below); 'audit' shows the reusable, read-only
+  // AuditLogSection (same component ReportsScreen.tsx's own Audit tab uses).
+  // Purely additive UI state — no effect on any existing filter/data logic.
+  const [mainTab, setMainTab] = useState<'live' | 'audit'>('live');
+
   // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: the outlet report modal's
   // selected outlet, or null when closed. Purely local UI state — no data
   // write, no new fetch (the modal reads the same already-filtered `rows`).
@@ -430,12 +438,15 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // visibility, except User Management which mirrors that screen's own
   // users.view/super_admin gate so the tile never offers an entry point the
   // destination screen would otherwise hide.
+  // PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports removed
+  // from this list too, for the same "mirrors sidebar/drawer visibility"
+  // reason stated above — its route (screen 9) remains fully wired in
+  // App.tsx, only every navigation entry point was hidden.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   const quickActions: QuickAction[] = useMemo(() => {
     const actions: QuickAction[] = [
       { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
       { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-      { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
       { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
       { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
     ];
@@ -721,6 +732,30 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         <PhoenixOrgScope />
       </div>
 
+      {/* PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: top-level tab bar
+          — 'live' renders the exact same, unmodified content that already
+          existed below (availability filters/table/outlet view/exports/
+          movement report); 'audit' renders the reusable read-only
+          AuditLogSection. Purely a display switch — no data/filter changes. */}
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+        <button
+          onClick={() => setMainTab('live')}
+          style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'live' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'live' ? 'var(--pd)' : 'var(--t)' }}
+        >
+          📋 {t('nav_status_center', lang)}
+        </button>
+        <button
+          onClick={() => setMainTab('audit')}
+          style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'audit' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'audit' ? 'var(--pd)' : 'var(--t)' }}
+        >
+          📜 {t('tab_audit', lang)}
+        </button>
+      </div>
+
+      {mainTab === 'audit' && <AuditLogSection />}
+
+      {mainTab === 'live' && (
+      <>
       {/* Quick Actions — UX-COMMAND-CENTER-SMART-A */}
       <div style={{ marginBottom: '16px' }}>
         <h3 className="premium-section-header" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>{t('quick', lang)}</h3>
@@ -1106,6 +1141,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           {t('open_exchange_center', lang)} →
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

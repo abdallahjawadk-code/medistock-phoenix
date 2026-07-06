@@ -10,13 +10,16 @@ import { t } from '@/shared/i18n/strings';
 // page (nav_intake, screen 8) hidden, which is why it no longer appears
 // below. Its route (screen 8 — IntakeFrozenScreen) remains fully wired in
 // App.tsx; only the drawer entry point was removed.
+// PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports (screen 9,
+// ReportsScreen) is intentionally NOT listed here (hidden from navigation
+// only). Its route remains fully wired in App.tsx; only the drawer entry
+// point was removed — mirrors the same change in PhoenixSidebar.tsx.
 const ALL_NAV: { screen: number; icon: string; labelKey: string; frozen?: boolean }[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the

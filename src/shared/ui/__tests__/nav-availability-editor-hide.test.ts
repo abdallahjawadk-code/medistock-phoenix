@@ -56,7 +56,8 @@ describe('Desktop sidebar: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('NAV_ITEMS still contains the other required-visible pages', () => {
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
+    // nav_reports was removed from this list (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — it is now hidden from nav; see section 12 below.
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -92,7 +93,8 @@ describe('Mobile drawer: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('ALL_NAV still contains the other required-visible pages', () => {
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_reports']
+    // nav_reports was removed from this list (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — it is now hidden from nav; see section 12 below.
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });
@@ -294,16 +296,20 @@ describe('Status Center remains visible', () => {
 });
 
 // ============================================================================
-// 12. Reports remains visible
+// 12. Reports is now hidden from nav
+//    (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A — see
+//    nav-reports-hide.test.ts for the full, dedicated test suite)
 // ============================================================================
 
-describe('Reports remains visible', () => {
-  it('nav_reports is present in the desktop sidebar', () => {
-    expect(sidebar).toContain("'nav_reports'");
+describe('Reports is hidden from nav in this phase', () => {
+  it('nav_reports is not present in the desktop sidebar NAV_ITEMS', () => {
+    const navItemsBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
+    expect(navItemsBlock).not.toContain("'nav_reports'");
   });
 
-  it('nav_reports is present in the mobile drawer', () => {
-    expect(mobileDrawer).toContain("'nav_reports'");
+  it('nav_reports is not present in the mobile drawer ALL_NAV', () => {
+    const allNavBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
+    expect(allNavBlock).not.toContain("'nav_reports'");
   });
 });
 

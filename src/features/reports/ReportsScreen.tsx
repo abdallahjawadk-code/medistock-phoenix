@@ -4,7 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/services/dashboard.service';
 import { getLowStockItems } from '@/shared/supabase/services/availability.service';
-import { getAuditLog } from '@/shared/supabase/services/audit.service';
+import { AuditLogSection } from './AuditLogSection';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -35,7 +35,6 @@ export function ReportsScreen() {
   const metrics  = useAsync(() => getDashboardMetrics(activeOrgId ?? undefined), [activeOrgId]);
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const lowStock = useAsync(() => activeOrgId ? getLowStockItems(activeOrgId) : Promise.resolve([]), [activeOrgId]);
-  const audit    = useAsync(() => activeOrgId ? getAuditLog(activeOrgId) : Promise.resolve([]), [activeOrgId]);
 
   const lowRows = (lowStock.data ?? []) as unknown as LowRow[];
   const lowOnly = lowRows.filter(r => r.condition === 'low_stock' || r.condition === 'near_expiry');
@@ -65,7 +64,10 @@ export function ReportsScreen() {
     return lang === 'ar' ? dp?.name_ar ?? dp?.name ?? '' : dp?.name ?? dp?.name_ar ?? '';
   };
 
-  const needsOrg = (tab === 'low' || tab === 'missing' || tab === 'audit') && !activeOrgId;
+  // 'audit' is excluded here (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A):
+  // AuditLogSection now renders its own no-org-scope empty state internally,
+  // so this shared block must not also render one for 'audit' (would double up).
+  const needsOrg = (tab === 'low' || tab === 'missing') && !activeOrgId;
 
   return (
     <div style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
@@ -187,29 +189,8 @@ export function ReportsScreen() {
         </>
       )}
 
-      {/* Audit */}
-      {tab === 'audit' && activeOrgId && (
-        <>
-          {audit.loading && <PhoenixLoadingState label={t('loading', lang)} />}
-          {!audit.loading && audit.error && <PhoenixErrorState title={t('load_error', lang)} message={audit.error} onRetry={audit.reload} />}
-          {!audit.loading && !audit.error && (audit.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="📜" title={t('empty_audit', lang)} />}
-          {!audit.loading && !audit.error && (audit.data?.length ?? 0) > 0 && (
-            <PhoenixCard padding="16px" style={{ animation: 'fs .25s ease' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {(audit.data ?? []).map((row, i, arr) => (
-                  <div key={row.id} style={{ display: 'flex', gap: '12px', padding: '12px 0', borderBottom: i < arr.length - 1 ? '1px solid var(--brd)' : undefined }}>
-                    <div style={{ fontSize: '10px', color: 'var(--t3)', whiteSpace: 'nowrap', fontFamily: 'monospace', marginTop: '2px' }} dir="ltr">{new Date(row.created_at).toLocaleString(lang === 'ar' ? 'ar' : 'en')}</div>
-                    <div>
-                      <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{row.action} · {row.entity_type}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{row.actor_role ?? '—'}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </PhoenixCard>
-          )}
-        </>
-      )}
+      {/* Audit — extracted into AuditLogSection (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A), also reused by StatusCenterScreen's new Audit Log tab. */}
+      {tab === 'audit' && <AuditLogSection />}
     </div>
   );
 }

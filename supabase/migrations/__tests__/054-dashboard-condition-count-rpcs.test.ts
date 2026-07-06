@@ -482,11 +482,18 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
   // read-only availability item details modal, unrelated to this migration's
   // own RPC scope. AvailabilityItemDetailsModal.tsx itself is a brand-new
   // untracked file, so it never appears in `git diff` output at all.
+  //
+  // PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: ReportsScreen.tsx,
+  // PhoenixSidebar.tsx, and PhoenixMobileDrawer.tsx are also excluded here —
+  // a still later, separately-reviewed phase that hides the Reports nav
+  // entry and moves its Audit Log tab into Status Center, unrelated to this
+  // migration's own RPC scope. AuditLogSection.tsx is a brand-new untracked
+  // file, so it never appears in `git diff` output at all.
   it('no working-tree diff on any frontend production file other than dashboard.service.ts (already-approved RPC switch) and the Entered Price addition', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/institutions/InstitutionScreen.tsx"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

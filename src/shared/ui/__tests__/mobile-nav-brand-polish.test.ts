@@ -109,7 +109,8 @@ describe('Mobile drawer mirrors the desktop sidebar page set', () => {
   const secondaryItemsBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'));
 
   it('drawer ALL_NAV contains every primary desktop NAV_ITEMS label key', () => {
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor', 'nav_reports']
+    // nav_reports removed from this mirror-check (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — hidden from both surfaces now, see nav-reports-hide.test.ts.
+    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => {
         expect(navItemsBlock).toContain(`'${key}'`);
         expect(allNavBlock).toContain(`'${key}'`);
