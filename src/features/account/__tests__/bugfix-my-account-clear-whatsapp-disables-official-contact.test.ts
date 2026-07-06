@@ -237,11 +237,13 @@ describe('11. No QR/export/print/user-management/auth/RLS/permissions files chan
   // PublicQrScreen.tsx is also excluded — a later, separately-reviewed
   // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase that hides
   // non-available items from the public QR list.
-  it('empty diff on App.tsx, auth.service.ts, AppContext.tsx; UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
+  // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
+  it('empty diff on auth.service.ts, AppContext.tsx; UserManagementScreen.tsx allows only the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/app/App.tsx src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
+        'git diff -- src/shared/supabase/services/auth.service.ts src/app/AppContext.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

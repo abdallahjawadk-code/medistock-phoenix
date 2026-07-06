@@ -19,6 +19,8 @@ const sidebar        = readSrc('shared/ui/PhoenixSidebar.tsx');
 const mobileDrawer    = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
 const mobileBottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
 const app             = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: screen-case routing moved into its own lazy chunk.
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 
 // PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports now joins
 // the hidden-from-nav list too (see nav-reports-hide.test.ts for the
@@ -121,24 +123,27 @@ describe('Reports is now hidden from nav in this phase (see nav-reports-hide.tes
 // ============================================================================
 
 describe('App.tsx retains all screen cases for hidden-nav pages (routes not removed)', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: the screen switch now lives in the lazy-loaded
+  // AuthenticatedApp.tsx, not App.tsx itself — App.tsx only decides which
+  // lazy chunk (public QR vs authenticated app) to load.
   it('imports and renders QrScreen on case 6', () => {
-    expect(app).toContain("import { QrScreen } from '@/features/qr/QrScreen'");
-    expect(app).toMatch(/case 6:\s*return <QrScreen \/>/);
+    expect(authenticatedApp).toContain("import { QrScreen } from '@/features/qr/QrScreen'");
+    expect(authenticatedApp).toMatch(/case 6:\s*return <QrScreen \/>/);
   });
 
   it('imports and renders RegistryScreen on case 4', () => {
-    expect(app).toContain("import { RegistryScreen } from '@/features/registry/RegistryScreen'");
-    expect(app).toMatch(/case 4:\s*return <RegistryScreen \/>/);
+    expect(authenticatedApp).toContain("import { RegistryScreen } from '@/features/registry/RegistryScreen'");
+    expect(authenticatedApp).toMatch(/case 4:\s*return <RegistryScreen \/>/);
   });
 
   it('imports and renders StatusEditorScreen on case 16', () => {
-    expect(app).toContain("import { StatusEditorScreen } from '@/features/status/StatusEditorScreen'");
-    expect(app).toMatch(/case 16:\s*return <StatusEditorScreen \/>/);
+    expect(authenticatedApp).toContain("import { StatusEditorScreen } from '@/features/status/StatusEditorScreen'");
+    expect(authenticatedApp).toMatch(/case 16:\s*return <StatusEditorScreen \/>/);
   });
 
   it('imports and renders ReportsScreen on case 9', () => {
-    expect(app).toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
-    expect(app).toMatch(/case 9:\s*return <ReportsScreen \/>/);
+    expect(authenticatedApp).toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
+    expect(authenticatedApp).toMatch(/case 9:\s*return <ReportsScreen \/>/);
   });
 });
 
@@ -148,7 +153,9 @@ describe('App.tsx retains all screen cases for hidden-nav pages (routes not remo
 
 describe('Public QR path is untouched by nav hiding', () => {
   it('App.tsx still resolves ?qid=/?token= to PublicQrScreen before auth', () => {
-    expect(app).toContain("import { PublicQrScreen } from '@/features/qr/PublicQrScreen'");
+    // QR-BUNDLE-CODE-SPLIT-A: PublicQrScreen is now lazy-loaded (its own
+    // chunk) rather than statically imported — the module path is the same.
+    expect(app).toContain("import('@/features/qr/PublicQrScreen')");
     expect(app).toContain("params.get('qid')");
     expect(app).toContain("params.get('token')");
     expect(app).toContain('<PublicQrScreen publicId={qid} />');

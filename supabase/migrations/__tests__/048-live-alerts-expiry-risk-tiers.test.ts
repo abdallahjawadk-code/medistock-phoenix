@@ -302,8 +302,10 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     // concerns (see the relaxed InstitutionScreen.tsx diff check just below).
     let diff = '';
     try {
+      // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
+      // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
       diff = execSync(
-        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/app/App.tsx src/features/status/StatusEditorScreen.tsx',
+        'git diff -- src/features/account/MyAccountScreen.tsx src/shared/supabase/services/auth.service.ts src/features/status/StatusEditorScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

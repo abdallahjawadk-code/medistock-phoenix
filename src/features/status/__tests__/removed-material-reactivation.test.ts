@@ -337,11 +337,13 @@ describe('Guards: no SQL/migration/package change, safety files untouched', () =
     expect(diff.trim()).toBe('');
   });
 
-  it('no QR/alert-lifecycle/auth/permissions/navigation file was touched by this phase', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
+  // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
+  it('no QR/alert-lifecycle/auth/permissions file was touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx src/app/App.tsx',
+        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

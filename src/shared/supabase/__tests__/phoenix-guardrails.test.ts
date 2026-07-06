@@ -375,15 +375,26 @@ describe('Live auth: client + auth service', () => {
 
 describe('App routing: auth gate + public QR', () => {
   const app = readSrc('app/App.tsx');
+  const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 
-  it('gates the app behind a session', () => {
-    expect(app).toContain('session');
-    expect(app).toContain('LoginScreen');
+  // QR-BUNDLE-CODE-SPLIT-A: the session/LoginScreen auth gate now lives in
+  // AuthenticatedApp.tsx (its own lazy chunk), not App.tsx — App.tsx only
+  // decides which lazy chunk to load (public QR vs authenticated app).
+  it('gates the app behind a session (in the lazy-loaded authenticated chunk)', () => {
+    expect(authenticatedApp).toContain('session');
+    expect(authenticatedApp).toContain('LoginScreen');
   });
 
-  it('exposes an anon public QR route via ?qid=', () => {
+  it('App.tsx does not statically import the authenticated screen tree', () => {
+    expect(app).not.toContain('LoginScreen');
+    expect(app).not.toMatch(/^import.*UserManagementScreen/m);
+  });
+
+  it('exposes an anon public QR route via ?qid=, lazy-loaded separately from the authenticated app', () => {
     expect(app).toContain('qid');
     expect(app).toContain('PublicQrScreen');
+    expect(app).toContain('AuthenticatedApp');
+    expect(app).toMatch(/lazy\(/);
   });
 });
 
@@ -1543,14 +1554,16 @@ describe('Post-recycling guardrails', () => {
 // ============================================================================
 
 describe('My Account: route and UI', () => {
-  const app = readSrc('app/App.tsx');
+  // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+  // lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+  const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
   const shell = readSrc('shared/ui/PhoenixAppShell.tsx');
   const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
   const strings = readSrc('shared/i18n/strings.ts');
 
   it('MyAccountScreen is imported and wired to screen 15', () => {
-    expect(app).toContain('MyAccountScreen');
-    expect(app).toContain('case 15');
+    expect(authenticatedApp).toContain('MyAccountScreen');
+    expect(authenticatedApp).toContain('case 15');
   });
 
   it('screen 15 title key is registered in PhoenixAppShell', () => {

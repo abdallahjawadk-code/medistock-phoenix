@@ -24,6 +24,10 @@ const ROOT = join(__dirname, '../../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx's route
+// detection (public QR vs authenticated app).
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const emptyState = readSrc('shared/ui/PhoenixEmptyState.tsx');
 const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
 const qrScreen = readSrc('features/qr/QrScreen.tsx');
@@ -46,14 +50,14 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
       [15, 'MyAccountScreen'], [16, 'StatusEditorScreen'],
     ];
     for (const [num, component] of expected) {
-      expect(app).toContain(`case ${num}:`);
-      const idx = app.indexOf(`case ${num}:`);
-      expect(app.slice(idx, idx + 80)).toContain(component);
+      expect(authenticatedApp).toContain(`case ${num}:`);
+      const idx = authenticatedApp.indexOf(`case ${num}:`);
+      expect(authenticatedApp.slice(idx, idx + 80)).toContain(component);
     }
   });
 
   it('the initial/default screen (Status Center, 12) is unchanged', () => {
-    expect(app).toContain('useState(12)');
+    expect(authenticatedApp).toContain('useState(12)');
   });
 });
 
@@ -329,10 +333,11 @@ describe('14. Existing button handlers remain connected', () => {
 
 describe('15. No route path was renamed', () => {
   it('the screen-number constants used across nav components are unchanged (spot check against App.tsx cases)', () => {
-    // QrScreen is screen 6 (App.tsx case 6) — confirm the nav-target number
-    // wasn't renumbered anywhere touched by this phase.
-    const caseSixIdx = app.indexOf('case 6:');
-    expect(app.slice(caseSixIdx, caseSixIdx + 40)).toContain('QrScreen');
+    // QrScreen is screen 6 (AuthenticatedApp.tsx case 6, moved there by
+    // QR-BUNDLE-CODE-SPLIT-A) — confirm the nav-target number wasn't
+    // renumbered anywhere touched by this phase.
+    const caseSixIdx = authenticatedApp.indexOf('case 6:');
+    expect(authenticatedApp.slice(caseSixIdx, caseSixIdx + 40)).toContain('QrScreen');
   });
 
   it('qrScreen file itself is untouched by this phase', () => {

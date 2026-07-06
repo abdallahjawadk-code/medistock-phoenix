@@ -26,7 +26,6 @@ const dashboard = readSrc('features/dashboard/DashboardScreen.tsx');
 const usersService = readSrc('shared/supabase/services/users.service.ts');
 const whatsappButton = readSrc('shared/ui/WhatsAppContactButton.tsx');
 const alertLifecycleService = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
-const app = readSrc('app/App.tsx');
 
 describe('1. Reusable mobile premium card classes exist in the CSS', () => {
   it('defines the required class set, scoped to the mobile breakpoint', () => {
@@ -199,13 +198,12 @@ describe('12. Existing routes/links are not changed', () => {
     expect(dashboard).toContain('onNavigate(11)');
   });
 
-  it('App.tsx screen-number routing is untouched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/app/App.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
-    expect(app).toContain('InterInstitutionAlertsScreen');
+  // QR-BUNDLE-CODE-SPLIT-A: App.tsx was later, legitimately restructured
+  // (screen-number switch now lives in the lazy-loaded AuthenticatedApp.tsx)
+  // — check the screen map there instead of requiring an empty App.tsx diff.
+  it('App.tsx screen-number routing is untouched by this phase (screen map now lives in AuthenticatedApp.tsx)', () => {
+    const authenticatedApp = readFileSync(join(ROOT, 'src/app/AuthenticatedApp.tsx'), 'utf8');
+    expect(authenticatedApp).toContain('InterInstitutionAlertsScreen');
   });
 });
 

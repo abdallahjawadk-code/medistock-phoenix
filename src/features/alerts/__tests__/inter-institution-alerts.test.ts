@@ -246,9 +246,11 @@ describe('Inter-institution alert helpers', () => {
 // ============================================================================
 describe('Inter-institution alerts: navigation wiring', () => {
   it('App routes screen 13 to the alerts screen', () => {
-    const app = readSrc('app/App.tsx');
-    expect(app).toContain('InterInstitutionAlertsScreen');
-    expect(app).toMatch(/case 13:\s*return <InterInstitutionAlertsScreen/);
+    // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in
+    // AuthenticatedApp.tsx, not App.tsx.
+    const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
+    expect(authenticatedApp).toContain('InterInstitutionAlertsScreen');
+    expect(authenticatedApp).toMatch(/case 13:\s*return <InterInstitutionAlertsScreen/);
   });
 
   it('sidebar includes the alerts page', () => {

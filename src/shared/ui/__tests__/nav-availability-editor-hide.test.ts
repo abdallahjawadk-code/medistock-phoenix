@@ -37,7 +37,9 @@ const dashboardScreen     = readSrc('features/dashboard/DashboardScreen.tsx');
 const intakeFrozenScreen  = readSrc('features/health/IntakeFrozenScreen.tsx');
 const meshScreen          = readSrc('features/mesh/MeshScreen.tsx');
 const mobileCommandScreen = readSrc('features/mesh/MobileCommandScreen.tsx');
-const app                 = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+const authenticatedApp    = readSrc('app/AuthenticatedApp.tsx');
 const editorScreen        = readSrc('features/editor/EditorScreen.tsx');
 
 // ============================================================================
@@ -205,13 +207,13 @@ describe('nav_intake is hidden from all visible navigation', () => {
 
 describe('App.tsx retains both routes (nothing removed)', () => {
   it('imports and renders EditorScreen on case 3', () => {
-    expect(app).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
-    expect(app).toMatch(/case 3:\s*return <EditorScreen \/>/);
+    expect(authenticatedApp).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
+    expect(authenticatedApp).toMatch(/case 3:\s*return <EditorScreen \/>/);
   });
 
   it('imports and renders IntakeFrozenScreen on case 8', () => {
-    expect(app).toContain("import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen'");
-    expect(app).toMatch(/case 8:\s*return <IntakeFrozenScreen onNavigate={setScreen} \/>/);
+    expect(authenticatedApp).toContain("import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen'");
+    expect(authenticatedApp).toMatch(/case 8:\s*return <IntakeFrozenScreen onNavigate={setScreen} \/>/);
   });
 });
 

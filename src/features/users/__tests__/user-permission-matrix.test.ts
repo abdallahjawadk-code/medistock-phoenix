@@ -524,9 +524,11 @@ describe('Permission grant authority', () => {
 // ============================================================================
 describe('User management navigation wiring', () => {
   it('App routes screen 14 to UserManagementScreen', () => {
-    const app = readSrc('app/App.tsx');
-    expect(app).toContain('UserManagementScreen');
-    expect(app).toMatch(/case 14:\s*return <UserManagementScreen/);
+    // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in
+    // AuthenticatedApp.tsx, not App.tsx.
+    const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
+    expect(authenticatedApp).toContain('UserManagementScreen');
+    expect(authenticatedApp).toMatch(/case 14:\s*return <UserManagementScreen/);
   });
   it('sidebar + drawer + shell expose the users page', () => {
     expect(readSrc('shared/ui/PhoenixSidebar.tsx')).toContain('nav_users');

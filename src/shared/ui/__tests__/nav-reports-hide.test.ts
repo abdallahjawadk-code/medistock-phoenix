@@ -29,7 +29,9 @@ const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
 const mobileDrawer = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
 const mobileBottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
 const commandPalette = readSrc('shared/ui/CommandPalette.tsx');
-const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const reportsScreen = readSrc('features/reports/ReportsScreen.tsx');
 const auditLogSection = readSrc('features/reports/AuditLogSection.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
@@ -101,9 +103,11 @@ describe('E) CommandPalette keeps its Reports quick-jump entry (established prec
 });
 
 describe('F) Reports route/page are NOT deleted — still fully wired in App.tsx', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch (including ReportsScreen)
+  // now lives in AuthenticatedApp.tsx, not App.tsx.
   it('App.tsx still imports and renders ReportsScreen on case 9', () => {
-    expect(app).toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
-    expect(app).toMatch(/case 9:\s*return <ReportsScreen \/>/);
+    expect(authenticatedApp).toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
+    expect(authenticatedApp).toMatch(/case 9:\s*return <ReportsScreen \/>/);
   });
 
   it('ReportsScreen.tsx file still exists and exports ReportsScreen', () => {
@@ -290,11 +294,14 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     expect(diff.trim()).toBe('');
   });
 
-  it('no QR/alert-lifecycle/movement-history/auth/permissions/navigation(App.tsx routing)/dashboard-service file was touched by this phase', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
+  // restructures src/app/App.tsx (route-level lazy loading) — excluded here,
+  // same precedent as the migration exclusions above.
+  it('no QR/alert-lifecycle/movement-history/auth/permissions/dashboard-service file was touched by this phase', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx src/app/App.tsx src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx src/shared/supabase/services/dashboard.service.ts',
+        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/shared/supabase/services/auth.service.ts src/shared/lib/permissions.ts src/app/AppContext.tsx src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx src/shared/supabase/services/dashboard.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

@@ -20,6 +20,9 @@ const ROOT = join(__dirname, '../../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
 const usersService = readSrc('shared/supabase/services/users.service.ts');
 const whatsappHelper = readSrc('shared/lib/whatsapp.ts');
@@ -33,7 +36,7 @@ const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
 describe('1. App screen map / routes unchanged', () => {
   it('App.tsx still switches on the same known screen numbers', () => {
     for (const n of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
-      expect(app).toContain(`case ${n}:`);
+      expect(authenticatedApp).toContain(`case ${n}:`);
     }
   });
 });
@@ -466,6 +469,10 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration, now
       // tracked/committed.
       'supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      // PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A: new reviewed
+      // migration, now tracked/committed (allowlist update only — no new
+      // migration added by this cleanup).
+      'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -474,7 +481,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(56);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(57);
   });
 });
 
@@ -483,12 +490,14 @@ describe('24. No route/link/QR/export/user-management breakage', () => {
   // excluded from this empty-diff check — a later, separately-reviewed
   // phase that hides non-available items from the public list. App.tsx
   // remains fully guarded.
-  it('App.tsx was not part of this phase (PublicQrScreen.tsx excluded — later, separately-reviewed QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase)', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/app/App.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // QR-BUNDLE-CODE-SPLIT-A: App.tsx was later, legitimately restructured
+  // (route detection now lazy-loads PublicQrScreen vs AuthenticatedApp) —
+  // the empty-diff guard is replaced by a behavior check that the public QR
+  // route still resolves the same way.
+  it('App.tsx still resolves ?qid=/?token= to PublicQrScreen (route behavior unchanged by later QR-BUNDLE-CODE-SPLIT-A restructuring)', () => {
+    const app = readFileSync(join(ROOT, 'src/app/App.tsx'), 'utf8');
+    expect(app).toContain("params.get('qid')");
+    expect(app).toContain('PublicQrScreen');
   });
 });
 

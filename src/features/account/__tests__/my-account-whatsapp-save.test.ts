@@ -300,12 +300,12 @@ describe('19. QR routes unchanged', () => {
 
   // PublicQrScreen.tsx is excluded below — a later, separately-reviewed
   // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A phase, unrelated to this one.
-  it('App.tsx was not modified by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/app/App.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // QR-BUNDLE-CODE-SPLIT-A (also later, separately-reviewed) legitimately
+  // restructures App.tsx for route-level code splitting — the empty-diff
+  // guard is replaced by the same behavior check as the test above.
+  it('App.tsx still resolves the public QR route the same way (route behavior unchanged by later QR-BUNDLE-CODE-SPLIT-A restructuring)', () => {
+    expect(app).toContain('publicQrId');
+    expect(app).toContain('PublicQrScreen');
   });
 });
 

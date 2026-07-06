@@ -18,6 +18,10 @@ const ROOT = join(__dirname, '../../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx's route
+// detection (public QR vs authenticated app).
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const shell = readSrc('shared/ui/PhoenixAppShell.tsx');
 const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
 const drawer = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
@@ -31,18 +35,18 @@ const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
 describe('1. App screen map / routes unchanged', () => {
   it('App.tsx still switches on the same 14 known screen numbers', () => {
     for (const n of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
-      expect(app).toContain(`case ${n}:`);
+      expect(authenticatedApp).toContain(`case ${n}:`);
     }
   });
 
   it('initial screen and post-logout screen remain Status Center (12)', () => {
-    expect(app).toContain('useState(12)');
-    expect(app).toContain('setScreen(12)');
+    expect(authenticatedApp).toContain('useState(12)');
+    expect(authenticatedApp).toContain('setScreen(12)');
   });
 
   it('unknown/default screens still redirect to Status Center', () => {
-    const defaultIdx = app.indexOf('default:');
-    expect(app.slice(defaultIdx, defaultIdx + 80)).toContain('StatusCenterScreen');
+    const defaultIdx = authenticatedApp.indexOf('default:');
+    expect(authenticatedApp.slice(defaultIdx, defaultIdx + 80)).toContain('StatusCenterScreen');
   });
 });
 

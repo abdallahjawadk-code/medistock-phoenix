@@ -169,14 +169,16 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
     expect(diff.trim()).toBe('');
   });
 
-  it('no QR/alerts/movement-history/auth/permissions/navigation files changed', () => {
+  // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
+  // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
+  it('no QR/alerts/movement-history/auth/permissions files changed', () => {
     let diff = '';
     try {
       diff = execSync(
         'git diff -- src/shared/supabase/services/qr.service.ts src/features/qr/PublicQrScreen.tsx ' +
         'src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/status/MovementHistoryModal.tsx ' +
         'src/features/status/MovementReportSection.tsx src/shared/supabase/services/auth.service.ts ' +
-        'src/app/AppContext.tsx src/shared/lib/permissions.ts src/app/App.tsx',
+        'src/app/AppContext.tsx src/shared/lib/permissions.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

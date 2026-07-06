@@ -24,6 +24,9 @@ const ROOT = join(__dirname, '../../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const whatsappHelper = readSrc('shared/lib/whatsapp.ts');
 const whatsappButton = readSrc('shared/ui/WhatsAppContactButton.tsx');
 const userManagementScreen = readSrc('features/users/UserManagementScreen.tsx');
@@ -198,7 +201,7 @@ describe('22. No clinical/medical recommendations in WhatsApp message', () => {
 describe('1. App screen map / routes unchanged', () => {
   it('App.tsx still switches on the same known screen numbers', () => {
     for (const n of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
-      expect(app).toContain(`case ${n}:`);
+      expect(authenticatedApp).toContain(`case ${n}:`);
     }
   });
 });

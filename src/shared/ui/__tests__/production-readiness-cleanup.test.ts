@@ -22,6 +22,9 @@ const ROOT = join(__dirname, '../../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const app = readSrc('app/App.tsx');
+// QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
+// lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
+const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 const sidebar = readSrc('shared/ui/PhoenixSidebar.tsx');
 const drawer = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
 const bottomNav = readSrc('shared/ui/PhoenixMobileBottomNav.tsx');
@@ -36,20 +39,20 @@ describe('Central dashboard removed from navigation', () => {
   });
 
   it('App.tsx has no case 2 (former central dashboard screen number)', () => {
-    expect(app).not.toMatch(/case 2:/);
+    expect(authenticatedApp).not.toMatch(/case 2:/);
   });
 
   it('unknown/removed screen numbers (including the former screen 2) redirect to Status Center', () => {
-    const defaultIdx = app.indexOf('default:');
-    const around = app.slice(defaultIdx, defaultIdx + 80);
+    const defaultIdx = authenticatedApp.indexOf('default:');
+    const around = authenticatedApp.slice(defaultIdx, defaultIdx + 80);
     expect(around).toContain('StatusCenterScreen');
   });
 
   it('the initial screen and post-logout screen are Status Center (12), not the removed dashboard (2)', () => {
-    expect(app).toContain('useState(12)');
-    expect(app).toContain('setScreen(12)');
-    expect(app).not.toContain('useState(2)');
-    expect(app).not.toContain('setScreen(2)');
+    expect(authenticatedApp).toContain('useState(12)');
+    expect(authenticatedApp).toContain('setScreen(12)');
+    expect(authenticatedApp).not.toContain('useState(2)');
+    expect(authenticatedApp).not.toContain('setScreen(2)');
   });
 
   it('sidebar NAV_ITEMS no longer contains nav_dash', () => {

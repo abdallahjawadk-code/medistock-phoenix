@@ -129,8 +129,10 @@ describe('Mobile drawer mirrors the desktop sidebar page set', () => {
   });
 
   it('no route permissions/visibility rules were removed (screen 15 still routes to MyAccountScreen)', () => {
-    const app = readSrc('app/App.tsx');
-    expect(app).toMatch(/case 15:\s*return <MyAccountScreen/);
+    // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in
+    // AuthenticatedApp.tsx, not App.tsx.
+    const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
+    expect(authenticatedApp).toMatch(/case 15:\s*return <MyAccountScreen/);
   });
 });
 

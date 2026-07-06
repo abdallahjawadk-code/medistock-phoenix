@@ -175,17 +175,20 @@ describe('Mobile logout access', () => {
   });
 
   it('PhoenixAppShell (and therefore the mobile drawer) is never rendered for LoginScreen/PublicQrScreen', () => {
-    // App.tsx only renders PhoenixAppShell once an authenticated session exists;
-    // LoginScreen and PublicQrScreen are returned before it in the render tree.
+    // QR-BUNDLE-CODE-SPLIT-A: PublicQrScreen (App.tsx) and the authenticated
+    // app (LoginScreen + PhoenixAppShell, now in AuthenticatedApp.tsx) are
+    // two separate lazy-loaded branches — they structurally can never render
+    // in the same tree, which is a stronger guarantee than the old ordering
+    // check within a single file.
     const app = readSrc('app/App.tsx');
-    const loginIdx = app.indexOf('return <LoginScreen');
-    const publicIdx = app.indexOf('return <PublicQrScreen');
-    const shellIdx = app.indexOf('<PhoenixAppShell');
+    const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
+    expect(app).toContain('<PublicQrScreen');
+    expect(app).toContain('<AuthenticatedApp');
+    const loginIdx = authenticatedApp.indexOf('return <LoginScreen');
+    const shellIdx = authenticatedApp.indexOf('<PhoenixAppShell');
     expect(loginIdx).toBeGreaterThan(-1);
-    expect(publicIdx).toBeGreaterThan(-1);
     expect(shellIdx).toBeGreaterThan(-1);
     expect(shellIdx).toBeGreaterThan(loginIdx);
-    expect(shellIdx).toBeGreaterThan(publicIdx);
   });
 
   it('does not expose session/profile internals in the logout control itself', () => {
