@@ -32,8 +32,13 @@ describe('A) Super Admin gating — admin panel', () => {
     expect(adminPanel).toMatch(/const isSuper = normalizeRole\(role\) === 'super_admin';/);
   });
 
+  // AUTHENTICATED-SCREEN-SPLIT-B: the static import was converted to a
+  // React.lazy dynamic import (so its chunk is only fetched for
+  // super_admin), gated by the same normalizeRole(role) === 'super_admin'
+  // check the component already performs internally.
   it('is wired into UserManagementScreen alongside AvailabilityCleanupWizard', () => {
-    expect(userMgmt).toContain("import { PlatformBroadcastAdminPanel } from '@/features/platform-broadcast/PlatformBroadcastAdminPanel';");
+    expect(userMgmt).toContain("import('@/features/platform-broadcast/PlatformBroadcastAdminPanel').then(m => ({ default: m.PlatformBroadcastAdminPanel }))");
+    expect(userMgmt).toContain("normalizeRole(role) === 'super_admin'");
     expect(userMgmt).toMatch(/<PlatformBroadcastAdminPanel lang=\{lang\} role=\{role\} \/>/);
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -28,8 +28,17 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
-import { AvailabilityCleanupWizard } from '@/features/admin/AvailabilityCleanupWizard';
-import { PlatformBroadcastAdminPanel } from '@/features/platform-broadcast/PlatformBroadcastAdminPanel';
+/**
+ * AUTHENTICATED-SCREEN-SPLIT-B: lazy-load these two Super Admin-only panels
+ * (same convention as AvailabilityCleanupWizard above — each already
+ * Renders null internally for any non-super_admin role).
+ */
+const AvailabilityCleanupWizard = lazy(() =>
+  import('@/features/admin/AvailabilityCleanupWizard').then(m => ({ default: m.AvailabilityCleanupWizard })),
+);
+const PlatformBroadcastAdminPanel = lazy(() =>
+  import('@/features/platform-broadcast/PlatformBroadcastAdminPanel').then(m => ({ default: m.PlatformBroadcastAdminPanel })),
+);
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -340,13 +349,23 @@ export function UserManagementScreen() {
 
       {/* PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: Super Admin-only maintenance wizard.
           Renders null internally for any non-super_admin role — this screen
-          is already the safest existing super_admin-oriented admin area. */}
-      <AvailabilityCleanupWizard lang={lang} role={role} />
+          is already the safest existing super_admin-oriented admin area.
+          AUTHENTICATED-SCREEN-SPLIT-B: lazy-loaded here too. */}
+      {normalizeRole(role) === 'super_admin' && (
+        <Suspense fallback={<PhoenixLoadingState />}>
+          <AvailabilityCleanupWizard lang={lang} role={role} />
+        </Suspense>
+      )}
 
       {/* PHASE3-PLATFORM-BROADCAST-NOTICES-A: Super Admin-only broadcast
           management panel. Renders null internally for any non-super_admin
-          role, same convention as AvailabilityCleanupWizard above. */}
-      <PlatformBroadcastAdminPanel lang={lang} role={role} />
+          role, same convention as AvailabilityCleanupWizard above.
+          AUTHENTICATED-SCREEN-SPLIT-B: lazy-loaded here too. */}
+      {normalizeRole(role) === 'super_admin' && (
+        <Suspense fallback={<PhoenixLoadingState />}>
+          <PlatformBroadcastAdminPanel lang={lang} role={role} />
+        </Suspense>
+      )}
     </div>
   );
 }

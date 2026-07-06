@@ -30,8 +30,13 @@ describe('A) Super Admin gating', () => {
     expect(wizard).toMatch(/const isSuper = normalizeRole\(role\) === 'super_admin';/);
   });
 
+  // AUTHENTICATED-SCREEN-SPLIT-B: the static import was converted to a
+  // React.lazy dynamic import (so its chunk is only fetched for
+  // super_admin), gated by the same normalizeRole(role) === 'super_admin'
+  // check the component already performs internally.
   it('is wired into UserManagementScreen (the safest existing super_admin admin area), not Status Center', () => {
-    expect(userMgmt).toContain("import { AvailabilityCleanupWizard } from '@/features/admin/AvailabilityCleanupWizard';");
+    expect(userMgmt).toContain("import('@/features/admin/AvailabilityCleanupWizard').then(m => ({ default: m.AvailabilityCleanupWizard }))");
+    expect(userMgmt).toContain("normalizeRole(role) === 'super_admin'");
     expect(userMgmt).toMatch(/<AvailabilityCleanupWizard lang=\{lang\} role=\{role\} \/>/);
   });
 
