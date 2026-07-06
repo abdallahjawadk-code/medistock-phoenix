@@ -233,7 +233,9 @@ describe('Guards: no SQL/migration/package change, safety files untouched', () =
       .filter(l => l !== '?? supabase/migrations/055_phoenix_clean_availability_data.sql'
                  && l !== 'A  supabase/migrations/055_phoenix_clean_availability_data.sql'
                  && l !== 'M supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== 'M  supabase/migrations/055_phoenix_clean_availability_data.sql');
+                 && l !== 'M  supabase/migrations/055_phoenix_clean_availability_data.sql'
+                 && l !== '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
+                 && l !== 'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql');
     expect(unexpectedListing).toEqual([]);
   });
 

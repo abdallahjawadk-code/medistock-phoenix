@@ -191,6 +191,10 @@ describe('7. No backend/migration/RLS/auth/permissions files changed', () => {
       // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
       'M supabase/migrations/055_phoenix_clean_availability_data.sql',
       'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -218,7 +222,7 @@ describe('8. No QR generation/cancel/recreate logic changed, no export/print/use
       userMgmtDiff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     const addedLines = userMgmtDiff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
-    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest') && !l.includes('PlatformBroadcastAdminPanel') && !l.includes('PHASE3-PLATFORM-BROADCAST-NOTICES-A') && !l.includes('same convention as AvailabilityCleanupWizard above'));
     expect(unexpected).toEqual([]);
   });
 });

@@ -326,6 +326,10 @@ describe('19-22. Safety guards', () => {
       // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
       'M supabase/migrations/055_phoenix_clean_availability_data.sql',
       'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration,
+      // prepared but not yet applied/committed.
+      '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

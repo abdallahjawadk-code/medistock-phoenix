@@ -290,7 +290,7 @@ describe('26/27. No SQL applied locally, supabase db push not run', () => {
 });
 
 describe('28/29. Migration ceiling allows exactly 044/045/046/047/048/049/050/051/052/053/054, future 055+ still fails', () => {
-  it('exactly twelve reviewed migrations exist beyond 043 (044-055)', () => {
+  it('exactly thirteen reviewed migrations exist beyond 043 (044-056)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -305,11 +305,12 @@ describe('28/29. Migration ceiling allows exactly 044/045/046/047/048/049/050/05
       '053_item_availability_removed_marker.sql',
       '054_dashboard_condition_counts_rpcs.sql',
       '055_phoenix_clean_availability_data.sql',
+      '056_phoenix_platform_broadcast_notices.sql',
     ]);
   });
 
-  it('no migration 056 (or higher) exists yet (055 is this reviewed PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[6-9]|[6-9][0-9])_/.test(f));
+  it('no migration 057 (or higher) exists yet (056 is this reviewed PHASE3-PLATFORM-BROADCAST-NOTICES-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[7-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

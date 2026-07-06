@@ -101,6 +101,7 @@ describe('Migration 043: does not modify migrations 001-042', () => {
       '053_item_availability_removed_marker.sql',
       '054_dashboard_condition_counts_rpcs.sql',
       '055_phoenix_clean_availability_data.sql',
+      '056_phoenix_platform_broadcast_notices.sql',
     ]);
   });
 });

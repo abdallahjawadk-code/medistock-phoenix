@@ -29,6 +29,7 @@ import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 import { AvailabilityCleanupWizard } from '@/features/admin/AvailabilityCleanupWizard';
+import { PlatformBroadcastAdminPanel } from '@/features/platform-broadcast/PlatformBroadcastAdminPanel';
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -341,6 +342,11 @@ export function UserManagementScreen() {
           Renders null internally for any non-super_admin role — this screen
           is already the safest existing super_admin-oriented admin area. */}
       <AvailabilityCleanupWizard lang={lang} role={role} />
+
+      {/* PHASE3-PLATFORM-BROADCAST-NOTICES-A: Super Admin-only broadcast
+          management panel. Renders null internally for any non-super_admin
+          role, same convention as AvailabilityCleanupWizard above. */}
+      <PlatformBroadcastAdminPanel lang={lang} role={role} />
     </div>
   );
 }

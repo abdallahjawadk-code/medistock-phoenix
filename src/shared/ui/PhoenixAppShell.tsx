@@ -7,6 +7,7 @@ import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
+import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
 // longer has an entry — App.tsx redirects it to Status Center, so the
@@ -95,6 +96,12 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           navigates via the same onNavigate screen-switch already passed
           down; no new routes, no new backend reads. */}
       <CommandPalette onNavigate={onNavigate} />
+
+      {/* PHASE3-PLATFORM-BROADCAST-NOTICES-A: institution-level broadcast
+          popup. Self-gates on authReady/session/profile/activeOrgId and
+          renders null until a pending broadcast exists — safe to always
+          mount here alongside the other always-present overlays above. */}
+      <PlatformBroadcastGate />
     </div>
   );
 }

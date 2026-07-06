@@ -228,7 +228,7 @@ describe('15. Frontend changes at this phase were label-only; RPC/service/type w
       diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
-    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest'));
+    const unexpected = addedLines.filter(l => !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') && !l.includes('Renders null internally') && !l.includes('is already the safest') && !l.includes('PlatformBroadcastAdminPanel') && !l.includes('PHASE3-PLATFORM-BROADCAST-NOTICES-A') && !l.includes('same convention as AvailabilityCleanupWizard above'));
     expect(unexpected).toEqual([]);
   });
 });
@@ -246,8 +246,8 @@ describe('16. Migration ceiling as of this phase: 044-049 exist; 050 (if present
     ]);
   });
 
-  it('no migration 056 (or higher) exists yet (050-055 are later, separately-reviewed phases)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[6-9]|[6-9][0-9])_/.test(f));
+  it('no migration 057 (or higher) exists yet (050-056 are later, separately-reviewed phases)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[7-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });
