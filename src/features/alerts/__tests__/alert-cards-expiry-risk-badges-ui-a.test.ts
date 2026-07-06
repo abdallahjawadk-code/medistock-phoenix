@@ -188,7 +188,7 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql"',
+        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
@@ -232,6 +232,8 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
       'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
       'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
       'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+      '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
+      'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

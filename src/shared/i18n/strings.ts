@@ -1303,6 +1303,24 @@ export const T: Dict = {
   pbc_acknowledge_button:          { ar: 'إقرار بالاطلاع',                                                                                    en: 'Acknowledge' },
   pbc_ack_failed:                  { ar: 'تعذر تسجيل الاطلاع، يرجى المحاولة مرة أخرى',                                                       en: 'Could not record acknowledgement, please try again' },
   pbc_published_on:                { ar: 'نُشر في',                                                                                          en: 'Published on' },
+
+  // PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A
+  pbc_details_button:              { ar: 'التفاصيل',                                                                                        en: 'Details' },
+  pbc_ack_details_title:           { ar: 'تفاصيل الاطلاع',                                                                                   en: 'Acknowledgement details' },
+  pbc_institution_column:          { ar: 'المؤسسة',                                                                                          en: 'Institution' },
+  pbc_status_acknowledged:         { ar: 'تم الاطلاع',                                                                                        en: 'Acknowledged' },
+  pbc_status_pending:              { ar: 'بانتظار الاطلاع',                                                                                   en: 'Pending' },
+  pbc_acknowledged_by_column:      { ar: 'تم الاطلاع بواسطة',                                                                                 en: 'Acknowledged by' },
+  pbc_acknowledged_at_column:      { ar: 'وقت الاطلاع',                                                                                       en: 'Acknowledged at' },
+  pbc_not_acknowledged_yet:        { ar: 'لم يتم الاطلاع بعد',                                                                                en: 'Not acknowledged yet' },
+  pbc_ack_details_load_failed:     { ar: 'تعذر تحميل تفاصيل الاطلاع',                                                                        en: 'Failed to load acknowledgement details' },
+  pbc_delete_button:               { ar: 'حذف الإشعار',                                                                                       en: 'Delete broadcast' },
+  pbc_delete_warning:              { ar: 'سيتم حذف هذا الإشعار نهائيًا مع كل سجلات الاطلاع المرتبطة به. لا يمكن التراجع عن هذا الإجراء.',      en: 'This will permanently delete this broadcast and all its acknowledgement records. This action cannot be undone.' },
+  pbc_delete_confirmation_label:   { ar: 'اكتب DELETE PLATFORM BROADCAST للتأكيد',                                                            en: 'Type DELETE PLATFORM BROADCAST to confirm' },
+  pbc_delete_confirm_button:       { ar: 'تأكيد الحذف',                                                                                       en: 'Confirm delete' },
+  pbc_delete_success:              { ar: 'تم حذف الإشعار بنجاح',                                                                              en: 'Broadcast deleted successfully' },
+  pbc_delete_failed:               { ar: 'فشل حذف الإشعار',                                                                                    en: 'Failed to delete broadcast' },
+  pbc_close_button:                { ar: 'إغلاق',                                                                                             en: 'Close' },
 };
 
 export function t(key: string, lang: Lang): string {

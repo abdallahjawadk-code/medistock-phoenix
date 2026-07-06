@@ -318,9 +318,9 @@ describe('N) Service wrapper: typed results, RPC call shape', () => {
     expect(body).toContain('p_message_id: messageId');
   });
 
-  it('all five functions throw on a Supabase-level error', () => {
+  it('all five original functions throw on a Supabase-level error (2 more added in Q for a total of 7 across the file)', () => {
     const count = (service.match(/if \(error\) throw error;/g) ?? []).length;
-    expect(count).toBe(5);
+    expect(count).toBe(7);
   });
 });
 
@@ -370,5 +370,177 @@ describe('P) Guard tests: no QR/availability/movement/Deep-Clean/Reports/Status-
       expect(src).not.toMatch(/\bitem_availability\b/);
       expect(src).not.toMatch(/\bitem_availability_movements\b/);
     }
+  });
+});
+
+// =============================================================================
+// PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A
+// =============================================================================
+
+describe('Q) Service wrapper: ack-status details and delete', () => {
+  it('getPlatformBroadcastAckStatus calls phoenix_get_platform_broadcast_ack_status with p_message_id', () => {
+    const start = service.indexOf('export async function getPlatformBroadcastAckStatus');
+    const body = service.slice(start, service.indexOf('export async function deletePlatformBroadcast'));
+    expect(body).toContain("supabase.rpc('phoenix_get_platform_broadcast_ack_status'");
+    expect(body).toContain('p_message_id: messageId');
+  });
+
+  it('deletePlatformBroadcast calls phoenix_delete_platform_broadcast with p_message_id and p_confirmation', () => {
+    const start = service.indexOf('export async function deletePlatformBroadcast');
+    const body = service.slice(start);
+    expect(body).toContain("supabase.rpc('phoenix_delete_platform_broadcast'");
+    expect(body).toContain('p_message_id: messageId');
+    expect(body).toContain('p_confirmation: confirmation');
+  });
+
+  it('both new functions throw on a Supabase-level error', () => {
+    const start = service.indexOf('export async function getPlatformBroadcastAckStatus');
+    const tail = service.slice(start);
+    const count = (tail.match(/if \(error\) throw error;/g) ?? []).length;
+    expect(count).toBe(2);
+  });
+});
+
+describe('R) Details button opens details modal and calls the service with the message id', () => {
+  it('onOpenDetails calls getPlatformBroadcastAckStatus with messageId', () => {
+    const start = adminPanel.indexOf('async function onOpenDetails(messageId: string)');
+    const body = adminPanel.slice(start, adminPanel.indexOf('function onCloseDetails'));
+    expect(body).toContain('await getPlatformBroadcastAckStatus(messageId)');
+  });
+
+  it('a Details button exists per broadcast row, calling onOpenDetails(m.id)', () => {
+    expect(adminPanel).toMatch(/onClick=\{\(\) => onOpenDetails\(m\.id\)\}/);
+    expect(adminPanel).toContain("t('pbc_details_button', lang)");
+  });
+
+  it('the details modal renders only when detailsMessageId is set', () => {
+    expect(adminPanel).toMatch(/\{detailsMessageId && \(\s*\n\s*<PhoenixDialog open onClose=\{onCloseDetails\}/);
+  });
+});
+
+describe('S) Details modal renders institution names and acknowledged/pending statuses', () => {
+  it('maps detailsData.institutions and renders organization_name', () => {
+    expect(adminPanel).toContain('detailsData.institutions.map(inst =>');
+    expect(adminPanel).toContain('{inst.organization_name}');
+  });
+
+  it('renders acknowledged vs pending status badge based on inst.acknowledged', () => {
+    expect(adminPanel).toMatch(/variant=\{inst\.acknowledged \? 'ok' : 'neutral'\}/);
+    expect(adminPanel).toMatch(/t\(inst\.acknowledged \? 'pbc_status_acknowledged' : 'pbc_status_pending', lang\)/);
+  });
+
+  it('renders acknowledged_by_name/email/role and acknowledged_at when acknowledged', () => {
+    const start = adminPanel.indexOf('{inst.acknowledged ? (');
+    const body = adminPanel.slice(start, adminPanel.indexOf(') : (', start));
+    expect(body).toContain('inst.acknowledged_by_name');
+    expect(body).toContain('inst.acknowledged_by_email');
+    expect(body).toContain('inst.acknowledged_by_role');
+    expect(body).toContain('inst.acknowledged_at');
+    expect(body).toContain("t('pbc_acknowledged_by_column', lang)");
+    expect(body).toContain("t('pbc_acknowledged_at_column', lang)");
+  });
+
+  it('renders pbc_not_acknowledged_yet for a pending institution', () => {
+    expect(adminPanel).toContain("t('pbc_not_acknowledged_yet', lang)");
+  });
+});
+
+describe('T) Delete button opens confirmation modal; typed-phrase gating', () => {
+  it('a Delete button exists per broadcast row, calling onOpenDelete(m.id)', () => {
+    expect(adminPanel).toMatch(/onClick=\{\(\) => onOpenDelete\(m\.id\)\}/);
+    expect(adminPanel).toContain("t('pbc_delete_button', lang)");
+  });
+
+  it('the delete confirmation modal renders only when deleteMessageId is set', () => {
+    expect(adminPanel).toMatch(/\{deleteMessageId && \(\s*\n\s*<PhoenixDialog open onClose=\{onCloseDelete\}/);
+  });
+
+  it("canDelete requires the exact phrase 'DELETE PLATFORM BROADCAST'", () => {
+    expect(adminPanel).toContain("const DELETE_PLATFORM_BROADCAST_CONFIRMATION = 'DELETE PLATFORM BROADCAST';");
+    expect(adminPanel).toContain('const canDelete = deleteConfirmText === DELETE_PLATFORM_BROADCAST_CONFIRMATION && !deleteBusy;');
+  });
+
+  it('the confirm-delete button is disabled unless canDelete', () => {
+    expect(adminPanel).toMatch(/<PhoenixButton variant="danger" size="md" disabled=\{!canDelete\} loading=\{deleteBusy\} onClick=\{onConfirmDelete\}>/);
+  });
+
+  it('wrong phrase keeps canDelete false (strict equality, no trim/case-insensitive match)', () => {
+    expect(adminPanel).not.toMatch(/deleteConfirmText\.trim\(\)/);
+    expect(adminPanel).not.toMatch(/deleteConfirmText\.toLowerCase\(\)/);
+  });
+
+  it('onConfirmDelete is a no-op unless canDelete (guards before calling the service)', () => {
+    const start = adminPanel.indexOf('async function onConfirmDelete()');
+    const body = adminPanel.slice(start, start + 150);
+    expect(body).toMatch(/if \(!deleteMessageId \|\| !canDelete\) return;/);
+  });
+});
+
+describe('U) Delete service is called with the exact message id and confirmation text', () => {
+  it('onConfirmDelete calls deletePlatformBroadcast(deleteMessageId, deleteConfirmText)', () => {
+    const start = adminPanel.indexOf('async function onConfirmDelete()');
+    const body = adminPanel.slice(start);
+    expect(body).toContain('await deletePlatformBroadcast(deleteMessageId, deleteConfirmText)');
+  });
+});
+
+describe('V) After delete success, the broadcast list refreshes and the modal closes', () => {
+  it('calls list.reload() and onCloseDelete() on a successful delete', () => {
+    const start = adminPanel.indexOf('async function onConfirmDelete()');
+    const body = adminPanel.slice(start, adminPanel.indexOf('} catch (err) {', start));
+    expect(body).toContain('list.reload();');
+    expect(body).toContain('onCloseDelete();');
+  });
+
+  it('shows a safe success message after delete', () => {
+    expect(adminPanel).toContain("t('pbc_delete_success', lang)");
+  });
+
+  it('shows a safe failure message on delete error, without exposing raw internals', () => {
+    expect(adminPanel).toContain("t('pbc_delete_failed', lang)");
+  });
+});
+
+describe('W) Delete is never added to the institution popup (PlatformBroadcastGate)', () => {
+  it('PlatformBroadcastGate has no delete button, delete service import, or delete-related state', () => {
+    expect(gate).not.toContain('deletePlatformBroadcast');
+    expect(gate).not.toContain('DELETE PLATFORM BROADCAST');
+    expect(gate).not.toMatch(/pbc_delete_/);
+  });
+});
+
+describe('X) i18n: all new pbc_* keys used by details/delete are defined bilingually', () => {
+  const newKeys = [
+    'pbc_details_button', 'pbc_ack_details_title', 'pbc_institution_column',
+    'pbc_status_acknowledged', 'pbc_status_pending', 'pbc_acknowledged_by_column',
+    'pbc_acknowledged_at_column', 'pbc_not_acknowledged_yet', 'pbc_ack_details_load_failed',
+    'pbc_delete_button', 'pbc_delete_warning', 'pbc_delete_confirmation_label',
+    'pbc_delete_confirm_button', 'pbc_delete_success', 'pbc_delete_failed', 'pbc_close_button',
+  ];
+
+  it.each(newKeys)('%s is defined bilingually (ar + en) in strings.ts', (key) => {
+    const re = new RegExp(`${key}:\\s*\\{\\s*ar:\\s*'[^']+',\\s*en:\\s*'[^']+'`);
+    expect(strings).toMatch(re);
+  });
+});
+
+describe('Y) Guard: no QR/availability/movement/Deep-Clean files changed by this phase', () => {
+  it('no working-tree diff on QR, availability, movement-history, or Deep Clean files', () => {
+    let diff = '';
+    try {
+      diff = execSync(
+        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts ' +
+        'src/shared/supabase/services/availability.service.ts src/features/institutions/InstitutionScreen.tsx ' +
+        'src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx ' +
+        'supabase/migrations/055_phoenix_clean_availability_data.sql supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+    } catch { /* git not available in this sandbox — skip silently */ }
+    expect(diff.trim()).toBe('');
+  });
+
+  it('migration 056 is not redefined in migration 057', () => {
+    const migration057 = readFileSync(join(ROOT, 'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'), 'utf8');
+    expect(migration057).not.toContain('CREATE OR REPLACE FUNCTION public.phoenix_create_platform_broadcast(');
   });
 });

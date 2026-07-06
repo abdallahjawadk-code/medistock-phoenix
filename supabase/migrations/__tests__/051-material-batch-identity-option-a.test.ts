@@ -425,7 +425,7 @@ describe('35. Does not change package/lockfiles', () => {
 });
 
 describe('36. Migration ceiling: allows exactly 044-054, 055+ still fails', () => {
-  it('exactly thirteen reviewed migrations exist beyond 043 (044-056)', () => {
+  it('exactly fourteen reviewed migrations exist beyond 043 (044-057)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -441,11 +441,12 @@ describe('36. Migration ceiling: allows exactly 044-054, 055+ still fails', () =
       '054_dashboard_condition_counts_rpcs.sql',
       '055_phoenix_clean_availability_data.sql',
       '056_phoenix_platform_broadcast_notices.sql',
+      '057_phoenix_platform_broadcast_admin_details_delete.sql',
     ]);
   });
 
-  it('no migration 057 (or higher) exists yet (056 is this reviewed PHASE3-PLATFORM-BROADCAST-NOTICES-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[7-9]|[6-9][0-9])_/.test(f));
+  it('no migration 058 (or higher) exists yet (057 is this reviewed PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[8-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

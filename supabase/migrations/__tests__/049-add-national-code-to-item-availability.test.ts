@@ -246,8 +246,8 @@ describe('16. Migration ceiling as of this phase: 044-049 exist; 050 (if present
     ]);
   });
 
-  it('no migration 057 (or higher) exists yet (050-056 are later, separately-reviewed phases)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[7-9]|[6-9][0-9])_/.test(f));
+  it('no migration 058 (or higher) exists yet (050-057 are later, separately-reviewed phases)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[8-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

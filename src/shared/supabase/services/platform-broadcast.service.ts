@@ -27,6 +27,33 @@ export interface AdminBroadcast {
   pending_count: number;
 }
 
+export interface BroadcastAckInstitution {
+  organization_id: string;
+  organization_name: string;
+  targeted: boolean;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  acknowledged_by_name: string | null;
+  acknowledged_by_email: string | null;
+  acknowledged_by_role: string | null;
+}
+
+export interface BroadcastAckStatus {
+  message: {
+    id: string;
+    title: string;
+    severity: BroadcastSeverity;
+    target_scope: BroadcastTargetScope;
+    publish_at: string;
+    expires_at: string | null;
+    is_active: boolean;
+  };
+  target_count: number;
+  acknowledged_count: number;
+  pending_count: number;
+  institutions: BroadcastAckInstitution[];
+}
+
 export interface CreateBroadcastInput {
   title: string;
   body: string;
@@ -47,7 +74,7 @@ export interface BroadcastErrorResult {
   error: string;
 }
 
-export type BroadcastResult<T extends Record<string, unknown> = Record<string, never>> =
+export type BroadcastResult<T extends object = Record<string, never>> =
   (BroadcastOkResult & T) | BroadcastErrorResult;
 
 /** Super admin only — server-side enforced by phoenix_create_platform_broadcast (migration 056). */
@@ -117,6 +144,46 @@ export async function acknowledgePlatformBroadcast(messageId: string): Promise<B
 
   const { data, error } = await supabase.rpc('phoenix_ack_platform_broadcast', {
     p_message_id: messageId,
+  });
+
+  if (error) throw error;
+  return data as BroadcastResult;
+}
+
+/**
+ * Super admin only — server-side enforced by phoenix_get_platform_broadcast_ack_status
+ * (migration 057). Returns institution-by-institution acknowledgement detail
+ * for one broadcast — never a raw acknowledged_by uuid, only name/email/role.
+ */
+export async function getPlatformBroadcastAckStatus(
+  messageId: string,
+): Promise<BroadcastResult<BroadcastAckStatus>> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const { data, error } = await supabase.rpc('phoenix_get_platform_broadcast_ack_status', {
+    p_message_id: messageId,
+  });
+
+  if (error) throw error;
+  return data as BroadcastResult<BroadcastAckStatus>;
+}
+
+/**
+ * Super admin only — server-side enforced by phoenix_delete_platform_broadcast
+ * (migration 057). Permanently deletes the message plus its target/
+ * acknowledgement rows. Requires the exact confirmation phrase
+ * 'DELETE PLATFORM BROADCAST'; the RPC rejects anything else with
+ * ok=false, error='INVALID_CONFIRMATION'.
+ */
+export async function deletePlatformBroadcast(
+  messageId: string,
+  confirmation: string,
+): Promise<BroadcastResult> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+
+  const { data, error } = await supabase.rpc('phoenix_delete_platform_broadcast', {
+    p_message_id: messageId,
+    p_confirmation: confirmation,
   });
 
   if (error) throw error;

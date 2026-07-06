@@ -337,7 +337,7 @@ describe('Guards: no SQL/migration/package change, unrelated behavior untouched'
   it('no migration .sql file was created or modified by this phase', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let listing = '';
@@ -354,7 +354,9 @@ describe('Guards: no SQL/migration/package change, unrelated behavior untouched'
                  && l !== '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
                  && l !== 'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
                  && l !== 'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== 'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql');
+                 && l !== 'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
+                 && l !== '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
+                 && l !== 'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql');
     expect(unexpectedListing).toEqual([]);
   });
 

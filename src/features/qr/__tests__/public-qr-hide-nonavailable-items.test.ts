@@ -170,7 +170,7 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql"',
+        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
@@ -179,9 +179,9 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
 
   // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: migration 053 is a later,
   // separately-reviewed phase — this phase's own scope is unaffected.
-  it('no migration 057 (or higher) file was created (053-056 are later, separately-reviewed additions)', () => {
+  it('no migration 058 (or higher) file was created (053-057 are later, separately-reviewed additions)', () => {
     const migsDir = join(ROOT, 'supabase/migrations');
-    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[7-9]|[6-9][0-9])_/.test(f));
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(5[8-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 
