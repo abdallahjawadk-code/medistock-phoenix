@@ -177,6 +177,26 @@ describe('Migration 055: physical DELETE in the exact required order', () => {
   it('never uses TRUNCATE as active SQL in the function body (comments describing the design decision are fine)', () => {
     expect(activeSql(fnBody)).not.toMatch(/TRUNCATE/i);
   });
+
+  // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: the VERIFY block's
+  // own TRUNCATE ASSERT previously ran a naive ILIKE '%TRUNCATE%' against the
+  // full function source (including comments), so a prose comment merely
+  // explaining "DELETE only — never TRUNCATE" tripped the assertion on a
+  // clean function that never actually ran TRUNCATE — a false positive that
+  // blocked manual apply in Supabase SQL Editor. These tests guard against
+  // that exact class of bug recurring.
+  it('the function body itself contains no literal "TRUNCATE" anywhere, comments included (root cause of the original false positive — safest fix is to never say the word in the body at all)', () => {
+    expect(fnBody).not.toMatch(/TRUNCATE/i);
+  });
+
+  it('the VERIFY block strips comments before checking for TRUNCATE, so this class of false positive cannot recur even if a future comment mentions the word', () => {
+    const verifyBlock = migration055.slice(migration055.indexOf('DO $$', migration055.indexOf('GRANT EXECUTE')));
+    expect(verifyBlock).toContain("v_active_sql := regexp_replace(v_fn_src, '--[^\\n]*', '', 'g');");
+    expect(verifyBlock).toMatch(/ASSERT v_active_sql NOT ILIKE '%TRUNCATE%'/);
+    // The TRUNCATE assertion must be checked against the stripped copy, not
+    // the raw v_fn_src directly.
+    expect(verifyBlock).not.toMatch(/ASSERT v_fn_src NOT ILIKE '%TRUNCATE%'/);
+  });
 });
 
 describe('Migration 055: no protected table is ever deleted from', () => {

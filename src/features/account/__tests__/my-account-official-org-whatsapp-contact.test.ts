@@ -191,7 +191,7 @@ describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is 
   it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix), and no new migration SQL file was created', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let status = '';
@@ -241,6 +241,11 @@ describe('15. No SQL/migration/RPC/Edge Function added by this phase — 046 is 
       // prepared but not yet applied/committed.
       '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
       'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
+      // in-place before its first successful manual apply (VERIFY block's
+      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
+      'M supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

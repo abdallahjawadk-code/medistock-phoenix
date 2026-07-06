@@ -253,7 +253,7 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   it('no migration .sql file was created or modified by this phase', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     let listing = '';
@@ -264,7 +264,9 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     // prepared but not yet applied/committed, is the only allowed entry here.
     const unexpectedListing = listing.split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean)
       .filter(l => l !== '?? supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== 'A  supabase/migrations/055_phoenix_clean_availability_data.sql');
+                 && l !== 'A  supabase/migrations/055_phoenix_clean_availability_data.sql'
+                 && l !== 'M supabase/migrations/055_phoenix_clean_availability_data.sql'
+                 && l !== 'M  supabase/migrations/055_phoenix_clean_availability_data.sql');
     expect(unexpectedListing).toEqual([]);
   });
 

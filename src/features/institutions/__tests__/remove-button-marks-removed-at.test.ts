@@ -189,6 +189,11 @@ describe('Guards: no SQL/migration/package/permission change, safety files untou
     const allowed055 = new Set([
       '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
       'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
+      // in-place before its first successful manual apply (VERIFY block's
+      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
+      'M supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
       '?? supabase/migrations/__tests__/055-phoenix-clean-availability-data.test.ts',
       'A  supabase/migrations/__tests__/055-phoenix-clean-availability-data.test.ts',
     ]);
@@ -204,7 +209,7 @@ describe('Guards: no SQL/migration/package/permission change, safety files untou
   it('no migration SQL file has a working-tree diff (other than the already-approved 054 NULL-role fail-closed fix)', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

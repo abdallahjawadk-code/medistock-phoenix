@@ -280,7 +280,7 @@ describe('M) Safety: no SQL/migration/package changes; dashboard RPC switch unto
   it('no migration SQL file was created or modified', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
     const matches = readdirSync(join(ROOT, 'supabase/migrations')).filter(f => f.startsWith('055_'));

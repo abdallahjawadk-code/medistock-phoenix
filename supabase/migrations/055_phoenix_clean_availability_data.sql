@@ -192,8 +192,10 @@ BEGIN
   END IF;
 
   -- 6. Physical DELETE in strict FK-safe order (child rows before the
-  --    tables/rows they reference). DELETE only — never TRUNCATE. Never
-  --    touches any protected table listed in the header.
+  --    tables/rows they reference). Row-scoped DELETE statements only — the
+  --    whole-table-clearing SQL command is deliberately not used anywhere in
+  --    this function (see the migration header for why). Never touches any
+  --    protected table listed in the header.
   DELETE FROM public.inter_org_exchange_events;
   GET DIAGNOSTICS v_exchange_events_deleted = ROW_COUNT;
 
@@ -272,13 +274,20 @@ NOTIFY pgrst, 'reload schema';
 
 DO $$
 DECLARE
-  v_fn_src text;
+  v_fn_src    text;
+  -- Comment-stripped copy of the function source, used only for checks that
+  -- must ignore prose (e.g. a comment explaining why TRUNCATE is NOT used
+  -- would otherwise trip a naive substring search on the word itself).
+  -- FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A.
+  v_active_sql text;
 BEGIN
   SELECT pg_get_functiondef(oid) INTO v_fn_src
   FROM pg_proc WHERE proname = 'phoenix_clean_availability_data';
 
   ASSERT v_fn_src IS NOT NULL,
     'VERIFY FAILED: phoenix_clean_availability_data function not found';
+
+  v_active_sql := regexp_replace(v_fn_src, '--[^\n]*', '', 'g');
 
   ASSERT v_fn_src LIKE '%SECURITY DEFINER%',
     'VERIFY FAILED: missing SECURITY DEFINER';
@@ -304,7 +313,10 @@ BEGIN
        < position('DELETE FROM public.item_availability;' in v_fn_src),
     'VERIFY FAILED: DELETE order is not exactly exchange_events -> exchange_requests -> alert_events -> alert_states -> movements -> item_availability';
 
-  ASSERT v_fn_src NOT ILIKE '%TRUNCATE%',
+  -- Checked against the comment-stripped source, not v_fn_src directly — a
+  -- prose comment mentioning the word (e.g. explaining a design decision)
+  -- must never trip this check; only an actual TRUNCATE statement may.
+  ASSERT v_active_sql NOT ILIKE '%TRUNCATE%',
     'VERIFY FAILED: TRUNCATE must never be used, only DELETE';
 
   ASSERT v_fn_src NOT ILIKE '%DELETE FROM public.organizations%'

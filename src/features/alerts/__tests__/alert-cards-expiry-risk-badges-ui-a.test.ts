@@ -188,7 +188,7 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql"',
+        'git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
@@ -221,6 +221,11 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
       // prepared but not yet applied/committed.
       '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
       'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
+      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
+      // in-place before its first successful manual apply (VERIFY block's
+      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
+      'M supabase/migrations/055_phoenix_clean_availability_data.sql',
+      'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
