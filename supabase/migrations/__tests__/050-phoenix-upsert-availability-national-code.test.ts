@@ -340,7 +340,7 @@ describe('24. Does not change package/lockfiles', () => {
 });
 
 describe('25. Migration ceiling: allows exactly 044-054, 055+ still fails', () => {
-  it('exactly fourteen reviewed migrations exist beyond 043 (044-057)', () => {
+  it('exactly fifteen reviewed migrations exist beyond 043 (044-058)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|5[0-9]|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -357,11 +357,13 @@ describe('25. Migration ceiling: allows exactly 044-054, 055+ still fails', () =
       '055_phoenix_clean_availability_data.sql',
       '056_phoenix_platform_broadcast_notices.sql',
       '057_phoenix_platform_broadcast_admin_details_delete.sql',
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
+      '058_phoenix_public_qr_dosage_form.sql',
     ]);
   });
 
-  it('no migration 058 (or higher) exists yet (057 is this reviewed PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[8-9]|[6-9][0-9])_/.test(f));
+  it('no migration 059 (or higher) exists yet (058 is this reviewed PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(59|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

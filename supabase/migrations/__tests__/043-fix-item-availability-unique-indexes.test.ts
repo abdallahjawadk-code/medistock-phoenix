@@ -103,6 +103,8 @@ describe('Migration 043: does not modify migrations 001-042', () => {
       '055_phoenix_clean_availability_data.sql',
       '056_phoenix_platform_broadcast_notices.sql',
       '057_phoenix_platform_broadcast_admin_details_delete.sql',
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
+      '058_phoenix_public_qr_dosage_form.sql',
     ]);
   });
 });

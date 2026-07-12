@@ -234,6 +234,9 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
       'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
       '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
       'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
+      '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

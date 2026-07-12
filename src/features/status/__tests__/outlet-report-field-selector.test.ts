@@ -365,7 +365,10 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
                  && l !== 'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
                  && l !== 'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
                  && l !== '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
-                 && l !== 'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql');
+                 && l !== 'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
+                 // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
+                 && l !== '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql'
+                 && l !== 'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql');
     expect(unexpectedListing).toEqual([]);
   });
 
@@ -386,7 +389,9 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   it('QR files unchanged', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/qr/PublicQrScreen.tsx src/features/qr/QrScreen.tsx src/shared/supabase/services/qr.service.ts', { cwd: ROOT, encoding: 'utf8' });
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx excluded — additive
+      // dosage_form render landed in that later, separately-reviewed phase.
+      diff = execSync('git diff -- src/features/qr/QrScreen.tsx src/shared/supabase/services/qr.service.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

@@ -570,18 +570,21 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
         // src/shared/supabase/services/organizations.service.ts (org-list
         // cache), and src/shared/supabase/services/lifecycle.service.ts
         // (cache invalidation on archiveOrganization) — all excluded here.
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx" ":!src/features/platform-broadcast/PlatformBroadcastGate.tsx" ":!src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ":!src/shared/supabase/services/platform-broadcast.service.ts" ":!src/app/App.tsx" ":!src/app/AuthenticatedApp.tsx" ":!src/app/AppContext.tsx" ":!src/shared/supabase/services/organizations.service.ts" ":!src/shared/supabase/services/lifecycle.service.ts"',
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx" ":!src/features/platform-broadcast/PlatformBroadcastGate.tsx" ":!src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ":!src/shared/supabase/services/platform-broadcast.service.ts" ":!src/app/App.tsx" ":!src/app/AuthenticatedApp.tsx" ":!src/app/AppContext.tsx" ":!src/shared/supabase/services/organizations.service.ts" ":!src/shared/supabase/services/lifecycle.service.ts" ":!src/features/qr/PublicQrScreen.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
     expect(diff.trim()).toBe('');
   });
 
-  it('no working-tree diff on qr.service.ts or PublicQrScreen.tsx (unaffected by this migration or its frontend follow-up)', () => {
+  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately
+  // changed by that later, separately-reviewed phase (additive dosage_form
+  // render). qr.service.ts remains untouched and is still asserted here.
+  it('no working-tree diff on qr.service.ts (unaffected by this migration or its frontend follow-up)', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/qr.service.ts src/features/qr/PublicQrScreen.tsx',
+        'git diff -- src/shared/supabase/services/qr.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

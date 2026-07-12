@@ -31,6 +31,10 @@ type PublicItem = {
   unit?: string;
   expiry_date?: string;
   expiry_bucket?: string; // D7: 'expired'|'3_months'|'6_months'|'9_months'|null
+  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive public field, sourced from the
+  // RPC payload (item_availability.dosage_form via migration 058). Optional/
+  // nullable — rendered only when it holds a real non-empty value.
+  dosage_form?: string | null;
 };
 
 const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
@@ -265,6 +269,13 @@ export function PublicQrScreen({ publicId }: Props) {
               )}
               {filteredItems.map((item, i) => {
                 const label = itemLabel(item, lang);
+                // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: show the entered dosage form
+                // only when it is a real non-empty (non-whitespace) value — no
+                // placeholder, empty row, or reserved space when null/empty/blank.
+                const dosageForm =
+                  typeof item.dosage_form === 'string' && item.dosage_form.trim().length > 0
+                    ? item.dosage_form.trim()
+                    : null;
                 const variant = item.condition ? CONDITION_VARIANT[item.condition] ?? 'neutral' : 'neutral';
                 const condLabel = item.condition ? conditionLabel(item.condition, lang) : '';
                 const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
@@ -284,6 +295,11 @@ export function PublicQrScreen({ publicId }: Props) {
                         )}
                       </div>
                     </div>
+                    {dosageForm && (
+                      <div dir="auto" style={{ marginTop: '4px', fontSize: '11px', color: 'var(--t2)' }}>
+                        {dosageForm}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>
                       {typeof item.quantity === 'number' && variant !== 'err' && (
                         <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>

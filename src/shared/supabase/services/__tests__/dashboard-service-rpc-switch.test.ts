@@ -177,7 +177,9 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/shared/supabase/services/qr.service.ts src/features/qr/PublicQrScreen.tsx ' +
+        // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx excluded — additive
+        // dosage_form render landed in that later, separately-reviewed phase.
+        'git diff -- src/shared/supabase/services/qr.service.ts ' +
         'src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/status/MovementHistoryModal.tsx ' +
         'src/features/status/MovementReportSection.tsx src/shared/supabase/services/auth.service.ts ' +
         'src/shared/lib/permissions.ts',

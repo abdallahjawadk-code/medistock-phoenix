@@ -346,7 +346,9 @@ describe('P) Guard tests: no QR/availability/movement/Deep-Clean/Reports/Status-
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts ' +
+        // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx excluded — additive
+        // dosage_form render landed in that later, separately-reviewed phase.
+        'git diff -- src/shared/supabase/services/qr.service.ts ' +
         'src/shared/supabase/services/availability.service.ts src/features/institutions/InstitutionScreen.tsx ' +
         'src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx ' +
         'supabase/migrations/055_phoenix_clean_availability_data.sql ' +
@@ -534,7 +536,9 @@ describe('Y) Guard: no QR/availability/movement/Deep-Clean files changed by this
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/shared/supabase/services/qr.service.ts ' +
+        // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx excluded — additive
+        // dosage_form render landed in that later, separately-reviewed phase.
+        'git diff -- src/shared/supabase/services/qr.service.ts ' +
         'src/shared/supabase/services/availability.service.ts src/features/institutions/InstitutionScreen.tsx ' +
         'src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx ' +
         'supabase/migrations/055_phoenix_clean_availability_data.sql supabase/migrations/056_phoenix_platform_broadcast_notices.sql',

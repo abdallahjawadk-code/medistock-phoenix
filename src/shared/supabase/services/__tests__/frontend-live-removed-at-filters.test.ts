@@ -178,12 +178,17 @@ describe('F) Public QR remains protected and unchanged (already DB/RPC-filtered)
     expect(diff.trim()).toBe('');
   });
 
-  it('PublicQrScreen.tsx is untouched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/qr/PublicQrScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately changed
+  // by that later, separately-reviewed phase (additive dosage_form render). This
+  // phase (FRONTEND-LIVE-REMOVED-AT-FILTERS-A) still makes no change of its own
+  // to it; the source-wiring checks below confirm the only public-QR change is
+  // the additive dosage_form field, with no private field or direct query added.
+  it('PublicQrScreen.tsx change is confined to the additive dosage_form field (no private field, no direct query)', () => {
+    expect(publicQrScreen).toMatch(/item\.dosage_form\.trim\(\)\.length > 0/);
+    expect(publicQrScreen).not.toContain("from('item_availability')");
+    for (const forbidden of ['trade_name', 'batch_number', 'entered_price', 'national_code', 'supply_type']) {
+      expect(publicQrScreen).not.toContain(forbidden);
+    }
   });
 
   it('qr.service.ts still calls the get_public_qr_payload RPC (DB-side removed_at filtering, unaffected)', () => {

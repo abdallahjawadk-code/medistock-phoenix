@@ -257,8 +257,11 @@ describe('24. Does not change QR/export/print/user-management', () => {
     try {
       // QR-BUNDLE-CODE-SPLIT-A: a later, separately-reviewed phase legitimately
       // restructures src/app/App.tsx (route-level lazy loading) — excluded here.
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately
+      // changed by that later, separately-reviewed phase (additive dosage_form
+      // render) — excluded here so this migration's own scope stays asserted.
       diff = execSync(
-        'git diff -- src/features/qr/PublicQrScreen.tsx src/features/status/StatusCenterScreen.tsx src/features/users/UserManagementScreen.tsx',
+        'git diff -- src/features/status/StatusCenterScreen.tsx src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
@@ -292,7 +295,7 @@ describe('26/27. No SQL applied locally, supabase db push not run', () => {
 });
 
 describe('28/29. Migration ceiling allows exactly 044/045/046/047/048/049/050/051/052/053/054, future 055+ still fails', () => {
-  it('exactly fourteen reviewed migrations exist beyond 043 (044-057)', () => {
+  it('exactly fifteen reviewed migrations exist beyond 043 (044-058)', () => {
     const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
     expect(matches).toEqual([
       '044_phoenix_profiles_whatsapp_phone.sql',
@@ -309,11 +312,13 @@ describe('28/29. Migration ceiling allows exactly 044/045/046/047/048/049/050/05
       '055_phoenix_clean_availability_data.sql',
       '056_phoenix_platform_broadcast_notices.sql',
       '057_phoenix_platform_broadcast_admin_details_delete.sql',
+      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
+      '058_phoenix_public_qr_dosage_form.sql',
     ]);
   });
 
-  it('no migration 058 (or higher) exists yet (057 is this reviewed PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(5[8-9]|[6-9][0-9])_/.test(f));
+  it('no migration 059 (or higher) exists yet (058 is this reviewed PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(59|[6-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });
