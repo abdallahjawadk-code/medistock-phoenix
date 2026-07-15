@@ -121,6 +121,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '058_phoenix_public_qr_dosage_form.sql',
   '059_phoenix_public_qr_concentration.sql',
   '060_phoenix_warehouse_foundation.sql',
+  '061_phoenix_warehouse_dispatch_schema.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

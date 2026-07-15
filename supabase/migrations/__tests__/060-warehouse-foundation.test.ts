@@ -21,8 +21,6 @@ import { join } from 'path';
 import {
   REVIEWED_MIGRATION_FILES,
   findUnreviewedMigrationFiles,
-  getMaximumReviewedMigrationNumber,
-  getNextUnreviewedMigrationNumber,
   isReviewedMigrationFile,
 } from './helpers/reviewed-migrations';
 
@@ -94,24 +92,28 @@ describe('1. migration 060 exists and is registered by exact filename', () => {
     expect(isReviewedMigrationFile(M060_NAME)).toBe(true);
   });
 
-  it('the registry maximum is now 60 and the next unreviewed number is 61', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(60);
-    expect(getNextUnreviewedMigrationNumber()).toBe(61);
-  });
-
+  // WAREHOUSE-W1-DISPATCH-SCHEMA-061-A: three GLOBAL-CEILING assertions were
+  // removed from this file here, because they were a defect introduced by the
+  // 060 phase itself:
+  //
+  //   expect(getMaximumReviewedMigrationNumber()).toBe(60);   // + toBe(61)
+  //   expect(isReviewedMigrationFile('061_phoenix_warehouse_dispatch_schema.sql')).toBe(false);
+  //   expect(readdirSync(MIGRATIONS_DIR).filter(f => /^06[12]_/.test(f))).toEqual([]);
+  //
+  // Those are not 060-specific contracts — they are claims about the registry
+  // ceiling and about which migrations exist NEXT, and they reintroduced exactly
+  // the two churn patterns MIGRATION-GUARD-DERIVE-A/B removed everywhere else (a
+  // hard-coded maximum, and a future-number range regex). One even hard-coded a
+  // guess at 061's eventual filename. Every one of them had to be edited the
+  // moment 061 was legitimately registered — which is the precise failure mode
+  // the canonical registry exists to prevent.
+  //
+  // Nothing is weakened by deleting them: reviewed-migration-manifest.test.ts
+  // owns the ceiling (maximum/next), registry↔disk agreement, and the synthetic
+  // rejection proofs, and enforces them more strictly than these did. What stays
+  // in this file below is only what is genuinely specific to migration 060.
   it('no unreviewed migration file exists on disk', () => {
     expect(findUnreviewedMigrationFiles(readdirSync(MIGRATIONS_DIR))).toEqual([]);
-  });
-
-  it('a synthetic migration 061 remains unreviewed and rejected', () => {
-    expect(isReviewedMigrationFile('061_phoenix_warehouse_dispatch_schema.sql')).toBe(false);
-    expect(
-      findUnreviewedMigrationFiles([...readdirSync(MIGRATIONS_DIR), '061_unreviewed.sql']),
-    ).toEqual(['061_unreviewed.sql']);
-  });
-
-  it('no real migration 061 or 062 file was created by this phase', () => {
-    expect(readdirSync(MIGRATIONS_DIR).filter(f => /^06[12]_/.test(f))).toEqual([]);
   });
 
   it('is manual-apply-only (mentions the prohibition, never invokes it)', () => {
