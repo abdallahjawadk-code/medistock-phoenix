@@ -20,6 +20,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { findUnexpectedMigrationGitStatusEntries } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migration-git-status';
 
 const ROOT = join(__dirname, '../../../../');
 const SRC = join(__dirname, '../../../');
@@ -266,23 +267,13 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     } catch { /* ignore */ }
     // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration 055,
     // prepared but not yet applied/committed, is the only allowed entry here.
-    const unexpectedListing = listing.split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean)
-      .filter(l => l !== '?? supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== 'A  supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== 'M supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== 'M  supabase/migrations/055_phoenix_clean_availability_data.sql'
-                 && l !== '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== 'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== 'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== 'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql'
-                 && l !== '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
-                 && l !== 'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
-                 // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
-                 && l !== '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql'
-                 && l !== '?? supabase/migrations/059_phoenix_public_qr_concentration.sql'
-                 && l !== 'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql'
-                 && l !== 'A  supabase/migrations/059_phoenix_public_qr_concentration.sql');
-    expect(unexpectedListing).toEqual([]);
+    // MIGRATION-GUARD-DERIVE-B: the allowed in-flight migration entries are
+    // now DERIVED from the canonical reviewed registry instead of a copy kept
+    // in this file, so registering a migration once permits it everywhere and
+    // no historical guard needs an edit. Strictly stronger than the old list:
+    // an unregistered migration still fails, and a MODIFIED reviewed migration
+    // now fails too (the old list tolerated `M `/`M  ` entries).
+    expect(findUnexpectedMigrationGitStatusEntries(listing)).toEqual([]);
   });
 
   it('no migration 055 was created, other than the later, separately-reviewed PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A addition', () => {

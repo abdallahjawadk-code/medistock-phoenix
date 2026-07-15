@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { getMaximumReviewedMigrationNumber } from './helpers/reviewed-migrations';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS = join(ROOT, 'supabase/migrations');
@@ -72,8 +73,10 @@ describe('1. Migration 059 exists; migrations 001–058 remain untouched', () =>
       .split('\n')
       .filter(f => /^supabase\/migrations\/\d{3}_/.test(f));
     const nums = files.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    // 059 is untracked at review time (new file), so the tracked max is 058.
-    expect(Math.max(...nums)).toBeLessThanOrEqual(59);
+    // MIGRATION-GUARD-DERIVE-B: was a hard-coded `<= 59`, which would have
+    // failed the moment migration 060 was committed. The ceiling now derives
+    // from the canonical reviewed registry.
+    expect(Math.max(...nums)).toBeLessThanOrEqual(getMaximumReviewedMigrationNumber());
   });
 
   it('no tracked migration SQL file 001–058 has a working-tree diff', () => {

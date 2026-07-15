@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { findUnreviewedMigrationFiles, getMaximumReviewedMigrationNumber } from '../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
 
 const SRC = join(__dirname, '../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -185,9 +186,12 @@ describe('Guards: no QR payload/RPC/RLS change, no migration, no package/lockfil
     const migrationsDir = join(SRC, '../supabase/migrations');
     const files: string[] = readdirSync(migrationsDir).filter((f: string) => /^\d{3}_/.test(f));
     const nums = files.map(f => parseInt(f.slice(0, 3), 10));
-    // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 is a later,
-    // separately-reviewed phase — this phase itself still adds no migration.
-    expect(Math.max(...nums)).toBeLessThanOrEqual(59);
+    // MIGRATION-GUARD-DERIVE-B: was a hard-coded `<= 59` ceiling that had to be
+    // bumped for every reviewed migration. The ceiling now comes from the
+    // canonical registry, and the exact-membership guard below is what actually
+    // rejects an unreviewed file — a number alone never approves anything.
+    expect(Math.max(...nums)).toBeLessThanOrEqual(getMaximumReviewedMigrationNumber());
+    expect(findUnreviewedMigrationFiles(readdirSync(migrationsDir))).toEqual([]);
   });
 
   it('no package/lockfile diff', () => {

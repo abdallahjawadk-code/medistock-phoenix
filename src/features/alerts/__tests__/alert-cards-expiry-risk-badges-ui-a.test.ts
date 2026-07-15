@@ -19,6 +19,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { findUnexpectedMigrationGitStatusEntries } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migration-git-status';
 import { execSync } from 'child_process';
 
 const SRC = join(__dirname, '../../../');
@@ -200,48 +201,13 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    const ALLOWED_UNTRACKED = new Set([
-      '?? supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
-      'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
-      '?? supabase/migrations/053_item_availability_removed_marker.sql',
-      'A  supabase/migrations/053_item_availability_removed_marker.sql',
-      // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 corrected in-place before its
-      // first successful manual apply.
-      'M supabase/migrations/053_item_availability_removed_marker.sql',
-      'M  supabase/migrations/053_item_availability_removed_marker.sql',
-      // PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      // HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: 054 corrected in-place
-      // before its first successful manual apply, same pattern as 053.
-      'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
-      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
-      // in-place before its first successful manual apply (VERIFY block's
-      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
-      'M supabase/migrations/055_phoenix_clean_availability_data.sql',
-      'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
-      'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
-      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
-      '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
-      '?? supabase/migrations/059_phoenix_public_qr_concentration.sql',
-      'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
-      'A  supabase/migrations/059_phoenix_public_qr_concentration.sql',
-    ]);
-    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
-    expect(unexpected).toEqual([]);
+    // MIGRATION-GUARD-DERIVE-B: the allowed in-flight migration entries are
+    // now DERIVED from the canonical reviewed registry instead of a copy kept
+    // in this file, so registering a migration once permits it everywhere and
+    // no historical guard needs an edit. Strictly stronger than the old list:
+    // an unregistered migration still fails, and a MODIFIED reviewed migration
+    // now fails too (the old list tolerated `M `/`M  ` entries).
+    expect(findUnexpectedMigrationGitStatusEntries(status)).toEqual([]);
   });
 
   it('no package/lockfile diff', () => {

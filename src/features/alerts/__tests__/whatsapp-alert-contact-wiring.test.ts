@@ -12,6 +12,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { findUnreviewedMigrationFiles, getMaximumReviewedMigrationNumber } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
+import { findUnexpectedMigrationGitStatusEntries } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migration-git-status';
 import { execSync } from 'child_process';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 
@@ -155,75 +157,13 @@ describe('10. No package/lockfile/migration changes', () => {
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    const ALLOWED_UNTRACKED = new Set([
-      '?? supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
-      'A  supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
-      '?? supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
-      'A  supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
-      '?? supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
-      'A  supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
-      '?? supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
-      'A  supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
-      '?? supabase/migrations/049_add_national_code_to_item_availability.sql',
-      'A  supabase/migrations/049_add_national_code_to_item_availability.sql',
-      '?? supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
-      'A  supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
-      '?? supabase/migrations/051_material_batch_identity_option_a.sql',
-      'A  supabase/migrations/051_material_batch_identity_option_a.sql',
-      // Trimmed forms of " M ..." (unstaged modify) / "M  ..." (staged modify) —
-      // status.split('\n').map(l => l.trim()) strips only the leading char.
-      'M supabase/migrations/051_material_batch_identity_option_a.sql',
-      'M  supabase/migrations/051_material_batch_identity_option_a.sql',
-      // QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
-      'A  supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
-      // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/053_item_availability_removed_marker.sql',
-      'A  supabase/migrations/053_item_availability_removed_marker.sql',
-      // FIX-MIGRATION-053-REMOVED-BY-FK-A: 053 corrected in-place before its
-      // first successful manual apply (removed_by FK creation/verification
-      // fix), same pattern as the 051 immutable-expiry-date correction.
-      'M supabase/migrations/053_item_availability_removed_marker.sql',
-      'M  supabase/migrations/053_item_availability_removed_marker.sql',
-      // PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      'A  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      // HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A: 054 corrected in-place
-      // before its first successful manual apply, same pattern as 051/053.
-      'M supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      'M  supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
-      'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
-      // in-place before its first successful manual apply (VERIFY block's
-      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
-      'M supabase/migrations/055_phoenix_clean_availability_data.sql',
-      'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      'A  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      // FIX-MIGRATION-056-SEARCH-PATH-VERIFY-FALSE-POSITIVE-A: 056 corrected
-      // in-place before its first successful manual apply, same pattern as
-      // 051/053/054/055.
-      'M supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      'M  supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      '?? supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
-      'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
-      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration,
-      // prepared but not yet applied/committed.
-      '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
-      '?? supabase/migrations/059_phoenix_public_qr_concentration.sql',
-      'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
-      'A  supabase/migrations/059_phoenix_public_qr_concentration.sql',
-    ]);
-    const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
-    expect(unexpected).toEqual([]);
+    // MIGRATION-GUARD-DERIVE-B: the allowed in-flight migration entries are
+    // now DERIVED from the canonical reviewed registry instead of a copy kept
+    // in this file, so registering a migration once permits it everywhere and
+    // no historical guard needs an edit. Strictly stronger than the old list:
+    // an unregistered migration still fails, and a MODIFIED reviewed migration
+    // now fails too (the old list tolerated `M `/`M  ` entries).
+    expect(findUnexpectedMigrationGitStatusEntries(status)).toEqual([]);
   });
 });
 
@@ -457,42 +397,14 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       files = execSync('git ls-files supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     const trackedMigrationFiles = files.split('\n').filter(f => /^supabase\/migrations\/\d{3}_/.test(f));
-    const allowedBeyond043 = new Set([
-      'supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql',
-      'supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql',
-      'supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
-      'supabase/migrations/047_phoenix_live_alerts_contact_fields.sql',
-      'supabase/migrations/048_live_alerts_expiry_risk_tiers.sql',
-      'supabase/migrations/049_add_national_code_to_item_availability.sql',
-      'supabase/migrations/050_phoenix_upsert_availability_national_code.sql',
-      'supabase/migrations/051_material_batch_identity_option_a.sql',
-      'supabase/migrations/052_qr_effective_condition_quantity_zero.sql',
-      'supabase/migrations/053_item_availability_removed_marker.sql',
-      'supabase/migrations/054_dashboard_condition_counts_rpcs.sql',
-      // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration, now
-      // tracked/committed.
-      'supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // PHASE3-PLATFORM-BROADCAST-NOTICES-A: new reviewed migration, now
-      // tracked/committed.
-      'supabase/migrations/056_phoenix_platform_broadcast_notices.sql',
-      // PHASE3-PLATFORM-BROADCAST-ACK-DETAILS-DELETE-A: new reviewed
-      // migration, now tracked/committed (allowlist update only — no new
-      // migration added by this cleanup).
-      'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
-      // QR-PUBLIC-DOSAGE-FORM-058-A: new reviewed migration, now
-      // tracked/committed (allowlist update only — no new migration added
-      // by this fix).
-      'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
-      'supabase/migrations/059_phoenix_public_qr_concentration.sql',
-    ]);
-    const beyond043 = trackedMigrationFiles.filter(f => {
-      const match = f.match(/\/(\d{3})_/);
-      return match ? Number(match[1]) > 43 : false;
-    });
-    const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
-    expect(unexpected).toEqual([]);
-    const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(59);
+    // MIGRATION-GUARD-DERIVE-B: the tracked-migration allowlist and the `<= 59`
+    // ceiling both used to need an edit per migration. Both now derive from the
+    // canonical registry: every tracked migration SQL file must be an exactly
+    // reviewed filename, and the ceiling is the registry maximum.
+    const trackedNames = trackedMigrationFiles.map(f => f.slice('supabase/migrations/'.length));
+    expect(findUnreviewedMigrationFiles(trackedNames)).toEqual([]);
+    const nums = trackedNames.map(f => parseInt(f.slice(0, 3), 10));
+    expect(Math.max(...nums)).toBeLessThanOrEqual(getMaximumReviewedMigrationNumber());
   });
 
   // BASELINE-GUARD-FIX-A: proves the allowlist above still REJECTS an
