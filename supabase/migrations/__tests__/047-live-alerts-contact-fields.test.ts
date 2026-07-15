@@ -19,6 +19,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { findUnreviewedMigrationFiles, reviewedMigrationFilesAbove } from './helpers/reviewed-migrations';
+import { actualMigrationFilesAbove } from './helpers/migration-dir';
 import { execSync } from 'child_process';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
@@ -220,33 +222,20 @@ describe('19/20. No SQL applied locally, supabase db push not run', () => {
   });
 });
 
-describe('21/22. Migration ceiling allows exactly 044/045/046/047/048/049/050/051/052/053/054, future 055+ still fails', () => {
-  it('exactly fifteen reviewed migrations exist beyond 043 (044-058)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([
-      '044_phoenix_profiles_whatsapp_phone.sql',
-      '045_phoenix_update_my_whatsapp_phone_rpc.sql',
-      '046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
-      '047_phoenix_live_alerts_contact_fields.sql',
-      '048_live_alerts_expiry_risk_tiers.sql',
-      '049_add_national_code_to_item_availability.sql',
-      '050_phoenix_upsert_availability_national_code.sql',
-      '051_material_batch_identity_option_a.sql',
-      '052_qr_effective_condition_quantity_zero.sql',
-      '053_item_availability_removed_marker.sql',
-      '054_dashboard_condition_counts_rpcs.sql',
-      '055_phoenix_clean_availability_data.sql',
-      '056_phoenix_platform_broadcast_notices.sql',
-      '057_phoenix_platform_broadcast_admin_details_delete.sql',
-      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
-      '058_phoenix_public_qr_dosage_form.sql',
-      '059_phoenix_public_qr_concentration.sql',
-    ]);
+describe('21/22. Migration review: only exactly-reviewed migrations exist; any unregistered migration still fails', () => {
+  it('only exactly-reviewed migrations exist beyond 043 — any unregistered migration beyond 043 still fails this check', () => {
+    // MIGRATION-GUARD-DERIVE-A: the expected filenames beyond 043 now come from the
+    // canonical reviewed-migration registry instead of a copy kept in this file.
+    // Still exact-filename equality: an unregistered file on disk fails here.
+    expect(actualMigrationFilesAbove(43)).toEqual(reviewedMigrationFilesAbove(43));
   });
 
-  it('no migration 060 (or higher) exists yet (058 is this reviewed PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+  it('no unreviewed migration file exists (approval is exact-filename membership in the canonical reviewed registry, not a number ceiling)', () => {
+    // MIGRATION-GUARD-DERIVE-A: this was a hard-coded "no 060+" range regex that
+    // had to be bumped for every new migration. It is now exact-membership based
+    // and strictly broader: ANY unreviewed file at ANY number fails here, while a
+    // properly reviewed future migration passes without editing this file.
+    expect(findUnreviewedMigrationFiles(readdirSync(MIGRATIONS_DIR))).toEqual([]);
   });
 });
 

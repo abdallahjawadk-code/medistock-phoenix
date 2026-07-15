@@ -19,6 +19,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { isPubliclyAvailableQrItem } from '../PublicQrScreen';
+import { findUnreviewedMigrationFiles } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
@@ -179,10 +180,12 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
 
   // DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: migration 053 is a later,
   // separately-reviewed phase — this phase's own scope is unaffected.
-  it('no migration 060 (or higher) file was created (053-058 are later, separately-reviewed additions incl. PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A)', () => {
+  // MIGRATION-GUARD-DERIVE-A: was a hard-coded "no 060+" range regex needing a
+  // bump per migration. Now exact-membership based and strictly broader — ANY
+  // unreviewed migration file at ANY number fails here.
+  it('no unreviewed migration file was created (approval is exact-filename membership in the canonical reviewed registry, not a number ceiling)', () => {
     const migsDir = join(ROOT, 'supabase/migrations');
-    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+    expect(findUnreviewedMigrationFiles(readdirSync(migsDir) as string[])).toEqual([]);
   });
 
   it('no package/lockfile diff', () => {

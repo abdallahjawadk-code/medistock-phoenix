@@ -14,6 +14,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { reviewedMigrationFilesAbove } from './helpers/reviewed-migrations';
+import { actualMigrationFilesAbove } from './helpers/migration-dir';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
 const SRC = join(__dirname, '../../../src/');
@@ -55,9 +57,11 @@ describe('Migration 044 exists exactly once', () => {
     expect(migration044).toContain('ASSERT');
   });
 
-  it('only the reviewed migrations 045/046/047/048/049/050/051/052/053/054 (DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A) exist beyond 044 — any other migration beyond 044 still fails this check', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[5-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql', '047_phoenix_live_alerts_contact_fields.sql', '048_live_alerts_expiry_risk_tiers.sql', '049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql', '053_item_availability_removed_marker.sql', '054_dashboard_condition_counts_rpcs.sql', '055_phoenix_clean_availability_data.sql', '056_phoenix_platform_broadcast_notices.sql', '057_phoenix_platform_broadcast_admin_details_delete.sql', '058_phoenix_public_qr_dosage_form.sql', '059_phoenix_public_qr_concentration.sql']);
+  it('only exactly-reviewed migrations exist beyond 044 — any unregistered migration beyond 044 still fails this check', () => {
+    // MIGRATION-GUARD-DERIVE-A: the expected filenames beyond 044 now come from the
+    // canonical reviewed-migration registry instead of a copy kept in this file.
+    // Still exact-filename equality: an unregistered file on disk fails here.
+    expect(actualMigrationFilesAbove(44)).toEqual(reviewedMigrationFilesAbove(44));
   });
 });
 

@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { findUnreviewedMigrationFiles } from './helpers/reviewed-migrations';
 import { execSync } from 'child_process';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
@@ -71,9 +72,12 @@ describe('1. Migration 058 exists exactly once', () => {
     expect(matches).toEqual(['058_phoenix_public_qr_dosage_form.sql']);
   });
 
-  it('does not create migration 060 (or higher)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
-    expect(matches).toEqual([]);
+  it('no unreviewed migration file exists (approval is exact-filename membership in the canonical reviewed registry, not a number ceiling)', () => {
+    // MIGRATION-GUARD-DERIVE-A: this was a hard-coded "no 060+" range regex that
+    // had to be bumped for every new migration. It is now exact-membership based
+    // and strictly broader: ANY unreviewed file at ANY number fails here, while a
+    // properly reviewed future migration passes without editing this file.
+    expect(findUnreviewedMigrationFiles(readdirSync(MIGRATIONS_DIR))).toEqual([]);
   });
 
   it('is manual-apply-only (no supabase db push)', () => {

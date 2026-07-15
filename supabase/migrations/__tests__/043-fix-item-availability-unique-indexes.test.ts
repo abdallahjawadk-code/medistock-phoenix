@@ -24,6 +24,11 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import {
+  findUnreviewedMigrationFiles,
+  reviewedMigrationFilesAbove,
+} from './helpers/reviewed-migrations';
+import { actualMigrationFilesAbove } from './helpers/migration-dir';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
 const MIGRATION_043_PATH = join(MIGRATIONS_DIR, '043_phoenix_fix_item_availability_unique_indexes.sql');
@@ -86,27 +91,16 @@ describe('Migration 043: does not modify migrations 001-042', () => {
     }
   });
 
-  it('only the reviewed migrations 044/045/046/047/048/049/050/051/052/053/054 (DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / DB-OFFICIAL-ORG-WHATSAPP-CONTACT-RPC-A / DB-ALERTS-LIVE-WHATSAPP-CONTACT-FIELDS-A / DB-EXPIRY-RISK-TIERS-LIVE-ALERTS-A / DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A) exist beyond 043 — any other migration beyond 043 still fails this check', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual([
-      '044_phoenix_profiles_whatsapp_phone.sql',
-      '045_phoenix_update_my_whatsapp_phone_rpc.sql',
-      '046_phoenix_set_my_org_whatsapp_contact_rpc.sql',
-      '047_phoenix_live_alerts_contact_fields.sql',
-      '048_live_alerts_expiry_risk_tiers.sql',
-      '049_add_national_code_to_item_availability.sql',
-      '050_phoenix_upsert_availability_national_code.sql',
-      '051_material_batch_identity_option_a.sql',
-      '052_qr_effective_condition_quantity_zero.sql',
-      '053_item_availability_removed_marker.sql',
-      '054_dashboard_condition_counts_rpcs.sql',
-      '055_phoenix_clean_availability_data.sql',
-      '056_phoenix_platform_broadcast_notices.sql',
-      '057_phoenix_platform_broadcast_admin_details_delete.sql',
-      // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
-      '058_phoenix_public_qr_dosage_form.sql',
-      '059_phoenix_public_qr_concentration.sql',
-    ]);
+  // MIGRATION-GUARD-DERIVE-A: the expected list beyond 043 now comes from the
+  // canonical reviewed-migration registry instead of a copy maintained here.
+  // The guarantee is unchanged and still exact-filename based: anything on disk
+  // above 043 that is not an exactly-reviewed filename fails this check.
+  it('only exactly-reviewed migrations exist beyond 043 — any other migration beyond 043 still fails this check', () => {
+    expect(actualMigrationFilesAbove(43)).toEqual(reviewedMigrationFilesAbove(43));
+  });
+
+  it('no unreviewed migration file exists anywhere in the directory', () => {
+    expect(findUnreviewedMigrationFiles(readdirSync(MIGRATIONS_DIR))).toEqual([]);
   });
 });
 

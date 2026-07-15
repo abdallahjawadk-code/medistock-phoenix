@@ -28,8 +28,10 @@
  * assertions, matching this repo's established test conventions.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
+import { reviewedMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
+import { actualMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/migration-dir';
 import { T } from '@/shared/i18n/strings';
 
 const SRC = join(__dirname, '../../../');
@@ -255,7 +257,10 @@ describe('Guards: no Service-D/inter_org_exchange, no wipe tooling, no migration
   it('no new migration was added for this phase — display-only fix, no backend/data change required (only the separately-reviewed migrations 044/045/.../054, DB-MY-ACCOUNT-WHATSAPP-PHONE-A / DB-MY-ACCOUNT-WHATSAPP-RPC-A / ... / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A, are allowed beyond 043)', () => {
     const ROOT = join(__dirname, '../../../../');
     const migrationsDir = join(ROOT, 'supabase/migrations');
-    const matches = readdirSync(migrationsDir).filter((f: string) => /^0(4[4-9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['044_phoenix_profiles_whatsapp_phone.sql', '045_phoenix_update_my_whatsapp_phone_rpc.sql', '046_phoenix_set_my_org_whatsapp_contact_rpc.sql', '047_phoenix_live_alerts_contact_fields.sql', '048_live_alerts_expiry_risk_tiers.sql', '049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql', '053_item_availability_removed_marker.sql', '054_dashboard_condition_counts_rpcs.sql', '055_phoenix_clean_availability_data.sql', '056_phoenix_platform_broadcast_notices.sql', '057_phoenix_platform_broadcast_admin_details_delete.sql', '058_phoenix_public_qr_dosage_form.sql', '059_phoenix_public_qr_concentration.sql']);
+    // MIGRATION-GUARD-DERIVE-A: the expected filenames beyond 043 now come from
+    // the canonical reviewed-migration registry instead of a copy kept in this
+    // file. Still exact-filename equality: an unregistered migration on disk
+    // fails here, so this phase still cannot smuggle in a migration of its own.
+    expect(actualMigrationFilesAbove(43, migrationsDir)).toEqual(reviewedMigrationFilesAbove(43));
   });
 });
