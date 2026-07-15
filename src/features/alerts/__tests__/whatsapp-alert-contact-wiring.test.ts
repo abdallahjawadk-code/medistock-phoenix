@@ -477,6 +477,10 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       // migration, now tracked/committed (allowlist update only — no new
       // migration added by this cleanup).
       'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
+      // QR-PUBLIC-DOSAGE-FORM-058-A: new reviewed migration, now
+      // tracked/committed (allowlist update only — no new migration added
+      // by this fix).
+      'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -485,7 +489,32 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(57);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(58);
+  });
+
+  // BASELINE-GUARD-FIX-A: proves the allowlist above still REJECTS an
+  // unreviewed migration rather than merely accepting whatever is on disk.
+  // Pure in-memory logic mirroring the filter at the top of this block — it
+  // never creates, reads, or requires a real 059 file.
+  it('a synthetic unreviewed migration 059 would still be rejected by the allowlist (guard is not a wildcard)', () => {
+    const allowedBeyond043 = new Set([
+      'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
+      'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+    ]);
+    const synthetic = [
+      'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'supabase/migrations/059_totally_unreviewed_migration.sql',
+    ];
+    const beyond043 = synthetic.filter(f => {
+      const match = f.match(/\/(\d{3})_/);
+      return match ? Number(match[1]) > 43 : false;
+    });
+    const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
+    // 058 is allowed through; 059 is caught.
+    expect(unexpected).toEqual(['supabase/migrations/059_totally_unreviewed_migration.sql']);
+    // And the numeric ceiling independently catches it too.
+    const nums = synthetic.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
+    expect(Math.max(...nums)).toBeGreaterThan(58);
   });
 });
 
