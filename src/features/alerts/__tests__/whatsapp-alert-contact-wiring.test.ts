@@ -218,7 +218,9 @@ describe('10. No package/lockfile/migration changes', () => {
       // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration,
       // prepared but not yet applied/committed.
       '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      '?? supabase/migrations/059_phoenix_public_qr_concentration.sql',
       'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'A  supabase/migrations/059_phoenix_public_qr_concentration.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);
@@ -481,6 +483,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
       // tracked/committed (allowlist update only — no new migration added
       // by this fix).
       'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'supabase/migrations/059_phoenix_public_qr_concentration.sql',
     ]);
     const beyond043 = trackedMigrationFiles.filter(f => {
       const match = f.match(/\/(\d{3})_/);
@@ -489,7 +492,7 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const unexpected = beyond043.filter(f => !allowedBeyond043.has(f));
     expect(unexpected).toEqual([]);
     const nums = trackedMigrationFiles.map(f => parseInt(f.slice('supabase/migrations/'.length, 'supabase/migrations/'.length + 3), 10));
-    expect(Math.max(...nums)).toBeLessThanOrEqual(58);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(59);
   });
 
   // BASELINE-GUARD-FIX-A: proves the allowlist above still REJECTS an
@@ -500,9 +503,11 @@ describe('23. No new SQL/migrations/RPC/Edge Function introduced', () => {
     const allowedBeyond043 = new Set([
       'supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
       'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'supabase/migrations/059_phoenix_public_qr_concentration.sql',
     ]);
     const synthetic = [
       'supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'supabase/migrations/059_phoenix_public_qr_concentration.sql',
       'supabase/migrations/059_totally_unreviewed_migration.sql',
     ];
     const beyond043 = synthetic.filter(f => {

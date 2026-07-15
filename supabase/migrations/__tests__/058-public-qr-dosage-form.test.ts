@@ -71,8 +71,8 @@ describe('1. Migration 058 exists exactly once', () => {
     expect(matches).toEqual(['058_phoenix_public_qr_dosage_form.sql']);
   });
 
-  it('does not create migration 059 (or higher)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(59|[6-9][0-9])_/.test(f));
+  it('does not create migration 060 (or higher)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 

@@ -226,7 +226,9 @@ describe('10. No migrations created or modified by this fix', () => {
       'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql',
       // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
       '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      '?? supabase/migrations/059_phoenix_public_qr_concentration.sql',
       'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql',
+      'A  supabase/migrations/059_phoenix_public_qr_concentration.sql',
     ]);
     const unexpected = status.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !ALLOWED_UNTRACKED.has(l));
     expect(unexpected).toEqual([]);

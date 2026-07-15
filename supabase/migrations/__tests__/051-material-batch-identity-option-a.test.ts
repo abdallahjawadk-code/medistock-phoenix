@@ -459,11 +459,12 @@ describe('36. Migration ceiling: allows exactly 044-054, 055+ still fails', () =
       '057_phoenix_platform_broadcast_admin_details_delete.sql',
       // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 (get_public_qr_payload dosage_form)
       '058_phoenix_public_qr_dosage_form.sql',
+      '059_phoenix_public_qr_concentration.sql',
     ]);
   });
 
-  it('no migration 059 (or higher) exists yet (058 is this reviewed PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A addition)', () => {
-    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(59|[6-9][0-9])_/.test(f));
+  it('no migration 060 (or higher) exists yet (058 is this reviewed PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A addition)', () => {
+    const matches = readdirSync(MIGRATIONS_DIR).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 });

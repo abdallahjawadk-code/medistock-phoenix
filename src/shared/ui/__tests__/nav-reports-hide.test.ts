@@ -279,7 +279,9 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
                  && l !== 'A  supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql'
                  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: new reviewed additive migration (untracked).
                  && l !== '?? supabase/migrations/058_phoenix_public_qr_dosage_form.sql'
-                 && l !== 'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql');
+                 && l !== '?? supabase/migrations/059_phoenix_public_qr_concentration.sql'
+                 && l !== 'A  supabase/migrations/058_phoenix_public_qr_dosage_form.sql'
+                 && l !== 'A  supabase/migrations/059_phoenix_public_qr_concentration.sql');
     expect(unexpectedListing).toEqual([]);
   });
 

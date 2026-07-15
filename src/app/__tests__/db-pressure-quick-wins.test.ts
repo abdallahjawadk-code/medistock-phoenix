@@ -187,7 +187,7 @@ describe('Guards: no QR payload/RPC/RLS change, no migration, no package/lockfil
     const nums = files.map(f => parseInt(f.slice(0, 3), 10));
     // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive migration 058 is a later,
     // separately-reviewed phase — this phase itself still adds no migration.
-    expect(Math.max(...nums)).toBeLessThanOrEqual(58);
+    expect(Math.max(...nums)).toBeLessThanOrEqual(59);
   });
 
   it('no package/lockfile diff', () => {

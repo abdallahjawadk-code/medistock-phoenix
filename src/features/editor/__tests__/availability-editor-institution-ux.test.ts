@@ -2338,7 +2338,7 @@ describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effect
   it('no SQL was applied and no supabase db push was run as part of this phase (no migration beyond 051, later separately-reviewed DATA-MODEL-NATIONAL-CODE-SEPARATION-A / DB-AVAILABILITY-UPSERT-NATIONAL-CODE-050-A / DB-MATERIAL-BATCH-IDENTITY-051-A / QR-EFFECTIVE-CONDITION-QUANTITY-ZERO-052-A / DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A / PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A additions)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
     const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(4[9]|[5-9][0-9])_/.test(f));
-    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql', '053_item_availability_removed_marker.sql', '054_dashboard_condition_counts_rpcs.sql', '055_phoenix_clean_availability_data.sql', '056_phoenix_platform_broadcast_notices.sql', '057_phoenix_platform_broadcast_admin_details_delete.sql', '058_phoenix_public_qr_dosage_form.sql']);
+    expect(matches).toEqual(['049_add_national_code_to_item_availability.sql', '050_phoenix_upsert_availability_national_code.sql', '051_material_batch_identity_option_a.sql', '052_qr_effective_condition_quantity_zero.sql', '053_item_availability_removed_marker.sql', '054_dashboard_condition_counts_rpcs.sql', '055_phoenix_clean_availability_data.sql', '056_phoenix_platform_broadcast_notices.sql', '057_phoenix_platform_broadcast_admin_details_delete.sql', '058_phoenix_public_qr_dosage_form.sql', '059_phoenix_public_qr_concentration.sql']);
   });
 
   it('no package/lockfile diff from this phase', () => {
@@ -2382,9 +2382,9 @@ describe('STATUS-EDITOR-CLEANUP-A: no SQL/db-push/package/permission side effect
 // ============================================================================
 
 describe('AVAILABILITY-EDITOR-NATIONAL-CODE-WIRING-A: no SQL/migration/package side effects', () => {
-  it('no migration 059 (or higher) exists (052-058 are later, separately-reviewed additions incl. PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A)', () => {
+  it('no migration 060 (or higher) exists (052-058 are later, separately-reviewed additions incl. PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A)', () => {
     const migsDir = join(PHOENIX, 'supabase/migrations');
-    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(59|[6-9][0-9])_/.test(f));
+    const matches = (readdirSync(migsDir) as string[]).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f));
     expect(matches).toEqual([]);
   });
 

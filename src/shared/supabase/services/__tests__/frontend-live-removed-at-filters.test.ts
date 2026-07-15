@@ -183,8 +183,14 @@ describe('F) Public QR remains protected and unchanged (already DB/RPC-filtered)
   // phase (FRONTEND-LIVE-REMOVED-AT-FILTERS-A) still makes no change of its own
   // to it; the source-wiring checks below confirm the only public-QR change is
   // the additive dosage_form field, with no private field or direct query added.
-  it('PublicQrScreen.tsx change is confined to the additive dosage_form field (no private field, no direct query)', () => {
-    expect(publicQrScreen).toMatch(/item\.dosage_form\.trim\(\)\.length > 0/);
+  // PUBLIC-QR-CONCENTRATION-059-A: a later, separately-reviewed phase additively
+  // adds concentration alongside dosage_form, both trimmed inside the exported
+  // buildQrItemMetaLine helper. Every privacy assertion below is retained
+  // verbatim — only the dosage_form shape check moved to the helper.
+  it('PublicQrScreen.tsx change is confined to the additive dosage_form/concentration fields (no private field, no direct query)', () => {
+    expect(publicQrScreen).toContain('export function buildQrItemMetaLine');
+    expect(publicQrScreen).toContain('dosage_form?: string | null;');
+    expect(publicQrScreen).toContain('concentration?: string | null;');
     expect(publicQrScreen).not.toContain("from('item_availability')");
     for (const forbidden of ['trade_name', 'batch_number', 'entered_price', 'national_code', 'supply_type']) {
       expect(publicQrScreen).not.toContain(forbidden);

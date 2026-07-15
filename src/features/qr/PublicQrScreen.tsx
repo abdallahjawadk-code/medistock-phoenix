@@ -35,7 +35,34 @@ type PublicItem = {
   // RPC payload (item_availability.dosage_form via migration 058). Optional/
   // nullable — rendered only when it holds a real non-empty value.
   dosage_form?: string | null;
+  // PUBLIC-QR-CONCENTRATION-059-A: additive public field, sourced from the RPC
+  // payload (item_availability.concentration via migration 059). Optional/
+  // nullable — same rendering contract as dosage_form above.
+  concentration?: string | null;
 };
+
+/**
+ * PUBLIC-QR-CONCENTRATION-059-A
+ *
+ * Build the one-line material metadata shown directly under the material name:
+ *   "500 mg • Tablet"  (both present)
+ *   "500 mg"           (concentration only)
+ *   "Tablet"           (dosage form only)
+ *   ""                 (neither — caller renders nothing at all)
+ *
+ * Each value is trimmed, and only real non-empty (non-whitespace) values are
+ * included, so the separator can never appear leading, trailing, or isolated.
+ * Missing values contribute nothing at all — no placeholder text of any kind
+ * is substituted, and no blank space is reserved.
+ *
+ * Exported for direct unit testing (same convention as isPubliclyAvailableQrItem).
+ */
+export function buildQrItemMetaLine(item: PublicItem): string {
+  const trimmed = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  return [trimmed(item.concentration), trimmed(item.dosage_form)]
+    .filter(part => part.length > 0)
+    .join(' • ');
+}
 
 const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
   available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
@@ -269,13 +296,12 @@ export function PublicQrScreen({ publicId }: Props) {
               )}
               {filteredItems.map((item, i) => {
                 const label = itemLabel(item, lang);
-                // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: show the entered dosage form
-                // only when it is a real non-empty (non-whitespace) value — no
-                // placeholder, empty row, or reserved space when null/empty/blank.
-                const dosageForm =
-                  typeof item.dosage_form === 'string' && item.dosage_form.trim().length > 0
-                    ? item.dosage_form.trim()
-                    : null;
+                // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A + PUBLIC-QR-CONCENTRATION-059-A:
+                // one metadata line under the name — "concentration • dosage form",
+                // collapsing to whichever side is present. Empty string when
+                // neither is, so nothing renders: no placeholder, no empty row,
+                // no reserved space, no isolated separator.
+                const metaLine = buildQrItemMetaLine(item);
                 const variant = item.condition ? CONDITION_VARIANT[item.condition] ?? 'neutral' : 'neutral';
                 const condLabel = item.condition ? conditionLabel(item.condition, lang) : '';
                 const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
@@ -295,9 +321,9 @@ export function PublicQrScreen({ publicId }: Props) {
                         )}
                       </div>
                     </div>
-                    {dosageForm && (
+                    {metaLine && (
                       <div dir="auto" style={{ marginTop: '4px', fontSize: '11px', color: 'var(--t2)' }}>
-                        {dosageForm}
+                        {metaLine}
                       </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>

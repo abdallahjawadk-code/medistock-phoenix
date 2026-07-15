@@ -73,20 +73,27 @@ describe('PublicQrScreen wiring: additive dosage form', () => {
     expect(screen).toMatch(/dosage_form\?:\s*string\s*\|\s*null/);
   });
 
-  it('computes the rendered value with the exact non-empty-trim guard', () => {
-    expect(screen).toMatch(
-      /typeof item\.dosage_form === 'string' &&\s*item\.dosage_form\.trim\(\)\.length > 0/,
-    );
+  // PUBLIC-QR-CONCENTRATION-059-A: the later, separately-reviewed 059 phase
+  // merged this line with concentration into a single "concentration • dosage
+  // form" meta line built by the exported buildQrItemMetaLine helper. The
+  // dosage-form CONTRACT guarded here is unchanged (trimmed, rendered only
+  // when a real non-empty value exists, never a placeholder, dir="auto") — it
+  // is now enforced behaviorally in public-qr-concentration.test.ts against
+  // the helper itself, which is stronger than the previous source-text match.
+  it('computes the rendered value with a non-empty-trim guard (now inside buildQrItemMetaLine)', () => {
+    expect(screen).toContain('export function buildQrItemMetaLine');
+    expect(screen).toMatch(/typeof v === 'string' \? v\.trim\(\) : ''/);
+    expect(screen).toContain('.filter(part => part.length > 0)');
   });
 
   it('renders the trimmed value only when present (no placeholder)', () => {
-    expect(screen).toMatch(/\{dosageForm && \(/);
-    expect(screen).toContain('{dosageForm}');
+    expect(screen).toMatch(/\{metaLine && \(/);
+    expect(screen).toContain('{metaLine}');
   });
 
   it('6. uses dir="auto" on the dosage form line (RTL/LTR safe)', () => {
-    // the dosage form block is a <div dir="auto"> ... {dosageForm} ... </div>
-    expect(screen).toMatch(/<div dir="auto"[^>]*>\s*\{dosageForm\}/);
+    // the meta line block is a <div dir="auto"> ... {metaLine} ... </div>
+    expect(screen).toMatch(/<div dir="auto"[^>]*>\s*\{metaLine\}/);
   });
 
   it('adds no placeholder text for a missing dosage form', () => {
@@ -101,10 +108,19 @@ describe('PublicQrScreen: existing material fields untouched', () => {
     expect(screen).toMatch(/dir="auto">\{label\}</);
   });
 
-  it('8. introduces no concentration field (payload/UI shape otherwise unchanged)', () => {
-    // concentration was never part of the public payload or card; this phase
-    // must not add it. dosage_form is the only new field.
-    expect(screen).not.toContain('concentration');
+  // PUBLIC-QR-CONCENTRATION-059-A: concentration was correctly absent as of the
+  // 058 phase (dosage_form was that phase's only new field). The later,
+  // separately-reviewed 059 phase additively adds concentration to the same two
+  // material objects. This assertion is therefore inverted rather than deleted:
+  // it now pins that concentration is the ONLY further public field 058's card
+  // gained, and that every other 058-era privacy exclusion still holds (see the
+  // dedicated privacy block in public-qr-concentration.test.ts).
+  it('8. gains only concentration beyond dosage_form (payload/UI shape otherwise unchanged)', () => {
+    expect(screen).toContain('concentration?: string | null;');
+    const typeStart = screen.indexOf('type PublicItem = {');
+    const typeEnd = screen.indexOf('};', typeStart);
+    const publicItemType = screen.slice(typeStart, typeEnd);
+    expect(publicItemType).not.toMatch(/price|supply_type|national_code|batch_number|dispatch/);
   });
 
   it('9. quantity render (guarded by variant !== err) is unchanged', () => {
