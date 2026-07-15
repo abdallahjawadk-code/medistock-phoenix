@@ -101,9 +101,15 @@ describe('1. migration 061 exists and is registered by exact filename', () => {
     ).toEqual(['062_unreviewed.sql']);
   });
 
-  it('this phase created no migration 062 (dispatch RPCs are 062 scope)', () => {
-    expect(readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('062_'))).toEqual([]);
-  });
+  // REMOVED (USER-RBAC-U1-SCOPE-062-IMPLEMENT-A): a `no 062_* file exists on disk`
+  // assertion. It was a future-ceiling guard of exactly the kind
+  // MIGRATION-GUARD-DERIVE centralized, phrased per-phase rather than as a regex
+  // range, so it survived that cleanup — and it failed permanently the moment
+  // migration 062 was legitimately reviewed and registered. Nothing is lost:
+  // reviewed-migration-manifest.test.ts rejects any unregistered 062 by exact
+  // filename membership, and the synthetic-rejection test directly above still
+  // proves that here. No historical phase test should break merely because a
+  // later reviewed migration now exists.
 
   it('is manual-apply-only (mentions the prohibition, never invokes it)', () => {
     expect(m061).toContain('MANUAL APPLY ONLY');
