@@ -47,8 +47,8 @@ describe('warehouse source-of-truth contract', () => {
       /available_quantity\s+integer GENERATED ALWAYS AS \(on_hand_quantity - reserved_quantity\) STORED/,
     );
     expect(active060).toContain('warehouse_stock_reserved_le_on_hand_chk');
-    expect(active060).toMatch(/CHECK \(on_hand_quantity >= 0\)/);
-    expect(active060).toMatch(/CHECK \(reserved_quantity >= 0\)/);
+    expect(active060).toMatch(/CHECK \(on_hand_quantity\s*>=\s*0\)/);
+    expect(active060).toMatch(/CHECK \(reserved_quantity\s*>=\s*0\)/);
   });
 
   it('keeps the warehouse movement ledger immutable and client-read-only', () => {
@@ -92,7 +92,7 @@ describe('warehouse source-of-truth contract', () => {
   it('enforces sender/receiver separation in role defaults', () => {
     const defaults = active061.slice(
       active061.indexOf('INSERT INTO public.role_permission_defaults'),
-      active061.indexOf('-- super_admin: repository convention'),
+      active061.indexOf("INSERT INTO public.role_permission_defaults (role, permission_key, allowed)\n  SELECT 'super_admin'"),
     );
 
     expect(defaults).toContain(
