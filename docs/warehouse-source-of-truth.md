@@ -47,8 +47,14 @@ belong to migration 065 or later.
 - `internal_batch_reference` is private provenance. It distinguishes
   independently received no-batch stock and is never exposed through public QR.
 - Warehouse-origin outlet rows carry the dispatch provenance reference.
-- The manual editor may only match rows whose `internal_batch_reference IS NULL`.
-  It must never overwrite or reactivate dispatch-origin rows.
+- Migration 065 must add an explicit outlet `source_kind` discriminator with
+  `manual` and `warehouse_dispatch` values. Existing rows start as `manual`.
+- The corrected outlet identity includes `source_kind`, so a real-batch manual
+  row and a real-batch dispatch row can never merge merely because both have a
+  null internal reference.
+- The manual editor may only match `source_kind = 'manual'` rows. It must never
+  overwrite, reactivate, or apply quantity movements to a
+  `source_kind = 'warehouse_dispatch'` row.
 
 ### Quantity truth
 
@@ -133,7 +139,7 @@ pinned `search_path = public`, explicit authentication, active-profile checks,
 organization and assignment checks, permission checks, row locks, arithmetic
 guards, idempotency guards, and audit logging.
 
-Migration 065 must provide the smallest coherent function set:
+The reviewed migration 065+ sequence must provide the smallest coherent function set:
 
 - warehouse stock receipt/adjustment;
 - create dispatch draft;
@@ -196,15 +202,17 @@ business timestamp, decision, quantity, or audit snapshot.
 ## Delivery order
 
 1. Contract and static acceptance guards.
-2. Migration 065 server workflow and tests.
-3. Typed Supabase services.
-4. Warehouse stock and movement UI.
-5. Dispatch sender UI.
-6. Outlet receipt UI.
-7. Derived alert/status integrations.
-8. Scoped RBAC integration on every new surface.
-9. staging/protected-preview E2E and shadow telemetry.
-10. explicit production migration plan and progressive rollout.
+2. Migration 065 provenance boundary and warehouse-stock RPCs.
+3. Migration 066 dispatch lifecycle RPCs.
+4. Migration 067 scope-administration RPCs, if still required.
+5. Typed Supabase services.
+6. Warehouse stock and movement UI.
+7. Dispatch sender UI.
+8. Outlet receipt UI.
+9. Derived alert/status integrations.
+10. Scoped RBAC integration on every new surface.
+11. staging/protected-preview E2E and shadow telemetry.
+12. explicit production migration plan and progressive rollout.
 
 No production SQL, migration application, RBAC enforcement, or destructive data
 operation is authorized by this document.
