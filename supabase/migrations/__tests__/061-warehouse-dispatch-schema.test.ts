@@ -407,6 +407,86 @@ describe('7. composite unique FK targets added safely', () => {
     expect(ddlSection).toContain('warehouse_stock_id_org_uniq');
     expect(ddlSection).toMatch(/ADD CONSTRAINT warehouse_stock_id_org_uniq UNIQUE \(id, organization_id\)/);
   });
+
+  // WAREHOUSE-W1-DISPATCH-FK-TARGET-061-FIX-A
+  //
+  // Real production failure this guards against, observed applying 061:
+  //   ERROR 42830: there is no unique constraint matching given keys for
+  //                referenced table "warehouse_dispatches"
+  //
+  // warehouse_dispatch_lines_dispatch_org_fk references
+  // warehouse_dispatches (id, organization_id), but the table declared only
+  // PRIMARY KEY (id). A composite FK needs a UNIQUE/PK on the EXACT referenced
+  // column set, and PRIMARY KEY (id) does not provide (id, organization_id).
+  // The migration aborted inside its own transaction.
+  it('declares warehouse_dispatches (id, organization_id) as a composite FK target', () => {
+    expect(ddlSection).toContain('warehouse_dispatches_id_org_uniq');
+    expect(ddlSection).toMatch(
+      /CONSTRAINT warehouse_dispatches_id_org_uniq UNIQUE \(id, organization_id\)/,
+    );
+  });
+
+  it('declares that target BEFORE the foreign key that references it (ERROR 42830 guard)', () => {
+    const targetAt = ddlSection.indexOf('CONSTRAINT warehouse_dispatches_id_org_uniq');
+    const fkAt = ddlSection.indexOf('CONSTRAINT warehouse_dispatch_lines_dispatch_org_fk');
+    expect(targetAt).toBeGreaterThan(-1);
+    expect(fkAt).toBeGreaterThan(-1);
+    // Statement order is the whole point: PostgreSQL resolves the FK target at
+    // creation time, so a target declared afterwards is worthless.
+    expect(targetAt).toBeLessThan(fkAt);
+  });
+
+  it('declares the target inside the CREATE TABLE warehouse_dispatches body', () => {
+    // Inline declaration is what makes the ordering unconditional — an ALTER
+    // TABLE placed later in the file could drift below part F on a future edit.
+    const createAt = ddlSection.indexOf('CREATE TABLE IF NOT EXISTS public.warehouse_dispatches');
+    const linesAt = ddlSection.indexOf('CREATE TABLE IF NOT EXISTS public.warehouse_dispatch_lines');
+    const targetAt = ddlSection.indexOf('CONSTRAINT warehouse_dispatches_id_org_uniq');
+    expect(createAt).toBeGreaterThan(-1);
+    expect(linesAt).toBeGreaterThan(createAt);
+    expect(targetAt).toBeGreaterThan(createAt);
+    expect(targetAt).toBeLessThan(linesAt);
+  });
+
+  it('keeps the dispatch-lines FK composite — same-organization integrity stays structural', () => {
+    // Guards against the tempting "fix" of collapsing this to a single-column
+    // dispatch_id FK, which would silently drop the org-agreement guarantee.
+    expect(ddlSection).toMatch(
+      /CONSTRAINT warehouse_dispatch_lines_dispatch_org_fk\s*\n\s*FOREIGN KEY \(dispatch_id, organization_id\)\s*\n\s*REFERENCES public\.warehouse_dispatches \(id, organization_id\)/,
+    );
+  });
+
+  it('every composite FK in 061 has a UNIQUE/PK target declared before it', () => {
+    // Mechanical sweep: each multi-column FK's referenced column set must have a
+    // matching unique target that appears earlier in the file (or come from 060).
+    const targets: Record<string, number> = {
+      // created by migration 060, already applied in production
+      'public.warehouses (id, organization_id)': -1,
+      'public.distribution_points (id, organization_id)': ddlSection.indexOf(
+        'ADD CONSTRAINT distribution_points_id_org_uniq UNIQUE (id, organization_id)',
+      ),
+      'public.warehouse_stock (id, organization_id)': ddlSection.indexOf(
+        'ADD CONSTRAINT warehouse_stock_id_org_uniq UNIQUE (id, organization_id)',
+      ),
+      'public.warehouse_dispatches (id, organization_id)': ddlSection.indexOf(
+        'CONSTRAINT warehouse_dispatches_id_org_uniq UNIQUE (id, organization_id)',
+      ),
+    };
+    const fkRe = /FOREIGN KEY \([^)]*,[^)]*\)\s*\n\s*REFERENCES (public\.\w+ \([^)]*\))/g;
+    const seen: string[] = [];
+    for (const m of ddlSection.matchAll(fkRe)) {
+      const ref = m[1];
+      seen.push(ref);
+      expect(targets).toHaveProperty(ref);
+      const targetAt = targets[ref];
+      if (targetAt !== -1) {
+        // declared in this migration — must precede the FK that uses it
+        expect(targetAt).toBeLessThan(m.index!);
+      }
+    }
+    // All four composite FKs are accounted for; none is silently unguarded.
+    expect(seen).toHaveLength(4);
+  });
 });
 
 // ============================================================================

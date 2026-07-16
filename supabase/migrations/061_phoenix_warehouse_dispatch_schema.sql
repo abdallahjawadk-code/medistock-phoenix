@@ -487,6 +487,21 @@ CREATE TABLE IF NOT EXISTS public.warehouse_dispatches (
   created_at                        timestamptz NOT NULL DEFAULT now(),
   updated_at                        timestamptz NOT NULL DEFAULT now(),
 
+  -- WAREHOUSE-W1-DISPATCH-FK-TARGET-061-FIX-A — READ BEFORE EDITING.
+  -- Composite FK TARGET for warehouse_dispatch_lines_dispatch_org_fk (part F).
+  -- REQUIRED, not decorative: PostgreSQL demands a UNIQUE or PRIMARY KEY on the
+  -- exact referenced column set, and PRIMARY KEY (id) alone does NOT satisfy
+  -- (id, organization_id). Without this constraint part F fails with
+  --   ERROR 42830: there is no unique constraint matching given keys for
+  --                referenced table "warehouse_dispatches"
+  -- and the whole migration rolls back. Declared inline here, inside the CREATE
+  -- TABLE, so it can never be ordered after the foreign key that needs it —
+  -- exactly the guarantee 060 gives with warehouses_id_org_uniq and part D gives
+  -- with distribution_points_id_org_uniq / warehouse_stock_id_org_uniq.
+  -- Trivially satisfiable: id is already the primary key, so (id, organization_id)
+  -- is unique for every row this table can ever hold.
+  CONSTRAINT warehouse_dispatches_id_org_uniq UNIQUE (id, organization_id),
+
   -- RESTRICT on both: a warehouse or outlet with dispatch history cannot be
   -- deleted out from under it. Retention beats convenience here.
   CONSTRAINT warehouse_dispatches_wh_org_fk
@@ -1041,10 +1056,61 @@ BEGIN
   -- ---------------------------------------------------------------------------
   -- 4. Composite FK targets
   -- ---------------------------------------------------------------------------
-  FOREACH v_item IN ARRAY ARRAY['distribution_points_id_org_uniq', 'warehouse_stock_id_org_uniq'] LOOP
+  FOREACH v_item IN ARRAY ARRAY[
+    'distribution_points_id_org_uniq', 'warehouse_stock_id_org_uniq',
+    'warehouse_dispatches_id_org_uniq'
+  ] LOOP
     ASSERT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = v_item),
       'VERIFY FAILED (061): composite FK target missing: ' || v_item;
   END LOOP;
+
+  -- WAREHOUSE-W1-DISPATCH-FK-TARGET-061-FIX-A: prove the target this migration's
+  -- own part F depends on PRECISELY — schema, owning relation, constraint type,
+  -- validation state and exact definition — so a same-named constraint on another
+  -- table can never satisfy it. The name-only loop above cannot distinguish that.
+  ASSERT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t     ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname = 'warehouse_dispatches'
+      AND c.conname = 'warehouse_dispatches_id_org_uniq'
+      AND c.contype = 'u'
+      AND c.convalidated
+      AND pg_get_constraintdef(c.oid) = 'UNIQUE (id, organization_id)'
+  ), 'VERIFY FAILED (061): warehouse_dispatches_id_org_uniq must exist on '
+     'public.warehouse_dispatches as a VALIDATED UNIQUE (id, organization_id). '
+     'Without it warehouse_dispatch_lines_dispatch_org_fk cannot be created '
+     '(ERROR 42830: no unique constraint matching given keys).';
+
+  -- ...and the FK that needs it must reference exactly those columns, in order.
+  -- Column sets are compared structurally through conkey/confkey rather than by
+  -- string-matching pg_get_constraintdef, so deparser formatting can never fail
+  -- this assertion and roll back a healthy migration.
+  ASSERT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t     ON t.oid = c.conrelid
+    JOIN pg_class rt    ON rt.oid = c.confrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public'
+      AND t.relname  = 'warehouse_dispatch_lines'
+      AND rt.relname = 'warehouse_dispatches'
+      AND c.conname  = 'warehouse_dispatch_lines_dispatch_org_fk'
+      AND c.contype  = 'f'
+      AND (SELECT array_agg(a.attname ORDER BY x.ord)
+             FROM unnest(c.conkey) WITH ORDINALITY AS x(attnum, ord)
+             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum)
+          = ARRAY['dispatch_id','organization_id']::name[]
+      AND (SELECT array_agg(a.attname ORDER BY x.ord)
+             FROM unnest(c.confkey) WITH ORDINALITY AS x(attnum, ord)
+             JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = x.attnum)
+          = ARRAY['id','organization_id']::name[]
+  ), 'VERIFY FAILED (061): warehouse_dispatch_lines_dispatch_org_fk must be '
+     'FOREIGN KEY (dispatch_id, organization_id) REFERENCES '
+     'warehouse_dispatches (id, organization_id) — same-organization dispatch '
+     'integrity must stay structural, never a single-column dispatch_id FK.';
 
   -- ---------------------------------------------------------------------------
   -- 5. Dispatch tables
