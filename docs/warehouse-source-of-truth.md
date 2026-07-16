@@ -49,12 +49,13 @@ belong to migration 065 or later.
 - Warehouse-origin outlet rows carry the dispatch provenance reference.
 - Migration 065 must add an explicit outlet `source_kind` discriminator with
   `manual` and `warehouse_dispatch` values. Existing rows start as `manual`.
-- The corrected outlet identity includes `source_kind`, so a real-batch manual
-  row and a real-batch dispatch row can never merge merely because both have a
-  null internal reference.
-- The manual editor may only match `source_kind = 'manual'` rows. It must never
-  overwrite, reactivate, or apply quantity movements to a
-  `source_kind = 'warehouse_dispatch'` row.
+- Every dispatch-origin outlet row receives a non-null private provenance key
+  derived from its warehouse stock identity, including real-batch rows. This
+  uses migration 061's existing eighth identity component to prevent a manual
+  row and a warehouse-dispatch row from ever merging.
+- The manual editor may only match `source_kind = 'manual'` rows with a null
+  internal reference. It must never overwrite, reactivate, or apply quantity
+  movements to a `source_kind = 'warehouse_dispatch'` row.
 
 ### Quantity truth
 
