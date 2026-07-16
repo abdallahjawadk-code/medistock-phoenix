@@ -700,6 +700,7 @@ describe('shadow diagnostics deduplication', () => {
       windowMs: 1000, now: () => t, emit: r => emitted.push(r),
     });
     const record = {
+      outcome: 'disagreement' as const,
       profileRef: 'abcd1234', role: 'warehouse_officer',
       permissionKey: 'warehouse_stock.view',
       organizationId: ORG_A, warehouseId: WH_A2, distributionPointId: null,
@@ -723,6 +724,7 @@ describe('shadow diagnostics deduplication', () => {
     const emitted: unknown[] = [];
     const reporter = createShadowReporter({ now: () => 0, emit: r => emitted.push(r) });
     const base = {
+      outcome: 'disagreement' as const,
       profileRef: 'abcd1234', role: 'warehouse_officer',
       permissionKey: 'warehouse_stock.view',
       organizationId: ORG_A, distributionPointId: null,
@@ -738,6 +740,7 @@ describe('shadow diagnostics deduplication', () => {
     const emitted: unknown[] = [];
     const reporter = createShadowReporter({ now: () => 0, emit: r => emitted.push(r) });
     const record = {
+      outcome: 'disagreement' as const,
       profileRef: 'abcd1234', role: 'viewer', permissionKey: 'reports.view',
       organizationId: ORG_A, warehouseId: null, distributionPointId: null,
       legacyDecision: true, scopedDecision: false,

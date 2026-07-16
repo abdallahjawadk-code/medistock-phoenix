@@ -190,6 +190,37 @@ const LEGACY_ADMIN_DEFAULTS = [
   'inter_institution_alerts.resolve', 'inter_institution_alerts.dismiss',
 ];
 
+/**
+ * transfer_manager — hidden legacy role, FROZEN default set.
+ *
+ * RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT.
+ *
+ * This is a byte-for-byte snapshot of MONTHLY_STATUS_OFFICER_DEFAULTS as it
+ * stands today, and it is a COPY on purpose — the two lists must be free to
+ * diverge, because the database has already diverged them:
+ *
+ *   • migration 010 seeded transfer_manager BY COPYING monthly_status_officer's
+ *     defaults at that time. That is why this snapshot is identical today, and
+ *     why nothing here changes what a transfer_manager can currently do.
+ *   • migration 062 then granted monthly_status_officer reports.view and
+ *     audit.view, and gave transfer_manager NEITHER (absent row = false), while
+ *     explicitly denying it the other eight new keys.
+ *
+ * Deriving this list from monthly_status_officer's would re-create exactly the
+ * inheritance 062 rejected: the next key added there would silently become a
+ * transfer_manager grant that the database denies. A snapshot cannot do that.
+ * legacy-role-alignment.test.ts pins both halves — today's parity, and the
+ * prohibition on any 062 key ever appearing here.
+ */
+const TRANSFER_MANAGER_LEGACY_DEFAULTS = [
+  'dashboard.view', 'availability.view',
+  'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
+  'exchange_alerts.view', 'inter_institution_alerts.view',
+  'status_contacts.view', 'status_contacts.manage',
+  'availability.movements.view',
+  'inter_institution_alerts.acknowledge',
+];
+
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   super_admin:            ALL_KEYS,
   institution_admin:      INSTITUTION_ADMIN_DEFAULTS,
@@ -202,7 +233,9 @@ const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
 /** Default permission set for any role string (legacy-aware). */
 export function roleDefaults(role: string): Set<string> {
   const n = normalizeRole(role);
-  if (n === 'hospital_admin') return new Set(LEGACY_ADMIN_DEFAULTS);
+  if (n === 'hospital_admin')   return new Set(LEGACY_ADMIN_DEFAULTS);
+  // Its own frozen list — never resolved through monthly_status_officer.
+  if (n === 'transfer_manager') return new Set(TRANSFER_MANAGER_LEGACY_DEFAULTS);
   return new Set(OFFICIAL_DEFAULTS[n]);
 }
 

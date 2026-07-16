@@ -23,9 +23,10 @@
    ──────────────────────────────────────────────────────────────────────────── */
 
 import {
-  createShadowReporter, nullShadowReporter, truncateProfileRef,
-  type AuthzReasonCode, type ShadowReporter,
+  combineReporters, createShadowReporter, nullShadowReporter, truncateProfileRef,
+  type AuthzReasonCode, type ShadowOutcome, type ShadowReporter,
 } from './diagnostics';
+import { createRbacTelemetryStore, telemetryReporter, type RbacTelemetryStore } from './telemetry';
 import {
   currentScopedRbacMode, scopedEngineEnabled, scopedEngineEnforcesRole,
   type ScopedRbacMode,
@@ -248,8 +249,19 @@ export function createAuthorizationService(
       mode, permissionKey: key, scope: s,
     };
 
-    if (mismatch) {
+    // Report a real disagreement, and separately report the scoped engine
+    // FAILING to answer — the second is RPC health, not an RBAC finding, and
+    // `outcome` keeps a reviewer from reading it as one. Nothing else is
+    // reported: an anonymous or profile-less context produces unknowns by the
+    // thousand and says nothing about migration 062.
+    const reportable: ShadowOutcome | null =
+      mismatch ? 'disagreement'
+      : scopedReason === 'TEMPORARY_FAILURE' ? 'unknown'
+      : null;
+
+    if (reportable) {
       reporter.report({
+        outcome:             reportable,
         profileRef:          truncateProfileRef(ctx.profileId),
         role:                ctx.role ?? 'unknown',
         permissionKey:       key,
@@ -397,10 +409,30 @@ export function createAuthorizationService(
   };
 }
 
-/** The reporter this build should use: loud in dev/test, silent in production. */
-export function defaultReporter(): ShadowReporter {
-  const noisy = import.meta.env.DEV || import.meta.env.MODE === 'test';
-  return noisy ? createShadowReporter() : nullShadowReporter;
+/**
+ * The observability this build should use.
+ *
+ * Two channels, deliberately different in lifetime:
+ *   • console — dev/test only, heavily deduplicated, for the developer watching.
+ *   • telemetry store — wherever the engine runs (including staging shadow),
+ *     accumulating the session's evidence for a human to export and review.
+ *
+ * A production build with mode=off gets neither, and the store reports itself
+ * disabled rather than pretending to be empty.
+ */
+export function createRbacObservability(mode: ScopedRbacMode): {
+  reporter: ShadowReporter;
+  store: RbacTelemetryStore;
+} {
+  const dev   = import.meta.env.DEV;
+  const noisy = dev || import.meta.env.MODE === 'test';
+
+  const store = createRbacTelemetryStore({
+    mode, dev, environment: import.meta.env.MODE,
+  });
+
+  const console_ = noisy ? createShadowReporter() : nullShadowReporter;
+  return { reporter: combineReporters(console_, telemetryReporter(store)), store };
 }
 
 export type { ScopeAssignment } from './rbac.service';

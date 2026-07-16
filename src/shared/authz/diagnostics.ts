@@ -29,8 +29,22 @@ export type AuthzReasonCode =
   | 'OUT_OF_SCOPE'
   | 'TEMPORARY_FAILURE';
 
+/**
+ * What the scoped engine's answer actually was, relative to the legacy one.
+ *
+ * These are NOT interchangeable and the distinction is load-bearing:
+ *   'disagreement' — both engines answered and they differ. This is signal:
+ *                    it is what enforcement would change.
+ *   'unknown'      — the scoped engine could not answer (RPC failure). This is
+ *                    NOT a disagreement and must never be counted as one, or
+ *                    an afternoon of flaky network reads as an RBAC problem and
+ *                    the real disagreements drown in it.
+ */
+export type ShadowOutcome = 'disagreement' | 'unknown';
+
 /** The complete set of fields a shadow record may carry. Nothing else exists. */
 export interface ShadowMismatchRecord {
+  outcome: ShadowOutcome;
   /** First 8 chars of the profile UUID. Never the full ID, never a name/email. */
   profileRef: string;
   role: string;
@@ -70,12 +84,23 @@ function defaultEmit(record: ShadowMismatchRecord): void {
   // Development/test only. A production build must stay silent: a mismatch is a
   // developer signal, and a console line in production is just an information
   // leak with no reader.
-  console.warn('[phoenix][rbac-shadow] scoped/legacy mismatch', record);
+  const label = record.outcome === 'disagreement'
+    ? 'scoped/legacy mismatch'
+    : 'scoped engine could not answer (not a mismatch)';
+  console.warn(`[phoenix][rbac-shadow] ${label}`, record);
 }
 
-const dedupKey = (r: Omit<ShadowMismatchRecord, 'suppressedCount'>): string =>
+/** Fan one record out to several reporters. */
+export function combineReporters(...reporters: ShadowReporter[]): ShadowReporter {
+  return {
+    report(record) { for (const r of reporters) r.report(record); },
+    reset()        { for (const r of reporters) r.reset(); },
+  };
+}
+
+export const dedupKey = (r: Omit<ShadowMismatchRecord, 'suppressedCount'>): string =>
   [
-    r.profileRef, r.role, r.permissionKey,
+    r.outcome, r.profileRef, r.role, r.permissionKey,
     r.organizationId ?? '-', r.warehouseId ?? '-', r.distributionPointId ?? '-',
     String(r.legacyDecision), String(r.scopedDecision), r.reasonCode,
   ].join('|');

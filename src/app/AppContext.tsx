@@ -16,10 +16,14 @@ import {
 } from '@/shared/supabase/services/auth.service';
 import { getEffectivePermissions } from '@/shared/supabase/services/users.service';
 import {
-  createAuthorizationService, defaultReporter,
+  createAuthorizationService, createRbacObservability,
   type AuthorizationService,
 } from '@/shared/authz/authorization';
-import { currentScopedRbacMode, type ScopedRbacMode } from '@/shared/authz/mode';
+import {
+  currentScopedRbacDiagnostic, currentScopedRbacMode,
+  type ScopedRbacMode, type ScopedRbacModeDiagnostic,
+} from '@/shared/authz/mode';
+import type { RbacTelemetryStore } from '@/shared/authz/telemetry';
 
 interface AppState {
   // ── UI prefs ──
@@ -69,6 +73,15 @@ interface AppState {
   authz: AuthorizationService;
   /** The resolved PHOENIX_SCOPED_RBAC_MODE for this build. */
   scopedRbacMode: ScopedRbacMode;
+  /**
+   * Session-scoped, in-memory mismatch telemetry (RBAC-PHASE-2). Bounded,
+   * deduplicated, cleared on logout/profile switch, and never transmitted
+   * anywhere — a human exports it as JSON to review. Collects nothing in a
+   * production build with mode=off.
+   */
+  rbacTelemetry: RbacTelemetryStore;
+  /** Safe configuration diagnostic: mode, environment, whether the engine runs. */
+  scopedRbacDiagnostic: ScopedRbacModeDiagnostic;
 
   // ── Password recovery ──
   /** True when the user arrived via a reset-password email (recovery session). */
@@ -111,8 +124,11 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   // are per-session state, and a service rebuilt on every render would cache
   // nothing and issue one RPC per row per render.
   const scopedRbacMode = useRef<ScopedRbacMode>(currentScopedRbacMode()).current;
+  const scopedRbacDiagnostic = useRef<ScopedRbacModeDiagnostic>(currentScopedRbacDiagnostic()).current;
+  const observability = useRef(createRbacObservability(scopedRbacMode)).current;
+  const rbacTelemetry = observability.store;
   const authz = useRef<AuthorizationService>(
-    createAuthorizationService({ mode: scopedRbacMode, reporter: defaultReporter() }),
+    createAuthorizationService({ mode: scopedRbacMode, reporter: observability.reporter }),
   ).current;
   // Seed recovery mode from the URL so the reset screen shows immediately,
   // before Supabase's PASSWORD_RECOVERY event fires. ResetPasswordScreen
@@ -247,6 +263,44 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     return () => { active = false; unsub(); };
   }, [loadProfile, skipAuthBootstrap]);
 
+  // Startup diagnostic (RBAC-PHASE-2 Phase C). Development only, once per
+  // mount. It answers "is shadow mode actually on in this build?" — a question
+  // that otherwise gets answered by assumption, and whose answer decides
+  // whether the telemetry means anything. It reports CONFIGURATION only: the
+  // record has no field for a URL, a key, a session or a user.
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.info('[phoenix][rbac] scoped RBAC configuration', scopedRbacDiagnostic);
+    }
+  }, [scopedRbacDiagnostic]);
+
+  // Console export handle for the staging review (docs/rbac-staging-activation.md).
+  // Attached ONLY where the store already collects — a production build with
+  // mode=off has `enabled: false`, so nothing is exposed there at all. What it
+  // exposes is the same sanitized snapshot the store would give anyone: no
+  // identity, no token, no URL. It is deliberately read-only — there is no
+  // reason for a console to be able to inject an authorization event.
+  useEffect(() => {
+    if (!rbacTelemetry.enabled || typeof window === 'undefined') return;
+    const w = window as unknown as Record<string, unknown>;
+    w.__phoenixRbacTelemetry = {
+      exportJson: () => rbacTelemetry.exportJson(),
+      snapshot:   () => rbacTelemetry.snapshot(),
+      mode:       scopedRbacDiagnostic,
+    };
+    return () => { delete w.__phoenixRbacTelemetry; };
+  }, [rbacTelemetry, scopedRbacDiagnostic]);
+
+  // Telemetry is per-subject. A profile switch on a shared workstation must not
+  // leave the previous person's mismatches in the buffer for the next person to
+  // export. Keyed on profile.id ALONE, deliberately: the authz cache is
+  // invalidated on every permission refresh too, but wiping the session's
+  // accumulated evidence every time permissions reload would leave the store
+  // permanently near-empty for no safety benefit.
+  useEffect(() => {
+    rbacTelemetry.clear();
+  }, [rbacTelemetry, profile?.id]);
+
   // Keep the authorization service's context in step with the session. Every
   // dependency here is a reason its cached decisions are no longer valid:
   //   session   → login / logout / token refresh to a different user
@@ -328,7 +382,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
       activeOrgId, setActiveOrgId,
       signIn, signOut, reloadProfile,
       myPermissions, myPermissionsMigrationMissing, reloadMyPermissions,
-      authz, scopedRbacMode,
+      authz, scopedRbacMode, rbacTelemetry, scopedRbacDiagnostic,
       passwordRecovery, requestPasswordReset, updatePassword, clearRecovery,
     }}>
       {children}

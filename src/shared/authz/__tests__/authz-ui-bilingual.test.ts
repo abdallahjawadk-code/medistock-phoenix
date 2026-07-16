@@ -11,7 +11,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { T, t } from '@/shared/i18n/strings';
+import { PERMISSION_KEY_SET } from '@/shared/lib/permissions';
 import { AUTHZ_REASON_STRING_KEY, isRecoverableReason } from '../PhoenixPermissionGate';
+import { SCOPED_PERMISSION_KEYS } from '../scoped-permissions';
 import type { AuthzReasonCode } from '../diagnostics';
 
 const SRC  = join(__dirname, '../../../');
@@ -172,13 +174,13 @@ describe('integration surface — read-only flows only', () => {
   });
 
   it('the legacy permission catalog is untouched — no new checkboxes appear', () => {
-    const perms = read('shared/lib/permissions.ts');
-    for (const newKey of [
-      'warehouse_stock.view', 'warehouse_stock.adjust', 'warehouse_stock.correct',
-      'warehouse_stock.movements_view', 'reports.financial', 'reports.export',
-      'audit.view', 'users.edit_scope', 'users.reset_permissions',
-    ]) {
-      expect(`${newKey}: ${perms.includes(newKey)}`).toBe(`${newKey}: false`);
+    // Asserted against the CATALOG, not the file text: permissions.ts now
+    // documents in prose why transfer_manager is denied reports.view and
+    // audit.view (RBAC-PHASE-2), and a grep-based test would force that
+    // explanation to be deleted to stay green. What must hold is that the ten
+    // keys are not offered as permission-matrix checkboxes.
+    for (const def of SCOPED_PERMISSION_KEYS) {
+      expect(`${def.key}: ${PERMISSION_KEY_SET.has(def.key)}`).toBe(`${def.key}: false`);
     }
   });
 });

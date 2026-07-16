@@ -30,7 +30,23 @@ describe('Official role model', () => {
   it('maps legacy roles to official non-destructively', () => {
     expect(normalizeRole('warehouse_manager')).toBe('warehouse_officer');
     expect(normalizeRole('point_operator')).toBe('port_officer');
-    expect(normalizeRole('transfer_manager')).toBe('monthly_status_officer');
+    // RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT:
+    // transfer_manager used to normalize to monthly_status_officer here. That
+    // assertion is deliberately superseded, not relaxed.
+    //
+    // Migration 062 made the two roles genuinely different: it grants
+    // monthly_status_officer reports.view and audit.view, and grants
+    // transfer_manager neither (their rows are absent, which evaluates to
+    // false) while explicitly denying it the other eight new keys. Resolving one
+    // role through the other could not represent that, and would have handed
+    // transfer_manager two database-denied permissions the moment the new keys
+    // reached the frontend catalog.
+    //
+    // It keeps its own authorization identity now. Nothing else changed: its
+    // display label is unchanged, its stored value is unchanged, and its
+    // effective permissions are unchanged (see legacy-role-alignment.test.ts,
+    // which pins today's parity alongside the closed inheritance channel).
+    expect(normalizeRole('transfer_manager')).toBe('transfer_manager');
     expect(normalizeRole('hospital_admin')).toBe('hospital_admin'); // legacy admin kept
     expect(normalizeRole('viewer')).toBe('viewer');
     expect(normalizeRole('unknown')).toBe('viewer'); // safe fallback

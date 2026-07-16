@@ -72,6 +72,52 @@ export function scopedEngineEnabled(mode: ScopedRbacMode): boolean {
   return mode !== 'off';
 }
 
+/* ── Runtime diagnostic (RBAC-PHASE-2, Phase C) ───────────────────────────────
+   "Is shadow mode actually on in this build?" is a question that has been
+   answered by assumption more than once, and the answer decides whether the
+   telemetry we are about to review means anything. This makes it observable —
+   and observable ONLY as configuration.
+
+   The record below has no field for a URL, a key, a session, a profile or any
+   user-identifying value, so no code path can emit one. It reports what this
+   BUILD is configured to do, not who is using it. */
+
+export interface ScopedRbacModeDiagnostic {
+  mode: ScopedRbacMode;
+  /** 'development' | 'test' | 'production' — Vite's build environment. */
+  environment: string;
+  /** Whether the scoped engine will be evaluated at all. */
+  scopedEvaluationEnabled: boolean;
+  /**
+   * Whether ANY role is gated by the scoped engine in this build. True only for
+   * enforce_super_admin, and even then only for super_admin.
+   */
+  enforcementActive: boolean;
+  /** True when the mode came from an explicit env value rather than a default. */
+  explicitlyConfigured: boolean;
+}
+
+export function describeScopedRbacMode(env: ModeEnvironment & { environment?: string }): ScopedRbacModeDiagnostic {
+  const mode = resolveScopedRbacMode(env);
+  return {
+    mode,
+    environment: env.environment ?? (env.test ? 'test' : env.dev ? 'development' : 'production'),
+    scopedEvaluationEnabled: scopedEngineEnabled(mode),
+    enforcementActive: mode === 'enforce_super_admin',
+    explicitlyConfigured: isScopedRbacMode(env.raw),
+  };
+}
+
+/** This build's diagnostic. */
+export function currentScopedRbacDiagnostic(): ScopedRbacModeDiagnostic {
+  return describeScopedRbacMode({
+    raw:         import.meta.env.VITE_PHOENIX_SCOPED_RBAC_MODE,
+    dev:         import.meta.env.DEV,
+    test:        import.meta.env.MODE === 'test',
+    environment: import.meta.env.MODE,
+  });
+}
+
 /**
  * True when the scoped decision may actually GATE this role.
  * The pilot is super_admin only — every other role stays shadow-only, in every
