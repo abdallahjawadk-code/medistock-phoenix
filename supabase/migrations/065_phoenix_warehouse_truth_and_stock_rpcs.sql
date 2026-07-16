@@ -795,19 +795,15 @@ BEGIN
       AND pg_get_constraintdef(oid) LIKE '%request_fingerprint%'
   ), 'VERIFY FAILED (065): request fingerprint constraint missing';
 
+  -- Exact signatures: a different overload must never satisfy verification.
   FOREACH v_def IN ARRAY ARRAY[
-    'phoenix_apply_availability_movement',
-    'phoenix_receive_warehouse_stock',
-    'phoenix_apply_warehouse_stock_movement'
+    'public.phoenix_guard_availability_source_kind()',
+    'public.phoenix_apply_availability_movement(uuid,text,integer,text,text)',
+    'public.phoenix_receive_warehouse_stock(uuid,uuid,text,integer,boolean,boolean,uuid,text,text,text,text,text,text,date,numeric,text,text,text,text,text)',
+    'public.phoenix_apply_warehouse_stock_movement(uuid,uuid,text,integer,text,text,text)'
   ] LOOP
-    SELECT pg_get_functiondef(p.oid)
-      INTO v_qr_def
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND p.proname = v_def
-    ORDER BY p.oid DESC
-    LIMIT 1;
+    SELECT pg_get_functiondef(v_def::regprocedure)
+      INTO v_qr_def;
 
     ASSERT v_qr_def IS NOT NULL,
       'VERIFY FAILED (065): function missing: ' || v_def;
@@ -842,15 +838,24 @@ BEGIN
      AND v_def LIKE '%INSERT INTO public.audit_logs%',
     'VERIFY FAILED (065): adjustment RPC lost a required safety boundary';
 
+  -- Raw ACL inspection includes the PUBLIC pseudo-role (OID 0); the
+  -- information_schema.role_* views intentionally omit PUBLIC grants.
   SELECT count(*) INTO v_count
-  FROM information_schema.role_routine_grants
-  WHERE routine_schema = 'public'
-    AND routine_name IN (
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  CROSS JOIN LATERAL aclexplode(
+    COALESCE(p.proacl, acldefault('f', p.proowner))
+  ) acl
+  WHERE n.nspname = 'public'
+    AND p.proname IN (
       'phoenix_receive_warehouse_stock',
       'phoenix_apply_warehouse_stock_movement'
     )
-    AND grantee IN ('anon', 'PUBLIC')
-    AND privilege_type = 'EXECUTE';
+    AND acl.privilege_type = 'EXECUTE'
+    AND (
+      acl.grantee = 0
+      OR acl.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'anon')
+    );
   ASSERT v_count = 0,
     'VERIFY FAILED (065): anon/PUBLIC can execute a warehouse mutation RPC';
 
