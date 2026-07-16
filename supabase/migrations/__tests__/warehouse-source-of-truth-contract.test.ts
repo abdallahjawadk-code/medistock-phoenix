@@ -25,18 +25,19 @@ const active010 = activeSql(m010);
 const active060 = activeSql(m060);
 const active061 = activeSql(m061);
 const active062 = activeSql(m062);
+const contractText = contract.replace(/\s+/g, ' ');
 
 describe('warehouse source-of-truth contract', () => {
   it('is explicit, binding, and leaves historical migrations immutable', () => {
-    expect(contract).toContain('binding implementation contract');
-    expect(contract).toContain('authoritative quantity and batch source');
-    expect(contract).toContain('Historical migrations 001–064 must not be edited');
-    expect(contract).toContain('migration 065 or later');
+    expect(contractText).toContain('binding implementation contract');
+    expect(contractText).toContain('authoritative quantity and batch source');
+    expect(contractText).toContain('Historical migrations 001–064 must not be edited');
+    expect(contractText).toContain('migration 065 or later');
   });
 
   it('keeps warehouse and outlet as distinct domain entities', () => {
-    expect(contract).toContain('A warehouse is a real warehouse entity');
-    expect(contract).toContain('It is not modelled as a distribution point');
+    expect(contractText).toContain('A warehouse is a real warehouse entity');
+    expect(contractText).toContain('It is not modelled as a distribution point');
     expect(active061).toMatch(
       /warehouse_id\s+uuid NOT NULL,[\s\S]*destination_distribution_point_id uuid NOT NULL/,
     );
@@ -70,8 +71,8 @@ describe('warehouse source-of-truth contract', () => {
       /CHECK \(batch_number IS NULL OR \(btrim\(batch_number\) = batch_number/,
     );
     expect(active061).toContain('AND ia.internal_batch_reference IS NULL');
-    expect(contract).toContain('is private provenance');
-    expect(contract).toContain('never exposed through public QR');
+    expect(contractText).toContain('is private provenance');
+    expect(contractText).toContain('never exposed through public QR');
   });
 
   it('makes dispatch acceptance idempotent at the outlet movement boundary', () => {
@@ -79,7 +80,7 @@ describe('warehouse source-of-truth contract', () => {
     expect(active061).toMatch(
       /CREATE UNIQUE INDEX IF NOT EXISTS item_availability_movements_dispatch_line_uniq\s+ON public\.item_availability_movements \(dispatch_line_id\)\s+WHERE dispatch_line_id IS NOT NULL/,
     );
-    expect(contract).toContain('is idempotent and cannot be repeated');
+    expect(contractText).toContain('is idempotent and cannot be repeated');
   });
 
   it('pins every dispatch to one organization structurally', () => {
@@ -126,7 +127,7 @@ describe('warehouse source-of-truth contract', () => {
     expect(active010).toContain(
       "('warehouse_officer','warehouses.view',true)",
     );
-    expect(contract).toContain('A sender must never self-accept a line');
+    expect(contractText).toContain('A sender must never self-accept a line');
   });
 
   it('requires active assignments and never widens organization scope', () => {
@@ -134,18 +135,18 @@ describe('warehouse source-of-truth contract', () => {
     expect(active062).toContain('phoenix_profile_has_scoped_permission');
     expect(active062).toContain('phoenix_profile_has_warehouse_assignment');
     expect(active062).toContain('phoenix_profile_has_point_assignment');
-    expect(contract).toContain('Organization scope may only be');
-    expect(contract).toContain('narrowed by an assignment; never widened');
+    expect(contractText).toContain('Organization scope may only be');
+    expect(contractText).toContain('narrowed by an assignment; never widened');
   });
 
   it('does not authorize automatic transfer or derived-system writes', () => {
-    expect(contract).toContain('No automatic transfer or silent stock reconciliation');
-    expect(contract).toContain('do not become a second inventory source');
-    expect(contract).toContain('cannot create one itself');
+    expect(contractText).toContain('No automatic transfer or silent stock reconciliation');
+    expect(contractText).toContain('do not become a second inventory source');
+    expect(contractText).toContain('cannot create one itself');
   });
 
   it('does not authorize production mutation or RBAC enforcement', () => {
-    expect(contract).toContain(
+    expect(contractText).toContain(
       'No production SQL, migration application, RBAC enforcement, or destructive data',
     );
   });
