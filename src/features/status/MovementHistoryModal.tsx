@@ -81,7 +81,6 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
       setMovements([]);
       setError(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row?.id]);
 
   // UX-SMART-FILTERS-TIMELINE-A: maps the exact same already-fetched
