@@ -256,9 +256,14 @@ describe('Role default permissions', () => {
     expect(d.has('users.create')).toBe(false);
   });
 
-  it('warehouse_officer manages stores, not users/orgs', () => {
+  // RBAC-FALLBACK-ALIGNMENT: migration 062 (C1) demoted warehouse_officer from
+  // warehouse owner to warehouse DATA ENTRY officer — it sees its warehouses but
+  // no longer administers the master records. This test previously asserted the
+  // opposite; the assertion was the divergence, not the role.
+  it('warehouse_officer views stores but does not manage them, users or orgs', () => {
     const d = roleDefaults('warehouse_officer');
-    expect(d.has('warehouses.manage')).toBe(true);
+    expect(d.has('warehouses.view')).toBe(true);
+    expect(d.has('warehouses.manage')).toBe(false);
     expect(d.has('users.create')).toBe(false);
     expect(d.has('organizations.archive')).toBe(false);
   });

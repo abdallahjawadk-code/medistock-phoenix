@@ -106,8 +106,16 @@ const VIEWER_DEFAULTS = [
   'availability.movements.view',
 ];
 
+// RBAC-FALLBACK-ALIGNMENT: `warehouses.manage` is deliberately absent.
+// Migration 062 (C1) sets this default to false — warehouse_officer is a DATA
+// ENTRY role, not a warehouse owner: the key authorizes org-wide INSERT/UPDATE
+// on warehouse MASTER records (create, rename, re-code, flip is_main, archive),
+// none of which is its job. `warehouses.view` is retained so the role can still
+// see its warehouses. An operator who deliberately grants the key back via an
+// override still gets 060's org-scoped behavior — an explicit, audited decision.
+// The database is authoritative; this fallback must not out-grant it.
 const WAREHOUSE_OFFICER_DEFAULTS = [
-  'dashboard.view', 'organizations.view', 'warehouses.view', 'warehouses.manage',
+  'dashboard.view', 'organizations.view', 'warehouses.view',
   'ports.view', 'qr.view', 'qr.generate',
   'availability.view', 'availability.manage', 'availability.create', 'availability.update',
   'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
