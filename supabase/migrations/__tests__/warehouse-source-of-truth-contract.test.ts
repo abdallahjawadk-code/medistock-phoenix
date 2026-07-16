@@ -73,6 +73,9 @@ describe('warehouse source-of-truth contract', () => {
     expect(active061).toContain('AND ia.internal_batch_reference IS NULL');
     expect(contractText).toContain('is private provenance');
     expect(contractText).toContain('never exposed through public QR');
+    expect(contractText).toContain('explicit outlet `source_kind` discriminator');
+    expect(contractText).toContain("source_kind = 'manual'");
+    expect(contractText).toContain("source_kind = 'warehouse_dispatch'");
   });
 
   it('makes dispatch acceptance idempotent at the outlet movement boundary', () => {
