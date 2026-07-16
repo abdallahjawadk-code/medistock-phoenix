@@ -125,6 +125,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '062_phoenix_user_rbac_scope_foundation.sql',
   '063_phoenix_rbac_security_hardening.sql',
   '064_fix_profile_identity_snapshot_return_type.sql',
+  '065_phoenix_warehouse_truth_and_stock_rpcs.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
