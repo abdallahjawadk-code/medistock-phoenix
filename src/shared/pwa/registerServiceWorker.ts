@@ -14,7 +14,6 @@ export function registerServiceWorker(): void {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'unknown error';
-      // eslint-disable-next-line no-console
       console.warn('[pwa] service worker registration failed:', message);
     });
   });
