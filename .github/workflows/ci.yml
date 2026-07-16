@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Security and quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1e60f620b9541d5284c4862646b9c117fba5c339 # v4.0.3
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Lint with the established warning baseline
+        run: npm run lint -- --max-warnings 4
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_PHOENIX_SUPABASE_URL: https://example.supabase.co
+          VITE_PHOENIX_SUPABASE_ANON_KEY: ci-public-anon-placeholder
+          VITE_PHOENIX_BATCH_IDENTITY_051_ENABLED: "true"
+          VITE_PHOENIX_SCOPED_RBAC_MODE: "off"
+
+      - name: Validate Vercel configuration
+        run: node -e "JSON.parse(require('node:fs').readFileSync('vercel.json', 'utf8'))"
