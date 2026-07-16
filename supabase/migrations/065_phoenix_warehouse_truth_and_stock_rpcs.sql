@@ -163,7 +163,29 @@ COMMENT ON FUNCTION public.phoenix_apply_availability_movement(
 -- =============================================================================
 
 -- One client request produces at most one warehouse movement. The request UUID
--- is not a document number; it is a caller-generated idempotency key.
+-- is not a document number; it is a caller-generated idempotency key. The
+-- fingerprint is a consistency checksum, not an authentication primitive: a
+-- replay with the same UUID but different normalized inputs fails closed.
+ALTER TABLE public.warehouse_stock_movements
+  ADD COLUMN IF NOT EXISTS request_fingerprint text;
+
+DO $$ BEGIN
+  ALTER TABLE public.warehouse_stock_movements
+    ADD CONSTRAINT warehouse_stock_movements_request_fingerprint_chk
+    CHECK (
+      reference_type IS DISTINCT FROM 'warehouse_request'
+      OR (
+        request_fingerprint IS NOT NULL
+        AND request_fingerprint ~ '^[0-9a-f]{32}$'
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+COMMENT ON COLUMN public.warehouse_stock_movements.request_fingerprint IS
+  'MD5 consistency checksum of normalized warehouse mutation inputs. It binds '
+  'a warehouse_request UUID to one semantic request and is not an authentication '
+  'or secret-protection mechanism. Required when reference_type=warehouse_request.';
+
 CREATE UNIQUE INDEX IF NOT EXISTS warehouse_stock_movements_request_once_uniq
   ON public.warehouse_stock_movements (reference_id)
   WHERE reference_type = 'warehouse_request'
@@ -223,6 +245,7 @@ DECLARE
   v_after          integer;
   v_movement_id    uuid;
   v_existing       public.warehouse_stock_movements%ROWTYPE;
+  v_request_fingerprint text;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
@@ -279,7 +302,42 @@ BEGIN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
   END IF;
 
-  -- Serialize retries of one request before checking/creating its movement.
+  -- A no-batch receipt gets a stable private identity derived from the request,
+  -- so a retry finds the same row while independent receipts never merge.
+  v_internal_ref := CASE
+    WHEN p_has_no_batch_number
+      THEN 'WSNB-' || replace(p_request_id::text, '-', '')
+    ELSE NULL
+  END;
+
+  -- Bind the idempotency key to every normalized semantic input. jsonb text has
+  -- deterministic key ordering; MD5 is used only as a compact consistency
+  -- checksum, never as authentication or password hashing.
+  v_request_fingerprint := md5(jsonb_build_object(
+    'operation', 'receive',
+    'warehouse_id', p_warehouse_id,
+    'scientific_name', v_scientific,
+    'quantity', p_quantity,
+    'has_no_national_code', p_has_no_national_code,
+    'has_no_batch_number', p_has_no_batch_number,
+    'central_item_id', p_central_item_id,
+    'trade_name', v_trade,
+    'concentration', v_concentration,
+    'dosage_form', v_dosage,
+    'unit', v_unit,
+    'national_code', v_national,
+    'batch_number', v_batch,
+    'expiry_date', p_expiry_date,
+    'unit_price', p_unit_price,
+    'price_basis', v_price_basis,
+    'currency', v_currency,
+    'supply_type_text', v_supply_type,
+    'source_document_number', v_source_doc,
+    'notes', v_notes
+  )::text);
+
+  -- Serialize retries before taking any row lock. All 065 warehouse write RPCs
+  -- use this advisory-lock-first order, preventing lock-order inversion.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 65065));
 
   SELECT *
@@ -290,7 +348,8 @@ BEGIN
 
   IF FOUND THEN
     IF v_existing.organization_id IS DISTINCT FROM v_org
-       OR v_existing.warehouse_id IS DISTINCT FROM p_warehouse_id THEN
+       OR v_existing.warehouse_id IS DISTINCT FROM p_warehouse_id
+       OR v_existing.request_fingerprint IS DISTINCT FROM v_request_fingerprint THEN
       RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
     END IF;
     RETURN jsonb_build_object(
@@ -303,14 +362,6 @@ BEGIN
       'quantity_after', v_existing.on_hand_after
     );
   END IF;
-
-  -- A no-batch receipt gets a stable private identity derived from the request,
-  -- so a retry finds the same row while independent receipts never merge.
-  v_internal_ref := CASE
-    WHEN p_has_no_batch_number
-      THEN 'WSNB-' || replace(p_request_id::text, '-', '')
-    ELSE NULL
-  END;
 
   INSERT INTO public.warehouse_stock (
     organization_id, warehouse_id, central_item_id,
@@ -372,8 +423,8 @@ BEGIN
     movement_type,
     on_hand_before, on_hand_delta, on_hand_after,
     reserved_before, reserved_delta, reserved_after,
-    reason, reference_type, reference_id, source_document_number,
-    actor_id, actor_role, actor_name,
+    reason, reference_type, reference_id, request_fingerprint,
+    source_document_number, actor_id, actor_role, actor_name,
     scientific_name_snapshot, concentration_snapshot,
     dosage_form_snapshot, batch_number_snapshot,
     internal_batch_reference_snapshot
@@ -382,8 +433,8 @@ BEGIN
     'add',
     v_before, p_quantity, v_after,
     v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
-    'warehouse_receipt', 'warehouse_request', p_request_id, v_source_doc,
-    v_actor, v_actor_role, v_actor_name,
+    'warehouse_receipt', 'warehouse_request', p_request_id, v_request_fingerprint,
+    v_source_doc, v_actor, v_actor_role, v_actor_name,
     v_stock.scientific_name, v_stock.concentration,
     v_stock.dosage_form, v_stock.batch_number,
     v_stock.internal_batch_reference
@@ -452,6 +503,7 @@ DECLARE
   v_delta       integer;
   v_key         text;
   v_movement_id uuid;
+  v_request_fingerprint text;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
@@ -479,6 +531,19 @@ BEGIN
     RAISE EXCEPTION 'warehouse_correction_reason_required'
       USING ERRCODE = '23514';
   END IF;
+
+  v_request_fingerprint := md5(jsonb_build_object(
+    'operation', 'adjust',
+    'warehouse_stock_id', p_warehouse_stock_id,
+    'movement_type', p_movement_type,
+    'amount', p_amount,
+    'reason', v_reason,
+    'source_document_number', v_source_doc,
+    'notes', v_notes
+  )::text);
+
+  -- Advisory lock first, row lock second: identical ordering to receipt.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 65065));
 
   SELECT *
     INTO v_stock
@@ -513,8 +578,6 @@ BEGIN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
   END IF;
 
-  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 65065));
-
   SELECT *
     INTO v_existing
   FROM public.warehouse_stock_movements m
@@ -522,7 +585,8 @@ BEGIN
     AND m.reference_id = p_request_id;
 
   IF FOUND THEN
-    IF v_existing.warehouse_stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    IF v_existing.warehouse_stock_id IS DISTINCT FROM p_warehouse_stock_id
+       OR v_existing.request_fingerprint IS DISTINCT FROM v_request_fingerprint THEN
       RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
     END IF;
     RETURN jsonb_build_object(
@@ -575,8 +639,8 @@ BEGIN
     movement_type,
     on_hand_before, on_hand_delta, on_hand_after,
     reserved_before, reserved_delta, reserved_after,
-    reason, reference_type, reference_id, source_document_number,
-    actor_id, actor_role, actor_name,
+    reason, reference_type, reference_id, request_fingerprint,
+    source_document_number, actor_id, actor_role, actor_name,
     scientific_name_snapshot, concentration_snapshot,
     dosage_form_snapshot, batch_number_snapshot,
     internal_batch_reference_snapshot
@@ -585,8 +649,8 @@ BEGIN
     p_movement_type,
     v_before, v_delta, v_after,
     v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
-    v_reason, 'warehouse_request', p_request_id, v_source_doc,
-    v_actor, v_actor_role, v_actor_name,
+    v_reason, 'warehouse_request', p_request_id, v_request_fingerprint,
+    v_source_doc, v_actor, v_actor_role, v_actor_name,
     v_stock.scientific_name, v_stock.concentration,
     v_stock.dosage_form, v_stock.batch_number,
     v_stock.internal_batch_reference
@@ -716,6 +780,21 @@ BEGIN
       AND indexdef LIKE '%warehouse_request%'
   ), 'VERIFY FAILED (065): request idempotency index missing';
 
+  ASSERT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'warehouse_stock_movements'
+      AND column_name = 'request_fingerprint'
+      AND data_type = 'text'
+  ), 'VERIFY FAILED (065): request fingerprint column missing';
+
+  ASSERT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'warehouse_stock_movements_request_fingerprint_chk'
+      AND pg_get_constraintdef(oid) LIKE '%warehouse_request%'
+      AND pg_get_constraintdef(oid) LIKE '%request_fingerprint%'
+  ), 'VERIFY FAILED (065): request fingerprint constraint missing';
+
   FOREACH v_def IN ARRAY ARRAY[
     'phoenix_apply_availability_movement',
     'phoenix_receive_warehouse_stock',
@@ -745,6 +824,7 @@ BEGIN
      AND v_def LIKE '%phoenix_profile_has_scoped_permission%'
      AND v_def LIKE '%warehouse_stock.adjust%'
      AND v_def LIKE '%pg_advisory_xact_lock%'
+     AND v_def LIKE '%request_fingerprint%'
      AND v_def LIKE '%INSERT INTO public.warehouse_stock_movements%'
      AND v_def LIKE '%INSERT INTO public.audit_logs%',
     'VERIFY FAILED (065): receipt RPC lost lock/scope/idempotency/ledger/audit';
@@ -756,6 +836,8 @@ BEGIN
      AND v_def LIKE '%warehouse_stock.adjust%'
      AND v_def LIKE '%warehouse_stock.correct%'
      AND v_def LIKE '%warehouse_quantity_below_reserved%'
+     AND v_def LIKE '%pg_advisory_xact_lock%'
+     AND v_def LIKE '%request_fingerprint%'
      AND v_def LIKE '%INSERT INTO public.warehouse_stock_movements%'
      AND v_def LIKE '%INSERT INTO public.audit_logs%',
     'VERIFY FAILED (065): adjustment RPC lost a required safety boundary';
@@ -767,10 +849,10 @@ BEGIN
       'phoenix_receive_warehouse_stock',
       'phoenix_apply_warehouse_stock_movement'
     )
-    AND grantee = 'anon'
+    AND grantee IN ('anon', 'PUBLIC')
     AND privilege_type = 'EXECUTE';
   ASSERT v_count = 0,
-    'VERIFY FAILED (065): anon can execute a warehouse mutation RPC';
+    'VERIFY FAILED (065): anon/PUBLIC can execute a warehouse mutation RPC';
 
   SELECT count(*) INTO v_count
   FROM information_schema.role_table_grants
