@@ -176,13 +176,13 @@ DO $$ BEGIN
       reference_type IS DISTINCT FROM 'warehouse_request'
       OR (
         request_fingerprint IS NOT NULL
-        AND request_fingerprint ~ '^[0-9a-f]{32}$'
+        AND request_fingerprint ~ '^[0-9a-f]{64}$'
       )
     );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 COMMENT ON COLUMN public.warehouse_stock_movements.request_fingerprint IS
-  'MD5 consistency checksum of normalized warehouse mutation inputs. It binds '
+  'SHA-256 consistency checksum of normalized warehouse mutation inputs. It binds '
   'a warehouse_request UUID to one semantic request and is not an authentication '
   'or secret-protection mechanism. Required when reference_type=warehouse_request.';
 
@@ -311,9 +311,9 @@ BEGIN
   END;
 
   -- Bind the idempotency key to every normalized semantic input. jsonb text has
-  -- deterministic key ordering; MD5 is used only as a compact consistency
+  -- deterministic key ordering; SHA-256 is used only as a compact consistency
   -- checksum, never as authentication or password hashing.
-  v_request_fingerprint := md5(jsonb_build_object(
+  v_request_fingerprint := encode(sha256(convert_to(jsonb_build_object(
     'operation', 'receive',
     'warehouse_id', p_warehouse_id,
     'scientific_name', v_scientific,
@@ -334,7 +334,7 @@ BEGIN
     'supply_type_text', v_supply_type,
     'source_document_number', v_source_doc,
     'notes', v_notes
-  )::text);
+  )::text, 'UTF8')), 'hex');
 
   -- Serialize retries before taking any row lock. All 065 warehouse write RPCs
   -- use this advisory-lock-first order, preventing lock-order inversion.
@@ -532,7 +532,7 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  v_request_fingerprint := md5(jsonb_build_object(
+  v_request_fingerprint := encode(sha256(convert_to(jsonb_build_object(
     'operation', 'adjust',
     'warehouse_stock_id', p_warehouse_stock_id,
     'movement_type', p_movement_type,
@@ -540,7 +540,7 @@ BEGIN
     'reason', v_reason,
     'source_document_number', v_source_doc,
     'notes', v_notes
-  )::text);
+  )::text, 'UTF8')), 'hex');
 
   -- Advisory lock first, row lock second: identical ordering to receipt.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 65065));
