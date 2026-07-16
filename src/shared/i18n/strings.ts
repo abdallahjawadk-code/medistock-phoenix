@@ -1321,6 +1321,27 @@ export const T: Dict = {
   pbc_delete_success:              { ar: 'تم حذف الإشعار بنجاح',                                                                              en: 'Broadcast deleted successfully' },
   pbc_delete_failed:               { ar: 'فشل حذف الإشعار',                                                                                    en: 'Failed to delete broadcast' },
   pbc_close_button:                { ar: 'إغلاق',                                                                                             en: 'Close' },
+
+  /* ── Scoped-RBAC authorization states (PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE) ──
+     One string per reason code the central authorization service can return.
+
+     WORDING RULE: none of these confirms or denies that a particular record
+     exists. "You are not assigned to this warehouse" would tell an unassigned
+     officer that the ID they guessed is a real warehouse; "outside your assigned
+     scope" tells them only about THEIR OWN scope, which they already know. The
+     Arabic follows the same rule — it is not a literal translation of a leakier
+     English sentence. */
+  authz_checking:              { ar: 'جارٍ التحقق من الصلاحية…',                          en: 'Checking permission…' },
+  authz_not_authenticated:     { ar: 'انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.',          en: 'Your session has ended. Please sign in again.' },
+  authz_profile_unavailable:   { ar: 'تعذّر تحميل بيانات حسابك. يرجى المحاولة مرة أخرى.',   en: 'Your account details could not be loaded. Please try again.' },
+  authz_permission_denied:     { ar: 'لا تملك صلاحية لهذا الإجراء.',                        en: 'You do not have permission for this action.' },
+  authz_assignment_missing:    { ar: 'هذا الإجراء يتطلب تخصيصًا فعّالًا ضمن نطاقك.',        en: 'This action requires an active assignment within your scope.' },
+  authz_out_of_scope:          { ar: 'هذا الإجراء خارج النطاق المخصّص لك.',                 en: 'This action is outside your assigned scope.' },
+  authz_temporary_failure:     { ar: 'تعذّر التحقق من الصلاحية حاليًا. يرجى المحاولة مرة أخرى.', en: 'Permission could not be verified right now. Please try again.' },
+  authz_retry:                 { ar: 'إعادة المحاولة',                                      en: 'Retry' },
+  /* Shown instead of an endless spinner when the super_admin pilot cannot
+     establish a decision — recoverable, never a dead end. */
+  authz_pilot_unavailable_title: { ar: 'تعذّر التحقق من الصلاحيات',                          en: 'Permission check unavailable' },
 };
 
 export function t(key: string, lang: Lang): string {

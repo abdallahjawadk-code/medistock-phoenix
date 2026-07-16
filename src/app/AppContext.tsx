@@ -15,6 +15,11 @@ import {
   type SignInResult,
 } from '@/shared/supabase/services/auth.service';
 import { getEffectivePermissions } from '@/shared/supabase/services/users.service';
+import {
+  createAuthorizationService, defaultReporter,
+  type AuthorizationService,
+} from '@/shared/authz/authorization';
+import { currentScopedRbacMode, type ScopedRbacMode } from '@/shared/authz/mode';
 
 interface AppState {
   // ── UI prefs ──
@@ -54,6 +59,17 @@ interface AppState {
   /** Re-fetches the current user's effective permissions from the DB. */
   reloadMyPermissions: () => Promise<void>;
 
+  /**
+   * PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: the central scoped-RBAC
+   * authorization service (migration 062). In 'off'/'shadow' it observes only —
+   * every effective decision it returns is still `myPermissions`, unchanged.
+   * The super_admin pilot ('enforce_super_admin') is the sole mode where its
+   * answer gates anything, and only for role === 'super_admin'.
+   */
+  authz: AuthorizationService;
+  /** The resolved PHOENIX_SCOPED_RBAC_MODE for this build. */
+  scopedRbacMode: ScopedRbacMode;
+
   // ── Password recovery ──
   /** True when the user arrived via a reset-password email (recovery session). */
   passwordRecovery: boolean;
@@ -89,6 +105,15 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [myPermissions, setMyPermissions] = useState<Set<string>>(new Set());
   const [myPermissionsMigrationMissing, setMyPermissionsMigrationMissing] = useState(false);
+
+  // ── Scoped-RBAC service (PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE) ──
+  // One instance per provider, created once: its cache and in-flight dedup map
+  // are per-session state, and a service rebuilt on every render would cache
+  // nothing and issue one RPC per row per render.
+  const scopedRbacMode = useRef<ScopedRbacMode>(currentScopedRbacMode()).current;
+  const authz = useRef<AuthorizationService>(
+    createAuthorizationService({ mode: scopedRbacMode, reporter: defaultReporter() }),
+  ).current;
   // Seed recovery mode from the URL so the reset screen shows immediately,
   // before Supabase's PASSWORD_RECOVERY event fires. ResetPasswordScreen
   // handles its own session exchange — AppContext skips profile loading.
@@ -222,6 +247,28 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     return () => { active = false; unsub(); };
   }, [loadProfile, skipAuthBootstrap]);
 
+  // Keep the authorization service's context in step with the session. Every
+  // dependency here is a reason its cached decisions are no longer valid:
+  //   session   → login / logout / token refresh to a different user
+  //   profile   → role, org or status changed under us
+  //   permissions → an administrator changed what this person may do
+  // setContext() invalidates unconditionally, so no cached decision can outlive
+  // the state it was computed from, and none can survive into another user's
+  // session.
+  useEffect(() => {
+    authz.setContext({
+      authenticated:     session !== null,
+      profileId:         profile?.id ?? null,
+      // Role is read from the profile ONLY. There is no fallback role here on
+      // purpose: `role` below defaults to 'viewer' for display, and feeding that
+      // default into the authorization engine would silently authorize a
+      // profile-load failure as a viewer instead of failing closed.
+      role:              profile?.role ?? null,
+      organizationId:    profile?.organization_id ?? null,
+      legacyPermissions: myPermissions,
+    });
+  }, [authz, session, profile, myPermissions]);
+
   const signIn = useCallback(async (email: string, password: string) => {
     const res = await authSignIn(email, password);
     // session + profile arrive via onAuthChange subscription.
@@ -281,6 +328,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
       activeOrgId, setActiveOrgId,
       signIn, signOut, reloadProfile,
       myPermissions, myPermissionsMigrationMissing, reloadMyPermissions,
+      authz, scopedRbacMode,
       passwordRecovery, requestPasswordReset, updatePassword, clearRecovery,
     }}>
       {children}

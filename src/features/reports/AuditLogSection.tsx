@@ -2,6 +2,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getAuditLog } from '@/shared/supabase/services/audit.service';
+import { useShadowObservation } from '@/shared/authz/useAuthorization';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
@@ -25,7 +26,13 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
  * as the original ReportsScreen block; no new fields are exposed here).
  */
 export function AuditLogSection() {
-  const { lang, activeOrgId } = useApp();
+  const { lang, activeOrgId, authz } = useApp();
+
+  // PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: observe audit.view against
+  // migration 062. Read-only and non-gating — the fetch below is unchanged and
+  // still protected by the audit_logs RLS policy, which stays authoritative.
+  useShadowObservation(authz, 'audit.view', { organizationId: activeOrgId });
+
   const audit = useAsync(() => activeOrgId ? getAuditLog(activeOrgId) : Promise.resolve([]), [activeOrgId]);
 
   if (!activeOrgId) {

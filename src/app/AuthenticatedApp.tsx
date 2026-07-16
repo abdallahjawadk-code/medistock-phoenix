@@ -18,6 +18,7 @@ import { InterInstitutionAlertsScreen } from '@/features/alerts/InterInstitution
 import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
 import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
+import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
  * QR-BUNDLE-CODE-SPLIT-A: everything that only an authenticated session
@@ -79,7 +80,12 @@ export function AuthenticatedApp() {
       onNavigate={setScreen}
       onLogout={() => { void signOut(); setScreen(12); }}
     >
-      {screenContent()}
+      {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
+          renders screenContent() unchanged and only observes. It gates solely
+          under PHOENIX_SCOPED_RBAC_MODE=enforce_super_admin, for super_admin. */}
+      <ScreenAuthzGuard screen={screen}>
+        {screenContent()}
+      </ScreenAuthzGuard>
     </PhoenixAppShell>
   );
 }

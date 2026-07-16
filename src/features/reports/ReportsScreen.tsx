@@ -5,6 +5,7 @@ import { useAsync } from '@/shared/lib/useAsync';
 import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/services/dashboard.service';
 import { getLowStockItems } from '@/shared/supabase/services/availability.service';
 import { AuditLogSection } from './AuditLogSection';
+import { useShadowObservation } from '@/shared/authz/useAuthorization';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -28,8 +29,15 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 export function ReportsScreen() {
-  const { lang, activeOrgId } = useApp();
+  const { lang, activeOrgId, authz } = useApp();
   const [tab, setTab] = useState<ReportTab>('summary');
+
+  // PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: observe only. This screen
+  // has never been permission-gated; gating it now would newly block anyone
+  // whose effective permissions lack reports.view, which is exactly the
+  // production change shadow mode exists to avoid. The scoped engine runs, the
+  // comparison is reported, and the screen renders as before.
+  useShadowObservation(authz, 'reports.view', { organizationId: activeOrgId });
   const isMobile = window.innerWidth < 768;
 
   const metrics  = useAsync(() => getDashboardMetrics(activeOrgId ?? undefined), [activeOrgId]);

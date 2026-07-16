@@ -18,6 +18,7 @@ import {
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { useShadowObservation } from '@/shared/authz/useAuthorization';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -113,9 +114,22 @@ function messageForPermissionCodes(codes: string[], lang: 'ar' | 'en'): string {
 }
 
 export function UserManagementScreen() {
-  const { lang, role, activeOrgId, profile, myPermissions, reloadMyPermissions } = useApp();
+  // `authz` sits before myPermissions deliberately: permission-persistence.test.ts
+  // pins the exact `myPermissions, reloadMyPermissions } = useApp()` text as its
+  // proof that actor gating reads the context rather than the hardcoded table.
+  // That guard is still true and worth keeping — so this addition works around
+  // it rather than editing it.
+  const { lang, role, activeOrgId, profile, authz, myPermissions, reloadMyPermissions } = useApp();
   const isMobile = window.innerWidth < 768;
   const isSuper  = normalizeRole(role) === 'super_admin';
+
+  // PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: observe the two scope-
+  // administration keys migration 062 introduced for this screen. Observation
+  // only — no scope-management UI is activated in this phase, and neither key
+  // gates anything here. The mismatch report tells us what enforcing them later
+  // would change, before it changes for anyone.
+  useShadowObservation(authz, 'users.edit_scope',        { organizationId: activeOrgId });
+  useShadowObservation(authz, 'users.reset_permissions', { organizationId: activeOrgId });
 
   // myPermissions is the actor's DB-backed effective permission set (role
   // defaults + their own profile_permission_overrides), loaded fresh on
