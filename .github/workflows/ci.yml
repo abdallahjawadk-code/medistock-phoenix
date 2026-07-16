@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -40,8 +40,20 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Prepare CI-only local guard fixtures
+        run: |
+          install -m 600 /dev/null premium-preview.html
+          git config user.name "MediStock CI"
+          git config user.email "ci@users.noreply.github.com"
+          printf '\n' >> SECURITY.md
+          git add SECURITY.md
+          git stash push -m "paused Service-D inter-org exchange service work" -- SECURITY.md
+          git status --porcelain --untracked-files=no | grep -q '^' && exit 1 || true
+
       - name: Run tests
         run: npm test
+        env:
+          TZ: Asia/Baghdad
 
       - name: Lint with the established warning baseline
         run: npm run lint -- --max-warnings 4
