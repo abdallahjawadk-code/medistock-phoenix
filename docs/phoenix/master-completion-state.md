@@ -18,7 +18,7 @@ repository, and resume from the first incomplete checkpoint.
 | **Current** | Checkpoint 2 — Windows Local Runtime Preparation |
 | **Pending** | Checkpoints 3–9 |
 | **Verified SHA (start)** | `c9653061db1016f9125affc2ea8060b2848c652b` |
-| **Checkpoint 1 commit** | `<recorded below on commit>` |
+| **Checkpoint 1 commit** | `193d8c36d642407027819af439dfebdb87535225` (pushed) |
 
 ---
 
@@ -133,14 +133,41 @@ it is staged/committed. They are *uncommitted-change* detectors, not regressions
 
 ## Checkpoint 2 — Windows Local Runtime Preparation ⏸️
 
-**Status: WAITING FOR OWNER — WSL2 is not installed.**
+**Status: WAITING FOR OWNER — RUN `MediStock_Enable_WSL2_Admin.cmd` AND REBOOT**
 
 `wsl --status` fails with `REGDB_E_CLASSNOTREG`; `docker info` finds no server.
 This blocks Checkpoints 3 and 4, which require a local Postgres to replay
 migrations 001–063 and run real Auth/RPC/RLS tests. No silent OS install is
-permitted, and enabling WSL2 requires administrator rights and a reboot.
+permitted: enabling WSL2 needs administrator rights and a reboot, and Docker
+Desktop needs license acceptance.
 
-Scripts are prepared on the Desktop. See "Owner action required" below.
+### Files delivered to `C:\Users\abdal\OneDrive\Desktop\` (NOT committed)
+
+| File | Purpose |
+| --- | --- |
+| `MediStock_Enable_WSL2_Admin.cmd` | **The file the owner runs.** Self-elevates, `dism` ×2 + `wsl --install` |
+| `MediStock_Enable_WSL2_Admin.ps1` | PowerShell equivalent for those who prefer it |
+| `MediStock_Verify_WSL2.ps1` | Read-only: features, `wsl --status`, `wsl --version`, Supabase CLI |
+| `MediStock_Verify_Docker.ps1` | Read-only: Docker **client AND server**, `docker info`, OSType=linux, WSL2, CLI |
+| `MediStock_Local_Runtime_Setup_Guide.txt` | Full owner guide incl. Docker Desktop steps |
+
+### Safety properties (verified)
+
+- Official Microsoft tools only (`dism.exe`, `wsl.exe`); Docker from the
+  official site only, installed **by the owner**.
+- **No PowerShell execution-policy bypass.** The `.cmd` calls `dism`/`wsl`
+  directly and re-elevates via a single `-Command` (not a script file), so no
+  policy is involved. Scanned clean.
+- No Windows security setting disabled; no Defender interaction.
+- Reboot detection: DISM `3010` and `wsl --install` pre-reboot failure both
+  handled and explained as expected.
+- All three `.ps1` files pass `[Parser]::ParseFile` with zero errors.
+- Docker check tests the **server**, not just the client — a client with no
+  engine is the current failure mode and looks like success if only the client
+  is checked.
+
+**Resume trigger:** owner confirms *"WSL2 and Docker both verify OK — resume at
+Checkpoint 3."*
 
 ---
 
