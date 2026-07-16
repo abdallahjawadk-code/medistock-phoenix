@@ -12,6 +12,7 @@ const ROOT = join(__dirname, '../../../');
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 
 const contract = read('docs/warehouse-source-of-truth.md');
+const m010 = read('supabase/migrations/010_phoenix_user_permission_matrix.sql');
 const m060 = read('supabase/migrations/060_phoenix_warehouse_foundation.sql');
 const m061 = read('supabase/migrations/061_phoenix_warehouse_dispatch_schema.sql');
 const m062 = read('supabase/migrations/062_phoenix_user_rbac_scope_foundation.sql');
@@ -20,6 +21,7 @@ function activeSql(sql: string): string {
   return sql.split('\n').map(line => line.replace(/--.*$/, '')).join('\n');
 }
 
+const active010 = activeSql(m010);
 const active060 = activeSql(m060);
 const active061 = activeSql(m061);
 const active062 = activeSql(m062);
@@ -82,7 +84,7 @@ describe('warehouse source-of-truth contract', () => {
 
   it('pins every dispatch to one organization structurally', () => {
     expect(active061).toContain('warehouse_dispatches_wh_org_fk');
-    expect(active061).toContain('warehouse_dispatches_dp_org_fk');
+    expect(active061).toContain('warehouse_dispatches_dest_org_fk');
     expect(active061).toContain('warehouse_dispatch_lines_dispatch_org_fk');
     expect(active061).toContain('warehouse_dispatch_lines_stock_org_fk');
   });
@@ -119,16 +121,16 @@ describe('warehouse source-of-truth contract', () => {
 
   it('keeps warehouse officer as data-entry, not warehouse ownership', () => {
     expect(active062).toMatch(
-      /\('warehouse_officer',\s*'warehouses\.manage',\s*false\)/,
+      /UPDATE public\.role_permission_defaults[\s\S]*SET allowed = false[\s\S]*role = 'warehouse_officer'[\s\S]*permission_key = 'warehouses\.manage'/,
     );
-    expect(active062).toMatch(
-      /\('warehouse_officer',\s*'warehouses\.view',\s*true\)/,
+    expect(active010).toContain(
+      "('warehouse_officer','warehouses.view',true)",
     );
     expect(contract).toContain('A sender must never self-accept a line');
   });
 
   it('requires active assignments and never widens organization scope', () => {
-    expect(active062).toContain('CREATE TABLE public.profile_scope_assignments');
+    expect(active062).toContain('CREATE TABLE IF NOT EXISTS public.profile_scope_assignments');
     expect(active062).toContain('phoenix_profile_has_scoped_permission');
     expect(active062).toContain('phoenix_profile_has_warehouse_assignment');
     expect(active062).toContain('phoenix_profile_has_point_assignment');
