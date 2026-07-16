@@ -65,9 +65,17 @@ describe('Migration 063 exists exactly once and is registered', () => {
     expect(readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('063_'))).toEqual([M063_NAME]);
   });
 
-  it('does not create migration 064', () => {
-    expect(readdirSync(MIGRATIONS_DIR).filter(f => f.startsWith('064_'))).toEqual([]);
-  });
+  // PROFILE-IDENTITY-SNAPSHOT-RETURN-TYPE-064-A: the former
+  // `does not create migration 064` disk assertion is DELIBERATELY ABSENT, for
+  // the same reason 062's test never carried one (see its "DELIBERATELY ABSENT"
+  // note). A `readdirSync(...startsWith('064_')) === []` check is not a property
+  // of migration 063 at all — it is a ceiling on the NEXT phase, and it forces an
+  // unrelated historical guard to be edited the moment a legitimate 064 lands.
+  // That churn is precisely the hazard the canonical registry exists to remove:
+  // whether 064 is approved is decided by exact-filename membership in
+  // REVIEWED_MIGRATION_FILES and asserted in reviewed-migration-manifest.test.ts
+  // alone. 063's own scope stays fully covered by the assertions below, which
+  // verify what 063's SQL does and does not contain.
 
   it('is registered in the reviewed-migration registry by exact filename', () => {
     expect(REVIEWED_MIGRATION_FILES).toContain(M063_NAME);

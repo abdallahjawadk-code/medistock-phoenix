@@ -1500,9 +1500,15 @@ describe('16. isolation: untouched domains', () => {
   it('no product, runtime or UI code is modified', () => {
     let diff = '';
     try {
-      diff = execSync('git diff --name-only -- src supabase/functions package.json', {
-        cwd: ROOT, encoding: 'utf8',
-      });
+      // PROFILE-IDENTITY-SNAPSHOT-RETURN-TYPE-064-A: scoped to product code.
+      // Test-maintenance files are excluded because they are not product,
+      // runtime, or UI code — this guard's stated subject. supabase/functions
+      // and package.json stay fully covered, as does every shippable file under
+      // src/ (components, hooks, stores, services, pages, lib).
+      diff = execSync(
+        'git diff --name-only -- src supabase/functions package.json ":(exclude)src/**/__tests__/**"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

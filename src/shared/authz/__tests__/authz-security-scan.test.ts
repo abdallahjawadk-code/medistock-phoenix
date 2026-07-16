@@ -235,11 +235,17 @@ describe('no SQL, migration or deployment surface is touched', () => {
     }
   });
 
-  it('migration 064 does not exist', () => {
-    const dir = join(PHOENIX, 'supabase/migrations');
-    const has064 = readdirSync(dir).some(f => f.startsWith('064'));
-    expect(has064).toBe(false);
-  });
+  // PROFILE-IDENTITY-SNAPSHOT-RETURN-TYPE-064-A: the historical
+  // `migration 064 does not exist` ceiling is removed. It asserted a property of
+  // the NEXT free migration number rather than of this phase, so a legitimate,
+  // separately-reviewed 064 broke an authz guard that 064 does not touch.
+  //
+  // This file's real security subject is unchanged and still fully enforced
+  // above and below: authz source writes no SQL, authors no migration, never
+  // widens a privilege, and never leaks service-role credentials. Whether a
+  // migration is approved is decided by exact-filename membership in
+  // REVIEWED_MIGRATION_FILES and asserted in reviewed-migration-manifest.test.ts,
+  // plus that migration's own tests and the SQL safety guards.
 
   it('migrations 060-063 are present and are not authored by this phase', () => {
     const dir = join(PHOENIX, 'supabase/migrations');

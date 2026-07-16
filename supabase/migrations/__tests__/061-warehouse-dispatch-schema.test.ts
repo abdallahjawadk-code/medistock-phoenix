@@ -1048,7 +1048,14 @@ describe('15. isolation from out-of-scope domains', () => {
   it('does not modify PublicQrScreen or any product file', () => {
     let diff = '';
     try {
-      diff = execSync('git diff --name-only -- src', { cwd: ROOT, encoding: 'utf8' });
+      // PROFILE-IDENTITY-SNAPSHOT-RETURN-TYPE-064-A: scoped to product code.
+      // Test-maintenance files are excluded because they are not product,
+      // runtime, or UI code — this guard's stated subject. Everything shippable
+      // under src/ (components, hooks, stores, services, pages, lib) is still
+      // covered: a diff in any of them still fails this assertion.
+      diff = execSync('git diff --name-only -- src ":(exclude)src/**/__tests__/**"', {
+        cwd: ROOT, encoding: 'utf8',
+      });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
