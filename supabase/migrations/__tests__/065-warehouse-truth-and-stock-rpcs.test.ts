@@ -104,12 +104,12 @@ describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
     );
     expect(active).toContain('warehouse_stock_movements_request_fingerprint_chk');
     expect(active).toContain("reference_type IS DISTINCT FROM 'warehouse_request'");
-    expect(active).toContain("request_fingerprint ~ '^[0-9a-f]{32}$'");
+    expect(active).toContain("request_fingerprint ~ '^[0-9a-f]{64}$'");
     expect(active).toMatch(
       /CREATE UNIQUE INDEX IF NOT EXISTS warehouse_stock_movements_request_once_uniq\s+ON public\.warehouse_stock_movements \(reference_id\)\s+WHERE reference_type = 'warehouse_request'\s+AND reference_id IS NOT NULL/,
     );
-    expect(receipt).toContain('v_request_fingerprint := md5(jsonb_build_object(');
-    expect(adjustment).toContain('v_request_fingerprint := md5(jsonb_build_object(');
+    expect(receipt).toContain('v_request_fingerprint := encode(sha256(convert_to(jsonb_build_object(');
+    expect(adjustment).toContain('v_request_fingerprint := encode(sha256(convert_to(jsonb_build_object(');
     expect(receipt).toContain(
       'v_existing.request_fingerprint IS DISTINCT FROM v_request_fingerprint',
     );
