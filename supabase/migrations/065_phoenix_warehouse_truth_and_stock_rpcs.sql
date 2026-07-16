@@ -39,31 +39,51 @@ COMMENT ON COLUMN public.item_availability.source_kind IS
 
 -- A warehouse-managed outlet row is server-owned. Migration 066 will set the
 -- transaction-local phoenix.dispatch_write flag immediately before its atomic
--- acceptance write. No public/authenticated function exposes that flag.
+-- acceptance write. The flag alone is never authority: this trigger is SECURITY
+-- INVOKER and also requires the firing statement to run as the item_availability
+-- table owner. Direct authenticated DML therefore cannot self-authorize by
+-- setting a custom GUC, while the reviewed SECURITY DEFINER acceptance RPC can.
 CREATE OR REPLACE FUNCTION public.phoenix_guard_availability_source_kind()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_dispatch_write boolean :=
+  v_dispatch_flag boolean :=
     COALESCE(current_setting('phoenix.dispatch_write', true), '') = 'on';
+  v_trusted_dispatch_write boolean := false;
 BEGIN
+  SELECT v_dispatch_flag
+         AND current_user = pg_get_userbyid(c.relowner)
+    INTO v_trusted_dispatch_write
+  FROM pg_class c
+  WHERE c.oid = 'public.item_availability'::regclass;
+
   IF TG_OP = 'INSERT' THEN
-    IF NEW.source_kind = 'warehouse_dispatch' AND NOT v_dispatch_write THEN
+    IF NEW.source_kind = 'warehouse_dispatch' AND NOT v_trusted_dispatch_write THEN
       RAISE EXCEPTION 'warehouse_managed_availability_server_only'
         USING ERRCODE = '42501';
     END IF;
     RETURN NEW;
   END IF;
 
-  IF NEW.source_kind IS DISTINCT FROM OLD.source_kind AND NOT v_dispatch_write THEN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.source_kind = 'warehouse_dispatch' AND NOT v_trusted_dispatch_write THEN
+      RAISE EXCEPTION 'warehouse_managed_availability_read_only'
+        USING ERRCODE = '42501';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF NEW.source_kind IS DISTINCT FROM OLD.source_kind
+     AND NOT v_trusted_dispatch_write THEN
     RAISE EXCEPTION 'availability_source_kind_immutable'
       USING ERRCODE = '42501';
   END IF;
 
-  IF OLD.source_kind = 'warehouse_dispatch' AND NOT v_dispatch_write THEN
+  IF OLD.source_kind = 'warehouse_dispatch'
+     AND NOT v_trusted_dispatch_write THEN
     RAISE EXCEPTION 'warehouse_managed_availability_read_only'
       USING ERRCODE = '42501';
   END IF;
@@ -78,7 +98,7 @@ REVOKE ALL ON FUNCTION public.phoenix_guard_availability_source_kind()
 DROP TRIGGER IF EXISTS trg_guard_availability_source_kind
   ON public.item_availability;
 CREATE TRIGGER trg_guard_availability_source_kind
-  BEFORE INSERT OR UPDATE ON public.item_availability
+  BEFORE INSERT OR UPDATE OR DELETE ON public.item_availability
   FOR EACH ROW
   EXECUTE FUNCTION public.phoenix_guard_availability_source_kind();
 
@@ -401,12 +421,22 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
+  -- A receipt may fill an absent catalog link, but must never silently relink an
+  -- established stock identity to a different central item. Such a correction
+  -- requires a separately reviewed, explicitly audited correction path.
+  IF v_stock.central_item_id IS NOT NULL
+     AND p_central_item_id IS NOT NULL
+     AND v_stock.central_item_id IS DISTINCT FROM p_central_item_id THEN
+    RAISE EXCEPTION 'warehouse_stock_central_item_conflict'
+      USING ERRCODE = '23514';
+  END IF;
+
   v_before := v_stock.on_hand_quantity;
   v_after  := v_before + p_quantity;
 
   UPDATE public.warehouse_stock
      SET on_hand_quantity          = v_after,
-         central_item_id           = COALESCE(p_central_item_id, central_item_id),
+         central_item_id           = COALESCE(v_stock.central_item_id, p_central_item_id),
          trade_name                = COALESCE(v_trade, trade_name),
          unit                      = COALESCE(v_unit, unit),
          unit_price                = COALESCE(p_unit_price, unit_price),
@@ -770,7 +800,8 @@ BEGIN
       AND t.tgname = 'trg_guard_availability_source_kind'
       AND t.tgenabled = 'O'
       AND NOT t.tgisinternal
-  ), 'VERIFY FAILED (065): source-kind guard trigger missing or disabled';
+      AND pg_get_triggerdef(t.oid) ILIKE '%DELETE%'
+  ), 'VERIFY FAILED (065): source-kind guard trigger missing, disabled or not DELETE-safe';
 
   ASSERT EXISTS (
     SELECT 1 FROM pg_indexes
@@ -795,9 +826,31 @@ BEGIN
       AND pg_get_constraintdef(oid) LIKE '%request_fingerprint%'
   ), 'VERIFY FAILED (065): request fingerprint constraint missing';
 
-  -- Exact signatures: a different overload must never satisfy verification.
+  -- The trigger must remain SECURITY INVOKER: its owner check distinguishes a
+  -- reviewed definer write from direct authenticated DML. A definer trigger
+  -- would erase that distinction by changing current_user before the check.
+  ASSERT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'phoenix_guard_availability_source_kind'
+      AND p.pronargs = 0
+      AND p.prosecdef = false
+  ), 'VERIFY FAILED (065): source-kind guard must be SECURITY INVOKER';
+
+  SELECT pg_get_functiondef(
+    'public.phoenix_guard_availability_source_kind()'::regprocedure
+  ) INTO v_qr_def;
+  ASSERT v_qr_def LIKE '%SET search_path%'
+     AND v_qr_def LIKE '%current_user%'
+     AND v_qr_def LIKE '%relowner%'
+     AND v_qr_def LIKE '%TG_OP = ''DELETE''%',
+    'VERIFY FAILED (065): source-kind guard lost search_path/owner/delete boundary';
+
+  -- Exact application signatures: a different overload must never satisfy
+  -- verification. These RPCs remain SECURITY DEFINER.
   FOREACH v_def IN ARRAY ARRAY[
-    'public.phoenix_guard_availability_source_kind()',
     'public.phoenix_apply_availability_movement(uuid,text,integer,text,text)',
     'public.phoenix_receive_warehouse_stock(uuid,uuid,text,integer,boolean,boolean,uuid,text,text,text,text,text,text,date,numeric,text,text,text,text,text)',
     'public.phoenix_apply_warehouse_stock_movement(uuid,uuid,text,integer,text,text,text)'
@@ -821,6 +874,7 @@ BEGIN
      AND v_def LIKE '%warehouse_stock.adjust%'
      AND v_def LIKE '%pg_advisory_xact_lock%'
      AND v_def LIKE '%request_fingerprint%'
+     AND v_def LIKE '%warehouse_stock_central_item_conflict%'
      AND v_def LIKE '%INSERT INTO public.warehouse_stock_movements%'
      AND v_def LIKE '%INSERT INTO public.audit_logs%',
     'VERIFY FAILED (065): receipt RPC lost lock/scope/idempotency/ledger/audit';
@@ -887,7 +941,8 @@ BEGIN
     'boundary added; warehouse-managed availability is server-only and rejected '
     'by the manual movement RPC; warehouse request idempotency is structural; '
     'receipt/adjustment RPCs are scoped, locked, audited and ledger-backed; '
-    'direct authenticated table writes remain revoked; anon has no mutation '
+    'dispatch rows reject direct insert/update/delete and catalog relinking; '
+    'direct authenticated warehouse writes remain revoked; anon has no mutation '
     'execute privilege; public QR remains free of private provenance.';
 END;
 $$;
