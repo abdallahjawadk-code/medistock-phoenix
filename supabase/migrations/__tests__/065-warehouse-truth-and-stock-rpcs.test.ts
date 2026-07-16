@@ -234,7 +234,10 @@ describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
     expect(verify).toContain('phoenix_profile_has_scoped_permission');
     expect(verify).toContain('INSERT INTO public.warehouse_stock_movements');
     expect(verify).toContain('INSERT INTO public.audit_logs');
-    expect(verify).toContain("grantee IN ('anon', 'PUBLIC')");
+    expect(verify).toContain('v_def::regprocedure');
+    expect(verify).toContain('aclexplode(');
+    expect(verify).toContain('acl.grantee = 0');
+    expect(verify).toContain("rolname = 'anon'");
     expect(verify).toContain('authenticated retained direct warehouse table writes');
     expect(verify).toContain("v_qr_def NOT ILIKE '%source_kind%'");
     expect(verify).toContain("v_qr_def NOT ILIKE '%internal_batch_reference%'");
