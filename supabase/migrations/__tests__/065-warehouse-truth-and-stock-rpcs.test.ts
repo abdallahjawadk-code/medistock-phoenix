@@ -70,13 +70,20 @@ describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
   });
 
   it('makes warehouse-dispatch availability server-owned and source kind immutable', () => {
-    expect(sourceGuard).toContain('SECURITY DEFINER');
+    expect(sourceGuard).toContain('SECURITY INVOKER');
+    expect(sourceGuard).not.toContain('SECURITY DEFINER');
     expect(sourceGuard).toContain('SET search_path = public, pg_temp');
     expect(sourceGuard).toContain("current_setting('phoenix.dispatch_write', true)");
+    expect(sourceGuard).toContain('current_user = pg_get_userbyid(c.relowner)');
+    expect(sourceGuard).toContain('v_trusted_dispatch_write');
+    expect(sourceGuard).toContain("TG_OP = 'DELETE'");
     expect(sourceGuard).toContain('warehouse_managed_availability_server_only');
     expect(sourceGuard).toContain('availability_source_kind_immutable');
     expect(sourceGuard).toContain('warehouse_managed_availability_read_only');
     expect(active).toContain('CREATE TRIGGER trg_guard_availability_source_kind');
+    expect(active).toMatch(
+      /BEFORE INSERT OR UPDATE OR DELETE ON public\.item_availability/,
+    );
     expect(active).toMatch(
       /REVOKE ALL ON FUNCTION public\.phoenix_guard_availability_source_kind\(\)\s+FROM PUBLIC, anon, authenticated/,
     );
@@ -162,6 +169,16 @@ describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
   });
 
   it('records every receipt in the immutable warehouse ledger and audit log', () => {
+    expect(receipt).toContain('warehouse_stock_central_item_conflict');
+    expect(receipt).toContain(
+      'v_stock.central_item_id IS DISTINCT FROM p_central_item_id',
+    );
+    expect(receipt).toContain(
+      'COALESCE(v_stock.central_item_id, p_central_item_id)',
+    );
+    expect(receipt).not.toContain(
+      'COALESCE(p_central_item_id, central_item_id)',
+    );
     expect(receipt).toContain('UPDATE public.warehouse_stock');
     expect(receipt).toContain('INSERT INTO public.warehouse_stock_movements');
     expect(receipt).toContain("'warehouse_receipt', 'warehouse_request'");
@@ -235,6 +252,9 @@ describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
     expect(verify).toContain('request idempotency index missing');
     expect(verify).toContain('request fingerprint column missing');
     expect(verify).toContain('request fingerprint constraint missing');
+    expect(verify).toContain('source-kind guard must be SECURITY INVOKER');
+    expect(verify).toContain('source-kind guard trigger missing, disabled or not DELETE-safe');
+    expect(verify).toContain('warehouse_stock_central_item_conflict');
     expect(verify).toContain('phoenix_profile_has_scoped_permission');
     expect(verify).toContain('INSERT INTO public.warehouse_stock_movements');
     expect(verify).toContain('INSERT INTO public.audit_logs');
