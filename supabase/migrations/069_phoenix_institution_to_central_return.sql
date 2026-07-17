@@ -102,15 +102,32 @@
 -- warehouse_stock (restockable) or warehouse_quarantine_stock (quarantined,
 -- section 2) — and credits the correct one, always. A batch that is
 -- objectively expired at receipt time, or whose return reason is
--- 'expired'/'damaged'/'recalled'/'quality_issue'/'temperature_excursion', is
--- ALWAYS quarantined — never client-overridable. 'near_expiry' requires an
--- explicit p_disposition_decision from the authorized receiver (no silent
--- default). warehouse_quarantine_stock is intentionally minimal: it is never
--- read by available_quantity, never surfaced by the public QR payload, and
--- 069 only ever INSERTs into it — release/destroy/final disposition is 071's
--- job, tracked as its own migration, on the SAME table rather than a
--- throwaway representation this file would improvise and 071 would have to
--- redesign.
+-- 'expired'/'damaged'/'recalled'/'quality_issue'/'temperature_excursion'/
+-- 'other', is ALWAYS quarantined — never client-overridable. 'other' is
+-- classified alongside the named-mandatory reasons, not defaulted to
+-- restockable, precisely because it is unclassified: 071 is what gets to
+-- decide what an unlabeled batch actually was, not a silent default here.
+--
+-- FAIL-CLOSED, NOT FAIL-OPEN: 'near_expiry', 'excess' and 'shipment_error'
+-- ALL require an explicit p_disposition_decision from the authorized
+-- receiver — none of them defaults to 'restockable'. An earlier revision of
+-- this file let 'excess'/'shipment_error' default to restockable on the
+-- theory that "the return is presumed sound" — caught in review as a
+-- fail-open hole: presuming soundness is exactly the judgment call that
+-- belongs to the receiver who can see and count the batch, not to a default
+-- branch that runs before anyone has looked at it. Now: no decision, no
+-- credit to EITHER balance — the function raises before touching any stock
+-- row, exactly the same "decide before you mutate" discipline this file
+-- already used for near_expiry. A decision of 'restockable' is only ever
+-- reachable once the batch is already known to be un-expired and outside
+-- every mandatory-quarantine reason, so "restockable" can never smuggle a
+-- rejected-on-its-face batch back into dispensable stock.
+--
+-- warehouse_quarantine_stock is intentionally minimal: it is never read by
+-- available_quantity, never surfaced by the public QR payload, and 069 only
+-- ever INSERTs into it — release/destroy/final disposition is 071's job,
+-- tracked as its own migration, on the SAME table rather than a throwaway
+-- representation this file would improvise and 071 would have to redesign.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- REUSED, NOT WIDENED: 'dispatch_return' WAS ALREADY IN 060's CHECK
@@ -535,13 +552,13 @@ CREATE TABLE IF NOT EXISTS public.warehouse_return_request_lines (
   CONSTRAINT wrrl_sci_name_chk
     CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
   -- Full vocabulary, not just enough to exercise the happy path: each value
-  -- has an explicit quarantine rule at RECEIVE (see phoenix_receive_...'s own
-  -- comment) — 'expired'/'damaged'/'recalled'/'quality_issue'/
-  -- 'temperature_excursion' are MANDATORY quarantine, never client-overridable;
-  -- 'near_expiry' requires an explicit authorized decision at receipt;
-  -- 'excess'/'shipment_error'/'other' default to restockable (unless the
-  -- batch is OBJECTIVELY expired by the time it is actually received, which
-  -- is checked independently of reason_code).
+  -- has an explicit, FAIL-CLOSED quarantine rule at RECEIVE (see
+  -- phoenix_receive_...'s own comment) — 'expired'/'damaged'/'recalled'/
+  -- 'quality_issue'/'temperature_excursion'/'other' are MANDATORY quarantine,
+  -- never client-overridable; 'near_expiry'/'excess'/'shipment_error' each
+  -- require an explicit authorized decision at receipt, with NO default in
+  -- either direction — absent a decision, RECEIVE raises before touching any
+  -- balance. None of the nine values defaults to restockable.
   CONSTRAINT wrrl_reason_code_chk
     CHECK (reason_code IN (
       'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged',
@@ -1860,11 +1877,13 @@ CREATE OR REPLACE FUNCTION public.phoenix_receive_warehouse_return_shipment_line
   p_received_quantity      integer,
   p_difference_reason      text DEFAULT NULL,
   p_notes                  text DEFAULT NULL,
-  -- Consulted ONLY when the line's return reason is 'near_expiry' and the
-  -- batch is not (yet) objectively expired — every other reason is decided
-  -- deterministically by the server and this parameter is ignored for them,
-  -- so a client can never use it to talk a mandatory-quarantine reason into
-  -- 'restockable'.
+  -- Consulted ONLY when the line's return reason is 'near_expiry',
+  -- 'excess' or 'shipment_error' and the batch is not (yet) objectively
+  -- expired — every mandatory-quarantine reason is decided deterministically
+  -- by the server and this parameter is ignored for them, so a client can
+  -- never use it to talk a mandatory-quarantine reason into 'restockable'.
+  -- Required (not optional) for the three reasons above: NULL there raises
+  -- before any balance is touched — fail-closed, never a silent default.
   p_disposition_decision   text DEFAULT NULL
 )
 RETURNS jsonb
@@ -2014,6 +2033,14 @@ BEGIN
     ELSE 'received_with_difference'
   END;
 
+  -- Looked up here, before EITHER outcome (rejection or classification), so
+  -- the audit trail for a rejection also records what the return was FOR —
+  -- an auditor should never have to guess why a batch was rejected.
+  v_reason_code := (
+    SELECT rl.reason_code FROM public.warehouse_return_request_lines rl
+    WHERE rl.id = v_line.return_request_line_id
+  );
+
   IF p_received_quantity = 0 THEN
     -- REJECTED: central refuses the shipment outright. No balance touched —
     -- not on_hand, not quarantine. The goods exist somewhere physically but
@@ -2041,6 +2068,7 @@ BEGIN
       v_line.scientific_name,
       jsonb_build_object(
         'request_id', p_request_id, 'shipment_id', v_shipment.id,
+        'reason_code', v_reason_code,
         'sent_quantity', v_line.sent_quantity, 'received_quantity', 0,
         'custody_state', 'exception_pending', 'reason', v_reason
       )
@@ -2054,37 +2082,46 @@ BEGIN
     );
   END IF;
 
-  -- DISPOSITION CLASSIFICATION. A return is deliberately allowed to be OF an
-  -- expired or unsound batch (see phoenix_send's own comment) — but crediting
-  -- it into the SAME on_hand pool ordinary dispensable stock draws from would
-  -- make it dispensable again, which must never happen silently. This is a
-  -- structural classification, not an RPC-level suggestion:
+  -- DISPOSITION CLASSIFICATION — FAIL-CLOSED. A return is deliberately
+  -- allowed to be OF an expired or unsound batch (see phoenix_send's own
+  -- comment) — but crediting it into the SAME on_hand pool ordinary
+  -- dispensable stock draws from would make it dispensable again, which must
+  -- never happen silently, and must never happen by DEFAULT either. This is
+  -- a structural classification, not an RPC-level suggestion:
   --   - objectively expired at receipt time (regardless of stated reason), OR
-  --     reason IN ('expired','damaged','recalled','quality_issue',
-  --     'temperature_excursion') -> ALWAYS 'quarantined'. The client cannot
-  --     override this via p_disposition_decision — it is not even consulted.
-  --   - reason = 'near_expiry' (and not objectively expired) -> the AUTHORIZED
-  --     receiver must explicitly decide via p_disposition_decision; there is
-  --     no silent default.
-  --   - everything else ('excess','shipment_error','other') -> 'restockable'
-  --     by default, since the return is presumed sound.
-  v_reason_code := (
-    SELECT rl.reason_code FROM public.warehouse_return_request_lines rl
-    WHERE rl.id = v_line.return_request_line_id
-  );
+  --     reason_code IS NULL (the return-request line was deleted; an unknown
+  --     reason is never presumed sound), OR reason_code IN ('expired',
+  --     'damaged', 'recalled', 'quality_issue', 'temperature_excursion',
+  --     'other') -> ALWAYS 'quarantined'. The client cannot override this via
+  --     p_disposition_decision — it is not even consulted.
+  --   - reason_code IN ('near_expiry', 'excess', 'shipment_error') (and not
+  --     objectively expired) -> the AUTHORIZED receiver must explicitly
+  --     decide via p_disposition_decision; there is NO default in either
+  --     direction. Absent or invalid, the function raises here, BEFORE
+  --     either credit branch below — no partial mutation, no stock touched.
+  --   - every reason_code value the CHECK constraint allows is named in one
+  --     of the two IN-lists above; the final ELSE is unreachable by
+  --     construction and exists only as a fail-closed backstop, never a
+  --     silent default.
   v_objectively_expired := v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date;
   v_mandatory_quarantine := v_objectively_expired
-    OR v_reason_code IN ('expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion');
+    OR v_reason_code IS NULL
+    OR v_reason_code IN (
+         'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other'
+       );
 
   IF v_mandatory_quarantine THEN
     v_disposition := 'quarantined';
-  ELSIF v_reason_code = 'near_expiry' THEN
+  ELSIF v_reason_code IN ('near_expiry', 'excess', 'shipment_error') THEN
     IF p_disposition_decision IS NULL THEN
-      RAISE EXCEPTION 'near_expiry_return_requires_explicit_disposition_decision' USING ERRCODE = '23514';
+      RAISE EXCEPTION 'return_receive_requires_explicit_disposition_decision' USING ERRCODE = '23514';
     END IF;
     v_disposition := p_disposition_decision;
   ELSE
-    v_disposition := 'restockable';
+    -- Unreachable: every allowed reason_code value is named above. A
+    -- fail-closed backstop, not a fallback default — never credits either
+    -- balance.
+    RAISE EXCEPTION 'return_receive_unclassified_reason_code' USING ERRCODE = '23514';
   END IF;
 
   v_custody := CASE v_disposition WHEN 'restockable' THEN 'destination_stock' ELSE 'destination_quarantine' END;
@@ -2283,7 +2320,9 @@ BEGIN
       'shipment_line_id', v_line.id,
       'movement_id', v_movement_id,
       'line_status', v_status,
+      'reason_code', v_reason_code,
       'disposition', v_disposition,
+      'disposition_decision', p_disposition_decision,
       'custody_state', v_custody,
       'sent_quantity', v_line.sent_quantity,
       'quantity_before', v_before,
@@ -2372,9 +2411,11 @@ COMMENT ON FUNCTION public.phoenix_receive_warehouse_return_shipment_line(
   'must not depend on current route state. Classifies every accepted quantity '
   'as restockable (credited to warehouse_stock) or quarantined (credited to '
   'warehouse_quarantine_stock) — expired/damaged/recalled/quality_issue/'
-  'temperature_excursion are mandatory quarantine, never client-overridable; '
-  'near_expiry requires an explicit p_disposition_decision from the authorized '
-  'receiver.';
+  'temperature_excursion/other are mandatory quarantine, never '
+  'client-overridable; near_expiry/excess/shipment_error are fail-closed — '
+  'each requires an explicit p_disposition_decision from the authorized '
+  'receiver, with no default in either direction. No decision, no credit to '
+  'either balance.';
 
 -- ============================================================================
 -- 13. RLS
@@ -2626,9 +2667,12 @@ BEGIN
     'VERIFY FAILED (069): return-send must not refuse expired batches';
 
   -- 13i2. RECEIVE must classify EVERY accepted quantity as restockable or
-  -- quarantined — never a silent, undifferentiated credit to on_hand. All
-  -- five mandatory-quarantine reasons must be named explicitly, and
-  -- near_expiry must require an explicit decision, not a default.
+  -- quarantined — never a silent, undifferentiated credit to on_hand, and
+  -- never a silent DEFAULT in either direction. Six mandatory-quarantine
+  -- reasons (including 'other') must be named explicitly, and
+  -- near_expiry/excess/shipment_error must each require an explicit
+  -- decision, fail-closed — no old-style "presume sound, default to
+  -- restockable" branch may exist.
   DECLARE
     v_receive_body text := pg_get_functiondef(
       'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure);
@@ -2636,15 +2680,30 @@ BEGIN
     ASSERT v_receive_body LIKE '%v_objectively_expired%' AND v_receive_body LIKE '%v_mandatory_quarantine%',
       'VERIFY FAILED (069): return-receive does not classify disposition at all';
     FOREACH v_def IN ARRAY ARRAY[
-      'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion'
+      'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other'
     ] LOOP
       ASSERT v_receive_body LIKE '%''' || v_def || '''%',
         'VERIFY FAILED (069): return-receive is missing the mandatory-quarantine reason: ' || v_def;
     END LOOP;
-    ASSERT v_receive_body LIKE '%near_expiry_return_requires_explicit_disposition_decision%',
-      'VERIFY FAILED (069): near_expiry does not require an explicit disposition decision';
+    ASSERT v_receive_body LIKE '%v_reason_code IS NULL%',
+      'VERIFY FAILED (069): a NULL reason_code is not treated as mandatory quarantine (fail-closed)';
+    FOREACH v_def IN ARRAY ARRAY['near_expiry', 'excess', 'shipment_error'] LOOP
+      ASSERT v_receive_body LIKE '%''' || v_def || '''%',
+        'VERIFY FAILED (069): return-receive is missing the decision-required reason: ' || v_def;
+    END LOOP;
+    ASSERT v_receive_body LIKE '%return_receive_requires_explicit_disposition_decision%',
+      'VERIFY FAILED (069): near_expiry/excess/shipment_error do not require an explicit disposition decision';
+    -- Fail-closed regression guard: neither retired name (the old
+    -- near_expiry-only exception, and the pre-069 block-and-refuse guard)
+    -- may reappear, and the disposition can never be assigned the bare
+    -- string 'restockable' as a DEFAULT — every path to 'restockable' must
+    -- run through p_disposition_decision.
+    ASSERT v_receive_body NOT LIKE '%near_expiry_return_requires_explicit_disposition_decision%',
+      'VERIFY FAILED (069): the retired near_expiry-only exception name must not reappear';
     ASSERT v_receive_body NOT LIKE '%requires_quarantine_disposition_deferred_to_071%',
       'VERIFY FAILED (069): the old block-and-refuse guard was not fully replaced by classification';
+    ASSERT v_receive_body NOT LIKE '%v_disposition := ''restockable'';%',
+      'VERIFY FAILED (069): restockable must never be a hardcoded default — only ever from p_disposition_decision';
   END;
 
   -- 13i3. Classification must be decided BEFORE either credit branch runs —
