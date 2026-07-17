@@ -26,11 +26,13 @@
  * ---------------------------------------
  * These tests prove the migration SOURCE contains the boundaries it must
  * contain, and that a future edit cannot quietly remove one. They do not
- * execute SQL, so they cannot prove runtime behaviour. This migration has NOT
- * been run against Postgres (no local database or Docker daemon was available
- * when it was authored) — unlike 060-067, its post-condition block (part 12)
- * is unexecuted analysis, not a proven runtime guarantee. That absence is
- * itself asserted below so it cannot be silently forgotten.
+ * execute SQL, so they cannot prove runtime behaviour. Pre-merge validation of
+ * this migration did not include execution against a disposable PostgreSQL
+ * database; validation used static analysis, tests, CI, and Supabase dry-run —
+ * unlike 060-067, its post-condition block (part 12) is unexecuted analysis,
+ * not a proven runtime guarantee. That fact is itself asserted below so it
+ * cannot be silently forgotten. This phrasing is a permanent historical
+ * record of what pre-merge validation covered, not a status to flip later.
  *
  * NOTE ON SCOPE: like 060–067, this file carries NO global ceiling assertion.
  * The reviewed maximum belongs to reviewed-migration-manifest.test.ts alone.
@@ -99,12 +101,15 @@ describe('1. migration 068 exists exactly once and is registered', () => {
     expect(m068).toMatch(/MANUAL APPLY ONLY/);
   });
 
-  it('has NOT been executed against Postgres — unlike 060-067, this is unproven', () => {
+  it('documents that pre-merge validation excluded execution against a disposable Postgres', () => {
     // Deliberately documenting an absence: 060-067 were each run inside a
     // rolled-back transaction (or read-only verified live) before merge. 068's
-    // post-condition block is analysis only. If a future revision runs it for
-    // real, this test should be updated to say so — not deleted silently.
-    expect(m068).toMatch(/has NOT been executed against Postgres|has not been executed/i);
+    // post-condition block is analysis only. This phrasing is permanent
+    // (historical record of what pre-merge validation covered), not a status
+    // to flip once the migration is eventually applied — do not delete it.
+    expect(m068.replace(/^--\s?/gm, '').replace(/\s+/g, ' ')).toMatch(
+      /pre-merge validation did not include execution against a disposable postgresql database; validation used static analysis, tests, ci, and supabase dry-run/i
+    );
   });
 });
 
