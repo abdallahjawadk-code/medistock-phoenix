@@ -3,6 +3,12 @@
 --
 -- MANUAL APPLY ONLY. DO NOT use supabase db push or any automated runner.
 --
+-- VERIFICATION STATUS: this migration has NOT been executed against Postgres —
+-- unlike 060-067, no local database or Docker daemon was available when it was
+-- authored. Part 12's post-conditions are analysis, not a proven runtime
+-- guarantee. Apply to a staging/preview database and confirm all 12x
+-- post-conditions pass BEFORE this is treated as ready for production.
+--
 -- STRATEGY: Expand -> Frontend Migration -> Contract. This is an EXPAND step.
 -- It is ADDITIVE AND BACKWARD-COMPATIBLE BY CONSTRUCTION.
 --
