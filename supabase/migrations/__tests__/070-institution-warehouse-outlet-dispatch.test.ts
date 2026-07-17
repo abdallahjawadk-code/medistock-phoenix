@@ -407,9 +407,9 @@ describe('10. every lifecycle + send RPC exists as a CREATE FUNCTION', () => {
 });
 
 // ============================================================================
-// 11. Scoped read: RESTRICTIVE policies, additive to 061, plus explicit deny
+// 11. Scoped read: RESTRICTIVE policies, additive to 062's scoped base, plus explicit deny
 // ============================================================================
-describe('11. RESTRICTIVE scoped-read policies narrow 061\'s unscoped visibility, without touching 061', () => {
+describe('11. RESTRICTIVE scoped-read policies bound 062\'s scoped visibility, without touching the base', () => {
   it('declares both new policies AS RESTRICTIVE (never PERMISSIVE — that would widen access instead of narrowing it)', () => {
     expect(norm070).toMatch(/CREATE POLICY warehouse_dispatches_scope_restrict\s+ON public\.warehouse_dispatches\s+AS RESTRICTIVE\s+FOR SELECT/);
     expect(norm070).toMatch(/CREATE POLICY warehouse_dispatch_lines_scope_restrict\s+ON public\.warehouse_dispatch_lines\s+AS RESTRICTIVE\s+FOR SELECT/);
@@ -432,16 +432,19 @@ describe('11. RESTRICTIVE scoped-read policies narrow 061\'s unscoped visibility
     );
   });
 
-  it('061\'s own permissive policies are neither dropped nor redefined by this file', () => {
-    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_perm/);
-    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_perm/);
-    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_perm"?/);
+  it('the base scoped permissive policies (062) are neither dropped nor redefined by this file', () => {
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_scoped/);
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_scoped/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_scoped"?/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatch_lines_select_scoped"?/);
   });
 
-  it('post-conditions prove the new policies are RESTRICTIVE and 061\'s originals are still PERMISSIVE, on the live catalog', () => {
+  it('post-conditions prove the new policies are RESTRICTIVE and the BASE (062 _select_scoped) is still PERMISSIVE, on the live catalog', () => {
     expect(m070).toContain('polpermissive = false');
     expect(m070).toContain('polpermissive = true');
-    expect(m070).toContain('warehouse_dispatches_select_perm');
+    // asserts the REAL base name that 062 created, never the pre-062 placeholder
+    expect(m070).toContain('warehouse_dispatches_select_scoped');
+    expect(m070).not.toMatch(/pol\.polname = v_def \|\| '_select_perm'/);
   });
 
   it('outlet_officer is explicitly denied create/edit_draft/cancel/send — not merely absent', () => {
@@ -537,13 +540,13 @@ describe('14. aggregation fix leaves reserved_quantity alone and never partially
 //     NARROW second PERMISSIVE policy is required for the outlet_officer to be
 //     able to READ the dispatch it is allowed to RECEIVE.
 //
-//     Final SELECT composition PostgreSQL evaluates on both tables:
-//       ( super_admin                                      [061 permissive]
-//         OR org member w/ unscoped warehouse_dispatch.view [061 permissive]
-//         OR scoped outlet_stock.receive on destination     [9d permissive] )
-//       AND phoenix_can_read_warehouse_dispatch(...)        [9c restrictive]
+//     Final SELECT composition PostgreSQL evaluates on both tables (the base is
+//     062's ALREADY-SCOPED _select_scoped policy, NOT 061's dropped _select_perm):
+//       ( super_admin OR scoped wh_officer/port_officer/org-wide [062 permissive]
+//         OR scoped outlet_stock.receive on destination          [9d permissive] )
+//       AND phoenix_can_read_warehouse_dispatch(...)             [9c restrictive]
 // ============================================================================
-describe('15. the outlet_officer read path: a narrow permissive policy ORs in the one principal 061 omits, the restrictive layer bounds everyone to exact scope', () => {
+describe('15. the outlet_officer read path: a narrow permissive policy ORs in the one principal 062 omits, the restrictive layer bounds everyone to exact scope', () => {
   it('adds a SECOND permissive SELECT policy on warehouse_dispatches, AS PERMISSIVE, keyed to scoped outlet_stock.receive on the destination outlet', () => {
     expect(norm070).toMatch(
       /CREATE POLICY warehouse_dispatches_outlet_receive_perm\s+ON public\.warehouse_dispatches\s+AS PERMISSIVE\s+FOR SELECT\s+TO authenticated/,
@@ -571,13 +574,15 @@ describe('15. the outlet_officer read path: a narrow permissive policy ORs in th
     );
   });
 
-  it('does NOT drop or redefine 061\'s permissive policies — 070 only adds its own policies alongside them (its own new policies are idempotently DROP-IF-EXISTS + CREATE, which is fine)', () => {
-    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_perm/);
-    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_perm/);
+  it('does NOT drop or redefine the base scoped permissive policies (062 _select_scoped) — 070 only adds its own policies alongside them (its own new policies are idempotently DROP-IF-EXISTS + CREATE, which is fine)', () => {
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_scoped/);
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_scoped/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_scoped"?/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatch_lines_select_scoped"?/);
+    // and it must not resurrect 061's pre-062 placeholder either
     expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_perm"?/);
-    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatch_lines_select_perm"?/);
     // every DROP POLICY in this file targets only a policy this file itself
-    // (re)creates — never a pre-existing 061 one.
+    // (re)creates — never a pre-existing 061/062 one.
     const dropped = [...exec070.matchAll(/DROP POLICY IF EXISTS (\w+)/g)].map((m) => m[1]);
     for (const name of dropped) {
       expect(name).toMatch(/_scope_restrict$|_outlet_receive_perm$/);
@@ -586,27 +591,27 @@ describe('15. the outlet_officer read path: a narrow permissive policy ORs in th
 
   // The six behavioural scenarios, each pinned to the exact predicate that
   // decides it under (P061 OR P9d) AND R9c.
-  it('SCENARIO super_admin sees everything: 061 permissive admits via super_admin, 9c restrictive bypasses via super_admin', () => {
-    // 061 permissive branch (unchanged) + can_read super_admin bypass.
+  it('SCENARIO super_admin sees everything: 062 permissive admits via super_admin, 9c restrictive bypasses via super_admin', () => {
+    // 062 scoped permissive branch (unchanged) + can_read super_admin bypass.
     const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
     expect(canRead).toMatch(/phoenix_my_role\(\) = 'super_admin'/);
   });
 
-  it('SCENARIO warehouse_officer sees ONLY its own warehouse: 061 permissive admits (holds view key org-wide) but 9c restrictive bounds to the SPECIFIC warehouse via scoped view (assignment required)', () => {
+  it('SCENARIO warehouse_officer sees ONLY its own warehouse: 062 permissive already scopes it to the assigned warehouse, and 9c restrictive re-asserts the SAME bound via scoped view (assignment required)', () => {
     const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
     expect(canRead).toMatch(
       /phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'warehouse_dispatch\.view', p_organization_id, p_warehouse_id, NULL/,
     );
   });
 
-  it('SCENARIO warehouse_officer does NOT see another warehouse in the same org: the broad org-level view key passes 061 permissive, but the wrong warehouse scope fails 9c restrictive — a restrictive policy is never bypassed by a permissive one', () => {
+  it('SCENARIO warehouse_officer does NOT see another warehouse in the same org: 062 permissive already denies the wrong warehouse (needs assignment), and 9c restrictive independently denies it too — a restrictive policy is never bypassed by a permissive one', () => {
     // Proven by the restrictive policy being declared AS RESTRICTIVE (10k) and
     // keyed to p_warehouse_id, so a wrong warehouse can only ever AND to false.
     expect(norm070).toMatch(/CREATE POLICY warehouse_dispatches_scope_restrict\s+ON public\.warehouse_dispatches\s+AS RESTRICTIVE/);
     expect(m070).toContain('polpermissive = false');
   });
 
-  it('SCENARIO outlet_officer sees ONLY dispatches to its own outlet: 9d permissive admits (061 does not, it holds no dispatch key) via scoped receive on THIS destination, and 9c restrictive agrees on the same predicate', () => {
+  it('SCENARIO outlet_officer sees ONLY dispatches to its own outlet: 9d permissive admits (062 does not — it has no outlet_officer branch) via scoped receive on THIS destination, and 9c restrictive agrees on the same predicate', () => {
     const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
     expect(canRead).toMatch(
       /phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'outlet_stock\.receive', p_organization_id, NULL, p_destination_distribution_point_id/,
@@ -623,7 +628,7 @@ describe('15. the outlet_officer read path: a narrow permissive policy ORs in th
     expect(policy).toContain('destination_distribution_point_id');
   });
 
-  it('SCENARIO same-org user with NO assignment sees nothing: an unassigned outlet_officer fails 9d (needs point assignment) and is absent from 061 (no view key); an unassigned warehouse_officer passes 061 but fails 9c restrictive (needs warehouse assignment)', () => {
+  it('SCENARIO same-org user with NO assignment sees nothing: an unassigned outlet_officer fails 9d (needs point assignment) and is absent from 062 (no outlet_officer branch); an unassigned warehouse_officer fails 062 (needs warehouse assignment) and 9c restrictive alike', () => {
     // The scope helper requires an active resource assignment for operational
     // roles — proven by 062's own contract, exercised identically by both the
     // 9d permissive and the 9c restrictive predicates here.
@@ -643,7 +648,7 @@ describe('15. the outlet_officer read path: a narrow permissive policy ORs in th
   });
 
   it('post-condition proves the EXACT policy census: two permissive + one restrictive SELECT policy per table', () => {
-    expect(m070).toContain('EXACTLY two permissive SELECT policies (061 view + 9d outlet-receive)');
+    expect(m070).toContain('EXACTLY two permissive SELECT policies (062 _select_scoped + 9d outlet-receive)');
     expect(m070).toContain('EXACTLY one restrictive SELECT policy (9c scope boundary)');
   });
 
@@ -719,5 +724,77 @@ describe('16. internal functions are not callable by clients, and the shared rec
     expect(receive).toContain('phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id)');
     const trigger = functionBody('phoenix_sync_warehouse_dispatch_header_status');
     expect(trigger).toContain('phoenix_recompute_warehouse_dispatch_header_status(NEW.dispatch_id)');
+  });
+});
+
+// ============================================================================
+// 17. Regression guard for the round-3-APPLY failure: 070's base-policy
+//     post-condition must track the REAL live policy name/semantics, never a
+//     superseded one.
+//
+//     ROOT CAUSE: 061 shipped warehouse_dispatches_select_perm (unscoped). 062
+//     (E4/E5) DROPPED it and created warehouse_dispatches_select_scoped
+//     (scoped). 070's §10l originally asserted the dead pre-062 name and the
+//     migration aborted on apply with "061's original permissive policy
+//     warehouse_dispatches_select_perm is missing or was changed". These tests
+//     fail if that stale coupling ever returns, or if the base policy that 070
+//     builds on is renamed/redefined in the migration history without 070's
+//     guard being updated to match.
+// ============================================================================
+describe('17. base-policy guard tracks the REAL (062) policy, not the dropped 061 placeholder', () => {
+  const P062 = join(MIGRATIONS_DIR, '062_phoenix_user_rbac_scope_foundation.sql');
+  const m062 = readFileSync(P062, 'utf8');
+
+  it('062 is the migration that actually defines the live base policy names (drops _select_perm, creates _select_scoped)', () => {
+    for (const t of ['warehouse_dispatches', 'warehouse_dispatch_lines'] as const) {
+      expect(m062).toMatch(new RegExp(`DROP POLICY IF EXISTS "${t}_select_perm"`));
+      expect(m062).toMatch(new RegExp(`CREATE POLICY "${t}_select_scoped"`));
+    }
+  });
+
+  it('070\'s base-policy post-condition asserts the REAL 062 name (_select_scoped), for both tables', () => {
+    // must LOOK UP the scoped name the live catalog actually holds
+    expect(m070).toMatch(/pol\.polname = v_def \|\| '_select_scoped'/);
+    // and must NEVER look the base policy up under the dead pre-062 name.
+    // (The pre-062 name may still appear, but ONLY inside the 10l-bis NEGATIVE
+    // guard that forbids its reappearance — never as the positive lookup key.)
+    expect(m070).not.toMatch(/pol\.polname = v_def \|\| '_select_perm'/);
+    expect(m070).not.toMatch(/AND pol\.polname = v_def \|\| '_select_perm'\s+AND pol\.polpermissive = true/);
+  });
+
+  it('070 asserts the base policy by SEMANTICS, not name alone — it checks 062\'s scoped predicate is intact', () => {
+    // the guard proves the base still carries 062's scoping (not just any policy
+    // renamed to _select_scoped): view key + both assignment helpers.
+    expect(m070).toContain('warehouse_dispatch.view');
+    expect(m070).toContain('phoenix_profile_has_warehouse_assignment');
+    expect(m070).toContain('phoenix_profile_has_point_assignment');
+    expect(m070).toMatch(/lost its 062 scoped semantics/);
+  });
+
+  it('070 actively forbids the reappearance of 061\'s dropped placeholder (10l-bis)', () => {
+    expect(m070).toMatch(/pre-062 placeholder policy % is present again/);
+    expect(m070).toContain("ARRAY['warehouse_dispatches_select_perm', 'warehouse_dispatch_lines_select_perm']");
+  });
+
+  it('the base-policy name 070 expects is exactly the CREATE POLICY name 062 emits — no drift between the guard and the defining migration', () => {
+    // Derive the scoped names straight from 062's source and prove 070 asserts them.
+    const scopedNames = [...m062.matchAll(/CREATE POLICY "(warehouse_dispatch(?:es|_lines)_select_scoped)"/g)]
+      .map((mm) => mm[1]);
+    expect(scopedNames).toEqual(
+      expect.arrayContaining(['warehouse_dispatches_select_scoped', 'warehouse_dispatch_lines_select_scoped']),
+    );
+    for (const name of scopedNames) {
+      const table = name.replace('_select_scoped', '');
+      // 070 builds the looked-up name as: v_def || '_select_scoped' over [tables]
+      expect(m070).toContain(`'${table}'`);
+    }
+    // 070 must iterate exactly the two dispatch tables when checking the base policy
+    expect(m070).toMatch(/FOREACH v_def IN ARRAY ARRAY\['warehouse_dispatches', 'warehouse_dispatch_lines'\] LOOP\s+DECLARE\s+v_qual text;/);
+  });
+
+  it('070 still ADDS its own two policy layers on top of 062\'s untouched base (no DROP/redefine of the base)', () => {
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*_select_scoped/);
+    expect(norm070).toContain('warehouse_dispatches_scope_restrict');       // 9c restrictive
+    expect(norm070).toContain('warehouse_dispatches_outlet_receive_perm');  // 9d permissive
   });
 });
