@@ -89,6 +89,17 @@ ALTER TABLE public.warehouses
 COMMENT ON COLUMN public.warehouses.warehouse_kind IS
   'INVENTORY-NETWORK-EXPAND-066-A: ''central'' = pharmacy-department central warehouse (level 1); ''institution'' = health-institution warehouse (level 2). Defaults to ''institution'' so existing rows keep their current meaning.';
 
+-- Composite key (id, warehouse_kind). This exists so supply routes can enforce
+-- "source must be central" and "target must be institution" DECLARATIVELY, via
+-- composite foreign keys, instead of a trigger. A plain CHECK cannot do it —
+-- CHECK constraints may not query another table. As a bonus, the FK also blocks
+-- flipping a warehouse's kind while it is referenced by a route.
+ALTER TABLE public.warehouses
+  DROP CONSTRAINT IF EXISTS warehouses_id_kind_uniq;
+
+ALTER TABLE public.warehouses
+  ADD CONSTRAINT warehouses_id_kind_uniq UNIQUE (id, warehouse_kind);
+
 -- ============================================================================
 -- 2. Outlet types
 --
@@ -147,21 +158,46 @@ ALTER TABLE public.profiles
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.warehouse_supply_routes (
   id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_warehouse_id       uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
-  target_warehouse_id       uuid NOT NULL REFERENCES public.warehouses(id) ON DELETE RESTRICT,
+  source_warehouse_id       uuid NOT NULL,
+  target_warehouse_id       uuid NOT NULL,
+  -- Kind is pinned by CHECK and tied to the referenced warehouse by a composite
+  -- FK, so "central supplies institution" is enforced by the database itself and
+  -- cannot be bypassed by any writer, including service_role.
+  source_warehouse_kind     text NOT NULL DEFAULT 'central',
+  target_warehouse_kind     text NOT NULL DEFAULT 'institution',
   priority                  integer NOT NULL DEFAULT 1,
   is_active                 boolean NOT NULL DEFAULT true,
   notes                     text,
   created_by                uuid,
   created_at                timestamptz NOT NULL DEFAULT now(),
   updated_at                timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT warehouse_supply_routes_no_self_supply CHECK (source_warehouse_id <> target_warehouse_id),
-  CONSTRAINT warehouse_supply_routes_priority_positive CHECK (priority >= 1)
+  CONSTRAINT warehouse_supply_routes_no_self_supply
+    CHECK (source_warehouse_id <> target_warehouse_id),
+  CONSTRAINT warehouse_supply_routes_priority_positive
+    CHECK (priority >= 1),
+  CONSTRAINT warehouse_supply_routes_source_is_central
+    CHECK (source_warehouse_kind = 'central'),
+  CONSTRAINT warehouse_supply_routes_target_is_institution
+    CHECK (target_warehouse_kind = 'institution'),
+  CONSTRAINT warehouse_supply_routes_source_central_fk
+    FOREIGN KEY (source_warehouse_id, source_warehouse_kind)
+    REFERENCES public.warehouses(id, warehouse_kind) ON DELETE RESTRICT,
+  CONSTRAINT warehouse_supply_routes_target_institution_fk
+    FOREIGN KEY (target_warehouse_id, target_warehouse_kind)
+    REFERENCES public.warehouses(id, warehouse_kind) ON DELETE RESTRICT
 );
 
+-- One central may supply a given institution at most once while active.
 CREATE UNIQUE INDEX IF NOT EXISTS warehouse_supply_routes_active_pair_uniq
   ON public.warehouse_supply_routes (source_warehouse_id, target_warehouse_id)
   WHERE is_active;
+
+-- An institution has AT MOST ONE primary source. Fallbacks use priority >= 2 and
+-- stay unconstrained in number. Without this, two priority-1 routes could coexist
+-- and "the primary source" would be ambiguous.
+CREATE UNIQUE INDEX IF NOT EXISTS warehouse_supply_routes_one_primary_per_target
+  ON public.warehouse_supply_routes (target_warehouse_id)
+  WHERE is_active AND priority = 1;
 
 CREATE INDEX IF NOT EXISTS warehouse_supply_routes_target_idx
   ON public.warehouse_supply_routes (target_warehouse_id) WHERE is_active;
@@ -441,6 +477,52 @@ BEGIN
   IF has_table_privilege('anon', 'public.warehouse_supply_routes', 'SELECT')
      OR has_table_privilege('anon', 'public.warehouse_supply_routes', 'INSERT') THEN
     RAISE EXCEPTION 'ABORT 066: anon gained access to supply routes.';
+  END IF;
+
+  -- 9j. Supply direction is enforced by the database, not by convention:
+  --     source must be central, target must be institution.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relname='warehouse_supply_routes'
+      AND con.conname='warehouse_supply_routes_source_central_fk' AND con.contype='f'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relname='warehouse_supply_routes'
+      AND con.conname='warehouse_supply_routes_target_institution_fk' AND con.contype='f'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 066: supply direction (central -> institution) is not enforced by composite FK.';
+  END IF;
+
+  -- 9k. At most one primary source per institution.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname='public' AND tablename='warehouse_supply_routes'
+      AND indexname='warehouse_supply_routes_one_primary_per_target'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 066: the one-primary-per-institution index is missing.';
+  END IF;
+
+  -- 9l. Nothing outside super_admin may manage supply routes by default.
+  IF EXISTS (
+    SELECT 1 FROM public.role_permission_defaults
+    WHERE permission_key = 'supply_routes.manage' AND allowed AND role <> 'super_admin'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 066: a non-super_admin role was granted supply_routes.manage by default.';
+  END IF;
+
+  -- 9m. super_admin must hold every key this migration introduces. A new key that
+  --      super_admin lacks would silently create an unadministrable surface.
+  IF EXISTS (
+    SELECT 1 FROM public.permission_keys k
+    WHERE k.module IN ('outlets','outlet_stock','central_warehouse','supply_routes')
+      AND NOT EXISTS (
+        SELECT 1 FROM public.role_permission_defaults d
+        WHERE d.role='super_admin' AND d.permission_key = k.key AND d.allowed
+      )
+  ) THEN
+    RAISE EXCEPTION 'ABORT 066: super_admin is missing at least one newly introduced permission key.';
   END IF;
 
   RAISE NOTICE '066 verified: additive network foundation in place; the existing manual path still works.';

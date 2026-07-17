@@ -186,6 +186,37 @@ describe('066 adds the three-level network model', () => {
     expect(norm066).toMatch(/CHECK \(source_warehouse_id <> target_warehouse_id\)/i);
   });
 
+  it('enforces central -> institution direction in the database, not by convention', () => {
+    // A CHECK cannot query another table, so direction is pinned with a composite
+    // FK against warehouses(id, warehouse_kind). This holds against ANY writer,
+    // including service_role — it is not merely an application-layer rule.
+    expect(norm066).toMatch(/CHECK \(source_warehouse_kind = 'central'\)/i);
+    expect(norm066).toMatch(/CHECK \(target_warehouse_kind = 'institution'\)/i);
+    expect(norm066).toMatch(
+      /FOREIGN KEY \(source_warehouse_id, source_warehouse_kind\) REFERENCES public\.warehouses\(id, warehouse_kind\)/i,
+    );
+    expect(norm066).toMatch(
+      /FOREIGN KEY \(target_warehouse_id, target_warehouse_kind\) REFERENCES public\.warehouses\(id, warehouse_kind\)/i,
+    );
+    expect(norm066).toMatch(/ADD CONSTRAINT warehouses_id_kind_uniq UNIQUE \(id, warehouse_kind\)/i);
+    expect(norm066).toMatch(/supply direction \(central -> institution\) is not enforced by composite FK/i);
+  });
+
+  it('allows at most one primary source per institution, with unlimited fallbacks', () => {
+    expect(norm066).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS warehouse_supply_routes_one_primary_per_target ON public\.warehouse_supply_routes \(target_warehouse_id\) WHERE is_active AND priority = 1/i,
+    );
+    // Fallbacks (priority >= 2) must NOT be constrained to one.
+    expect(norm066).toMatch(/CHECK \(priority >= 1\)/i);
+    expect(norm066).toMatch(/one-primary-per-institution index is missing/i);
+  });
+
+  it('prevents duplicate active routes between the same pair', () => {
+    expect(norm066).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS warehouse_supply_routes_active_pair_uniq ON public\.warehouse_supply_routes \(source_warehouse_id, target_warehouse_id\) WHERE is_active/i,
+    );
+  });
+
   it('adds the outlet assignment scope while keeping the legacy scope', () => {
     expect(norm066).toMatch(
       /CHECK \(scope_type IN \('warehouse', 'distribution_point', 'outlet'\)\)/i,
@@ -290,6 +321,26 @@ describe('role boundaries', () => {
   it('explicitly denies the new privileged keys to every legacy role', () => {
     // A new permission key must never widen an old role by omission.
     expect(norm066).toMatch(/CROSS JOIN \(VALUES \('central_warehouse\.manage'\)/i);
+  });
+
+  it('gives super_admin every key this migration introduces, and asserts it', () => {
+    // A new key super_admin lacks would create an unadministrable surface.
+    for (const k of [
+      'outlets.view', 'outlets.manage', 'outlets.assign_officer',
+      'outlet_stock.view', 'outlet_stock.receive', 'outlet_stock.dispense',
+      'outlet_stock.return', 'outlet_stock.count',
+      'central_warehouse.view', 'central_warehouse.manage',
+      'central_warehouse.receive', 'central_warehouse.fulfil',
+      'supply_routes.view', 'supply_routes.manage',
+      'warehouse_stock.transfer',
+    ]) {
+      expect(norm066, `super_admin must be granted ${k}`).toContain(`'${k}'`);
+    }
+    expect(norm066).toMatch(/super_admin is missing at least one newly introduced permission key/i);
+  });
+
+  it('reserves supply_routes.manage to super_admin alone', () => {
+    expect(norm066).toMatch(/a non-super_admin role was granted supply_routes\.manage by default/i);
   });
 });
 
