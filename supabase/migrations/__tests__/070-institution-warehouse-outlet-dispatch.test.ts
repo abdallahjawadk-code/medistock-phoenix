@@ -193,6 +193,41 @@ describe('5. draft/add-line/update/delete never touch warehouse_stock or outlet_
       expect(body, rpc).toContain('dispatch_not_editable');
     }
   });
+
+  it('CANCEL never hard-deletes a line — soft status transition to \'cancelled\' only', () => {
+    const body = functionBody('phoenix_cancel_warehouse_dispatch');
+    expect(body).not.toMatch(/DELETE FROM public\.warehouse_dispatch_lines/);
+    expect(body).toMatch(/UPDATE public\.warehouse_dispatch_lines\s+SET status = 'cancelled'/);
+  });
+});
+
+// ============================================================================
+// 5b. Header status closes only per line completion — a gap 067 itself
+//     leaves, closed here via an independent trigger
+// ============================================================================
+describe('5b. a trigger recomputes the header status from its lines, since 067 never does', () => {
+  it('067\'s RECEIVE RPC never updates warehouse_dispatches — confirmed, and documented as the reason this trigger exists', () => {
+    expect(m070.toLowerCase()).toContain('never updates warehouse_dispatches.status');
+  });
+
+  it('the sync function and trigger exist', () => {
+    expect(norm070).toContain('phoenix_sync_warehouse_dispatch_header_status');
+    expect(norm070).toContain('trg_sync_warehouse_dispatch_header_status');
+    expect(norm070).toMatch(/AFTER UPDATE OF status ON public\.warehouse_dispatch_lines/);
+  });
+
+  it('the trigger only fires on an actual status change', () => {
+    expect(norm070).toMatch(/WHEN \(NEW\.status IS DISTINCT FROM OLD\.status\)/);
+  });
+
+  it('the recompute never touches draft or an already-terminal header — only sent/partially_accepted', () => {
+    const body = functionBody('phoenix_sync_warehouse_dispatch_header_status');
+    expect(body).toMatch(/WHERE id = NEW\.dispatch_id\s+AND status IN \('sent', 'partially_accepted'\)/);
+  });
+
+  it('the post-condition proves the trigger exists on the live catalog, not just in source', () => {
+    expect(m070).toContain('ABORT 070: header-status-sync trigger missing');
+  });
 });
 
 // ============================================================================
@@ -212,8 +247,28 @@ describe('6. no automatic lot selection anywhere — FEFO auto-allocation is 072
 
 // ============================================================================
 // 7. SEND: atomic, refuses expired batches, refuses insufficient quantity,
-//    idempotent per line
+//    idempotent per line, aggregates same-lot demand across multiple lines
 // ============================================================================
+describe('7a. SEND aggregates demand across multiple lines naming the SAME warehouse_stock_id', () => {
+  it('locks DISTINCT stock rows, not one row per line', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/SELECT DISTINCT warehouse_stock_id FROM public\.warehouse_dispatch_lines/);
+  });
+
+  it('validates the SUM of sent_quantity per stock row, never a single line in isolation', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/coalesce\(sum\(l\.sent_quantity\), 0\) INTO v_total_for_stock/);
+    expect(body).toContain('insufficient_available_quantity_for_stock');
+    // The old per-line-only check must be gone, not merely supplemented.
+    expect(body).not.toContain('insufficient_available_quantity_for_line');
+  });
+
+  it('locks distinct stock rows in a fixed, deterministic order (ORDER BY s.id) to prevent deadlocks', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/ORDER BY s\.id\s+FOR UPDATE/);
+  });
+});
+
 describe('7. SEND is atomic (validate-then-mutate), refuses expired stock, idempotent per line', () => {
   it('refuses an expired batch — forward direction, unlike the return domain\'s deliberate exception', () => {
     const body = functionBody('phoenix_send_warehouse_dispatch');
@@ -230,9 +285,9 @@ describe('7. SEND is atomic (validate-then-mutate), refuses expired stock, idemp
     expect(firstForUpdateIdx).toBeLessThan(firstStockUpdateIdx);
   });
 
-  it('refuses insufficient available quantity per line', () => {
+  it('refuses insufficient available quantity per (aggregated) stock row', () => {
     const body = functionBody('phoenix_send_warehouse_dispatch');
-    expect(body).toContain('insufficient_available_quantity_for_line');
+    expect(body).toContain('insufficient_available_quantity_for_stock');
   });
 
   it('idempotency is keyed per LINE (reference_id = dispatch_line.id), not per shared request id', () => {
@@ -285,7 +340,10 @@ describe('9. additive only — no DROP, RENAME, or REVOKE of a pre-existing obje
 
   it('every REVOKE targets only functions this file itself creates', () => {
     const revokedFns = [...active070.matchAll(/REVOKE ALL ON FUNCTION public\.(\w+)/g)].map(m => m[1]);
-    const createdFns = LIFECYCLE_RPCS.concat(['phoenix_send_warehouse_dispatch'] as const);
+    const createdFns = LIFECYCLE_RPCS.concat([
+      'phoenix_send_warehouse_dispatch',
+      'phoenix_sync_warehouse_dispatch_header_status',
+    ] as const);
     for (const fn of revokedFns) {
       expect(createdFns as readonly string[], fn).toContain(fn);
     }

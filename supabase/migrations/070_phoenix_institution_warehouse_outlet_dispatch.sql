@@ -546,7 +546,14 @@ BEGIN
          cancellation_reason = v_reason
    WHERE id = v_dispatch.id;
 
-  DELETE FROM public.warehouse_dispatch_lines WHERE dispatch_id = v_dispatch.id;
+  -- Soft: mark every still-pending line 'cancelled' (a status the 061 CHECK
+  -- already accommodates for exactly this transition) rather than hard-
+  -- deleting the rows. Nothing here was ever sent, so there is no physical
+  -- movement to unwind — but the row itself is the record that a line was
+  -- proposed and then withdrawn, and that is worth keeping.
+  UPDATE public.warehouse_dispatch_lines
+     SET status = 'cancelled'
+   WHERE dispatch_id = v_dispatch.id AND status = 'pending';
 
   INSERT INTO public.audit_logs (
     organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
@@ -589,6 +596,7 @@ DECLARE
   v_movement_id uuid;
   v_fingerprint text;
   v_line_count  integer := 0;
+  v_total_for_stock integer;
   v_movement_ids uuid[] := ARRAY[]::uuid[];
 BEGIN
   IF v_actor IS NULL THEN
@@ -632,29 +640,41 @@ BEGIN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
   END IF;
 
-  -- PASS 1: lock and validate EVERY line's stock BEFORE debiting any of
-  -- them — atomic all-or-nothing, no partial send on an insufficient lot.
-  FOR v_line IN
-    SELECT * FROM public.warehouse_dispatch_lines
-    WHERE dispatch_id = v_dispatch.id
-    ORDER BY id
+  v_line_count := (SELECT count(*) FROM public.warehouse_dispatch_lines WHERE dispatch_id = v_dispatch.id);
+
+  -- PASS 1: lock every DISTINCT warehouse_stock row this dispatch touches, in
+  -- ASCENDING id ORDER — a fixed, deterministic lock order shared by every
+  -- caller, so two concurrent sends that both touch overlapping stock rows
+  -- can never deadlock against each other.
+  --
+  -- Validated here is the AGGREGATE demand per stock row, never a single
+  -- line's demand in isolation: two (or more) lines in the SAME dispatch can
+  -- legitimately name the SAME warehouse_stock_id (061 places no UNIQUE
+  -- constraint against it), and each individually being <= available proves
+  -- nothing about whether their SUM is. Checking per-line against a snapshot
+  -- read before any debit would let two lines of 60 each pass independently
+  -- against a stock row that only has 100 — this is exactly that bug, closed.
+  FOR v_stock IN
+    SELECT s.* FROM public.warehouse_stock s
+    WHERE s.id IN (
+      SELECT DISTINCT warehouse_stock_id FROM public.warehouse_dispatch_lines
+      WHERE dispatch_id = v_dispatch.id
+    )
+    ORDER BY s.id
     FOR UPDATE
   LOOP
-    v_line_count := v_line_count + 1;
+    SELECT coalesce(sum(l.sent_quantity), 0) INTO v_total_for_stock
+    FROM public.warehouse_dispatch_lines l
+    WHERE l.dispatch_id = v_dispatch.id AND l.warehouse_stock_id = v_stock.id;
 
-    SELECT * INTO v_stock
-    FROM public.warehouse_stock WHERE id = v_line.warehouse_stock_id FOR UPDATE;
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'warehouse_stock_not_found_for_line: %', v_line.id USING ERRCODE = 'P0002';
-    END IF;
-    IF v_stock.on_hand_quantity - v_stock.reserved_quantity < v_line.sent_quantity THEN
-      RAISE EXCEPTION 'insufficient_available_quantity_for_line: %', v_line.id USING ERRCODE = '23514';
+    IF v_stock.on_hand_quantity - v_stock.reserved_quantity < v_total_for_stock THEN
+      RAISE EXCEPTION 'insufficient_available_quantity_for_stock: %', v_stock.id USING ERRCODE = '23514';
     END IF;
     -- Refuse a lot that has expired between draft and send — the last point
     -- this system can still refuse it; forward SEND never ships expired
     -- stock (unlike the return domain's deliberate exception).
     IF v_stock.expiry_date IS NOT NULL AND v_stock.expiry_date < current_date THEN
-      RAISE EXCEPTION 'expired_batch_cannot_be_dispatched: %', v_line.id USING ERRCODE = '23514';
+      RAISE EXCEPTION 'expired_batch_cannot_be_dispatched: %', v_stock.id USING ERRCODE = '23514';
     END IF;
   END LOOP;
 
@@ -731,6 +751,81 @@ BEGIN
   );
 END;
 $$;
+
+-- ============================================================================
+-- 8b. HEADER STATUS SYNC — closes a gap discovered in 067, without touching
+-- 067's RPC or its contract
+-- ============================================================================
+-- 067's phoenix_receive_outlet_dispatch_line updates warehouse_dispatch_lines
+-- per line but NEVER updates warehouse_dispatches.status (confirmed: no
+-- `UPDATE public.warehouse_dispatches` appears anywhere in 067). Left alone,
+-- a header would sit at 'sent' forever regardless of how its lines resolve —
+-- but this migration's own requirement is that the header closes ONLY once
+-- every line has a decision. Rather than editing 067's RPC (out of scope,
+-- and the instruction governing this file is to leave 067 untouched), this
+-- is a TRIGGER on warehouse_dispatch_lines: it fires on any line status
+-- change, from ANY caller (067's RECEIVE today; a future correction-only RPC
+-- tomorrow), and recomputes the header purely from its lines' current
+-- states. 067's function signature, body and contract are unmodified — this
+-- is a wholly separate database object.
+CREATE OR REPLACE FUNCTION public.phoenix_sync_warehouse_dispatch_header_status()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_total     integer;
+  v_pending   integer;
+  v_accepted  integer;
+  v_rejected  integer;
+  v_new_status text;
+BEGIN
+  SELECT count(*),
+         count(*) FILTER (WHERE status = 'pending'),
+         count(*) FILTER (WHERE status IN ('accepted', 'accepted_with_difference')),
+         count(*) FILTER (WHERE status = 'rejected')
+    INTO v_total, v_pending, v_accepted, v_rejected
+  FROM public.warehouse_dispatch_lines
+  WHERE dispatch_id = NEW.dispatch_id;
+
+  v_new_status := CASE
+    WHEN v_pending > 0 THEN 'partially_accepted'  -- at least one decided, some still open
+    WHEN v_accepted = v_total THEN 'accepted'      -- every line accepted (with or without difference)
+    WHEN v_rejected = v_total THEN 'rejected'      -- every line rejected
+    ELSE 'partially_accepted'                       -- all decided, but a mix of accepted/rejected
+  END;
+
+  -- Only ever moves a header OUT of 'sent'/'partially_accepted'. Never
+  -- touches 'draft' (this migration's own cancel path already sets each
+  -- pending line to 'cancelled', which would otherwise also fire this
+  -- trigger) or an already-terminal 'accepted'/'rejected'/'cancelled' header.
+  UPDATE public.warehouse_dispatches
+     SET status = v_new_status
+   WHERE id = NEW.dispatch_id
+     AND status IN ('sent', 'partially_accepted')
+     AND status IS DISTINCT FROM v_new_status;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_warehouse_dispatch_header_status ON public.warehouse_dispatch_lines;
+CREATE TRIGGER trg_sync_warehouse_dispatch_header_status
+  AFTER UPDATE OF status ON public.warehouse_dispatch_lines
+  FOR EACH ROW
+  WHEN (NEW.status IS DISTINCT FROM OLD.status)
+  EXECUTE FUNCTION public.phoenix_sync_warehouse_dispatch_header_status();
+
+COMMENT ON FUNCTION public.phoenix_sync_warehouse_dispatch_header_status() IS
+  'INSTITUTION-WAREHOUSE-TO-OUTLET-DISPATCH-070-A: recomputes '
+  'warehouse_dispatches.status from its lines'' CURRENT statuses whenever any '
+  'line status changes. Added because 067''s phoenix_receive_outlet_dispatch_line '
+  'never updates the header itself — this closes that gap as an independent '
+  'trigger, without modifying 067''s function.';
+
+REVOKE ALL ON FUNCTION public.phoenix_sync_warehouse_dispatch_header_status()
+  FROM PUBLIC, anon, authenticated;
 
 -- ============================================================================
 -- 9. Grants
@@ -829,6 +924,36 @@ BEGIN
       RAISE EXCEPTION 'ABORT 070: expected pre-existing permission key missing: %', v_def;
     END IF;
   END LOOP;
+
+  -- 10h. SEND validates the AGGREGATE demand per DISTINCT stock row (never a
+  -- single line's demand read against a stale snapshot) — the fix for the
+  -- multi-line-same-lot aggregation bug caught in review.
+  ASSERT v_body LIKE '%DISTINCT warehouse_stock_id%',
+    'VERIFY FAILED (070): SEND must lock DISTINCT stock rows, not one row per line';
+  ASSERT v_body LIKE '%sum(l.sent_quantity)%',
+    'VERIFY FAILED (070): SEND must validate the SUM of sent_quantity per stock row';
+  ASSERT v_body LIKE '%ORDER BY s.id%',
+    'VERIFY FAILED (070): stock rows must be locked in a fixed, deterministic order (deadlock safety)';
+
+  -- 10i. CANCEL never hard-deletes a line — soft status transition only.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'phoenix_cancel_warehouse_dispatch'
+      AND pg_get_functiondef(p.oid) LIKE '%DELETE FROM public.warehouse_dispatch_lines%'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (070): cancel must not hard-delete dispatch lines';
+  END IF;
+
+  -- 10j. The header-status-sync trigger exists and never touches draft or a
+  -- terminal header — closing the gap that 067 leaves (it never updates
+  -- warehouse_dispatches.status itself).
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE c.relname = 'warehouse_dispatch_lines'
+      AND t.tgname = 'trg_sync_warehouse_dispatch_header_status'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 070: header-status-sync trigger missing';
+  END IF;
 
   RAISE NOTICE '070 verified: institution warehouse -> outlet forward dispatch '
     'builds CREATE/ADD-LINE/UPDATE-LINE/DELETE-LINE/CANCEL/SEND on 061''s '
