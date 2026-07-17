@@ -68,10 +68,24 @@ function functionBody(name: string): string {
   return normalizeSql(src!);
 }
 
-/** The two write RPCs 068 introduces. Every one obeys the same contract. */
+/** The two stock-moving RPCs 068 introduces. Every one obeys the SEND/RECEIVE
+ *  contract: advisory lock, fingerprint, 68068 lock namespace. */
 const WRITE_RPCS = [
   'phoenix_send_warehouse_transfer_line',
   'phoenix_receive_warehouse_transfer_line',
+] as const;
+
+/** The seven request-lifecycle RPCs 068 introduces. None moves stock, so none
+ *  shares WRITE_RPCS's fingerprint/68068-lock contract — but each does write
+ *  to warehouse_transfer_requests/_lines from inside its own body. */
+const REQUEST_LIFECYCLE_RPCS = [
+  'phoenix_create_warehouse_transfer_request',
+  'phoenix_add_warehouse_transfer_request_line',
+  'phoenix_update_warehouse_transfer_request_line',
+  'phoenix_delete_warehouse_transfer_request_line',
+  'phoenix_submit_warehouse_transfer_request',
+  'phoenix_cancel_warehouse_transfer_request',
+  'phoenix_review_warehouse_transfer_request',
 ] as const;
 
 // ============================================================================
@@ -315,9 +329,12 @@ describe('5. requests name a material, never a batch', () => {
   it('the send RPC refuses to over-fulfil a request line', () => {
     const body = functionBody('phoenix_send_warehouse_transfer_line');
     expect(body).toContain('request_line_would_be_over_fulfilled');
+    // Bounded by what was APPROVED by review, never by what was merely
+    // requested — a partial approval is a real ceiling.
     expect(body).toMatch(
-      /IF v_reqline\.fulfilled_quantity \+ p_quantity > v_reqline\.requested_quantity THEN/,
+      /IF v_reqline\.fulfilled_quantity \+ p_quantity > v_reqline\.approved_quantity THEN/,
     );
+    expect(body).toContain('request_line_not_approved');
   });
 
   it('the send RPC pins the request line to the SAME route as the send', () => {
@@ -609,9 +626,9 @@ describe('9c. separation of duty is a role default, not just an RPC check', () =
     expect(m068).toContain('ABORT 068: warehouse_officer must not send central stock');
   });
 
-  it('every pre-existing legacy role is explicitly denied the new send/receive keys', () => {
+  it('every pre-existing legacy role is explicitly denied the new send/receive/request/review keys', () => {
     expect(norm068).toMatch(
-      /CROSS JOIN \(VALUES \('warehouse_transfer\.send'\),\('warehouse_transfer\.receive'\),\s*'?\s*\('warehouse_transfer\.request'\)\) AS k\(key\)/,
+      /CROSS JOIN \(VALUES \('warehouse_transfer\.send'\),\('warehouse_transfer\.receive'\),\s+\('warehouse_transfer\.request'\),\('warehouse_transfer\.review'\)\) AS k\(key\)/,
     );
   });
 });
@@ -744,6 +761,13 @@ describe('12. 068 breaks nothing that exists today', () => {
       'public.phoenix_send_warehouse_transfer_line',
       'public.phoenix_receive_warehouse_transfer_line',
       'public.phoenix_can_read_warehouse_transfer',
+      'public.phoenix_create_warehouse_transfer_request',
+      'public.phoenix_add_warehouse_transfer_request_line',
+      'public.phoenix_update_warehouse_transfer_request_line',
+      'public.phoenix_delete_warehouse_transfer_request_line',
+      'public.phoenix_submit_warehouse_transfer_request',
+      'public.phoenix_cancel_warehouse_transfer_request',
+      'public.phoenix_review_warehouse_transfer_request',
     ];
     const revokes = [...active068.matchAll(/REVOKE [^;]*? ON (?:TABLE |FUNCTION )?(public\.\w+)/g)].map(
       m => m[1],
@@ -777,7 +801,7 @@ describe('12. 068 breaks nothing that exists today', () => {
     // sqlFunctionSource is invoked on exec068 itself (already comment-stripped
     // and literal-blanked) so the extracted body is a genuine substring of it.
     let outsideFunctions = exec068;
-    for (const rpc of WRITE_RPCS) {
+    for (const rpc of [...WRITE_RPCS, ...REQUEST_LIFECYCLE_RPCS]) {
       const body = sqlFunctionSource(exec068, rpc);
       if (body) outsideFunctions = outsideFunctions.replace(body, '');
     }
@@ -785,7 +809,10 @@ describe('12. 068 breaks nothing that exists today', () => {
     expect(inserts).not.toContain('warehouse_supply_routes');
     expect(inserts).not.toContain('warehouse_transfers');
     expect(inserts).not.toContain('warehouse_transfer_requests');
+    expect(inserts).not.toContain('warehouse_transfer_request_lines');
     // The only migration-time INSERTs are the intent-declaring Shadow Mode rows.
+    // Everything else (requests, request lines, transfers, transfer lines,
+    // audit_logs) happens only inside an RPC body, at call time, never here.
     expect(new Set(inserts)).toEqual(new Set(['permission_keys', 'role_permission_defaults']));
   });
 
@@ -811,9 +838,17 @@ describe('13. return path and cancellation are explicitly deferred to 069', () =
     expect(m068).toMatch(/RETURN path \(institution -> central\)\. Deferred to 069/);
   });
 
-  it('creates no return/cancel RPC', () => {
+  it('creates no return/cancel RPC for a TRANSFER (movement) — only for a still-unsent REQUEST', () => {
+    // phoenix_cancel_warehouse_transfer_request cancels an institution's own
+    // DRAFT/SUBMITTED request, before anything has moved — that is a real
+    // RPC in 068 (section 8f). What must still not exist is any un-send of a
+    // transfer/transfer-line once stock is on a truck; that is the return
+    // path, deferred to 069.
     expect(exec068).not.toMatch(
-      /CREATE (OR REPLACE )?FUNCTION public\.phoenix_(return|cancel)_warehouse_transfer/,
+      /CREATE (OR REPLACE )?FUNCTION public\.phoenix_(return|cancel)_warehouse_transfer(?!_request)/,
+    );
+    expect(exec068).toMatch(
+      /CREATE (OR REPLACE )?FUNCTION public\.phoenix_cancel_warehouse_transfer_request/,
     );
   });
 
@@ -899,5 +934,186 @@ describe('15. 068 states its own contract at apply time (unexecuted)', () => {
     expect(m068).toContain(
       'public.phoenix_receive_warehouse_transfer_line(uuid,uuid,integer,text,text)',
     );
+  });
+});
+
+// ============================================================================
+// 16. Request lifecycle — the institution asks, the central reviews
+// ============================================================================
+
+describe('16. request lifecycle RPCs exist with the full create->submit->review->send contract', () => {
+  it('all seven lifecycle RPCs exist with their exact signatures', () => {
+    for (const rpc of REQUEST_LIFECYCLE_RPCS) {
+      expect(functionBody(rpc), rpc).toBeTruthy();
+    }
+    expect(m068).toContain('public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)');
+    expect(m068).toContain(
+      'public.phoenix_add_warehouse_transfer_request_line(uuid,text,integer,uuid,text,text,text,text)',
+    );
+    expect(m068).toContain('public.phoenix_update_warehouse_transfer_request_line(uuid,integer,text)');
+    expect(m068).toContain('public.phoenix_delete_warehouse_transfer_request_line(uuid)');
+    expect(m068).toContain('public.phoenix_submit_warehouse_transfer_request(uuid)');
+    expect(m068).toContain('public.phoenix_cancel_warehouse_transfer_request(uuid,text)');
+    expect(m068).toContain('public.phoenix_review_warehouse_transfer_request(uuid,jsonb)');
+  });
+
+  it('every lifecycle RPC is SECURITY DEFINER, pinned search_path, actor via auth.uid(), and audited', () => {
+    for (const rpc of REQUEST_LIFECYCLE_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toContain('SECURITY DEFINER');
+      expect(body, rpc).toContain('SET search_path = public, pg_temp');
+      expect(body, rpc).toContain('auth.uid()');
+      expect(body, rpc).toContain('INSERT INTO public.audit_logs');
+      expect(body, rpc).not.toMatch(/EXECUTE\s+format|EXECUTE\s+'/);
+    }
+  });
+
+  it('CREATE proves the destination is the route\'s own target before trusting it (IDOR-safe)', () => {
+    const body = functionBody('phoenix_create_warehouse_transfer_request');
+    expect(body).toContain('destination_not_route_target');
+    expect(body).toMatch(/IF p_destination_warehouse_id IS DISTINCT FROM v_route\.target_warehouse_id THEN/);
+    expect(body).toContain('supply_route_inactive');
+  });
+
+  it('CREATE derives source org/warehouse from the route, never from a client parameter', () => {
+    const body = functionBody('phoenix_create_warehouse_transfer_request');
+    expect(body).not.toMatch(/p_source_organization_id|p_source_warehouse_id/);
+    expect(body).toContain('v_route.source_warehouse_id');
+  });
+
+  it('line CRUD (add/update/delete) is refused once the request is no longer draft', () => {
+    for (const rpc of [
+      'phoenix_add_warehouse_transfer_request_line',
+      'phoenix_update_warehouse_transfer_request_line',
+      'phoenix_delete_warehouse_transfer_request_line',
+    ] as const) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toContain('transfer_request_not_draft');
+      expect(body, rpc).toMatch(/IF v_request\.status <> 'draft' THEN/);
+    }
+  });
+
+  it('SUBMIT requires an active route and at least one line, and stamps requested_by/at', () => {
+    const body = functionBody('phoenix_submit_warehouse_transfer_request');
+    expect(body).toContain('supply_route_inactive');
+    expect(body).toContain('transfer_request_has_no_lines');
+    expect(body).toContain('transfer_request_not_draft');
+    expect(body).toMatch(/SET status = 'submitted', requested_by = v_actor, requested_at = now\(\)/);
+  });
+
+  it('CANCEL is refused once reviewed or sent, and requires a reason', () => {
+    const body = functionBody('phoenix_cancel_warehouse_transfer_request');
+    expect(body).toContain('cancellation_reason_required');
+    expect(body).toContain('transfer_request_not_cancellable');
+    expect(body).toMatch(/IF v_request\.status NOT IN \('draft', 'submitted'\) THEN/);
+    // Cancelling a request does not silently resurrect its pending lines as
+    // fulfillable — they move to 'cancelled' too, in the same transaction.
+    expect(body).toMatch(
+      /UPDATE public\.warehouse_transfer_request_lines\s+SET status = 'cancelled'\s+WHERE transfer_request_id = v_request\.id AND status = 'pending'/,
+    );
+  });
+
+  it('REVIEW is gated by warehouse_transfer.review scoped to the SOURCE warehouse, never the requester\'s own scope', () => {
+    const body = functionBody('phoenix_review_warehouse_transfer_request');
+    expect(body).toContain("'warehouse_transfer.review'");
+    expect(body).toMatch(
+      /phoenix_profile_has_scoped_permission\(\s*v_actor, 'warehouse_transfer\.review',\s*v_request\.source_organization_id, v_request\.source_warehouse_id, NULL/,
+    );
+    expect(body).toContain('transfer_request_not_submitted');
+  });
+
+  it('REVIEW requires every pending line to be decided in the one call — no ambiguous partial batch', () => {
+    const body = functionBody('phoenix_review_warehouse_transfer_request');
+    expect(body).toContain('all_pending_lines_must_be_decided');
+    expect(body).toContain('duplicate_decision_for_line');
+    expect(body).toContain('decision_line_not_pending_for_request');
+    expect(body).toContain('approved_quantity_exceeds_requested');
+  });
+
+  it('REVIEW locks the pending lines with FOR UPDATE before deciding them', () => {
+    const body = functionBody('phoenix_review_warehouse_transfer_request');
+    expect(body).toMatch(/status = 'pending'\s+FOR UPDATE/);
+  });
+
+  it('SEND can only draw against an approved request line, bounded by approved_quantity', () => {
+    const body = functionBody('phoenix_send_warehouse_transfer_line');
+    expect(body).toContain('request_line_not_approved');
+    expect(body).toMatch(/IF v_reqline\.status NOT IN \('approved', 'partially_fulfilled'\) THEN/);
+  });
+
+  it('the request status enum includes the review outcomes, and the line enum includes approved/rejected', () => {
+    expect(norm068).toMatch(
+      /'draft', 'submitted', 'approved', 'partially_approved', 'rejected', 'cancelled', 'partially_fulfilled', 'fulfilled'/,
+    );
+    expect(norm068).toMatch(
+      /'pending', 'approved', 'rejected', 'partially_fulfilled', 'fulfilled', 'cancelled'/,
+    );
+  });
+
+  it('approved_quantity is structurally bounded by requested_quantity and gates fulfilled_quantity', () => {
+    expect(norm068).toContain('wtrl_approved_qty_chk');
+    expect(norm068).toContain('wtrl_fulfilled_le_approved_chk');
+    expect(norm068).toContain('wtrl_fulfilled_requires_approval_chk');
+  });
+
+  it('reviewed_at/reviewed_by are structurally consistent with status (wtr_reviewed_at_chk)', () => {
+    expect(norm068).toContain('wtr_reviewed_at_chk');
+  });
+
+  it('adds a dedicated warehouse_transfer.review permission key, distinct from .send/.request', () => {
+    expect(norm068).toMatch(
+      /\('warehouse_transfer\.review',\s*'warehouse_transfer',\s*'review'/,
+    );
+  });
+
+  it('grants review only to central_warehouse_manager and super_admin, never the requester side', () => {
+    expect(norm068).toMatch(
+      /\('central_warehouse_manager', 'warehouse_transfer\.review', true\)/,
+    );
+    expect(norm068).toMatch(
+      /\('warehouse_officer', 'warehouse_transfer\.review', false\)/,
+    );
+    expect(norm068).toMatch(
+      /\('outlet_officer', 'warehouse_transfer\.review', false\)/,
+    );
+  });
+
+  it('the post-conditions assert the requester cannot review its own request', () => {
+    expect(m068).toContain('ABORT 068: warehouse_officer must not review its own request');
+    expect(m068).toContain('ABORT 068: central_warehouse_manager must not open its own request');
+  });
+
+  it('CREATE/ADD/UPDATE/DELETE all authorize via warehouse_transfer.request scoped to the destination', () => {
+    for (const rpc of [
+      'phoenix_create_warehouse_transfer_request',
+      'phoenix_add_warehouse_transfer_request_line',
+      'phoenix_update_warehouse_transfer_request_line',
+      'phoenix_delete_warehouse_transfer_request_line',
+      'phoenix_submit_warehouse_transfer_request',
+      'phoenix_cancel_warehouse_transfer_request',
+    ] as const) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toContain("'warehouse_transfer.request'");
+    }
+  });
+
+  it('DELETE LINE is a real delete (pre-submission, no history to preserve), not a status flip', () => {
+    const body = functionBody('phoenix_delete_warehouse_transfer_request_line');
+    expect(body).toMatch(/DELETE FROM public\.warehouse_transfer_request_lines WHERE id = v_line\.id;/);
+  });
+
+  it('none of the seven lifecycle RPCs writes to warehouse_stock_movements — they never move stock', () => {
+    for (const rpc of REQUEST_LIFECYCLE_RPCS) {
+      expect(functionBody(rpc), rpc).not.toContain('warehouse_stock_movements');
+    }
+  });
+
+  it('all seven lifecycle RPCs are granted to authenticated and revoked from PUBLIC/anon', () => {
+    for (const rpc of REQUEST_LIFECYCLE_RPCS) {
+      const grantBlock = new RegExp(
+        `REVOKE ALL ON FUNCTION public\\.${rpc}\\([^)]*\\)[\\s\\S]*?FROM PUBLIC, anon;[\\s\\S]*?GRANT EXECUTE ON FUNCTION public\\.${rpc}\\([^)]*\\)[\\s\\S]*?TO authenticated;`,
+      );
+      expect(active068, rpc).toMatch(grantBlock);
+    }
   });
 });

@@ -5,9 +5,9 @@
 --
 -- VERIFICATION STATUS: pre-merge validation did not include execution against a
 -- disposable PostgreSQL database; validation used static analysis, tests, CI,
--- and Supabase dry-run. Part 12's post-conditions are analysis, not a proven
--- runtime guarantee. Apply to a staging/preview database and confirm all 12x
--- post-conditions pass BEFORE this is treated as ready for production.
+-- and Supabase dry-run. Section 13's post-conditions are analysis, not a
+-- proven runtime guarantee. Apply to a staging/preview database and confirm
+-- every post-condition passes BEFORE this is treated as ready for production.
 --
 -- STRATEGY: Expand -> Frontend Migration -> Contract. This is an EXPAND step.
 -- It is ADDITIVE AND BACKWARD-COMPATIBLE BY CONSTRUCTION.
@@ -19,10 +19,17 @@
 -- institution). 067 gave outlets their own balance. Neither built the movement
 -- between levels 1 and 2. 068 does:
 --
---   central warehouse --request--> institution asks for stock
---                     --send-----> stock leaves the central warehouse
---                     --in transit-> owned by neither balance
---                     --receive---> stock enters the institution warehouse
+--   institution --request--> asks for stock along an active route
+--               --submit---> sends the draft to the central side
+--   central     --review----> approves in full/in part, or rejects, per line
+--               --send------> stock leaves the central warehouse
+--               --in transit-> owned by neither balance
+--   institution --receive---> stock enters the institution warehouse
+--
+-- The request lifecycle (create/add-line/update-line/delete-line/submit/
+-- cancel/review) and the movement (send/receive) are both implemented here —
+-- section 8 for the former, sections 9-10 for the latter (unchanged from the
+-- original SEND/RECEIVE contract, now additionally gated on review).
 --
 -- After 068 the supply chain is continuous:
 --   central --068--> institution --061/067--> outlet
@@ -83,10 +90,14 @@
 --   * No contract step; no change to any legacy path or default.
 --   * No RETURN path (institution -> central). Deferred to 069 with the outlet
 --     return, so both directions are designed together, once.
---   * No cancellation of an in-transit transfer. Stock on a truck cannot be
+--   * No cancellation of a request after it has been reviewed or sent, and no
+--     cancellation of an in-transit transfer. Stock on a truck cannot be
 --     un-sent by an UPDATE; that needs the return path to exist first (069).
---   * No RBAC enforcement change. Enforcement stays OFF.
+--   * No RBAC enforcement change. Enforcement stays OFF; organization/warehouse
+--     scope enforcement (phoenix_profile_has_scoped_permission) stays ON, as
+--     it always has, independent of the RBAC/Shadow Mode toggle.
 --   * No data backfill. No route is created. No row is rewritten.
+--   * No frontend and no return path (069) — this is the DB layer only.
 -- ============================================================================
 
 begin;
@@ -159,6 +170,13 @@ CREATE TABLE IF NOT EXISTS public.warehouse_transfer_requests (
   cancelled_at              timestamptz,
   cancellation_reason       text,
 
+  -- The central-side review decision (full/partial approve or reject), taken
+  -- once per request across all its lines. Distinct from requested_at
+  -- (institution's submit) and from fulfilled/partially_fulfilled (actual
+  -- send, tracked per-line via existing SEND).
+  reviewed_by               uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  reviewed_at               timestamptz,
+
   created_by                uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at                timestamptz NOT NULL DEFAULT now(),
   updated_at                timestamptz NOT NULL DEFAULT now(),
@@ -185,8 +203,14 @@ CREATE TABLE IF NOT EXISTS public.warehouse_transfer_requests (
   CONSTRAINT wtr_no_self_supply
     CHECK (source_warehouse_id <> destination_warehouse_id),
 
+  -- 'approved'/'partially_approved'/'rejected' are the review outcome, taken
+  -- BEFORE any stock moves. 'partially_fulfilled'/'fulfilled' are the send
+  -- outcome, taken AFTER — same as before, driven by existing SEND logic.
   CONSTRAINT wtr_status_chk
-    CHECK (status IN ('draft', 'submitted', 'partially_fulfilled', 'fulfilled', 'rejected', 'cancelled')),
+    CHECK (status IN (
+      'draft', 'submitted', 'approved', 'partially_approved', 'rejected',
+      'cancelled', 'partially_fulfilled', 'fulfilled'
+    )),
 
   CONSTRAINT wtr_number_chk
     CHECK (btrim(request_number) = request_number AND request_number <> ''),
@@ -206,6 +230,18 @@ CREATE TABLE IF NOT EXISTS public.warehouse_transfer_requests (
            THEN cancelled_at IS NOT NULL
                 AND cancellation_reason IS NOT NULL AND btrim(cancellation_reason) <> ''
            ELSE cancelled_at IS NULL AND cancelled_by IS NULL AND cancellation_reason IS NULL
+      END
+    ),
+
+  -- A request has been reviewed iff its status says so. Cancellation is not a
+  -- review (it uses cancelled_at instead) — an institution can cancel a
+  -- submitted-but-unreviewed request without the central side ever deciding.
+  CONSTRAINT wtr_reviewed_at_chk
+    CHECK (
+      CASE WHEN status IN ('approved', 'partially_approved', 'rejected',
+                            'partially_fulfilled', 'fulfilled')
+           THEN reviewed_at IS NOT NULL AND reviewed_by IS NOT NULL
+           ELSE reviewed_at IS NULL AND reviewed_by IS NULL
       END
     )
 );
@@ -248,6 +284,9 @@ CREATE TABLE IF NOT EXISTS public.warehouse_transfer_request_lines (
   unit                      text,
 
   requested_quantity        integer NOT NULL,
+  -- Set once by review (phoenix_review_warehouse_transfer_request). NULL means
+  -- "not yet reviewed" — SEND must refuse to touch such a line.
+  approved_quantity         integer,
   fulfilled_quantity        integer NOT NULL DEFAULT 0,
   status                    text NOT NULL DEFAULT 'pending',
   notes                     text,
@@ -268,11 +307,43 @@ CREATE TABLE IF NOT EXISTS public.warehouse_transfer_request_lines (
     CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
   CONSTRAINT wtrl_requested_qty_chk  CHECK (requested_quantity > 0),
   CONSTRAINT wtrl_fulfilled_qty_chk  CHECK (fulfilled_quantity >= 0),
-  -- A line can never be over-fulfilled. Enforced, not trusted to the RPC.
+  -- A line can never be over-fulfilled relative to what was asked, whatever
+  -- the review outcome — a ceiling under the tighter approved-quantity check
+  -- below, kept as an independent structural backstop.
   CONSTRAINT wtrl_fulfilled_le_requested_chk
     CHECK (fulfilled_quantity <= requested_quantity),
+  CONSTRAINT wtrl_approved_qty_chk
+    CHECK (approved_quantity IS NULL
+           OR (approved_quantity >= 0 AND approved_quantity <= requested_quantity)),
+  -- Nothing can be sent against a line the central side never approved.
+  CONSTRAINT wtrl_fulfilled_requires_approval_chk
+    CHECK (approved_quantity IS NOT NULL OR fulfilled_quantity = 0),
+  -- Once approved, sent quantity is bounded by the APPROVED quantity, not the
+  -- originally requested one — a partial approval is a real ceiling.
+  CONSTRAINT wtrl_fulfilled_le_approved_chk
+    CHECK (approved_quantity IS NULL OR fulfilled_quantity <= approved_quantity),
   CONSTRAINT wtrl_status_chk
-    CHECK (status IN ('pending', 'partially_fulfilled', 'fulfilled', 'rejected', 'cancelled'))
+    CHECK (status IN (
+      'pending', 'approved', 'rejected', 'partially_fulfilled', 'fulfilled', 'cancelled'
+    )),
+  -- The decision + fulfilment state machine, expressed as data — same style as
+  -- wtl_decision_chk on warehouse_transfer_lines.
+  CONSTRAINT wtrl_status_qty_consistency_chk
+    CHECK (
+      CASE status
+        WHEN 'pending'              THEN approved_quantity IS NULL AND fulfilled_quantity = 0
+        WHEN 'approved'             THEN approved_quantity IS NOT NULL AND approved_quantity > 0
+                                          AND fulfilled_quantity = 0
+        WHEN 'rejected'             THEN approved_quantity = 0 AND fulfilled_quantity = 0
+        WHEN 'cancelled'            THEN fulfilled_quantity = 0
+        WHEN 'partially_fulfilled'  THEN approved_quantity IS NOT NULL
+                                          AND fulfilled_quantity > 0
+                                          AND fulfilled_quantity < approved_quantity
+        WHEN 'fulfilled'            THEN approved_quantity IS NOT NULL
+                                          AND fulfilled_quantity = approved_quantity
+        ELSE false
+      END
+    )
 );
 
 -- One material per request. A second line for the same material would make
@@ -291,8 +362,11 @@ CREATE INDEX IF NOT EXISTS wtrl_request_idx
 COMMENT ON TABLE public.warehouse_transfer_request_lines IS
   'CENTRAL-TO-INSTITUTION-SUPPLY-068-A: one requested MATERIAL per request. Batch '
   'identity is deliberately absent — the central warehouse chooses the lots at '
-  'send time from real stock. fulfilled_quantity can never exceed '
-  'requested_quantity (wtrl_fulfilled_le_requested_chk).';
+  'send time from real stock. approved_quantity is set once by review and is '
+  'the real ceiling for fulfilled_quantity (wtrl_fulfilled_le_approved_chk); '
+  'requested_quantity remains an independent structural ceiling '
+  '(wtrl_fulfilled_le_requested_chk). Written only by SECURITY DEFINER RPCs; no '
+  'direct client write path.';
 
 DO $$ BEGIN
   CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.warehouse_transfer_request_lines
@@ -590,6 +664,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS warehouse_stock_movements_transfer_line_once_u
 INSERT INTO public.permission_keys (key, module, action, label_en, label_ar, is_dangerous) VALUES
   ('warehouse_transfer.view',    'warehouse_transfer', 'view',    'View warehouse transfers',        'عرض تحويلات المخازن',        false),
   ('warehouse_transfer.request', 'warehouse_transfer', 'request', 'Request stock from central',      'طلب مخزون من المركزي',       false),
+  ('warehouse_transfer.review',  'warehouse_transfer', 'review',  'Review an institution request',   'مراجعة طلب مؤسسة',           false),
   ('warehouse_transfer.send',    'warehouse_transfer', 'send',    'Send stock to an institution',    'إرسال مخزون إلى مؤسسة',      false),
   ('warehouse_transfer.receive', 'warehouse_transfer', 'receive', 'Receive an institution transfer', 'استلام تحويل في المؤسسة',    false)
 ON CONFLICT (key) DO NOTHING;
@@ -603,17 +678,23 @@ ON CONFLICT (role, permission_key) DO NOTHING;
 -- The separation of duty that matters: the side that SENDS is never the side
 -- that RECEIVES. A central manager cannot receive its own shipment into an
 -- institution, and an institution officer cannot send stock to itself.
+-- REVIEW sits with the side that will eventually SEND (the central manager
+-- who is accountable for what leaves their warehouse) — never with the
+-- requester, who must not be able to approve its own request.
 INSERT INTO public.role_permission_defaults (role, permission_key, allowed) VALUES
   ('central_warehouse_manager', 'warehouse_transfer.view',    true),
+  ('central_warehouse_manager', 'warehouse_transfer.review',  true),
   ('central_warehouse_manager', 'warehouse_transfer.send',    true),
   ('central_warehouse_manager', 'warehouse_transfer.receive', false),
   ('central_warehouse_manager', 'warehouse_transfer.request', false),
   ('warehouse_officer',         'warehouse_transfer.view',    true),
   ('warehouse_officer',         'warehouse_transfer.request', true),
   ('warehouse_officer',         'warehouse_transfer.receive', true),
+  ('warehouse_officer',         'warehouse_transfer.review',  false),
   ('warehouse_officer',         'warehouse_transfer.send',    false),
   ('outlet_officer',            'warehouse_transfer.view',    false),
   ('outlet_officer',            'warehouse_transfer.request', false),
+  ('outlet_officer',            'warehouse_transfer.review',  false),
   ('outlet_officer',            'warehouse_transfer.send',    false),
   ('outlet_officer',            'warehouse_transfer.receive', false)
 ON CONFLICT (role, permission_key) DO NOTHING;
@@ -623,11 +704,604 @@ SELECT r.role, k.key, false
 FROM (VALUES ('institution_admin'),('port_officer'),('monthly_status_officer'),('viewer'),
              ('hospital_admin'),('warehouse_manager'),('point_operator'),('transfer_manager')) AS r(role)
 CROSS JOIN (VALUES ('warehouse_transfer.send'),('warehouse_transfer.receive'),
-                   ('warehouse_transfer.request')) AS k(key)
+                   ('warehouse_transfer.request'),('warehouse_transfer.review')) AS k(key)
 ON CONFLICT (role, permission_key) DO NOTHING;
 
 -- ============================================================================
--- 8. SEND — stock leaves the central warehouse
+-- 8. REQUEST LIFECYCLE — the institution asks, the central reviews
+-- ============================================================================
+-- Contract mirrors SEND/RECEIVE: advisory lock first, row lock second,
+-- phoenix_profile_has_scoped_permission gate (never a role literal), audit
+-- written for every transition. None of these seven RPCs moves stock — that
+-- stays exclusively in SEND/RECEIVE — so none writes warehouse_stock_movements.
+-- Each is idempotency-safe by construction: every transition is a one-way
+-- status flip guarded by a row lock plus an explicit precondition, so a retry
+-- either replays into the same terminal state and is rejected by that guard,
+-- or loses a genuine race to the lock. No fingerprint ledger is needed for
+-- operations that never touch a balance.
+
+-- 8a. CREATE — the institution opens a draft request along an active route.
+CREATE OR REPLACE FUNCTION public.phoenix_create_warehouse_transfer_request(
+  p_route_id                 uuid,
+  p_destination_warehouse_id uuid,
+  p_request_number           text,
+  p_notes                    text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor       uuid := auth.uid();
+  v_actor_role  text;
+  v_route       public.warehouse_supply_routes%ROWTYPE;
+  v_dest_org    uuid;
+  v_src_org     uuid;
+  v_number      text := NULLIF(btrim(p_request_number), '');
+  v_notes       text := NULLIF(btrim(p_notes), '');
+  v_request     public.warehouse_transfer_requests%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_route_id IS NULL OR p_destination_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'route_and_destination_required' USING ERRCODE = '23514';
+  END IF;
+  IF v_number IS NULL THEN
+    RAISE EXCEPTION 'request_number_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_destination_warehouse_id::text, 68069));
+
+  SELECT * INTO v_route FROM public.warehouse_supply_routes WHERE id = p_route_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF NOT v_route.is_active THEN
+    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
+  END IF;
+
+  -- The destination must actually BE the route's target — the same
+  -- IDOR-prevention pattern as SEND's stock/source check: a caller cannot
+  -- open a request against a warehouse the route does not lead to.
+  IF p_destination_warehouse_id IS DISTINCT FROM v_route.target_warehouse_id THEN
+    RAISE EXCEPTION 'destination_not_route_target' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT organization_id INTO v_dest_org
+  FROM public.warehouses WHERE id = p_destination_warehouse_id AND status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'destination_warehouse_not_found_or_inactive' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT organization_id INTO v_src_org
+  FROM public.warehouses WHERE id = v_route.source_warehouse_id AND status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'source_warehouse_not_found_or_inactive' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- THE IDOR GATE. Authority is scoped to the DESTINATION warehouse just
+  -- resolved from the route — never trusted from any client-asserted org.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request', v_dest_org, p_destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.warehouse_transfer_requests (
+    route_id, source_warehouse_id, source_organization_id,
+    destination_warehouse_id, destination_organization_id,
+    request_number, status, notes, created_by
+  ) VALUES (
+    p_route_id, v_route.source_warehouse_id, v_src_org,
+    p_destination_warehouse_id, v_dest_org,
+    v_number, 'draft', v_notes, v_actor
+  )
+  RETURNING * INTO v_request;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_dest_org, v_actor, v_actor_role,
+    'warehouse_transfer.request_created', 'warehouse_transfer_requests', v_request.id, v_number,
+    jsonb_build_object('route_id', p_route_id, 'destination_warehouse_id', p_destination_warehouse_id)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_id', v_request.id, 'status', v_request.status);
+END;
+$$;
+
+-- 8b. ADD LINE — while the request is still a draft.
+CREATE OR REPLACE FUNCTION public.phoenix_add_warehouse_transfer_request_line(
+  p_transfer_request_id uuid,
+  p_scientific_name     text,
+  p_requested_quantity  integer,
+  p_central_item_id     uuid DEFAULT NULL,
+  p_concentration       text DEFAULT NULL,
+  p_dosage_form         text DEFAULT NULL,
+  p_unit                text DEFAULT NULL,
+  p_notes               text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor    uuid := auth.uid();
+  v_request  public.warehouse_transfer_requests%ROWTYPE;
+  v_name     text := NULLIF(btrim(p_scientific_name), '');
+  v_line_id  uuid;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF v_name IS NULL THEN
+    RAISE EXCEPTION 'scientific_name_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_requested_quantity IS NULL OR p_requested_quantity <= 0 THEN
+    RAISE EXCEPTION 'quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request',
+    v_request.destination_organization_id, v_request.destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  -- Lines can only be added, changed or removed before submission — after
+  -- that, the request is what the central side reviews against.
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'transfer_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO public.warehouse_transfer_request_lines (
+    transfer_request_id, destination_organization_id, central_item_id,
+    scientific_name, concentration, dosage_form, unit,
+    requested_quantity, notes
+  ) VALUES (
+    v_request.id, v_request.destination_organization_id, p_central_item_id,
+    v_name, NULLIF(btrim(p_concentration), ''), NULLIF(btrim(p_dosage_form), ''),
+    NULLIF(btrim(p_unit), ''), p_requested_quantity, NULLIF(btrim(p_notes), '')
+  )
+  RETURNING id INTO v_line_id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.destination_organization_id, v_actor,
+    (SELECT role FROM public.profiles WHERE id = v_actor),
+    'warehouse_transfer.request_line_added', 'warehouse_transfer_request_lines', v_line_id, v_name,
+    jsonb_build_object('transfer_request_id', v_request.id, 'requested_quantity', p_requested_quantity)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_line_id', v_line_id);
+END;
+$$;
+
+-- 8c. UPDATE LINE — quantity/notes only, still draft-only.
+CREATE OR REPLACE FUNCTION public.phoenix_update_warehouse_transfer_request_line(
+  p_transfer_request_line_id uuid,
+  p_requested_quantity       integer,
+  p_notes                    text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor   uuid := auth.uid();
+  v_line    public.warehouse_transfer_request_lines%ROWTYPE;
+  v_request public.warehouse_transfer_requests%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_line_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_line_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_requested_quantity IS NULL OR p_requested_quantity <= 0 THEN
+    RAISE EXCEPTION 'quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_line
+  FROM public.warehouse_transfer_request_lines WHERE id = p_transfer_request_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = v_line.transfer_request_id FOR UPDATE;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request',
+    v_request.destination_organization_id, v_request.destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'transfer_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  UPDATE public.warehouse_transfer_request_lines
+     SET requested_quantity = p_requested_quantity,
+         notes = COALESCE(NULLIF(btrim(p_notes), ''), notes)
+   WHERE id = v_line.id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.destination_organization_id, v_actor,
+    (SELECT role FROM public.profiles WHERE id = v_actor),
+    'warehouse_transfer.request_line_updated', 'warehouse_transfer_request_lines', v_line.id,
+    v_line.scientific_name,
+    jsonb_build_object('previous_quantity', v_line.requested_quantity, 'new_quantity', p_requested_quantity)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_line_id', v_line.id);
+END;
+$$;
+
+-- 8d. DELETE LINE — draft-only; nothing has been reviewed or sent yet, so
+-- this is a real delete, not a status flip. No history exists yet to preserve.
+CREATE OR REPLACE FUNCTION public.phoenix_delete_warehouse_transfer_request_line(
+  p_transfer_request_line_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor   uuid := auth.uid();
+  v_line    public.warehouse_transfer_request_lines%ROWTYPE;
+  v_request public.warehouse_transfer_requests%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_line_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_line_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_line
+  FROM public.warehouse_transfer_request_lines WHERE id = p_transfer_request_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = v_line.transfer_request_id FOR UPDATE;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request',
+    v_request.destination_organization_id, v_request.destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'transfer_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.destination_organization_id, v_actor,
+    (SELECT role FROM public.profiles WHERE id = v_actor),
+    'warehouse_transfer.request_line_deleted', 'warehouse_transfer_request_lines', v_line.id,
+    v_line.scientific_name,
+    jsonb_build_object('transfer_request_id', v_request.id, 'requested_quantity', v_line.requested_quantity)
+  );
+
+  DELETE FROM public.warehouse_transfer_request_lines WHERE id = v_line.id;
+
+  RETURN jsonb_build_object('ok', true, 'deleted', true, 'transfer_request_line_id', v_line.id);
+END;
+$$;
+
+-- 8e. SUBMIT — draft -> submitted. Requires at least one line and an ACTIVE
+-- route checked again NOW, not only at the moment the draft was opened.
+CREATE OR REPLACE FUNCTION public.phoenix_submit_warehouse_transfer_request(
+  p_transfer_request_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
+  v_request    public.warehouse_transfer_requests%ROWTYPE;
+  v_line_count integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_transfer_request_id::text, 68069));
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request',
+    v_request.destination_organization_id, v_request.destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'transfer_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.warehouse_supply_routes r
+    WHERE r.id = v_request.route_id AND r.is_active
+  ) THEN
+    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT count(*) INTO v_line_count
+  FROM public.warehouse_transfer_request_lines WHERE transfer_request_id = v_request.id;
+  IF v_line_count = 0 THEN
+    RAISE EXCEPTION 'transfer_request_has_no_lines' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+
+  UPDATE public.warehouse_transfer_requests
+     SET status = 'submitted', requested_by = v_actor, requested_at = now()
+   WHERE id = v_request.id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.destination_organization_id, v_actor, v_actor_role,
+    'warehouse_transfer.request_submitted', 'warehouse_transfer_requests', v_request.id,
+    v_request.request_number, jsonb_build_object('line_count', v_line_count)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_id', v_request.id, 'status', 'submitted');
+END;
+$$;
+
+-- 8f. CANCEL — institution-side, before review/send only. wtr_cancel_chk
+-- requires a reason; anything after review or send is the return path (069).
+CREATE OR REPLACE FUNCTION public.phoenix_cancel_warehouse_transfer_request(
+  p_transfer_request_id uuid,
+  p_cancellation_reason text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
+  v_request    public.warehouse_transfer_requests%ROWTYPE;
+  v_reason     text := NULLIF(btrim(p_cancellation_reason), '');
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF v_reason IS NULL THEN
+    RAISE EXCEPTION 'cancellation_reason_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_transfer_request_id::text, 68069));
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.request',
+    v_request.destination_organization_id, v_request.destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_request' USING ERRCODE = '42501';
+  END IF;
+
+  -- Only before the central side has decided anything, and before any stock
+  -- has moved. Once reviewed or sent, un-asking is the return path (069).
+  IF v_request.status NOT IN ('draft', 'submitted') THEN
+    RAISE EXCEPTION 'transfer_request_not_cancellable' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+
+  UPDATE public.warehouse_transfer_requests
+     SET status = 'cancelled', cancelled_by = v_actor, cancelled_at = now(),
+         cancellation_reason = v_reason
+   WHERE id = v_request.id;
+
+  UPDATE public.warehouse_transfer_request_lines
+     SET status = 'cancelled'
+   WHERE transfer_request_id = v_request.id AND status = 'pending';
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.destination_organization_id, v_actor, v_actor_role,
+    'warehouse_transfer.request_cancelled', 'warehouse_transfer_requests', v_request.id,
+    v_request.request_number,
+    jsonb_build_object('reason', v_reason, 'previous_status', v_request.status)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_id', v_request.id, 'status', 'cancelled');
+END;
+$$;
+
+-- 8g. REVIEW — the central side decides, line by line, in one transaction.
+-- p_decisions is a JSON array of {"line_id": uuid, "approved_quantity": int}
+-- and MUST cover every currently 'pending' line of the request exactly once,
+-- so the header's post-review status is unambiguous.
+CREATE OR REPLACE FUNCTION public.phoenix_review_warehouse_transfer_request(
+  p_transfer_request_id uuid,
+  p_decisions           jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor          uuid := auth.uid();
+  v_actor_role     text;
+  v_request        public.warehouse_transfer_requests%ROWTYPE;
+  v_decision       jsonb;
+  v_line_id        uuid;
+  v_approved_qty   integer;
+  v_line           public.warehouse_transfer_request_lines%ROWTYPE;
+  v_pending_ids    uuid[];
+  v_decided_ids    uuid[] := ARRAY[]::uuid[];
+  v_approved_count integer := 0;
+  v_rejected_count integer := 0;
+  v_full_count     integer := 0;
+  v_header_status  text;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_transfer_request_id IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_decisions IS NULL OR jsonb_typeof(p_decisions) <> 'array' OR jsonb_array_length(p_decisions) = 0 THEN
+    RAISE EXCEPTION 'decisions_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_transfer_request_id::text, 68069));
+
+  SELECT * INTO v_request
+  FROM public.warehouse_transfer_requests WHERE id = p_transfer_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- THE IDOR GATE, and the separation of duty: authority is scoped to the
+  -- SOURCE warehouse (the central manager accountable for what it sends),
+  -- never to the requester's own scope — a requester cannot approve itself.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.review',
+    v_request.source_organization_id, v_request.source_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_transfer_review' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'submitted' THEN
+    RAISE EXCEPTION 'transfer_request_not_submitted' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT array_agg(id) INTO v_pending_ids
+  FROM (
+    SELECT id FROM public.warehouse_transfer_request_lines
+    WHERE transfer_request_id = v_request.id AND status = 'pending'
+    FOR UPDATE
+  ) locked_lines;
+
+  IF v_pending_ids IS NULL THEN
+    RAISE EXCEPTION 'transfer_request_has_no_pending_lines' USING ERRCODE = '23514';
+  END IF;
+
+  FOR v_decision IN SELECT * FROM jsonb_array_elements(p_decisions)
+  LOOP
+    v_line_id      := NULLIF(v_decision->>'line_id', '')::uuid;
+    v_approved_qty := NULLIF(v_decision->>'approved_quantity', '')::integer;
+
+    IF v_line_id IS NULL OR v_approved_qty IS NULL OR v_approved_qty < 0 THEN
+      RAISE EXCEPTION 'invalid_review_decision' USING ERRCODE = '23514';
+    END IF;
+    IF NOT (v_line_id = ANY (v_pending_ids)) THEN
+      RAISE EXCEPTION 'decision_line_not_pending_for_request' USING ERRCODE = 'P0002';
+    END IF;
+    IF v_line_id = ANY (v_decided_ids) THEN
+      RAISE EXCEPTION 'duplicate_decision_for_line' USING ERRCODE = '23505';
+    END IF;
+
+    SELECT * INTO v_line FROM public.warehouse_transfer_request_lines WHERE id = v_line_id;
+    IF v_approved_qty > v_line.requested_quantity THEN
+      RAISE EXCEPTION 'approved_quantity_exceeds_requested' USING ERRCODE = '23514';
+    END IF;
+
+    UPDATE public.warehouse_transfer_request_lines
+       SET approved_quantity = v_approved_qty,
+           status = CASE WHEN v_approved_qty = 0 THEN 'rejected' ELSE 'approved' END
+     WHERE id = v_line_id;
+
+    v_decided_ids := array_append(v_decided_ids, v_line_id);
+    IF v_approved_qty = 0 THEN
+      v_rejected_count := v_rejected_count + 1;
+    ELSE
+      v_approved_count := v_approved_count + 1;
+      IF v_approved_qty = v_line.requested_quantity THEN
+        v_full_count := v_full_count + 1;
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- Every pending line must be decided in this one call — a partial batch
+  -- would leave the header status ambiguous between two review passes.
+  IF array_length(v_decided_ids, 1) IS DISTINCT FROM array_length(v_pending_ids, 1) THEN
+    RAISE EXCEPTION 'all_pending_lines_must_be_decided' USING ERRCODE = '23514';
+  END IF;
+
+  v_header_status := CASE
+    WHEN v_approved_count = 0 THEN 'rejected'
+    WHEN v_rejected_count = 0 AND v_full_count = v_approved_count THEN 'approved'
+    ELSE 'partially_approved'
+  END;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+
+  UPDATE public.warehouse_transfer_requests
+     SET status = v_header_status, reviewed_by = v_actor, reviewed_at = now()
+   WHERE id = v_request.id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.source_organization_id, v_actor, v_actor_role,
+    'warehouse_transfer.request_reviewed', 'warehouse_transfer_requests', v_request.id,
+    v_request.request_number, jsonb_build_object('decisions', p_decisions, 'result_status', v_header_status)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'transfer_request_id', v_request.id, 'status', v_header_status);
+END;
+$$;
+
+-- ============================================================================
+-- 9. SEND — stock leaves the central warehouse
 -- ============================================================================
 -- Contract identical to 065/067: advisory lock first, row lock second,
 -- idempotent by request UUID + fingerprint, authorized only through
@@ -817,7 +1491,9 @@ BEGIN
   END IF;
 
   -- If this send answers a request line, the request must belong to the same
-  -- route and must not be over-fulfilled.
+  -- route, the line must have been APPROVED by review (not merely requested),
+  -- and it must not be over-fulfilled relative to what was approved — never
+  -- relative to what was originally asked for.
   IF p_transfer_request_line_id IS NOT NULL THEN
     SELECT l.* INTO v_reqline
     FROM public.warehouse_transfer_request_lines l
@@ -828,13 +1504,16 @@ BEGIN
     IF NOT FOUND THEN
       RAISE EXCEPTION 'request_line_not_found_for_route' USING ERRCODE = 'P0002';
     END IF;
-    IF v_reqline.fulfilled_quantity + p_quantity > v_reqline.requested_quantity THEN
+    IF v_reqline.status NOT IN ('approved', 'partially_fulfilled') THEN
+      RAISE EXCEPTION 'request_line_not_approved' USING ERRCODE = '23514';
+    END IF;
+    IF v_reqline.fulfilled_quantity + p_quantity > v_reqline.approved_quantity THEN
       RAISE EXCEPTION 'request_line_would_be_over_fulfilled' USING ERRCODE = '23514';
     END IF;
 
     UPDATE public.warehouse_transfer_request_lines
        SET fulfilled_quantity = fulfilled_quantity + p_quantity,
-           status = CASE WHEN fulfilled_quantity + p_quantity >= requested_quantity
+           status = CASE WHEN fulfilled_quantity + p_quantity >= approved_quantity
                          THEN 'fulfilled' ELSE 'partially_fulfilled' END
      WHERE id = v_reqline.id;
 
@@ -933,7 +1612,7 @@ END;
 $$;
 
 -- ============================================================================
--- 9. RECEIVE — stock enters the institution warehouse
+-- 10. RECEIVE — stock enters the institution warehouse
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.phoenix_receive_warehouse_transfer_line(
@@ -1216,8 +1895,57 @@ END;
 $$;
 
 -- ============================================================================
--- 10. Function privileges
+-- 11. Function privileges
 -- ============================================================================
+REVOKE ALL ON FUNCTION public.phoenix_create_warehouse_transfer_request(
+  uuid, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_create_warehouse_transfer_request(
+  uuid, uuid, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_add_warehouse_transfer_request_line(
+  uuid, text, integer, uuid, text, text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_add_warehouse_transfer_request_line(
+  uuid, text, integer, uuid, text, text, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_update_warehouse_transfer_request_line(
+  uuid, integer, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_update_warehouse_transfer_request_line(
+  uuid, integer, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_delete_warehouse_transfer_request_line(
+  uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_delete_warehouse_transfer_request_line(
+  uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_submit_warehouse_transfer_request(
+  uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_submit_warehouse_transfer_request(
+  uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_cancel_warehouse_transfer_request(
+  uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_cancel_warehouse_transfer_request(
+  uuid, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.phoenix_review_warehouse_transfer_request(
+  uuid, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_review_warehouse_transfer_request(
+  uuid, jsonb) TO authenticated;
+
+COMMENT ON FUNCTION public.phoenix_create_warehouse_transfer_request(
+  uuid, uuid, text, text) IS
+  'CENTRAL-TO-INSTITUTION-SUPPLY-068-A: opens a draft request along an ACTIVE '
+  'route. Requires warehouse_transfer.request scoped to the DESTINATION '
+  'warehouse, resolved from the route (IDOR-safe); source is derived from the '
+  'route, never client-asserted.';
+
+COMMENT ON FUNCTION public.phoenix_review_warehouse_transfer_request(
+  uuid, jsonb) IS
+  'CENTRAL-TO-INSTITUTION-SUPPLY-068-A: the central-side approve/partially- '
+  'approve/reject decision, taken atomically across every pending line. '
+  'Requires warehouse_transfer.review scoped to the SOURCE warehouse — never '
+  'the requester''s own scope, so a request cannot approve itself.';
+
 REVOKE ALL ON FUNCTION public.phoenix_send_warehouse_transfer_line(
   uuid, uuid, uuid, integer, text, uuid, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_transfer_line(
@@ -1246,7 +1974,7 @@ COMMENT ON FUNCTION public.phoenix_receive_warehouse_transfer_line(
   'impossible under concurrency.';
 
 -- ============================================================================
--- 11. RLS
+-- 12. RLS
 -- ============================================================================
 -- Reads are scope-aware and, crucially, TWO-SIDED: a transfer is visible to the
 -- sending side AND the receiving side. That is not a widening — each side must
@@ -1346,7 +2074,7 @@ CREATE POLICY wtl_select_scoped
             t.destination_organization_id, t.destination_warehouse_id)));
 
 -- ============================================================================
--- 12. POST-CONDITIONS — proven, not asserted
+-- 13. POST-CONDITIONS — proven, not asserted
 -- ============================================================================
 DO $verify$
 DECLARE
@@ -1394,8 +2122,14 @@ BEGIN
 
   -- 12e. Quantities cannot lie.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtl_received_le_sent_chk')
-     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtrl_fulfilled_le_requested_chk') THEN
-    RAISE EXCEPTION 'ABORT 068: over-receipt / over-fulfilment is not structurally refused.';
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtrl_fulfilled_le_requested_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtrl_fulfilled_le_approved_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtrl_approved_qty_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtrl_fulfilled_requires_approval_chk') THEN
+    RAISE EXCEPTION 'ABORT 068: over-receipt / over-fulfilment / over-approval is not structurally refused.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wtr_reviewed_at_chk') THEN
+    RAISE EXCEPTION 'ABORT 068: request review timestamp is not structurally consistent with status.';
   END IF;
 
   -- 12f. Idempotency is structural for both movements.
@@ -1431,7 +2165,7 @@ BEGIN
     RAISE EXCEPTION 'ABORT 068: the in-transit view is not security_invoker.';
   END IF;
 
-  -- 12i. RPC boundaries.
+  -- 12i. RPC boundaries — stock-moving RPCs (advisory lock + fingerprint).
   FOREACH v_def IN ARRAY ARRAY[
     'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)',
     'public.phoenix_receive_warehouse_transfer_line(uuid,uuid,integer,text,text)'
@@ -1451,6 +2185,89 @@ BEGIN
     ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%INSERT INTO public.audit_logs%',
       'VERIFY FAILED (068): no audit trail: ' || v_def;
   END LOOP;
+
+  -- 12i2. RPC boundaries — request lifecycle RPCs that flip a status under an
+  -- advisory lock (create/submit/cancel/review). Idempotency here is the
+  -- status-guard itself (documented at the top of section 8), not a
+  -- fingerprint, since none of these four touches a balance.
+  FOREACH v_def IN ARRAY ARRAY[
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)',
+    'public.phoenix_submit_warehouse_transfer_request(uuid)',
+    'public.phoenix_cancel_warehouse_transfer_request(uuid,text)',
+    'public.phoenix_review_warehouse_transfer_request(uuid,jsonb)'
+  ] LOOP
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%SECURITY DEFINER%',
+      'VERIFY FAILED (068): not SECURITY DEFINER: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%SET search_path%',
+      'VERIFY FAILED (068): no pinned search_path: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%pg_advisory_xact_lock%',
+      'VERIFY FAILED (068): no advisory lock: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%FOR UPDATE%',
+      'VERIFY FAILED (068): no row lock: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%phoenix_profile_has_scoped_permission%',
+      'VERIFY FAILED (068): no scoped permission gate (IDOR): ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%INSERT INTO public.audit_logs%',
+      'VERIFY FAILED (068): no audit trail: ' || v_def;
+  END LOOP;
+
+  -- 12i3. RPC boundaries — draft-only line CRUD (row lock on the header is
+  -- the serialization point; no advisory lock needed for metadata that isn't
+  -- a balance).
+  FOREACH v_def IN ARRAY ARRAY[
+    'public.phoenix_add_warehouse_transfer_request_line(uuid,text,integer,uuid,text,text,text,text)',
+    'public.phoenix_update_warehouse_transfer_request_line(uuid,integer,text)',
+    'public.phoenix_delete_warehouse_transfer_request_line(uuid)'
+  ] LOOP
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%SECURITY DEFINER%',
+      'VERIFY FAILED (068): not SECURITY DEFINER: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%SET search_path%',
+      'VERIFY FAILED (068): no pinned search_path: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%FOR UPDATE%',
+      'VERIFY FAILED (068): no row lock: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%phoenix_profile_has_scoped_permission%',
+      'VERIFY FAILED (068): no scoped permission gate (IDOR): ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%transfer_request_not_draft%',
+      'VERIFY FAILED (068): line CRUD does not require the request to still be draft: ' || v_def;
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%INSERT INTO public.audit_logs%',
+      'VERIFY FAILED (068): no audit trail: ' || v_def;
+  END LOOP;
+
+  -- 12i4. Review is gated by its OWN permission key, scoped to the SOURCE
+  -- warehouse — never the requester's, and never reusing .send/.request.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_review_warehouse_transfer_request(uuid,jsonb)'::regprocedure)
+    LIKE '%warehouse_transfer.review%'
+    AND pg_get_functiondef(
+    'public.phoenix_review_warehouse_transfer_request(uuid,jsonb)'::regprocedure)
+    LIKE '%v_request.source_organization_id, v_request.source_warehouse_id%',
+    'VERIFY FAILED (068): review is not scoped to the SOURCE warehouse under its own permission key';
+
+  -- 12i5. Cancel is refused once the request has moved past submitted
+  -- (reviewed or fulfilled) — the return path (069) owns anything after that.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_cancel_warehouse_transfer_request(uuid,text)'::regprocedure)
+    LIKE '%NOT IN (''draft'', ''submitted'')%',
+    'VERIFY FAILED (068): cancel does not stop at review/send';
+
+  -- 12i6. Submit re-checks route activity NOW, not only at request creation.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_submit_warehouse_transfer_request(uuid)'::regprocedure)
+    LIKE '%supply_route_inactive%',
+    'VERIFY FAILED (068): submit does not require an ACTIVE route';
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%supply_route_inactive%',
+    'VERIFY FAILED (068): request creation does not require an ACTIVE route';
+
+  -- 12i7. SEND can only draw against an APPROVED request line, bounded by
+  -- what was approved — never by what was merely requested.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'::regprocedure)
+    LIKE '%request_line_not_approved%'
+    AND pg_get_functiondef(
+    'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'::regprocedure)
+    LIKE '%v_reqline.approved_quantity%',
+    'VERIFY FAILED (068): send can draw against an unapproved or unbounded request line';
 
   -- 12j. Send: route active, stock really in the source warehouse, no negative.
   SELECT pg_get_functiondef(
@@ -1512,6 +2329,17 @@ BEGIN
      IS DISTINCT FROM false THEN
     RAISE EXCEPTION 'ABORT 068: warehouse_officer must not send central stock.';
   END IF;
+  -- The requester must not also be the reviewer of its own request.
+  IF (SELECT allowed FROM public.role_permission_defaults
+      WHERE role='warehouse_officer' AND permission_key='warehouse_transfer.review')
+     IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'ABORT 068: warehouse_officer must not review its own request.';
+  END IF;
+  IF (SELECT allowed FROM public.role_permission_defaults
+      WHERE role='central_warehouse_manager' AND permission_key='warehouse_transfer.request')
+     IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'ABORT 068: central_warehouse_manager must not open its own request.';
+  END IF;
 
   -- 12o. Legacy paths and defaults untouched.
   IF NOT has_function_privilege('authenticated',
@@ -1539,9 +2367,10 @@ BEGIN
     'VERIFY FAILED (068): transfer data leaked into public QR';
 
   RAISE NOTICE '068 verified: central->institution supply is route-enforced by '
-    'composite FK, crosses organizations safely, cannot over-fulfil or '
-    'over-receive, is idempotent and lock-ordered, keeps in-transit derived '
-    'rather than stored, and separates sending from receiving.';
+    'composite FK, crosses organizations safely, cannot over-fulfil, '
+    'over-approve or over-receive, is idempotent and lock-ordered, keeps '
+    'in-transit derived rather than stored, and separates requesting from '
+    'reviewing from sending from receiving.';
 END;
 $verify$;
 
