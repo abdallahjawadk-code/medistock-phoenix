@@ -9,7 +9,6 @@ import { join } from 'path';
 import {
   REVIEWED_MIGRATION_FILES,
   findUnreviewedMigrationFiles,
-  getMaximumReviewedMigrationNumber,
 } from './helpers/reviewed-migrations';
 
 const ROOT = join(__dirname, '../../../');
@@ -46,7 +45,14 @@ const sourceGuard = functionSql('phoenix_guard_availability_source_kind');
 describe('migration 065 — warehouse truth boundary and stock RPCs', () => {
   it('is the one exact reviewed 065 migration and leaves no unreviewed SQL', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(file => file.startsWith('065_'))).toEqual([FILE]);
-    expect(getMaximumReviewedMigrationNumber()).toBe(65);
+    // INVENTORY-ONLY-AVAILABILITY-066-A: the former
+    // `getMaximumReviewedMigrationNumber() === 65` assertion is DELIBERATELY
+    // ABSENT. It is not a property of migration 065 — it is a ceiling on the NEXT
+    // phase, so a legitimate, separately-reviewed 066 broke a guard that 066 does
+    // not touch. That churn is exactly what the canonical registry exists to
+    // remove; the reviewed maximum belongs to reviewed-migration-manifest.test.ts
+    // alone. 065's own scope stays covered by every assertion below, and the
+    // "no unreviewed SQL on disk" property below is strictly stronger anyway.
     expect(findUnreviewedMigrationFiles(readdirSync(MIGRATIONS))).toEqual([]);
   });
 
