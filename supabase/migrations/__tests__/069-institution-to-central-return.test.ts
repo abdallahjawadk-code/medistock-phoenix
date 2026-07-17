@@ -765,3 +765,133 @@ describe('19. 069 states its own contract at apply time (unexecuted)', () => {
     );
   });
 });
+
+// ============================================================================
+// 20. Route deactivation must NOT block a legitimate historical return
+// ============================================================================
+// A first draft of 069 mirrored 068's forward-supply rule of requiring an
+// ACTIVE route — wrong for a return: deactivating a route stops NEW forward
+// supply, it must never retroactively forbid returning/recalling material
+// that already moved along it. Caught in review before merge; these tests
+// pin the fix down so it cannot regress.
+
+describe('20. route deactivation does not block request/recall/submit/send of a historical return', () => {
+  const ROUTE_TOUCHING_RETURN_RPCS = [
+    'phoenix_request_warehouse_return',
+    'phoenix_recall_warehouse_transfer',
+    'phoenix_submit_warehouse_return_request',
+    'phoenix_send_warehouse_return_shipment_line',
+  ] as const;
+
+  it('none of the four gates on route is_active', () => {
+    for (const rpc of ROUTE_TOUCHING_RETURN_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).not.toContain('supply_route_inactive');
+      expect(body, rpc).not.toMatch(/IF NOT v_route\.is_active THEN/);
+    }
+  });
+
+  it('each still fetches AND locks the route row FOR SHARE — the lock is kept for identity/consistency, only the is_active gate is removed', () => {
+    for (const rpc of ROUTE_TOUCHING_RETURN_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toMatch(/FROM public\.warehouse_supply_routes WHERE id = \S+ FOR SHARE/);
+    }
+  });
+
+  it('CREATE/RECALL/SEND still refuse a route that does not exist at all (NOT FOUND), just not an inactive one', () => {
+    // SUBMIT is excluded deliberately: it reads route_id off an already
+    // FK-validated warehouse_return_requests row, so the route is
+    // guaranteed to exist — a NOT FOUND check there would be dead code,
+    // unlike CREATE/RECALL/SEND where p_route_id is a client-supplied,
+    // untrusted uuid.
+    for (const rpc of ['phoenix_request_warehouse_return', 'phoenix_recall_warehouse_transfer', 'phoenix_send_warehouse_return_shipment_line'] as const) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toContain('supply_route_not_found');
+    }
+  });
+
+  it('RECALL still proves the source warehouse is the route\'s own target (IDOR-safe), independent of is_active', () => {
+    const body = functionBody('phoenix_recall_warehouse_transfer');
+    expect(body).toMatch(/IF p_source_warehouse_id IS DISTINCT FROM v_route\.target_warehouse_id THEN/);
+  });
+
+  it('the post-conditions assert this for all four RPCs, not just document it in a comment', () => {
+    expect(m069).toContain(
+      'VERIFY FAILED (069): gates a legitimate historical return on route is_active',
+    );
+  });
+});
+
+// ============================================================================
+// 21. Quarantine-disposition guard — expired/quality-flagged returns cannot
+//     become dispensable stock
+// ============================================================================
+// Return-SEND deliberately allows an expired or quality-flagged batch (see
+// section 9) — but allowing it to be SENT is not the same as allowing it to
+// be CREDITED into the same on_hand pool ordinary dispensable stock draws
+// from. 069 carries no quarantine balance of its own (071's job); RECEIVE
+// must refuse to accept such a batch into inventory rather than improvise a
+// temporary representation that would have to be redesigned later.
+
+describe('21. RECEIVE refuses to credit an expired or quality-flagged return into dispensable stock', () => {
+  it('refuses a batch that is expired at receipt time, before any stock mutation', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toContain('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
+    expect(body).toMatch(/IF v_line\.expiry_date IS NOT NULL AND v_line\.expiry_date < current_date THEN/);
+  });
+
+  it('refuses a batch whose ORIGINAL return reason was quality_issue, joined back to the request line', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toContain('return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071');
+    expect(body).toMatch(
+      /SELECT 1 FROM public\.warehouse_return_request_lines rl\s+WHERE rl\.id = v_line\.return_request_line_id AND rl\.reason_code = 'quality_issue'/,
+    );
+  });
+
+  it('both guards are placed BEFORE the warehouse_stock INSERT — a guard after the credit would be worthless', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const expiredGuardIdx = body.indexOf('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
+    const qualityGuardIdx = body.indexOf('return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071');
+    const insertIdx = body.indexOf('INSERT INTO public.warehouse_stock (');
+    expect(expiredGuardIdx).toBeGreaterThan(-1);
+    expect(qualityGuardIdx).toBeGreaterThan(-1);
+    expect(insertIdx).toBeGreaterThan(-1);
+    expect(expiredGuardIdx).toBeLessThan(insertIdx);
+    expect(qualityGuardIdx).toBeLessThan(insertIdx);
+  });
+
+  it('rejection (received_quantity = 0) is NOT gated by the quarantine guard — central can always refuse a return outright', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const rejectIdx = body.indexOf("IF p_received_quantity = 0 THEN");
+    const rejectReturnIdx = body.indexOf('RETURN jsonb_build_object', rejectIdx);
+    const expiredGuardIdx = body.indexOf('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
+    // The rejection branch RETURNs before the guard is ever reached.
+    expect(rejectIdx).toBeGreaterThan(-1);
+    expect(rejectReturnIdx).toBeGreaterThan(rejectIdx);
+    expect(rejectReturnIdx).toBeLessThan(expiredGuardIdx);
+  });
+
+  it('no code path anywhere in 069 credits on_hand_quantity for an expired or quality-flagged return', () => {
+    // The ONLY place warehouse_stock.on_hand_quantity is credited on the
+    // return-receive path is after both guards, meaning an expired/
+    // quality-flagged batch can never reach it (already proven above by
+    // ordering) — this test additionally proves there is no SECOND,
+    // alternate credit path elsewhere in the file that bypasses the guard.
+    const creditSites = [...exec069.matchAll(/SET on_hand_quantity = v_after/g)];
+    expect(creditSites.length).toBe(2); // one in SEND (debit), one in RECEIVE (credit)
+  });
+
+  it('the file header documents this as a deliberate temporary limitation, not a workaround', () => {
+    expect(m069).toContain('This is a deliberate temporary limitation, not a workaround');
+    expect(m069.toLowerCase()).toContain('quarantine');
+  });
+
+  it('the post-conditions assert both guards exist and precede the stock credit', () => {
+    expect(m069).toContain(
+      'VERIFY FAILED (069): return-receive does not guard against crediting an expired/quality-flagged batch',
+    );
+    expect(m069).toContain(
+      'VERIFY FAILED (069): quarantine guard does not precede the stock credit',
+    );
+  });
+});
