@@ -754,7 +754,13 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_destination_warehouse_id::text, 68069));
 
-  SELECT * INTO v_route FROM public.warehouse_supply_routes WHERE id = p_route_id;
+  -- Fetch AND lock the route in the SAME statement — closes the TOCTOU
+  -- window between "read is_active" and "hold a lock on it". FOR SHARE, not
+  -- FOR UPDATE: many concurrent request-creations against the same active
+  -- route must not serialize against each other, only against a concurrent
+  -- deactivation (which needs an UPDATE, and therefore waits for us).
+  SELECT * INTO v_route
+  FROM public.warehouse_supply_routes WHERE id = p_route_id FOR SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
   END IF;
@@ -1032,6 +1038,7 @@ DECLARE
   v_actor      uuid := auth.uid();
   v_actor_role text;
   v_request    public.warehouse_transfer_requests%ROWTYPE;
+  v_route      public.warehouse_supply_routes%ROWTYPE;
   v_line_count integer;
 BEGIN
   IF v_actor IS NULL THEN
@@ -1060,10 +1067,12 @@ BEGIN
     RAISE EXCEPTION 'transfer_request_not_draft' USING ERRCODE = '23514';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM public.warehouse_supply_routes r
-    WHERE r.id = v_request.route_id AND r.is_active
-  ) THEN
+  -- Fetch AND lock the route in the SAME statement (FOR SHARE, same reasoning
+  -- as CREATE) — a route deactivated between draft and submit must not slip
+  -- an inactive route past this check via a read/lock race.
+  SELECT * INTO v_route
+  FROM public.warehouse_supply_routes WHERE id = v_request.route_id FOR SHARE;
+  IF NOT FOUND OR NOT v_route.is_active THEN
     RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
   END IF;
 
@@ -1180,6 +1189,7 @@ DECLARE
   v_actor          uuid := auth.uid();
   v_actor_role     text;
   v_request        public.warehouse_transfer_requests%ROWTYPE;
+  v_route          public.warehouse_supply_routes%ROWTYPE;
   v_decision       jsonb;
   v_line_id        uuid;
   v_approved_qty   integer;
@@ -1223,6 +1233,13 @@ BEGIN
     RAISE EXCEPTION 'transfer_request_not_submitted' USING ERRCODE = '23514';
   END IF;
 
+  -- Fetch AND lock the route (FOR SHARE, same reasoning as CREATE/SUBMIT).
+  -- Held unconditionally for the rest of the transaction; is_active is only
+  -- ENFORCED below when a decision actually approves something — a pure
+  -- rejection needs no active route, since nothing is going to move.
+  SELECT * INTO v_route
+  FROM public.warehouse_supply_routes WHERE id = v_request.route_id FOR SHARE;
+
   SELECT array_agg(id) INTO v_pending_ids
   FROM (
     SELECT id FROM public.warehouse_transfer_request_lines
@@ -1252,6 +1269,11 @@ BEGIN
     SELECT * INTO v_line FROM public.warehouse_transfer_request_lines WHERE id = v_line_id;
     IF v_approved_qty > v_line.requested_quantity THEN
       RAISE EXCEPTION 'approved_quantity_exceeds_requested' USING ERRCODE = '23514';
+    END IF;
+    -- Only an APPROVAL needs an active route — a rejection (approved_qty=0)
+    -- sends nothing, so a deactivated route must not block it.
+    IF v_approved_qty > 0 AND NOT v_route.is_active THEN
+      RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
     END IF;
 
     UPDATE public.warehouse_transfer_request_lines
@@ -1394,9 +1416,11 @@ BEGIN
 
   -- The route must exist and be ACTIVE right now. Activity is checked here, not
   -- by FK: it is mutable, and deactivating a route later must not retroactively
-  -- invalidate stock already sent.
+  -- invalidate stock already sent. Fetch AND lock in the SAME statement (FOR
+  -- SHARE, same reasoning as CREATE/SUBMIT/REVIEW) — closes the TOCTOU window
+  -- between reading is_active and holding a lock on it.
   SELECT * INTO v_route
-  FROM public.warehouse_supply_routes WHERE id = p_route_id;
+  FROM public.warehouse_supply_routes WHERE id = p_route_id FOR SHARE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
@@ -2187,11 +2211,14 @@ BEGIN
   END LOOP;
 
   -- 12i2. RPC boundaries — request lifecycle RPCs that flip a status under an
-  -- advisory lock (create/submit/cancel/review). Idempotency here is the
-  -- status-guard itself (documented at the top of section 8), not a
-  -- fingerprint, since none of these four touches a balance.
+  -- advisory lock AND hold a row lock on their own header (submit/cancel/
+  -- review lock the REQUEST row FOR UPDATE — they mutate it). CREATE is
+  -- checked separately below: it inserts a new header, so there is no
+  -- pre-existing row to FOR UPDATE — what it must lock instead is the ROUTE
+  -- it depends on (12i2b). Idempotency here is the status-guard itself
+  -- (documented at the top of section 8), not a fingerprint, since none of
+  -- these RPCs touches a balance.
   FOREACH v_def IN ARRAY ARRAY[
-    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)',
     'public.phoenix_submit_warehouse_transfer_request(uuid)',
     'public.phoenix_cancel_warehouse_transfer_request(uuid,text)',
     'public.phoenix_review_warehouse_transfer_request(uuid,jsonb)'
@@ -2209,6 +2236,54 @@ BEGIN
     ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%INSERT INTO public.audit_logs%',
       'VERIFY FAILED (068): no audit trail: ' || v_def;
   END LOOP;
+
+  -- 12i2a. CREATE: same SECURITY DEFINER/search_path/advisory-lock/scope/
+  -- audit contract as the other three, but no FOR UPDATE assertion — see
+  -- 12i2b for what it locks instead.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%SECURITY DEFINER%',
+    'VERIFY FAILED (068): not SECURITY DEFINER: create_warehouse_transfer_request';
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%SET search_path%',
+    'VERIFY FAILED (068): no pinned search_path: create_warehouse_transfer_request';
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%pg_advisory_xact_lock%',
+    'VERIFY FAILED (068): no advisory lock: create_warehouse_transfer_request';
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%phoenix_profile_has_scoped_permission%',
+    'VERIFY FAILED (068): no scoped permission gate (IDOR): create_warehouse_transfer_request';
+  ASSERT pg_get_functiondef(
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)'::regprocedure)
+    LIKE '%INSERT INTO public.audit_logs%',
+    'VERIFY FAILED (068): no audit trail: create_warehouse_transfer_request';
+
+  -- 12i2b. create/submit/review/send must each lock the ROUTE row FOR SHARE
+  -- before trusting is_active — fetch and lock in the same statement, so
+  -- there is no TOCTOU window between reading the flag and holding the lock.
+  -- FOR SHARE, not FOR UPDATE: concurrent callers against the same active
+  -- route must not serialize against each other, only against a concurrent
+  -- deactivation.
+  FOREACH v_def IN ARRAY ARRAY[
+    'public.phoenix_create_warehouse_transfer_request(uuid,uuid,text,text)',
+    'public.phoenix_submit_warehouse_transfer_request(uuid)',
+    'public.phoenix_review_warehouse_transfer_request(uuid,jsonb)',
+    'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'
+  ] LOOP
+    ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%public.warehouse_supply_routes%FOR SHARE%',
+      'VERIFY FAILED (068): does not lock the route row FOR SHARE before trusting is_active: ' || v_def;
+  END LOOP;
+
+  -- 12i2c. RECEIVE must not depend on route state AT ALL — an in-transit
+  -- shipment must be completable even if the route was deactivated after it
+  -- was sent. No lock, no is_active check, no reference to the table.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_receive_warehouse_transfer_line(uuid,uuid,integer,text,text)'::regprocedure)
+    NOT LIKE '%warehouse_supply_routes%',
+    'VERIFY FAILED (068): receive must not depend on route state';
 
   -- 12i3. RPC boundaries — draft-only line CRUD (row lock on the header is
   -- the serialization point; no advisory lock needed for metadata that isn't

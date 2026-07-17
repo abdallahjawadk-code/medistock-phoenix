@@ -1117,3 +1117,107 @@ describe('16. request lifecycle RPCs exist with the full create->submit->review-
     }
   });
 });
+
+// ============================================================================
+// 17. Route-active TOCTOU fix — FOR SHARE lock on the route row itself
+// ============================================================================
+// A live apply attempt aborted at post-condition 12i2 ("no row lock:
+// phoenix_create_warehouse_transfer_request") because CREATE read
+// warehouse_supply_routes.is_active without ever locking the row it read it
+// from — a plain unlocked SELECT, so nothing prevented a concurrent
+// deactivation between the read and the INSERT that trusted it. The fix
+// locks the SAME statement that reads is_active with FOR SHARE (not FOR
+// UPDATE, so concurrent callers against one active route do not serialize
+// against each other — only against a concurrent deactivating UPDATE).
+// These tests pin down that the lock is specifically on
+// warehouse_supply_routes, not merely "a FOR UPDATE somewhere in the body"
+// (which is what the old, too-generic post-condition accepted).
+
+describe('17. route-active checks fetch-and-lock the ROUTE row in one statement (TOCTOU fix)', () => {
+  const ROUTE_LOCKING_RPCS = [
+    'phoenix_create_warehouse_transfer_request',
+    'phoenix_submit_warehouse_transfer_request',
+    'phoenix_review_warehouse_transfer_request',
+    'phoenix_send_warehouse_transfer_line',
+  ] as const;
+
+  it('CREATE/SUBMIT/REVIEW/SEND each fetch AND lock warehouse_supply_routes with FOR SHARE in the same statement', () => {
+    for (const rpc of ROUTE_LOCKING_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toMatch(
+        /FROM public\.warehouse_supply_routes WHERE id = \S+ FOR SHARE/,
+      );
+    }
+  });
+
+  it('none of the four uses FOR UPDATE on warehouse_supply_routes (FOR SHARE only — concurrent requests must not serialize)', () => {
+    for (const rpc of ROUTE_LOCKING_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).not.toMatch(
+        /FROM public\.warehouse_supply_routes WHERE id = \S+ FOR UPDATE/,
+      );
+    }
+  });
+
+  it('CREATE has no FOR UPDATE at all — it inserts a new header, so the route lock is the only lock it needs', () => {
+    const body = functionBody('phoenix_create_warehouse_transfer_request');
+    expect(body).not.toContain('FOR UPDATE');
+    expect(body).toContain('FOR SHARE');
+  });
+
+  it('SUBMIT locks both the request row (FOR UPDATE) and the route row (FOR SHARE) — two different locks for two different reasons', () => {
+    const body = functionBody('phoenix_submit_warehouse_transfer_request');
+    expect(body).toMatch(/FROM public\.warehouse_transfer_requests WHERE id = p_transfer_request_id FOR UPDATE/);
+    expect(body).toMatch(/FROM public\.warehouse_supply_routes WHERE id = v_request\.route_id FOR SHARE/);
+  });
+
+  it('REVIEW enforces route-active only when a decision actually approves something, never on a pure rejection', () => {
+    const body = functionBody('phoenix_review_warehouse_transfer_request');
+    expect(body).toMatch(/FROM public\.warehouse_supply_routes WHERE id = v_request\.route_id FOR SHARE/);
+    expect(body).toMatch(
+      /IF v_approved_qty > 0 AND NOT v_route\.is_active THEN\s*RAISE EXCEPTION 'supply_route_inactive'/,
+    );
+    // The route fetch itself is unconditional (held for the whole decision
+    // loop) — only the ENFORCEMENT is conditional on approving something.
+    expect(body.indexOf('FOR SHARE')).toBeLessThan(body.indexOf("IF v_approved_qty > 0 AND NOT v_route.is_active"));
+  });
+
+  it('RECEIVE never references warehouse_supply_routes — a deactivated route must not block completing an in-transit shipment', () => {
+    const body = functionBody('phoenix_receive_warehouse_transfer_line');
+    expect(body).not.toContain('warehouse_supply_routes');
+    expect(body).not.toContain('supply_route_inactive');
+  });
+
+  it('the post-conditions assert the route lock specifically on warehouse_supply_routes, not a generic FOR UPDATE search', () => {
+    expect(m068).toContain(
+      'VERIFY FAILED (068): does not lock the route row FOR SHARE before trusting is_active',
+    );
+    expect(m068).toContain('VERIFY FAILED (068): receive must not depend on route state');
+    // The old, too-generic assertion that caused the live-apply abort (a bare
+    // "no row lock" check against CREATE with no route-specificity) must be
+    // gone, not just supplemented.
+    expect(exec068).not.toMatch(
+      /ARRAY\[\s*'public\.phoenix_create_warehouse_transfer_request\(uuid,uuid,text,text\)',\s*'public\.phoenix_submit_warehouse_transfer_request\(uuid\)',\s*'public\.phoenix_cancel_warehouse_transfer_request\(uuid,text\)',\s*'public\.phoenix_review_warehouse_transfer_request\(uuid,jsonb\)'\s*\]/,
+    );
+  });
+
+  it('every other post-condition from before this fix is still present, unweakened', () => {
+    for (const assertion of [
+      'ABORT 068: expected 060/066 schema is absent',
+      'ABORT 068: missing per-side organization pin',
+      'ABORT 068: supply-route enforcement is not a composite FK',
+      'ABORT 068: transfer idempotency index missing',
+      'ABORT 068: in-transit was denormalized onto warehouse_stock',
+      'ABORT 068: the in-transit view is not security_invoker',
+      'ABORT 068: anon can read',
+      'VERIFY FAILED (068): authenticated holds a direct transfer write privilege',
+      'ABORT 068: central_warehouse_manager must not receive its own shipment',
+      'ABORT 068: warehouse_officer must not send central stock',
+      'ABORT 068: warehouse_officer must not review its own request',
+      'ABORT 068: central_warehouse_manager must not open its own request',
+      'VERIFY FAILED (068): send can draw against an unapproved or unbounded request line',
+    ]) {
+      expect(m068, assertion).toContain(assertion);
+    }
+  });
+});
