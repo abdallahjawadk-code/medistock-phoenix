@@ -494,6 +494,21 @@ describe('9. idempotency, RLS, and grant hygiene', () => {
       /ASSERT v_qr_def NOT ILIKE '%outlet_return%' AND v_qr_def NOT ILIKE '%quarantine%'/,
     );
   });
+
+  it('§14i resolves get_public_qr_payload by its FULL (text) signature, never a bare name that ::regprocedure cannot cast', () => {
+    // regprocedure input REQUIRES the argument-type list; a bare name aborts the
+    // whole migration ("expected a left parenthesis"). The real signature is (text).
+    expect(m071).toContain(
+      "pg_get_functiondef('public.get_public_qr_payload(text)'::regprocedure)",
+    );
+    // Guard against the incomplete form ever coming back.
+    expect(m071).not.toContain("'public.get_public_qr_payload'::regprocedure");
+  });
+
+  it('every ::regprocedure cast in 071 carries a parenthesised argument-type list', () => {
+    const bareRegprocedure = m071.match(/'[a-z0-9_.]+'::regprocedure/gi) ?? [];
+    expect(bareRegprocedure, `bare-name regprocedure casts: ${bareRegprocedure.join(', ')}`).toEqual([]);
+  });
 });
 
 // ============================================================================

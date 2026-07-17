@@ -2457,7 +2457,7 @@ BEGIN
 
   -- 14i. Public QR path stays untouched and leaks nothing about outlet returns.
   DECLARE
-    v_qr_def text := pg_get_functiondef('public.get_public_qr_payload'::regprocedure);
+    v_qr_def text := pg_get_functiondef('public.get_public_qr_payload(text)'::regprocedure);
   BEGIN
     ASSERT v_qr_def NOT ILIKE '%outlet_return%' AND v_qr_def NOT ILIKE '%quarantine%',
       'VERIFY FAILED (071): outlet return or quarantine data leaked into public QR';
