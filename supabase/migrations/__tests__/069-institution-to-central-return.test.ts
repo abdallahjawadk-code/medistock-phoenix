@@ -871,10 +871,11 @@ describe('20. route deactivation does not block request/recall/submit/send of a 
 // RECEIVE now classifies every accepted quantity into exactly one of two
 // balances and credits the correct one, always.
 
-describe('21. RECEIVE classifies every accepted quantity as restockable or quarantined', () => {
+describe('21. RECEIVE classifies every accepted quantity as restockable or quarantined, fail-closed', () => {
   const MANDATORY_QUARANTINE_REASONS = [
-    'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion',
+    'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other',
   ] as const;
+  const DECISION_REQUIRED_REASONS = ['near_expiry', 'excess', 'shipment_error'] as const;
 
   it('the old block-and-refuse guard is gone — no dead-end error text remains anywhere', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
@@ -888,19 +889,24 @@ describe('21. RECEIVE classifies every accepted quantity as restockable or quara
     expect(body).toMatch(
       /v_objectively_expired := v_line\.expiry_date IS NOT NULL AND v_line\.expiry_date < current_date/,
     );
-    expect(body).toMatch(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN/);
+    expect(body).toMatch(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IS NULL\s+OR v_reason_code IN/);
   });
 
-  it('every mandatory-quarantine reason is named explicitly — none can be missed silently', () => {
+  it('a NULL reason_code (deleted return-request line) is mandatory quarantine, not a silent default', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IS NULL/);
+  });
+
+  it('every mandatory-quarantine reason, including \'other\', is named explicitly — none can be missed silently', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
     for (const reason of MANDATORY_QUARANTINE_REASONS) {
       expect(body, reason).toMatch(new RegExp(`v_reason_code IN \\([^)]*'${reason}'`));
     }
   });
 
-  it('the client CANNOT override a mandatory-quarantine reason via p_disposition_decision', () => {
+  it('the client CANNOT override a mandatory-quarantine reason (including \'other\') via p_disposition_decision', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    // p_disposition_decision is only read inside the near_expiry ELSIF
+    // p_disposition_decision is only read inside the decision-required ELSIF
     // branch — never inside the v_mandatory_quarantine branch.
     const mandatoryBranch = body.slice(
       body.indexOf('IF v_mandatory_quarantine THEN'),
@@ -910,17 +916,53 @@ describe('21. RECEIVE classifies every accepted quantity as restockable or quara
     expect(mandatoryBranch).toContain("v_disposition := 'quarantined'");
   });
 
-  it('near_expiry requires an explicit p_disposition_decision — no silent default', () => {
+  it('near_expiry/excess/shipment_error ALL require an explicit p_disposition_decision — no silent default in either direction', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    expect(body).toContain('near_expiry_return_requires_explicit_disposition_decision');
-    expect(body).toMatch(
-      /ELSIF v_reason_code = 'near_expiry' THEN\s+IF p_disposition_decision IS NULL THEN/,
-    );
+    expect(body).toContain('return_receive_requires_explicit_disposition_decision');
+    // The retired near_expiry-only exception name must not reappear.
+    expect(body).not.toContain('near_expiry_return_requires_explicit_disposition_decision');
+    for (const reason of DECISION_REQUIRED_REASONS) {
+      expect(body, reason).toMatch(new RegExp(`ELSIF v_reason_code IN \\([^)]*'${reason}'[^)]*\\) THEN\\s+IF p_disposition_decision IS NULL THEN`));
+    }
   });
 
-  it('excess/shipment_error/other default to restockable when not objectively expired', () => {
+  it('excess/shipment_error/other do NOT default to restockable — the old fail-open branch is gone', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    expect(body).toMatch(/ELSE\s+v_disposition := 'restockable';\s+END IF;/);
+    expect(body).not.toMatch(/ELSE\s+v_disposition := 'restockable';\s+END IF;/);
+    expect(body).not.toContain("v_disposition := 'restockable';");
+  });
+
+  it('restockable is only ever assigned from p_disposition_decision, never a hardcoded literal', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/v_disposition := p_disposition_decision;/);
+  });
+
+  it('an unreachable fail-closed backstop exists for any reason_code not named above (defensive, never a silent default)', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toContain('return_receive_unclassified_reason_code');
+    expect(body).toMatch(/ELSE\s+[\s\S]*?RAISE EXCEPTION 'return_receive_unclassified_reason_code'/);
+  });
+
+  it('a decision failure (missing p_disposition_decision) raises BEFORE any stock mutation — no partial credit', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const decisionRaiseIdx = body.indexOf("RAISE EXCEPTION 'return_receive_requires_explicit_disposition_decision'");
+    const stockInsertIdx = body.indexOf('INSERT INTO public.warehouse_stock (');
+    const quarantineInsertIdx = body.indexOf('INSERT INTO public.warehouse_quarantine_stock (');
+    const stockUpdateIdx = body.indexOf('UPDATE public.warehouse_stock');
+    const quarantineUpdateIdx = body.indexOf('UPDATE public.warehouse_quarantine_stock');
+    expect(decisionRaiseIdx).toBeGreaterThan(-1);
+    expect(decisionRaiseIdx).toBeLessThan(stockInsertIdx);
+    expect(decisionRaiseIdx).toBeLessThan(quarantineInsertIdx);
+    expect(decisionRaiseIdx).toBeLessThan(stockUpdateIdx);
+    expect(decisionRaiseIdx).toBeLessThan(quarantineUpdateIdx);
+  });
+
+  it('an unauthorized receiver never reaches disposition classification — the scoped-permission gate runs first', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const permIdx = body.indexOf('forbidden_warehouse_return_receive');
+    const classifyIdx = body.indexOf('v_mandatory_quarantine := v_objectively_expired');
+    expect(permIdx).toBeGreaterThan(-1);
+    expect(permIdx).toBeLessThan(classifyIdx);
   });
 
   it('classification happens BEFORE either credit branch — restockable and quarantine both', () => {
@@ -1227,27 +1269,33 @@ describe('26. every reason_code has an explicit, testable quarantine rule', () =
     );
   });
 
-  it('mandatory-quarantine reasons (expired/damaged/recalled/quality_issue/temperature_excursion) all appear in the SAME IN-list in RECEIVE', () => {
+  it('mandatory-quarantine reasons (expired/damaged/recalled/quality_issue/temperature_excursion/other) all appear in the SAME IN-list in RECEIVE', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    const match = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN \(([^)]*)\)/);
+    const match = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IS NULL\s+OR v_reason_code IN \(([^)]*)\)/);
     expect(match, 'mandatory quarantine IN-list must exist').not.toBeNull();
     const list = match![1];
-    for (const reason of ['expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion']) {
+    for (const reason of ['expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other']) {
       expect(list, reason).toContain(`'${reason}'`);
     }
   });
 
-  it('near_expiry is handled in its own explicit branch, distinct from the mandatory set and the default', () => {
+  it('near_expiry, excess and shipment_error are handled in the SAME decision-required branch, distinct from the mandatory set', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    expect(body).toMatch(/ELSIF v_reason_code = 'near_expiry' THEN/);
+    const match = body.match(/ELSIF v_reason_code IN \(([^)]*)\) THEN/);
+    expect(match, 'decision-required IN-list must exist').not.toBeNull();
+    for (const reason of ['near_expiry', 'excess', 'shipment_error']) {
+      expect(match![1], reason).toContain(`'${reason}'`);
+    }
   });
 
-  it('excess and shipment_error are NOT in the mandatory-quarantine list — they fall through to the restockable default', () => {
+  it('excess and shipment_error are NOT in the mandatory-quarantine list, but ALSO do not fall through to any restockable default', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    const match = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN \(([^)]*)\)/);
-    expect(match).not.toBeNull();
-    expect(match![1]).not.toContain("'excess'");
-    expect(match![1]).not.toContain("'shipment_error'");
+    const mandatoryMatch = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IS NULL\s+OR v_reason_code IN \(([^)]*)\)/);
+    expect(mandatoryMatch).not.toBeNull();
+    expect(mandatoryMatch![1]).not.toContain("'excess'");
+    expect(mandatoryMatch![1]).not.toContain("'shipment_error'");
+    // They fall into the decision-required branch, not a restockable default.
+    expect(body).not.toContain("v_disposition := 'restockable';");
   });
 });
 
