@@ -119,6 +119,32 @@ END;
 $guard$;
 
 -- ============================================================================
+-- 0b. Composite key: (id, point_type)
+-- ============================================================================
+-- ADDITIVE and trivially satisfiable — id is already the primary key, so
+-- (id, point_type) is unique for every row this table can ever hold. Nothing
+-- about distribution_points changes semantically.
+--
+-- It exists so outlet_stock can enforce "stock lives only at an APPROVED outlet
+-- type" DECLARATIVELY, via a composite foreign key, instead of a trigger. A
+-- plain CHECK cannot do it: CHECK constraints may not query another table. This
+-- is exactly the technique 066 used for warehouses_id_kind_uniq, reused rather
+-- than reinvented.
+--
+-- It also blocks a second, subtler mistake: with the FK in place, a point's
+-- type cannot be flipped out from under stock that is already sitting in it.
+-- Added via the DO/EXCEPTION idiom rather than DROP-then-ADD. 066 used
+-- `DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT ...` for its equivalent key, but
+-- 067 holds itself to a stricter rule: this migration issues NO DROP of any kind
+-- against a pre-existing object, so "067 drops nothing" stays a mechanically
+-- checkable property rather than one with an explained exception. Re-running is
+-- still safe — a duplicate is swallowed.
+DO $$ BEGIN
+  ALTER TABLE public.distribution_points
+    ADD CONSTRAINT distribution_points_id_point_type_uniq UNIQUE (id, point_type);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ============================================================================
 -- 1. outlet_stock — the outlet's operational balance
 -- ============================================================================
 -- Column types, constraint names and identity strategy mirror warehouse_stock
@@ -134,6 +160,22 @@ CREATE TABLE IF NOT EXISTS public.outlet_stock (
   -- The outlet. NOT NULL and composite-FK-pinned to its organization, exactly
   -- as warehouse_stock pins warehouse_id.
   distribution_point_id     uuid NOT NULL,
+
+  -- The outlet's type, pinned to the referenced point by composite FK (see
+  -- outlet_stock_dp_type_fk). This is NOT a denormalized convenience copy: it is
+  -- the only way to make "physical stock lives only at an APPROVED outlet type"
+  -- a database guarantee rather than an RPC convention.
+  --
+  -- LEGACY COMPATIBILITY, STATED PLAINLY: the retired point types
+  -- (dispensing/storage/returns/emergency) that 066 kept accepting on
+  -- distribution_points are NOT accepted here. A legacy outlet therefore cannot
+  -- hold outlet_stock until someone deliberately reclassifies it to one of the
+  -- three approved types. That is the intended behaviour: this migration does
+  -- NOT auto-reclassify anything, because guessing whether a point called
+  -- 'dispensing' is really a pharmacy, a crash cabinet or a rescue cart is an
+  -- operational decision, not a data migration. Nothing existing breaks — every
+  -- legacy point keeps working exactly as today on every path that exists today.
+  point_type                text NOT NULL,
 
   -- Optional drug-master link, nullable + snapshot-backed for the same reason
   -- warehouse_stock (060) and item_availability (019) made it optional: the
@@ -189,6 +231,16 @@ CREATE TABLE IF NOT EXISTS public.outlet_stock (
   CONSTRAINT outlet_stock_dp_org_fk
     FOREIGN KEY (distribution_point_id, organization_id)
     REFERENCES public.distribution_points (id, organization_id) ON DELETE RESTRICT,
+
+  -- Only the three approved network outlet types may hold physical stock. The
+  -- CHECK pins the value; the composite FK ties it to the referenced point, so
+  -- the pair cannot lie and no writer — including a SECURITY DEFINER RPC or
+  -- service_role — can put stock in a warehouse-shaped or legacy point.
+  CONSTRAINT outlet_stock_point_type_approved_chk
+    CHECK (point_type IN ('pharmacy', 'crash_cabinet', 'rescue_cart')),
+  CONSTRAINT outlet_stock_dp_type_fk
+    FOREIGN KEY (distribution_point_id, point_type)
+    REFERENCES public.distribution_points (id, point_type) ON DELETE RESTRICT,
 
   CONSTRAINT outlet_stock_sci_name_chk
     CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
@@ -667,6 +719,7 @@ DECLARE
   v_actor_name  text;
   v_line        public.warehouse_dispatch_lines%ROWTYPE;
   v_dispatch    public.warehouse_dispatches%ROWTYPE;
+  v_point       public.distribution_points%ROWTYPE;
   v_stock       public.outlet_stock%ROWTYPE;
   v_existing    public.outlet_stock_movements%ROWTYPE;
   v_reason      text := NULLIF(btrim(p_difference_reason), '');
@@ -774,6 +827,26 @@ BEGIN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
   END IF;
 
+  -- Resolve the destination outlet and prove it may hold stock at all. The
+  -- composite FK would refuse a legacy point anyway; this raises a named error
+  -- instead of a raw constraint violation, so the caller learns WHY. A legacy
+  -- 'dispensing' point must be deliberately reclassified first — 067 never
+  -- reclassifies anything automatically.
+  SELECT * INTO v_point
+  FROM public.distribution_points
+  WHERE id = v_dispatch.destination_distribution_point_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'destination_outlet_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_point.status <> 'active' THEN
+    RAISE EXCEPTION 'destination_outlet_inactive' USING ERRCODE = '23514';
+  END IF;
+  IF v_point.point_type NOT IN ('pharmacy', 'crash_cabinet', 'rescue_cart') THEN
+    RAISE EXCEPTION 'outlet_type_not_approved_for_stock: %', v_point.point_type
+      USING ERRCODE = '23514';
+  END IF;
+
   -- An expired batch must never enter an outlet. This is the last point at
   -- which the system can refuse it; after this it is dispensable stock.
   IF v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date THEN
@@ -821,7 +894,7 @@ BEGIN
   -- Resolve (or create) the outlet_stock identity from the line's IMMUTABLE
   -- snapshots — never from a client-supplied identity.
   INSERT INTO public.outlet_stock (
-    organization_id, distribution_point_id, central_item_id,
+    organization_id, distribution_point_id, point_type, central_item_id,
     scientific_name, trade_name, concentration, dosage_form, unit,
     national_code, has_no_national_code,
     batch_number, has_no_batch_number, internal_batch_reference,
@@ -830,7 +903,7 @@ BEGIN
     source_document_number, notes, created_by, updated_by
   ) VALUES (
     v_dispatch.organization_id, v_dispatch.destination_distribution_point_id,
-    v_line.central_item_id,
+    v_point.point_type, v_line.central_item_id,
     v_line.scientific_name, v_line.trade_name, v_line.concentration,
     v_line.dosage_form, v_line.unit,
     v_line.national_code, v_line.has_no_national_code,
@@ -1490,6 +1563,33 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- 9e2. Only approved outlet types may hold stock, enforced by the database
+  --      (CHECK + composite FK), not by RPC convention.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+    WHERE c.relname='outlet_stock' AND con.conname='outlet_stock_point_type_approved_chk'
+      AND pg_get_constraintdef(con.oid) LIKE '%pharmacy%'
+      AND pg_get_constraintdef(con.oid) LIKE '%crash_cabinet%'
+      AND pg_get_constraintdef(con.oid) LIKE '%rescue_cart%'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: outlet_stock does not restrict stock to approved outlet types.';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+    WHERE c.relname='outlet_stock' AND con.conname='outlet_stock_dp_type_fk' AND con.contype='f'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: outlet_stock.point_type is not tied to its point by composite FK.';
+  END IF;
+  -- The legacy types must still be ACCEPTED on distribution_points itself: 067
+  -- restricts where stock may live, and reclassifies nothing.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
+    WHERE c.relname='distribution_points' AND con.conname='distribution_points_point_type_check'
+      AND pg_get_constraintdef(con.oid) LIKE '%dispensing%'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: 066 legacy point types were dropped. 067 must not reclassify.';
+  END IF;
+
   -- 9f. Identity uniqueness is per outlet + material + batch.
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
@@ -1500,6 +1600,47 @@ BEGIN
       AND indexdef LIKE '%internal_batch_reference%'
   ) THEN
     RAISE EXCEPTION 'ABORT 067: outlet stock identity index missing or incomplete.';
+  END IF;
+
+  -- 9f2. NULL must not open a duplicate-balance hole.
+  --
+  -- batch_number, expiry_date, national_code, concentration, dosage_form and
+  -- internal_batch_reference are all NULLABLE. In a plain UNIQUE index NULLs
+  -- compare as DISTINCT, so two "same material, no batch" rows would both be
+  -- accepted and the outlet's balance would silently split in two.
+  --
+  -- This index closes that by wrapping EVERY nullable component in COALESCE to a
+  -- sentinel, so the indexed expression is never NULL and duplicates collide.
+  -- That is equivalent to NULLS NOT DISTINCT, but works on PG < 15 and matches
+  -- warehouse_stock_identity_uniq (060) and item_availability (051) exactly
+  -- rather than introducing a second, divergent convention.
+  --
+  -- Proven, not asserted: each nullable component must appear COALESCEd.
+  FOREACH v_def IN ARRAY ARRAY[
+    'COALESCE(concentration',
+    'COALESCE(dosage_form',
+    'COALESCE(national_code',
+    'COALESCE(batch_number',
+    'COALESCE(expiry_date',
+    'COALESCE(internal_batch_reference'
+  ] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_indexes
+      WHERE schemaname='public' AND indexname='outlet_stock_identity_uniq'
+        AND replace(indexdef, ' ', '') LIKE '%' || replace(v_def, ' ', '') || '%'
+    ) THEN
+      RAISE EXCEPTION
+        'ABORT 067: identity index leaves a nullable component un-COALESCEd (%). NULL would allow duplicate balances.', v_def;
+    END IF;
+  END LOOP;
+  -- And the two NOT NULL components need no sentinel, so they must be real.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='outlet_stock'
+      AND column_name IN ('distribution_point_id','scientific_name','point_type')
+      AND is_nullable = 'YES'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: an identity anchor column became nullable.';
   END IF;
 
   -- 9g. Idempotency is structural, not conventional.
@@ -1582,6 +1723,33 @@ BEGIN
       OR acl.grantee = (SELECT oid FROM pg_roles WHERE rolname='authenticated'));
   ASSERT v_count = 0,
     'VERIFY FAILED (067): the projection writer is executable by a client role';
+
+  -- 9k2. No CASCADE may reach a balance or a history row.
+  --
+  -- Deleting an organization, an outlet or a dispatch line must never silently
+  -- take stock or its ledger with it. Every FK out of the two new tables is
+  -- RESTRICT (retention beats convenience) or SET NULL (retention-soft actor and
+  -- result links, which 061 established and 055's Deep Clean depends on).
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint con
+    JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN ('outlet_stock', 'outlet_stock_movements')
+      AND con.contype = 'f'
+      AND con.confdeltype = 'c'   -- 'c' = ON DELETE CASCADE
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: a CASCADE foreign key can delete outlet balances or history.';
+  END IF;
+  -- The new dispatch-line link must not cascade either: a deleted outlet_stock
+  -- row must never take the dispatch record with it.
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'warehouse_dispatch_lines_resulting_outlet_stock_fk'
+      AND confdeltype <> 'n'      -- 'n' = ON DELETE SET NULL
+  ) THEN
+    RAISE EXCEPTION 'ABORT 067: the outlet_stock result link is not ON DELETE SET NULL.';
+  END IF;
 
   -- 9l. anon gained nothing.
   IF has_table_privilege('anon', 'public.outlet_stock', 'SELECT')

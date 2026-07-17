@@ -210,6 +210,129 @@ describe('3. outlet_stock is created with its quantity invariants', () => {
   });
 });
 
+describe('3c. only approved outlet types may hold physical stock', () => {
+  it('restricts point_type to the three approved network outlet types', () => {
+    expect(norm067).toMatch(
+      /CONSTRAINT outlet_stock_point_type_approved_chk CHECK \(point_type IN \('pharmacy', 'crash_cabinet', 'rescue_cart'\)\)/,
+    );
+  });
+
+  it('ties point_type to the referenced point by composite FK, not by convention', () => {
+    // A CHECK cannot query another table, so without this FK the column could
+    // claim 'pharmacy' while pointing at a legacy 'dispensing' outlet.
+    expect(norm067).toMatch(
+      /CONSTRAINT outlet_stock_dp_type_fk FOREIGN KEY \(distribution_point_id, point_type\) REFERENCES public\.distribution_points \(id, point_type\) ON DELETE RESTRICT/,
+    );
+  });
+
+  it('adds the composite FK target the constraint requires', () => {
+    // Without UNIQUE (id, point_type) the FK above fails with ERROR 42830.
+    expect(norm067).toMatch(
+      /ADD CONSTRAINT distribution_points_id_point_type_uniq UNIQUE \(id, point_type\)/,
+    );
+  });
+
+  it('adds that key without a DROP, keeping "067 drops nothing" mechanical', () => {
+    expect(exec067).not.toMatch(/DROP CONSTRAINT/i);
+    expect(norm067).toMatch(/EXCEPTION WHEN duplicate_object THEN NULL/);
+  });
+
+  it('refuses a legacy outlet in the RPC with a named error, not a raw violation', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toContain('outlet_type_not_approved_for_stock');
+    expect(body).toMatch(/v_point\.point_type NOT IN \('pharmacy', 'crash_cabinet', 'rescue_cart'\)/);
+  });
+
+  it('refuses an inactive or missing destination outlet', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toContain('destination_outlet_inactive');
+    expect(body).toContain('destination_outlet_not_found');
+  });
+
+  it('reclassifies no legacy point, and leaves the legacy types accepted', () => {
+    // 067 restricts where stock may LIVE. It must not touch what
+    // distribution_points itself accepts, and must not rewrite any row.
+    expect(exec067).not.toMatch(/UPDATE public\.distribution_points/i);
+    expect(exec067).not.toMatch(/distribution_points_point_type_check/);
+    expect(m067).toContain('ABORT 067: 066 legacy point types were dropped. 067 must not reclassify.');
+  });
+
+  it('takes point_type from the resolved point, never from the caller', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toContain('v_point.point_type, v_line.central_item_id');
+  });
+
+  it('proves the boundary survived the migration', () => {
+    expect(m067).toContain('ABORT 067: outlet_stock does not restrict stock to approved outlet types.');
+    expect(m067).toContain('ABORT 067: outlet_stock.point_type is not tied to its point by composite FK.');
+  });
+});
+
+describe('3d. NULL cannot split an outlet balance into duplicate rows', () => {
+  it('wraps every nullable identity component in COALESCE', () => {
+    // In a plain UNIQUE index NULLs compare as DISTINCT, so two "same material,
+    // no batch" rows would both be accepted and the balance would silently
+    // split. COALESCE sentinels make the indexed expression never-NULL, which is
+    // equivalent to NULLS NOT DISTINCT but works on PG < 15 and matches 060/051.
+    const idx = norm067.slice(
+      norm067.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS outlet_stock_identity_uniq'),
+    );
+    const decl = idx.slice(0, idx.indexOf(');') + 2);
+    for (const nullable of [
+      'concentration',
+      'dosage_form',
+      'national_code',
+      'batch_number',
+      'expiry_date',
+      'internal_batch_reference',
+    ]) {
+      expect(decl, `${nullable} must be COALESCEd in the identity index`).toContain(
+        `COALESCE(${nullable},`,
+      );
+    }
+  });
+
+  it('anchors the index on columns that are NOT NULL, needing no sentinel', () => {
+    const idx = norm067.slice(
+      norm067.indexOf('CREATE UNIQUE INDEX IF NOT EXISTS outlet_stock_identity_uniq'),
+    );
+    const decl = idx.slice(0, idx.indexOf(');') + 2);
+    expect(decl).toContain('distribution_point_id,');
+    expect(decl).toContain('scientific_name,');
+    expect(norm067).toMatch(/distribution_point_id\s+uuid NOT NULL/);
+    expect(norm067).toMatch(/scientific_name\s+text NOT NULL/);
+  });
+
+  it('proves the no-duplicate-balance property at apply time', () => {
+    expect(m067).toContain(
+      'ABORT 067: identity index leaves a nullable component un-COALESCEd',
+    );
+    expect(m067).toContain('ABORT 067: an identity anchor column became nullable.');
+  });
+});
+
+describe('3e. no CASCADE can delete a balance or its history', () => {
+  it('uses only RESTRICT and SET NULL on the new tables', () => {
+    expect(exec067).not.toMatch(/ON DELETE CASCADE/i);
+  });
+
+  it('proves it at apply time by inspecting confdeltype, not by reading the source', () => {
+    expect(m067).toContain(
+      'ABORT 067: a CASCADE foreign key can delete outlet balances or history.',
+    );
+    expect(m067).toContain('ABORT 067: the outlet_stock result link is not ON DELETE SET NULL.');
+  });
+
+  it('keeps history when an outlet or an actor goes away', () => {
+    // Outlet/org deletion is RESTRICTed while stock or ledger rows exist;
+    // actor deletion nulls the reference but never removes the movement.
+    expect(norm067).toMatch(
+      /CONSTRAINT outlet_stock_movements_dp_org_fk FOREIGN KEY \(distribution_point_id, organization_id\) REFERENCES public\.distribution_points \(id, organization_id\) ON DELETE RESTRICT/,
+    );
+    expect(norm067).toMatch(/actor_id\s+uuid REFERENCES auth\.users\(id\) ON DELETE SET NULL/);
+  });
+});
+
 describe('3b. outlet_stock identity uniqueness is per outlet + material + batch', () => {
   it('creates the 8-component unique identity index', () => {
     expect(norm067).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS outlet_stock_identity_uniq/);
@@ -754,15 +877,31 @@ describe('9. 067 breaks nothing that exists today', () => {
     );
   });
 
-  it('touches no existing table except to add that one nullable column', () => {
+  it('touches only the tables it must, and only additively', () => {
     const altered = [...exec067.matchAll(/ALTER TABLE public\.(\w+)/g)].map(m => m[1]);
     expect(new Set(altered)).toEqual(
-      new Set(['outlet_stock', 'outlet_stock_movements', 'warehouse_dispatch_lines']),
+      new Set([
+        'outlet_stock',
+        'outlet_stock_movements',
+        'warehouse_dispatch_lines',
+        // Gains one trivially-satisfiable UNIQUE (id, point_type) key, which is
+        // the composite FK target outlet_stock needs. No column, no data change.
+        'distribution_points',
+      ]),
     );
     const dispatchAlters = [...exec067.matchAll(/ALTER TABLE public\.warehouse_dispatch_lines\s+([\s\S]*?);/g)]
       .map(m => m[1].replace(/\s+/g, ' ').trim());
     for (const a of dispatchAlters) {
       expect(a).toMatch(/^(ADD COLUMN IF NOT EXISTS resulting_outlet_stock_id uuid|ADD CONSTRAINT warehouse_dispatch_lines_resulting_outlet_stock_fk)/);
+    }
+  });
+
+  it('only ever ADDs to a pre-existing table — never drops or alters a column', () => {
+    const dpAlters = [...exec067.matchAll(/ALTER TABLE public\.distribution_points\s+([\s\S]*?);/g)]
+      .map(m => m[1].replace(/\s+/g, ' ').trim());
+    expect(dpAlters.length).toBeGreaterThan(0);
+    for (const a of dpAlters) {
+      expect(a).toMatch(/^ADD CONSTRAINT distribution_points_id_point_type_uniq UNIQUE \(id, point_type\)$/);
     }
   });
 
