@@ -16,6 +16,7 @@ import { readFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import { getMaximumReviewedMigrationNumber } from './helpers/reviewed-migrations';
+import { stripSqlComments } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS = join(ROOT, 'supabase/migrations');
@@ -42,16 +43,19 @@ function fnBlock(sql: string): string {
   return sql.slice(start, end + 4);
 }
 
-/** Drop SQL line comments from a snippet (keeps code only). */
-function stripComments(sql: string): string {
-  return sql.split('\n').map(l => l.replace(/--.*$/, '')).join('\n');
-}
+/**
+ * Drop SQL line comments from a snippet (keeps code only).
+ *
+ * SQL-SOURCE-LEXER-A: delegates to the shared lexical stripper. The per-file
+ * `/--.*$/` this replaced stripped nothing at all on a CRLF checkout.
+ */
+const stripComments = stripSqlComments;
 
 /** Semantic code only: SQL line comments, blank lines and indentation removed. */
 function semanticCode(sql: string): string[] {
-  return fnBlock(sql)
+  return stripSqlComments(fnBlock(sql))
     .split('\n')
-    .map(l => l.replace(/--.*$/, '').trim())
+    .map(l => l.trim())
     .filter(l => l.length > 0);
 }
 
@@ -275,7 +279,7 @@ describe('6. public privacy limit — only concentration newly exposed', () => {
 
 describe('7. no destructive or schema-changing SQL', () => {
   /** Strip line comments so descriptive header prose cannot trip keyword scans. */
-  const code = m059.split('\n').map(l => l.replace(/--.*$/, '')).join('\n');
+  const code = stripSqlComments(m059);
 
   it('contains no DELETE', () => {
     expect(code).not.toMatch(/\bdelete\s+from\b/i);

@@ -31,6 +31,16 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { REVIEWED_MIGRATION_FILES, isReviewedMigrationFile } from './helpers/reviewed-migrations';
+// SQL-SOURCE-LEXER-A: comment stripping, literal blanking and function-body
+// extraction are lexical and shared, so 067's placeholder CHECK (which contains
+// the literals '-' and '--') cannot corrupt them and a CRLF checkout behaves
+// exactly like an LF one.
+import {
+  activeSql,
+  executableSql,
+  normalizeSql,
+  sqlFunctionSource,
+} from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS_DIR = join(ROOT, 'supabase/migrations');
@@ -39,58 +49,17 @@ const M067_NAME = '067_phoenix_outlet_stock_expand.sql';
 const P067 = join(MIGRATIONS_DIR, M067_NAME);
 const m067 = readFileSync(P067, 'utf8');
 
-/**
- * Active SQL only: strip `--` comments so prose can never satisfy a check.
- *
- * This scans rather than running a per-line regex, because `--` also occurs
- * INSIDE string literals in this migration (the placeholder CHECK rejects the
- * literals '-' and '--'). A naive /--.*$/ strip truncates that line mid-literal,
- * unbalances the quotes, and silently corrupts every later assertion.
- */
-function activeSql(sql: string): string {
-  let out = '';
-  let inString = false;
-  for (let i = 0; i < sql.length; i++) {
-    const c = sql[i];
-    if (inString) {
-      out += c;
-      if (c === "'") {
-        if (sql[i + 1] === "'") { out += sql[++i]; } // '' is an escaped quote
-        else { inString = false; }
-      }
-      continue;
-    }
-    if (c === "'") { inString = true; out += c; continue; }
-    if (c === '-' && sql[i + 1] === '-') {
-      while (i < sql.length && sql[i] !== '\n') i++; // drop through end of line
-      out += '\n';
-      continue;
-    }
-    out += c;
-  }
-  return out;
-}
 const active067 = activeSql(m067);
-const norm067 = active067.replace(/\s+/g, ' ').trim();
+const norm067 = normalizeSql(active067);
 
 /** Executable SQL with string literals blanked, so RAISE prose cannot match. */
-const exec067 = active067.replace(/'(?:[^']|'')*'/g, "''");
+const exec067 = executableSql(m067);
 
-/**
- * The body of one CREATE FUNCTION, by name — for per-RPC assertions.
- *
- * Ends at the function's own `$$;` terminator. Ending at "the next CREATE
- * FUNCTION" instead would make the LAST function in the file swallow every
- * statement after it, so an assertion about that function would silently be
- * testing the rest of the migration.
- */
+/** The body of one CREATE FUNCTION, by name — for per-RPC assertions. */
 function functionBody(name: string): string {
-  const start = norm067.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
-  expect(start, `function ${name} must exist`).toBeGreaterThan(-1);
-  const rest = norm067.slice(start);
-  const end = rest.indexOf('$$;');
-  expect(end, `function ${name} must be dollar-quoted and terminated`).toBeGreaterThan(-1);
-  return rest.slice(0, end);
+  const src = sqlFunctionSource(m067, name);
+  expect(src, `function ${name} must exist`).not.toBeNull();
+  return normalizeSql(src!);
 }
 
 /** The three write RPCs 067 introduces. Every one obeys the same contract. */

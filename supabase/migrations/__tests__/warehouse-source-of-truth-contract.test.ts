@@ -7,6 +7,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+// SQL-SOURCE-LEXER-A: comment stripping is lexical and shared. The per-file
+// `/--.*$/` this replaced stripped nothing at all on a CRLF checkout, which made
+// every prose-based guard below silently inert on Windows.
+import { activeSql } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
@@ -16,10 +20,6 @@ const m010 = read('supabase/migrations/010_phoenix_user_permission_matrix.sql');
 const m060 = read('supabase/migrations/060_phoenix_warehouse_foundation.sql');
 const m061 = read('supabase/migrations/061_phoenix_warehouse_dispatch_schema.sql');
 const m062 = read('supabase/migrations/062_phoenix_user_rbac_scope_foundation.sql');
-
-function activeSql(sql: string): string {
-  return sql.split('\n').map(line => line.replace(/--.*$/, '')).join('\n');
-}
 
 const active010 = activeSql(m010);
 const active060 = activeSql(m060);

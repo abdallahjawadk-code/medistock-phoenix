@@ -20,6 +20,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { REVIEWED_MIGRATION_FILES, isReviewedMigrationFile } from './helpers/reviewed-migrations';
+// SQL-SOURCE-LEXER-A: comment stripping and literal blanking are lexical and
+// shared now. The per-file `/--.*$/` this replaced stripped nothing at all on a
+// CRLF checkout, which made the negative guards in this file fail on Windows
+// while passing on the Linux CI runner.
+import { activeSql, executableSql } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS_DIR = join(ROOT, 'supabase/migrations');
@@ -28,18 +33,11 @@ const M066_NAME = '066_phoenix_inventory_network_expand.sql';
 const P066 = join(MIGRATIONS_DIR, M066_NAME);
 const m066 = readFileSync(P066, 'utf8');
 
-/** Active SQL only: strip `--` comments so prose can never satisfy a check. */
-function activeSql(sql: string): string {
-  return sql
-    .split('\n')
-    .map(l => l.replace(/--.*$/, ''))
-    .join('\n');
-}
 const active066 = activeSql(m066);
 const norm066 = active066.replace(/\s+/g, ' ').trim();
 
 /** Executable SQL with string literals removed, so RAISE prose cannot match. */
-const exec066 = active066.replace(/'(?:[^']|'')*'/g, "''");
+const exec066 = executableSql(m066);
 
 // ============================================================================
 // Presence and registration
