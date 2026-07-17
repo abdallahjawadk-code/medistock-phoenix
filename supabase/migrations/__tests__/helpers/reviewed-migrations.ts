@@ -129,6 +129,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '066_phoenix_inventory_network_expand.sql',
   '067_phoenix_outlet_stock_expand.sql',
   '068_phoenix_central_to_institution_supply.sql',
+  '069_phoenix_institution_to_central_return.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
