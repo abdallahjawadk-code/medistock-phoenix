@@ -94,9 +94,10 @@ describe('2. movement_type=\'add\' on outlet_stock_movements is documented as un
     expect(m070.toLowerCase()).toContain('reserved-but-unwritten');
   });
 
-  it('this migration writes ONLY dispatch_send (warehouse side) and reuses dispatch_receive (outlet side) — never add', () => {
-    expect(exec070).not.toMatch(/INSERT INTO public\.outlet_stock_movements/);
-    expect(exec070).not.toMatch(/'add',\s*\n?\s*v_before/);
+  it('the only movement_type literal ever written to outlet_stock_movements in this file is dispatch_receive', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toMatch(/'dispatch_receive',/);
+    expect(body).not.toMatch(/'add',/);
   });
 });
 
@@ -205,24 +206,27 @@ describe('5. draft/add-line/update/delete never touch warehouse_stock or outlet_
 // 5b. Header status closes only per line completion — a gap 067 itself
 //     leaves, closed here via an independent trigger
 // ============================================================================
-describe('5b. a trigger recomputes the header status from its lines, since 067 never does', () => {
-  it('067\'s RECEIVE RPC never updates warehouse_dispatches — confirmed, and documented as the reason this trigger exists', () => {
-    expect(m070.toLowerCase()).toContain('never updates warehouse_dispatches.status');
+describe('5b. header status closes only per line completion — recomputed explicitly by RECEIVE, trigger is defense-in-depth only', () => {
+  it('a shared recompute function exists and never touches draft or an already-terminal header', () => {
+    const body = functionBody('phoenix_recompute_warehouse_dispatch_header_status');
+    expect(body).toMatch(/WHERE id = p_dispatch_id\s+AND status IN \('sent', 'partially_accepted'\)/);
   });
 
-  it('the sync function and trigger exist', () => {
-    expect(norm070).toContain('phoenix_sync_warehouse_dispatch_header_status');
+  it('RECEIVE calls the shared recompute function explicitly, under its own header lock', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toContain('phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id)');
+  });
+
+  it('the trigger delegates to the SAME shared function — no duplicated logic', () => {
+    const body = functionBody('phoenix_sync_warehouse_dispatch_header_status');
+    expect(body).toContain('phoenix_recompute_warehouse_dispatch_header_status(NEW.dispatch_id)');
+    expect(body).not.toMatch(/WHERE dispatch_id = NEW\.dispatch_id/); // no re-implemented count logic
+  });
+
+  it('the sync trigger exists and only fires on an actual status change', () => {
     expect(norm070).toContain('trg_sync_warehouse_dispatch_header_status');
     expect(norm070).toMatch(/AFTER UPDATE OF status ON public\.warehouse_dispatch_lines/);
-  });
-
-  it('the trigger only fires on an actual status change', () => {
     expect(norm070).toMatch(/WHEN \(NEW\.status IS DISTINCT FROM OLD\.status\)/);
-  });
-
-  it('the recompute never touches draft or an already-terminal header — only sent/partially_accepted', () => {
-    const body = functionBody('phoenix_sync_warehouse_dispatch_header_status');
-    expect(body).toMatch(/WHERE id = NEW\.dispatch_id\s+AND status IN \('sent', 'partially_accepted'\)/);
   });
 
   it('the post-condition proves the trigger exists on the live catalog, not just in source', () => {
@@ -316,15 +320,49 @@ describe('7. SEND is atomic (validate-then-mutate), refuses expired stock, idemp
 });
 
 // ============================================================================
-// 8. RECEIVE is reused verbatim — not modified, not reimplemented
+// 8. RECEIVE is recreated for concurrency safety — SAME signature/ACL/contract
 // ============================================================================
-describe('8. RECEIVE is reused verbatim from 067 — not touched by this file', () => {
-  it('this file contains no CREATE OR REPLACE FUNCTION for phoenix_receive_outlet_dispatch_line', () => {
-    expect(exec070).not.toMatch(/CREATE (OR REPLACE )?FUNCTION public\.phoenix_receive_outlet_dispatch_line/);
+describe('8. RECEIVE keeps 067\'s exact signature, ACL, and return contract — only lock order and one explicit call changed', () => {
+  it('this file DOES recreate phoenix_receive_outlet_dispatch_line (per the review\'s own instruction)', () => {
+    expect(exec070).toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_receive_outlet_dispatch_line/);
   });
 
-  it('post-condition proves the 067 RECEIVE signature is still present, unmodified', () => {
-    expect(m070).toContain('ABORT 070: 067 RECEIVE RPC was removed or its signature changed');
+  it('the signature is character-for-character identical to 067\'s original', () => {
+    expect(m070).toContain(
+      'public.phoenix_receive_outlet_dispatch_line(uuid,uuid,integer,text,text)',
+    );
+  });
+
+  it('post-condition proves the signature is unchanged', () => {
+    expect(m070).toContain("ABORT 070: RECEIVE RPC signature changed — must match 067''s original exactly");
+  });
+
+  it('the ACL is restated identically: REVOKE ALL then GRANT EXECUTE to authenticated only', () => {
+    const idx = active070.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_receive_outlet_dispatch_line');
+    const tail = active070.slice(idx, idx + 12000);
+    expect(tail).toMatch(/REVOKE ALL ON FUNCTION public\.phoenix_receive_outlet_dispatch_line\(uuid, uuid, integer, text, text\)\s+FROM PUBLIC, anon;/);
+    expect(tail).toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_receive_outlet_dispatch_line\(uuid, uuid, integer, text, text\)\s+TO authenticated;/);
+  });
+
+  it('the return shape (ok/idempotent_replay/line_status/outlet_stock_id/movement_id/item_availability_id/quantities) is unchanged', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    for (const key of ['line_status', 'outlet_stock_id', 'movement_id', 'item_availability_id', 'quantity_before', 'quantity_delta', 'quantity_after']) {
+      expect(body, key).toContain(`'${key}'`);
+    }
+  });
+
+  it('idempotent replay still returns the same shape 067 always did', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(body).toMatch(/'ok', true, 'idempotent_replay', true,\s*'outlet_stock_id', v_existing\.outlet_stock_id/);
+  });
+
+  it('a replayed request never inserts outlet_stock twice — the idempotency check returns before any INSERT', () => {
+    const body = functionBody('phoenix_receive_outlet_dispatch_line');
+    const replayReturnIdx = body.indexOf("'idempotent_replay', true");
+    const outletStockInsertIdx = body.indexOf('INSERT INTO public.outlet_stock (');
+    expect(replayReturnIdx).toBeGreaterThan(-1);
+    expect(outletStockInsertIdx).toBeGreaterThan(-1);
+    expect(replayReturnIdx).toBeLessThan(outletStockInsertIdx);
   });
 });
 
@@ -343,6 +381,9 @@ describe('9. additive only — no DROP, RENAME, or REVOKE of a pre-existing obje
     const createdFns = LIFECYCLE_RPCS.concat([
       'phoenix_send_warehouse_dispatch',
       'phoenix_sync_warehouse_dispatch_header_status',
+      'phoenix_recompute_warehouse_dispatch_header_status',
+      'phoenix_receive_outlet_dispatch_line',
+      'phoenix_can_read_warehouse_dispatch',
     ] as const);
     for (const fn of revokedFns) {
       expect(createdFns as readonly string[], fn).toContain(fn);
@@ -362,5 +403,131 @@ describe('10. every lifecycle + send RPC exists as a CREATE FUNCTION', () => {
 
   it('the SEND RPC exists', () => {
     expect(sqlFunctionSource(m070, 'phoenix_send_warehouse_dispatch')).not.toBeNull();
+  });
+});
+
+// ============================================================================
+// 11. Scoped read: RESTRICTIVE policies, additive to 061, plus explicit deny
+// ============================================================================
+describe('11. RESTRICTIVE scoped-read policies narrow 061\'s unscoped visibility, without touching 061', () => {
+  it('declares both new policies AS RESTRICTIVE (never PERMISSIVE — that would widen access instead of narrowing it)', () => {
+    expect(norm070).toMatch(/CREATE POLICY warehouse_dispatches_scope_restrict\s+ON public\.warehouse_dispatches\s+AS RESTRICTIVE\s+FOR SELECT/);
+    expect(norm070).toMatch(/CREATE POLICY warehouse_dispatch_lines_scope_restrict\s+ON public\.warehouse_dispatch_lines\s+AS RESTRICTIVE\s+FOR SELECT/);
+  });
+
+  it('the scope function checks warehouse_dispatch.view scoped to the SPECIFIC warehouse, and outlet_stock.receive scoped to the SPECIFIC outlet', () => {
+    const body = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(body).toMatch(/phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'warehouse_dispatch\.view', p_organization_id, p_warehouse_id, NULL/);
+    expect(body).toMatch(/phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'outlet_stock\.receive', p_organization_id, NULL, p_destination_distribution_point_id/);
+  });
+
+  it('super_admin bypasses the scope function', () => {
+    const body = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(body).toMatch(/phoenix_my_role\(\) = 'super_admin'/);
+  });
+
+  it('lines are readable only via their parent dispatch\'s own scope check (no separate, weaker rule)', () => {
+    expect(norm070).toMatch(
+      /EXISTS \(\s*SELECT 1 FROM public\.warehouse_dispatches d\s+WHERE d\.id = warehouse_dispatch_lines\.dispatch_id\s+AND public\.phoenix_can_read_warehouse_dispatch/,
+    );
+  });
+
+  it('061\'s own permissive policies are neither dropped nor redefined by this file', () => {
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_perm/);
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_perm/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_perm"?/);
+  });
+
+  it('post-conditions prove the new policies are RESTRICTIVE and 061\'s originals are still PERMISSIVE, on the live catalog', () => {
+    expect(m070).toContain('polpermissive = false');
+    expect(m070).toContain('polpermissive = true');
+    expect(m070).toContain('warehouse_dispatches_select_perm');
+  });
+
+  it('outlet_officer is explicitly denied create/edit_draft/cancel/send — not merely absent', () => {
+    expect(norm070).toMatch(/\('outlet_officer', 'warehouse_dispatch\.create',\s+false\)/);
+    expect(norm070).toMatch(/\('outlet_officer', 'warehouse_dispatch\.edit_draft',\s+false\)/);
+    expect(norm070).toMatch(/\('outlet_officer', 'warehouse_dispatch\.cancel',\s+false\)/);
+    expect(norm070).toMatch(/\('outlet_officer', 'warehouse_dispatch\.send',\s+false\)/);
+  });
+
+  it('post-condition proves each explicit outlet_officer denial on the live catalog', () => {
+    expect(m070).toContain('ABORT 070: outlet_officer is not explicitly denied');
+  });
+});
+
+// ============================================================================
+// 12. SEND: fail-closed status handling, per real dispatch status
+// ============================================================================
+describe('12. SEND handles every dispatch status explicitly — cancelled is a hard error, only real post-send states replay', () => {
+  it('cancelled raises a SPECIFIC error, never treated as an idempotent replay', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/IF v_dispatch\.status = 'cancelled' THEN\s+RAISE EXCEPTION 'dispatch_cancelled'/);
+  });
+
+  it('sent/partially_accepted/accepted/rejected are the ONLY statuses that replay idempotently', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(
+      /ELSIF v_dispatch\.status IN \('sent', 'partially_accepted', 'accepted', 'rejected'\) THEN\s+RETURN jsonb_build_object\('ok', true, 'idempotent_replay', true/,
+    );
+  });
+
+  it('any other status raises a fail-closed, unreachable-by-construction error', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/ELSIF v_dispatch\.status <> 'draft' THEN\s+RAISE EXCEPTION 'dispatch_unexpected_status/);
+  });
+
+  it('every one of 061\'s status values is explicitly accounted for', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    for (const s of ['cancelled', 'sent', 'partially_accepted', 'accepted', 'rejected']) {
+      expect(body, s).toContain(`'${s}'`);
+    }
+  });
+});
+
+// ============================================================================
+// 13. SEND re-validates warehouse and destination outlet liveness
+// ============================================================================
+describe('13. SEND re-checks the warehouse and destination outlet LIVE, not just at CREATE time', () => {
+  it('re-locks and re-reads the warehouse row, refusing if inactive', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/FROM public\.warehouses WHERE id = v_dispatch\.warehouse_id FOR SHARE/);
+    expect(body).toContain('warehouse_not_found_or_inactive');
+  });
+
+  it('re-locks and re-reads the destination outlet, refusing if inactive, wrong type, or re-paired to a different warehouse', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/FROM public\.distribution_points WHERE id = v_dispatch\.destination_distribution_point_id FOR SHARE/);
+    expect(body).toContain('destination_outlet_not_found_or_inactive');
+    expect(body).toContain('destination_outlet_not_paired_with_this_warehouse');
+  });
+
+  it('this re-validation happens BEFORE the aggregation pass (fail fast, before any stock lock)', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    const warehouseCheckIdx = body.indexOf('warehouse_not_found_or_inactive');
+    const aggregationIdx = body.indexOf('DISTINCT warehouse_stock_id');
+    expect(warehouseCheckIdx).toBeGreaterThan(-1);
+    expect(aggregationIdx).toBeGreaterThan(-1);
+    expect(warehouseCheckIdx).toBeLessThan(aggregationIdx);
+  });
+});
+
+// ============================================================================
+// 14. Aggregation: reserved_quantity untouched, no partial mutation on failure
+// ============================================================================
+describe('14. aggregation fix leaves reserved_quantity alone and never partially debits', () => {
+  it('the availability check reads on_hand_quantity - reserved_quantity, never mutating reserved_quantity itself', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    expect(body).toMatch(/v_stock\.on_hand_quantity - v_stock\.reserved_quantity < v_total_for_stock/);
+    expect(body).not.toMatch(/SET reserved_quantity/);
+  });
+
+  it('the aggregation validation pass (pass 1) contains no UPDATE — a failure there leaves every row completely untouched', () => {
+    const body = functionBody('phoenix_send_warehouse_dispatch');
+    const pass1Start = body.indexOf('DISTINCT warehouse_stock_id');
+    const pass1End = body.indexOf('END LOOP;', pass1Start); // closes the FOR v_stock IN ... LOOP
+    const pass1Text = body.slice(Math.max(0, pass1Start - 50), pass1End);
+    expect(pass1End).toBeGreaterThan(pass1Start);
+    expect(pass1Text).not.toMatch(/UPDATE public\.warehouse_stock/);
   });
 });

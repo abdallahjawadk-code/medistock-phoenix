@@ -171,6 +171,447 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
+-- 2b. Shared header-status recompute — one implementation, two callers
+-- ============================================================================
+-- Extracted so both the rebuilt RECEIVE (2c) and the defensive trigger (8b)
+-- compute the header status identically, from the SAME logic, rather than
+-- two copies that could drift.
+CREATE OR REPLACE FUNCTION public.phoenix_recompute_warehouse_dispatch_header_status(
+  p_dispatch_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_total     integer;
+  v_pending   integer;
+  v_accepted  integer;
+  v_rejected  integer;
+  v_new_status text;
+BEGIN
+  SELECT count(*),
+         count(*) FILTER (WHERE status = 'pending'),
+         count(*) FILTER (WHERE status IN ('accepted', 'accepted_with_difference')),
+         count(*) FILTER (WHERE status = 'rejected')
+    INTO v_total, v_pending, v_accepted, v_rejected
+  FROM public.warehouse_dispatch_lines
+  WHERE dispatch_id = p_dispatch_id;
+
+  v_new_status := CASE
+    WHEN v_pending > 0 THEN 'partially_accepted'  -- at least one decided, some still open
+    WHEN v_accepted = v_total THEN 'accepted'      -- every line accepted (with or without difference)
+    WHEN v_rejected = v_total THEN 'rejected'      -- every line rejected
+    ELSE 'partially_accepted'                       -- all decided, but a mix of accepted/rejected
+  END;
+
+  -- Only ever moves a header OUT of 'sent'/'partially_accepted'. Never
+  -- touches 'draft' or an already-terminal 'accepted'/'rejected'/'cancelled'
+  -- header.
+  UPDATE public.warehouse_dispatches
+     SET status = v_new_status
+   WHERE id = p_dispatch_id
+     AND status IN ('sent', 'partially_accepted')
+     AND status IS DISTINCT FROM v_new_status;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_recompute_warehouse_dispatch_header_status(uuid)
+  FROM PUBLIC, anon, authenticated;
+
+COMMENT ON FUNCTION public.phoenix_recompute_warehouse_dispatch_header_status(uuid) IS
+  'INSTITUTION-WAREHOUSE-TO-OUTLET-DISPATCH-070-A: recomputes warehouse_dispatches.'
+  'status from its lines'' CURRENT statuses. Called explicitly, under the SAME '
+  'header row lock, from the rebuilt RECEIVE (2c) right after it decides a line '
+  '— NOT relied upon via the trigger (8b) alone, which exists only as '
+  'defense-in-depth for any future caller that updates a line without going '
+  'through RECEIVE.';
+
+-- ============================================================================
+-- 2c. RECEIVE — 067's phoenix_receive_outlet_dispatch_line, RECREATED here to
+-- close a concurrency gap, with THE SAME SIGNATURE, ACL, search_path and
+-- return contract. Every line of business logic below is unchanged from 067;
+-- what changed is lock ORDER and ONE explicit recompute call.
+-- ============================================================================
+-- THE GAP: two concurrent RECEIVE calls against DIFFERENT LINES of the SAME
+-- dispatch were previously serialized only by each line's own row lock and by
+-- the per-request_id advisory lock (which does nothing for two DIFFERENT
+-- request ids). Under READ COMMITTED, a header-status recompute driven only
+-- by an AFTER trigger could run inside a transaction that started before a
+-- sibling transaction committed its own line update — seeing a stale,
+-- incomplete picture and leaving the header at 'sent' after only one of two
+-- lines had actually been decided.
+--
+-- THE FIX, in order:
+--   1. Safely extract dispatch_id from p_dispatch_line_id with an UNLOCKED
+--      read — safe because dispatch_id is an immutable FK, never UPDATEd
+--      after a line is created, so there is no TOCTOU window to race.
+--   2. Take a SECOND advisory lock, keyed by DISPATCH (not request, not
+--      line) — every RECEIVE call against the SAME dispatch now fully
+--      serializes, whatever line or request_id it names.
+--   3. Lock the HEADER row FOR UPDATE first, THEN the LINE — the same order
+--      070's own SEND uses, so the two RPCs can never deadlock against each
+--      other.
+--   4. After deciding the line (either branch: rejected or accepted/
+--      accepted_with_difference), call phoenix_recompute_warehouse_dispatch_
+--      header_status(v_dispatch.id) EXPLICITLY, still holding the header's
+--      FOR UPDATE lock acquired in step 3 — so the recompute is guaranteed
+--      correct regardless of trigger timing. The trigger (8b) still exists
+--      as pure defense-in-depth.
+--
+-- ALSO FIXED (per review): the ORIGINAL 067 body refused RECEIVE outright if
+-- the destination outlet had since gone inactive
+-- (`destination_outlet_inactive`). That is wrong: a shipment already
+-- in_transit must always be settleable — an outlet being deactivated AFTER
+-- send must never trap goods that already left the warehouse in limbo. The
+-- outlet's `status` check is removed from RECEIVE; only existence and
+-- point_type approval (a structural requirement of outlet_stock's own CHECK,
+-- not a liveness gate) remain.
+CREATE OR REPLACE FUNCTION public.phoenix_receive_outlet_dispatch_line(
+  p_request_id        uuid,
+  p_dispatch_line_id  uuid,
+  p_received_quantity integer,
+  p_difference_reason text DEFAULT NULL,
+  p_notes             text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor       uuid := auth.uid();
+  v_actor_role  text;
+  v_actor_name  text;
+  v_dispatch_id uuid;
+  v_line        public.warehouse_dispatch_lines%ROWTYPE;
+  v_dispatch    public.warehouse_dispatches%ROWTYPE;
+  v_point       public.distribution_points%ROWTYPE;
+  v_stock       public.outlet_stock%ROWTYPE;
+  v_existing    public.outlet_stock_movements%ROWTYPE;
+  v_reason      text := NULLIF(btrim(p_difference_reason), '');
+  v_notes       text := NULLIF(btrim(p_notes), '');
+  v_before      integer;
+  v_after       integer;
+  v_movement_id uuid;
+  v_avail_id    uuid;
+  v_line_status text;
+  v_fingerprint text;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_request_id IS NULL THEN
+    RAISE EXCEPTION 'request_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_dispatch_line_id IS NULL THEN
+    RAISE EXCEPTION 'dispatch_line_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_received_quantity IS NULL OR p_received_quantity < 0 THEN
+    RAISE EXCEPTION 'received_quantity_must_be_non_negative' USING ERRCODE = '23514';
+  END IF;
+
+  v_fingerprint := encode(sha256(convert_to(jsonb_build_object(
+    'operation', 'receive_dispatch_line',
+    'dispatch_line_id', p_dispatch_line_id,
+    'received_quantity', p_received_quantity,
+    'difference_reason', v_reason,
+    'notes', v_notes
+  )::text, 'UTF8')), 'hex');
+
+  -- Step 1: safe, unlocked extraction of the immutable parent dispatch_id.
+  SELECT dispatch_id INTO v_dispatch_id
+  FROM public.warehouse_dispatch_lines WHERE id = p_dispatch_line_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Step 2: per-DISPATCH advisory lock — serializes every RECEIVE against
+  -- this dispatch, regardless of line or request id.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_dispatch_id::text, 70170));
+
+  -- Advisory lock first, row locks second: identical ordering to 065/067's
+  -- own original design — kept for the per-request idempotency check below.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 67067));
+
+  -- Replay check BEFORE any authorization side effect, so a retry is cheap and
+  -- cannot be turned into a probe that behaves differently from the first call.
+  SELECT * INTO v_existing
+  FROM public.outlet_stock_movements m
+  WHERE m.reference_type = 'outlet_request' AND m.reference_id = p_request_id;
+
+  IF FOUND THEN
+    IF v_existing.dispatch_line_id IS DISTINCT FROM p_dispatch_line_id
+       OR v_existing.request_fingerprint IS DISTINCT FROM v_fingerprint THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok', true, 'idempotent_replay', true,
+      'outlet_stock_id', v_existing.outlet_stock_id,
+      'movement_id', v_existing.id,
+      'quantity_before', v_existing.on_hand_before,
+      'quantity_delta', v_existing.on_hand_delta,
+      'quantity_after', v_existing.on_hand_after
+    );
+  END IF;
+
+  -- Step 3: HEADER first, then LINE — reordered from 067's original
+  -- line-then-header sequence, matching 070's own SEND.
+  SELECT * INTO v_dispatch
+  FROM public.warehouse_dispatches
+  WHERE id = v_dispatch_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_line
+  FROM public.warehouse_dispatch_lines
+  WHERE id = p_dispatch_line_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Only a physically sent dispatch can be received.
+  IF v_dispatch.status NOT IN ('sent', 'partially_accepted') THEN
+    RAISE EXCEPTION 'dispatch_not_receivable' USING ERRCODE = '23514';
+  END IF;
+  IF v_line.status <> 'pending' THEN
+    RAISE EXCEPTION 'dispatch_line_already_decided' USING ERRCODE = '23505';
+  END IF;
+  IF p_received_quantity > v_line.sent_quantity THEN
+    RAISE EXCEPTION 'received_quantity_exceeds_sent' USING ERRCODE = '23514';
+  END IF;
+  -- A quantity that disagrees with the shipment must be explained, or the
+  -- discrepancy becomes invisible the moment it matters.
+  IF p_received_quantity <> v_line.sent_quantity AND v_reason IS NULL THEN
+    RAISE EXCEPTION 'difference_reason_required' USING ERRCODE = '23514';
+  END IF;
+
+  -- THE IDOR GATE. Authority is the actor's scoped assignment to the
+  -- DESTINATION OUTLET — never a role literal, never the client's word, never
+  -- the dispatch's own claim about where it is going.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'outlet_stock.receive', v_dispatch.organization_id,
+    NULL, v_dispatch.destination_distribution_point_id
+  ) THEN
+    RAISE EXCEPTION 'forbidden_outlet_stock_receive' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role, p.full_name INTO v_actor_role, v_actor_name
+  FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  -- Resolve the destination outlet and prove it may hold stock AT ALL (its
+  -- point_type is structurally required by outlet_stock's own CHECK). Its
+  -- STATUS is deliberately NOT gated here (see file header, section 2c): a
+  -- shipment already in_transit must always be settleable, even if the
+  -- outlet has since been deactivated.
+  SELECT * INTO v_point
+  FROM public.distribution_points
+  WHERE id = v_dispatch.destination_distribution_point_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'destination_outlet_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_point.point_type NOT IN ('pharmacy', 'crash_cabinet', 'rescue_cart') THEN
+    RAISE EXCEPTION 'outlet_type_not_approved_for_stock: %', v_point.point_type
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- An expired batch must never enter an outlet. This is the last point at
+  -- which the system can refuse it; after this it is dispensable stock.
+  IF v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date THEN
+    RAISE EXCEPTION 'expired_batch_cannot_be_received' USING ERRCODE = '23514';
+  END IF;
+
+  v_line_status := CASE
+    WHEN p_received_quantity = 0 THEN 'rejected'
+    WHEN p_received_quantity = v_line.sent_quantity THEN 'accepted'
+    ELSE 'accepted_with_difference'
+  END;
+
+  -- A fully rejected line moves no stock: record the decision and stop. There is
+  -- no outlet_stock row to create, so there is no movement and no projection.
+  IF p_received_quantity = 0 THEN
+    UPDATE public.warehouse_dispatch_lines
+       SET status = 'rejected', received_quantity = 0,
+           rejection_reason = v_reason, rejected_by = v_actor, rejected_at = now()
+     WHERE id = v_line.id;
+
+    -- Step 4: recompute the header, still holding its FOR UPDATE lock.
+    PERFORM public.phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id);
+
+    INSERT INTO public.audit_logs (
+      organization_id, actor_id, actor_role,
+      action, entity_type, entity_id, entity_label, payload
+    ) VALUES (
+      v_dispatch.organization_id, v_actor, v_actor_role,
+      'outlet_stock.dispatch_rejected', 'warehouse_dispatch_lines', v_line.id,
+      v_line.scientific_name,
+      jsonb_build_object(
+        'request_id', p_request_id,
+        'dispatch_id', v_dispatch.id,
+        'distribution_point_id', v_dispatch.destination_distribution_point_id,
+        'sent_quantity', v_line.sent_quantity,
+        'received_quantity', 0,
+        'reason', v_reason
+      )
+    );
+
+    RETURN jsonb_build_object(
+      'ok', true, 'idempotent_replay', false,
+      'line_status', 'rejected', 'outlet_stock_id', NULL, 'movement_id', NULL,
+      'quantity_before', 0, 'quantity_delta', 0, 'quantity_after', 0
+    );
+  END IF;
+
+  -- Resolve (or create) the outlet_stock identity from the line's IMMUTABLE
+  -- snapshots — never from a client-supplied identity.
+  INSERT INTO public.outlet_stock (
+    organization_id, distribution_point_id, point_type, central_item_id,
+    scientific_name, trade_name, concentration, dosage_form, unit,
+    national_code, has_no_national_code,
+    batch_number, has_no_batch_number, internal_batch_reference,
+    expiry_date, on_hand_quantity, reserved_quantity,
+    unit_price, price_basis, currency, supply_type_text,
+    source_document_number, notes, created_by, updated_by
+  ) VALUES (
+    v_dispatch.organization_id, v_dispatch.destination_distribution_point_id,
+    v_point.point_type, v_line.central_item_id,
+    v_line.scientific_name, v_line.trade_name, v_line.concentration,
+    v_line.dosage_form, v_line.unit,
+    v_line.national_code, v_line.has_no_national_code,
+    v_line.batch_number, v_line.has_no_batch_number, v_line.internal_batch_reference,
+    v_line.expiry_date, 0, 0,
+    v_line.unit_price, v_line.price_basis, v_line.currency, v_line.supply_type_text,
+    v_dispatch.document_number, v_notes, v_actor, v_actor
+  )
+  ON CONFLICT DO NOTHING;
+
+  SELECT * INTO v_stock
+  FROM public.outlet_stock s
+  WHERE s.distribution_point_id = v_dispatch.destination_distribution_point_id
+    AND s.scientific_name = v_line.scientific_name
+    AND COALESCE(s.concentration, '') = COALESCE(v_line.concentration, '')
+    AND COALESCE(s.dosage_form, '')   = COALESCE(v_line.dosage_form, '')
+    AND COALESCE(s.national_code, '') = COALESCE(v_line.national_code, '')
+    AND COALESCE(s.batch_number, '')  = COALESCE(v_line.batch_number, '')
+    AND COALESCE(s.expiry_date, DATE '0001-01-01')
+        = COALESCE(v_line.expiry_date, DATE '0001-01-01')
+    AND COALESCE(s.internal_batch_reference, '')
+        = COALESCE(v_line.internal_batch_reference, '')
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'outlet_stock_identity_resolution_failed' USING ERRCODE = 'P0002';
+  END IF;
+
+  v_before := v_stock.on_hand_quantity;
+  v_after  := v_before + p_received_quantity;
+
+  UPDATE public.outlet_stock
+     SET on_hand_quantity       = v_after,
+         central_item_id        = COALESCE(v_stock.central_item_id, v_line.central_item_id),
+         unit_price             = COALESCE(v_line.unit_price, unit_price),
+         source_document_number = COALESCE(v_dispatch.document_number, source_document_number),
+         notes                  = COALESCE(v_notes, notes),
+         updated_by             = v_actor
+   WHERE id = v_stock.id;
+
+  INSERT INTO public.outlet_stock_movements (
+    outlet_stock_id, organization_id, distribution_point_id,
+    movement_type,
+    on_hand_before, on_hand_delta, on_hand_after,
+    reserved_before, reserved_delta, reserved_after,
+    reason, reference_type, reference_id, dispatch_line_id, request_fingerprint,
+    source_document_number, actor_id, actor_role, actor_name,
+    scientific_name_snapshot, concentration_snapshot, dosage_form_snapshot,
+    batch_number_snapshot, internal_batch_reference_snapshot, expiry_date_snapshot
+  ) VALUES (
+    v_stock.id, v_dispatch.organization_id, v_dispatch.destination_distribution_point_id,
+    'dispatch_receive',
+    v_before, p_received_quantity, v_after,
+    v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
+    v_reason, 'outlet_request', p_request_id, v_line.id, v_fingerprint,
+    v_dispatch.document_number, v_actor, v_actor_role, v_actor_name,
+    v_stock.scientific_name, v_stock.concentration, v_stock.dosage_form,
+    v_stock.batch_number, v_stock.internal_batch_reference, v_stock.expiry_date
+  )
+  RETURNING id INTO v_movement_id;
+
+  -- Transitional projection, in THIS transaction. The client never dual-writes.
+  v_avail_id := public.phoenix_project_outlet_availability(v_stock.id);
+
+  UPDATE public.warehouse_dispatch_lines
+     SET status                         = v_line_status,
+         received_quantity              = p_received_quantity,
+         difference_reason              = v_reason,
+         accepted_by                    = v_actor,
+         accepted_at                    = now(),
+         resulting_outlet_stock_id      = v_stock.id,
+         -- Kept populated on purpose: 061's link must not break during expand.
+         resulting_item_availability_id = v_avail_id
+   WHERE id = v_line.id;
+
+  -- Step 4: recompute the header, still holding its FOR UPDATE lock acquired
+  -- in step 3 — guaranteed to see this line's own just-made update, and (by
+  -- construction of the per-dispatch advisory lock) every sibling line's
+  -- fully-committed prior state too.
+  PERFORM public.phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id);
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role,
+    action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_dispatch.organization_id, v_actor, v_actor_role,
+    'outlet_stock.dispatch_receive', 'outlet_stock', v_stock.id,
+    v_stock.scientific_name,
+    jsonb_build_object(
+      'request_id', p_request_id,
+      'dispatch_id', v_dispatch.id,
+      'dispatch_line_id', v_line.id,
+      'distribution_point_id', v_dispatch.destination_distribution_point_id,
+      'movement_id', v_movement_id,
+      'line_status', v_line_status,
+      'sent_quantity', v_line.sent_quantity,
+      'quantity_before', v_before,
+      'quantity_delta', p_received_quantity,
+      'quantity_after', v_after,
+      'reason', v_reason
+    )
+  );
+
+  RETURN jsonb_build_object(
+    'ok', true, 'idempotent_replay', false,
+    'line_status', v_line_status,
+    'outlet_stock_id', v_stock.id,
+    'movement_id', v_movement_id,
+    'item_availability_id', v_avail_id,
+    'quantity_before', v_before,
+    'quantity_delta', p_received_quantity,
+    'quantity_after', v_after
+  );
+END;
+$$;
+
+-- Grants IDENTICAL to 067's own (REVOKE ALL then GRANT EXECUTE to
+-- authenticated) — the ACL contract is unchanged, only re-stated because
+-- CREATE OR REPLACE does not alter existing grants, but restating is
+-- harmless and keeps this file self-contained.
+REVOKE ALL ON FUNCTION public.phoenix_receive_outlet_dispatch_line(uuid, uuid, integer, text, text)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_receive_outlet_dispatch_line(uuid, uuid, integer, text, text)
+  TO authenticated;
+
+-- ============================================================================
 -- 3. CREATE — a draft dispatch header
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_create_warehouse_dispatch(
@@ -589,6 +1030,8 @@ DECLARE
   v_actor_role  text;
   v_actor_name  text;
   v_dispatch    public.warehouse_dispatches%ROWTYPE;
+  v_warehouse   public.warehouses%ROWTYPE;
+  v_point       public.distribution_points%ROWTYPE;
   v_line        RECORD;
   v_stock       public.warehouse_stock%ROWTYPE;
   v_before      integer;
@@ -614,14 +1057,25 @@ BEGIN
     RAISE EXCEPTION 'dispatch_not_found' USING ERRCODE = 'P0002';
   END IF;
 
-  -- Idempotent replay at the HEADER level: already sent, and every line
-  -- already has its once-only movement (proven by the unique index in
-  -- section 2) — a retry is a safe no-op, not a re-debit.
-  IF v_dispatch.status <> 'draft' THEN
-    IF v_dispatch.status IN ('sent', 'partially_accepted', 'accepted', 'rejected') THEN
-      RETURN jsonb_build_object('ok', true, 'idempotent_replay', true, 'dispatch_id', v_dispatch.id, 'status', v_dispatch.status);
-    END IF;
-    RAISE EXCEPTION 'dispatch_not_sendable' USING ERRCODE = '23514';
+  -- FAIL-CLOSED status handling — every one of the six values 061's own
+  -- CHECK allows is named explicitly, never lumped into a generic
+  -- "not sendable" catch-all:
+  --   'draft'                                        -> proceed to send below
+  --   'cancelled'                                     -> a SPECIFIC error;
+  --       this is NOT a safe idempotent replay, it is a real terminal state
+  --       a caller must be told about by name, not silently or genercially.
+  --   'sent'/'partially_accepted'/'accepted'/'rejected' -> these, and ONLY
+  --       these, are the states a REAL prior send can have produced —
+  --       idempotent replay is safe here because every line already has its
+  --       once-only movement (proven by the unique index in section 2).
+  --   anything else -> unreachable given the CHECK constraint, but rejected
+  --       explicitly rather than silently treated as either outcome.
+  IF v_dispatch.status = 'cancelled' THEN
+    RAISE EXCEPTION 'dispatch_cancelled' USING ERRCODE = '23514';
+  ELSIF v_dispatch.status IN ('sent', 'partially_accepted', 'accepted', 'rejected') THEN
+    RETURN jsonb_build_object('ok', true, 'idempotent_replay', true, 'dispatch_id', v_dispatch.id, 'status', v_dispatch.status);
+  ELSIF v_dispatch.status <> 'draft' THEN
+    RAISE EXCEPTION 'dispatch_unexpected_status: %', v_dispatch.status USING ERRCODE = '23514';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.warehouse_dispatch_lines WHERE dispatch_id = v_dispatch.id) THEN
@@ -638,6 +1092,28 @@ BEGIN
   FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
   IF NOT FOUND THEN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  -- RE-VALIDATE liveness at SEND time, not just at CREATE — a warehouse or
+  -- outlet can be deactivated, or an outlet's warehouse_id/point_type
+  -- reassigned, in the time between drafting and sending. CREATE's own
+  -- checks prove nothing about the CURRENT state.
+  SELECT * INTO v_warehouse
+  FROM public.warehouses WHERE id = v_dispatch.warehouse_id FOR SHARE;
+  IF NOT FOUND OR v_warehouse.status <> 'active' THEN
+    RAISE EXCEPTION 'warehouse_not_found_or_inactive' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_point
+  FROM public.distribution_points WHERE id = v_dispatch.destination_distribution_point_id FOR SHARE;
+  IF NOT FOUND OR v_point.status <> 'active' THEN
+    RAISE EXCEPTION 'destination_outlet_not_found_or_inactive' USING ERRCODE = '23514';
+  END IF;
+  IF v_point.point_type NOT IN ('pharmacy', 'crash_cabinet', 'rescue_cart') THEN
+    RAISE EXCEPTION 'outlet_type_not_approved_for_stock: %', v_point.point_type USING ERRCODE = '23514';
+  END IF;
+  IF v_point.warehouse_id IS DISTINCT FROM v_dispatch.warehouse_id THEN
+    RAISE EXCEPTION 'destination_outlet_not_paired_with_this_warehouse' USING ERRCODE = '23514';
   END IF;
 
   v_line_count := (SELECT count(*) FROM public.warehouse_dispatch_lines WHERE dispatch_id = v_dispatch.id);
@@ -753,59 +1229,23 @@ END;
 $$;
 
 -- ============================================================================
--- 8b. HEADER STATUS SYNC — closes a gap discovered in 067, without touching
--- 067's RPC or its contract
+-- 8b. HEADER STATUS SYNC TRIGGER — DEFENSE IN DEPTH ONLY
 -- ============================================================================
--- 067's phoenix_receive_outlet_dispatch_line updates warehouse_dispatch_lines
--- per line but NEVER updates warehouse_dispatches.status (confirmed: no
--- `UPDATE public.warehouse_dispatches` appears anywhere in 067). Left alone,
--- a header would sit at 'sent' forever regardless of how its lines resolve —
--- but this migration's own requirement is that the header closes ONLY once
--- every line has a decision. Rather than editing 067's RPC (out of scope,
--- and the instruction governing this file is to leave 067 untouched), this
--- is a TRIGGER on warehouse_dispatch_lines: it fires on any line status
--- change, from ANY caller (067's RECEIVE today; a future correction-only RPC
--- tomorrow), and recomputes the header purely from its lines' current
--- states. 067's function signature, body and contract are unmodified — this
--- is a wholly separate database object.
+-- The rebuilt RECEIVE (2c) already calls phoenix_recompute_warehouse_dispatch_
+-- header_status explicitly, under the header's own FOR UPDATE lock, right
+-- after deciding a line — that is what actually GUARANTEES correctness under
+-- concurrency (see 2c's own header comment). This trigger is not what proves
+-- that; it exists only so that some future RPC which updates a line's status
+-- WITHOUT going through RECEIVE cannot silently leave the header stale. It
+-- calls the SAME shared function (2b), never a second copy of the logic.
 CREATE OR REPLACE FUNCTION public.phoenix_sync_warehouse_dispatch_header_status()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-  v_total     integer;
-  v_pending   integer;
-  v_accepted  integer;
-  v_rejected  integer;
-  v_new_status text;
 BEGIN
-  SELECT count(*),
-         count(*) FILTER (WHERE status = 'pending'),
-         count(*) FILTER (WHERE status IN ('accepted', 'accepted_with_difference')),
-         count(*) FILTER (WHERE status = 'rejected')
-    INTO v_total, v_pending, v_accepted, v_rejected
-  FROM public.warehouse_dispatch_lines
-  WHERE dispatch_id = NEW.dispatch_id;
-
-  v_new_status := CASE
-    WHEN v_pending > 0 THEN 'partially_accepted'  -- at least one decided, some still open
-    WHEN v_accepted = v_total THEN 'accepted'      -- every line accepted (with or without difference)
-    WHEN v_rejected = v_total THEN 'rejected'      -- every line rejected
-    ELSE 'partially_accepted'                       -- all decided, but a mix of accepted/rejected
-  END;
-
-  -- Only ever moves a header OUT of 'sent'/'partially_accepted'. Never
-  -- touches 'draft' (this migration's own cancel path already sets each
-  -- pending line to 'cancelled', which would otherwise also fire this
-  -- trigger) or an already-terminal 'accepted'/'rejected'/'cancelled' header.
-  UPDATE public.warehouse_dispatches
-     SET status = v_new_status
-   WHERE id = NEW.dispatch_id
-     AND status IN ('sent', 'partially_accepted')
-     AND status IS DISTINCT FROM v_new_status;
-
+  PERFORM public.phoenix_recompute_warehouse_dispatch_header_status(NEW.dispatch_id);
   RETURN NEW;
 END;
 $$;
@@ -818,11 +1258,12 @@ CREATE TRIGGER trg_sync_warehouse_dispatch_header_status
   EXECUTE FUNCTION public.phoenix_sync_warehouse_dispatch_header_status();
 
 COMMENT ON FUNCTION public.phoenix_sync_warehouse_dispatch_header_status() IS
-  'INSTITUTION-WAREHOUSE-TO-OUTLET-DISPATCH-070-A: recomputes '
-  'warehouse_dispatches.status from its lines'' CURRENT statuses whenever any '
-  'line status changes. Added because 067''s phoenix_receive_outlet_dispatch_line '
-  'never updates the header itself — this closes that gap as an independent '
-  'trigger, without modifying 067''s function.';
+  'INSTITUTION-WAREHOUSE-TO-OUTLET-DISPATCH-070-A: defense-in-depth only — '
+  'delegates to phoenix_recompute_warehouse_dispatch_header_status (2b), the '
+  'SAME function RECEIVE (2c) calls explicitly under its own header lock. '
+  'This trigger catches any future caller that updates a line without going '
+  'through RECEIVE; it is not what makes RECEIVE itself correct under '
+  'concurrency.';
 
 REVOKE ALL ON FUNCTION public.phoenix_sync_warehouse_dispatch_header_status()
   FROM PUBLIC, anon, authenticated;
@@ -869,6 +1310,127 @@ COMMENT ON FUNCTION public.phoenix_send_warehouse_dispatch(uuid, uuid) IS
   'never a new movement_type.';
 
 -- ============================================================================
+-- 9b. Explicit deny defaults for outlet_officer — stated, not merely implied
+-- ============================================================================
+-- 061 never seeded a (outlet_officer, warehouse_dispatch.*) row at all, for
+-- ANY of these keys. phoenix_profile_has_permission's own contract
+-- (010: coalesce(override, role_default, false)) means an ABSENT row already
+-- resolves to false — outlet_officer was always correctly denied. But
+-- "correct by absence" is not the same as "correct by statement": a future
+-- migration that seeds a row for outlet_officer without checking here could
+-- silently reverse this. These four rows make the denial explicit and,
+-- being explicit, structurally provable by this migration's own
+-- post-conditions (10) rather than merely inferred from what is missing.
+INSERT INTO public.role_permission_defaults (role, permission_key, allowed) VALUES
+  ('outlet_officer', 'warehouse_dispatch.create',     false),
+  ('outlet_officer', 'warehouse_dispatch.edit_draft',  false),
+  ('outlet_officer', 'warehouse_dispatch.cancel',      false),
+  ('outlet_officer', 'warehouse_dispatch.send',        false)
+ON CONFLICT (role, permission_key) DO NOTHING;
+
+-- ============================================================================
+-- 9c. SCOPED READ — restrictive policies, additive to 061's unscoped ones
+-- ============================================================================
+-- THE PROBLEM: 061's own SELECT policies
+--   USING (phoenix_my_role() = 'super_admin'
+--          OR (organization_id = phoenix_my_org()
+--              AND phoenix_profile_has_permission(auth.uid(), 'warehouse_dispatch.view')))
+-- check only the UNSCOPED permission — organization membership plus a
+-- boolean "do you hold this key at all". Many roles hold
+-- warehouse_dispatch.view = true at the ORG level (warehouse_officer,
+-- institution_admin, viewer, port_officer, central_warehouse_manager — 061's
+-- own defaults). A warehouse_officer assigned to ONE warehouse in a
+-- multi-warehouse institution can therefore see every OTHER warehouse's
+-- dispatches too, and likewise for an outlet_officer across every outlet in
+-- the org — the row is visible the instant the boolean key is held, with no
+-- check against WHICH warehouse or outlet the actor is actually assigned to.
+--
+-- THE FIX: PostgreSQL RLS composes multiple policies for the same command as
+-- (OR of every PERMISSIVE policy) AND (AND of every RESTRICTIVE policy). 061
+-- defines exactly one PERMISSIVE SELECT policy per table. Adding a SECOND
+-- permissive policy here would only OR in MORE access, making the problem
+-- worse. A RESTRICTIVE policy is the opposite: it can only ever NARROW what
+-- 061's permissive policy already allows, and it does so unconditionally —
+-- no future permissive policy anywhere can widen past it, because
+-- restrictive policies are never bypassed by permissive ones (this is
+-- PostgreSQL's own documented composition rule, not a convention this file
+-- invents). 061's policy is therefore left COMPLETELY UNTOUCHED: no DROP, no
+-- redefinition — this migration only ever ADDS a restrictive layer on top.
+--
+-- Visibility, once both policies apply: a row is visible only if it passes
+-- 061's org+unscoped-key check AND ALSO one of:
+--   - super_admin (platform role, sees everything);
+--   - phoenix_profile_has_scoped_permission('warehouse_dispatch.view', org,
+--     warehouse_id, NULL) — true for an org-wide role (institution_admin/
+--     hospital_admin/monthly_status_officer/viewer), or for warehouse_officer
+--     ONLY if actively assigned to THAT SPECIFIC warehouse;
+--   - phoenix_profile_has_scoped_permission('outlet_stock.receive', org,
+--     NULL, destination_distribution_point_id) — true for outlet_officer
+--     ONLY if actively assigned to THAT SPECIFIC outlet (the same permission
+--     067's RECEIVE itself checks, so "can see the dispatch" and "can
+--     receive it" are the same boundary).
+CREATE OR REPLACE FUNCTION public.phoenix_can_read_warehouse_dispatch(
+  p_organization_id            uuid,
+  p_warehouse_id               uuid,
+  p_destination_distribution_point_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT
+    auth.uid() IS NOT NULL
+    AND (
+      public.phoenix_my_role() = 'super_admin'
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'warehouse_dispatch.view', p_organization_id, p_warehouse_id, NULL
+         )
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'outlet_stock.receive', p_organization_id, NULL, p_destination_distribution_point_id
+         )
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_can_read_warehouse_dispatch(uuid, uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_can_read_warehouse_dispatch(uuid, uuid, uuid) TO authenticated;
+
+COMMENT ON FUNCTION public.phoenix_can_read_warehouse_dispatch(uuid, uuid, uuid) IS
+  'INSTITUTION-WAREHOUSE-TO-OUTLET-DISPATCH-070-A: the scoped boundary enforced '
+  'by 070''s RESTRICTIVE policies, additive to 061''s existing permissive '
+  'org+unscoped-key policies. A warehouse_officer sees only dispatches from '
+  'its assigned warehouse; an outlet_officer sees only dispatches addressed '
+  'to its assigned outlet (the same scope phoenix_receive_outlet_dispatch_'
+  'line itself enforces). super_admin sees everything.';
+
+DROP POLICY IF EXISTS warehouse_dispatches_scope_restrict ON public.warehouse_dispatches;
+CREATE POLICY warehouse_dispatches_scope_restrict
+  ON public.warehouse_dispatches
+  AS RESTRICTIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    public.phoenix_can_read_warehouse_dispatch(organization_id, warehouse_id, destination_distribution_point_id)
+  );
+
+DROP POLICY IF EXISTS warehouse_dispatch_lines_scope_restrict ON public.warehouse_dispatch_lines;
+CREATE POLICY warehouse_dispatch_lines_scope_restrict
+  ON public.warehouse_dispatch_lines
+  AS RESTRICTIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.warehouse_dispatches d
+      WHERE d.id = warehouse_dispatch_lines.dispatch_id
+        AND public.phoenix_can_read_warehouse_dispatch(
+              d.organization_id, d.warehouse_id, d.destination_distribution_point_id
+            )
+    )
+  );
+
+-- ============================================================================
 -- 10. POST-CONDITIONS
 -- ============================================================================
 DO $verify$
@@ -892,10 +1454,11 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (070): warehouse_stock_movements_type_chk missing dispatch_send';
   END IF;
 
-  -- 10c. 067's RECEIVE RPC is untouched — same signature, still present,
-  -- still the only writer of 'dispatch_receive'.
+  -- 10c. RECEIVE's signature is exactly 067's original — recreated (2c) for
+  -- concurrency, never renamed or reshaped. Still the only writer of
+  -- 'dispatch_receive'.
   IF to_regprocedure('public.phoenix_receive_outlet_dispatch_line(uuid,uuid,integer,text,text)') IS NULL THEN
-    RAISE EXCEPTION 'ABORT 070: 067 RECEIVE RPC was removed or its signature changed';
+    RAISE EXCEPTION 'ABORT 070: RECEIVE RPC signature changed — must match 067''s original exactly';
   END IF;
 
   -- 10d. SEND refuses expired batches (forward direction — unlike the return
@@ -945,8 +1508,7 @@ BEGIN
   END IF;
 
   -- 10j. The header-status-sync trigger exists and never touches draft or a
-  -- terminal header — closing the gap that 067 leaves (it never updates
-  -- warehouse_dispatches.status itself).
+  -- terminal header — defense-in-depth alongside RECEIVE's own explicit call.
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
     WHERE c.relname = 'warehouse_dispatch_lines'
@@ -954,6 +1516,82 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'ABORT 070: header-status-sync trigger missing';
   END IF;
+
+  -- 10k. RESTRICTIVE scoped-read policies exist on both tables — proven by
+  -- polrestrictive = true (pg_policy), not merely by presence, since a
+  -- PERMISSIVE policy of the same name would compile but grant the OPPOSITE
+  -- of what this migration requires (OR instead of AND).
+  FOREACH v_def IN ARRAY ARRAY['warehouse_dispatches', 'warehouse_dispatch_lines'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policy pol
+      JOIN pg_class c ON c.oid = pol.polrelid
+      WHERE c.relname = v_def
+        AND pol.polname = v_def || '_scope_restrict'
+        AND pol.polpermissive = false
+    ) THEN
+      RAISE EXCEPTION 'ABORT 070: % is missing its RESTRICTIVE scope policy (or it is PERMISSIVE, which would widen access instead of narrowing it)', v_def;
+    END IF;
+  END LOOP;
+
+  -- 10l. 061's own PERMISSIVE policies are untouched — this migration only
+  -- ever ADDS a restrictive layer, never drops or redefines the original.
+  FOREACH v_def IN ARRAY ARRAY['warehouse_dispatches_select_perm', 'warehouse_dispatch_lines_select_perm'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policy pol
+      WHERE pol.polname = v_def AND pol.polpermissive = true
+    ) THEN
+      RAISE EXCEPTION 'ABORT 070: 061''s original permissive policy % is missing or was changed', v_def;
+    END IF;
+  END LOOP;
+
+  -- 10m. outlet_officer is explicitly denied every warehouse_dispatch.* key
+  -- this file's RPCs check — stated, not merely inferred from absence.
+  FOREACH v_def IN ARRAY ARRAY[
+    'warehouse_dispatch.create', 'warehouse_dispatch.edit_draft',
+    'warehouse_dispatch.cancel', 'warehouse_dispatch.send'
+  ] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM public.role_permission_defaults
+      WHERE role = 'outlet_officer' AND permission_key = v_def AND allowed = false
+    ) THEN
+      RAISE EXCEPTION 'ABORT 070: outlet_officer is not explicitly denied %', v_def;
+    END IF;
+  END LOOP;
+
+  -- 10n. SEND's status handling is fail-closed: 'cancelled' gets its own
+  -- named error (never folded into a generic message or treated as a safe
+  -- replay), and an unreachable ELSE exists as a backstop.
+  v_body := pg_get_functiondef('public.phoenix_send_warehouse_dispatch(uuid,uuid)'::regprocedure);
+  ASSERT v_body LIKE '%dispatch_cancelled%',
+    'VERIFY FAILED (070): SEND must raise a specific error for a cancelled dispatch, not a generic one';
+  ASSERT v_body LIKE '%dispatch_unexpected_status%',
+    'VERIFY FAILED (070): SEND must fail closed on any status its own vocabulary does not name';
+
+  -- 10o. SEND re-validates the warehouse and destination outlet LIVE, not
+  -- just at CREATE time.
+  ASSERT v_body LIKE '%FROM public.warehouses WHERE id = v_dispatch.warehouse_id FOR SHARE%',
+    'VERIFY FAILED (070): SEND must re-lock and re-check the warehouse''s live status';
+  ASSERT v_body LIKE '%FROM public.distribution_points WHERE id = v_dispatch.destination_distribution_point_id FOR SHARE%',
+    'VERIFY FAILED (070): SEND must re-lock and re-check the destination outlet''s live status';
+
+  -- 10p. RECEIVE (2c) serializes per DISPATCH (not merely per request or per
+  -- line), locks the header before the line, and explicitly recomputes the
+  -- header status under that same lock — the actual concurrency fix, not
+  -- merely the trigger.
+  DECLARE
+    v_receive_body text := pg_get_functiondef(
+      'public.phoenix_receive_outlet_dispatch_line(uuid,uuid,integer,text,text)'::regprocedure);
+  BEGIN
+    ASSERT v_receive_body LIKE '%hashtextextended(v_dispatch_id::text, 70170)%',
+      'VERIFY FAILED (070): RECEIVE must take a per-DISPATCH advisory lock';
+    ASSERT position('SELECT * INTO v_dispatch' in v_receive_body)
+         < position('SELECT * INTO v_line' in v_receive_body),
+      'VERIFY FAILED (070): RECEIVE must lock the HEADER before the LINE';
+    ASSERT v_receive_body LIKE '%phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id)%',
+      'VERIFY FAILED (070): RECEIVE must explicitly recompute the header status under its own lock';
+    ASSERT v_receive_body NOT LIKE '%destination_outlet_inactive%',
+      'VERIFY FAILED (070): RECEIVE must not refuse to settle an in_transit shipment because the outlet later went inactive';
+  END;
 
   RAISE NOTICE '070 verified: institution warehouse -> outlet forward dispatch '
     'builds CREATE/ADD-LINE/UPDATE-LINE/DELETE-LINE/CANCEL/SEND on 061''s '
