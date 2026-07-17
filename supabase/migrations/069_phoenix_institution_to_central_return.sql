@@ -90,6 +90,23 @@
 -- contract, not an oversight; a test asserts the absence explicitly.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ...BUT RECEIVE MUST NOT LET IT BECOME DISPENSABLE STOCK EITHER
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Allowing an expired/quality-flagged batch to be SENT back does not mean it
+-- is safe to CREDIT into the same on_hand pool ordinary dispensable stock
+-- draws from. 069 has no quarantine balance or disposition state of its own
+-- — that model (alongside FEFO and count/correction) is 071's job, tracked
+-- as its own migration precisely so it isn't improvised here. Rather than
+-- invent a throwaway quarantine representation that 071 would likely have to
+-- redesign, phoenix_receive_warehouse_return_shipment_line REFUSES to credit
+-- any balance for a batch that is expired at receipt time, or whose return
+-- reason was flagged 'quality_issue' — central can still REJECT such a
+-- return (received_quantity = 0 touches no balance at all), it just cannot
+-- be ACCEPTED into inventory until 071 ships. This is a deliberate temporary
+-- limitation, not a workaround: there is no code path anywhere in this file
+-- that lets an expired or quality-flagged return become dispensable stock.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
 -- REUSED, NOT WIDENED: 'dispatch_return' WAS ALREADY IN 060's CHECK
 -- ─────────────────────────────────────────────────────────────────────────────
 -- warehouse_stock_movements.movement_type has included 'dispatch_return'
@@ -664,13 +681,17 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_source_warehouse_id::text, 69069));
 
+  -- Fetch AND lock the route (FOR SHARE, same lock discipline as every other
+  -- route-touching RPC) — but deliberately NOT gated on is_active. A route
+  -- carries no expiry on the stock it already delivered: deactivating it
+  -- stops NEW forward supply, never a legitimate return/recall of material
+  -- that already moved along it. The lock still fixes the route's identity
+  -- (endpoints) for the rest of this transaction; it just isn't a permission
+  -- gate here the way it is for 068's forward SEND/SUBMIT.
   SELECT * INTO v_route
   FROM public.warehouse_supply_routes WHERE id = p_route_id FOR SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
-  END IF;
-  IF NOT v_route.is_active THEN
-    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
   END IF;
 
   -- The institution is the route's TARGET — a caller cannot open a return
@@ -761,13 +782,13 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_source_warehouse_id::text, 69069));
 
+  -- Fetch AND lock the route, deliberately NOT gated on is_active — a recall
+  -- of previously delivered material must not depend on the route's CURRENT
+  -- activity. See the identical note in phoenix_request_warehouse_return.
   SELECT * INTO v_route
   FROM public.warehouse_supply_routes WHERE id = p_route_id FOR SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
-  END IF;
-  IF NOT v_route.is_active THEN
-    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
   END IF;
 
   IF p_source_warehouse_id IS DISTINCT FROM v_route.target_warehouse_id THEN
@@ -1024,11 +1045,12 @@ BEGIN
     RAISE EXCEPTION 'return_request_not_draft' USING ERRCODE = '23514';
   END IF;
 
+  -- Locked (FOR SHARE), not gated on is_active — submitting a return of
+  -- material already delivered must not depend on the route's CURRENT
+  -- activity. The route is guaranteed to exist by wrr_route_endpoints_fk;
+  -- this SELECT only fixes its identity for the rest of the transaction.
   SELECT * INTO v_route
   FROM public.warehouse_supply_routes WHERE id = v_request.route_id FOR SHARE;
-  IF NOT FOUND OR NOT v_route.is_active THEN
-    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
-  END IF;
 
   SELECT count(*) INTO v_line_count
   FROM public.warehouse_return_request_lines WHERE return_request_id = v_request.id;
@@ -1354,13 +1376,14 @@ BEGIN
     );
   END IF;
 
+  -- Locked (FOR SHARE), not gated on is_active — sending back material that
+  -- was already legitimately delivered must not depend on the route's
+  -- CURRENT activity. Deactivating a route stops NEW forward supply; it does
+  -- not retroactively forbid returning what already moved along it.
   SELECT * INTO v_route
   FROM public.warehouse_supply_routes WHERE id = p_route_id FOR SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE = 'P0002';
-  END IF;
-  IF NOT v_route.is_active THEN
-    RAISE EXCEPTION 'supply_route_inactive' USING ERRCODE = '23514';
   END IF;
 
   SELECT l.* INTO v_reqline
@@ -1709,6 +1732,32 @@ BEGIN
       'warehouse_stock_id', NULL, 'movement_id', NULL,
       'quantity_before', 0, 'quantity_delta', 0, 'quantity_after', 0
     );
+  END IF;
+
+  -- QUARANTINE-DISPOSITION GUARD. A return is deliberately allowed to be OF
+  -- an expired or quality-flagged batch (see phoenix_send's own comment) —
+  -- but that does NOT mean it is safe to credit into the SAME on_hand pool
+  -- that ordinary dispensable stock draws from. 069 has no quarantine
+  -- balance/state of its own (that model is 071's job, alongside FEFO and
+  -- disposition). Rather than invent a half-built quarantine representation
+  -- here that 071 would likely have to redesign, RECEIVE simply refuses to
+  -- credit ANY balance for a batch that is expired at receipt time or whose
+  -- return reason was flagged as a quality issue. Central can still REJECT
+  -- such a return (received_quantity = 0, handled above — no balance is
+  -- touched by a rejection), it just cannot be ACCEPTED into inventory until
+  -- 071 ships. This is a deliberate temporary limitation, not a workaround —
+  -- there is no code path anywhere that lets an expired/quality-flagged
+  -- return become dispensable stock.
+  IF v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date THEN
+    RAISE EXCEPTION 'return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071'
+      USING ERRCODE = '23514';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.warehouse_return_request_lines rl
+    WHERE rl.id = v_line.return_request_line_id AND rl.reason_code = 'quality_issue'
+  ) THEN
+    RAISE EXCEPTION 'return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071'
+      USING ERRCODE = '23514';
   END IF;
 
   v_internal := v_line.internal_batch_reference;
@@ -2093,6 +2142,39 @@ BEGIN
     'public.phoenix_send_warehouse_return_shipment_line(uuid,uuid,uuid,integer,text,text,text)'::regprocedure)
     NOT LIKE '%expiry_date < current_date%',
     'VERIFY FAILED (069): return-send must not refuse expired batches';
+
+  -- 13i2. ...but RECEIVE must refuse to credit ANY balance for an
+  -- expired-at-receipt or quality-flagged batch — the quarantine model is
+  -- 071's job, not a reason to let it become dispensable stock here.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)
+    LIKE '%expiry_date < current_date%'
+    AND pg_get_functiondef(
+    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)
+    LIKE '%quality_issue%',
+    'VERIFY FAILED (069): return-receive does not guard against crediting an expired/quality-flagged batch';
+
+  -- 13i3. The quarantine guard must sit BEFORE the warehouse_stock INSERT —
+  -- a guard placed after the credit would be worthless.
+  ASSERT position('requires_quarantine_disposition_deferred_to_071' in
+    pg_get_functiondef(
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure))
+    < position('INSERT INTO public.warehouse_stock (' in
+    pg_get_functiondef(
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)),
+    'VERIFY FAILED (069): quarantine guard does not precede the stock credit';
+
+  -- 13i4. Route deactivation must NOT block a legitimate historical return —
+  -- none of the four route-touching RPCs may gate on is_active.
+  FOREACH v_def IN ARRAY ARRAY[
+    'public.phoenix_request_warehouse_return(uuid,uuid,text,text)',
+    'public.phoenix_recall_warehouse_transfer(uuid,uuid,text,text)',
+    'public.phoenix_submit_warehouse_return_request(uuid)',
+    'public.phoenix_send_warehouse_return_shipment_line(uuid,uuid,uuid,integer,text,text,text)'
+  ] LOOP
+    ASSERT pg_get_functiondef(v_def::regprocedure) NOT LIKE '%supply_route_inactive%',
+      'VERIFY FAILED (069): gates a legitimate historical return on route is_active: ' || v_def;
+  END LOOP;
 
   -- 13j. Request-lifecycle RPCs: advisory lock, route FOR SHARE where they
   -- touch the route, scoped permission, audit.
