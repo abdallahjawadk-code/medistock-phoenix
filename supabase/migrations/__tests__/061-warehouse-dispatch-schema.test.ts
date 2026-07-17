@@ -32,6 +32,10 @@ import {
   findUnreviewedMigrationFiles,
   isReviewedMigrationFile,
 } from './helpers/reviewed-migrations';
+// SQL-SOURCE-LEXER-A: comment stripping is lexical and shared. The per-file
+// `/--.*$/` this replaced stripped nothing at all on a CRLF checkout, and also
+// truncated 061's placeholder CHECK mid-literal at its '--' string.
+import { activeSql } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS_DIR = join(ROOT, 'supabase/migrations');
@@ -40,10 +44,6 @@ const M061_NAME = '061_phoenix_warehouse_dispatch_schema.sql';
 const P061 = join(MIGRATIONS_DIR, M061_NAME);
 const m061 = readFileSync(P061, 'utf8');
 
-/** Active SQL only: strip `--` line comments so prose can never satisfy a check. */
-function activeSql(sql: string): string {
-  return sql.split('\n').map(l => l.replace(/--.*$/, '')).join('\n');
-}
 const active061 = activeSql(m061);
 const rawLines = active061.split('\n');
 const activeLines = rawLines.map(l => l.trim()).filter(l => l.length > 0);

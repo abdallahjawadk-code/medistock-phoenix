@@ -10,18 +10,15 @@ import {
   REVIEWED_MIGRATION_FILES,
   findUnreviewedMigrationFiles,
 } from './helpers/reviewed-migrations';
+// SQL-SOURCE-LEXER-A: comment stripping is lexical and shared. The per-file
+// `/--.*$/` this replaced stripped nothing at all on a CRLF checkout, which made
+// every prose-based guard below silently inert on Windows.
+import { activeSql } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS = join(ROOT, 'supabase/migrations');
 const FILE = '065_phoenix_warehouse_truth_and_stock_rpcs.sql';
 const sql = readFileSync(join(MIGRATIONS, FILE), 'utf8');
-
-function activeSql(source: string): string {
-  return source
-    .split('\n')
-    .map(line => line.replace(/--.*$/, ''))
-    .join('\n');
-}
 
 function functionSql(name: string): string {
   const pattern = new RegExp(

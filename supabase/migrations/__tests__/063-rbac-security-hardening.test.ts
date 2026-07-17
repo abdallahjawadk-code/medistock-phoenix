@@ -22,6 +22,10 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import { REVIEWED_MIGRATION_FILES, isReviewedMigrationFile } from './helpers/reviewed-migrations';
+// SQL-SOURCE-LEXER-A: comment stripping is lexical and shared. The per-file
+// `/--.*$/` this replaced stripped nothing at all on a CRLF checkout, which made
+// every prose-based guard below silently inert on Windows.
+import { activeSql } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS_DIR = join(ROOT, 'supabase/migrations');
@@ -30,10 +34,6 @@ const M063_NAME = '063_phoenix_rbac_security_hardening.sql';
 const P063 = join(MIGRATIONS_DIR, M063_NAME);
 const m063 = readFileSync(P063, 'utf8');
 
-/** Active SQL only: strip `--` line comments so prose can never satisfy a check. */
-function activeSql(sql: string): string {
-  return sql.split('\n').map(l => l.replace(/--.*$/, '')).join('\n');
-}
 const active063 = activeSql(m063);
 /** Whitespace-normalized active SQL: multi-line statements collapse to one line. */
 const norm063 = active063.replace(/\s+/g, ' ').trim();
