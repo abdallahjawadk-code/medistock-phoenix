@@ -92,19 +92,25 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- ...BUT RECEIVE MUST NOT LET IT BECOME DISPENSABLE STOCK EITHER
 -- ─────────────────────────────────────────────────────────────────────────────
--- Allowing an expired/quality-flagged batch to be SENT back does not mean it
--- is safe to CREDIT into the same on_hand pool ordinary dispensable stock
--- draws from. 069 has no quarantine balance or disposition state of its own
--- — that model (alongside FEFO and count/correction) is 071's job, tracked
--- as its own migration precisely so it isn't improvised here. Rather than
--- invent a throwaway quarantine representation that 071 would likely have to
--- redesign, phoenix_receive_warehouse_return_shipment_line REFUSES to credit
--- any balance for a batch that is expired at receipt time, or whose return
--- reason was flagged 'quality_issue' — central can still REJECT such a
--- return (received_quantity = 0 touches no balance at all), it just cannot
--- be ACCEPTED into inventory until 071 ships. This is a deliberate temporary
--- limitation, not a workaround: there is no code path anywhere in this file
--- that lets an expired or quality-flagged return become dispensable stock.
+-- Allowing an expired/unsound batch to be SENT back does not mean it is safe
+-- to CREDIT into the same on_hand pool ordinary dispensable stock draws from.
+-- An earlier revision of this file simply REFUSED to complete such a receive
+-- at all — safe, but it meant SEND could accept a batch that RECEIVE could
+-- never resolve, leaving stock stuck in_transit indefinitely. Fixed in
+-- review: phoenix_receive_warehouse_return_shipment_line now classifies every
+-- accepted quantity into exactly one of two balances —
+-- warehouse_stock (restockable) or warehouse_quarantine_stock (quarantined,
+-- section 2) — and credits the correct one, always. A batch that is
+-- objectively expired at receipt time, or whose return reason is
+-- 'expired'/'damaged'/'recalled'/'quality_issue'/'temperature_excursion', is
+-- ALWAYS quarantined — never client-overridable. 'near_expiry' requires an
+-- explicit p_disposition_decision from the authorized receiver (no silent
+-- default). warehouse_quarantine_stock is intentionally minimal: it is never
+-- read by available_quantity, never surfaced by the public QR payload, and
+-- 069 only ever INSERTs into it — release/destroy/final disposition is 071's
+-- job, tracked as its own migration, on the SAME table rather than a
+-- throwaway representation this file would improvise and 071 would have to
+-- redesign.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- REUSED, NOT WIDENED: 'dispatch_return' WAS ALREADY IN 060's CHECK
@@ -122,6 +128,9 @@
 --   * No outlet -> institution return (067's domain) — a follow-up migration.
 --   * No cancellation of an in-transit return shipment — symmetric with 068's
 --     own rule for the forward direction; a return, once sent, is done.
+--   * No final quarantine disposition (release back to stock, destroy,
+--     documented write-off) — 071's job, on the SAME warehouse_quarantine_stock
+--     table 069 creates. 069 only ever INSERTs into it, at RECEIVE.
 --   * No RBAC enforcement change. Enforcement stays OFF; organization/
 --     warehouse scope enforcement (phoenix_profile_has_scoped_permission)
 --     stays ON, independent of that toggle, as it always has.
@@ -179,8 +188,197 @@ DO $$ BEGIN
     CHECK (returned_quantity >= 0 AND returned_quantity <= COALESCE(received_quantity, 0));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- Two clearly SEPARATE counters, never one column doing double duty:
+--   returned_quantity        = COMMITTED/SENT — left the institution (SEND).
+--   return_received_quantity = ACTUALLY RECEIVED at central, whatever its
+--                               disposition (restockable OR quarantined —
+--                               both count, since both mean "central now has
+--                               custody"). Incremented once, at RECEIVE.
+-- The gap (returned_quantity - return_received_quantity) is what is still
+-- UNRESOLVED: either physically in_transit, or sitting exception_pending
+-- after a rejection — never silently absorbed into either counter.
+DO $$ BEGIN
+  ALTER TABLE public.warehouse_transfer_lines
+    ADD COLUMN return_received_quantity integer NOT NULL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE public.warehouse_transfer_lines
+    ADD CONSTRAINT wtl_return_received_qty_chk
+    CHECK (return_received_quantity >= 0 AND return_received_quantity <= returned_quantity);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- A third, MATERIALIZED counter — not just a comment describing the gap, but
+-- a generated column any caller can read directly: return_committed_quantity
+-- (=returned_quantity, sent/left the institution), return_received_quantity
+-- (above), and now return_unresolved_quantity (=committed-received): still
+-- in_transit, or sitting exception_pending after a destination-side
+-- rejection/shortfall. Never negative by wtl_return_received_qty_chk above.
+DO $$ BEGIN
+  ALTER TABLE public.warehouse_transfer_lines
+    ADD COLUMN return_unresolved_quantity integer
+    GENERATED ALWAYS AS (returned_quantity - return_received_quantity) STORED;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
 -- ============================================================================
--- 2. warehouse_return_requests — either side asks
+-- 2. warehouse_quarantine_stock — non-dispensable balance, reusable in 070/071
+-- ============================================================================
+-- A return may legitimately be OF an expired, damaged, recalled or quality-
+-- flagged batch (see phoenix_send's own comment) — but accepting it back
+-- must never silently make it available for dispensing again. This is a
+-- SEPARATE balance from warehouse_stock, not a flag on it: it is never read
+-- by warehouse_stock.available_quantity, never surfaced by the public QR
+-- payload, and has no client write path of its own — exactly the same
+-- write-only-through-SECURITY-DEFINER-RPCs contract as every other balance
+-- in this schema. 071 will add release/destroy/final-disposition RPCs on
+-- top of this same table; 069 only ever INSERTs into it (via RECEIVE).
+
+CREATE TABLE IF NOT EXISTS public.warehouse_quarantine_stock (
+  id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id           uuid NOT NULL,
+  warehouse_id              uuid NOT NULL,
+
+  central_item_id           uuid REFERENCES public.central_items(id) ON DELETE RESTRICT,
+  scientific_name           text NOT NULL,
+  trade_name                text,
+  concentration             text,
+  dosage_form               text,
+  unit                      text,
+  national_code             text,
+  has_no_national_code      boolean NOT NULL DEFAULT false,
+  batch_number              text,
+  has_no_batch_number       boolean NOT NULL DEFAULT false,
+  internal_batch_reference  text,
+  expiry_date               date,
+
+  -- WHY this lot is here. Part of identity — the same physical batch
+  -- quarantined for two structurally different reasons is two rows, never
+  -- one merged bucket that would blur "why can't we ship this?".
+  quarantine_reason         text NOT NULL,
+
+  quantity                  integer NOT NULL DEFAULT 0,
+
+  created_by                uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  updated_by                uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at                timestamptz NOT NULL DEFAULT now(),
+  updated_at                timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT wqs_id_org_uniq UNIQUE (id, organization_id),
+
+  CONSTRAINT wqs_wh_org_fk
+    FOREIGN KEY (warehouse_id, organization_id)
+    REFERENCES public.warehouses (id, organization_id) ON DELETE RESTRICT,
+
+  CONSTRAINT wqs_sci_name_chk
+    CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
+  CONSTRAINT wqs_quantity_nonneg_chk CHECK (quantity >= 0),
+  CONSTRAINT wqs_reason_chk
+    CHECK (quarantine_reason IN (
+      'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other'
+    )),
+  CONSTRAINT wqs_has_no_national_code_chk
+    CHECK (has_no_national_code = (national_code IS NULL)),
+  CONSTRAINT wqs_has_no_batch_number_chk
+    CHECK (has_no_batch_number = (batch_number IS NULL))
+);
+
+-- Identity: same lot fields as warehouse_stock, PLUS quarantine_reason —
+-- resolved by RECEIVE via the same INSERT ... ON CONFLICT DO NOTHING; SELECT
+-- ... FOR UPDATE pattern 068 established for warehouse_stock.
+CREATE UNIQUE INDEX IF NOT EXISTS wqs_identity_uniq
+  ON public.warehouse_quarantine_stock (
+    warehouse_id, scientific_name,
+    COALESCE(concentration, ''), COALESCE(dosage_form, ''),
+    COALESCE(national_code, ''), COALESCE(batch_number, ''),
+    COALESCE(expiry_date, DATE '0001-01-01'),
+    COALESCE(internal_batch_reference, ''),
+    quarantine_reason
+  );
+
+CREATE INDEX IF NOT EXISTS wqs_org_idx ON public.warehouse_quarantine_stock (organization_id);
+CREATE INDEX IF NOT EXISTS wqs_warehouse_idx ON public.warehouse_quarantine_stock (warehouse_id);
+
+COMMENT ON TABLE public.warehouse_quarantine_stock IS
+  'INSTITUTION-TO-CENTRAL-RETURN-069-A: non-dispensable balance, structurally '
+  'separate from warehouse_stock. Never read by available_quantity, never '
+  'surfaced by public QR. 069 only INSERTs (via RECEIVE); 071 owns release/'
+  'destroy/disposition on this same table.';
+
+DO $$ BEGIN
+  CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.warehouse_quarantine_stock
+    FOR EACH ROW EXECUTE FUNCTION phoenix_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Its own ledger, mirroring warehouse_stock_movements' shape but scoped to
+-- this balance — the same "the row already is the source of truth, an
+-- external ledger just proves how it got there" precedent as everywhere
+-- else in this schema.
+CREATE TABLE IF NOT EXISTS public.warehouse_quarantine_stock_movements (
+  id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quarantine_stock_id       uuid NOT NULL REFERENCES public.warehouse_quarantine_stock(id) ON DELETE RESTRICT,
+  organization_id           uuid NOT NULL,
+  warehouse_id              uuid NOT NULL,
+
+  -- 'quarantine_receive' is the only value 069 ever writes. The others are
+  -- reserved now, unused until 071 — the same 'dispatch_return'/'return_send'
+  -- precedent (060/067): pre-seeding an enum an EARLIER migration will not
+  -- need to widen later, not scope creep now.
+  movement_type             text NOT NULL,
+
+  quantity_before           integer NOT NULL,
+  quantity_delta            integer NOT NULL,
+  quantity_after            integer NOT NULL,
+
+  reason                    text,
+  reference_type            text,
+  reference_id              uuid,
+  request_fingerprint       text,
+  source_document_number    text,
+
+  actor_id                  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  actor_role                text,
+  actor_name                text,
+
+  scientific_name_snapshot             text,
+  concentration_snapshot               text,
+  dosage_form_snapshot                 text,
+  batch_number_snapshot                text,
+  internal_batch_reference_snapshot    text,
+
+  created_at                timestamptz NOT NULL DEFAULT now(),
+
+  CONSTRAINT wqsm_type_chk
+    CHECK (movement_type IN (
+      'quarantine_receive', 'quarantine_release', 'quarantine_destroy', 'quarantine_correction'
+    )),
+  CONSTRAINT wqsm_after_eq_before_plus_delta_chk
+    CHECK (quantity_after = quantity_before + quantity_delta),
+  CONSTRAINT wqsm_after_nonneg_chk CHECK (quantity_after >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS wqsm_stock_idx ON public.warehouse_quarantine_stock_movements (quarantine_stock_id);
+CREATE UNIQUE INDEX IF NOT EXISTS wqsm_receive_once_uniq
+  ON public.warehouse_quarantine_stock_movements (reference_id)
+  WHERE reference_type = 'warehouse_return_quarantine_receive' AND reference_id IS NOT NULL;
+
+DO $$ BEGIN
+  ALTER TABLE public.warehouse_quarantine_stock_movements
+    ADD CONSTRAINT wqsm_fingerprint_chk
+    CHECK (
+      reference_type IS DISTINCT FROM 'warehouse_return_quarantine_receive'
+      OR (request_fingerprint IS NOT NULL AND request_fingerprint ~ '^[0-9a-f]{64}$')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+COMMENT ON TABLE public.warehouse_quarantine_stock_movements IS
+  'INSTITUTION-TO-CENTRAL-RETURN-069-A: append-only ledger for '
+  'warehouse_quarantine_stock, mirroring warehouse_stock_movements'' shape. '
+  'Only ''quarantine_receive'' is written by any RPC in 069; the other '
+  'movement_type values are reserved for 071, pre-seeded the same way 060 '
+  'pre-seeded ''dispatch_return'' before 069 spent it.';
+
+-- ============================================================================
+-- 3. warehouse_return_requests — either side asks
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.warehouse_return_requests (
@@ -294,7 +492,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
--- 3. warehouse_return_request_lines — one specific received batch per line
+-- 4. warehouse_return_request_lines — one specific received batch per line
 -- ============================================================================
 -- Unlike 068's request lines (a MATERIAL, batch chosen later), a return line
 -- names an EXACT prior receipt: original_transfer_line_id. Snapshot fields
@@ -336,8 +534,19 @@ CREATE TABLE IF NOT EXISTS public.warehouse_return_request_lines (
 
   CONSTRAINT wrrl_sci_name_chk
     CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
+  -- Full vocabulary, not just enough to exercise the happy path: each value
+  -- has an explicit quarantine rule at RECEIVE (see phoenix_receive_...'s own
+  -- comment) — 'expired'/'damaged'/'recalled'/'quality_issue'/
+  -- 'temperature_excursion' are MANDATORY quarantine, never client-overridable;
+  -- 'near_expiry' requires an explicit authorized decision at receipt;
+  -- 'excess'/'shipment_error'/'other' default to restockable (unless the
+  -- batch is OBJECTIVELY expired by the time it is actually received, which
+  -- is checked independently of reason_code).
   CONSTRAINT wrrl_reason_code_chk
-    CHECK (reason_code IN ('excess', 'wrong_item', 'near_expiry', 'expired', 'quality_issue', 'recall', 'other')),
+    CHECK (reason_code IN (
+      'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged',
+      'recalled', 'quality_issue', 'temperature_excursion', 'other'
+    )),
   CONSTRAINT wrrl_requested_qty_chk  CHECK (requested_quantity > 0),
   CONSTRAINT wrrl_approved_qty_chk
     CHECK (approved_quantity IS NULL
@@ -396,7 +605,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
--- 4. warehouse_return_shipments — the institution sends it back
+-- 5. warehouse_return_shipments — the institution sends it back
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.warehouse_return_shipments (
@@ -466,7 +675,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
--- 5. warehouse_return_shipment_lines — one returned batch per line
+-- 6. warehouse_return_shipment_lines — one returned batch per line
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.warehouse_return_shipment_lines (
@@ -501,9 +710,17 @@ CREATE TABLE IF NOT EXISTS public.warehouse_return_shipment_lines (
   status                          text NOT NULL DEFAULT 'in_transit',
   difference_reason                text,
 
+  -- DISPOSITION: which balance received_quantity was credited to. NULL while
+  -- unresolved (in_transit/rejected); set exactly once, at RECEIVE.
+  disposition                      text,
+  -- CUSTODY: an explicit, always-populated answer to "where does this
+  -- quantity physically/logically sit right now?" — never left implicit.
+  custody_state                     text NOT NULL DEFAULT 'in_transit',
+
   received_by                        uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   received_at                         timestamptz,
   resulting_warehouse_stock_id         uuid REFERENCES public.warehouse_stock(id) ON DELETE SET NULL,
+  resulting_quarantine_stock_id         uuid REFERENCES public.warehouse_quarantine_stock(id) ON DELETE SET NULL,
 
   created_at                            timestamptz NOT NULL DEFAULT now(),
   updated_at                             timestamptz NOT NULL DEFAULT now(),
@@ -532,22 +749,71 @@ CREATE TABLE IF NOT EXISTS public.warehouse_return_shipment_lines (
   CONSTRAINT wrsl_has_no_batch_number_chk
     CHECK (has_no_batch_number = (batch_number IS NULL)),
 
+  CONSTRAINT wrsl_disposition_chk
+    CHECK (disposition IS NULL OR disposition IN ('restockable', 'quarantined')),
+  CONSTRAINT wrsl_custody_state_chk
+    CHECK (custody_state IN (
+      'in_transit', 'destination_stock', 'destination_quarantine', 'exception_pending'
+    )),
+
+  -- The full decision state machine: status, disposition and custody_state
+  -- must always agree — a 'received' line with no disposition, or a
+  -- disposition with the wrong custody_state, is structurally impossible,
+  -- not just discouraged by RPC discipline.
   CONSTRAINT wrsl_decision_chk
     CHECK (
       CASE status
         WHEN 'in_transit' THEN
           received_quantity IS NULL AND received_at IS NULL AND difference_reason IS NULL
+          AND disposition IS NULL AND custody_state = 'in_transit'
         WHEN 'received' THEN
           received_quantity = sent_quantity AND received_at IS NOT NULL
+          AND (
+            (disposition = 'restockable'  AND custody_state = 'destination_stock')
+            OR
+            (disposition = 'quarantined' AND custody_state = 'destination_quarantine')
+          )
         WHEN 'received_with_difference' THEN
           received_quantity IS NOT NULL AND received_quantity < sent_quantity
           AND received_at IS NOT NULL
           AND difference_reason IS NOT NULL AND btrim(difference_reason) <> ''
+          AND (
+            (disposition = 'restockable'  AND custody_state = 'destination_stock')
+            OR
+            (disposition = 'quarantined' AND custody_state = 'destination_quarantine')
+          )
         WHEN 'rejected' THEN
           received_quantity = 0 AND received_at IS NOT NULL
           AND difference_reason IS NOT NULL AND btrim(difference_reason) <> ''
+          AND disposition IS NULL AND custody_state = 'exception_pending'
         ELSE false
       END
+    ),
+
+  -- CONSERVATION, made LITERAL rather than merely implied by the constraints
+  -- above: for every line that has left in_transit, sent_quantity must equal
+  -- the sum of everywhere it can possibly be accounted for —
+  -- received-restockable + received-quarantined + rejected-pending-resolution
+  -- (the WHOLE sent quantity, since a rejected line touches no balance and
+  -- sits exception_pending in full) + documented-difference (the shortfall on
+  -- a received_with_difference line, always paired with a mandatory
+  -- difference_reason by wrsl_decision_chk above — "documented", never a bare
+  -- unexplained gap). Nothing is ever double-counted: exactly one branch is
+  -- non-zero per line, mirroring wrsl_decision_chk's own CASE. in_transit is
+  -- excluded because the sum has no meaning until the destination has acted.
+  CONSTRAINT wrsl_conservation_eq_chk
+    CHECK (
+      status = 'in_transit'
+      OR sent_quantity =
+           (CASE WHEN status IN ('received', 'received_with_difference')
+                      AND disposition = 'restockable'
+                 THEN received_quantity ELSE 0 END)
+         + (CASE WHEN status IN ('received', 'received_with_difference')
+                      AND disposition = 'quarantined'
+                 THEN received_quantity ELSE 0 END)
+         + (CASE WHEN status = 'rejected' THEN sent_quantity ELSE 0 END)
+         + (CASE WHEN status = 'received_with_difference'
+                 THEN sent_quantity - received_quantity ELSE 0 END)
     )
 );
 
@@ -569,7 +835,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
--- 6. Idempotency for return movements — reusing 065/068's ledger contract
+-- 7. Idempotency for return movements — reusing 065/068's ledger contract
 -- ============================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS warehouse_stock_movements_return_once_uniq
   ON public.warehouse_stock_movements (reference_id)
@@ -591,7 +857,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS warehouse_stock_movements_return_line_once_uni
   WHERE reference_type = 'warehouse_return_shipment_line' AND reference_id IS NOT NULL;
 
 -- ============================================================================
--- 7. Permission keys
+-- 8. Permission keys
 -- ============================================================================
 INSERT INTO public.permission_keys (key, module, action, label_en, label_ar, is_dangerous) VALUES
   ('warehouse_transfer.return_request', 'warehouse_transfer', 'return_request', 'Request a return to central',      'طلب إرجاع إلى المركزي',      false),
@@ -639,7 +905,7 @@ CROSS JOIN (VALUES ('warehouse_transfer.return_request'),('warehouse_transfer.re
 ON CONFLICT (role, permission_key) DO NOTHING;
 
 -- ============================================================================
--- 8. RETURN REQUEST LIFECYCLE — either side asks, central always reviews
+-- 9. RETURN REQUEST LIFECYCLE — either side asks, central always reviews
 -- ============================================================================
 -- Contract mirrors 068 section 8: advisory lock first, row lock second,
 -- phoenix_profile_has_scoped_permission gate (never a role literal), audit
@@ -647,7 +913,7 @@ ON CONFLICT (role, permission_key) DO NOTHING;
 -- writes warehouse_stock_movements; each is idempotency-safe by construction
 -- (one-way status flip under a row lock plus an explicit precondition).
 
--- 8a. REQUEST (receiver-initiated) — the institution asks to send stock back.
+-- 9a. REQUEST (receiver-initiated) — the institution asks to send stock back.
 CREATE OR REPLACE FUNCTION public.phoenix_request_warehouse_return(
   p_route_id             uuid,
   p_source_warehouse_id  uuid,
@@ -746,7 +1012,7 @@ BEGIN
 END;
 $$;
 
--- 8b. RECALL (sender-initiated) — central asks the institution to send stock
+-- 9b. RECALL (sender-initiated) — central asks the institution to send stock
 -- back. Same row, same lifecycle — only requested_by_side and the permission
 -- gate differ from REQUEST.
 CREATE OR REPLACE FUNCTION public.phoenix_recall_warehouse_transfer(
@@ -845,7 +1111,7 @@ BEGIN
 END;
 $$;
 
--- 8c. ADD LINE — while the request is still a draft. Names an EXACT prior
+-- 9c. ADD LINE — while the request is still a draft. Names an EXACT prior
 -- receipt, bounded by what THAT line has left to return.
 CREATE OR REPLACE FUNCTION public.phoenix_add_warehouse_return_request_line(
   p_return_request_id         uuid,
@@ -940,7 +1206,7 @@ BEGIN
 END;
 $$;
 
--- 8d. DELETE LINE — draft-only; a real delete, mirrors 068's line CRUD.
+-- 9d. DELETE LINE — draft-only; a real delete, mirrors 068's line CRUD.
 CREATE OR REPLACE FUNCTION public.phoenix_delete_warehouse_return_request_line(
   p_return_request_line_id uuid
 )
@@ -987,7 +1253,7 @@ BEGIN
 END;
 $$;
 
--- 8e. SUBMIT — draft -> submitted. Only whoever OPENED it may submit it,
+-- 9e. SUBMIT — draft -> submitted. Only whoever OPENED it may submit it,
 -- regardless of side, mirroring 068's submit permission (scoped to the
 -- creator's own side). Requires an ACTIVE route, checked again NOW.
 CREATE OR REPLACE FUNCTION public.phoenix_submit_warehouse_return_request(
@@ -1076,7 +1342,7 @@ BEGIN
 END;
 $$;
 
--- 8f. CANCEL — only the side that opened it may cancel it, before it has
+-- 9f. CANCEL — only the side that opened it may cancel it, before it has
 -- been reviewed or sent (symmetric with 068's cancel window).
 CREATE OR REPLACE FUNCTION public.phoenix_cancel_warehouse_return_request(
   p_return_request_id     uuid,
@@ -1156,7 +1422,7 @@ BEGIN
 END;
 $$;
 
--- 8g. REVIEW — ALWAYS central, regardless of who opened the request. Central
+-- 9g. REVIEW — ALWAYS central, regardless of who opened the request. Central
 -- is the side whose warehouse_stock will increase and must decide capacity/
 -- acceptance either way.
 CREATE OR REPLACE FUNCTION public.phoenix_review_warehouse_return_request(
@@ -1290,7 +1556,7 @@ END;
 $$;
 
 -- ============================================================================
--- 9. RETURN-SEND — stock leaves the institution warehouse
+-- 10. RETURN-SEND — stock leaves the institution warehouse
 -- ============================================================================
 -- Contract mirrors 068's SEND EXCEPT: no expiry-refusal (see header note),
 -- and the request-line cap is against approved_quantity of a RETURN line
@@ -1585,15 +1851,21 @@ END;
 $$;
 
 -- ============================================================================
--- 10. RETURN-RECEIVE — stock enters the central warehouse
+-- 11. RETURN-RECEIVE — stock enters the central warehouse
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.phoenix_receive_warehouse_return_shipment_line(
-  p_request_id         uuid,
-  p_shipment_line_id   uuid,
-  p_received_quantity  integer,
-  p_difference_reason  text DEFAULT NULL,
-  p_notes              text DEFAULT NULL
+  p_request_id             uuid,
+  p_shipment_line_id       uuid,
+  p_received_quantity      integer,
+  p_difference_reason      text DEFAULT NULL,
+  p_notes                  text DEFAULT NULL,
+  -- Consulted ONLY when the line's return reason is 'near_expiry' and the
+  -- batch is not (yet) objectively expired — every other reason is decided
+  -- deterministically by the server and this parameter is ignored for them,
+  -- so a client can never use it to talk a mandatory-quarantine reason into
+  -- 'restockable'.
+  p_disposition_decision   text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1601,21 +1873,29 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_actor       uuid := auth.uid();
-  v_actor_role  text;
-  v_actor_name  text;
-  v_line        public.warehouse_return_shipment_lines%ROWTYPE;
-  v_shipment    public.warehouse_return_shipments%ROWTYPE;
-  v_stock       public.warehouse_stock%ROWTYPE;
-  v_existing    public.warehouse_stock_movements%ROWTYPE;
-  v_reason      text := NULLIF(btrim(p_difference_reason), '');
-  v_notes       text := NULLIF(btrim(p_notes), '');
-  v_internal    text;
-  v_before      integer;
-  v_after       integer;
-  v_movement_id uuid;
-  v_status      text;
-  v_fingerprint text;
+  v_actor        uuid := auth.uid();
+  v_actor_role   text;
+  v_actor_name   text;
+  v_line         public.warehouse_return_shipment_lines%ROWTYPE;
+  v_shipment     public.warehouse_return_shipments%ROWTYPE;
+  v_orig         public.warehouse_transfer_lines%ROWTYPE;
+  v_stock        public.warehouse_stock%ROWTYPE;
+  v_quarantine   public.warehouse_quarantine_stock%ROWTYPE;
+  v_existing     public.warehouse_stock_movements%ROWTYPE;
+  v_existing_q   public.warehouse_quarantine_stock_movements%ROWTYPE;
+  v_reason       text := NULLIF(btrim(p_difference_reason), '');
+  v_notes        text := NULLIF(btrim(p_notes), '');
+  v_internal     text;
+  v_before       integer;
+  v_after        integer;
+  v_movement_id  uuid;
+  v_status       text;
+  v_fingerprint  text;
+  v_reason_code  text;
+  v_objectively_expired boolean;
+  v_mandatory_quarantine boolean;
+  v_disposition  text;
+  v_custody      text;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
@@ -1626,17 +1906,24 @@ BEGIN
   IF p_received_quantity IS NULL OR p_received_quantity < 0 THEN
     RAISE EXCEPTION 'received_quantity_must_be_non_negative' USING ERRCODE = '23514';
   END IF;
+  IF p_disposition_decision IS NOT NULL AND p_disposition_decision NOT IN ('restockable', 'quarantined') THEN
+    RAISE EXCEPTION 'invalid_disposition_decision' USING ERRCODE = '23514';
+  END IF;
 
   v_fingerprint := encode(sha256(convert_to(jsonb_build_object(
     'operation', 'return_receive',
     'shipment_line_id', p_shipment_line_id,
     'received_quantity', p_received_quantity,
     'difference_reason', v_reason,
-    'notes', v_notes
+    'notes', v_notes,
+    'disposition_decision', p_disposition_decision
   )::text, 'UTF8')), 'hex');
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 69069));
 
+  -- Idempotency replay can land in EITHER ledger depending on what the
+  -- ORIGINAL call resolved to (restockable -> warehouse_stock_movements,
+  -- quarantined -> warehouse_quarantine_stock_movements) — check both.
   SELECT * INTO v_existing
   FROM public.warehouse_stock_movements m
   WHERE m.reference_type = 'warehouse_return_receive' AND m.reference_id = p_request_id;
@@ -1646,12 +1933,30 @@ BEGIN
       RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
     END IF;
     RETURN jsonb_build_object(
-      'ok', true, 'idempotent_replay', true,
+      'ok', true, 'idempotent_replay', true, 'disposition', 'restockable',
       'warehouse_stock_id', v_existing.warehouse_stock_id,
       'movement_id', v_existing.id,
       'quantity_before', v_existing.on_hand_before,
       'quantity_delta', v_existing.on_hand_delta,
       'quantity_after', v_existing.on_hand_after
+    );
+  END IF;
+
+  SELECT * INTO v_existing_q
+  FROM public.warehouse_quarantine_stock_movements m
+  WHERE m.reference_type = 'warehouse_return_quarantine_receive' AND m.reference_id = p_request_id;
+
+  IF FOUND THEN
+    IF v_existing_q.request_fingerprint IS DISTINCT FROM v_fingerprint THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok', true, 'idempotent_replay', true, 'disposition', 'quarantined',
+      'quarantine_stock_id', v_existing_q.quarantine_stock_id,
+      'movement_id', v_existing_q.id,
+      'quantity_before', v_existing_q.quantity_before,
+      'quantity_delta', v_existing_q.quantity_delta,
+      'quantity_after', v_existing_q.quantity_after
     );
   END IF;
 
@@ -1694,6 +1999,15 @@ BEGIN
     RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
   END IF;
 
+  -- Lock the ORIGINAL received line now — RECEIVE increments its
+  -- return_received_quantity (a separate counter from returned_quantity,
+  -- which SEND already owns) under the same row lock discipline as SEND.
+  SELECT * INTO v_orig
+  FROM public.warehouse_transfer_lines WHERE id = v_line.original_transfer_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'original_transfer_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
   v_status := CASE
     WHEN p_received_quantity = 0 THEN 'rejected'
     WHEN p_received_quantity = v_line.sent_quantity THEN 'received'
@@ -1701,9 +2015,14 @@ BEGIN
   END;
 
   IF p_received_quantity = 0 THEN
+    -- REJECTED: central refuses the shipment outright. No balance touched —
+    -- not on_hand, not quarantine. The goods exist somewhere physically but
+    -- are custody-tracked as exception_pending, never silently returned to
+    -- the institution and never silently absorbed into either balance.
     UPDATE public.warehouse_return_shipment_lines
        SET status = 'rejected', received_quantity = 0,
-           difference_reason = v_reason, received_by = v_actor, received_at = now()
+           difference_reason = v_reason, received_by = v_actor, received_at = now(),
+           disposition = NULL, custody_state = 'exception_pending'
      WHERE id = v_line.id;
 
     UPDATE public.warehouse_return_shipments
@@ -1723,101 +2042,216 @@ BEGIN
       jsonb_build_object(
         'request_id', p_request_id, 'shipment_id', v_shipment.id,
         'sent_quantity', v_line.sent_quantity, 'received_quantity', 0,
-        'reason', v_reason
+        'custody_state', 'exception_pending', 'reason', v_reason
       )
     );
 
     RETURN jsonb_build_object(
       'ok', true, 'idempotent_replay', false, 'line_status', 'rejected',
-      'warehouse_stock_id', NULL, 'movement_id', NULL,
+      'disposition', NULL, 'custody_state', 'exception_pending',
+      'warehouse_stock_id', NULL, 'quarantine_stock_id', NULL, 'movement_id', NULL,
       'quantity_before', 0, 'quantity_delta', 0, 'quantity_after', 0
     );
   END IF;
 
-  -- QUARANTINE-DISPOSITION GUARD. A return is deliberately allowed to be OF
-  -- an expired or quality-flagged batch (see phoenix_send's own comment) —
-  -- but that does NOT mean it is safe to credit into the SAME on_hand pool
-  -- that ordinary dispensable stock draws from. 069 has no quarantine
-  -- balance/state of its own (that model is 071's job, alongside FEFO and
-  -- disposition). Rather than invent a half-built quarantine representation
-  -- here that 071 would likely have to redesign, RECEIVE simply refuses to
-  -- credit ANY balance for a batch that is expired at receipt time or whose
-  -- return reason was flagged as a quality issue. Central can still REJECT
-  -- such a return (received_quantity = 0, handled above — no balance is
-  -- touched by a rejection), it just cannot be ACCEPTED into inventory until
-  -- 071 ships. This is a deliberate temporary limitation, not a workaround —
-  -- there is no code path anywhere that lets an expired/quality-flagged
-  -- return become dispensable stock.
-  IF v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date THEN
-    RAISE EXCEPTION 'return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071'
-      USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (
-    SELECT 1 FROM public.warehouse_return_request_lines rl
-    WHERE rl.id = v_line.return_request_line_id AND rl.reason_code = 'quality_issue'
-  ) THEN
-    RAISE EXCEPTION 'return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071'
-      USING ERRCODE = '23514';
+  -- DISPOSITION CLASSIFICATION. A return is deliberately allowed to be OF an
+  -- expired or unsound batch (see phoenix_send's own comment) — but crediting
+  -- it into the SAME on_hand pool ordinary dispensable stock draws from would
+  -- make it dispensable again, which must never happen silently. This is a
+  -- structural classification, not an RPC-level suggestion:
+  --   - objectively expired at receipt time (regardless of stated reason), OR
+  --     reason IN ('expired','damaged','recalled','quality_issue',
+  --     'temperature_excursion') -> ALWAYS 'quarantined'. The client cannot
+  --     override this via p_disposition_decision — it is not even consulted.
+  --   - reason = 'near_expiry' (and not objectively expired) -> the AUTHORIZED
+  --     receiver must explicitly decide via p_disposition_decision; there is
+  --     no silent default.
+  --   - everything else ('excess','shipment_error','other') -> 'restockable'
+  --     by default, since the return is presumed sound.
+  v_reason_code := (
+    SELECT rl.reason_code FROM public.warehouse_return_request_lines rl
+    WHERE rl.id = v_line.return_request_line_id
+  );
+  v_objectively_expired := v_line.expiry_date IS NOT NULL AND v_line.expiry_date < current_date;
+  v_mandatory_quarantine := v_objectively_expired
+    OR v_reason_code IN ('expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion');
+
+  IF v_mandatory_quarantine THEN
+    v_disposition := 'quarantined';
+  ELSIF v_reason_code = 'near_expiry' THEN
+    IF p_disposition_decision IS NULL THEN
+      RAISE EXCEPTION 'near_expiry_return_requires_explicit_disposition_decision' USING ERRCODE = '23514';
+    END IF;
+    v_disposition := p_disposition_decision;
+  ELSE
+    v_disposition := 'restockable';
   END IF;
 
+  v_custody := CASE v_disposition WHEN 'restockable' THEN 'destination_stock' ELSE 'destination_quarantine' END;
   v_internal := v_line.internal_batch_reference;
 
-  INSERT INTO public.warehouse_stock (
-    organization_id, warehouse_id, central_item_id,
-    scientific_name, trade_name, concentration, dosage_form, unit,
-    national_code, has_no_national_code,
-    batch_number, has_no_batch_number, internal_batch_reference,
-    expiry_date, on_hand_quantity, reserved_quantity,
-    unit_price, price_basis, currency, supply_type_text,
-    source_document_number, notes, created_by, updated_by
-  ) VALUES (
-    v_shipment.destination_organization_id, v_shipment.destination_warehouse_id,
-    v_line.central_item_id,
-    v_line.scientific_name, v_line.trade_name, v_line.concentration,
-    v_line.dosage_form, v_line.unit,
-    v_line.national_code, v_line.has_no_national_code,
-    v_line.batch_number, v_line.has_no_batch_number, v_internal,
-    v_line.expiry_date, 0, 0,
-    v_line.unit_price, v_line.price_basis, v_line.currency, v_line.supply_type_text,
-    v_shipment.document_number, v_notes, v_actor, v_actor
-  )
-  ON CONFLICT DO NOTHING;
+  IF v_disposition = 'restockable' THEN
+    -- ---- RESTOCKABLE: credit the ordinary, dispensable warehouse_stock ----
+    INSERT INTO public.warehouse_stock (
+      organization_id, warehouse_id, central_item_id,
+      scientific_name, trade_name, concentration, dosage_form, unit,
+      national_code, has_no_national_code,
+      batch_number, has_no_batch_number, internal_batch_reference,
+      expiry_date, on_hand_quantity, reserved_quantity,
+      unit_price, price_basis, currency, supply_type_text,
+      source_document_number, notes, created_by, updated_by
+    ) VALUES (
+      v_shipment.destination_organization_id, v_shipment.destination_warehouse_id,
+      v_line.central_item_id,
+      v_line.scientific_name, v_line.trade_name, v_line.concentration,
+      v_line.dosage_form, v_line.unit,
+      v_line.national_code, v_line.has_no_national_code,
+      v_line.batch_number, v_line.has_no_batch_number, v_internal,
+      v_line.expiry_date, 0, 0,
+      v_line.unit_price, v_line.price_basis, v_line.currency, v_line.supply_type_text,
+      v_shipment.document_number, v_notes, v_actor, v_actor
+    )
+    ON CONFLICT DO NOTHING;
 
-  SELECT * INTO v_stock
-  FROM public.warehouse_stock s
-  WHERE s.warehouse_id = v_shipment.destination_warehouse_id
-    AND s.scientific_name = v_line.scientific_name
-    AND COALESCE(s.concentration, '') = COALESCE(v_line.concentration, '')
-    AND COALESCE(s.dosage_form, '')   = COALESCE(v_line.dosage_form, '')
-    AND COALESCE(s.national_code, '') = COALESCE(v_line.national_code, '')
-    AND COALESCE(s.batch_number, '')  = COALESCE(v_line.batch_number, '')
-    AND COALESCE(s.expiry_date, DATE '0001-01-01')
-        = COALESCE(v_line.expiry_date, DATE '0001-01-01')
-    AND COALESCE(s.internal_batch_reference, '') = COALESCE(v_internal, '')
-  FOR UPDATE;
+    SELECT * INTO v_stock
+    FROM public.warehouse_stock s
+    WHERE s.warehouse_id = v_shipment.destination_warehouse_id
+      AND s.scientific_name = v_line.scientific_name
+      AND COALESCE(s.concentration, '') = COALESCE(v_line.concentration, '')
+      AND COALESCE(s.dosage_form, '')   = COALESCE(v_line.dosage_form, '')
+      AND COALESCE(s.national_code, '') = COALESCE(v_line.national_code, '')
+      AND COALESCE(s.batch_number, '')  = COALESCE(v_line.batch_number, '')
+      AND COALESCE(s.expiry_date, DATE '0001-01-01')
+          = COALESCE(v_line.expiry_date, DATE '0001-01-01')
+      AND COALESCE(s.internal_batch_reference, '') = COALESCE(v_internal, '')
+    FOR UPDATE;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'destination_stock_identity_resolution_failed' USING ERRCODE = 'P0002';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'destination_stock_identity_resolution_failed' USING ERRCODE = 'P0002';
+    END IF;
+
+    v_before := v_stock.on_hand_quantity;
+    v_after  := v_before + p_received_quantity;
+
+    UPDATE public.warehouse_stock
+       SET on_hand_quantity = v_after,
+           central_item_id  = COALESCE(v_stock.central_item_id, v_line.central_item_id),
+           updated_by       = v_actor
+     WHERE id = v_stock.id;
+
+    UPDATE public.warehouse_return_shipment_lines
+       SET status = v_status,
+           received_quantity = p_received_quantity,
+           difference_reason = v_reason,
+           received_by = v_actor,
+           received_at = now(),
+           disposition = 'restockable',
+           custody_state = 'destination_stock',
+           resulting_warehouse_stock_id = v_stock.id
+     WHERE id = v_line.id;
+
+    INSERT INTO public.warehouse_stock_movements (
+      warehouse_stock_id, organization_id, warehouse_id, movement_type,
+      on_hand_before, on_hand_delta, on_hand_after,
+      reserved_before, reserved_delta, reserved_after,
+      reason, reference_type, reference_id, request_fingerprint,
+      source_document_number, actor_id, actor_role, actor_name,
+      scientific_name_snapshot, concentration_snapshot,
+      dosage_form_snapshot, batch_number_snapshot,
+      internal_batch_reference_snapshot
+    ) VALUES (
+      v_stock.id, v_stock.organization_id, v_stock.warehouse_id, 'add',
+      v_before, p_received_quantity, v_after,
+      v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
+      'warehouse_transfer_return', 'warehouse_return_receive', p_request_id, v_fingerprint,
+      v_shipment.document_number, v_actor, v_actor_role, v_actor_name,
+      v_stock.scientific_name, v_stock.concentration,
+      v_stock.dosage_form, v_stock.batch_number,
+      v_stock.internal_batch_reference
+    )
+    RETURNING id INTO v_movement_id;
+  ELSE
+    -- ---- QUARANTINED: credit the non-dispensable warehouse_quarantine_stock ----
+    INSERT INTO public.warehouse_quarantine_stock (
+      organization_id, warehouse_id, central_item_id,
+      scientific_name, trade_name, concentration, dosage_form, unit,
+      national_code, has_no_national_code,
+      batch_number, has_no_batch_number, internal_batch_reference,
+      expiry_date, quarantine_reason, quantity, created_by, updated_by
+    ) VALUES (
+      v_shipment.destination_organization_id, v_shipment.destination_warehouse_id,
+      v_line.central_item_id,
+      v_line.scientific_name, v_line.trade_name, v_line.concentration,
+      v_line.dosage_form, v_line.unit,
+      v_line.national_code, v_line.has_no_national_code,
+      v_line.batch_number, v_line.has_no_batch_number, v_internal,
+      v_line.expiry_date,
+      CASE WHEN v_objectively_expired AND v_reason_code IS DISTINCT FROM 'expired'
+           THEN 'expired' ELSE COALESCE(v_reason_code, 'other') END,
+      0, v_actor, v_actor
+    )
+    ON CONFLICT DO NOTHING;
+
+    SELECT * INTO v_quarantine
+    FROM public.warehouse_quarantine_stock q
+    WHERE q.warehouse_id = v_shipment.destination_warehouse_id
+      AND q.scientific_name = v_line.scientific_name
+      AND COALESCE(q.concentration, '') = COALESCE(v_line.concentration, '')
+      AND COALESCE(q.dosage_form, '')   = COALESCE(v_line.dosage_form, '')
+      AND COALESCE(q.national_code, '') = COALESCE(v_line.national_code, '')
+      AND COALESCE(q.batch_number, '')  = COALESCE(v_line.batch_number, '')
+      AND COALESCE(q.expiry_date, DATE '0001-01-01')
+          = COALESCE(v_line.expiry_date, DATE '0001-01-01')
+      AND COALESCE(q.internal_batch_reference, '') = COALESCE(v_internal, '')
+      AND q.quarantine_reason = (
+            CASE WHEN v_objectively_expired AND v_reason_code IS DISTINCT FROM 'expired'
+                 THEN 'expired' ELSE COALESCE(v_reason_code, 'other') END)
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'destination_quarantine_identity_resolution_failed' USING ERRCODE = 'P0002';
+    END IF;
+
+    v_before := v_quarantine.quantity;
+    v_after  := v_before + p_received_quantity;
+
+    UPDATE public.warehouse_quarantine_stock
+       SET quantity = v_after, updated_by = v_actor
+     WHERE id = v_quarantine.id;
+
+    UPDATE public.warehouse_return_shipment_lines
+       SET status = v_status,
+           received_quantity = p_received_quantity,
+           difference_reason = v_reason,
+           received_by = v_actor,
+           received_at = now(),
+           disposition = 'quarantined',
+           custody_state = 'destination_quarantine',
+           resulting_quarantine_stock_id = v_quarantine.id
+     WHERE id = v_line.id;
+
+    INSERT INTO public.warehouse_quarantine_stock_movements (
+      quarantine_stock_id, organization_id, warehouse_id, movement_type,
+      quantity_before, quantity_delta, quantity_after,
+      reason, reference_type, reference_id, request_fingerprint,
+      source_document_number, actor_id, actor_role, actor_name,
+      scientific_name_snapshot, concentration_snapshot,
+      dosage_form_snapshot, batch_number_snapshot,
+      internal_batch_reference_snapshot
+    ) VALUES (
+      v_quarantine.id, v_quarantine.organization_id, v_quarantine.warehouse_id, 'quarantine_receive',
+      v_before, p_received_quantity, v_after,
+      'warehouse_transfer_return', 'warehouse_return_quarantine_receive', p_request_id, v_fingerprint,
+      v_shipment.document_number, v_actor, v_actor_role, v_actor_name,
+      v_quarantine.scientific_name, v_quarantine.concentration,
+      v_quarantine.dosage_form, v_quarantine.batch_number,
+      v_quarantine.internal_batch_reference
+    )
+    RETURNING id INTO v_movement_id;
   END IF;
 
-  v_before := v_stock.on_hand_quantity;
-  v_after  := v_before + p_received_quantity;
-
-  UPDATE public.warehouse_stock
-     SET on_hand_quantity = v_after,
-         central_item_id  = COALESCE(v_stock.central_item_id, v_line.central_item_id),
-         updated_by       = v_actor
-   WHERE id = v_stock.id;
-
-  UPDATE public.warehouse_return_shipment_lines
-     SET status = v_status,
-         received_quantity = p_received_quantity,
-         difference_reason = v_reason,
-         received_by = v_actor,
-         received_at = now(),
-         resulting_warehouse_stock_id = v_stock.id
-   WHERE id = v_line.id;
-
+  -- Shared tail: both dispositions reach here having credited exactly one
+  -- balance and set exactly one resulting_* pointer.
   UPDATE public.warehouse_return_shipments
      SET status = CASE WHEN NOT EXISTS (
                          SELECT 1 FROM public.warehouse_return_shipment_lines x
@@ -1825,40 +2259,32 @@ BEGIN
                        THEN 'received' ELSE 'partially_received' END
    WHERE id = v_shipment.id;
 
-  INSERT INTO public.warehouse_stock_movements (
-    warehouse_stock_id, organization_id, warehouse_id, movement_type,
-    on_hand_before, on_hand_delta, on_hand_after,
-    reserved_before, reserved_delta, reserved_after,
-    reason, reference_type, reference_id, request_fingerprint,
-    source_document_number, actor_id, actor_role, actor_name,
-    scientific_name_snapshot, concentration_snapshot,
-    dosage_form_snapshot, batch_number_snapshot,
-    internal_batch_reference_snapshot
-  ) VALUES (
-    v_stock.id, v_stock.organization_id, v_stock.warehouse_id, 'add',
-    v_before, p_received_quantity, v_after,
-    v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
-    'warehouse_transfer_return', 'warehouse_return_receive', p_request_id, v_fingerprint,
-    v_shipment.document_number, v_actor, v_actor_role, v_actor_name,
-    v_stock.scientific_name, v_stock.concentration,
-    v_stock.dosage_form, v_stock.batch_number,
-    v_stock.internal_batch_reference
-  )
-  RETURNING id INTO v_movement_id;
+  -- return_received_quantity is a SEPARATE counter from returned_quantity
+  -- (which SEND owns) — counts what actually reached custody at central,
+  -- whichever balance it landed in. Never exceeds returned_quantity
+  -- (wtl_return_received_qty_chk), itself never exceeding received_quantity
+  -- (wtl_returned_qty_chk) — the chain is transitively capped at the source.
+  UPDATE public.warehouse_transfer_lines
+     SET return_received_quantity = return_received_quantity + p_received_quantity
+   WHERE id = v_orig.id;
 
   INSERT INTO public.audit_logs (
     organization_id, actor_id, actor_role,
     action, entity_type, entity_id, entity_label, payload
   ) VALUES (
     v_shipment.destination_organization_id, v_actor, v_actor_role,
-    'warehouse_transfer.return_receive', 'warehouse_stock', v_stock.id,
-    v_stock.scientific_name,
+    'warehouse_transfer.return_receive',
+    CASE WHEN v_disposition = 'restockable' THEN 'warehouse_stock' ELSE 'warehouse_quarantine_stock' END,
+    COALESCE(v_stock.id, v_quarantine.id),
+    v_line.scientific_name,
     jsonb_build_object(
       'request_id', p_request_id,
       'shipment_id', v_shipment.id,
       'shipment_line_id', v_line.id,
       'movement_id', v_movement_id,
       'line_status', v_status,
+      'disposition', v_disposition,
+      'custody_state', v_custody,
       'sent_quantity', v_line.sent_quantity,
       'quantity_before', v_before,
       'quantity_delta', p_received_quantity,
@@ -1870,8 +2296,11 @@ BEGIN
   RETURN jsonb_build_object(
     'ok', true, 'idempotent_replay', false,
     'line_status', v_status,
+    'disposition', v_disposition,
+    'custody_state', v_custody,
     'shipment_id', v_shipment.id,
     'warehouse_stock_id', v_stock.id,
+    'quarantine_stock_id', v_quarantine.id,
     'movement_id', v_movement_id,
     'quantity_before', v_before,
     'quantity_delta', p_received_quantity,
@@ -1881,7 +2310,7 @@ END;
 $$;
 
 -- ============================================================================
--- 11. Function privileges
+-- 12. Function privileges
 -- ============================================================================
 REVOKE ALL ON FUNCTION public.phoenix_request_warehouse_return(
   uuid, uuid, text, text) FROM PUBLIC, anon;
@@ -1924,9 +2353,9 @@ GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_return_shipment_line(
   uuid, uuid, uuid, integer, text, text, text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.phoenix_receive_warehouse_return_shipment_line(
-  uuid, uuid, integer, text, text) FROM PUBLIC, anon;
+  uuid, uuid, integer, text, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.phoenix_receive_warehouse_return_shipment_line(
-  uuid, uuid, integer, text, text) TO authenticated;
+  uuid, uuid, integer, text, text, text) TO authenticated;
 
 COMMENT ON FUNCTION public.phoenix_send_warehouse_return_shipment_line(
   uuid, uuid, uuid, integer, text, text, text) IS
@@ -1936,14 +2365,19 @@ COMMENT ON FUNCTION public.phoenix_send_warehouse_return_shipment_line(
   'expired batches — see file header.';
 
 COMMENT ON FUNCTION public.phoenix_receive_warehouse_return_shipment_line(
-  uuid, uuid, integer, text, text) IS
+  uuid, uuid, integer, text, text, text) IS
   'INSTITUTION-TO-CENTRAL-RETURN-069-A: idempotent receipt at central. Requires '
   'warehouse_transfer.return_receive scoped to the central (route source) '
   'warehouse. No route/is_active dependency — completing an in-transit return '
-  'must not depend on current route state.';
+  'must not depend on current route state. Classifies every accepted quantity '
+  'as restockable (credited to warehouse_stock) or quarantined (credited to '
+  'warehouse_quarantine_stock) — expired/damaged/recalled/quality_issue/'
+  'temperature_excursion are mandatory quarantine, never client-overridable; '
+  'near_expiry requires an explicit p_disposition_decision from the authorized '
+  'receiver.';
 
 -- ============================================================================
--- 12. RLS
+-- 13. RLS
 -- ============================================================================
 ALTER TABLE public.warehouse_return_requests      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.warehouse_return_request_lines  ENABLE ROW LEVEL SECURITY;
@@ -1964,6 +2398,47 @@ REVOKE ALL ON TABLE public.warehouse_return_requests      FROM anon;
 REVOKE ALL ON TABLE public.warehouse_return_request_lines FROM anon;
 REVOKE ALL ON TABLE public.warehouse_return_shipments      FROM anon;
 REVOKE ALL ON TABLE public.warehouse_return_shipment_lines FROM anon;
+
+-- Quarantine: same read-only-to-authenticated, nothing-to-anon contract.
+-- Visible to whoever can receive or review a return at that warehouse —
+-- the same two roles who could ever have caused a row to exist here.
+ALTER TABLE public.warehouse_quarantine_stock           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.warehouse_quarantine_stock_movements  ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT ON TABLE public.warehouse_quarantine_stock          TO authenticated;
+GRANT SELECT ON TABLE public.warehouse_quarantine_stock_movements TO authenticated;
+
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.warehouse_quarantine_stock          FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.warehouse_quarantine_stock_movements FROM authenticated;
+
+REVOKE ALL ON TABLE public.warehouse_quarantine_stock          FROM anon;
+REVOKE ALL ON TABLE public.warehouse_quarantine_stock_movements FROM anon;
+
+DROP POLICY IF EXISTS wqs_select_scoped ON public.warehouse_quarantine_stock;
+CREATE POLICY wqs_select_scoped
+  ON public.warehouse_quarantine_stock FOR SELECT TO authenticated
+  USING (
+    auth.uid() IS NOT NULL AND (
+      public.phoenix_my_role() = 'super_admin'
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'warehouse_transfer.return_receive', organization_id, warehouse_id, NULL)
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'warehouse_transfer.review_return', organization_id, warehouse_id, NULL)
+    )
+  );
+
+DROP POLICY IF EXISTS wqsm_select_scoped ON public.warehouse_quarantine_stock_movements;
+CREATE POLICY wqsm_select_scoped
+  ON public.warehouse_quarantine_stock_movements FOR SELECT TO authenticated
+  USING (
+    auth.uid() IS NOT NULL AND (
+      public.phoenix_my_role() = 'super_admin'
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'warehouse_transfer.return_receive', organization_id, warehouse_id, NULL)
+      OR public.phoenix_profile_has_scoped_permission(
+           auth.uid(), 'warehouse_transfer.review_return', organization_id, warehouse_id, NULL)
+    )
+  );
 
 CREATE OR REPLACE FUNCTION public.phoenix_can_read_warehouse_return(
   p_source_organization_id      uuid,
@@ -2045,7 +2520,7 @@ CREATE POLICY wrsl_select_scoped
             t.destination_organization_id, t.destination_warehouse_id)));
 
 -- ============================================================================
--- 13. POST-CONDITIONS — proven, not asserted
+-- 14. POST-CONDITIONS — proven, not asserted
 -- ============================================================================
 DO $verify$
 DECLARE
@@ -2055,7 +2530,8 @@ BEGIN
   -- 13a. New objects exist.
   FOREACH v_def IN ARRAY ARRAY[
     'public.warehouse_return_requests', 'public.warehouse_return_request_lines',
-    'public.warehouse_return_shipments', 'public.warehouse_return_shipment_lines'
+    'public.warehouse_return_shipments', 'public.warehouse_return_shipment_lines',
+    'public.warehouse_quarantine_stock', 'public.warehouse_quarantine_stock_movements'
   ] LOOP
     IF to_regclass(v_def) IS NULL THEN
       RAISE EXCEPTION 'ABORT 069: % was not created.', v_def;
@@ -2078,10 +2554,16 @@ BEGIN
   END LOOP;
 
   -- 13d. Quantities cannot lie: over-fulfilment / over-approval / over-return.
+  -- wtl_return_received_qty_chk keeps the two SEPARATE counters (committed
+  -- vs actually-received) from ever inverting; wrsl_disposition_chk/
+  -- wrsl_custody_state_chk keep the conservation state machine (which
+  -- balance, and where it physically sits) structurally honest.
   FOREACH v_def IN ARRAY ARRAY[
     'wrsl_received_le_sent_chk','wrrl_fulfilled_le_requested_chk',
     'wrrl_fulfilled_le_approved_chk','wrrl_approved_qty_chk',
-    'wrrl_fulfilled_requires_approval_chk','wtl_returned_qty_chk'
+    'wrrl_fulfilled_requires_approval_chk','wtl_returned_qty_chk',
+    'wtl_return_received_qty_chk','wrsl_disposition_chk','wrsl_custody_state_chk',
+    'wrsl_decision_chk','wrsl_conservation_eq_chk','wqs_quantity_nonneg_chk','wqs_reason_chk'
   ] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname=v_def) THEN
       RAISE EXCEPTION 'ABORT 069: missing structural quantity guard: %', v_def;
@@ -2104,7 +2586,7 @@ BEGIN
   -- route FOR SHARE, learned from 068's live-apply fix).
   FOREACH v_def IN ARRAY ARRAY[
     'public.phoenix_send_warehouse_return_shipment_line(uuid,uuid,uuid,integer,text,text,text)',
-    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'
+    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'
   ] LOOP
     ASSERT pg_get_functiondef(v_def::regprocedure) LIKE '%SECURITY DEFINER%',
       'VERIFY FAILED (069): not SECURITY DEFINER: ' || v_def;
@@ -2132,7 +2614,7 @@ BEGIN
   -- 13h. RECEIVE has zero dependency on route state — an in-transit return
   -- must be completable regardless of the route's current activity.
   ASSERT pg_get_functiondef(
-    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)
+    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure)
     NOT LIKE '%warehouse_supply_routes%',
     'VERIFY FAILED (069): return-receive must not depend on route state';
 
@@ -2143,26 +2625,51 @@ BEGIN
     NOT LIKE '%expiry_date < current_date%',
     'VERIFY FAILED (069): return-send must not refuse expired batches';
 
-  -- 13i2. ...but RECEIVE must refuse to credit ANY balance for an
-  -- expired-at-receipt or quality-flagged batch — the quarantine model is
-  -- 071's job, not a reason to let it become dispensable stock here.
-  ASSERT pg_get_functiondef(
-    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)
-    LIKE '%expiry_date < current_date%'
-    AND pg_get_functiondef(
-    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)
-    LIKE '%quality_issue%',
-    'VERIFY FAILED (069): return-receive does not guard against crediting an expired/quality-flagged batch';
+  -- 13i2. RECEIVE must classify EVERY accepted quantity as restockable or
+  -- quarantined — never a silent, undifferentiated credit to on_hand. All
+  -- five mandatory-quarantine reasons must be named explicitly, and
+  -- near_expiry must require an explicit decision, not a default.
+  DECLARE
+    v_receive_body text := pg_get_functiondef(
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure);
+  BEGIN
+    ASSERT v_receive_body LIKE '%v_objectively_expired%' AND v_receive_body LIKE '%v_mandatory_quarantine%',
+      'VERIFY FAILED (069): return-receive does not classify disposition at all';
+    FOREACH v_def IN ARRAY ARRAY[
+      'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion'
+    ] LOOP
+      ASSERT v_receive_body LIKE '%''' || v_def || '''%',
+        'VERIFY FAILED (069): return-receive is missing the mandatory-quarantine reason: ' || v_def;
+    END LOOP;
+    ASSERT v_receive_body LIKE '%near_expiry_return_requires_explicit_disposition_decision%',
+      'VERIFY FAILED (069): near_expiry does not require an explicit disposition decision';
+    ASSERT v_receive_body NOT LIKE '%requires_quarantine_disposition_deferred_to_071%',
+      'VERIFY FAILED (069): the old block-and-refuse guard was not fully replaced by classification';
+  END;
 
-  -- 13i3. The quarantine guard must sit BEFORE the warehouse_stock INSERT —
-  -- a guard placed after the credit would be worthless.
-  ASSERT position('requires_quarantine_disposition_deferred_to_071' in
+  -- 13i3. Classification must be decided BEFORE either credit branch runs —
+  -- a classification computed after the fact would be worthless.
+  ASSERT position('v_mandatory_quarantine :=' in
     pg_get_functiondef(
-      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure))
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure))
     < position('INSERT INTO public.warehouse_stock (' in
     pg_get_functiondef(
-      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)'::regprocedure)),
-    'VERIFY FAILED (069): quarantine guard does not precede the stock credit';
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure)),
+    'VERIFY FAILED (069): disposition is not classified before the stock credit';
+  ASSERT position('v_mandatory_quarantine :=' in
+    pg_get_functiondef(
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure))
+    < position('INSERT INTO public.warehouse_quarantine_stock (' in
+    pg_get_functiondef(
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure)),
+    'VERIFY FAILED (069): disposition is not classified before the quarantine credit';
+
+  -- 13i5. A rejection never touches EITHER balance, and never silently
+  -- returns quantity to the institution's own stock.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure)
+    LIKE '%custody_state = ''exception_pending''%',
+    'VERIFY FAILED (069): a rejected return is not tracked as exception_pending';
 
   -- 13i4. Route deactivation must NOT block a legitimate historical return —
   -- none of the four route-touching RPCs may gate on is_active.
@@ -2252,7 +2759,8 @@ BEGIN
   -- 13o. anon gained nothing.
   FOREACH v_def IN ARRAY ARRAY[
     'public.warehouse_return_requests','public.warehouse_return_request_lines',
-    'public.warehouse_return_shipments','public.warehouse_return_shipment_lines'
+    'public.warehouse_return_shipments','public.warehouse_return_shipment_lines',
+    'public.warehouse_quarantine_stock','public.warehouse_quarantine_stock_movements'
   ] LOOP
     IF has_table_privilege('anon', v_def, 'SELECT') THEN
       RAISE EXCEPTION 'ABORT 069: anon can read %', v_def;
@@ -2264,11 +2772,12 @@ BEGIN
   FROM information_schema.role_table_grants
   WHERE table_schema='public'
     AND table_name IN ('warehouse_return_requests','warehouse_return_request_lines',
-                       'warehouse_return_shipments','warehouse_return_shipment_lines')
+                       'warehouse_return_shipments','warehouse_return_shipment_lines',
+                       'warehouse_quarantine_stock','warehouse_quarantine_stock_movements')
     AND grantee='authenticated'
     AND privilege_type IN ('INSERT','UPDATE','DELETE');
   ASSERT v_count = 0,
-    'VERIFY FAILED (069): authenticated holds a direct return write privilege';
+    'VERIFY FAILED (069): authenticated holds a direct return/quarantine write privilege';
 
   -- 13q. Separation of duty: the return-requester side must never be the
   -- reviewer/recaller/receiver, and vice versa.
@@ -2308,14 +2817,24 @@ BEGIN
     RAISE EXCEPTION 'ABORT 069: phoenix_upsert_availability lost authenticated EXECUTE.';
   END IF;
 
-  -- 13s. Public QR learns nothing about returns.
+  -- 13s. Public QR learns nothing about returns OR quarantine.
   SELECT pg_get_functiondef(p.oid) INTO v_def
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proname='get_public_qr_payload'
   ORDER BY p.oid DESC LIMIT 1;
   ASSERT v_def IS NOT NULL, 'VERIFY FAILED (069): public QR function missing';
-  ASSERT v_def NOT ILIKE '%warehouse_return%',
-    'VERIFY FAILED (069): return data leaked into public QR';
+  ASSERT v_def NOT ILIKE '%warehouse_return%' AND v_def NOT ILIKE '%quarantine%',
+    'VERIFY FAILED (069): return or quarantine data leaked into public QR';
+
+  -- 13t. Cancel's exact boundary, proven, not just documented: only
+  -- draft/submitted — i.e. strictly before review, and strictly before any
+  -- send — may be cancelled. Every later status (approved, partially_
+  -- approved, rejected, partially_fulfilled, fulfilled, cancelled) is
+  -- refused by this single NOT IN check.
+  ASSERT pg_get_functiondef(
+    'public.phoenix_cancel_warehouse_return_request(uuid,text)'::regprocedure)
+    LIKE '%IF v_request.status NOT IN (''draft'', ''submitted'') THEN%',
+    'VERIFY FAILED (069): cancel does not stop precisely at draft/submitted';
 
   RAISE NOTICE '069 verified: institution->central return reuses 066''s route in '
     'reverse, is bidirectionally initiable but always institution-sent/'

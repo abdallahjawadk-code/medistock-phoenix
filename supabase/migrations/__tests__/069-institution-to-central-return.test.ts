@@ -207,7 +207,7 @@ describe('5. return request lines are pinned to original_transfer_line_id', () =
   it('has a reason_code CHECK constraint', () => {
     expect(norm069).toContain('wrrl_reason_code_chk');
     expect(norm069).toMatch(
-      /CHECK \(reason_code IN \('excess', 'wrong_item', 'near_expiry', 'expired', 'quality_issue', 'recall', 'other'\)\)/,
+      /CHECK \(reason_code IN \(\s*'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged',\s*'recalled', 'quality_issue', 'temperature_excursion', 'other'\s*\)\)/,
     );
   });
 });
@@ -233,6 +233,33 @@ describe('6. quantity ceilings are structural, not just RPC promises', () => {
   it('the shipment-line decision CHECK mirrors 068\'s wtl_decision_chk exactly', () => {
     expect(norm069).toContain('wrsl_decision_chk');
     expect(norm069).toMatch(/received_quantity = sent_quantity AND received_at IS NOT NULL/);
+  });
+
+  it('a literal conservation equation is a structural CHECK, not just implied', () => {
+    expect(norm069).toContain('wrsl_conservation_eq_chk');
+    expect(norm069).toMatch(
+      /CONSTRAINT wrsl_conservation_eq_chk\s+CHECK \(\s*status = 'in_transit'\s+OR sent_quantity =/,
+    );
+    // Every resolved-status term appears exactly once in the sum, so no
+    // quantity can be counted twice or dropped: restockable, quarantined,
+    // rejected (the WHOLE sent amount), and the documented difference.
+    expect(norm069).toMatch(/disposition = 'restockable'\s*\n?\s*THEN received_quantity ELSE 0 END\)/);
+    expect(norm069).toMatch(/disposition = 'quarantined'\s*\n?\s*THEN received_quantity ELSE 0 END\)/);
+    expect(norm069).toMatch(/WHEN status = 'rejected' THEN sent_quantity ELSE 0 END/);
+    expect(norm069).toMatch(
+      /WHEN status = 'received_with_difference'\s*\n?\s*THEN sent_quantity - received_quantity ELSE 0 END/,
+    );
+  });
+
+  it('warehouse_transfer_lines materializes a third, unresolved counter as a generated column', () => {
+    expect(norm069).toContain('return_unresolved_quantity');
+    expect(norm069).toMatch(
+      /ADD COLUMN return_unresolved_quantity integer\s+GENERATED ALWAYS AS \(returned_quantity - return_received_quantity\) STORED/,
+    );
+  });
+
+  it('the conservation CHECK is a proven post-condition, not just present in source', () => {
+    expect(m069).toContain("'wrsl_conservation_eq_chk'");
   });
 });
 
@@ -650,6 +677,8 @@ describe('17. 069 breaks nothing that exists today', () => {
       'public.warehouse_return_request_lines',
       'public.warehouse_return_shipments',
       'public.warehouse_return_shipment_lines',
+      'public.warehouse_quarantine_stock',
+      'public.warehouse_quarantine_stock_movements',
       'public.phoenix_request_warehouse_return',
       'public.phoenix_recall_warehouse_transfer',
       'public.phoenix_add_warehouse_return_request_line',
@@ -706,7 +735,7 @@ describe('17. 069 breaks nothing that exists today', () => {
 
   it('the public QR path stays untouched and leaks nothing about returns', () => {
     expect(exec069).not.toMatch(/CREATE OR REPLACE FUNCTION public\.get_public_qr_payload/);
-    expect(m069).toContain('VERIFY FAILED (069): return data leaked into public QR');
+    expect(m069).toContain('VERIFY FAILED (069): return or quarantine data leaked into public QR');
   });
 
   it('068\'s SEND RPC retains authenticated EXECUTE (post-condition proves it, not just assumes it)', () => {
@@ -750,7 +779,7 @@ describe('19. 069 states its own contract at apply time (unexecuted)', () => {
       'ABORT 069: return route enforcement is not a composite FK',
       'ABORT 069: return idempotency index missing',
       'ABORT 069: anon can read',
-      'VERIFY FAILED (069): authenticated holds a direct return write privilege',
+      'VERIFY FAILED (069): authenticated holds a direct return/quarantine write privilege',
     ]) {
       expect(m069, assertion).toContain(assertion);
     }
@@ -761,7 +790,7 @@ describe('19. 069 states its own contract at apply time (unexecuted)', () => {
       'public.phoenix_send_warehouse_return_shipment_line(uuid,uuid,uuid,integer,text,text,text)',
     );
     expect(m069).toContain(
-      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text)',
+      'public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)',
     );
   });
 });
@@ -833,65 +862,411 @@ describe('20. route deactivation does not block request/recall/submit/send of a 
 // must refuse to accept such a batch into inventory rather than improvise a
 // temporary representation that would have to be redesigned later.
 
-describe('21. RECEIVE refuses to credit an expired or quality-flagged return into dispensable stock', () => {
-  it('refuses a batch that is expired at receipt time, before any stock mutation', () => {
+// ============================================================================
+// 21. RECEIVE classifies restockable vs quarantined — never a dead end
+// ============================================================================
+// An earlier revision simply REFUSED to complete receipt of an expired/
+// quality-flagged return, which meant SEND could accept a batch RECEIVE
+// could never resolve — stock stuck in_transit forever. Fixed in review:
+// RECEIVE now classifies every accepted quantity into exactly one of two
+// balances and credits the correct one, always.
+
+describe('21. RECEIVE classifies every accepted quantity as restockable or quarantined', () => {
+  const MANDATORY_QUARANTINE_REASONS = [
+    'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion',
+  ] as const;
+
+  it('the old block-and-refuse guard is gone — no dead-end error text remains anywhere', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    expect(body).toContain('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
-    expect(body).toMatch(/IF v_line\.expiry_date IS NOT NULL AND v_line\.expiry_date < current_date THEN/);
+    expect(body).not.toContain('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
+    expect(body).not.toContain('return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071');
+    expect(body).not.toContain('requires_quarantine_disposition_deferred_to_071');
   });
 
-  it('refuses a batch whose ORIGINAL return reason was quality_issue, joined back to the request line', () => {
+  it('classifies objectively-expired-at-receipt as mandatory quarantine, independent of stated reason', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    expect(body).toContain('return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071');
     expect(body).toMatch(
-      /SELECT 1 FROM public\.warehouse_return_request_lines rl\s+WHERE rl\.id = v_line\.return_request_line_id AND rl\.reason_code = 'quality_issue'/,
+      /v_objectively_expired := v_line\.expiry_date IS NOT NULL AND v_line\.expiry_date < current_date/,
+    );
+    expect(body).toMatch(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN/);
+  });
+
+  it('every mandatory-quarantine reason is named explicitly — none can be missed silently', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    for (const reason of MANDATORY_QUARANTINE_REASONS) {
+      expect(body, reason).toMatch(new RegExp(`v_reason_code IN \\([^)]*'${reason}'`));
+    }
+  });
+
+  it('the client CANNOT override a mandatory-quarantine reason via p_disposition_decision', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    // p_disposition_decision is only read inside the near_expiry ELSIF
+    // branch — never inside the v_mandatory_quarantine branch.
+    const mandatoryBranch = body.slice(
+      body.indexOf('IF v_mandatory_quarantine THEN'),
+      body.indexOf('ELSIF v_reason_code'),
+    );
+    expect(mandatoryBranch).not.toContain('p_disposition_decision');
+    expect(mandatoryBranch).toContain("v_disposition := 'quarantined'");
+  });
+
+  it('near_expiry requires an explicit p_disposition_decision — no silent default', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toContain('near_expiry_return_requires_explicit_disposition_decision');
+    expect(body).toMatch(
+      /ELSIF v_reason_code = 'near_expiry' THEN\s+IF p_disposition_decision IS NULL THEN/,
     );
   });
 
-  it('both guards are placed BEFORE the warehouse_stock INSERT — a guard after the credit would be worthless', () => {
+  it('excess/shipment_error/other default to restockable when not objectively expired', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    const expiredGuardIdx = body.indexOf('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
-    const qualityGuardIdx = body.indexOf('return_receipt_of_quality_flagged_batch_requires_quarantine_disposition_deferred_to_071');
-    const insertIdx = body.indexOf('INSERT INTO public.warehouse_stock (');
-    expect(expiredGuardIdx).toBeGreaterThan(-1);
-    expect(qualityGuardIdx).toBeGreaterThan(-1);
-    expect(insertIdx).toBeGreaterThan(-1);
-    expect(expiredGuardIdx).toBeLessThan(insertIdx);
-    expect(qualityGuardIdx).toBeLessThan(insertIdx);
+    expect(body).toMatch(/ELSE\s+v_disposition := 'restockable';\s+END IF;/);
   });
 
-  it('rejection (received_quantity = 0) is NOT gated by the quarantine guard — central can always refuse a return outright', () => {
+  it('classification happens BEFORE either credit branch — restockable and quarantine both', () => {
     const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
-    const rejectIdx = body.indexOf("IF p_received_quantity = 0 THEN");
+    const classifyIdx = body.indexOf('v_mandatory_quarantine := v_objectively_expired');
+    const stockInsertIdx = body.indexOf('INSERT INTO public.warehouse_stock (');
+    const quarantineInsertIdx = body.indexOf('INSERT INTO public.warehouse_quarantine_stock (');
+    expect(classifyIdx).toBeGreaterThan(-1);
+    expect(stockInsertIdx).toBeGreaterThan(-1);
+    expect(quarantineInsertIdx).toBeGreaterThan(-1);
+    expect(classifyIdx).toBeLessThan(stockInsertIdx);
+    expect(classifyIdx).toBeLessThan(quarantineInsertIdx);
+  });
+
+  it('restockable credits warehouse_stock.on_hand_quantity; quarantined credits warehouse_quarantine_stock.quantity — never both, never neither', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/IF v_disposition = 'restockable' THEN[\s\S]*UPDATE public\.warehouse_stock/);
+    expect(body).toMatch(/ELSE[\s\S]*UPDATE public\.warehouse_quarantine_stock/);
+  });
+
+  it('rejection (received_quantity = 0) touches NEITHER balance and is tracked exception_pending', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const rejectIdx = body.indexOf('IF p_received_quantity = 0 THEN');
     const rejectReturnIdx = body.indexOf('RETURN jsonb_build_object', rejectIdx);
-    const expiredGuardIdx = body.indexOf('return_receipt_of_expired_batch_requires_quarantine_disposition_deferred_to_071');
-    // The rejection branch RETURNs before the guard is ever reached.
+    const classifyIdx = body.indexOf('v_mandatory_quarantine := v_objectively_expired');
     expect(rejectIdx).toBeGreaterThan(-1);
     expect(rejectReturnIdx).toBeGreaterThan(rejectIdx);
-    expect(rejectReturnIdx).toBeLessThan(expiredGuardIdx);
+    // The rejection branch RETURNs before classification is ever reached.
+    expect(rejectReturnIdx).toBeLessThan(classifyIdx);
+    expect(body.slice(rejectIdx, rejectReturnIdx)).toContain("custody_state = 'exception_pending'");
+    expect(body.slice(rejectIdx, rejectReturnIdx)).not.toContain('warehouse_stock');
+    expect(body.slice(rejectIdx, rejectReturnIdx)).not.toContain('warehouse_quarantine_stock');
   });
 
-  it('no code path anywhere in 069 credits on_hand_quantity for an expired or quality-flagged return', () => {
-    // The ONLY place warehouse_stock.on_hand_quantity is credited on the
-    // return-receive path is after both guards, meaning an expired/
-    // quality-flagged batch can never reach it (already proven above by
-    // ordering) — this test additionally proves there is no SECOND,
-    // alternate credit path elsewhere in the file that bypasses the guard.
+  it('a rejected return is never silently sent back to the institution\'s own warehouse_stock', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const rejectIdx = body.indexOf('IF p_received_quantity = 0 THEN');
+    const rejectReturnIdx = body.indexOf('RETURN jsonb_build_object', rejectIdx);
+    expect(body.slice(rejectIdx, rejectReturnIdx)).not.toMatch(/UPDATE public\.warehouse_stock/);
+  });
+
+  it('no code path anywhere in 069 credits warehouse_stock.on_hand_quantity except the restockable branch', () => {
     const creditSites = [...exec069.matchAll(/SET on_hand_quantity = v_after/g)];
-    expect(creditSites.length).toBe(2); // one in SEND (debit), one in RECEIVE (credit)
+    expect(creditSites.length).toBe(2); // one in SEND (debit), one in RECEIVE restockable (credit)
   });
 
-  it('the file header documents this as a deliberate temporary limitation, not a workaround', () => {
-    expect(m069).toContain('This is a deliberate temporary limitation, not a workaround');
+  it('quarantine crediting happens exactly once in the whole file', () => {
+    const creditSites = [...exec069.matchAll(/SET quantity = v_after, updated_by = v_actor/g)];
+    expect(creditSites.length).toBe(1);
+  });
+
+  it('idempotency replay checks BOTH ledgers — a prior quarantine credit must not be re-creditable as restockable, or vice versa', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/FROM public\.warehouse_stock_movements m\s+WHERE m\.reference_type = 'warehouse_return_receive'/);
+    expect(body).toMatch(
+      /FROM public\.warehouse_quarantine_stock_movements m\s+WHERE m\.reference_type = 'warehouse_return_quarantine_receive'/,
+    );
+  });
+
+  it('the quarantine ledger reuses the SAME fingerprint/idempotency discipline as every other movement', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toContain("'quarantine_receive'");
+    expect(body).toMatch(/INSERT INTO public\.warehouse_quarantine_stock_movements[\s\S]*RETURNING id INTO v_movement_id/);
+  });
+
+  it('the file header documents this as the fixed design, not the old dead-end limitation', () => {
+    expect(m069).toContain('An earlier revision of this file simply REFUSED');
     expect(m069.toLowerCase()).toContain('quarantine');
+    expect(m069).not.toContain('This is a deliberate temporary limitation, not a workaround');
   });
 
-  it('the post-conditions assert both guards exist and precede the stock credit', () => {
+  it('the post-conditions assert classification exists and precedes both credit branches', () => {
     expect(m069).toContain(
-      'VERIFY FAILED (069): return-receive does not guard against crediting an expired/quality-flagged batch',
+      'VERIFY FAILED (069): return-receive does not classify disposition at all',
     );
     expect(m069).toContain(
-      'VERIFY FAILED (069): quarantine guard does not precede the stock credit',
+      'VERIFY FAILED (069): disposition is not classified before the stock credit',
     );
+    expect(m069).toContain(
+      'VERIFY FAILED (069): disposition is not classified before the quarantine credit',
+    );
+  });
+});
+
+// ============================================================================
+// 22. warehouse_quarantine_stock — non-dispensable, RLS-scoped, no client write
+// ============================================================================
+
+describe('22. warehouse_quarantine_stock is structurally isolated from ordinary stock', () => {
+  it('is a SEPARATE table, never a flag/column on warehouse_stock', () => {
+    expect(exec069).not.toMatch(/ALTER TABLE public\.warehouse_stock ADD COLUMN \w*quarantine\w*/i);
+    expect(norm069).toMatch(/CREATE TABLE IF NOT EXISTS public\.warehouse_quarantine_stock/);
+  });
+
+  it('quantity can never go negative', () => {
+    expect(norm069).toContain('wqs_quantity_nonneg_chk');
+    expect(norm069).toMatch(/CHECK \(quantity >= 0\)/);
+  });
+
+  it('quarantine_reason is a closed, structural vocabulary', () => {
+    expect(norm069).toContain('wqs_reason_chk');
+    expect(norm069).toMatch(
+      /CHECK \(quarantine_reason IN \(\s*'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other'\s*\)\)/,
+    );
+  });
+
+  it('identity includes quarantine_reason — two different reasons for the same batch never silently merge', () => {
+    expect(norm069).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS wqs_identity_uniq\s+ON public\.warehouse_quarantine_stock \([\s\S]*?quarantine_reason[\s\S]*?\);/,
+    );
+  });
+
+  it('RLS is enabled, authenticated is SELECT-only, anon has nothing', () => {
+    for (const t of ['warehouse_quarantine_stock', 'warehouse_quarantine_stock_movements']) {
+      expect(norm069).toMatch(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`));
+      expect(norm069).toMatch(new RegExp(`GRANT SELECT ON TABLE public\\.${t}\\s+TO authenticated`));
+      expect(norm069).toMatch(
+        new RegExp(`REVOKE INSERT, UPDATE, DELETE ON TABLE public\\.${t}\\s+FROM authenticated`),
+      );
+      expect(norm069).toMatch(new RegExp(`REVOKE ALL ON TABLE public\\.${t}\\s+FROM anon`));
+    }
+  });
+
+  it('the movement_type CHECK pre-seeds release/destroy/correction for 071, exactly like 060 pre-seeded dispatch_return for 069', () => {
+    expect(norm069).toContain('wqsm_type_chk');
+    expect(norm069).toMatch(
+      /CHECK \(movement_type IN \(\s*'quarantine_receive', 'quarantine_release', 'quarantine_destroy', 'quarantine_correction'\s*\)\)/,
+    );
+  });
+
+  it('only quarantine_receive is ever written by any RPC in this file', () => {
+    expect(exec069).not.toContain("'quarantine_release'");
+    expect(exec069).not.toContain("'quarantine_destroy'");
+    expect(exec069).not.toContain("'quarantine_correction'");
+  });
+
+  it('the ledger enforces after = before + delta and never goes negative, same discipline as warehouse_stock_movements', () => {
+    expect(norm069).toContain('wqsm_after_eq_before_plus_delta_chk');
+    expect(norm069).toContain('wqsm_after_nonneg_chk');
+  });
+
+  it('has its own fingerprint CHECK and idempotency index, reusing the exact pattern from section 7', () => {
+    expect(norm069).toContain('wqsm_fingerprint_chk');
+    expect(norm069).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS wqsm_receive_once_uniq/);
+  });
+});
+
+// ============================================================================
+// 23. Conservation — separate counters, never one column for two meanings
+// ============================================================================
+
+describe('23. returned_quantity (committed) and return_received_quantity (actually received) are kept structurally separate', () => {
+  it('return_received_quantity is its own additive column, distinct from returned_quantity', () => {
+    expect(norm069).toMatch(
+      /ALTER TABLE public\.warehouse_transfer_lines\s+ADD COLUMN return_received_quantity integer NOT NULL DEFAULT 0/,
+    );
+  });
+
+  it('return_received_quantity can never exceed returned_quantity — received can never outrun committed', () => {
+    expect(norm069).toContain('wtl_return_received_qty_chk');
+    expect(norm069).toMatch(
+      /CHECK \(return_received_quantity >= 0 AND return_received_quantity <= returned_quantity\)/,
+    );
+  });
+
+  it('returned_quantity is incremented ONLY in SEND; return_received_quantity is incremented ONLY in RECEIVE', () => {
+    const sendBody = functionBody('phoenix_send_warehouse_return_shipment_line');
+    const receiveBody = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(sendBody).toMatch(/SET returned_quantity = returned_quantity \+ p_quantity/);
+    expect(sendBody).not.toContain('return_received_quantity');
+    expect(receiveBody).toMatch(
+      /SET return_received_quantity = return_received_quantity \+ p_received_quantity/,
+    );
+    expect(receiveBody).not.toMatch(/SET returned_quantity = returned_quantity/);
+  });
+
+  it('the transitive cap holds structurally: returned <= received, and return_received <= returned <= received', () => {
+    // wtl_returned_qty_chk:        returned_quantity        <= received_quantity
+    // wtl_return_received_qty_chk: return_received_quantity <= returned_quantity
+    // => return_received_quantity is transitively capped at received_quantity
+    //    without needing a THIRD, redundant CHECK that could drift out of sync.
+    expect(norm069).toContain('wtl_returned_qty_chk');
+    expect(norm069).toContain('wtl_return_received_qty_chk');
+  });
+
+  it('RECEIVE locks the ORIGINAL line FOR UPDATE before incrementing return_received_quantity — same discipline as SEND', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(
+      /FROM public\.warehouse_transfer_lines WHERE id = v_line\.original_transfer_line_id FOR UPDATE/,
+    );
+  });
+
+  it('RECEIVE increments return_received_quantity for EITHER disposition (restockable or quarantined) — both mean central now has custody', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const updateIdx = body.indexOf('SET return_received_quantity = return_received_quantity');
+    const restockableCreditIdx = body.indexOf("v_disposition := 'restockable'");
+    // The increment happens in the SHARED TAIL, after both branches, not
+    // duplicated inside each — so it fires exactly once regardless of which
+    // branch executed.
+    expect(updateIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeGreaterThan(restockableCreditIdx);
+    const occurrences = [...body.matchAll(/SET return_received_quantity = return_received_quantity/g)];
+    expect(occurrences.length).toBe(1);
+  });
+});
+
+// ============================================================================
+// 24. Custody — an explicit answer to "where does this quantity sit right now?"
+// ============================================================================
+
+describe('24. custody_state is explicit and exhaustive across the whole lifecycle', () => {
+  it('the four custody states are structurally closed', () => {
+    expect(norm069).toContain('wrsl_custody_state_chk');
+    expect(norm069).toMatch(
+      /CHECK \(custody_state IN \(\s*'in_transit', 'destination_stock', 'destination_quarantine', 'exception_pending'\s*\)\)/,
+    );
+  });
+
+  it('the decision CHECK ties status, disposition and custody_state together — none can drift independently', () => {
+    expect(norm069).toContain('wrsl_decision_chk');
+    expect(norm069).toMatch(/disposition = 'restockable'\s+AND custody_state = 'destination_stock'/);
+    expect(norm069).toMatch(/disposition = 'quarantined' AND custody_state = 'destination_quarantine'/);
+  });
+
+  it('in_transit is the DEFAULT custody_state — a shipment line is born in that state at SEND', () => {
+    expect(norm069).toMatch(/custody_state\s+text NOT NULL DEFAULT 'in_transit'/);
+  });
+
+  it('SEND never sets custody_state directly — the row default IS the in_transit state', () => {
+    const body = functionBody('phoenix_send_warehouse_return_shipment_line');
+    expect(body).not.toContain('custody_state');
+  });
+
+  it('every terminal RECEIVE outcome sets custody_state explicitly — never left at its default', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/custody_state = 'exception_pending'/);
+    expect(body).toMatch(/custody_state = 'destination_stock'/);
+    expect(body).toMatch(/custody_state = 'destination_quarantine'/);
+  });
+});
+
+// ============================================================================
+// 25. Concurrency and double-return protection
+// ============================================================================
+
+describe('25. row locks prevent double-return and double-receive under concurrency', () => {
+  it('ADD LINE locks the original line FOR UPDATE while computing remaining returnable quantity', () => {
+    const body = functionBody('phoenix_add_warehouse_return_request_line');
+    expect(body).toMatch(
+      /FROM public\.warehouse_transfer_lines WHERE id = p_original_transfer_line_id FOR UPDATE/,
+    );
+  });
+
+  it('SEND re-locks and re-validates the LIVE original line — a second concurrent send cannot both pass the same cap', () => {
+    const body = functionBody('phoenix_send_warehouse_return_shipment_line');
+    expect(body).toMatch(
+      /FROM public\.warehouse_transfer_lines WHERE id = v_reqline\.original_transfer_line_id FOR UPDATE/,
+    );
+    expect(body).toContain('original_line_would_be_over_returned');
+  });
+
+  it('a return request line can only be named against a given original line ONCE per request — structural, not RPC discipline', () => {
+    expect(norm069).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS wrrl_request_original_line_uniq\s+ON public\.warehouse_return_request_lines \(return_request_id, original_transfer_line_id\)/,
+    );
+  });
+
+  it('a shipment line can never leave in_transit twice — RECEIVE row-locks it and checks status before any credit', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(
+      /FROM public\.warehouse_return_shipment_lines WHERE id = p_shipment_line_id FOR UPDATE/,
+    );
+    expect(body).toContain('return_shipment_line_already_received');
+    const lockIdx = body.indexOf('FROM public.warehouse_return_shipment_lines WHERE id = p_shipment_line_id FOR UPDATE');
+    const statusCheckIdx = body.indexOf('return_shipment_line_already_received');
+    expect(lockIdx).toBeLessThan(statusCheckIdx);
+  });
+
+  it('both write RPCs take the advisory lock (69069 namespace) BEFORE any row lock, serializing retries of the same request', () => {
+    for (const rpc of WRITE_RPCS) {
+      const body = functionBody(rpc);
+      expect(body.indexOf('pg_advisory_xact_lock')).toBeGreaterThan(-1);
+      expect(body.indexOf('pg_advisory_xact_lock')).toBeLessThan(body.indexOf('FOR UPDATE'));
+    }
+  });
+
+  it('a duplicate request_id with a DIFFERENT payload is rejected (23505), never silently re-executed', () => {
+    for (const rpc of WRITE_RPCS) {
+      const body = functionBody(rpc);
+      expect(body, rpc).toContain('request_id_conflict');
+    }
+  });
+});
+
+// ============================================================================
+// 26. Reason-code vocabulary is exercised in full, not just quality_issue
+// ============================================================================
+
+describe('26. every reason_code has an explicit, testable quarantine rule', () => {
+  it('the request-line reason_code CHECK covers the full vocabulary', () => {
+    expect(norm069).toContain('wrrl_reason_code_chk');
+    expect(norm069).toMatch(
+      /CHECK \(reason_code IN \(\s*'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged',\s*'recalled', 'quality_issue', 'temperature_excursion', 'other'\s*\)\)/,
+    );
+  });
+
+  it('mandatory-quarantine reasons (expired/damaged/recalled/quality_issue/temperature_excursion) all appear in the SAME IN-list in RECEIVE', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const match = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN \(([^)]*)\)/);
+    expect(match, 'mandatory quarantine IN-list must exist').not.toBeNull();
+    const list = match![1];
+    for (const reason of ['expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion']) {
+      expect(list, reason).toContain(`'${reason}'`);
+    }
+  });
+
+  it('near_expiry is handled in its own explicit branch, distinct from the mandatory set and the default', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    expect(body).toMatch(/ELSIF v_reason_code = 'near_expiry' THEN/);
+  });
+
+  it('excess and shipment_error are NOT in the mandatory-quarantine list — they fall through to the restockable default', () => {
+    const body = functionBody('phoenix_receive_warehouse_return_shipment_line');
+    const match = body.match(/v_mandatory_quarantine := v_objectively_expired\s+OR v_reason_code IN \(([^)]*)\)/);
+    expect(match).not.toBeNull();
+    expect(match![1]).not.toContain("'excess'");
+    expect(match![1]).not.toContain("'shipment_error'");
+  });
+});
+
+// ============================================================================
+// 27. QR stays silent on returns AND quarantine, explicitly
+// ============================================================================
+
+describe('27. public QR payload leaks nothing about returns or quarantine', () => {
+  it('the post-condition checks BOTH warehouse_return and quarantine substrings, not just one', () => {
+    expect(m069).toMatch(
+      /ASSERT v_def NOT ILIKE '%warehouse_return%' AND v_def NOT ILIKE '%quarantine%'/,
+    );
+  });
+
+  it('no RPC in this file writes to or reads from item_availability or the public QR path', () => {
+    for (const rpc of [...WRITE_RPCS, ...REQUEST_LIFECYCLE_RPCS]) {
+      const body = functionBody(rpc);
+      expect(body, rpc).not.toContain('item_availability');
+      expect(body, rpc).not.toContain('get_public_qr_payload');
+    }
   });
 });
