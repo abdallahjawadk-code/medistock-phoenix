@@ -531,3 +531,193 @@ describe('14. aggregation fix leaves reserved_quantity alone and never partially
     expect(pass1Text).not.toMatch(/UPDATE public\.warehouse_stock/);
   });
 });
+
+// ============================================================================
+// 15. RLS composition fix (round 3): a RESTRICTIVE policy can only NARROW, so a
+//     NARROW second PERMISSIVE policy is required for the outlet_officer to be
+//     able to READ the dispatch it is allowed to RECEIVE.
+//
+//     Final SELECT composition PostgreSQL evaluates on both tables:
+//       ( super_admin                                      [061 permissive]
+//         OR org member w/ unscoped warehouse_dispatch.view [061 permissive]
+//         OR scoped outlet_stock.receive on destination     [9d permissive] )
+//       AND phoenix_can_read_warehouse_dispatch(...)        [9c restrictive]
+// ============================================================================
+describe('15. the outlet_officer read path: a narrow permissive policy ORs in the one principal 061 omits, the restrictive layer bounds everyone to exact scope', () => {
+  it('adds a SECOND permissive SELECT policy on warehouse_dispatches, AS PERMISSIVE, keyed to scoped outlet_stock.receive on the destination outlet', () => {
+    expect(norm070).toMatch(
+      /CREATE POLICY warehouse_dispatches_outlet_receive_perm\s+ON public\.warehouse_dispatches\s+AS PERMISSIVE\s+FOR SELECT\s+TO authenticated/,
+    );
+    expect(norm070).toMatch(
+      /warehouse_dispatches_outlet_receive_perm[\s\S]*?phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'outlet_stock\.receive', organization_id, NULL, destination_distribution_point_id/,
+    );
+  });
+
+  it('the outlet-receive permissive predicate is NARROWER than 9c\'s restrictive one — it names ONLY outlet_stock.receive, never super_admin or warehouse_dispatch.view (so it can never widen past the scope bound)', () => {
+    const start = norm070.indexOf('CREATE POLICY warehouse_dispatches_outlet_receive_perm');
+    const end = norm070.indexOf('CREATE POLICY warehouse_dispatch_lines_outlet_receive_perm', start);
+    const policy = norm070.slice(start, end);
+    expect(policy).toContain("'outlet_stock.receive'");
+    expect(policy).not.toContain("'warehouse_dispatch.view'");
+    expect(policy).not.toContain("super_admin");
+  });
+
+  it('adds the mirrored permissive policy on warehouse_dispatch_lines, gated ONLY through the parent dispatch\'s destination (no separate, weaker rule)', () => {
+    expect(norm070).toMatch(
+      /CREATE POLICY warehouse_dispatch_lines_outlet_receive_perm\s+ON public\.warehouse_dispatch_lines\s+AS PERMISSIVE\s+FOR SELECT/,
+    );
+    expect(norm070).toMatch(
+      /warehouse_dispatch_lines_outlet_receive_perm[\s\S]*?EXISTS \(\s*SELECT 1 FROM public\.warehouse_dispatches d\s+WHERE d\.id = warehouse_dispatch_lines\.dispatch_id\s+AND public\.phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'outlet_stock\.receive', d\.organization_id, NULL,\s*d\.destination_distribution_point_id/,
+    );
+  });
+
+  it('does NOT drop or redefine 061\'s permissive policies — 070 only adds its own policies alongside them (its own new policies are idempotently DROP-IF-EXISTS + CREATE, which is fine)', () => {
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatches_select_perm/);
+    expect(exec070).not.toMatch(/DROP POLICY[^;]*warehouse_dispatch_lines_select_perm/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatches_select_perm"?/);
+    expect(exec070).not.toMatch(/CREATE POLICY "?warehouse_dispatch_lines_select_perm"?/);
+    // every DROP POLICY in this file targets only a policy this file itself
+    // (re)creates — never a pre-existing 061 one.
+    const dropped = [...exec070.matchAll(/DROP POLICY IF EXISTS (\w+)/g)].map((m) => m[1]);
+    for (const name of dropped) {
+      expect(name).toMatch(/_scope_restrict$|_outlet_receive_perm$/);
+    }
+  });
+
+  // The six behavioural scenarios, each pinned to the exact predicate that
+  // decides it under (P061 OR P9d) AND R9c.
+  it('SCENARIO super_admin sees everything: 061 permissive admits via super_admin, 9c restrictive bypasses via super_admin', () => {
+    // 061 permissive branch (unchanged) + can_read super_admin bypass.
+    const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(canRead).toMatch(/phoenix_my_role\(\) = 'super_admin'/);
+  });
+
+  it('SCENARIO warehouse_officer sees ONLY its own warehouse: 061 permissive admits (holds view key org-wide) but 9c restrictive bounds to the SPECIFIC warehouse via scoped view (assignment required)', () => {
+    const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(canRead).toMatch(
+      /phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'warehouse_dispatch\.view', p_organization_id, p_warehouse_id, NULL/,
+    );
+  });
+
+  it('SCENARIO warehouse_officer does NOT see another warehouse in the same org: the broad org-level view key passes 061 permissive, but the wrong warehouse scope fails 9c restrictive — a restrictive policy is never bypassed by a permissive one', () => {
+    // Proven by the restrictive policy being declared AS RESTRICTIVE (10k) and
+    // keyed to p_warehouse_id, so a wrong warehouse can only ever AND to false.
+    expect(norm070).toMatch(/CREATE POLICY warehouse_dispatches_scope_restrict\s+ON public\.warehouse_dispatches\s+AS RESTRICTIVE/);
+    expect(m070).toContain('polpermissive = false');
+  });
+
+  it('SCENARIO outlet_officer sees ONLY dispatches to its own outlet: 9d permissive admits (061 does not, it holds no dispatch key) via scoped receive on THIS destination, and 9c restrictive agrees on the same predicate', () => {
+    const canRead = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(canRead).toMatch(
+      /phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'outlet_stock\.receive', p_organization_id, NULL, p_destination_distribution_point_id/,
+    );
+    // and the permissive half exists to admit it in the first place
+    expect(norm070).toContain('warehouse_dispatches_outlet_receive_perm');
+  });
+
+  it('SCENARIO outlet_officer does NOT see another outlet in the same org: the scoped receive predicate names the SPECIFIC destination, so a different outlet fails BOTH the 9d permissive and the 9c restrictive checks (no assignment there)', () => {
+    // Both halves key on destination_distribution_point_id — a mismatched
+    // outlet can satisfy neither, so the row is OR-false at the permissive layer.
+    const start = norm070.indexOf('CREATE POLICY warehouse_dispatches_outlet_receive_perm');
+    const policy = norm070.slice(start, start + 600);
+    expect(policy).toContain('destination_distribution_point_id');
+  });
+
+  it('SCENARIO same-org user with NO assignment sees nothing: an unassigned outlet_officer fails 9d (needs point assignment) and is absent from 061 (no view key); an unassigned warehouse_officer passes 061 but fails 9c restrictive (needs warehouse assignment)', () => {
+    // The scope helper requires an active resource assignment for operational
+    // roles — proven by 062's own contract, exercised identically by both the
+    // 9d permissive and the 9c restrictive predicates here.
+    expect(norm070).toMatch(/phoenix_profile_has_scoped_permission/);
+  });
+
+  it('SCENARIO a broad role-default with the WRONG scope never bypasses the restrictive policy: this is exactly why 9d is deliberately NARROW and 9c is RESTRICTIVE (AND, never OR-around)', () => {
+    // The permissive addition (9d) is strictly narrower than the restrictive
+    // bound (9c); the census (10q) forbids a third, broader permissive policy.
+    expect(m070).toContain('EXACTLY two permissive SELECT policies');
+    expect(m070).toContain('EXACTLY one restrictive SELECT policy');
+  });
+
+  // Catalog-level post-conditions (polpermissive/polrestrictive + census).
+  it('post-condition proves the new outlet-receive policies are PERMISSIVE on the live catalog (not accidentally restrictive)', () => {
+    expect(m070).toContain('is missing its PERMISSIVE outlet-receive policy (9d)');
+  });
+
+  it('post-condition proves the EXACT policy census: two permissive + one restrictive SELECT policy per table', () => {
+    expect(m070).toContain('EXACTLY two permissive SELECT policies (061 view + 9d outlet-receive)');
+    expect(m070).toContain('EXACTLY one restrictive SELECT policy (9c scope boundary)');
+  });
+
+  it('the census counts SELECT policies specifically (polcmd = \'r\'), by polpermissive', () => {
+    expect(m070).toMatch(/polcmd = 'r' AND pol\.polpermissive = true/);
+    expect(m070).toMatch(/polcmd = 'r' AND pol\.polpermissive = false/);
+  });
+});
+
+// ============================================================================
+// 16. Internal-function ACL + recompute double-call safety
+// ============================================================================
+describe('16. internal functions are not callable by clients, and the shared recompute is safe to call twice', () => {
+  it('phoenix_recompute_warehouse_dispatch_header_status is REVOKEd from PUBLIC, anon AND authenticated — no client can call it directly (only the definer RPCs/trigger, as owner)', () => {
+    expect(norm070).toMatch(
+      /REVOKE ALL ON FUNCTION public\.phoenix_recompute_warehouse_dispatch_header_status\(uuid\)\s+FROM PUBLIC, anon, authenticated;/,
+    );
+    // and it is never granted back to any client role
+    expect(norm070).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_recompute_warehouse_dispatch_header_status/);
+  });
+
+  it('the trigger function phoenix_sync_warehouse_dispatch_header_status is likewise REVOKEd from PUBLIC, anon AND authenticated', () => {
+    expect(norm070).toMatch(
+      /REVOKE ALL ON FUNCTION public\.phoenix_sync_warehouse_dispatch_header_status\(\)\s+FROM PUBLIC, anon, authenticated;/,
+    );
+    expect(norm070).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_sync_warehouse_dispatch_header_status/);
+  });
+
+  it('phoenix_can_read_warehouse_dispatch grants EXECUTE to authenticated ONLY (RLS needs it), revoked from PUBLIC/anon, and never to a broader principal', () => {
+    expect(norm070).toMatch(
+      /REVOKE ALL ON FUNCTION public\.phoenix_can_read_warehouse_dispatch\(uuid, uuid, uuid\) FROM PUBLIC, anon;/,
+    );
+    expect(norm070).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.phoenix_can_read_warehouse_dispatch\(uuid, uuid, uuid\) TO authenticated;/,
+    );
+  });
+
+  it('phoenix_can_read_warehouse_dispatch performs NO write — it is a STABLE, read-only SELECT function', () => {
+    const body = functionBody('phoenix_can_read_warehouse_dispatch');
+    expect(body).not.toMatch(/INSERT INTO|UPDATE public\.|DELETE FROM/i);
+    const src = sqlFunctionSource(m070, 'phoenix_can_read_warehouse_dispatch')!;
+    expect(src).toMatch(/LANGUAGE sql\s+STABLE/);
+  });
+
+  it('every SECURITY DEFINER function in this file pins search_path (no unpinned definer)', () => {
+    // 10 real definer functions; the only other 'SECURITY DEFINER' occurrences
+    // are the two assertion string literals in section 10r.
+    const definerCount = (exec070.match(/SECURITY DEFINER/g) ?? []).length;
+    const searchPathCount = (exec070.match(/SET search_path = public, pg_temp/g) ?? []).length;
+    expect(definerCount).toBe(searchPathCount);
+  });
+
+  it('the shared recompute writes NOTHING but warehouse_dispatches.status — no INSERT (audit/movement), no stock table — so a redundant second call is a guaranteed no-op', () => {
+    const body = functionBody('phoenix_recompute_warehouse_dispatch_header_status');
+    expect(body).not.toMatch(/INSERT INTO/i);
+    expect(body).not.toMatch(/warehouse_stock|outlet_stock/);
+    expect(body).toMatch(/UPDATE public\.warehouse_dispatches\s+SET status = v_new_status/);
+  });
+
+  it('the recompute UPDATE is guarded by status IS DISTINCT FROM v_new_status — the second call changes no row', () => {
+    const body = functionBody('phoenix_recompute_warehouse_dispatch_header_status');
+    expect(body).toMatch(/status IS DISTINCT FROM v_new_status/);
+  });
+
+  it('post-conditions prove the recompute\'s double-call safety structurally (no INSERT, no stock, idempotent guard)', () => {
+    expect(m070).toContain('double-invocation must stay side-effect free');
+    expect(m070).toContain('header recompute must never touch a stock balance');
+    expect(m070).toContain('idempotent double-call');
+  });
+
+  it('RECEIVE\'s explicit recompute call and the 8b trigger both target the SAME dispatch on the SAME line-status UPDATE — double invocation is expected and proven harmless', () => {
+    const receive = functionBody('phoenix_receive_outlet_dispatch_line');
+    expect(receive).toContain('phoenix_recompute_warehouse_dispatch_header_status(v_dispatch.id)');
+    const trigger = functionBody('phoenix_sync_warehouse_dispatch_header_status');
+    expect(trigger).toContain('phoenix_recompute_warehouse_dispatch_header_status(NEW.dispatch_id)');
+  });
+});

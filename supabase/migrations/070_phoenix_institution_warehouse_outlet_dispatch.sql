@@ -1345,17 +1345,37 @@ ON CONFLICT (role, permission_key) DO NOTHING;
 -- the org — the row is visible the instant the boolean key is held, with no
 -- check against WHICH warehouse or outlet the actor is actually assigned to.
 --
--- THE FIX: PostgreSQL RLS composes multiple policies for the same command as
--- (OR of every PERMISSIVE policy) AND (AND of every RESTRICTIVE policy). 061
--- defines exactly one PERMISSIVE SELECT policy per table. Adding a SECOND
--- permissive policy here would only OR in MORE access, making the problem
--- worse. A RESTRICTIVE policy is the opposite: it can only ever NARROW what
--- 061's permissive policy already allows, and it does so unconditionally —
--- no future permissive policy anywhere can widen past it, because
--- restrictive policies are never bypassed by permissive ones (this is
--- PostgreSQL's own documented composition rule, not a convention this file
--- invents). 061's policy is therefore left COMPLETELY UNTOUCHED: no DROP, no
--- redefinition — this migration only ever ADDS a restrictive layer on top.
+-- THE FIX HAS TWO HALVES, and BOTH are required — this was the round-3 finding:
+-- PostgreSQL RLS composes multiple policies for the same command as
+-- (OR of every PERMISSIVE policy) AND (AND of every RESTRICTIVE policy). A
+-- RESTRICTIVE policy can only ever NARROW what some PERMISSIVE policy already
+-- granted; it can NEVER, by itself, hand a row to a principal that no
+-- permissive policy admitted. 061 defines exactly one permissive SELECT policy
+-- per table, and it admits a row only to super_admin or to an org member
+-- holding the UNSCOPED warehouse_dispatch.view key. An outlet_officer holds NO
+-- warehouse_dispatch.* key at all (061 seeds none; 9b denies them explicitly),
+-- so 061's permissive policy already excludes it — and a restrictive
+-- outlet_stock.receive branch, being restrictive, cannot let it back in.
+--
+--   HALF 1 (this section, 9c): a RESTRICTIVE policy that bounds EVERY principal
+--   061's permissive policy admits to its EXACT scope — a warehouse_officer to
+--   dispatches from its own assigned warehouse, an org-wide oversight role to
+--   its whole org, super_admin to everything. It does so unconditionally: no
+--   future permissive policy anywhere can widen past it, because restrictive
+--   policies are never bypassed by permissive ones (PostgreSQL's own documented
+--   composition rule, not a convention this file invents).
+--
+--   HALF 2 (section 9d, below): a NARROW second PERMISSIVE policy that ORs in
+--   the ONE legitimate principal 061's permissive policy omits — an
+--   outlet_officer scoped-assigned to the dispatch's destination outlet — using
+--   EXACTLY the outlet_stock.receive predicate RECEIVE itself enforces, and
+--   NOTHING broader. Because that permissive predicate is strictly narrower
+--   than 9c's restrictive boundary, it can never widen access past the scope
+--   bound; it only contributes the single row-class 061 left unreadable.
+--
+-- 061's policy is left COMPLETELY UNTOUCHED by both halves: no DROP, no
+-- redefinition — this migration only ADDS one restrictive and one narrow
+-- permissive layer alongside it.
 --
 -- Visibility, once both policies apply: a row is visible only if it passes
 -- 061's org+unscoped-key check AND ALSO one of:
@@ -1426,6 +1446,62 @@ CREATE POLICY warehouse_dispatch_lines_scope_restrict
       WHERE d.id = warehouse_dispatch_lines.dispatch_id
         AND public.phoenix_can_read_warehouse_dispatch(
               d.organization_id, d.warehouse_id, d.destination_distribution_point_id
+            )
+    )
+  );
+
+-- ============================================================================
+-- 9d. SCOPED READ, HALF 2 — the NARROW permissive policy the restrictive layer
+--     needs before it can bite for outlet_officer
+-- ============================================================================
+-- See 9c's header for the full composition argument. In short: 9c's restrictive
+-- policy can only NARROW what a permissive policy already granted, and 061's
+-- lone permissive policy never admits an outlet_officer (it holds no
+-- warehouse_dispatch.* key). Without this section an outlet_officer therefore
+-- cannot SELECT the very dispatch addressed to its own outlet that
+-- phoenix_receive_outlet_dispatch_line then lets it RECEIVE — "can receive" and
+-- "can read" disagree. This adds a SECOND permissive SELECT policy whose USING
+-- is EXACTLY the outlet_officer's legitimate boundary: scoped
+-- outlet_stock.receive on the dispatch's destination outlet — the SAME
+-- predicate RECEIVE enforces, and the SAME branch 9c's restrictive function
+-- already names. It is strictly NARROWER than 9c's restrictive predicate (it
+-- omits the super_admin and warehouse_dispatch.view branches), so it can never
+-- grant a row the restrictive boundary would not also allow; it only ever
+-- contributes the one principal 061 omitted. Final composition, both tables:
+--   ( super_admin                                          [061 permissive]
+--     OR org member with unscoped warehouse_dispatch.view  [061 permissive]
+--     OR scoped outlet_stock.receive on THIS destination   [9d permissive] )
+--   AND phoenix_can_read_warehouse_dispatch(org, wh, dest) [9c restrictive]
+-- which reduces exactly to the required boundary:
+--   ( super_admin
+--     OR warehouse officer scoped to the SOURCE warehouse with .view
+--     OR outlet officer scoped to the DESTINATION outlet with .receive )
+--   AND exact-scope.
+DROP POLICY IF EXISTS warehouse_dispatches_outlet_receive_perm ON public.warehouse_dispatches;
+CREATE POLICY warehouse_dispatches_outlet_receive_perm
+  ON public.warehouse_dispatches
+  AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    public.phoenix_profile_has_scoped_permission(
+      auth.uid(), 'outlet_stock.receive', organization_id, NULL, destination_distribution_point_id
+    )
+  );
+
+DROP POLICY IF EXISTS warehouse_dispatch_lines_outlet_receive_perm ON public.warehouse_dispatch_lines;
+CREATE POLICY warehouse_dispatch_lines_outlet_receive_perm
+  ON public.warehouse_dispatch_lines
+  AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.warehouse_dispatches d
+      WHERE d.id = warehouse_dispatch_lines.dispatch_id
+        AND public.phoenix_profile_has_scoped_permission(
+              auth.uid(), 'outlet_stock.receive', d.organization_id, NULL,
+              d.destination_distribution_point_id
             )
     )
   );
@@ -1544,6 +1620,44 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- 10l2. The NEW narrow PERMISSIVE outlet-receive policies (9d) exist and are
+  -- PERMISSIVE. This is the half without which 10k's restrictive layer can only
+  -- NARROW 061's permissive policy — which never admits an outlet_officer — so
+  -- "can receive" and "can read" would disagree. A policy of this name that was
+  -- accidentally RESTRICTIVE would compile but do the OPPOSITE (narrow, never
+  -- grant), so polpermissive = true is asserted explicitly, not merely presence.
+  FOREACH v_def IN ARRAY ARRAY['warehouse_dispatches', 'warehouse_dispatch_lines'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policy pol
+      JOIN pg_class c ON c.oid = pol.polrelid
+      WHERE c.relname = v_def
+        AND pol.polname = v_def || '_outlet_receive_perm'
+        AND pol.polpermissive = true
+    ) THEN
+      RAISE EXCEPTION 'ABORT 070: % is missing its PERMISSIVE outlet-receive policy (9d), or it is RESTRICTIVE — either way an outlet_officer cannot read the dispatch it is allowed to receive', v_def;
+    END IF;
+  END LOOP;
+
+  -- 10q. EXACT SELECT-policy census per table: precisely TWO permissive (061's
+  -- org+view and 9d's outlet-receive) and exactly ONE restrictive (9c's scope
+  -- boundary). A stray THIRD permissive policy added later could OR past the
+  -- scope boundary; a MISSING restrictive one would remove the bound entirely.
+  -- Counting both, by polpermissive, makes either regression fail the migration.
+  FOREACH v_def IN ARRAY ARRAY['warehouse_dispatches', 'warehouse_dispatch_lines'] LOOP
+    IF (
+      SELECT count(*) FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
+      WHERE c.relname = v_def AND pol.polcmd = 'r' AND pol.polpermissive = true
+    ) <> 2 THEN
+      RAISE EXCEPTION 'ABORT 070: % must have EXACTLY two permissive SELECT policies (061 view + 9d outlet-receive)', v_def;
+    END IF;
+    IF (
+      SELECT count(*) FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
+      WHERE c.relname = v_def AND pol.polcmd = 'r' AND pol.polpermissive = false
+    ) <> 1 THEN
+      RAISE EXCEPTION 'ABORT 070: % must have EXACTLY one restrictive SELECT policy (9c scope boundary)', v_def;
+    END IF;
+  END LOOP;
+
   -- 10m. outlet_officer is explicitly denied every warehouse_dispatch.* key
   -- this file's RPCs check — stated, not merely inferred from absence.
   FOREACH v_def IN ARRAY ARRAY[
@@ -1591,6 +1705,29 @@ BEGIN
       'VERIFY FAILED (070): RECEIVE must explicitly recompute the header status under its own lock';
     ASSERT v_receive_body NOT LIKE '%destination_outlet_inactive%',
       'VERIFY FAILED (070): RECEIVE must not refuse to settle an in_transit shipment because the outlet later went inactive';
+  END;
+
+  -- 10r. The shared header recompute (2b) is PURE header-status: calling it a
+  -- second time can never create a duplicate audit row, a duplicate stock
+  -- movement, or change any balance. It writes nothing but
+  -- warehouse_dispatches.status, and only when the value actually changes
+  -- (status IS DISTINCT FROM v_new_status) — so a redundant second call is a
+  -- guaranteed no-op. Proven structurally so a future edit that adds a write
+  -- inside it fails this migration rather than silently making double-invocation
+  -- (RECEIVE's explicit call + the 8b trigger on the same UPDATE) unsafe.
+  DECLARE
+    v_recompute text := pg_get_functiondef(
+      'public.phoenix_recompute_warehouse_dispatch_header_status(uuid)'::regprocedure);
+  BEGIN
+    ASSERT v_recompute NOT ILIKE '%INSERT INTO%',
+      'VERIFY FAILED (070): header recompute must never INSERT (no audit row, no movement) — double-invocation must stay side-effect free';
+    ASSERT v_recompute NOT ILIKE '%warehouse_stock%'
+       AND v_recompute NOT ILIKE '%outlet_stock%',
+      'VERIFY FAILED (070): header recompute must never touch a stock balance';
+    ASSERT v_recompute LIKE '%status IS DISTINCT FROM v_new_status%',
+      'VERIFY FAILED (070): header recompute must be a no-op when status is already current (idempotent double-call)';
+    ASSERT v_recompute LIKE '%SECURITY DEFINER%' AND v_recompute LIKE '%search_path%',
+      'VERIFY FAILED (070): header recompute must be SECURITY DEFINER with a pinned search_path';
   END;
 
   RAISE NOTICE '070 verified: institution warehouse -> outlet forward dispatch '
