@@ -49,6 +49,10 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
       minHeight: '100dvh',
       position: 'relative',
     }}>
+      <a className="nexus-skip-link" href="#phoenix-workspace">
+        {lang === 'ar' ? 'انتقل إلى المحتوى الرئيسي' : 'Skip to main content'}
+      </a>
+
       {!isMobile && (
         <PhoenixSidebar
           currentScreen={currentScreen}
@@ -73,14 +77,29 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onMenuClick={() => setSidebarOpen(s => !s)}
         />
 
-        <main className="premium-main" style={{
+        <main
+          id="phoenix-workspace"
+          className="premium-main"
+          data-screen={currentScreen}
+          tabIndex={-1}
+          style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
           padding: isMobile ? '16px 14px' : '24px 28px',
           paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
-        }}>
-          {children}
+          }}
+        >
+          <div className="nexus-workspace" data-screen={currentScreen}>
+            <div className="nexus-workspace__atmosphere" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="nexus-workspace__content">
+              {children}
+            </div>
+          </div>
         </main>
       </div>
 
