@@ -181,8 +181,11 @@ export function GlobalMaterialSearchPanel() {
   useEffect(() => {
     if (!catalogFingerprint || initializedCatalog.current === catalogFingerprint) return;
     initializedCatalog.current = catalogFingerprint;
+    requestSequence.current += 1;
+    setSearching(false);
     setSelectedOrganizations(new Set(activeOrganizations.map(org => org.id)));
     setResult(null);
+    setMessage(null);
   }, [catalogFingerprint, activeOrganizations]);
 
   const summary = useMemo(() => {
@@ -198,6 +201,13 @@ export function GlobalMaterialSearchPanel() {
 
   if (role !== 'super_admin') return null;
 
+  function invalidateSearchContext() {
+    requestSequence.current += 1;
+    setSearching(false);
+    setResult(null);
+    setMessage(null);
+  }
+
   function toggleOrganization(id: string) {
     setSelectedOrganizations(current => {
       const next = new Set(current);
@@ -205,8 +215,7 @@ export function GlobalMaterialSearchPanel() {
       else next.add(id);
       return next;
     });
-    setResult(null);
-    setMessage(null);
+    invalidateSearchContext();
   }
 
   async function runSearch() {
@@ -278,7 +287,7 @@ export function GlobalMaterialSearchPanel() {
             {c.query}
             <input
               value={query}
-              onChange={event => { setQuery(event.target.value); setResult(null); setMessage(null); }}
+              onChange={event => { setQuery(event.target.value); invalidateSearchContext(); }}
               onKeyDown={event => { if (event.key === 'Enter') void runSearch(); }}
               placeholder={c.queryPlaceholder}
               dir="auto"
@@ -294,7 +303,7 @@ export function GlobalMaterialSearchPanel() {
             {c.scope}
             <select
               value={scope}
-              onChange={event => { setScope(event.target.value as GlobalMaterialScope); setResult(null); }}
+              onChange={event => { setScope(event.target.value as GlobalMaterialScope); invalidateSearchContext(); }}
               style={{
                 width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)',
                 border: '1px solid var(--brd)', background: 'var(--bg)', color: 'var(--t)',
@@ -317,14 +326,14 @@ export function GlobalMaterialSearchPanel() {
               <PhoenixButton
                 variant="ghost"
                 size="sm"
-                onClick={() => { setSelectedOrganizations(new Set(activeOrganizations.map(org => org.id))); setResult(null); }}
+                onClick={() => { setSelectedOrganizations(new Set(activeOrganizations.map(org => org.id))); invalidateSearchContext(); }}
               >
                 {c.all}
               </PhoenixButton>
               <PhoenixButton
                 variant="ghost"
                 size="sm"
-                onClick={() => { setSelectedOrganizations(new Set()); setResult(null); }}
+                onClick={() => { setSelectedOrganizations(new Set()); invalidateSearchContext(); }}
               >
                 {c.clear}
               </PhoenixButton>
