@@ -1,5 +1,7 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
+import { PhoenixMark } from './PhoenixMark';
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_reg and nav_qr_audit are intentionally NOT
 // listed here (hidden from navigation only). Their routes (screens 4, 6 —
@@ -15,7 +17,7 @@ import { t } from '@/shared/i18n/strings';
 // on phones as well as desktop. Other roles retain the Phase-2 nav surface.
 const ALL_NAV: {
   screen: number;
-  icon: string;
+  icon: PhoenixIconName;
   labelKey: string;
   frozen?: boolean;
   superAdminOnly?: boolean;
@@ -24,21 +26,21 @@ const ALL_NAV: {
   /** PHASE-B-NETWORK-UI-A: super_admin or users.edit_scope. */
   requiresNetwork?: boolean;
 }[] = [
-  { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-  { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
-  { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
-  { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: '👥', labelKey: 'nav_users', requiresUsersView: true },
-  { screen: 17, icon: '🗺️', labelKey: 'nav_network', requiresNetwork: true },
-  { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
+  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
+  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
+  { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+  { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
+  { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
+  { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the
 // mobile drawer offers the exact same standalone pages as the desktop
 // sidebar (previously only ALL_NAV's 7 items were mirrored — nav_my_account
 // was missing from mobile).
-const SECONDARY_NAV: { screen: number; icon: string; labelKey: string }[] = [
-  { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+const SECONDARY_NAV: { screen: number; icon: PhoenixIconName; labelKey: string }[] = [
+  { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
 ];
 
 interface Props {
@@ -82,12 +84,14 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
-        <div className="premium-sidebar-brand premium-drawer-brand" style={{ padding: '10px 10px 14px', borderBottom: '1px solid var(--brd)', marginBottom: '8px', borderRadius: 'var(--r3)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className="premium-sidebar-logo premium-drawer-logo" style={{ width: '38px', height: '38px', borderRadius: 'var(--r2)', background: 'linear-gradient(145deg, var(--p), var(--pd))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '19px', color: '#fff', flexShrink: 0 }}>⚕</div>
+        <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px', borderRadius: 'var(--r3)' }}>
+          <div className="nexus-brand-lockup">
+            <div className="nexus-brand-mark">
+              <PhoenixMark size={39} title="" />
+            </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>MediStock-Babil</div>
-              <div style={{ fontSize: '10px', color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('shell_brand_department', lang)}</div>
+              <div className="nexus-brand-title">MediStock Phoenix</div>
+              <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
             <button
               onClick={onClose}
@@ -100,7 +104,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
                 cursor: 'pointer', transition: 'all 120ms',
               }}
             >
-              ✕
+              <PhoenixIcon name="close" size={18} />
             </button>
           </div>
         </div>
@@ -128,7 +132,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
                   ...s,
                 }}
               >
-                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
               </button>
             );
@@ -153,7 +157,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
                   ...s,
                 }}
               >
-                <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
               </button>
             );
@@ -172,7 +176,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
             cursor: 'pointer', flexShrink: 0,
           }}
         >
-          <span aria-hidden="true">⏻</span>
+          <PhoenixIcon name="logout" size={18} />
           <span>{t('auth_sign_out', lang)}</span>
         </button>
       </aside>
