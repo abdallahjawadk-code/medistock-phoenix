@@ -58,8 +58,10 @@ export type PhoenixIconName =
 
 interface PhoenixIconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: PhoenixIconName;
-  size?: number;
+  size?: number | string;
   title?: string;
+  /** Render as an inline glyph (1em, baseline-aligned) to sit beside text. */
+  inline?: boolean;
 }
 
 const P = ({ children }: { children: ReactNode }) => <>{children}</>;
@@ -177,11 +179,12 @@ function iconPaths(name: PhoenixIconName): ReactNode {
   }
 }
 
-export function PhoenixIcon({ name, size = 20, title, ...props }: PhoenixIconProps) {
+export function PhoenixIcon({ name, size, title, inline, style, ...props }: PhoenixIconProps) {
+  const dim = size ?? (inline ? '1em' : 20);
   return (
     <svg
-      width={size}
-      height={size}
+      width={dim}
+      height={dim}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -191,6 +194,7 @@ export function PhoenixIcon({ name, size = 20, title, ...props }: PhoenixIconPro
       role={title ? 'img' : undefined}
       aria-hidden={title ? undefined : true}
       focusable="false"
+      style={inline ? { verticalAlign: '-0.15em', flexShrink: 0, ...style } : style}
       {...props}
     >
       {title && <title>{title}</title>}
