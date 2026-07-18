@@ -53,7 +53,7 @@ describe('1. The port card no longer renders "+ إضافة صنف"', () => {
 
   it('no empty layout gap remains where the button was — the header row now renders only the label span', () => {
     const headerStart = portAvailabilitySection.indexOf("justifyContent: 'space-between', marginBottom: '6px'");
-    const headerBlock = portAvailabilitySection.slice(headerStart, headerStart + 250);
+    const headerBlock = portAvailabilitySection.slice(headerStart, headerStart + 500);
     expect(headerBlock).toContain("t('avail_manage', lang)");
     expect(headerBlock).not.toContain('<button');
   });

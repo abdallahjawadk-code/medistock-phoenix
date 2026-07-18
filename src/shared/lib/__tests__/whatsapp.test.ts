@@ -328,7 +328,8 @@ describe('24. Existing button handlers remain connected', () => {
       userManagementScreen.indexOf('function ContactSection'),
       userManagementScreen.indexOf('function ContactSection') + 1500,
     );
-    expect(block).toContain('📞');
+    expect(block).toContain('href={`tel:${c.phone}`}');
+    expect(block).toContain('PhoenixIcon name="phone"');
     expect(block).toContain('WhatsAppContactButton');
   });
 });

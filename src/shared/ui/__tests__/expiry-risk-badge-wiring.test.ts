@@ -39,7 +39,7 @@ describe('ExpiryRiskBadge: shared component', () => {
 
   it('shows a stronger (bold + warning icon) visual for the critical tiers (expired/critical_3m)', () => {
     expect(badgeSrc).toContain('isExpiryRiskCritical');
-    expect(badgeSrc).toMatch(/⚠/);
+    expect(badgeSrc).toContain('PhoenixIcon name="warning"');
     expect(badgeSrc).toMatch(/fontWeight:\s*800/);
   });
 

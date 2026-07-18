@@ -132,7 +132,7 @@ describe('C) AvailabilityItemDetailsModal is read-only', () => {
 
   it('has an explicit close (X) button in addition to the footer Close button', () => {
     expect(detailsModal).toContain('onClick={onClose}');
-    expect(detailsModal).toContain('✕');
+    expect(detailsModal).toContain('PhoenixIcon name="close"');
   });
 });
 

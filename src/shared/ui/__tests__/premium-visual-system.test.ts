@@ -35,7 +35,8 @@ describe('premium visual system', () => {
     expect(dashboard).toContain('premium-command-hero');
     expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
     expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');
-    expect(institutions).toContain('premium-page-header');
+    expect(institutions).toContain('<PhoenixScreenHeader');
+    expect(read('shared/ui/PhoenixScreenHeader.tsx')).toContain('premium-page-header');
     expect(institutions).toContain('premium-org-toolbar');
     expect(institutions).toContain('premium-org-card__meta');
     expect(institutions).toContain('org.code');

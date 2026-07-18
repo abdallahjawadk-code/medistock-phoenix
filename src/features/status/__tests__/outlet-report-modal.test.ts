@@ -82,8 +82,10 @@ describe('C) Modal shows the selected outlet name and narrows rows to it', () =>
   });
 
   it('renders the outlet name and institution name in the header', () => {
-    expect(modal).toContain('📦 {outletName');
-    expect(modal).toContain('🏥 {institutionName}');
+    expect(modal).toContain('PhoenixIcon name="outlet"');
+    expect(modal).toContain('{outletName ||');
+    expect(modal).toContain('PhoenixIcon name="institutions"');
+    expect(modal).toContain('{institutionName}');
   });
 
   it('title is the required bilingual "تقرير مواد المنفذ" / "Outlet Availability Report"', () => {

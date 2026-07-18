@@ -328,7 +328,7 @@ describe('23. Mobile-safe / no horizontal overflow', () => {
   });
 
   it('the screen container caps width and the field reuses the shared fieldStyle used by password inputs (consistent, tested mobile layout)', () => {
-    expect(myAccount).toContain("maxWidth: '640px'");
+    expect(myAccount).toContain("maxWidth: '720px'");
     expect(myAccount).toContain('...fieldStyle');
   });
 });
