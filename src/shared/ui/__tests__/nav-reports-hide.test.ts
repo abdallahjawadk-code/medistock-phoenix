@@ -5,8 +5,9 @@
  * Phase 2 originally hid Reports from primary navigation while preserving
  * its route and Command Palette entry. After the authenticated smoke test
  * proved the new global material search unreachable, desktop navigation now
- * restores Reports for super_admin only. Mobile drawer/bottom navigation and
- * Status Center Quick Actions remain unchanged.
+ * restores Reports for super_admin only in desktop and mobile drawer
+ * navigation. Mobile bottom navigation and Status Center Quick Actions remain
+ * unchanged.
  *
  * Also extracts ReportsScreen.tsx's existing Audit tab into a reusable,
  * read-only AuditLogSection component (same getAuditLog data source, same
@@ -65,10 +66,12 @@ describe('A) Reports is restored to the desktop sidebar for super_admin only', (
   });
 });
 
-describe('B) Reports is hidden from the mobile drawer', () => {
-  it('ALL_NAV no longer lists nav_reports', () => {
+describe('B) Reports is restored to the mobile drawer for super_admin only', () => {
+  it('ALL_NAV lists nav_reports with the same explicit guard', () => {
     const allNavBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
-    expect(allNavBlock).not.toContain("'nav_reports'");
+    expect(allNavBlock).toContain("'nav_reports'");
+    expect(allNavBlock).toContain('superAdminOnly: true');
+    expect(mobileDrawer).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
   it('every other primary drawer item remains present', () => {
