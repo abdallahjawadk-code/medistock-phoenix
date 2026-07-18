@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, CSSProperties } from 'react';
+import { useId, type InputHTMLAttributes, type CSSProperties } from 'react';
 import { PhoenixIcon } from './PhoenixIcon';
 
 interface Props extends InputHTMLAttributes<HTMLInputElement> {
@@ -8,7 +8,8 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function PhoenixInput({ label, error, style, id, className = '', ...props }: Props) {
-  const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+  const generatedId = useId();
+  const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-') ?? generatedId;
 
   return (
     <div className="nexus-field" data-error={Boolean(error)}>
