@@ -60,8 +60,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
               background: 'transparent',
               padding: '8px 6px',
               transition: 'all 120ms',
-              minWidth: '44px',
-              minHeight: '44px',
+              minWidth: '44px', minHeight: '44px',
               cursor: 'pointer',
               ...s,
             }}
