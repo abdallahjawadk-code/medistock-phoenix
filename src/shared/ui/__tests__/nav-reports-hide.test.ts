@@ -1,12 +1,12 @@
 /**
  * PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A
+ * SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A
  *
- * Hides the Reports ("التقارير") item from every navigation entry point
- * (desktop sidebar, mobile drawer, Status Center's own Quick Actions grid)
- * WITHOUT deleting ReportsScreen.tsx or its App.tsx route (case 9) — a
- * hide-only/de-emphasis change, exactly like the earlier
- * UI-LEGACY-PAGES-NAV-HIDE-A / RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A
- * phases hid nav_reg/nav_qr_audit/nav_intake.
+ * Phase 2 originally hid Reports from primary navigation while preserving
+ * its route and Command Palette entry. After the authenticated smoke test
+ * proved the new global material search unreachable, desktop navigation now
+ * restores Reports for super_admin only. Mobile drawer/bottom navigation and
+ * Status Center Quick Actions remain unchanged.
  *
  * Also extracts ReportsScreen.tsx's existing Audit tab into a reusable,
  * read-only AuditLogSection component (same getAuditLog data source, same
@@ -38,13 +38,18 @@ const auditLogSection = readSrc('features/reports/AuditLogSection.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const strings = readSrc('shared/i18n/strings.ts');
 
-describe('A) Reports is hidden from the desktop sidebar', () => {
-  it('NAV_ITEMS no longer lists nav_reports', () => {
+describe('A) Reports is restored to the desktop sidebar for super_admin only', () => {
+  it('NAV_ITEMS lists nav_reports with an explicit superAdminOnly marker', () => {
     const navBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
-    expect(navBlock).not.toContain("'nav_reports'");
+    expect(navBlock).toContain("'nav_reports'");
+    expect(navBlock).toContain('superAdminOnly: true');
   });
 
-  it('SECONDARY_ITEMS does not reintroduce nav_reports either', () => {
+  it('filters super-admin-only items at render time', () => {
+    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
+  });
+
+  it('SECONDARY_ITEMS does not duplicate nav_reports', () => {
     const secondaryBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'), sidebar.indexOf('const ROLE_MAP'));
     expect(secondaryBlock).not.toContain("'nav_reports'");
   });
@@ -55,8 +60,8 @@ describe('A) Reports is hidden from the desktop sidebar', () => {
       .forEach(key => expect(navBlock).toContain(`'${key}'`));
   });
 
-  it('documents the hide-only intent', () => {
-    expect(sidebar).toContain('PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A');
+  it('documents both the original phase and the scoped restoration', () => {
+    expect(sidebar).toContain('SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A');
   });
 });
 
