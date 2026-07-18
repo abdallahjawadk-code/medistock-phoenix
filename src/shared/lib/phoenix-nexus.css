@@ -358,8 +358,10 @@ html body {
 .nexus-control {
   display: inline-grid;
   place-items: center;
-  min-width: 36px;
-  min-height: 36px;
+  /* WCAG 2.5.5/2.5.8 — every shell control keeps a ≥44px hit area on phone
+     and desktop; the compact glyph stays centered inside it. */
+  min-inline-size: var(--touch-target);
+  min-block-size: var(--touch-target);
   border: 1px solid var(--nx-line-strong);
   border-radius: 12px;
   color: var(--t);
@@ -367,8 +369,14 @@ html body {
   box-shadow: var(--nx-bevel);
 }
 
+.nexus-control:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--focus-ring-contrast) 65%, transparent);
+}
+
 .nexus-control--language {
-  padding-inline: 12px;
+  padding-inline: 14px;
   font-size: 11px;
   font-weight: 750;
 }

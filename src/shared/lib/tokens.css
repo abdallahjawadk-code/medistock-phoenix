@@ -62,6 +62,16 @@
   --tbh: 58px;    /* topbar height */
   --bnh: 68px;    /* bottom nav height */
 
+  /* Accessibility — minimum interactive hit area (WCAG 2.5.5 / 2.5.8). */
+  --touch-target: 44px;
+
+  /* Focus indicator (keyboard). Two-tone ring: an accent outline plus a
+     contrasting halo so the indicator reads by SHAPE + a light↔dark contrast
+     flip, never by hue alone (WCAG 1.4.11 / 2.4.7 / 1.4.1). The contrast tone
+     inverts per theme so the ring stays visible on any surface. */
+  --focus-ring: var(--p);
+  --focus-ring-contrast: #0F2B4F;
+
   /* ─── CENTRAL SCALES (W1 canonical source — do not redefine per-component) ───
      tokens.css is the single source of truth for scale primitives. Cinematic
      accent colors live in phoenix-nexus.css as the --nx-* extension layer. */
@@ -113,4 +123,7 @@
   --sh-xl: 0 20px 60px rgba(0,0,0,.60);
   --sh-depth: 0 24px 56px rgba(0,0,0,.46), 0 8px 20px rgba(0,0,0,.32), inset 0 1px 0 var(--highlight);
   --sh-float: 0 34px 80px rgba(0,0,0,.64), 0 14px 30px rgba(0,0,0,.4);
+
+  /* Contrast tone flips to light on dark surfaces so the focus halo stays visible. */
+  --focus-ring-contrast: #EAF2FB;
 }

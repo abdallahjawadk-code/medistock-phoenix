@@ -29,7 +29,7 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
         <button
           onClick={onMenuClick}
           className="premium-drawer-trigger premium-focus-ring nexus-control"
-          style={{ width: '42px', height: '42px', flexShrink: 0 }}
+          style={{ flexShrink: 0 }}
           aria-label={t('menu', lang)}
         >
           {/* The legacy ☰ control is rendered as a deterministic accessible SVG. */}
@@ -56,7 +56,6 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
         <button
           onClick={toggleTheme}
           className="nexus-control"
-          style={{ width: '36px', height: '36px' }}
           aria-label={theme === 'dark' ? 'Activate light theme' : 'Activate dark theme'}
         >
           <PhoenixIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} />

@@ -98,7 +98,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
               className="premium-drawer-close premium-focus-ring"
               aria-label={t('close', lang)}
               style={{
-                width: '34px', height: '34px', flexShrink: 0, borderRadius: 'var(--r2)',
+                minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)',
+                flexShrink: 0, borderRadius: 'var(--r2)',
                 border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t2)',
                 fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', transition: 'all 120ms',
