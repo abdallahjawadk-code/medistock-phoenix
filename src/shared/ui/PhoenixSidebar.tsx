@@ -1,9 +1,11 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
+import { PhoenixMark } from './PhoenixMark';
 
 interface NavItem {
   screen: number;
-  icon: string;
+  icon: PhoenixIconName;
   labelKey: string;
   frozen?: boolean;
   superAdminOnly?: boolean;
@@ -32,25 +34,25 @@ interface NavItem {
 // Restore the sidebar entry for super_admin only; other roles retain the
 // Phase-2 navigation surface and Audit Log remains in Status Center.
 const NAV_ITEMS: NavItem[] = [
-  { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-  { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
-  { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
-  { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: '👥', labelKey: 'nav_users', requiresUsersView: true },
-  { screen: 17, icon: '🗺️', labelKey: 'nav_network', requiresNetwork: true },
-  { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
+  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
+  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
+  { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+  { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
+  { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
+  { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [
-  { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+  { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
 ];
 
-const ROLE_MAP: Record<string, { emoji: string }> = {
-  super_admin:       { emoji: '🔑' },
-  hospital_admin:    { emoji: '🏥' },
-  warehouse_manager: { emoji: '🏬' },
-  point_operator:    { emoji: '💊' },
-  viewer:            { emoji: '👁' },
+const ROLE_MAP: Record<string, { icon: PhoenixIconName }> = {
+  super_admin:       { icon: 'role' },
+  hospital_admin:    { icon: 'institutions' },
+  warehouse_manager: { icon: 'warehouse' },
+  point_operator:    { icon: 'outlet' },
+  viewer:            { icon: 'account' },
 };
 
 interface Props {
@@ -88,16 +90,14 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       zIndex: 50,
     }}>
       {/* Brand */}
-      <div className="premium-sidebar-brand" style={{ padding: '18px 14px 14px', borderBottom: '1px solid var(--brd)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div className="premium-sidebar-logo" style={{
-            width: '36px', height: '36px', borderRadius: 'var(--r2)',
-            background: 'var(--p)', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: '18px', flexShrink: 0,
-          }}>⚕</div>
+      <div className="premium-sidebar-brand">
+        <div className="nexus-brand-lockup">
+          <div className="nexus-brand-mark">
+            <PhoenixMark size={39} title="" />
+          </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>MediStock-Babil</div>
-            <div style={{ fontSize: '10px', color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('shell_brand_department', lang)}</div>
+            <div className="nexus-brand-title">MediStock Phoenix</div>
+            <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
           </div>
         </div>
       </div>
@@ -124,7 +124,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
                 ...s,
               }}
             >
-              <span style={{ fontSize: '15px', flexShrink: 0 }}>{item.icon}</span>
+              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t(item.labelKey, lang)}
               </span>
@@ -151,7 +151,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
                 ...s,
               }}
             >
-              <span style={{ fontSize: '15px', flexShrink: 0 }}>{item.icon}</span>
+              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                 {t(item.labelKey, lang)}
               </span>
@@ -172,12 +172,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       {/* User row */}
       <div className="premium-sidebar-user" style={{ padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            width: '30px', height: '30px', borderRadius: 'var(--rpill)',
-            background: 'var(--p2)', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: '14px', flexShrink: 0,
-          }}>
-            {ri.emoji}
+          <div className="nexus-role-orb">
+            <PhoenixIcon name={ri.icon} size={17} />
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.full_name ?? role}</div>
@@ -192,7 +188,10 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               cursor: 'pointer', transition: 'all 120ms',
             }}
           >
-            {t('logout', lang)}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <PhoenixIcon name="logout" size={13} />
+              {t('logout', lang)}
+            </span>
           </button>
         </div>
       </div>
