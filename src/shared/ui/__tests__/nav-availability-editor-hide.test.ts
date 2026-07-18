@@ -298,18 +298,19 @@ describe('Status Center remains visible', () => {
 });
 
 // ============================================================================
-// 12. Reports is now hidden from nav
-//    (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A — see
-//    nav-reports-hide.test.ts for the full, dedicated test suite)
+// 12. Reports is restored to the desktop sidebar for super_admin only.
+//     Mobile drawer remains unchanged in this focused navigation fix.
 // ============================================================================
 
-describe('Reports is hidden from nav in this phase', () => {
-  it('nav_reports is not present in the desktop sidebar NAV_ITEMS', () => {
+describe('Reports is reachable only through the super-admin desktop entry', () => {
+  it('nav_reports is present and marked superAdminOnly in desktop NAV_ITEMS', () => {
     const navItemsBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
-    expect(navItemsBlock).not.toContain("'nav_reports'");
+    expect(navItemsBlock).toContain("'nav_reports'");
+    expect(navItemsBlock).toContain('superAdminOnly: true');
+    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
-  it('nav_reports is not present in the mobile drawer ALL_NAV', () => {
+  it('nav_reports is still absent from the unchanged mobile drawer ALL_NAV', () => {
     const allNavBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
     expect(allNavBlock).not.toContain("'nav_reports'");
   });
