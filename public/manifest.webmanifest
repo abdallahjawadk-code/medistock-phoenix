@@ -1,14 +1,14 @@
 {
-  "name": "MediStock Phoenix — Babil Health",
-  "short_name": "MediStock Phoenix",
+  "name": "MediStock-Babil Phoenix",
+  "short_name": "MediStock",
   "description": "Intelligent medicine supply network for Babil Health Directorate — Pharmacy Department",
   "lang": "ar-IQ",
   "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#060B16",
-  "theme_color": "#0EA58A",
+  "background_color": "#F3F7FB",
+  "theme_color": "#0D9488",
   "orientation": "any",
   "categories": [
     "medical",
