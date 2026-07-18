@@ -21,15 +21,17 @@ const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 // 1. Official role model
 // ============================================================================
 describe('Official role model', () => {
-  it('has exactly the six official roles (including institution_admin)', () => {
+  it('has exactly the seven migration-066 official roles', () => {
     expect([...OFFICIAL_ROLES]).toEqual([
-      'super_admin', 'institution_admin', 'warehouse_officer', 'port_officer', 'monthly_status_officer', 'viewer',
+      'super_admin', 'institution_admin', 'central_warehouse_manager',
+      'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
     ]);
   });
 
-  it('maps legacy roles to official non-destructively', () => {
-    expect(normalizeRole('warehouse_manager')).toBe('warehouse_officer');
-    expect(normalizeRole('point_operator')).toBe('port_officer');
+  it('keeps every legacy role authorization-distinct', () => {
+    expect(normalizeRole('warehouse_manager')).toBe('warehouse_manager');
+    expect(normalizeRole('port_officer')).toBe('port_officer');
+    expect(normalizeRole('point_operator')).toBe('point_operator');
     // RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT:
     // transfer_manager used to normalize to monthly_status_officer here. That
     // assertion is deliberately superseded, not relaxed.
@@ -60,20 +62,27 @@ describe('Official role model', () => {
     expect(canTargetRole('institution_admin', 'institution_admin')).toBe(false);
     expect(canTargetRole('warehouse_officer', 'super_admin')).toBe(false);
     expect(canTargetRole('warehouse_officer', 'institution_admin')).toBe(false);
+    expect(canTargetRole('super_admin', 'central_warehouse_manager')).toBe(true);
+    expect(canTargetRole('institution_admin', 'central_warehouse_manager')).toBe(false);
     expect(canTargetRole('institution_admin', 'warehouse_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'outlet_officer')).toBe(true);
     expect(canTargetRole('institution_admin', 'viewer')).toBe(true);
     expect(canTargetRole('warehouse_officer', 'viewer')).toBe(true);
   });
 
-  it('roleLabelKey uses official labels for legacy roles', () => {
-    expect(roleLabelKey('warehouse_manager')).toBe('orole_warehouse_officer');
-    expect(roleLabelKey('point_operator')).toBe('orole_port_officer');
+  it('roleLabelKey marks legacy roles explicitly', () => {
+    expect(roleLabelKey('warehouse_manager')).toBe('orole_legacy_warehouse_manager');
+    expect(roleLabelKey('port_officer')).toBe('orole_legacy_port_officer');
+    expect(roleLabelKey('point_operator')).toBe('orole_legacy_point_operator');
     expect(roleLabelKey('hospital_admin')).toBe('orole_legacy_admin');
   });
 
   it('isOfficialRole guards', () => {
     expect(isOfficialRole('viewer')).toBe(true);
     expect(isOfficialRole('institution_admin')).toBe(true);
+    expect(isOfficialRole('central_warehouse_manager')).toBe(true);
+    expect(isOfficialRole('outlet_officer')).toBe(true);
+    expect(isOfficialRole('port_officer')).toBe(false);
     expect(isOfficialRole('hospital_admin')).toBe(false);
   });
 
@@ -96,12 +105,13 @@ describe('Official role & permission labels (bilingual)', () => {
     expect(strings).toContain('مدير المنصة');           // Platform Administrator
     expect(strings).toContain('مسؤول المؤسسة');         // Institution Administrator
     expect(strings).toContain('مسؤول المذخر');          // Store Officer
-    expect(strings).toContain('مسؤول المنفذ');          // Port Officer
+    expect(strings).toContain('مسؤول مخازن قسم الصيدلة'); // Central warehouse manager
+    expect(strings).toContain('مسؤول المنفذ');          // Outlet Officer
     expect(strings).toContain('مسؤول المواقف الشهرية'); // Monthly Status Officer
   });
 
   it('official English labels match the spec', () => {
-    ['Platform Administrator', 'Institution Administrator', 'Store Officer', 'Port Officer', 'Monthly Status Officer', 'Viewer']
+    ['Platform Administrator', 'Institution Administrator', 'Pharmacy Department Warehouse Manager', 'Store Officer', 'Outlet Officer', 'Monthly Status Officer', 'Viewer']
       .forEach(l => expect(strings).toContain(l));
   });
 
@@ -293,9 +303,11 @@ describe('Role default permissions', () => {
     expect(roleDefaults('institution_admin').size).toBe(26);
   });
 
-  it('legacy roles inherit their mapped official defaults', () => {
+  it('legacy roles preserve their current fallback snapshot without aliasing', () => {
     expect([...roleDefaults('warehouse_manager')].sort()).toEqual([...roleDefaults('warehouse_officer')].sort());
     expect([...roleDefaults('point_operator')].sort()).toEqual([...roleDefaults('port_officer')].sort());
+    expect(normalizeRole('warehouse_manager')).toBe('warehouse_manager');
+    expect(normalizeRole('point_operator')).toBe('point_operator');
   });
 });
 
@@ -895,11 +907,12 @@ describe('institution_admin role scoping (UI + Edge Function)', () => {
 
   it('institution_admin canTargetRole: can create operator-level roles, not admin-level', () => {
     expect(canTargetRole('institution_admin', 'warehouse_officer')).toBe(true);
-    expect(canTargetRole('institution_admin', 'port_officer')).toBe(true);
+    expect(canTargetRole('institution_admin', 'outlet_officer')).toBe(true);
     expect(canTargetRole('institution_admin', 'monthly_status_officer')).toBe(true);
     expect(canTargetRole('institution_admin', 'viewer')).toBe(true);
     expect(canTargetRole('institution_admin', 'super_admin')).toBe(false);
     expect(canTargetRole('institution_admin', 'institution_admin')).toBe(false);
+    expect(canTargetRole('institution_admin', 'central_warehouse_manager')).toBe(false);
   });
 });
 
