@@ -53,8 +53,6 @@ function numOrNull(v: string): number | null {
 export function InventoryThresholdModal({ open, organizationId, organizationLabel, editing = null, onCancel, onSaved }: Props) {
   const { lang } = useApp();
 
-  const scopes = useInventoryScopes(organizationId);
-
   const [scopeKind, setScopeKind] = useState<InventoryScopeKind>('warehouse');
   const [applyTo, setApplyTo] = useState<ApplyTo>('scope');
   const [scopeId, setScopeId] = useState<string>('');
@@ -66,20 +64,21 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const orgPermission = useExactThresholdPermission(organizationId, null, null, open);
+  const canOrgDefault = orgPermission.data === true;
+  const scopes = useInventoryScopes(organizationId, canOrgDefault);
+
   const options = scopeKind === 'warehouse'
     ? (scopes.data?.manageableWarehouses ?? [])
     : (scopes.data?.manageableOutlets ?? []);
   const selectedScope = options.find(o => o.id === scopeId) ?? null;
   const identityLocked = editing !== null;
-  const orgPermission = useExactThresholdPermission(organizationId, null, null, open);
   const selectedPermission = useExactThresholdPermission(
     organizationId,
     scopeKind,
     selectedScope?.id ?? null,
     open && selectedScope !== null,
   );
-  const canOrgDefault = orgPermission.data === true;
-
   const reorderNum = numOrNull(reorderPoint);
   const targetNum = numOrNull(targetMax);
   const nameOk = scientificName.trim() !== '';
