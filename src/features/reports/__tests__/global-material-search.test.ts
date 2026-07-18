@@ -21,6 +21,10 @@ const sidebar = readFileSync(
   new URL('../../../shared/ui/PhoenixSidebar.tsx', import.meta.url),
   'utf8',
 );
+const mobileDrawer = readFileSync(
+  new URL('../../../shared/ui/PhoenixMobileDrawer.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('super-admin global material search boundary', () => {
   it('renders the tab and panel only for super_admin', () => {
@@ -29,11 +33,13 @@ describe('super-admin global material search boundary', () => {
     expect(panel).toContain("if (role !== 'super_admin') return null");
   });
 
-  it('keeps Reports reachable from navigation for super_admin only', () => {
-    expect(sidebar).toContain("screen: 9");
-    expect(sidebar).toContain("labelKey: 'nav_reports'");
-    expect(sidebar).toContain('superAdminOnly: true');
-    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
+  it('keeps Reports reachable from desktop and mobile navigation for super_admin only', () => {
+    [sidebar, mobileDrawer].forEach(source => {
+      expect(source).toContain("screen: 9");
+      expect(source).toContain("labelKey: 'nav_reports'");
+      expect(source).toContain('superAdminOnly: true');
+      expect(source).toContain("!item.superAdminOnly || role === 'super_admin'");
+    });
   });
 
   it('never embeds elevated credentials or performs direct database writes', () => {
