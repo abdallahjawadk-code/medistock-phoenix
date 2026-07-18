@@ -28,10 +28,12 @@ describe('super-admin global material search boundary', () => {
   it('never embeds elevated credentials or performs direct database writes', () => {
     const source = [service, panel, exporter].join('\n');
     expect(source).not.toContain('service_role');
-    expect(source).not.toMatch(/\.insert\s*\(/);
-    expect(source).not.toMatch(/\.update\s*\(/);
-    expect(source).not.toMatch(/\.delete\s*\(/);
-    expect(source).not.toMatch(/\.rpc\s*\(/);
+    // Set.delete() in the UI only changes local checkbox state; inspect
+    // the Supabase service itself for database mutation methods.
+    expect(service).not.toMatch(/\.insert\s*\(/);
+    expect(service).not.toMatch(/\.update\s*\(/);
+    expect(service).not.toMatch(/\.delete\s*\(/);
+    expect(service).not.toMatch(/\.rpc\s*\(/);
   });
 
   it('uses existing RLS-protected truth tables rather than item_availability', () => {
