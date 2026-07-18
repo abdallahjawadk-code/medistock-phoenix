@@ -1,4 +1,5 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useId } from 'react';
+import { PhoenixIcon } from './PhoenixIcon';
 
 interface Props {
   open: boolean;
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }: Props) {
+  const titleId = useId();
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -20,14 +23,15 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      className="nexus-dialog"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="dialog-title"
+      aria-labelledby={titleId}
     >
       <div
+        className="nexus-dialog__backdrop"
         onClick={onClose}
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(2px)' }}
+        aria-hidden="true"
       />
       <div
         className="premium-dialog-panel"
@@ -45,7 +49,17 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
           overflowY: 'auto',
         }}
       >
-        <h2 id="dialog-title" style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px' }}>{title}</h2>
+        <div className="nexus-dialog__header">
+          <h2 id={titleId}>{title}</h2>
+          <button
+            type="button"
+            className="nexus-dialog__close premium-focus-ring"
+            onClick={onClose}
+            aria-label="Close / إغلاق"
+          >
+            <PhoenixIcon name="close" size={18} />
+          </button>
+        </div>
         {children}
       </div>
     </div>
