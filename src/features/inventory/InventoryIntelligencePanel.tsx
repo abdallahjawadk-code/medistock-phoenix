@@ -4,7 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
 import { getOrganization } from '@/shared/supabase/services/organizations.service';
-import { useInventoryScopes } from './useInventoryScopes';
+import { useExactThresholdPermission, useInventoryScopes } from './useInventoryScopes';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -29,6 +29,7 @@ import {
   recomputeInventoryAlerts,
   suggestInventoryTransfers,
   type InventoryAlert,
+  type InventoryThreshold,
   type InventoryTransferSuggestion,
 } from './inventory-intelligence.service';
 import {
@@ -57,11 +58,14 @@ export function InventoryIntelligencePanel() {
   const scopes = useInventoryScopes(activeOrgId);
   const org = useAsync(() => (activeOrgId ? getOrganization(activeOrgId) : Promise.resolve(null)), [activeOrgId]);
   const orgLabel = org.data ? (lang === 'ar' ? org.data.name_ar : org.data.name) : null;
+  const orgThresholdPermission = useExactThresholdPermission(activeOrgId, null, null, canThresholds);
+  const canManageOrgDefault = orgThresholdPermission.data === true;
 
   const [pending, setPending] = useState<PendingAction>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [thresholdOpen, setThresholdOpen] = useState(false);
+  const [editingThreshold, setEditingThreshold] = useState<InventoryThreshold | null>(null);
 
   const sortedAlerts = useMemo(
     () => (alerts.data ?? []).slice().sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]),
@@ -147,7 +151,7 @@ export function InventoryIntelligencePanel() {
             </PhoenixButton>
           )}
           {canThresholds && (
-            <PhoenixButton variant="ghost" size="sm" onClick={() => setThresholdOpen(true)}>
+            <PhoenixButton variant="ghost" size="sm" onClick={() => { setEditingThreshold(null); setThresholdOpen(true); }}>
               ⚙ {t('inv_threshold_add', lang)}
             </PhoenixButton>
           )}
@@ -297,6 +301,17 @@ export function InventoryIntelligencePanel() {
                 <span>{t('inv_th_near_expiry_days', lang)}: {th.nearExpiryDays ?? 270}</span>
                 {!th.isActive && <PhoenixStatusBadge variant="neutral" label="—" />}
               </div>
+              {canThresholds && (th.scopeId === null
+                ? canManageOrgDefault
+                : scopes.data?.canManage(th.scopeKind, th.scopeId)) && (
+                <PhoenixButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setEditingThreshold(th); setThresholdOpen(true); }}
+                >
+                  {t('inv_action_edit', lang)}
+                </PhoenixButton>
+              )}
             </div>
           ))}
         </div>
@@ -316,8 +331,9 @@ export function InventoryIntelligencePanel() {
           open={thresholdOpen}
           organizationId={activeOrgId}
           organizationLabel={orgLabel}
-          onCancel={() => setThresholdOpen(false)}
-          onSaved={() => { setThresholdOpen(false); flash(t('inv_saved', lang)); thresholds.reload(); scopes.reload(); }}
+          editing={editingThreshold}
+          onCancel={() => { setThresholdOpen(false); setEditingThreshold(null); }}
+          onSaved={() => { setThresholdOpen(false); setEditingThreshold(null); flash(t('inv_saved', lang)); thresholds.reload(); scopes.reload(); }}
         />
       )}
       {toast && <PhoenixToast message={toast} />}
