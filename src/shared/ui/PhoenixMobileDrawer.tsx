@@ -19,12 +19,14 @@ const ALL_NAV: {
   labelKey: string;
   frozen?: boolean;
   superAdminOnly?: boolean;
+  /** NAV-USERS-PARITY-A: gated by users.view, matching the sidebar and palette. */
+  requiresUsersView?: boolean;
 }[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: '👥', labelKey: 'nav_users' },
+  { screen: 14, icon: '👥', labelKey: 'nav_users', requiresUsersView: true },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
 ];
 
@@ -44,7 +46,9 @@ interface Props {
 }
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
-  const { lang, dir, role } = useApp();
+  const { lang, dir, role, myPermissions } = useApp();
+  // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx / PhoenixSidebar.tsx.
+  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',
@@ -99,6 +103,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
           {ALL_NAV
             .filter(item => !item.superAdminOnly || role === 'super_admin')
+            .filter(item => !item.requiresUsersView || canSeeUsers)
             .map(item => {
             const s = ns(item.screen);
             return (

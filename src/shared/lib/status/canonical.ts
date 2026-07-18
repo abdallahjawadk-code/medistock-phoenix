@@ -42,8 +42,32 @@ export type LegacyStatusReportType =
   | 'near_expiry'
   | 'missing';
 
+/**
+ * Two extra stored conditions accepted by item_availability.condition after
+ * migration 066 (mirrored by AvailabilityCondition in lib/types.ts):
+ *
+ *   - `not_stocked` — an authoritative catalog claim that this outlet/scope does
+ *     NOT stock the material. It is NOT the same as `missing`.
+ *   - `unknown`     — the stock state is genuinely unknown (not yet reported).
+ *
+ * They are epistemic/catalog states, not quantity states, so they are kept
+ * OUTSIDE CanonicalStatus (whose six values all imply a known, stocked item)
+ * and handled explicitly in computeEffectiveStatus.
+ */
+export type ExtendedAvailabilityCondition =
+  | RawAvailabilityCondition
+  | 'unknown'
+  | 'not_stocked';
+
 /** Canonical domain status — identical shape to RawAvailabilityCondition. */
 export type CanonicalStatus = RawAvailabilityCondition;
+
+/**
+ * The final status surfaced to UI/reports/alerts. Adds the two non-quantity
+ * states so `not_stocked`/`unknown` are never silently collapsed into
+ * `available` or `missing` (STATUS-CANONICAL-UNKNOWN-NOT-STOCKED-A).
+ */
+export type EffectiveStatus = CanonicalStatus | 'unknown' | 'not_stocked';
 
 /** Expiry-derived state, independent of quantity/manual condition. */
 export type DerivedExpiryStatus = 'normal' | 'near_expiry' | 'expired';
@@ -56,16 +80,16 @@ export type EffectiveSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 /** Result of computeEffectiveStatus — carries enough for later UI/reporting use. */
 export interface EffectiveStatusResult {
-  rawCondition: RawAvailabilityCondition;
-  normalizedCondition: CanonicalStatus;
+  rawCondition: ExtendedAvailabilityCondition;
+  normalizedCondition: EffectiveStatus;
   expiryBucket: ExpiryBucket;
   derivedExpiryStatus: DerivedExpiryStatus;
-  effectiveStatus: CanonicalStatus;
+  effectiveStatus: EffectiveStatus;
   severity: EffectiveSeverity;
 }
 
 export interface ComputeEffectiveStatusInput {
-  rawCondition: RawAvailabilityCondition;
+  rawCondition: ExtendedAvailabilityCondition;
   quantity: number | null | undefined;
   expiryDate: string | Date | null | undefined;
   today?: Date;
@@ -183,9 +207,9 @@ export function deriveExpiryStatus(
 
 // ─── Severity ─────────────────────────────────────────────────────────────────
 
-/** Baseline severity mapping for a canonical status. */
+/** Baseline severity mapping for an effective status. */
 export function getStatusSeverity(
-  status: CanonicalStatus,
+  status: EffectiveStatus,
   _expiryBucket?: ExpiryBucket,
 ): EffectiveSeverity {
   switch (status) {
@@ -195,6 +219,11 @@ export function getStatusSeverity(
     case 'low_stock':   return 'medium';
     case 'surplus':     return 'low';
     case 'available':   return 'info';
+    // Non-quantity states: informational, never critical. `not_stocked` is a
+    // deliberate catalog choice and `unknown` is simply unreported — neither is
+    // an actionable shortage.
+    case 'not_stocked': return 'info';
+    case 'unknown':     return 'info';
   }
 }
 
@@ -219,9 +248,27 @@ export function getStatusSeverity(
 export function computeEffectiveStatus(input: ComputeEffectiveStatusInput): EffectiveStatusResult {
   const today = input.today ?? new Date();
   const rawCondition = input.rawCondition;
-  const normalizedCondition = normalizeStatusType(rawCondition) ?? 'available';
   const expiryBucket = getExpiryBucket(today, input.expiryDate);
   const derivedExpiryStatus = deriveExpiryStatus(today, input.expiryDate);
+
+  // ── Highest precedence: the two non-quantity states (migration 066) ──────────
+  // `not_stocked` and `unknown` are authoritative claims about whether the item
+  // is stocked/known at all. They MUST short-circuit before the quantity and
+  // expiry rules below, so a zero-quantity `not_stocked`/`unknown` row is never
+  // relabelled as `missing`, and a positive-quantity one is never `available`.
+  // `missing` stays reserved for an EXPECTED material whose on_hand is 0.
+  if (rawCondition === 'not_stocked' || rawCondition === 'unknown') {
+    return {
+      rawCondition,
+      normalizedCondition: rawCondition,
+      expiryBucket,
+      derivedExpiryStatus,
+      effectiveStatus: rawCondition,
+      severity: getStatusSeverity(rawCondition, expiryBucket),
+    };
+  }
+
+  const normalizedCondition = normalizeStatusType(rawCondition) ?? 'available';
 
   const qty = input.quantity;
   const hasQty = typeof qty === 'number' && !Number.isNaN(qty);

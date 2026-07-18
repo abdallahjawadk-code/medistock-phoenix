@@ -2,8 +2,8 @@ import { supabase, supabaseConfigured } from '../client';
 import type { AvailabilityRecord, AvailabilityCondition } from '../../lib/types';
 import {
   computeEffectiveStatus,
-  type RawAvailabilityCondition,
-  type CanonicalStatus,
+  type ExtendedAvailabilityCondition,
+  type EffectiveStatus,
   type ExpiryBucket,
   type DerivedExpiryStatus,
   type EffectiveSeverity,
@@ -18,14 +18,14 @@ import {
 export interface EffectiveAvailabilityFields {
   /** Copy of the raw stored condition (never modified). */
   raw_condition: string;
-  /** Canonical vocabulary (scarce -> low_stock); falls back to 'available' for unknown. */
-  normalized_condition: CanonicalStatus;
+  /** Canonical vocabulary (scarce -> low_stock); not_stocked/unknown are preserved as-is. */
+  normalized_condition: EffectiveStatus;
   /** Fine-grained expiry bucket from expiry_date, or null. */
   expiry_bucket: ExpiryBucket;
   /** normal | near_expiry | expired derived from expiry_date. */
   derived_expiry_status: DerivedExpiryStatus;
   /** Final status for later UI/report/alert use (raw condition is untouched). */
-  effective_status: CanonicalStatus;
+  effective_status: EffectiveStatus;
   /** Baseline severity for the effective status. */
   effective_severity: EffectiveSeverity;
 }
@@ -40,7 +40,7 @@ export interface EffectiveAvailabilityFields {
 export function withEffectiveAvailabilityStatus<
   T extends { condition?: string | null; quantity?: number | null; expiry_date?: string | null },
 >(row: T, today?: Date): T & EffectiveAvailabilityFields {
-  const rawCondition = (row.condition ?? 'available') as RawAvailabilityCondition;
+  const rawCondition = (row.condition ?? 'available') as ExtendedAvailabilityCondition;
   const eff = computeEffectiveStatus({
     rawCondition,
     quantity: row.quantity ?? null,
