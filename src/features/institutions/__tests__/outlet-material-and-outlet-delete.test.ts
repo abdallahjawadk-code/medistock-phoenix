@@ -271,21 +271,21 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: Edit outlet action', () => {
 
   it('required fields (Arabic and English name) are validated before saving', () => {
     const fnStart = screen.indexOf('async function onSaveEdit');
-    const fnBody = screen.slice(fnStart, fnStart + 700);
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n\n  const ptTypeKey', fnStart));
     expect(fnBody).toMatch(/!editName\.trim\(\)\s*\|\|\s*!editNameAr\.trim\(\)/);
     expect(fnBody).toContain("t('port_name_required', lang)");
   });
 
   it('save calls the existing updateDistributionPoint service, not a fake/local-only update', () => {
     const fnStart = screen.indexOf('async function onSaveEdit');
-    const fnBody = screen.slice(fnStart, fnStart + 700);
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n\n  const ptTypeKey', fnStart));
     expect(fnBody).toMatch(/await updateDistributionPoint\(point\.id,/);
     expect(fnBody).not.toContain('setQr(');
   });
 
   it('does not send status or any unsupported field in the update payload', () => {
     const fnStart = screen.indexOf('async function onSaveEdit');
-    const fnBody = screen.slice(fnStart, fnStart + 700);
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n\n  const ptTypeKey', fnStart));
     const callStart = fnBody.indexOf('await updateDistributionPoint(point.id,');
     const callBody = fnBody.slice(callStart, callStart + 200);
     expect(callBody).not.toContain('status:');
@@ -293,7 +293,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: Edit outlet action', () => {
 
   it('success closes the dialog, reloads outlet data, and shows an honest success message', () => {
     const fnStart = screen.indexOf('async function onSaveEdit');
-    const fnBody = screen.slice(fnStart, fnStart + 700);
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n\n  const ptTypeKey', fnStart));
     expect(fnBody).toContain('setConfirmAction(null)');
     expect(fnBody).toContain('onReload()');
     expect(fnBody).toContain("onToast(t('port_updated', lang))");
@@ -301,7 +301,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: Edit outlet action', () => {
 
   it('failure keeps the dialog open and shows a translated, honest error (not a raw thrown error, not a silent close)', () => {
     const fnStart = screen.indexOf('async function onSaveEdit');
-    const fnBody = screen.slice(fnStart, fnStart + 700);
+    const fnBody = screen.slice(fnStart, screen.indexOf('\n\n  const ptTypeKey', fnStart));
     expect(fnBody).toMatch(/catch \(e\)/);
     expect(fnBody).toContain("setEditError(t('port_update_error', lang))");
     const catchIdx = fnBody.indexOf('catch (e)');
