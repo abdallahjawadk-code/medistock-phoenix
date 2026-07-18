@@ -47,8 +47,9 @@ const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const OFFICIAL_ROLES = [
   'super_admin',
   'institution_admin',
+  'central_warehouse_manager',
   'warehouse_officer',
-  'port_officer',
+  'outlet_officer',
   'monthly_status_officer',
   'viewer',
 ];
@@ -137,12 +138,17 @@ Deno.serve(async (req: Request) => {
 
   const isSuper = callerProfile.role === 'super_admin';
 
-  // Only super_admin may create super_admin or institution_admin.
+  // Only super_admin may create platform, institution-admin, or central-
+  // warehouse-manager identities. Operational institution/outlet roles remain
+  // subject to users.create and the organization boundary below.
   if (role === 'super_admin' && !isSuper) {
     return json({ ok: false, error: 'CANNOT_CREATE_SUPER_ADMIN' }, 403);
   }
   if (role === 'institution_admin' && !isSuper) {
     return json({ ok: false, error: 'CANNOT_CREATE_INSTITUTION_ADMIN' }, 403);
+  }
+  if (role === 'central_warehouse_manager' && !isSuper) {
+    return json({ ok: false, error: 'CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER' }, 403);
   }
 
   if (!isSuper) {
