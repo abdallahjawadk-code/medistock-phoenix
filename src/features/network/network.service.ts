@@ -166,6 +166,85 @@ export function setSupplyRouteActive(routeId: string, active: boolean, reason?: 
   });
 }
 
+// ─── Direct central→institution supply (077) ─────────────────────────────────
+// The route-free path: a pharmacy-department (central) warehouse officer opens a
+// request straight to a chosen institution warehouse. No warehouse_supply_route
+// is created or consulted — the server validates the endpoints on every call.
+// The legacy route helpers above remain for backward compatibility only.
+
+export function createDirectTransferRequest(input: {
+  sourceWarehouseId: string;
+  destinationOrganizationId: string;
+  destinationWarehouseId: string;
+  requestNumber: string;
+  notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_create_direct_warehouse_transfer_request', {
+    p_source_warehouse_id: input.sourceWarehouseId,
+    p_destination_organization_id: input.destinationOrganizationId,
+    p_destination_warehouse_id: input.destinationWarehouseId,
+    p_request_number: input.requestNumber,
+    p_notes: input.notes ?? null,
+  });
+}
+
+export function addTransferRequestLine(input: {
+  transferRequestId: string; scientificName: string; requestedQuantity: number;
+  centralItemId?: string | null; concentration?: string | null; dosageForm?: string | null;
+  unit?: string | null; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_add_warehouse_transfer_request_line', {
+    p_transfer_request_id: input.transferRequestId,
+    p_scientific_name: input.scientificName,
+    p_requested_quantity: input.requestedQuantity,
+    p_central_item_id: input.centralItemId ?? null,
+    p_concentration: input.concentration ?? null,
+    p_dosage_form: input.dosageForm ?? null,
+    p_unit: input.unit ?? null,
+    p_notes: input.notes ?? null,
+  });
+}
+
+export function submitTransferRequest(transferRequestId: string): Promise<RpcResult> {
+  return callRpc('phoenix_submit_warehouse_transfer_request', {
+    p_transfer_request_id: transferRequestId,
+  });
+}
+
+export function cancelTransferRequest(transferRequestId: string, reason: string): Promise<RpcResult> {
+  return callRpc('phoenix_cancel_warehouse_transfer_request', {
+    p_transfer_request_id: transferRequestId, p_cancellation_reason: reason,
+  });
+}
+
+export function reviewTransferRequest(
+  transferRequestId: string,
+  decisions: Array<{ line_id: string; approved_quantity: number }>,
+): Promise<RpcResult> {
+  return callRpc('phoenix_review_warehouse_transfer_request', {
+    p_transfer_request_id: transferRequestId,
+    p_decisions: decisions,
+  });
+}
+
+/** Ships one line of a DIRECT request. `requestId` is a fresh idempotency token. */
+export function sendDirectTransferLine(input: {
+  requestId: string; transferRequestId: string; warehouseStockId: string;
+  quantity: number; transferNumber: string; transferRequestLineId?: string | null;
+  documentNumber?: string | null; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_send_direct_warehouse_transfer_line', {
+    p_request_id: input.requestId,
+    p_transfer_request_id: input.transferRequestId,
+    p_warehouse_stock_id: input.warehouseStockId,
+    p_quantity: input.quantity,
+    p_transfer_number: input.transferNumber,
+    p_transfer_request_line_id: input.transferRequestLineId ?? null,
+    p_document_number: input.documentNumber ?? null,
+    p_notes: input.notes ?? null,
+  });
+}
+
 // ─── Scope assignments (076) ─────────────────────────────────────────────────
 
 export interface ScopeAssignment {

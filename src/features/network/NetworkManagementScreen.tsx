@@ -14,9 +14,9 @@ import { getOrganizations, getProfilesByOrg } from '@/shared/supabase/services/o
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAllWarehouses, createWarehouse, updateWarehouse, setWarehouseActive,
-  getSupplyRoutes, createSupplyRoute, setSupplyRouteActive, updateSupplyRoute,
+  getSupplyRoutes, createDirectTransferRequest,
   getScopeAssignments, assignProfileScope, revokeProfileScope,
-  type NetworkWarehouse, type SupplyRoute, type WarehouseKind, type ScopeKind, type RpcResult,
+  type NetworkWarehouse, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
 import { NetworkTopologyStage } from './NetworkTopologyStage';
 
@@ -48,24 +48,27 @@ const nameOf = (w: { name_ar: string; name: string } | undefined, lang: Lang): s
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'warehouses' | 'routes' | 'scopes';
+// W077: the manual "supply routes" tab is retired from the product. Central
+// officers supply institutions DIRECTLY (route-free). Warehouses + scope tabs
+// are unchanged. warehouse_supply_routes remains only as legacy compatibility.
+type Tab = 'warehouses' | 'supply' | 'scopes';
 
 export function NetworkManagementScreen() {
   const { lang, dir, role, myPermissions } = useApp();
   const isSuper = role === 'super_admin';
   const canEditScope = isSuper || myPermissions.has('users.edit_scope');
+  // Convenience gate only — the RPC re-checks source-warehouse scope server-side.
+  const canSupply = isSuper || myPermissions.has('warehouse_transfer.send');
 
   const tabs = useMemo(() => {
     const list: { id: Tab; labelKey: string }[] = [];
-    if (isSuper) {
-      list.push({ id: 'warehouses', labelKey: 'net_tab_warehouses' });
-      list.push({ id: 'routes', labelKey: 'net_tab_routes' });
-    }
+    if (isSuper) list.push({ id: 'warehouses', labelKey: 'net_tab_warehouses' });
+    if (canSupply) list.push({ id: 'supply', labelKey: 'net_tab_supply' });
     if (canEditScope) list.push({ id: 'scopes', labelKey: 'net_tab_scopes' });
     return list;
-  }, [isSuper, canEditScope]);
+  }, [isSuper, canSupply, canEditScope]);
 
-  const [tab, setTab] = useState<Tab>(() => (isSuper ? 'warehouses' : 'scopes'));
+  const [tab, setTab] = useState<Tab>(() => (isSuper ? 'warehouses' : canSupply ? 'supply' : 'scopes'));
 
   if (tabs.length === 0) {
     return (
@@ -98,7 +101,7 @@ export function NetworkManagementScreen() {
       </div>
 
       {activeTab === 'warehouses' && isSuper && <WarehousesPanel lang={lang} />}
-      {activeTab === 'routes' && isSuper && <SupplyRoutesPanel lang={lang} />}
+      {activeTab === 'supply' && canSupply && <DirectSupplyPanel lang={lang} />}
       {activeTab === 'scopes' && canEditScope && <ScopeAssignmentsPanel lang={lang} isSuper={isSuper} />}
     </div>
   );
@@ -321,176 +324,81 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
   );
 }
 
-// ─── Supply routes panel (075) ───────────────────────────────────────────────
+// ─── Direct central→institution supply panel (077) ───────────────────────────
+// Replaces the retired "supply routes" tab. A central warehouse officer picks
+// the institution, sees ITS active warehouses (مذاخر), picks a source central
+// warehouse, and opens a DIRECT request — no route is created or consulted.
+// The server (phoenix_create_direct_warehouse_transfer_request) re-validates the
+// endpoints and the officer's source-warehouse scope.
 
-function SupplyRoutesPanel({ lang }: { lang: Lang }) {
-  const [reloadKey, setReloadKey] = useState(0);
-  const warehouses = useAsync(() => getAllWarehouses(), [reloadKey]);
-  const routes = useAsync(() => getSupplyRoutes(), [reloadKey]);
+function DirectSupplyPanel({ lang }: { lang: Lang }) {
+  const warehouses = useAsync(() => getAllWarehouses(), []);
+  const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
+  const [sourceId, setSourceId] = useState('');
+  const [targetId, setTargetId] = useState('');
+  const [number, setNumber] = useState('');
+  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
-  const [adding, setAdding] = useState(false);
-  const reload = () => setReloadKey(k => k + 1);
 
-  const whById = useMemo(() => {
-    const m = new Map<string, NetworkWarehouse>();
-    (warehouses.data ?? []).forEach(w => m.set(w.id, w));
-    return m;
-  }, [warehouses.data]);
   const centrals = (warehouses.data ?? []).filter(w => w.warehouseKind === 'central' && w.status === 'active');
-  const institutions = (warehouses.data ?? []).filter(w => w.warehouseKind === 'institution' && w.status === 'active');
+  // Only the SELECTED institution's active warehouses (مذاخر) are offered.
+  const institutions = (warehouses.data ?? [])
+    .filter(w => w.warehouseKind === 'institution' && w.status === 'active' && w.organizationId === orgId);
 
-  if (warehouses.loading || routes.loading) return <PhoenixLoadingState />;
-  if (warehouses.error) return <PhoenixErrorState message={warehouses.error} onRetry={reload} />;
-  if (routes.error) return <PhoenixErrorState message={routes.error} onRetry={reload} />;
+  const effSource = sourceId || (centrals[0]?.id ?? '');
+  const effTarget = institutions.some(w => w.id === targetId) ? targetId : (institutions[0]?.id ?? '');
+  const canSubmit = orgId !== '' && effSource !== '' && effTarget !== '' && number.trim() !== '' && !busy;
 
-  const list = routes.data ?? [];
+  if (orgs.loading || warehouses.loading) return <PhoenixLoadingState />;
+  if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={() => location.reload()} />;
+  if (warehouses.error) return <PhoenixErrorState message={warehouses.error} onRetry={() => location.reload()} />;
 
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-        <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: 0 }}>{t('net_sr_hint', lang)}</p>
-        <PhoenixButton onClick={() => setAdding(a => !a)} disabled={centrals.length === 0 || institutions.length === 0}>
-          {t('net_sr_add', lang)}
-        </PhoenixButton>
-      </div>
-
-      {status && <StatusLine msg={status.msg} error={status.error} />}
-
-      {adding && (
-        <SupplyRouteForm
-          lang={lang} centrals={centrals} institutions={institutions}
-          onCancel={() => setAdding(false)}
-          onDone={(res) => {
-            if (res.ok) { setStatus({ msg: t('net_sr_saved', lang), error: false }); setAdding(false); reload(); }
-            else setStatus({ msg: networkErrorMessage(res.error, lang), error: true });
-          }}
-        />
-      )}
-
-      {list.length === 0 && <PhoenixEmptyState icon="🔀" title={t('net_sr_empty', lang)} />}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-        {list.map(r => (
-          <RouteRow key={r.id} lang={lang} route={r} whById={whById} onChanged={(res) => {
-            setStatus(res.ok
-              ? { msg: t('net_sr_saved', lang), error: false }
-              : { msg: networkErrorMessage(res.error, lang), error: true });
-            if (res.ok) reload();
-          }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RouteRow({ lang, route, whById, onChanged }: {
-  lang: Lang; route: SupplyRoute; whById: Map<string, NetworkWarehouse>;
-  onChanged: (res: RpcResult) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const active = route.isActive;
-
-  if (editing) {
-    return (
-      <SupplyRouteEditForm
-        lang={lang} route={route}
-        onCancel={() => setEditing(false)}
-        onDone={(res) => { if (res.ok) setEditing(false); onChanged(res); }}
-      />
-    );
+  async function create() {
+    if (!canSubmit) return;
+    setBusy(true);
+    const res = await createDirectTransferRequest({
+      sourceWarehouseId: effSource,
+      destinationOrganizationId: orgId,
+      destinationWarehouseId: effTarget,
+      requestNumber: number.trim(),
+    });
+    setBusy(false);
+    if (res.ok) { setStatus({ msg: t('net_ds_created', lang), error: false }); setNumber(''); }
+    else setStatus({ msg: networkErrorMessage(res.error, lang), error: true });
   }
 
   return (
-    <PhoenixCard padding="12px 14px">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 0, fontSize: '13px' }}>
-          <span style={{ fontWeight: 700 }}>{nameOf(whById.get(route.sourceWarehouseId), lang)}</span>
-          <span style={{ color: 'var(--t2)', margin: '0 6px' }}>→</span>
-          <span style={{ fontWeight: 700 }}>{nameOf(whById.get(route.targetWarehouseId), lang)}</span>
-          <span style={{ marginInlineStart: '8px' }}>
-            <Badge text={route.priority === 1 ? t('net_sr_primary', lang) : `${t('net_sr_fallback', lang)} ${route.priority}`} tone={route.priority === 1 ? 'p' : 'muted'} />
-            <Badge text={active ? t('net_wh_active', lang) : t('net_wh_inactive', lang)} tone={active ? 'ok' : 'muted'} />
-          </span>
-          {route.notes && <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>{route.notes}</div>}
+    <div>
+      <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: '0 0 12px' }}>{t('net_ds_hint', lang)}</p>
+
+      {status && <StatusLine msg={status.msg} error={status.error} />}
+
+      <PhoenixCard padding="16px" style={{ borderColor: 'var(--p)' }}>
+        <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          <PhoenixSelect label={t('net_ds_source', lang)} value={effSource} onChange={e => setSourceId(e.target.value)}
+            options={centrals.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
+          <PhoenixSelect label={t('net_ds_institution', lang)} value={orgId} options={options}
+            onChange={e => { setOrgId(e.target.value); setTargetId(''); }} />
+          <PhoenixSelect label={t('net_ds_warehouse', lang)} value={effTarget} onChange={e => setTargetId(e.target.value)}
+            options={institutions.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
+          <PhoenixInput label={t('net_ds_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
         </div>
-        <PhoenixButton size="sm" variant="ghost" onClick={() => setEditing(true)}>{t('net_wh_edit', lang)}</PhoenixButton>
-        <RouteToggle lang={lang} routeId={route.id} active={active} onDone={onChanged} />
-      </div>
-    </PhoenixCard>
-  );
-}
 
-function SupplyRouteEditForm({ lang, route, onCancel, onDone }: {
-  lang: Lang; route: SupplyRoute; onCancel: () => void; onDone: (res: RpcResult) => void;
-}) {
-  const [priority, setPriority] = useState(String(route.priority));
-  const [notes, setNotes] = useState(route.notes ?? '');
-  const [busy, setBusy] = useState(false);
-  const p = parseInt(priority, 10);
-  const canSubmit = Number.isFinite(p) && p >= 1;
+        {orgId !== '' && institutions.length === 0 && (
+          <div style={{ marginTop: '10px' }}>
+            <PhoenixEmptyState icon="🏬" title={t('net_ds_no_warehouses', lang)} />
+          </div>
+        )}
 
-  return (
-    <PhoenixCard padding="16px" style={{ borderColor: 'var(--p)' }}>
-      <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-        <PhoenixInput label={t('net_sr_priority', lang)} type="number" min={1} value={priority} onChange={e => setPriority(e.target.value)} />
-        <PhoenixInput label={t('net_sr_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
-      </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-        <PhoenixButton loading={busy} disabled={!canSubmit} onClick={async () => {
-          setBusy(true);
-          const res = await updateSupplyRoute({ routeId: route.id, priority: p, notes: notes.trim() === '' ? '' : notes.trim() });
-          setBusy(false); onDone(res);
-        }}>{t('net_save', lang)}</PhoenixButton>
-        <PhoenixButton variant="ghost" onClick={onCancel}>{t('net_cancel', lang)}</PhoenixButton>
-      </div>
-    </PhoenixCard>
-  );
-}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          <PhoenixButton loading={busy} disabled={!canSubmit} onClick={create}>{t('net_ds_create', lang)}</PhoenixButton>
+        </div>
+      </PhoenixCard>
 
-function RouteToggle({ lang, routeId, active, onDone }: {
-  lang: Lang; routeId: string; active: boolean; onDone: (res: RpcResult) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <PhoenixButton size="sm" variant={active ? 'warn' : 'primary'} loading={busy} onClick={async () => {
-      setBusy(true); const res = await setSupplyRouteActive(routeId, !active); setBusy(false); onDone(res);
-    }}>
-      {active ? t('net_wh_deactivate', lang) : t('net_wh_activate', lang)}
-    </PhoenixButton>
-  );
-}
-
-function SupplyRouteForm({ lang, centrals, institutions, onCancel, onDone }: {
-  lang: Lang; centrals: NetworkWarehouse[]; institutions: NetworkWarehouse[];
-  onCancel: () => void; onDone: (res: RpcResult) => void;
-}) {
-  const [source, setSource] = useState(centrals[0]?.id ?? '');
-  const [target, setTarget] = useState(institutions[0]?.id ?? '');
-  const [priority, setPriority] = useState('1');
-  const [notes, setNotes] = useState('');
-  const [busy, setBusy] = useState(false);
-  const p = parseInt(priority, 10);
-  const canSubmit = source !== '' && target !== '' && Number.isFinite(p) && p >= 1;
-
-  return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
-      <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-        <PhoenixSelect label={t('net_sr_source', lang)} value={source} onChange={e => setSource(e.target.value)}
-          options={centrals.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-        <PhoenixSelect label={t('net_sr_target', lang)} value={target} onChange={e => setTarget(e.target.value)}
-          options={institutions.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-        <PhoenixInput label={t('net_sr_priority', lang)} type="number" min={1} value={priority} onChange={e => setPriority(e.target.value)} />
-        <PhoenixInput label={t('net_sr_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
-      </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-        <PhoenixButton loading={busy} disabled={!canSubmit} onClick={async () => {
-          setBusy(true);
-          const res = await createSupplyRoute({ sourceWarehouseId: source, targetWarehouseId: target, priority: p, notes: notes.trim() || null });
-          setBusy(false); onDone(res);
-        }}>{t('net_save', lang)}</PhoenixButton>
-        <PhoenixButton variant="ghost" onClick={onCancel}>{t('net_cancel', lang)}</PhoenixButton>
-      </div>
-    </PhoenixCard>
+      {centrals.length === 0 && (
+        <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '12px' }}>{t('net_ds_no_central', lang)}</p>
+      )}
+    </div>
   );
 }
 
