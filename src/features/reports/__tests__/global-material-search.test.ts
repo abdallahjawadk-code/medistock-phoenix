@@ -64,6 +64,13 @@ describe('free-tier query pressure controls', () => {
     expect(service).toContain('function dedupeById');
     expect(service).toContain("['scientific_name', 'trade_name', 'national_code']");
   });
+
+  it('invalidates in-flight results whenever the search context changes', () => {
+    expect(panel).toContain('function invalidateSearchContext');
+    expect(panel).toContain('requestSequence.current += 1');
+    expect(panel).toContain('if (sequence !== requestSequence.current) return');
+    expect(panel.match(/invalidateSearchContext\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
+  });
 });
 
 describe('inventory meaning and aggregation', () => {
