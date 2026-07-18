@@ -55,11 +55,11 @@ export function InventoryIntelligencePanel() {
   const alerts = useInventoryAlerts();
   const suggestions = useInventoryTransferSuggestions();
   const thresholds = useInventoryThresholds();
-  const scopes = useInventoryScopes(activeOrgId);
-  const org = useAsync(() => (activeOrgId ? getOrganization(activeOrgId) : Promise.resolve(null)), [activeOrgId]);
-  const orgLabel = org.data ? (lang === 'ar' ? org.data.name_ar : org.data.name) : null;
   const orgThresholdPermission = useExactThresholdPermission(activeOrgId, null, null, canThresholds);
   const canManageOrgDefault = orgThresholdPermission.data === true;
+  const scopes = useInventoryScopes(activeOrgId, canManageOrgDefault);
+  const org = useAsync(() => (activeOrgId ? getOrganization(activeOrgId) : Promise.resolve(null)), [activeOrgId]);
+  const orgLabel = org.data ? (lang === 'ar' ? org.data.name_ar : org.data.name) : null;
 
   const [pending, setPending] = useState<PendingAction>(null);
   const [busy, setBusy] = useState(false);
