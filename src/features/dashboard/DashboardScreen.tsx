@@ -16,6 +16,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { InventoryIntelligenceSummary } from '@/features/inventory/InventoryIntelligenceSummary';
 
 interface Props { onNavigate: (screen: number) => void; }
 
@@ -312,6 +313,12 @@ export function DashboardScreen({ onNavigate }: Props) {
           })}
         </div>
       )}
+
+      {/* Inventory Intelligence summary (migration 072 · INVENTORY-INTELLIGENCE-FRONTEND-A).
+          Read-only signal/alert counts + high-severity pop-ups. Hides entirely
+          when the caller lacks inventory.view_signals; RLS scopes every row to
+          the caller's own orgs/scopes. "View all" opens the Status Center. */}
+      <InventoryIntelligenceSummary onViewAll={() => onNavigate(12)} />
 
       {/* Quick actions */}
       <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('quick', lang)}</h3>

@@ -1342,6 +1342,79 @@ export const T: Dict = {
   /* Shown instead of an endless spinner when the super_admin pilot cannot
      establish a decision — recoverable, never a dead end. */
   authz_pilot_unavailable_title: { ar: 'تعذّر التحقق من الصلاحيات',                          en: 'Permission check unavailable' },
+
+  /* ── Inventory Intelligence (migration 072 · INVENTORY-INTELLIGENCE-FRONTEND-A) ──
+     Read-only intelligence + advisory layer. Suggestions are RECOMMENDATIONS
+     only — there is no Accept and no stock movement anywhere in this feature. */
+  inv_title:                { ar: 'ذكاء المخزون',                              en: 'Inventory Intelligence' },
+  inv_subtitle:             { ar: 'إشارات وتنبيهات وتوصيات تحويل — قراءة وتحليل فقط', en: 'Signals, alerts and transfer recommendations — read & advise only' },
+  inv_recommendation_only:  { ar: 'توصية فقط',                                  en: 'Recommendation only' },
+  inv_recommendation_note:  { ar: 'توصية فقط — لا قبول ولا تحريك مخزون. أعد التحقق من المخزون الفعلي قبل أي إجراء.', en: 'Recommendation only — no acceptance, no stock movement. Re-check live stock before acting.' },
+  inv_stale_note:           { ar: 'قد تكون هذه التوصية قديمة بعد حركة مخزون لاحقة — تحقّق من التوفّر الحالي.', en: 'This recommendation may be stale after later stock movement — verify current availability.' },
+  inv_last_validated:       { ar: 'آخر تحقق',                                   en: 'Last validated' },
+
+  /* Summary card labels (reused on dashboard + status center) */
+  inv_summary_total:        { ar: 'تنبيهات نشطة',                               en: 'Active alerts' },
+  inv_summary_high:         { ar: 'عالية الخطورة',                              en: 'High severity' },
+  inv_summary_expiry:       { ar: 'قرب/منتهي الصلاحية',                          en: 'Near/expired' },
+  inv_summary_suggestions:  { ar: 'توصيات مفتوحة',                              en: 'Open recommendations' },
+
+  /* Signal types */
+  inv_signal_missing:       { ar: 'نقص كامل',                                   en: 'Missing' },
+  inv_signal_low_stock:     { ar: 'مخزون منخفض',                               en: 'Low stock' },
+  inv_signal_surplus:       { ar: 'فائض',                                       en: 'Surplus' },
+  inv_signal_near_expiry:   { ar: 'قرب انتهاء الصلاحية',                         en: 'Near expiry' },
+  inv_signal_expired:       { ar: 'منتهي الصلاحية',                             en: 'Expired' },
+
+  /* Severity */
+  inv_sev_high:             { ar: 'عالية',                                      en: 'High' },
+  inv_sev_medium:           { ar: 'متوسطة',                                     en: 'Medium' },
+  inv_sev_low:              { ar: 'منخفضة',                                     en: 'Low' },
+
+  /* Scope */
+  inv_scope_warehouse:      { ar: 'مستودع',                                     en: 'Warehouse' },
+  inv_scope_outlet:         { ar: 'منفذ',                                       en: 'Outlet' },
+
+  /* Alert lifecycle actions */
+  inv_alerts_title:         { ar: 'التنبيهات',                                  en: 'Alerts' },
+  inv_action_acknowledge:   { ar: 'إقرار',                                      en: 'Acknowledge' },
+  inv_action_resolve:       { ar: 'حل',                                         en: 'Resolve' },
+  inv_action_dismiss:       { ar: 'تجاهل',                                      en: 'Dismiss' },
+  inv_action_reject:        { ar: 'رفض التوصية',                                en: 'Reject recommendation' },
+  inv_action_recompute:     { ar: 'إعادة احتساب',                              en: 'Recompute' },
+  inv_action_regenerate:    { ar: 'تحديث التوصيات',                             en: 'Refresh recommendations' },
+  inv_reason_label:         { ar: 'السبب',                                      en: 'Reason' },
+  inv_reason_required:      { ar: 'السبب مطلوب',                                en: 'A reason is required' },
+  inv_reason_placeholder:   { ar: 'اكتب سببًا مختصرًا…',                          en: 'Enter a short reason…' },
+  inv_confirm:              { ar: 'تأكيد',                                      en: 'Confirm' },
+  inv_cancel:               { ar: 'إلغاء',                                      en: 'Cancel' },
+
+  /* Thresholds */
+  inv_thresholds_title:     { ar: 'حدود المخزون',                               en: 'Inventory thresholds' },
+  inv_threshold_add:        { ar: 'إضافة/تعديل حدّ',                            en: 'Add / edit threshold' },
+  inv_th_scientific_name:   { ar: 'الاسم العلمي',                               en: 'Scientific name' },
+  inv_th_national_code:     { ar: 'الرمز الوطني (اختياري)',                      en: 'National code (optional)' },
+  inv_th_reorder_point:     { ar: 'حدّ إعادة الطلب',                            en: 'Reorder point' },
+  inv_th_target_max:        { ar: 'الحدّ الأقصى المستهدف',                        en: 'Target max' },
+  inv_th_near_expiry_days:  { ar: 'نافذة قرب الصلاحية (يوم)',                    en: 'Near-expiry window (days)' },
+  inv_th_near_expiry_hint:  { ar: '1–270، فارغ = 270 يومًا افتراضيًا',           en: '1–270, empty = 270-day default' },
+  inv_th_scope:             { ar: 'النطاق',                                      en: 'Scope' },
+  inv_th_active:            { ar: 'مُفعّل',                                       en: 'Active' },
+  inv_th_org_default:       { ar: 'افتراضي للمؤسسة',                             en: 'Organization default' },
+  inv_th_wildcard:          { ar: 'كل الأكواد',                                  en: 'All codes' },
+  inv_saved:                { ar: 'تم الحفظ',                                    en: 'Saved' },
+
+  /* Empty / denied / states */
+  inv_empty_alerts:         { ar: 'لا توجد تنبيهات نشطة',                        en: 'No active alerts' },
+  inv_empty_suggestions:    { ar: 'لا توجد توصيات مفتوحة',                        en: 'No open recommendations' },
+  inv_empty_thresholds:     { ar: 'لا توجد حدود مُعرّفة',                          en: 'No thresholds configured' },
+  inv_denied:               { ar: 'لا تملك صلاحية عرض ذكاء المخزون.',            en: 'You do not have permission to view inventory intelligence.' },
+  inv_suggestions_title:    { ar: 'توصيات التحويل',                             en: 'Transfer recommendations' },
+  inv_cross_org:            { ar: 'بين المؤسسات',                                en: 'Cross-organization' },
+  inv_qty:                  { ar: 'الكمية',                                      en: 'Quantity' },
+  inv_batch:                { ar: 'الدفعة',                                      en: 'Batch' },
+  inv_view_all:             { ar: 'عرض الكل',                                    en: 'View all' },
+  inv_dismiss_popup:        { ar: 'إخفاء',                                       en: 'Dismiss' },
 };
 
 export function t(key: string, lang: Lang): string {

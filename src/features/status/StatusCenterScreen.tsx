@@ -33,6 +33,7 @@ import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
 import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
 import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
 import { AuditLogSection } from '@/features/reports/AuditLogSection';
+import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 
 // NOTE: Manual status reports (institution_item_status_reports) are intentionally
 // NO LONGER part of this screen (LIVE-STATUS-CENTER-REPORTS-PRINT-EXPORT-A). The
@@ -1127,6 +1128,15 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           quantity-movement report — hides itself when the caller lacks
           availability.movements.view (RLS remains the real enforcement). */}
       <MovementReportSection />
+
+      {/* Inventory Intelligence (migration 072 · INVENTORY-INTELLIGENCE-FRONTEND-A):
+          read-only signals/alerts + recommendation-only transfer suggestions
+          (no Accept, no stock movement) + permission-gated threshold management.
+          Hides itself when the caller lacks inventory.view_signals; RLS + the
+          SECURITY DEFINER RPCs remain the real enforcement. */}
+      <div style={{ marginTop: '28px' }}>
+        <InventoryIntelligencePanel />
+      </div>
 
       {/* Material Exchange Command Center CTA */}
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
