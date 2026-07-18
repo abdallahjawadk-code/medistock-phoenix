@@ -64,6 +64,16 @@ BEGIN
     RAISE EXCEPTION 'ABORT 073: inventory_threshold_guard trigger is absent.';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM public.inventory_signal_thresholds t
+    WHERE t.scope_id IS NOT NULL
+      AND public.phoenix_inventory_scope_org(t.scope_kind, t.scope_id)
+          IS DISTINCT FROM t.organization_id
+  ) THEN
+    RAISE EXCEPTION 'ABORT 073: an existing threshold has an orphaned or cross-organization scope; repair it before policy normalization.';
+  END IF;
+
   RAISE NOTICE '073 preconditions OK.';
 END
 $pre$;
@@ -306,6 +316,16 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    WHERE p.oid = 'public.phoenix_upsert_inventory_threshold(uuid,text,uuid,text,text,integer,integer,integer,boolean)'::regprocedure
+      AND p.prosecdef
+      AND p.proconfig @> ARRAY['search_path=public, pg_temp']::text[]
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (073): threshold upsert security/search_path changed.';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1 FROM pg_trigger t
     WHERE t.tgrelid = 'public.inventory_signal_thresholds'::regclass
       AND t.tgname = 'inventory_threshold_guard'
@@ -327,13 +347,20 @@ BEGIN
      )
      OR has_function_privilege(
        'authenticated', 'public.phoenix_inventory_threshold_guard()', 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon', 'public.phoenix_inventory_threshold_guard()', 'EXECUTE'
      ) THEN
     RAISE EXCEPTION 'VERIFY FAILED (073): function ACL boundary is incorrect.';
   END IF;
 
   IF has_table_privilege('authenticated', 'public.inventory_signal_thresholds', 'INSERT')
      OR has_table_privilege('authenticated', 'public.inventory_signal_thresholds', 'UPDATE')
-     OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'SELECT') THEN
+     OR has_table_privilege('authenticated', 'public.inventory_signal_thresholds', 'DELETE')
+     OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'SELECT')
+     OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'INSERT')
+     OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'UPDATE')
+     OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'DELETE') THEN
     RAISE EXCEPTION 'VERIFY FAILED (073): table ACL boundary changed.';
   END IF;
 
