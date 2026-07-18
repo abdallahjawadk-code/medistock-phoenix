@@ -1,8 +1,8 @@
 /**
  * RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT — Phase B.
  *
- * transfer_manager's authorization identity must be its own, and must never be
- * resolved through monthly_status_officer.
+ * Every retained role keeps its own authorization identity and is never
+ * resolved through a newer operational role.
  *
  * WHY THIS MATTERS, stated once: migration 010 seeded transfer_manager by
  * COPYING monthly_status_officer's defaults, so the two are identical today.
@@ -10,9 +10,10 @@
  * and audit.view; transfer_manager gained neither and was explicitly denied the
  * other eight new keys. A frontend that resolves one role through the other
  * cannot represent that divergence, and would grant two denied permissions the
- * moment the new keys reach the catalog. These tests pin both halves: today's
- * parity is preserved (no privilege changes), and the inheritance channel is
- * closed (no privilege can appear later).
+ * moment the new keys reach the catalog. Migration 066 repeats that boundary
+ * for warehouse_manager, port_officer and point_operator: new warehouse/outlet
+ * roles receive keys the retained roles are denied. These tests pin both halves:
+ * today's fallback behavior is preserved and every inheritance channel is shut.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -41,13 +42,15 @@ describe('B1. transfer_manager keeps its own authorization identity', () => {
 
   it('is not present in the legacy alias table — an alias claims equivalence', () => {
     expect(LEGACY_TO_OFFICIAL).not.toHaveProperty('transfer_manager');
-    expect(Object.keys(LEGACY_TO_OFFICIAL).sort()).toEqual(['point_operator', 'warehouse_manager']);
+    expect(Object.keys(LEGACY_TO_OFFICIAL)).toEqual([]);
   });
 
   it('is recognised as a legacy authorization role', () => {
     expect(isLegacyAuthorizationRole('transfer_manager')).toBe(true);
-    expect([...LEGACY_AUTHORIZATION_ROLES]).toEqual(['transfer_manager']);
-    for (const r of [...OFFICIAL_ROLES, 'hospital_admin', 'warehouse_manager', 'point_operator']) {
+    expect([...LEGACY_AUTHORIZATION_ROLES]).toEqual([
+      'warehouse_manager', 'port_officer', 'point_operator', 'transfer_manager',
+    ]);
+    for (const r of [...OFFICIAL_ROLES, 'hospital_admin']) {
       expect(isLegacyAuthorizationRole(r)).toBe(false);
     }
   });
@@ -60,14 +63,14 @@ describe('B1. transfer_manager keeps its own authorization identity', () => {
 });
 
 describe('B2. display stays compatible', () => {
-  it('still reads as the monthly-status label', () => {
-    expect(roleLabelKey('transfer_manager')).toBe('orole_monthly_status_officer');
+  it('marks transfer_manager as a retained legacy role', () => {
+    expect(roleLabelKey('transfer_manager')).toBe('orole_legacy_transfer_manager');
   });
 
   it('every role still resolves to a defined label key', () => {
     for (const r of [
       ...OFFICIAL_ROLES, 'hospital_admin', 'transfer_manager',
-      'warehouse_manager', 'point_operator', 'nonsense', '', null, undefined,
+      'warehouse_manager', 'port_officer', 'point_operator', 'nonsense', '', null, undefined,
     ]) {
       const key = roleLabelKey(r as string);
       expect(typeof key).toBe('string');
@@ -104,11 +107,8 @@ describe('B3. transfer_manager inherits no new 062 permission', () => {
     expect(src).not.toContain('...MONTHLY_STATUS_OFFICER_DEFAULTS');
   });
 
-  it('no legacy alias can inherit a 062 key either', () => {
-    // Same channel, other aliases. warehouse_manager and point_operator DO stay
-    // aliases (062 left them deliberately untouched), so this guard is what
-    // catches it if the new keys ever land in the catalog.
-    for (const role of ['warehouse_manager', 'point_operator', 'transfer_manager']) {
+  it('no retained role can inherit a 062 key', () => {
+    for (const role of LEGACY_AUTHORIZATION_ROLES) {
       const d = roleDefaults(role);
       for (const key of NEW_062_KEYS) {
         expect(`${role}/${key}: ${d.has(key)}`).toBe(`${role}/${key}: false`);
@@ -230,9 +230,10 @@ describe('B7. shadow diagnostics report the literal role without escalation', ()
 });
 
 describe('B5. unrelated roles are unchanged', () => {
-  it('the other legacy aliases still normalize to their official equivalent', () => {
-    expect(normalizeRole('warehouse_manager')).toBe('warehouse_officer');
-    expect(normalizeRole('point_operator')).toBe('port_officer');
+  it('every retained role now normalizes to its literal stored identity', () => {
+    expect(normalizeRole('warehouse_manager')).toBe('warehouse_manager');
+    expect(normalizeRole('port_officer')).toBe('port_officer');
+    expect(normalizeRole('point_operator')).toBe('point_operator');
     expect(normalizeRole('hospital_admin')).toBe('hospital_admin');
   });
 
@@ -254,8 +255,75 @@ describe('B5. unrelated roles are unchanged', () => {
   });
 
   it('super_admin is not reachable from any legacy role', () => {
-    for (const r of ['transfer_manager', 'warehouse_manager', 'point_operator', 'hospital_admin', 'nonsense']) {
+    for (const r of ['transfer_manager', 'warehouse_manager', 'port_officer', 'point_operator', 'hospital_admin', 'nonsense']) {
       expect(normalizeRole(r)).not.toBe('super_admin');
     }
+  });
+});
+
+describe('B8. migration 066 operational roles are explicit and fail closed', () => {
+  const migration066 = readFileSync(
+    join(__dirname, '../../../../supabase/migrations/066_phoenix_inventory_network_expand.sql'),
+    'utf8',
+  );
+  const strings = readFileSync(join(__dirname, '../../i18n/strings.ts'), 'utf8');
+  const permissions = readFileSync(join(__dirname, '../permissions.ts'), 'utf8');
+  const createUser = readFileSync(
+    join(__dirname, '../../../../supabase/functions/admin-create-user/index.ts'),
+    'utf8',
+  );
+  const recycleUser = readFileSync(
+    join(__dirname, '../../../../supabase/functions/admin-recycle-user/index.ts'),
+    'utf8',
+  );
+
+  it('offers the approved seven roles and retires port_officer from creation', () => {
+    expect(OFFICIAL_ROLES).toEqual([
+      'super_admin', 'institution_admin', 'central_warehouse_manager',
+      'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+    ]);
+    expect(OFFICIAL_ROLES).not.toContain('port_officer');
+  });
+
+  it('mirrors the role values accepted by migration 066', () => {
+    for (const role of [...OFFICIAL_ROLES, ...LEGACY_AUTHORIZATION_ROLES, 'hospital_admin']) {
+      expect(migration066).toContain(`'${role}'`);
+    }
+  });
+
+  it('new roles have bilingual labels and literal authorization identity', () => {
+    expect(normalizeRole('central_warehouse_manager')).toBe('central_warehouse_manager');
+    expect(normalizeRole('outlet_officer')).toBe('outlet_officer');
+    expect(strings).toContain('orole_central_warehouse_manager:');
+    expect(strings).toContain('orole_outlet_officer:');
+  });
+
+  it('uses narrow offline fallbacks until the 066 catalog lands', () => {
+    expect([...roleDefaults('central_warehouse_manager')]).toEqual(['warehouses.view']);
+    expect([...roleDefaults('outlet_officer')]).toEqual([]);
+  });
+
+  it('freezes every retained fallback instead of spreading a newer role list', () => {
+    expect(permissions).not.toContain('...WAREHOUSE_OFFICER_DEFAULTS');
+    expect(permissions).not.toContain('...PORT_OFFICER_DEFAULTS');
+  });
+
+  it('server allowlists accept the new roles and stop creating port_officer', () => {
+    for (const source of [createUser, recycleUser]) {
+      const allowlist = source.slice(
+        source.indexOf('const OFFICIAL_ROLES'),
+        source.indexOf('const CORS'),
+      );
+      expect(allowlist).toContain("'central_warehouse_manager'");
+      expect(allowlist).toContain("'outlet_officer'");
+      expect(allowlist).not.toContain("'port_officer'");
+    }
+  });
+
+  it('reserves central manager assignment for super_admin on both server paths', () => {
+    expect(createUser).toContain("role === 'central_warehouse_manager' && !isSuper");
+    expect(createUser).toContain('CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER');
+    expect(recycleUser).toContain("newRole === 'central_warehouse_manager'");
+    expect(recycleUser).toContain('CANNOT_ASSIGN_ELEVATED_ROLE');
   });
 });
