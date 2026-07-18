@@ -21,7 +21,7 @@ describe('Phoenix Nexus production design boundaries', () => {
     expect(shell).toContain('premium-shell nexus-shell');
     expect(shell).toContain('currentScreen={currentScreen}');
     expect(shell).toContain('onNavigate={onNavigate}');
-    expect(shell).toContain('<ScreenAuthzGuard');
+    expect(authenticatedApp).toContain('<ScreenAuthzGuard');
   });
 
   it('uses one deterministic SVG icon language on every navigation surface', () => {
