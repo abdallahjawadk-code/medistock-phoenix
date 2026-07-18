@@ -1,10 +1,14 @@
 /**
- * INVENTORY-INTELLIGENCE-072-A — Review Round 3
+ * INVENTORY-INTELLIGENCE-072-A — Review Round 4
  *
  * Static SQL-source tests for migration 072 (manual-apply-only; no DB
- * connection), matching the convention of 044-071. Round 3 keys every
- * regression block to a mandatory review item (1..10) and adds the explicit
- * scenario list from the round-3 mandate.
+ * connection), matching the convention of 044-071. Every regression block is
+ * keyed to a mandatory review item (1..10); Round 4 adds blocks for the
+ * mandate's six fixes: cross-org acceptance disabled (item 1), deterministic
+ * concurrency locks + conservation under contention, structural-guard
+ * re-validation on the full identity (incl. service_role UPDATE), accept
+ * recomputing live surplus/shortfall by committed total, and stable cross-org
+ * rerun + wildcard code exclusion.
  *
  * WHAT A STATIC TEST CAN AND CANNOT PROVE
  * ---------------------------------------
@@ -124,24 +128,39 @@ describe('0. migration 072 exists, is registered, manual-apply-only', () => {
 });
 
 // ============================================================================
-// ITEM 1 — 036-041 integration: reference, not a parallel engine
+// ITEM 1 — 036-041 integration: cross-org ACCEPTANCE IS DISABLED (Round 4).
+// A sound warehouse_stock <-> item_availability bridge cannot be built, so a
+// cross-org suggestion stays a RECOMMENDATION only and can never be accepted.
 // ============================================================================
-describe('item 1: cross-org acceptance is anchored to the 036-041 engine', () => {
-  it('suggestions carry exchange_request_id as a REAL FK to inter_org_exchange_requests', () => {
+describe('item 1: cross-org acceptance is disabled (recommendation-only)', () => {
+  it('exchange_request_id survives only as an OPTIONAL advisory back-reference FK', () => {
     expect(m072).toMatch(/exchange_request_id\s+uuid REFERENCES public\.inter_org_exchange_requests\(id\) ON DELETE SET NULL/);
+    expect(m072).toMatch(/OPTIONAL ADVISORY BACK-REFERENCE/i);
   });
-  it('a cross-org suggestion cannot be accepted without a stored exchange reference (structural CHECK)', () => {
-    expect(norm072).toMatch(/inventory_suggestions_cross_org_accept_link_chk CHECK \( status <> 'accepted' OR source_organization_id = target_organization_id OR exchange_request_id IS NOT NULL \)/);
+  it('a cross-org suggestion can NEVER reach accepted — structural CHECK, no exchange-link escape', () => {
+    expect(norm072).toMatch(/inventory_suggestions_no_cross_org_accept_chk CHECK \( status <> 'accepted' OR source_organization_id = target_organization_id \)/);
+    // the round-3 "OR exchange_request_id IS NOT NULL" escape hatch is gone
+    expect(norm072).not.toMatch(/status <> 'accepted' OR source_organization_id = target_organization_id OR exchange_request_id IS NOT NULL/);
   });
-  it('accept demands and validates the exchange request for cross-org rows', () => {
+  it('regression: accept REFUSES any cross-org row (cross_org_acceptance_not_supported)', () => {
     const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
-    expect(body).toMatch(/exchange_request_required_for_cross_org_accept/);
-    expect(body).toMatch(/exchange_request_not_found/);
-    expect(body).toMatch(/exchange_request_organization_mismatch/);
-    expect(body).toMatch(/exchange_request_material_mismatch/);
-    expect(body).toMatch(/exchange_request_terminal/);
-    // and rejects a spurious reference on an intra-org row
-    expect(body).toMatch(/exchange_request_only_for_cross_org/);
+    expect(body).toMatch(/v_s\.source_organization_id <> v_s\.target_organization_id THEN RAISE EXCEPTION 'cross_org_acceptance_not_supported'/);
+  });
+  it('accept no longer takes an exchange-request parameter (single-arg signature only)', () => {
+    const src = sqlFunctionSource(m072, 'phoenix_accept_inventory_transfer_suggestion')!;
+    const sig = src.slice(0, src.indexOf('RETURNS'));
+    expect(sig).not.toMatch(/p_exchange_request_id/);
+    // and it never re-derives a cross-org accept path via the exchange tables
+    const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
+    expect(body).not.toMatch(/exchange_request_required_for_cross_org_accept/);
+    expect(body).not.toMatch(/exchange_request_terminal/);
+    expect(m072).toMatch(/REVOKE ALL ON FUNCTION public\.phoenix_accept_inventory_transfer_suggestion\(uuid\) FROM PUBLIC, anon/);
+    expect(m072).toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_accept_inventory_transfer_suggestion\(uuid\) TO authenticated/);
+  });
+  it('§18 asserts the two-arg accept signature is gone and cross-org accept is disabled', () => {
+    expect(active072).toMatch(/the two-arg \(exchange-request\) accept signature still exists/);
+    expect(active072).toMatch(/cross-org acceptance is not structurally disabled/);
+    expect(active072).toMatch(/accept does not refuse cross-org rows/);
   });
   it('NO function in 072 ever writes the 036-041 exchange tables', () => {
     for (const fn of [...RPCS, ...GUARDS]) {
@@ -154,9 +173,14 @@ describe('item 1: cross-org acceptance is anchored to the 036-041 engine', () =>
     const created = [...active072.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?public\.([a-z_]+)/gi)].map(m => m[1]);
     expect(created).not.toContain('inter_org_exchange_requests');
   });
-  it('states the warehouse-level integration gap honestly instead of faking a bridge', () => {
+  it('states WHY the bridge is impossible honestly (item_availability is outlet-level; no warehouse_id)', () => {
+    // Round 4: the gap is acknowledged AND resolved by disabling acceptance,
+    // not treated as a ready state.
     expect(m072).toMatch(/KNOWN INTEGRATION GAP/);
     expect(m072).toMatch(/item_availability/);
+    expect(m072).toMatch(/requested_quantity/);
+    expect(m072).toMatch(/alert_key/);
+    expect(m072).toMatch(/DISABLES cross-org acceptance/i);
   });
 });
 
@@ -470,13 +494,32 @@ describe('item 9: acceptance re-verifies everything and expires stale rows', () 
     expect(body()).toMatch(/supply_route_inactive/);
     expect(body()).toMatch(/r\.is_active/);
   });
-  it('regression: re-verifies the batch (existence, material, expiry, quantity) — accept after stock change => expired', () => {
+  it('regression: re-verifies the batch by COMMITTED TOTAL, not lone quantity (accept after stock change => expired)', () => {
     expect(body()).toMatch(/source_batch_gone_or_expired/);
     expect(body()).toMatch(/source_batch_quantity_insufficient/);
-    expect(body()).toMatch(/v_available < v_s\.suggested_quantity/);
+    // Round 4: sum of open+accepted on the batch vs live availability
+    expect(body()).toMatch(/SELECT COALESCE\(SUM\(s\.suggested_quantity\), 0\) INTO v_committed[\s\S]*?s\.source_stock_id = v_s\.source_stock_id/);
+    expect(body()).toMatch(/v_committed > v_available/);
+    expect(body()).not.toMatch(/v_available < v_s\.suggested_quantity/);
   });
-  it('regression: re-verifies the 071 returnable cap for return suggestions', () => {
+  it('regression: re-verifies the 071 returnable cap as a SUM per provenance line', () => {
     expect(body()).toMatch(/returnable_quantity_insufficient/);
+    expect(body()).toMatch(/s\.provenance_dispatch_line_id = v_s\.provenance_dispatch_line_id/);
+    expect(body()).toMatch(/v_committed_line > v_returnable/);
+  });
+  it('regression: RECOMPUTES source surplus and target shortfall from live alerts (expire if gone/insufficient)', () => {
+    expect(body()).toMatch(/source_surplus_gone/);
+    expect(body()).toMatch(/source_surplus_insufficient/);
+    expect(body()).toMatch(/target_shortfall_gone/);
+    expect(body()).toMatch(/target_shortfall_insufficient/);
+    expect(body()).toMatch(/signal_type = 'surplus'/);
+    expect(body()).toMatch(/signal_type IN \('missing', 'low_stock'\)/);
+    // net of every OTHER commitment (this row excluded)
+    expect(body()).toMatch(/s\.id <> v_s\.id/);
+  });
+  it('regression: accept takes the deterministic batch/provline locks before reading any total', () => {
+    expect(body()).toMatch(/pg_advisory_xact_lock\(hashtextextended\('inv_stock:' \|\| v_s\.source_stock_id::text, 0\)\)/);
+    expect(body()).toMatch(/'inv_provline:' \|\| v_s\.provenance_dispatch_line_id::text/);
   });
   it('a stale suggestion becomes expired — audited — and is NOT accepted', () => {
     expect(body()).toMatch(/SET status = 'expired', reason = v_stale/);
@@ -534,6 +577,117 @@ describe('item 10: structural guard triggers', () => {
       expect(m072, fn).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\(\\) FROM PUBLIC, anon`));
       expect(exec072, fn).not.toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}`));
     }
+  });
+});
+
+// ============================================================================
+// ROUND 4 — concurrency: deterministic locks + conservation under contention
+// ============================================================================
+describe('round 4 / concurrency: batch & provenance-line conservation hold under contention', () => {
+  const guard = () => functionBody('phoenix_inventory_suggestion_guard');
+
+  it('the guard locks the source_stock_id row deterministically BEFORE the conservation SUM', () => {
+    const g = guard();
+    // lock precedes the availability read and the committed SUM
+    const lockIdx = g.indexOf("pg_advisory_xact_lock( hashtextextended('inv_stock:'");
+    const sumIdx = g.indexOf('SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed');
+    expect(lockIdx, 'inv_stock lock present').toBeGreaterThan(-1);
+    expect(sumIdx, 'committed SUM present').toBeGreaterThan(-1);
+    expect(lockIdx).toBeLessThan(sumIdx);
+  });
+  it('logical concurrency: two writers on the same batch serialize — the lock key is the stock id, so the second sees the first', () => {
+    const g = guard();
+    // deterministic key derived purely from the stock id (no time/random)
+    expect(g).toMatch(/hashtextextended\('inv_stock:' \|\| NEW\.source_stock_id::text, 0\)/);
+    // and the SUM counts committed siblings (open+accepted), excluding self
+    expect(g).toMatch(/s\.source_stock_id = NEW\.source_stock_id\s+AND s\.status IN \('open', 'accepted'\)\s+AND s\.id <> NEW\.id/);
+    expect(g).toMatch(/v_committed \+ NEW\.suggested_quantity > v_available THEN RAISE EXCEPTION 'guard_072_batch_oversubscribed'/);
+  });
+  it('logical concurrency: two return writers on the same provenance line serialize on the line lock before its SUM', () => {
+    const g = guard();
+    const lockIdx = g.indexOf("hashtextextended('inv_provline:' || NEW.provenance_dispatch_line_id::text");
+    const sumIdx = g.indexOf('SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed_line');
+    expect(lockIdx, 'inv_provline lock present').toBeGreaterThan(-1);
+    expect(sumIdx, 'per-line committed SUM present').toBeGreaterThan(-1);
+    expect(lockIdx).toBeLessThan(sumIdx);
+  });
+  it('conservation invariant 2: Σ(open+accepted) per provenance line <= received - returned (SUM, not lone row)', () => {
+    const g = guard();
+    expect(g).toMatch(/s\.provenance_dispatch_line_id = NEW\.provenance_dispatch_line_id\s+AND s\.status IN \('open', 'accepted'\)\s+AND s\.id <> NEW\.id/);
+    expect(g).toMatch(/v_committed_line \+ NEW\.suggested_quantity > v_returnable THEN RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity'/);
+    expect(g).toMatch(/COALESCE\(wdl\.received_quantity, 0\) - wdl\.returned_quantity/);
+  });
+  it('accept serializes on the SAME lock keys as the guard (no accept/insert race)', () => {
+    const a = functionBody('phoenix_accept_inventory_transfer_suggestion');
+    expect(a).toMatch(/hashtextextended\('inv_stock:' \|\| v_s\.source_stock_id::text, 0\)/);
+    expect(a).toMatch(/'inv_provline:' \|\| v_s\.provenance_dispatch_line_id::text/);
+  });
+});
+
+// ============================================================================
+// ROUND 4 — structural guard re-validates on the FULL identity, incl. UPDATE
+// via service_role (the guard binds every writer, not just the RPCs)
+// ============================================================================
+describe('round 4 / guard re-validation: identity changes and reopen re-fire the checks', () => {
+  const guard = () => functionBody('phoenix_inventory_suggestion_guard');
+
+  it('corridor/identity re-check fires on scientific_name, national_code and BOTH provenance columns', () => {
+    const g = guard();
+    expect(g).toMatch(/NEW\.scientific_name\s+IS DISTINCT FROM OLD\.scientific_name/);
+    expect(g).toMatch(/NEW\.national_code\s+IS DISTINCT FROM OLD\.national_code/);
+    expect(g).toMatch(/NEW\.provenance_dispatch_line_id IS DISTINCT FROM OLD\.provenance_dispatch_line_id/);
+    expect(g).toMatch(/NEW\.provenance_inbound_movement_id IS DISTINCT FROM OLD\.provenance_inbound_movement_id/);
+    expect(g).toMatch(/NEW\.source_stock_id\s+IS DISTINCT FROM OLD\.source_stock_id/);
+  });
+  it('any status transition INTO open/accepted (not only from terminal) re-validates', () => {
+    const g = guard();
+    expect(g).toMatch(/v_reopen := \(TG_OP = 'UPDATE'\) AND NEW\.status IN \('open', 'accepted'\) AND NEW\.status IS DISTINCT FROM OLD\.status/);
+    // reopen folds into the corridor re-check
+    expect(g).toMatch(/v_corridor_write := \(TG_OP = 'INSERT'\) OR v_reopen OR \(/);
+  });
+  it('regression: a service_role UPDATE that swaps the material is re-checked against the batch (mismatch => raise)', () => {
+    // the batch-match block runs under v_corridor_write, which now includes
+    // scientific_name / national_code changes
+    const g = guard();
+    expect(g).toMatch(/IF v_corridor_write THEN/);
+    expect(g).toMatch(/guard_072_source_stock_row_mismatch/);
+  });
+  it('regression: the stored exchange reference is re-validated when identity changes even if the UUID is unchanged', () => {
+    const g = guard();
+    expect(g).toMatch(/NEW\.exchange_request_id IS NOT NULL AND \(TG_OP = 'INSERT' OR NEW\.exchange_request_id IS DISTINCT FROM OLD\.exchange_request_id OR v_corridor_write\)/);
+    expect(g).toMatch(/guard_072_exchange_request_mismatch/);
+  });
+});
+
+// ============================================================================
+// ROUND 4 — cross-org rerun is stable (supersede-then-rebuild, no shrink) and
+// wildcard batches exclude codes covered by more specific coded thresholds
+// ============================================================================
+describe('round 4 / cross-org rerun stability + wildcard code exclusion', () => {
+  const xbody = () => functionBody('phoenix_suggest_cross_org_inventory_transfer');
+
+  it('regression: cross-org supersedes ITS OWN prior open rows for the tuple BEFORE recomputing remaining', () => {
+    const b = xbody();
+    const supersedeIdx = b.indexOf("SET status = 'superseded'");
+    const surplusIdx = b.indexOf('INTO v_surplus');
+    expect(supersedeIdx, 'supersede-first present').toBeGreaterThan(-1);
+    expect(surplusIdx, 'surplus computation present').toBeGreaterThan(-1);
+    // supersede happens before the remaining/surplus computation (no self-subtraction)
+    expect(supersedeIdx).toBeLessThan(surplusIdx);
+    expect(b).toMatch(/s\.route_kind = 'central_to_institution'[\s\S]*?s\.source_scope_id = p_source_warehouse_id[\s\S]*?s\.target_scope_id = p_target_warehouse_id/);
+  });
+  it('regression: wildcard cross-org request excludes codes with their own active coded threshold', () => {
+    const b = xbody();
+    expect(b).toMatch(/v_code IS NOT NULL OR NOT EXISTS \(\s*SELECT 1 FROM public\.inventory_signal_thresholds tc/);
+    expect(b).toMatch(/tc\.national_code IS NOT NULL\s+AND tc\.national_code = ws\.national_code/);
+  });
+  it('regression: intra-org wildcard allocation also excludes coded-covered batches', () => {
+    const b = functionBody('phoenix_suggest_inventory_transfers');
+    expect(b).toMatch(/v_src\.national_code IS NOT NULL OR NOT EXISTS \(\s*SELECT 1 FROM public\.inventory_signal_thresholds tc/);
+    expect(b).toMatch(/tc\.national_code IS NOT NULL\s+AND tc\.national_code = b\.national_code/);
+  });
+  it('§18 asserts the cross-org supersede-then-rebuild post-condition', () => {
+    expect(active072).toMatch(/cross-org suggest does not supersede-then-rebuild/);
   });
 });
 
