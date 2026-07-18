@@ -1,15 +1,17 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PhoenixMark } from '@/shared/ui/PhoenixMark';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
-  const [mode, setMode]         = useState<'signin' | 'reset'>('signin');
-  const [email, setEmail]       = useState('');
+  const [mode, setMode] = useState<'signin' | 'reset'>('signin');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
-  const [busy, setBusy]         = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   // Local-username accounts have no deliverable email — show guidance instead
   // of calling the reset API (LOCAL-CREDENTIALS-MODE-A, Part G).
@@ -20,7 +22,10 @@ export function LoginScreen() {
     setError(null);
 
     if (mode === 'reset') {
-      if (!email.trim()) { setError(t('email_required', lang)); return; }
+      if (!email.trim()) {
+        setError(t('email_required', lang));
+        return;
+      }
       if (!email.includes('@')) {
         setLocalResetNote(true);
         return;
@@ -28,7 +33,10 @@ export function LoginScreen() {
       setBusy(true);
       const res = await requestPasswordReset(email);
       setBusy(false);
-      if (!res.ok && res.error === 'NOT_CONFIGURED') { setError(t('config_missing', lang)); return; }
+      if (!res.ok && res.error === 'NOT_CONFIGURED') {
+        setError(t('config_missing', lang));
+        return;
+      }
       // Always show the same confirmation (avoid leaking which emails exist).
       setResetSent(true);
       return;
@@ -39,146 +47,195 @@ export function LoginScreen() {
       return;
     }
     setBusy(true);
-    // Bare usernames (no "@") resolve to the synthetic internal auth email.
-    // Whether a username exists is never revealed — same generic error either way.
+    // Bare usernames resolve to the synthetic internal auth email. Whether a
+    // username exists is never revealed — same generic error either way.
     const res = await signIn(resolveLoginIdentifier(email), password);
     setBusy(false);
     if (!res.ok) {
       setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('invalid_creds', lang));
     }
-    // On success, AppContext's auth subscription swaps to the app shell.
   }
 
+  const backToLogin = () => {
+    setMode('signin');
+    setResetSent(false);
+    setLocalResetNote(false);
+    setError(null);
+  };
+
   return (
-    <div className="premium-login" style={{
-      minHeight: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '24px', position: 'relative', overflow: 'hidden',
-    }}>
-      {/* Animated background blobs */}
-      <div aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '7%', insetInlineStart: '9%', width: '150px', height: '150px', borderRadius: '50%', background: 'var(--p2)', opacity: .45, animation: 'fl 7s ease-in-out infinite' }} />
-        <div style={{ position: 'absolute', top: '16%', insetInlineEnd: '7%', width: '95px', height: '95px', borderRadius: '50%', background: 'var(--sec2)', opacity: .4, animation: 'fl 9s ease-in-out infinite 2s' }} />
-        <div style={{ position: 'absolute', bottom: '13%', insetInlineStart: '6%', width: '72px', height: '72px', borderRadius: '50%', background: 'var(--p2)', opacity: .35, animation: 'fl 8s ease-in-out infinite 1s' }} />
-        <div style={{ position: 'absolute', bottom: '17%', insetInlineEnd: '10%', width: '115px', height: '115px', borderRadius: '50%', background: 'var(--ok2)', opacity: .3, animation: 'fl 10s ease-in-out infinite 3s' }} />
+    <div className="premium-login nexus-login">
+      <div className="nexus-login__atmosphere" aria-hidden="true">
+        <div className="nexus-login__aurora nexus-login__aurora--emerald" />
+        <div className="nexus-login__aurora nexus-login__aurora--cyan" />
+        <div className="nexus-login__mesh" />
       </div>
 
-      {/* Lang / Theme controls */}
-      <div style={{ position: 'absolute', top: '18px', insetInlineEnd: '18px', display: 'flex', gap: '8px', zIndex: 10 }}>
-        <button onClick={toggleLang} style={{ padding: '5px 13px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+      <div className="nexus-login__controls">
+        <button onClick={toggleLang} className="nexus-control nexus-control--language">
           {lang === 'ar' ? 'EN' : 'عربي'}
         </button>
-        <button onClick={toggleTheme} aria-label="Toggle theme" style={{ width: '34px', height: '34px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          {theme === 'dark' ? '☀️' : '🌙'}
+        <button
+          onClick={toggleTheme}
+          className="nexus-control"
+          aria-label={theme === 'dark' ? 'Activate light theme' : 'Activate dark theme'}
+        >
+          <PhoenixIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} />
         </button>
       </div>
 
-      {/* Brand */}
-      <div style={{ textAlign: 'center', marginBottom: '26px', animation: 'fs .5s ease', position: 'relative', zIndex: 1 }}>
-        <div className="premium-login__logo" style={{ width: '78px', height: '78px', borderRadius: 'var(--r4)', background: 'linear-gradient(145deg, var(--p), var(--pd))', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '37px', color: '#fff' }}>⚕</div>
-        <h1 className="premium-login__brand" style={{ fontSize: '25px', fontWeight: 700, color: 'var(--t)', letterSpacing: '-.4px', marginBottom: '5px' }}>MediStock-Babil</h1>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)' }} dir="auto">{t('login_department_subtitle', lang)}</p>
-        <div className="premium-login__divider" aria-hidden="true" />
-      </div>
-
-      {/* Card */}
-      <form className="premium-depth-card premium-login__card" onSubmit={onSubmit} style={{ width: '100%', maxWidth: '380px', borderRadius: 'var(--r5)', padding: '28px 26px', animation: 'fs .6s ease .12s both', position: 'relative', zIndex: 1 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
-          {mode === 'reset' ? t('reset_title', lang) : t('login_title', lang)}
-        </h2>
-        <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '18px' }}>
-          {mode === 'reset' ? t('reset_sub', lang) : t('login_sub', lang)}
-        </p>
-
-        {!configured && (
-          <div role="alert" style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--warn2)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: '11.5px', fontWeight: 600 }}>
-            ⚠ {t('config_missing', lang)}
+      <section className="nexus-login__visual" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي' : 'Medicine supply network'}>
+        <div className="nexus-login__visual-copy">
+          <div className="nexus-login__kicker">
+            <span />
+            {lang === 'ar' ? 'البنية التشغيلية الحية' : 'LIVE OPERATIONAL FABRIC'}
           </div>
-        )}
+          <h1>{lang === 'ar' ? 'شبكة دوائية موحّدة.' : 'One medicine network.'}</h1>
+          <p>
+            {lang === 'ar'
+              ? 'من مخازن قسم الصيدلة إلى مذاخر المؤسسات ومنافذ الصرف، برؤية فورية وصلاحيات دقيقة.'
+              : 'From Pharmacy Department warehouses to institution stores and dispensing outlets, with live visibility and exact scope control.'}
+          </p>
+        </div>
 
-        {mode === 'reset' && localResetNote ? (
-          <div style={{ textAlign: 'center', padding: '8px 0' }}>
-            <div style={{ fontSize: '34px', marginBottom: '10px' }}>🔑</div>
-            <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '16px' }} dir="auto">{t('login_local_reset_note', lang)}</p>
-            <button type="button" onClick={() => { setMode('signin'); setLocalResetNote(false); setError(null); }} style={{ width: '100%', padding: '12px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'transparent', color: 'var(--t2)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-              {t('back_to_login', lang)}
-            </button>
+        <div className="nexus-login__network" aria-hidden="true">
+          <div className="nexus-login__network-orbit nexus-login__network-orbit--one" />
+          <div className="nexus-login__network-orbit nexus-login__network-orbit--two" />
+          <div className="nexus-login__phoenix-core">
+            <PhoenixMark size="100%" title="" />
           </div>
-        ) : mode === 'reset' && resetSent ? (
-          <div style={{ textAlign: 'center', padding: '8px 0' }}>
-            <div style={{ fontSize: '34px', marginBottom: '10px' }}>📧</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>{t('reset_sent', lang)}</div>
-            <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '16px' }}>{t('reset_sent_msg', lang)}</p>
-            <button type="button" onClick={() => { setMode('signin'); setResetSent(false); setError(null); }} style={{ width: '100%', padding: '12px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'transparent', color: 'var(--t2)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-              {t('back_to_login', lang)}
-            </button>
+          <span className="nexus-login__node nexus-login__node--central"><PhoenixIcon name="warehouse" size={18} /></span>
+          <span className="nexus-login__node nexus-login__node--institution"><PhoenixIcon name="institutions" size={18} /></span>
+          <span className="nexus-login__node nexus-login__node--outlet"><PhoenixIcon name="outlet" size={18} /></span>
+          <span className="nexus-login__beam nexus-login__beam--one" />
+          <span className="nexus-login__beam nexus-login__beam--two" />
+          <span className="nexus-login__beam nexus-login__beam--three" />
+        </div>
+
+        <div className="nexus-login__trust-row">
+          <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
+          <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
+          <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
+        </div>
+      </section>
+
+      <main className="nexus-login__auth">
+        <div className="nexus-login__brand">
+          <div className="nexus-brand-mark nexus-login__brand-mark">
+            <PhoenixMark size={44} title="" />
           </div>
-        ) : (
-          <>
-            <label htmlFor="login-email" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '6px' }}>
-              {t('login_identifier', lang)}
-            </label>
-            <input
-              id="login-email" type="text" dir="ltr" autoComplete="username"
-              className="premium-field"
-              value={email} onChange={e => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '14px' }}
-            />
+          <div>
+            <div className="nexus-login__brand-name">MediStock Phoenix</div>
+            <div className="nexus-login__brand-department" dir="auto">{t('login_department_subtitle', lang)}</div>
+          </div>
+        </div>
 
-            {mode === 'signin' && (
-              <>
-                <label htmlFor="login-password" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '6px' }}>
-                  {t('password', lang)}
-                </label>
-                <input
-                  id="login-password" type="password" dir="ltr" autoComplete="current-password"
-                  className="premium-field"
-                  value={password} onChange={e => setPassword(e.target.value)}
-                  style={{ width: '100%', padding: '11px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t)', fontSize: '13px', marginBottom: '8px' }}
-                />
-                <div style={{ textAlign: 'end', marginBottom: error ? '12px' : '18px' }}>
-                  <button type="button" onClick={() => { setMode('reset'); setError(null); }} style={{ background: 'none', border: 'none', color: 'var(--p)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
-                    {t('forgot_password', lang)}
-                  </button>
-                </div>
-              </>
-            )}
+        <form className="nexus-login__card" onSubmit={onSubmit}>
+          <div className="nexus-login__card-heading">
+            <span className="nexus-login__secure-icon"><PhoenixIcon name="lock" size={18} /></span>
+            <div>
+              <h2>{mode === 'reset' ? t('reset_title', lang) : t('login_title', lang)}</h2>
+              <p>{mode === 'reset' ? t('reset_sub', lang) : t('login_sub', lang)}</p>
+            </div>
+          </div>
 
-            {error && (
-              <div role="alert" style={{ marginBottom: '16px', padding: '9px 12px', borderRadius: 'var(--r2)', background: 'var(--err2)', border: '1px solid var(--err)', color: 'var(--err)', fontSize: '12px', fontWeight: 600 }}>
-                {error}
-              </div>
-            )}
+          {!configured && (
+            <div className="nexus-login__notice nexus-login__notice--warning" role="alert">
+              <PhoenixIcon name="warning" size={17} />
+              <span>{t('config_missing', lang)}</span>
+            </div>
+          )}
 
-            <button
-              type="submit" disabled={busy}
-              className="premium-login__submit premium-focus-ring"
-              style={{
-                width: '100%', padding: '14px', borderRadius: 'var(--r3)',
-                border: 'none', background: 'linear-gradient(145deg, var(--p), var(--pd))', color: '#fff',
-                fontSize: '15px', fontWeight: 700, cursor: busy ? 'wait' : 'pointer',
-                opacity: busy ? 0.7 : 1, transition: 'all 150ms',
-              }}
-            >
-              {mode === 'reset'
-                ? (busy ? t('sending', lang) : t('send_reset', lang))
-                : (busy ? t('signing_in', lang) : t('sign_in', lang))}
-            </button>
-
-            {mode === 'reset' && (
-              <button type="button" onClick={() => { setMode('signin'); setError(null); }} style={{ width: '100%', marginTop: '10px', padding: '8px', borderRadius: 'var(--r2)', border: 'none', background: 'transparent', color: 'var(--t2)', fontSize: '12px', cursor: 'pointer' }}>
+          {mode === 'reset' && localResetNote ? (
+            <div className="nexus-login__state">
+              <span className="nexus-login__state-icon"><PhoenixIcon name="key" size={28} /></span>
+              <p dir="auto">{t('login_local_reset_note', lang)}</p>
+              <button type="button" onClick={backToLogin} className="nexus-login__secondary">
                 {t('back_to_login', lang)}
               </button>
-            )}
-          </>
-        )}
+            </div>
+          ) : mode === 'reset' && resetSent ? (
+            <div className="nexus-login__state">
+              <span className="nexus-login__state-icon"><PhoenixIcon name="mail" size={28} /></span>
+              <h3>{t('reset_sent', lang)}</h3>
+              <p>{t('reset_sent_msg', lang)}</p>
+              <button type="button" onClick={backToLogin} className="nexus-login__secondary">
+                {t('back_to_login', lang)}
+              </button>
+            </div>
+          ) : (
+            <>
+              <label htmlFor="login-email" className="nexus-login__label">
+                {t('login_identifier', lang)}
+              </label>
+              <div className="nexus-login__field-wrap">
+                <PhoenixIcon name="account" size={17} />
+                <input
+                  id="login-email"
+                  type="text"
+                  dir="ltr"
+                  autoComplete="username"
+                  className="premium-field nexus-login__field"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+              </div>
 
-        {/* Rights / supervision block */}
-        <div className="premium-login__rights">
-          <div className="premium-login__rights-code" dir="ltr">{t('login_rights_code', lang)}</div>
-          <div className="premium-login__rights-line" dir="auto">{t('login_supervision_line', lang)}</div>
-        </div>
-      </form>
+              {mode === 'signin' && (
+                <>
+                  <label htmlFor="login-password" className="nexus-login__label">
+                    {t('password', lang)}
+                  </label>
+                  <div className="nexus-login__field-wrap">
+                    <PhoenixIcon name="lock" size={17} />
+                    <input
+                      id="login-password"
+                      type="password"
+                      dir="ltr"
+                      autoComplete="current-password"
+                      className="premium-field nexus-login__field"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="nexus-login__forgot">
+                    <button type="button" onClick={() => { setMode('reset'); setError(null); }}>
+                      {t('forgot_password', lang)}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {error && (
+                <div className="nexus-login__notice nexus-login__notice--error" role="alert">
+                  <PhoenixIcon name="warning" size={17} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <button type="submit" disabled={busy} className="nexus-login__submit premium-focus-ring">
+                <span>
+                  {mode === 'reset'
+                    ? (busy ? t('sending', lang) : t('send_reset', lang))
+                    : (busy ? t('signing_in', lang) : t('sign_in', lang))}
+                </span>
+                <PhoenixIcon name={mode === 'reset' ? 'mail' : 'lock'} size={17} />
+              </button>
+
+              {mode === 'reset' && (
+                <button type="button" onClick={backToLogin} className="nexus-login__back">
+                  {t('back_to_login', lang)}
+                </button>
+              )}
+            </>
+          )}
+
+          <div className="nexus-login__rights">
+            <div dir="ltr">{t('login_rights_code', lang)}</div>
+            <span dir="auto">{t('login_supervision_line', lang)}</span>
+          </div>
+        </form>
+      </main>
     </div>
   );
 }
