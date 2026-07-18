@@ -1,11 +1,14 @@
 import { supabase, supabaseConfigured } from '../client';
 
+export type WarehouseKind = 'central' | 'institution';
+
 export interface Warehouse {
   id: string;
   name: string;
   name_ar: string;
   status: string;
   organizationId: string;
+  warehouseKind: WarehouseKind;
 }
 
 export interface DistributionPoint {
@@ -18,14 +21,19 @@ export interface DistributionPoint {
   pointType: string;
 }
 
-export type PointType = 'dispensing' | 'storage' | 'returns' | 'emergency';
+/** Types approved for operational outlet stock by migrations 066/067. */
+export type ApprovedPointType = 'pharmacy' | 'crash_cabinet' | 'rescue_cart';
+
+/** Legacy values remain readable so existing rows can be reclassified safely. */
+export type LegacyPointType = 'dispensing' | 'storage' | 'returns' | 'emergency';
+export type PointType = ApprovedPointType | LegacyPointType;
 
 export async function getWarehouses(orgId: string): Promise<Warehouse[]> {
   if (!supabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('warehouses')
-    .select('id, name, name_ar, status, organization_id')
+    .select('id, name, name_ar, status, organization_id, warehouse_kind')
     .eq('organization_id', orgId)
     .neq('status', 'archived')
     .order('name_ar');
@@ -34,6 +42,7 @@ export async function getWarehouses(orgId: string): Promise<Warehouse[]> {
   return (data ?? []).map(r => ({
     id: r.id, name: r.name, name_ar: r.name_ar,
     status: r.status, organizationId: r.organization_id,
+    warehouseKind: r.warehouse_kind as WarehouseKind,
   }));
 }
 
@@ -74,21 +83,22 @@ export async function getPointsByOrg(orgId: string): Promise<DistributionPoint[]
 }
 
 export async function createDistributionPoint(input: {
-  warehouseId?: string;
+  warehouseId: string;
   organizationId: string;
   name: string;
   name_ar: string;
-  pointType: PointType;
+  pointType: ApprovedPointType;
 }): Promise<DistributionPoint> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
+  if (!input.warehouseId) throw new Error('WAREHOUSE_REQUIRED');
 
   const row: Record<string, unknown> = {
     organization_id: input.organizationId,
     name:            input.name,
     name_ar:         input.name_ar,
     point_type:      input.pointType,
+    warehouse_id:   input.warehouseId,
   };
-  if (input.warehouseId) row.warehouse_id = input.warehouseId;
 
   const { data, error } = await supabase
     .from('distribution_points')
@@ -121,7 +131,7 @@ export async function createDistributionPoint(input: {
 
 export async function updateDistributionPoint(
   id: string,
-  input: { name?: string; name_ar?: string; pointType?: PointType; status?: string },
+  input: { name?: string; name_ar?: string; pointType?: PointType; warehouseId?: string; status?: string },
 ): Promise<void> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
@@ -129,6 +139,7 @@ export async function updateDistributionPoint(
   if (input.name !== undefined) update.name = input.name;
   if (input.name_ar !== undefined) update.name_ar = input.name_ar;
   if (input.pointType !== undefined) update.point_type = input.pointType;
+  if (input.warehouseId !== undefined) update.warehouse_id = input.warehouseId;
   if (input.status !== undefined) update.status = input.status;
 
   const { error } = await supabase
