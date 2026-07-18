@@ -36,6 +36,10 @@ describe('073 identity and atomicity', () => {
     }
     expect(sql).toContain('073 preconditions OK.');
   });
+  it('fails clearly before normalization when a legacy threshold scope is orphaned or cross-org', () => {
+    expect(sql).toContain('phoenix_inventory_scope_org(t.scope_kind, t.scope_id)');
+    expect(sql).toContain('an existing threshold has an orphaned or cross-organization scope');
+  });
 });
 
 describe('073 fixed column contract', () => {
@@ -119,11 +123,15 @@ describe('073 live post-conditions', () => {
   });
   it('verifies trigger security/search_path and enabled state', () => {
     expect(sql).toContain('trigger guard security/search_path changed');
+    expect(sql).toContain('threshold upsert security/search_path changed');
     expect(sql).toContain('inventory_threshold_guard is not enabled');
   });
   it('verifies function ACLs and direct-table writes remain closed', () => {
     expect(sql).toContain("has_function_privilege(\n       'anon'");
     expect(sql).toContain("has_table_privilege('authenticated', 'public.inventory_signal_thresholds', 'INSERT')");
+    expect(sql).toContain("has_table_privilege('authenticated', 'public.inventory_signal_thresholds', 'DELETE')");
+    expect(sql).toContain("has_table_privilege('anon', 'public.inventory_signal_thresholds', 'UPDATE')");
+    expect(sql).toContain("has_function_privilege(\n       'anon', 'public.phoenix_inventory_threshold_guard()'");
     expect(sql).toContain('function ACL boundary is incorrect');
     expect(sql).toContain('table ACL boundary changed');
   });
