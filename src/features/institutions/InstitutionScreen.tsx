@@ -18,10 +18,13 @@ import {
   type OrgProfileRow,
 } from '@/shared/supabase/services/organizations.service';
 import {
+  getWarehouses,
   getPointsByOrg,
   createDistributionPoint,
   updateDistributionPoint,
+  type Warehouse,
   type DistributionPoint,
+  type ApprovedPointType,
   type PointType,
 } from '@/shared/supabase/services/warehouses.service';
 import {
@@ -398,6 +401,9 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
   const org = useAsync(() => getOrganization(orgId), [orgId]);
   const users = useAsync(() => getProfilesByOrg(orgId), [orgId]);
   const points = useAsync(() => getPointsByOrg(orgId), [orgId]);
+  const warehouses = useAsync(() => getWarehouses(orgId), [orgId]);
+  const operationalWarehouses = (warehouses.data ?? [])
+    .filter(w => w.warehouseKind === 'institution' && w.status === 'active');
 
   const [editing, setEditing] = useState(false);
 
@@ -523,7 +529,10 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
-          onReload={() => { points.reload(); }}
+          warehouses={operationalWarehouses}
+          warehousesLoading={warehouses.loading}
+          warehousesError={warehouses.error}
+          onReload={() => { points.reload(); warehouses.reload(); }}
           onToast={onToast}
         />
       ) : (
@@ -720,12 +729,29 @@ function UserRow({ user, lang, actorRole, canEditRoles, onRoleChanged }: {
 
 /* ── Port / Distribution Point Section ── */
 
-const POINT_TYPES: { value: PointType; labelKey: string }[] = [
-  { value: 'dispensing', labelKey: 'port_type_dispensing' },
-  { value: 'storage',   labelKey: 'port_type_storage' },
-  { value: 'returns',   labelKey: 'port_type_returns' },
-  { value: 'emergency', labelKey: 'port_type_emergency' },
+const APPROVED_POINT_TYPES: { value: ApprovedPointType; labelKey: string }[] = [
+  { value: 'pharmacy',      labelKey: 'port_type_pharmacy' },
+  { value: 'crash_cabinet', labelKey: 'port_type_crash_cabinet' },
+  { value: 'rescue_cart',   labelKey: 'port_type_rescue_cart' },
 ];
+
+const POINT_TYPE_LABEL_KEY: Record<PointType, string> = {
+  pharmacy: 'port_type_pharmacy',
+  crash_cabinet: 'port_type_crash_cabinet',
+  rescue_cart: 'port_type_rescue_cart',
+  dispensing: 'port_type_dispensing',
+  storage: 'port_type_storage',
+  returns: 'port_type_returns',
+  emergency: 'port_type_emergency',
+};
+
+function isApprovedPointType(value: string): value is ApprovedPointType {
+  return APPROVED_POINT_TYPES.some(type => type.value === value);
+}
+
+function warehouseDisplayName(w: Warehouse, lang: 'ar' | 'en'): string {
+  return lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar);
+}
 
 function pointDisplayName(p: DistributionPoint, lang: 'ar' | 'en'): string {
   if (lang === 'ar') return p.name_ar || p.name;
@@ -743,7 +769,7 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 
 const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
@@ -758,6 +784,9 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
+  warehouses: Warehouse[];
+  warehousesLoading: boolean;
+  warehousesError: string | null;
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -786,6 +815,9 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
           lang={lang}
           orgId={orgId}
           canCreate={canCreatePorts}
+          warehouses={warehouses}
+          warehousesLoading={warehousesLoading}
+          warehousesError={warehousesError}
           onCreated={() => { setShowAdd(false); onReload(); }}
           onCancel={() => setShowAdd(false)}
           onToast={onToast}
@@ -805,6 +837,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               key={pt.id}
               point={pt}
               lang={lang}
+              warehouses={warehouses}
               canEditPorts={canEditPorts}
               canArchivePorts={canArchivePorts}
               canArchivePortsEffective={canArchivePortsEffective}
@@ -824,19 +857,27 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
 /* ── Add Port Form ── */
 
-function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
+function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, warehousesError, onCreated, onCancel, onToast }: {
   lang: 'ar' | 'en';
   orgId: string;
   canCreate: boolean;
+  warehouses: Warehouse[];
+  warehousesLoading: boolean;
+  warehousesError: string | null;
   onCreated: () => void;
   onCancel: () => void;
   onToast: (msg: string) => void;
 }) {
   const [portName, setPortName] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
+  const [pointType, setPointType] = useState<ApprovedPointType>('pharmacy');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = portName.trim().length > 0;
+  const canSubmit = portName.trim().length > 0
+    && warehouseId.length > 0
+    && !warehousesLoading
+    && !warehousesError;
 
   async function onSubmit() {
     if (!canSubmit) return;
@@ -844,18 +885,21 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
     if (import.meta.env.DEV) {
       console.info('[phoenix] AddPortForm.submit:', {
         orgId, canCreate, portName: portName.trim(),
-        payload: { organization_id: orgId, name: portName.trim(), name_ar: portName.trim(), point_type: 'dispensing' },
+        payload: {
+          organization_id: orgId, warehouse_id: warehouseId,
+          name: portName.trim(), name_ar: portName.trim(), point_type: pointType,
+        },
       });
     }
     setBusy(true);
     setError(null);
     try {
-      // name and name_ar both use the same visible value; type defaults to 'dispensing'
       const pt = await createDistributionPoint({
         organizationId: orgId,
+        warehouseId,
         name:      portName.trim(),
         name_ar:   portName.trim(),
-        pointType: 'dispensing',
+        pointType,
       });
       try {
         await createQrForTarget('distribution_point', pt.id, pt.name);
@@ -897,6 +941,42 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
             autoFocus
           />
         </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+            {t('port_warehouse', lang)} *
+          </label>
+          <select
+            value={warehouseId}
+            onChange={e => setWarehouseId(e.target.value)}
+            style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
+            disabled={warehousesLoading || Boolean(warehousesError) || warehouses.length === 0}
+          >
+            <option value="">{t('port_select_wh', lang)}</option>
+            {warehouses.map(w => (
+              <option key={w.id} value={w.id}>{warehouseDisplayName(w, lang)}</option>
+            ))}
+          </select>
+          {!warehousesLoading && !warehousesError && warehouses.length === 0 && (
+            <p style={{ fontSize: '11px', color: 'var(--warn)', marginTop: '5px' }}>{t('port_no_wh', lang)}</p>
+          )}
+          {warehousesError && (
+            <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '5px' }}>{warehousesError}</p>
+          )}
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+            {t('port_type', lang)} *
+          </label>
+          <select
+            value={pointType}
+            onChange={e => setPointType(e.target.value as ApprovedPointType)}
+            style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
+          >
+            {APPROVED_POINT_TYPES.map(type => (
+              <option key={type.value} value={type.value}>{t(type.labelKey, lang)}</option>
+            ))}
+          </select>
+        </div>
         {error && <p style={{ fontSize: '12px', color: 'var(--err)' }}>{error}</p>}
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <PhoenixButton variant="ghost" size="sm" onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
@@ -911,9 +991,10 @@ function AddPortForm({ lang, orgId, canCreate, onCreated, onCancel, onToast }: {
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
+function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
+  warehouses: Warehouse[];
   canEditPorts: boolean;
   canArchivePorts: boolean;
   canArchivePortsEffective: boolean;
@@ -945,14 +1026,18 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
   // in the archive flow above (a separate trigger-guarded path).
   const [editName, setEditName] = useState(point.name);
   const [editNameAr, setEditNameAr] = useState(point.name_ar);
-  const [editPointType, setEditPointType] = useState<PointType>(point.pointType as PointType);
+  const [editWarehouseId, setEditWarehouseId] = useState(point.warehouseId ?? '');
+  const [editPointType, setEditPointType] = useState<ApprovedPointType>(
+    isApprovedPointType(point.pointType) ? point.pointType : 'pharmacy',
+  );
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   function openEdit() {
     setEditName(point.name);
     setEditNameAr(point.name_ar);
-    setEditPointType(point.pointType as PointType);
+    setEditWarehouseId(point.warehouseId ?? '');
+    setEditPointType(isApprovedPointType(point.pointType) ? point.pointType : 'pharmacy');
     setEditError(null);
     setConfirmAction('edit');
   }
@@ -962,12 +1047,17 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
       setEditError(t('port_name_required', lang));
       return;
     }
+    if (!editWarehouseId) {
+      setEditError(t('inv_th_scope_required', lang));
+      return;
+    }
     setEditBusy(true);
     setEditError(null);
     try {
       await updateDistributionPoint(point.id, {
         name: editName.trim(),
         name_ar: editNameAr.trim(),
+        warehouseId: editWarehouseId,
         pointType: editPointType,
       });
       setConfirmAction(null);
@@ -981,7 +1071,9 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
     }
   }
 
-  const ptTypeKey = POINT_TYPES.find(p => p.value === point.pointType)?.labelKey;
+  const ptTypeKey = POINT_TYPE_LABEL_KEY[point.pointType as PointType];
+  const pairedWarehouse = warehouses.find(w => w.id === point.warehouseId);
+  const operationallyValid = isApprovedPointType(point.pointType) && Boolean(pairedWarehouse);
 
   useState(() => {
     getQrForPoint(point.id).then(r => setQr(r)).catch(() => setQr(null));
@@ -1110,7 +1202,14 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
           </div>
           <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>
             {ptTypeKey ? t(ptTypeKey, lang) : point.pointType}
+            {' · '}
+            {pairedWarehouse ? warehouseDisplayName(pairedWarehouse, lang) : t('port_no_wh', lang)}
           </div>
+          {!operationallyValid && (
+            <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '4px' }}>
+              ⚠ {t('port_operational_fix_required', lang)}
+            </div>
+          )}
         </div>
         <PhoenixStatusBadge variant={point.status === 'active' ? 'ok' : 'neutral'} label={statusLabel(point.status, lang)} />
       </div>
@@ -1268,10 +1367,25 @@ function PortCard({ point, lang, canEditPorts, canArchivePorts, canArchivePortsE
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
-              {t('port_type', lang)}
+              {t('port_warehouse', lang)} *
             </label>
-            <select value={editPointType} onChange={e => setEditPointType(e.target.value as PointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-              {POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+            <select
+              value={editWarehouseId}
+              onChange={e => setEditWarehouseId(e.target.value)}
+              style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
+            >
+              <option value="">{t('port_select_wh', lang)}</option>
+              {warehouses.map(w => (
+                <option key={w.id} value={w.id}>{warehouseDisplayName(w, lang)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+              {t('port_type', lang)} *
+            </label>
+            <select value={editPointType} onChange={e => setEditPointType(e.target.value as ApprovedPointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+              {APPROVED_POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
             </select>
           </div>
         </div>
