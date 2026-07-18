@@ -3,6 +3,9 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PhoenixNotice } from '@/shared/ui/PhoenixNotice';
 
 const MODULES = [
   { id: 'h1', dot: 'ok',   statusKey: 'healthy',  labelKey: 'mod_avail_read', border: undefined, details: [{ l: 'Uptime', v: '99.8%', c: 'var(--ok)' }, { l: 'Latency', v: '42ms' }, { l: 'Last Upd', v: '14:32' }, { l: 'Bridge', v: 'Connected', c: 'var(--p)' }] },
@@ -26,20 +29,20 @@ export function HealthScreen() {
   const toggle = (id: string) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
   return (
-    <div style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_health', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('health_sub', lang)}</p>
-        </div>
-        <PhoenixStatusBadge variant="ok" label={`● ${t('operational', lang)}`} />
-      </div>
+    <div className="premium-page nexus-health-page" style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="health"
+        eyebrow={lang === 'ar' ? 'PHOENIX HEALTH · مراقبة تشغيلية' : 'PHOENIX HEALTH · OPERATIONS WATCH'}
+        title={t('nav_health', lang)}
+        description={t('health_sub', lang)}
+        actions={<PhoenixStatusBadge variant="ok" label={`● ${t('operational', lang)}`} />}
+      />
 
       {/* Global status bar */}
       <PhoenixCard padding="16px 20px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '160px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚕</div>
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '2px solid var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ok)' }}><PhoenixIcon name="health" size={20} /></div>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700 }}>{t('global_status', lang)}</div>
               <div style={{ fontSize: '11.5px', color: 'var(--ok)' }}>{t('operational', lang)}</div>
@@ -74,14 +77,10 @@ export function HealthScreen() {
             {expanded[mod.id] && (
               <div style={{ padding: '0 16px 14px', borderTop: '1px solid var(--brd)', animation: 'fs .2s ease' }}>
                 {mod.frozen ? (
-                  <div style={{ padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--skel)', marginTop: '12px', fontSize: '12px', color: 'var(--t2)' }}>
-                    🔒 {t('intake_frozen_note', lang)}
-                  </div>
+                  <PhoenixNotice tone="neutral" icon="lock" className="nexus-notice--nested">{t('intake_frozen_note', lang)}</PhoenixNotice>
                 ) : mod.id === 'h2' ? (
                   <>
-                    <div style={{ padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--warn2)', marginTop: '12px', fontSize: '12px', color: 'var(--warn)' }}>
-                      🛡 {t('safemode_desc', lang)} · {t('hilla', lang)}
-                    </div>
+                    <PhoenixNotice tone="warning" icon="shield" className="nexus-notice--nested">{t('safemode_desc', lang)} · {t('hilla', lang)}</PhoenixNotice>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginTop: '10px', fontSize: '12px' }}>
                       {mod.details.map(d => (
                         <div key={d.l} style={{ padding: '10px', borderRadius: 'var(--r2)', background: 'var(--s2)' }}>
@@ -127,7 +126,7 @@ export function HealthScreen() {
           <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('recovery_q', lang)}</h3>
           <PhoenixCard padding="16px">
             <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--t2)' }}>
-              <div style={{ fontSize: '24px', marginBottom: '6px' }}>✅</div>
+              <div style={{ display: 'grid', placeItems: 'center', width: '42px', height: '42px', margin: '0 auto 8px', color: 'var(--ok)', background: 'var(--ok2)', borderRadius: '50%' }}><PhoenixIcon name="check" size={23} /></div>
               <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{t('recovery_clear', lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '4px' }}>{t('demoData', lang)}</div>
             </div>

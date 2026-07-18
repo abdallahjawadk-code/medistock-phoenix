@@ -8,10 +8,11 @@ import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
 
 interface Props { onNavigate: (screen: number) => void; }
 
-export function MeshScreen({ onNavigate }: Props) {
+export function MeshScreen({ onNavigate: _onNavigate }: Props) {
   const { lang } = useApp();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const isMobile = window.innerWidth < 768;
@@ -27,11 +28,13 @@ export function MeshScreen({ onNavigate }: Props) {
   };
 
   return (
-    <div style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_mesh', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('mesh_sub', lang)}</p>
-      </div>
+    <div className="premium-page nexus-mesh-page" style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="network"
+        eyebrow={lang === 'ar' ? 'PHOENIX MESH · خريطة المؤسسات' : 'PHOENIX MESH · INSTITUTION MAP'}
+        title={t('nav_mesh', lang)}
+        description={t('mesh_sub', lang)}
+      />
 
       {/* Legend */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
@@ -45,7 +48,7 @@ export function MeshScreen({ onNavigate }: Props) {
 
       {loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!loading && error && <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />}
-      {!loading && !error && nodes.length === 0 && <PhoenixEmptyState icon="🌐" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />}
+      {!loading && !error && nodes.length === 0 && <PhoenixEmptyState icon="network" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />}
 
       {!loading && !error && nodes.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (selected ? '1fr 280px' : '1fr'), gap: '16px', alignItems: 'start' }}>

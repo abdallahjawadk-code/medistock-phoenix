@@ -7,6 +7,7 @@ import {
 } from '@/shared/supabase/services/admin-cleanup.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -140,10 +141,10 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
         {t('acw_title', lang)}
       </h3>
       <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '10px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
-        ⚠ {t('acw_delete_materials_warning', lang)}
+        <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('acw_delete_materials_warning', lang)}
       </div>
       <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
-        ⚠ {t('acw_delete_movements_warning', lang)}
+        <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('acw_delete_movements_warning', lang)}
       </div>
       <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">
         {t('acw_delete_alert_exchange_note', lang)}

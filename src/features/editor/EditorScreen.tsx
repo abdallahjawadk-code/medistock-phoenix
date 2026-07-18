@@ -12,6 +12,8 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 interface PointRow { id: string; name: string; name_ar: string; }
 
@@ -351,19 +353,19 @@ export function EditorScreen() {
   const myOrgName = myOrg.data ? (lang === 'ar' ? myOrg.data.name_ar : myOrg.data.name) : '';
 
   return (
-    <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_editor', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('editor_sub', lang)}</p>
-        </div>
-        <PhoenixOrgScope />
-      </div>
+    <div className="premium-page nexus-editor-page" style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="editor"
+        eyebrow={lang === 'ar' ? 'PHOENIX AVAILABILITY · إدخال مضبوط' : 'PHOENIX AVAILABILITY · CONTROLLED ENTRY'}
+        title={t('nav_editor', lang)}
+        description={t('editor_sub', lang)}
+        actions={<PhoenixOrgScope />}
+      />
 
-      {!activeOrgId && <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {!activeOrgId && <PhoenixEmptyState icon="institutions" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {activeOrgId && !canViewAvailability && (
-        <PhoenixEmptyState icon="🔒" title={t('avail_no_edit_permission', lang)} description={t('avail_no_edit_permission', lang)} />
+        <PhoenixEmptyState icon="lock" title={t('avail_no_edit_permission', lang)} description={t('avail_no_edit_permission', lang)} />
       )}
 
       {activeOrgId && canViewAvailability && (
@@ -461,7 +463,7 @@ export function EditorScreen() {
                     cursor: isEditMode ? 'default' : 'text',
                   }}
                 />
-                {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('qty_err', lang)}</p>}
+                {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}><PhoenixIcon name="warning" size={13} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '4px' }} />{t('qty_err', lang)}</p>}
                 {isEditMode && (
                   <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
                     {t('avail_qty_locked_note', lang)}
@@ -620,7 +622,7 @@ export function EditorScreen() {
               </div>
               {similarMatchBlocked && (
                 <p style={{ fontSize: '11.5px', color: 'var(--err)', marginTop: '10px' }} dir="auto">
-                  ⚠ {t('avail_similar_match_conflict', lang)}
+                  <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('avail_similar_match_conflict', lang)}
                 </p>
               )}
               <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '10px' }} dir="auto">

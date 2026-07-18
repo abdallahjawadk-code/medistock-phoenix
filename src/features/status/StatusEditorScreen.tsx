@@ -14,9 +14,11 @@ import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 interface PointRow { id: string; name: string; name_ar: string; }
 
@@ -172,16 +174,16 @@ export function StatusEditorScreen() {
   const tdStyle = { padding: '8px 10px', fontSize: '12.5px', borderBottom: '1px solid var(--brd)', verticalAlign: 'top' as const };
 
   return (
-    <div style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_status_editor', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('se_sub', lang)}</p>
-        </div>
-        <PhoenixOrgScope />
-      </div>
+    <div className="premium-page nexus-status-editor-page" style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="table"
+        eyebrow={lang === 'ar' ? 'PHOENIX STATUS · سجل تشغيلي' : 'PHOENIX STATUS · OPERATIONS LEDGER'}
+        title={t('nav_status_editor', lang)}
+        description={t('se_sub', lang)}
+        actions={<PhoenixOrgScope />}
+      />
 
-      {!activeOrgId && <PhoenixEmptyState icon="📊" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {!activeOrgId && <PhoenixEmptyState icon="reports" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {activeOrgId && (
         <>
@@ -204,13 +206,13 @@ export function StatusEditorScreen() {
                   above the (potentially horizontally scrollable) table below. */}
               <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
                 <button onClick={exportXlsx} disabled={filtered.length === 0 || xlsxBusy} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
-                  📊 {t('se_export_excel', lang)}
+                  <PhoenixIcon name="download" size={14} /> {t('se_export_excel', lang)}
                 </button>
                 <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_export_pdf', lang)} style={actionBtnStyle}>
-                  📑 {t('se_export_pdf', lang)}
+                  <PhoenixIcon name="file" size={14} /> {t('se_export_pdf', lang)}
                 </button>
                 <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_print', lang)} style={actionBtnStyle}>
-                  🖨 {t('se_print', lang)}
+                  <PhoenixIcon name="reports" size={14} /> {t('se_print', lang)}
                 </button>
               </div>
             </div>
@@ -220,7 +222,7 @@ export function StatusEditorScreen() {
           {records.loading ? (
             <p style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>{t('loading', lang)}</p>
           ) : filtered.length === 0 ? (
-            <PhoenixEmptyState icon="📊" title={t('se_no_records', lang)} description={t('empty_hint', lang)} />
+            <PhoenixEmptyState icon="reports" title={t('se_no_records', lang)} description={t('empty_hint', lang)} />
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>

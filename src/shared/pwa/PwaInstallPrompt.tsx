@@ -1,6 +1,8 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { usePwaInstallPrompt } from './usePwaInstallPrompt';
+import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * PWA-INSTALL-PROMPT-A
@@ -31,7 +33,7 @@ export function PwaInstallPrompt({ isMobile }: Props) {
       role="region"
       aria-label={t('pwa_install_eyebrow', lang)}
     >
-      <div className="premium-pwa-install__icon" aria-hidden="true">⚕</div>
+      <div className="premium-pwa-install__icon" aria-hidden="true"><PhoenixMark size={25} title="" /></div>
       <div className="premium-pwa-install__body">
         <div className="premium-pwa-install__title">{t('pwa_install_title', lang)}</div>
         <div className="premium-pwa-install__desc">
@@ -54,7 +56,7 @@ export function PwaInstallPrompt({ isMobile }: Props) {
           onClick={dismiss}
           aria-label={t('pwa_install_dismiss_label', lang)}
         >
-          {canInstallNative ? t('pwa_install_later', lang) : '✕'}
+          {canInstallNative ? t('pwa_install_later', lang) : <PhoenixIcon name="close" size={16} />}
         </button>
       </div>
     </div>

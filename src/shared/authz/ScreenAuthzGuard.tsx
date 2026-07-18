@@ -21,6 +21,7 @@ import { scopedEngineEnforcesRole } from './mode';
 import { useAuthzDecision, useShadowObservation } from './useAuthorization';
 import { AUTHZ_REASON_STRING_KEY, isRecoverableReason } from './PhoenixPermissionGate';
 import type { AuthzReasonCode } from './diagnostics';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * The read-only permission key each existing screen answers to, for the pilot.
@@ -138,8 +139,8 @@ function AuthzUnavailable({
         background: 'var(--bg2)', textAlign: 'center',
       }}
     >
-      <div style={{ fontSize: '28px', marginBottom: '10px' }} aria-hidden="true">
-        {recoverable ? '⚠️' : '🔒'}
+      <div className="nexus-authz-state__icon" aria-hidden="true">
+        <PhoenixIcon name={recoverable ? 'warning' : 'lock'} size={27} />
       </div>
       <div style={{ fontWeight: 700, marginBottom: '8px', color: 'var(--t1)' }}>
         {t('authz_pilot_unavailable_title', lang)}

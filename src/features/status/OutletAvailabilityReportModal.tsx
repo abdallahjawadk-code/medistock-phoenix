@@ -14,6 +14,7 @@ import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { LiveAvailRow } from './StatusCenterScreen';
 
 /**
@@ -507,7 +508,7 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
           aria-label={t('close', lang)}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--t2)', padding: '4px 8px' }}
         >
-          ✕
+          <PhoenixIcon name="close" size={16} />
         </button>
       </div>
 
@@ -518,8 +519,8 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
       ) : (
         <>
           <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 700 }} dir="auto">📦 {outletName || '—'}</div>
-            {institutionName && <div style={{ fontSize: '12px', color: 'var(--t2)' }} dir="auto">🏥 {institutionName}</div>}
+            <div style={{ fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '7px' }} dir="auto"><PhoenixIcon name="outlet" size={17} /> {outletName || '—'}</div>
+            {institutionName && <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '6px' }} dir="auto"><PhoenixIcon name="institutions" size={14} /> {institutionName}</div>}
           </div>
 
           {/* Summary cards */}
@@ -601,7 +602,7 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
               onClick={() => setFieldsOpen(v => !v)}
               style={{ ...fieldStyle, width: '100%', textAlign: 'start', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', background: 'transparent' }}
             >
-              <span>🧩 {t('sc_outlet_report_fields_title', lang)} ({selectedFields.size}/{FIELD_DEFINITIONS.length})</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="scope" size={15} /> {t('sc_outlet_report_fields_title', lang)} ({selectedFields.size}/{FIELD_DEFINITIONS.length})</span>
               <span>{fieldsOpen ? '▲' : '▼'}</span>
             </button>
             {fieldsOpen && (
@@ -628,10 +629,10 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <PhoenixButton variant="secondary" size="sm" loading={xlsxBusy} disabled={xlsxBusy || noFieldsSelected} onClick={exportXlsx}>
-              📊 {t('sc_outlet_report_export', lang)}
+              <PhoenixIcon name="table" size={14} /> {t('sc_outlet_report_export', lang)}
             </PhoenixButton>
             <PhoenixButton variant="ghost" size="sm" disabled={filteredRows.length === 0 || noFieldsSelected} onClick={printReport}>
-              📄 {t('sc_print_pdf', lang)}
+              <PhoenixIcon name="file" size={14} /> {t('sc_print_pdf', lang)}
             </PhoenixButton>
           </div>
 

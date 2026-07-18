@@ -5,6 +5,8 @@ import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 interface Props { onNavigate: (screen: number) => void; }
 
@@ -20,11 +22,13 @@ export function MobileCommandScreen({ onNavigate }: Props) {
   const offset = dash - (dash * pct) / 100;
 
   return (
-    <div style={{ maxWidth: '420px', margin: '0 auto', animation: 'fs .3s ease' }}>
-      <div style={{ marginBottom: '18px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_mobile', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('mobile_sub', lang)}</p>
-      </div>
+    <div className="premium-page nexus-mobile-command-page" style={{ maxWidth: '520px', margin: '0 auto', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="command"
+        eyebrow={lang === 'ar' ? 'PHOENIX MOBILE · موجز تنفيذي' : 'PHOENIX MOBILE · EXECUTIVE BRIEF'}
+        title={t('nav_mobile', lang)}
+        description={t('mobile_sub', lang)}
+      />
 
       {metrics.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!metrics.loading && metrics.error && <PhoenixErrorState title={t('load_error', lang)} message={metrics.error} onRetry={metrics.reload} />}
@@ -64,7 +68,7 @@ export function MobileCommandScreen({ onNavigate }: Props) {
                 <div key={o.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lang === 'ar' ? o.name_ar : o.name}</span>
                   <span style={{ padding: '2px 7px', borderRadius: 'var(--rpill)', background: warn ? 'var(--warn2)' : 'var(--ok2)', color: warn ? 'var(--warn)' : 'var(--ok)', fontWeight: 600, fontSize: '10.5px' }}>
-                    {warn ? `⚠ ${o.low + o.missing}` : `● ${t('healthy', lang)}`}
+                    {warn ? <><PhoenixIcon name="warning" size={13} /> {o.low + o.missing}</> : <><PhoenixIcon name="check" size={13} /> {t('healthy', lang)}</>}
                   </span>
                 </div>
               );

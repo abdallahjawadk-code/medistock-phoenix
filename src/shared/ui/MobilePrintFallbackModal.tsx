@@ -4,6 +4,7 @@ import { downloadPrintableHtml, openPrintWindow } from '@/shared/lib/reportExpor
 import { PhoenixDialog } from './PhoenixDialog';
 import { PhoenixButton } from './PhoenixButton';
 import { PhoenixToast } from './PhoenixToast';
+import { PhoenixIcon } from './PhoenixIcon';
 
 /**
  * BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A
@@ -79,7 +80,7 @@ export function MobilePrintFallbackModal({ open, html, title, fileNameBase, lang
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <PhoenixButton variant="secondary" fullWidth style={rowBtnStyle} onClick={() => setPreviewOpen(v => !v)}>
-            👁 {t('mobile_print_preview', lang)}
+            <PhoenixIcon name="eye" size={16} /> {t('mobile_print_preview', lang)}
           </PhoenixButton>
 
           {previewOpen && (
@@ -94,17 +95,18 @@ export function MobilePrintFallbackModal({ open, html, title, fileNameBase, lang
           )}
 
           <PhoenixButton variant="secondary" fullWidth style={rowBtnStyle} onClick={handleDownload}>
-            ⬇ {t('mobile_print_download_html', lang)}
+            <PhoenixIcon name="download" size={16} /> {t('mobile_print_download_html', lang)}
           </PhoenixButton>
 
           <PhoenixButton variant="ghost" fullWidth style={rowBtnStyle} onClick={() => setConfirmingSystemPrint(v => !v)}>
-            🖨 {t('mobile_print_use_system', lang)}
+            <PhoenixIcon name="print" size={16} /> {t('mobile_print_use_system', lang)}
           </PhoenixButton>
 
           {confirmingSystemPrint && (
             <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '12px 14px' }}>
               <p style={{ fontSize: '12px', color: 'var(--warn)', marginBottom: '10px' }} dir="auto">
-                ⚠️ {t('mobile_print_system_warning', lang)}
+                <PhoenixIcon name="warning" size={15} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} />
+                {t('mobile_print_system_warning', lang)}
               </p>
               <PhoenixButton variant="warn" fullWidth style={{ minHeight: '44px' }} onClick={handleConfirmSystemPrint}>
                 {t('mobile_print_system_confirm', lang)}

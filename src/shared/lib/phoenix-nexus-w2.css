@@ -81,6 +81,23 @@
   pointer-events: none;
 }
 
+.nexus-workspace__atmosphere::before,
+.nexus-recovery-shell__atmosphere::before,
+.nexus-public-qr__atmosphere::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/phoenix-circuit-field.svg') center / cover no-repeat;
+  opacity: .11;
+}
+
+[data-theme="dark"] .nexus-workspace__atmosphere::before,
+[data-theme="dark"] .nexus-recovery-shell__atmosphere::before,
+[data-theme="dark"] .nexus-public-qr__atmosphere::before {
+  opacity: .2;
+  mix-blend-mode: screen;
+}
+
 .nexus-workspace__atmosphere > span {
   position: absolute;
   display: block;
@@ -149,6 +166,334 @@
 .nexus-workspace[data-screen="17"] { --nx-screen-accent: var(--nx-cyan); }
 
 /* ─── Page hierarchy ──────────────────────────────────────────────────────── */
+
+.nexus-screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(14px, 2vw, 24px);
+  min-height: 126px;
+  margin-block-end: var(--nx-page-gap);
+  padding: clamp(18px, 2.4vw, 28px) !important;
+  border: 1px solid color-mix(in srgb, var(--nx-screen-accent, var(--p)) 24%, var(--nx-line));
+  border-radius: 22px;
+  box-shadow: var(--nx-shadow-card), var(--nx-bevel);
+}
+
+.nexus-screen-header__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  min-width: 0;
+}
+
+.nexus-screen-header__mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: var(--nx-screen-accent, var(--p));
+  border: 1px solid color-mix(in srgb, var(--nx-screen-accent, var(--p)) 28%, var(--nx-line));
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--nx-screen-accent, var(--p)) 20%, transparent), transparent 65%),
+    var(--nx-surface-raised);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--nx-screen-accent, var(--p)) 8%, transparent), var(--nx-bevel);
+}
+
+.nexus-screen-header__copy {
+  min-width: 0;
+}
+
+.nexus-screen-header__eyebrow {
+  display: block;
+  margin-block-end: 5px;
+  color: var(--nx-screen-accent, var(--p));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.nexus-screen-header h2 {
+  margin: 0;
+  font-size: clamp(20px, 2.1vw, 29px) !important;
+  line-height: 1.18;
+}
+
+.nexus-screen-header p {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.nexus-screen-header__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin-block-start: 11px;
+  color: var(--t2);
+  font-size: 11px;
+}
+
+.nexus-screen-header__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.nexus-notice {
+  --notice-accent: var(--info);
+  --notice-bg: var(--info2);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-block-end: 16px;
+  padding: 12px 14px;
+  color: var(--notice-accent);
+  border: 1px solid color-mix(in srgb, var(--notice-accent) 44%, var(--nx-line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--notice-bg) 82%, var(--nx-surface-raised));
+  box-shadow: inset 0 1px color-mix(in srgb, #fff 46%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.nexus-notice[data-tone="success"] { --notice-accent: var(--ok); --notice-bg: var(--ok2); }
+.nexus-notice[data-tone="warning"] { --notice-accent: var(--warn); --notice-bg: var(--warn2); }
+.nexus-notice[data-tone="danger"] { --notice-accent: var(--err); --notice-bg: var(--err2); }
+.nexus-notice[data-tone="neutral"] { --notice-accent: var(--t2); --notice-bg: var(--s2); }
+
+.nexus-notice__icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--notice-accent) 11%, transparent);
+}
+
+.nexus-notice__copy { min-width: 0; }
+.nexus-notice__copy strong { display: block; margin-block-end: 2px; color: currentColor; }
+
+.nexus-notice--nested {
+  margin-block: 12px 0;
+}
+
+.nexus-smart-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  color: var(--p);
+  border: 1px solid color-mix(in srgb, var(--p) 34%, var(--nx-line));
+  border-radius: var(--rpill);
+  background: var(--p2);
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.nexus-quick-action__icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: var(--nx-screen-accent, var(--p));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 10%, var(--s2));
+}
+
+/* ─── Anonymous identity surfaces ────────────────────────────────────────── */
+
+.nexus-recovery-shell,
+.nexus-public-qr {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(50rem 30rem at 15% -10%, color-mix(in srgb, var(--nx-ember) 11%, transparent), transparent 72%),
+    radial-gradient(48rem 34rem at 100% 12%, color-mix(in srgb, var(--nx-cyan) 10%, transparent), transparent 75%),
+    var(--bg);
+}
+
+.nexus-recovery-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(76px, 10vh, 110px) 20px 34px;
+}
+
+.nexus-recovery-shell__atmosphere,
+.nexus-public-qr__atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.nexus-recovery-shell__atmosphere span,
+.nexus-public-qr__atmosphere span {
+  position: absolute;
+  border: 1px solid var(--nx-line);
+  border-radius: 50%;
+}
+
+.nexus-recovery-shell__atmosphere span:nth-child(1),
+.nexus-public-qr__atmosphere span:nth-child(1) { width: 340px; height: 340px; inset: -190px auto auto -130px; }
+.nexus-recovery-shell__atmosphere span:nth-child(2),
+.nexus-public-qr__atmosphere span:nth-child(2) { width: 240px; height: 240px; inset: 18% -130px auto auto; border-color: color-mix(in srgb, var(--nx-cyan) 20%, transparent); }
+.nexus-recovery-shell__atmosphere span:nth-child(3),
+.nexus-public-qr__atmosphere span:nth-child(3) { width: 180px; height: 180px; inset: auto auto -100px 24%; border-color: color-mix(in srgb, var(--nx-ember) 18%, transparent); }
+
+.nexus-recovery-shell__controls {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline-end: 18px;
+  display: flex;
+  gap: 8px;
+}
+
+.nexus-recovery-shell__controls button,
+.nexus-public-qr__lang {
+  display: inline-grid;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 7px 12px;
+  place-items: center;
+  color: var(--t);
+  border: 1px solid var(--nx-line-strong);
+  border-radius: var(--rpill);
+  background: color-mix(in srgb, var(--nx-surface-raised) 92%, transparent);
+  box-shadow: var(--nx-bevel);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nexus-recovery-shell__brand {
+  margin-block-end: 20px;
+  text-align: center;
+}
+
+.nexus-recovery-shell__mark {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 13px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--nx-ember) 36%, var(--nx-line));
+  border-radius: 23px;
+  background: var(--nx-obsidian);
+  box-shadow: 0 18px 52px color-mix(in srgb, var(--nx-obsidian) 26%, transparent), inset 0 0 32px color-mix(in srgb, var(--nx-ember) 9%, transparent);
+}
+
+.nexus-recovery-shell__brand > span,
+.nexus-public-qr__identity > div > span {
+  color: var(--nx-ember);
+  font-size: 9px;
+  font-weight: 820;
+  letter-spacing: .16em;
+}
+
+.nexus-recovery-shell__brand h1 { margin: 5px 0 0; font-size: 23px; letter-spacing: -.03em; }
+.nexus-recovery-shell__brand p { margin: 5px 0 0; color: var(--t2); font-size: 11.5px; }
+
+.nexus-recovery-card {
+  width: min(100%, 400px);
+  padding: clamp(22px, 4vw, 30px);
+  border: 1px solid var(--nx-line-strong);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent);
+  box-shadow: var(--nx-shadow-deep), var(--nx-bevel);
+  backdrop-filter: blur(18px);
+}
+
+.nexus-recovery-state { padding: 14px 0; text-align: center; }
+.nexus-recovery-state__icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 12px;
+  place-items: center;
+  color: var(--p);
+  border-radius: 17px;
+  background: var(--p2);
+}
+.nexus-recovery-state[data-state="success"] .nexus-recovery-state__icon { color: var(--ok); background: var(--ok2); }
+.nexus-recovery-state[data-state="error"] .nexus-recovery-state__icon { color: var(--err); background: var(--err2); }
+
+.nexus-public-qr {
+  display: flex;
+  justify-content: center;
+  padding: clamp(18px, 4vw, 34px) 14px 48px;
+}
+
+.nexus-public-qr__content { width: min(100%, 540px); }
+.nexus-public-qr__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block-end: 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--nx-line);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--nx-surface-raised) 92%, transparent);
+  box-shadow: var(--nx-shadow-card), var(--nx-bevel);
+  backdrop-filter: blur(16px);
+}
+
+.nexus-public-qr__identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.nexus-public-qr__mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--nx-obsidian);
+}
+
+.nexus-public-qr__invalid {
+  padding: 56px 24px;
+  color: var(--t2);
+  text-align: center;
+  border: 1px dashed var(--nx-line-strong);
+  border-radius: 18px;
+  background: var(--nx-surface-raised);
+}
+
+.nexus-public-qr__invalid > div:first-child {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 13px;
+  place-items: center;
+  color: var(--err);
+  border-radius: 18px;
+  background: var(--err2);
+}
+
+.nexus-authz-state__icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 10px;
+  place-items: center;
+  color: var(--warn);
+  border-radius: 16px;
+  background: var(--warn2);
+}
 
 .nexus-workspace :where(h1, h2, h3, h4) {
   text-wrap: balance;
@@ -431,6 +776,33 @@
   inset: 0;
   background: color-mix(in srgb, var(--nx-obsidian) 72%, transparent);
   backdrop-filter: blur(10px) saturate(112%);
+}
+
+/* Legacy lifecycle confirmations keep their original close/submit behavior,
+   while sharing the same cinematic material and accessible dialog surface. */
+.nexus-legacy-dialog {
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--p) 20%, transparent), transparent 34%),
+    color-mix(in srgb, #030712 74%, transparent) !important;
+  backdrop-filter: blur(14px) saturate(118%);
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+}
+
+.nexus-legacy-dialog__panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  animation: su .25s ease;
+}
+
+.nexus-legacy-dialog__panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/phoenix-circuit-field.svg') center / cover no-repeat;
+  opacity: .035;
 }
 
 .premium-dialog-panel {
@@ -930,6 +1302,27 @@
 }
 
 @media (max-width: 767px) {
+  .nexus-screen-header {
+    align-items: stretch;
+    min-height: 0;
+    padding: 16px !important;
+    border-radius: 18px;
+  }
+
+  .nexus-screen-header__mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  .nexus-screen-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .nexus-screen-header__actions > * {
+    flex: 1 1 auto;
+  }
   :root {
     --nx-control-height: 46px;
     --nx-panel-gap: 14px;

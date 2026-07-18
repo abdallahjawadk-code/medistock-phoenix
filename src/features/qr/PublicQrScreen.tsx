@@ -7,6 +7,8 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
+import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * AVAILABILITY-ALERTS-QR-POLISH-D
@@ -193,21 +195,23 @@ export function PublicQrScreen({ publicId }: Props) {
     : visibleItems;
 
   return (
-    <div className="premium-qr-public-shell" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
-      <div style={{ width: '100%', maxWidth: '480px' }}>
+    <main className="premium-qr-public-shell nexus-public-qr">
+      <div className="nexus-public-qr__atmosphere" aria-hidden="true"><span /><span /><span /></div>
+      <div className="nexus-public-qr__content">
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: 'var(--r3)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>⚕</div>
+        <header className="nexus-public-qr__header">
+          <div className="nexus-public-qr__identity">
+            <div className="nexus-public-qr__mark"><PhoenixMark size={34} title="MediStock-Babil Phoenix" /></div>
             <div>
+              <span>MEDISTOCK-BABIL PHOENIX</span>
               <div style={{ fontSize: '15px', fontWeight: 700 }}>{t('public_title', lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('public_sub', lang)}</div>
             </div>
           </div>
-          <button onClick={toggleLang} style={{ padding: '5px 12px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+          <button className="premium-focus-ring nexus-public-qr__lang" onClick={toggleLang}>
             {lang === 'ar' ? 'EN' : 'عربي'}
           </button>
-        </div>
+        </header>
 
         {loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
@@ -220,8 +224,8 @@ export function PublicQrScreen({ publicId }: Props) {
         )}
 
         {!loading && !error && !ok && (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🚫</div>
+          <div className="nexus-public-qr__invalid">
+            <div><PhoenixIcon name="lock" size={34} /></div>
             <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>{t('qr_invalid', lang)}</div>
             <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>{t('qr_scan_again', lang)}</p>
           </div>
@@ -265,7 +269,7 @@ export function PublicQrScreen({ publicId }: Props) {
             {/* Search */}
             {visibleItems.length > 3 && (
               <div style={{ position: 'relative', marginBottom: '12px' }}>
-                <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+                <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)', pointerEvents: 'none' }}><PhoenixIcon name="search" size={15} /></span>
                 <input
                   type="search"
                   placeholder={t('public_search', lang)}
@@ -332,7 +336,7 @@ export function PublicQrScreen({ publicId }: Props) {
                       )}
                       {item.expiry_date && isNearExpiry && (
                         <span style={{ color: bucketBadge ? bucketBadge.color : 'var(--warn)' }} dir="ltr">
-                          ⏱ {t('public_expiry_warn', lang)} {item.expiry_date}
+                          <PhoenixIcon name="clock" size={12} style={{ verticalAlign: 'middle', marginInlineEnd: '4px' }} /> {t('public_expiry_warn', lang)} {item.expiry_date}
                         </span>
                       )}
                     </div>
@@ -342,11 +346,11 @@ export function PublicQrScreen({ publicId }: Props) {
             </div>
 
             <div className="premium-qr-trust-note" style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
-              🔒 {t('qr_no_expose', lang)}
+              <PhoenixIcon name="shield" size={14} style={{ verticalAlign: 'middle', marginInlineEnd: '5px' }} /> {t('qr_no_expose', lang)}
             </div>
           </>
         )}
       </div>
-    </div>
+    </main>
   );
 }

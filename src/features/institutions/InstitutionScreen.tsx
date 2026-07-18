@@ -59,6 +59,9 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PhoenixNotice } from '@/shared/ui/PhoenixNotice';
 import { AvailabilityItemDetailsModal } from './AvailabilityItemDetailsModal';
 
 // Every role accepted by migration 066 must remain renderable. Official roles
@@ -144,22 +147,17 @@ export function InstitutionScreen() {
 
   return (
     <div className="premium-page premium-institutions-page" style={{ animation: 'fs .3s ease' }}>
-      <div className="premium-page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
-        <div>
-          <div className="premium-command-kicker">MediStock-Babil</div>
-          <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 700, letterSpacing: '-.3px' }}>
-            {t('nav_institutions', lang)}
-          </h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
-            {t('inst_sub', lang)}
-          </p>
-        </div>
-        {view !== 'list' && (
+      <PhoenixScreenHeader
+        icon="institutions"
+        eyebrow={lang === 'ar' ? 'MEDISTOCK-BABIL · شبكة المؤسسات' : 'MEDISTOCK-BABIL · INSTITUTION NETWORK'}
+        title={t('nav_institutions', lang)}
+        description={t('inst_sub', lang)}
+        actions={view !== 'list' ? (
           <PhoenixButton variant="ghost" size="sm" onClick={onBack}>
             {t('inst_back', lang)}
           </PhoenixButton>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Super admin: org list */}
       {isSuper && view === 'list' && (
@@ -206,7 +204,7 @@ export function InstitutionScreen() {
       )}
 
       {!isSuper && view === 'list' && !effectiveOrgId && (
-        <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="institutions" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       )}
 
       {toast && <PhoenixToast message={toast} />}
@@ -239,7 +237,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
     <>
       <div className="premium-org-toolbar" style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-          <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>🔍</span>
+          <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)', pointerEvents: 'none' }}><PhoenixIcon name="search" size={16} /></span>
           <input
             type="search"
             placeholder={t('search', lang)}
@@ -258,7 +256,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
       {orgs.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!orgs.loading && orgs.error && <PhoenixErrorState title={t('load_error', lang)} message={orgs.error} onRetry={orgs.reload} />}
       {!orgs.loading && !orgs.error && filtered.length === 0 && (
-        <PhoenixEmptyState icon="🏥" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="institutions" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />
       )}
 
       {!orgs.loading && !orgs.error && filtered.length > 0 && (
@@ -266,7 +264,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
           {filtered.map(org => (
             <PhoenixCard className="premium-org-card" key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
               <div className="premium-org-card__head">
-                <div className="premium-org-card__icon" aria-hidden="true">🏥</div>
+                <div className="premium-org-card__icon" aria-hidden="true"><PhoenixIcon name="institutions" size={22} /></div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
                     <span style={{ fontSize: '14px', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -464,11 +462,11 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           {/* Summary counts */}
           <div style={{ display: 'flex', gap: '16px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--brd)', fontSize: '12.5px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '16px' }}>📍</span>
+              <span style={{ color: 'var(--p)' }}><PhoenixIcon name="location" size={17} /></span>
               <span><strong>{ptCount}</strong> {t('inst_points', lang)}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '16px' }}>👥</span>
+              <span style={{ color: 'var(--p)' }}><PhoenixIcon name="users" size={17} /></span>
               <span><strong>{users.data?.length ?? 0}</strong> {t('inst_users', lang)}</span>
             </div>
           </div>
@@ -494,14 +492,12 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('inst_users', lang)}</h3>
 
         {/* Notice: user creation requires server-side */}
-        <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          ℹ️ {t('user_create_notice', lang)}
-        </div>
+        <PhoenixNotice>{t('user_create_notice', lang)}</PhoenixNotice>
 
         {users.loading && <PhoenixLoadingState label={t('loading', lang)} />}
         {!users.loading && users.error && <PhoenixErrorState title={t('load_error', lang)} message={users.error} onRetry={users.reload} />}
         {!users.loading && !users.error && (users.data ?? []).length === 0 && (
-          <PhoenixEmptyState icon="👥" title={t('inst_no_users', lang)} description={t('empty_hint', lang)} />
+          <PhoenixEmptyState icon="users" title={t('inst_no_users', lang)} description={t('empty_hint', lang)} />
         )}
 
         {!users.loading && !users.error && (users.data ?? []).length > 0 && (
@@ -813,9 +809,9 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
       {/* Safety notice */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <span>🔒 {t('port_revoke_safe', lang)}</span>
-        <span>📋 {t('port_archive_warn', lang)}</span>
-        <span>⚠ {t('port_archive_deps', lang)}</span>
+        <span><PhoenixIcon name="shield" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('port_revoke_safe', lang)}</span>
+        <span><PhoenixIcon name="file" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('port_archive_warn', lang)}</span>
+        <span><PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('port_archive_deps', lang)}</span>
       </div>
 
       {showAdd && (
@@ -835,7 +831,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
       {pointsLoading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!pointsLoading && pointsError && <PhoenixErrorState title={t('load_error', lang)} message={pointsError} onRetry={onReload} />}
       {!pointsLoading && !pointsError && points.length === 0 && !showAdd && (
-        <PhoenixEmptyState icon="📍" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="location" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
       )}
 
       {!pointsLoading && !pointsError && points.length > 0 && (
@@ -1215,7 +1211,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           </div>
           {!operationallyValid && (
             <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '4px' }}>
-              ⚠ {t('port_operational_fix_required', lang)}
+              <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('port_operational_fix_required', lang)}
             </div>
           )}
         </div>
@@ -1227,7 +1223,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>{t('loading', lang)}</div>
       )}
       {qr === null && (
-        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>📱 {t('qr_no_token', lang)}</div>
+        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}><PhoenixIcon name="qr" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('qr_no_token', lang)}</div>
       )}
       {qr && publicUrl && (
         <div style={{ marginBottom: '10px' }}>
@@ -1245,7 +1241,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
                   <img src={qrSrc} width={80} height={80} alt="QR Code" style={{ display: 'block' }} />
                 ) : (
                   <div style={{ width: 80, height: 80, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '28px' }}>📱</span>
+                    <PhoenixIcon name="qr" size={28} />
                   </div>
                 )}
                 <span style={{ fontSize: '9px', color: 'var(--p)', fontWeight: 700, padding: '2px 0 4px', letterSpacing: '.3px' }}>{t('qr_preview', lang)}</span>
@@ -1271,27 +1267,27 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
           {canEditPorts && (
             <PhoenixButton variant="ghost" size="sm" onClick={openEdit} style={{ minHeight: '32px' }}>
-              ✏️ {t('port_edit', lang)}
+              <PhoenixIcon name="editor" size={15} /> {t('port_edit', lang)}
             </PhoenixButton>
           )}
           {canGenerateQr && !qr && qr !== undefined && (
             <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
-              📱 {t('qr_generate', lang)}
+              <PhoenixIcon name="qr" size={15} /> {t('qr_generate', lang)}
             </PhoenixButton>
           )}
           {canGenerateQr && canRevokeQr && qr && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
-              🔄 {t('qr_regenerate', lang)}
+              <PhoenixIcon name="refresh" size={15} /> {t('qr_regenerate', lang)}
             </PhoenixButton>
           )}
           {canRevokeQr && qr && (
             <PhoenixButton variant="warn" size="sm" loading={busy === 'revoke'} onClick={() => setConfirmAction('revoke')}>
-              🚫 {t('qr_revoke', lang)}
+              <PhoenixIcon name="lock" size={15} /> {t('qr_revoke', lang)}
             </PhoenixButton>
           )}
           {canArchivePortsEffective && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
-              📦 {t('port_disable_action', lang)}
+              <PhoenixIcon name="archive" size={15} /> {t('port_disable_action', lang)}
             </PhoenixButton>
           )}
         </div>
@@ -1347,11 +1343,11 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           {t('qr_confirm_revoke', lang)}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--ok)', fontWeight: 600, marginBottom: '16px' }}>
-          🔒 {t('port_revoke_safe', lang)}
+          <PhoenixIcon name="shield" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('port_revoke_safe', lang)}
         </p>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onRevokeQr}>🚫 {t('qr_revoke', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onRevokeQr}><PhoenixIcon name="lock" size={15} /> {t('qr_revoke', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1400,7 +1396,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         {editError && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '12px' }}>{editError}</p>}
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} disabled={editBusy} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}>💾 {t('port_save_action', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}><PhoenixIcon name="check" size={15} /> {t('port_save_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1413,7 +1409,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           {t('port_confirm_archive', lang)}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--warn)', fontWeight: 600, marginBottom: '12px' }}>
-          ⚠ {t('port_archive_warn', lang)}
+          <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('port_archive_warn', lang)}
         </p>
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_archive_reason', lang)}</label>
@@ -1421,7 +1417,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={busy === 'archive'} onClick={onArchivePort}>📦 {t('port_disable_action', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={busy === 'archive'} onClick={onArchivePort}><PhoenixIcon name="archive" size={15} /> {t('port_disable_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1522,7 +1518,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
               <img src={src} width={200} height={200} alt="QR Code" style={{ display: 'block', borderRadius: '4px' }} />
             ) : (
               <div style={{ width: 200, height: 200, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
-                <span style={{ fontSize: '36px' }}>📱</span>
+                <PhoenixIcon name="qr" size={36} />
               </div>
             )}
           </div>
@@ -1539,11 +1535,11 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
           {canRegenerate && (
             <PhoenixButton variant="ghost" size="sm" loading={busy} onClick={onRegenerate}>
-              🔄 {t('qr_regenerate', lang)}
+              <PhoenixIcon name="refresh" size={15} /> {t('qr_regenerate', lang)}
             </PhoenixButton>
           )}
           <PhoenixButton variant="ghost" size="md" disabled={!src} onClick={handlePrint}>
-            🖨 {t('qr_print', lang)}
+            <PhoenixIcon name="print" size={15} /> {t('qr_print', lang)}
           </PhoenixButton>
           <PhoenixButton variant="primary" size="md" onClick={onClose}>
             {t('qr_close', lang)}
@@ -1728,7 +1724,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     return (
       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
         <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '10px' }} dir="auto">
-          🚫 {t('avail_outlet_disabled_empty', lang)}
+          <PhoenixIcon name="lock" size={15} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('avail_outlet_disabled_empty', lang)}
         </div>
       </div>
     );
@@ -1738,7 +1734,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
         <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)' }}>
-          💊 {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
+          <PhoenixIcon name="package" size={16} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
         </span>
       </div>
 
@@ -1804,7 +1800,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
                       aria-label={t('avail_remove_from_outlet', lang)}
                       style={{ fontSize: '10.5px', color: 'var(--err)', border: '1px solid var(--err)', background: 'transparent', borderRadius: 'var(--r1)', padding: '3px 8px', cursor: 'pointer', minHeight: '28px' }}
                     >
-                      🗑 {t('avail_remove_from_outlet', lang)}
+                      <PhoenixIcon name="trash" size={14} /> {t('avail_remove_from_outlet', lang)}
                     </button>
                   )}
                 </div>
@@ -1828,7 +1824,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
             {t('cancel', lang)}
           </PhoenixButton>
           <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={removeBusy} onClick={onConfirmRemove}>
-            🗑 {t('avail_remove_from_outlet', lang)}
+            <PhoenixIcon name="trash" size={15} /> {t('avail_remove_from_outlet', lang)}
           </PhoenixButton>
         </div>
       </PhoenixDialog>
@@ -1963,7 +1959,7 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)', marginBottom: '8px' }}>
-        🗑️ {t('dw_title', lang)}
+        <PhoenixIcon name="trash" size={16} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('dw_title', lang)}
       </div>
 
       {impact.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
@@ -1973,19 +1969,19 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
           {/* Impact counts */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11px' }}>
             <span style={{ color: itemCount > 0 ? 'var(--err)' : 'var(--ok)' }}>
-              📋 {itemCount} {t('dw_items_count', lang)}
+              <PhoenixIcon name="file" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {itemCount} {t('dw_items_count', lang)}
             </span>
             <span style={{ color: qrCount > 0 ? 'var(--warn)' : 'var(--ok)' }}>
-              📱 {qrCount} {t('dw_qr_count', lang)}
+              <PhoenixIcon name="qr" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {qrCount} {t('dw_qr_count', lang)}
             </span>
           </div>
 
           {/* Safety warnings */}
           <div style={{ fontSize: '10.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {hasItems && <span>⚠ {t('dw_clear_items_warn', lang)}</span>}
-            {qrCount > 0 && <span>📱 {t('dw_revoke_qr_warn', lang)}</span>}
-            <span>🔒 {t('dw_revoke_qr_safe', lang)}</span>
-            <span>📦 {t('dw_archive_safe', lang)}</span>
+            {hasItems && <span><PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_clear_items_warn', lang)}</span>}
+            {qrCount > 0 && <span><PhoenixIcon name="qr" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_revoke_qr_warn', lang)}</span>}
+            <span><PhoenixIcon name="shield" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_revoke_qr_safe', lang)}</span>
+            <span><PhoenixIcon name="archive" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_archive_safe', lang)}</span>
           </div>
 
           {/* Clear items action */}
@@ -2009,7 +2005,7 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
 
           {!hasItems && (
             <div style={{ fontSize: '10.5px', color: 'var(--ok)', fontWeight: 600 }}>
-              ✅ {t('dw_ready', lang)}
+              <PhoenixIcon name="check" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('dw_ready', lang)}
             </div>
           )}
         </div>
@@ -2053,7 +2049,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
 
   return (
     <div style={{ marginTop: '16px' }}>
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>🗑️ {t('dw_title', lang)}</h3>
+      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="trash" size={16} /> {t('dw_title', lang)}</h3>
 
       {impact.loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
@@ -2095,19 +2091,19 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
 
           {/* Warnings */}
           <div style={{ fontSize: '11px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '12px', padding: '10px', background: 'var(--info2)', borderRadius: 'var(--r2)' }}>
-            {!d.canArchive && <span>🚫 {t('dw_org_blocked', lang)}</span>}
-            {d.profiles > 0 && <span>👥 {t('dw_users_safe', lang)}</span>}
-            <span>📦 {t('dw_archive_safe', lang)}</span>
+            {!d.canArchive && <span><PhoenixIcon name="lock" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_org_blocked', lang)}</span>}
+            {d.profiles > 0 && <span><PhoenixIcon name="users" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_users_safe', lang)}</span>}
+            <span><PhoenixIcon name="archive" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} />{t('dw_archive_safe', lang)}</span>
           </div>
 
           {/* Status */}
           {d.canArchive ? (
             <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--ok)', fontWeight: 600 }}>
-              ✅ {t('dw_ready', lang)}
+              <PhoenixIcon name="check" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('dw_ready', lang)}
             </div>
           ) : (
             <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--err)', fontWeight: 600 }}>
-              🚫 {t('dw_blocked', lang)}
+              <PhoenixIcon name="lock" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('dw_blocked', lang)}
             </div>
           )}
 
@@ -2124,7 +2120,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
                   style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontFamily: 'monospace' }}
                 />
                 <PhoenixButton variant="warn" size="md" loading={busy} disabled={confirm !== phrase} onClick={onArchiveOrg}>
-                  📦 {t('dw_org_archived', lang)}
+                  <PhoenixIcon name="archive" size={15} /> {t('dw_org_archived', lang)}
                 </PhoenixButton>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { getExpiryRiskTier } from '@/shared/lib/expiry-risk';
 import type { AvailRow } from './InstitutionScreen';
 
@@ -90,7 +91,7 @@ export function AvailabilityItemDetailsModal({ open, onClose, row, lang, pointNa
           aria-label={t('close', lang)}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--t2)', padding: '4px 8px' }}
         >
-          ✕
+          <PhoenixIcon name="close" size={16} />
         </button>
       </div>
 

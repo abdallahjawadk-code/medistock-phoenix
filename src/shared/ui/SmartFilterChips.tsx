@@ -1,5 +1,6 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 /**
  * UX-SMART-FILTERS-TIMELINE-A — a single smart-filter chip.
@@ -12,7 +13,7 @@ import { t } from '@/shared/i18n/strings';
 export interface SmartFilterChipItem {
   key: string;
   labelKey: string;
-  icon?: string;
+  icon?: PhoenixIconName;
   active: boolean;
   onClick: () => void;
 }
@@ -49,7 +50,7 @@ export function SmartFilterChips({ items, ariaLabel }: Props) {
             transition: 'all 120ms',
           }}
         >
-          {item.icon && <span aria-hidden="true">{item.icon}</span>}
+          {item.icon && <span aria-hidden="true"><PhoenixIcon name={item.icon} size={14} /></span>}
           <span>{t(item.labelKey, lang)}</span>
         </button>
       ))}

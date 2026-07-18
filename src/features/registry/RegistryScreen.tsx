@@ -9,6 +9,9 @@ import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixNotice } from '@/shared/ui/PhoenixNotice';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 interface CentralRef { name: string; name_ar: string; unit: string; barcode?: string; category?: string; }
 interface LocalRow {
@@ -45,23 +48,21 @@ export function RegistryScreen() {
   });
 
   return (
-    <div style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_reg', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('reg_sub', lang)}</p>
-        </div>
-        <PhoenixOrgScope />
-      </div>
+    <div className="premium-page nexus-registry-page" style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="status"
+        eyebrow={lang === 'ar' ? 'PHOENIX REGISTRY · سجل موحّد' : 'PHOENIX REGISTRY · UNIFIED CATALOG'}
+        title={t('nav_reg', lang)}
+        description={t('reg_sub', lang)}
+        actions={<PhoenixOrgScope />}
+      />
 
       {/* Scope notice */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '12px 14px', marginBottom: '16px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ℹ️ {t('scope_note', lang)}
-      </div>
+      <PhoenixNotice>{t('scope_note', lang)}</PhoenixNotice>
 
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: '18px' }}>
-        <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>🔍</span>
+        <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--t3)' }}><PhoenixIcon name="search" size={16} /></span>
         <input
           type="search"
           placeholder={t('search', lang)}
@@ -73,14 +74,14 @@ export function RegistryScreen() {
       </div>
 
       {!activeOrgId && (
-        <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="institutions" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       )}
       {activeOrgId && loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {activeOrgId && !loading && error && (
         <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />
       )}
       {activeOrgId && !loading && !error && filtered.length === 0 && (
-        <PhoenixEmptyState icon="📋" title={t('empty_items', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="status" title={t('empty_items', lang)} description={t('empty_hint', lang)} />
       )}
 
       {activeOrgId && !loading && !error && filtered.length > 0 && (

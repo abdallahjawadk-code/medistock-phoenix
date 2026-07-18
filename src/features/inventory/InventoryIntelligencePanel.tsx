@@ -12,6 +12,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { InventoryReasonDialog } from './InventoryReasonDialog';
 import { InventoryThresholdModal } from './InventoryThresholdModal';
 import {
@@ -122,7 +123,7 @@ export function InventoryIntelligencePanel() {
 
   if (!canView) {
     return (
-      <PhoenixEmptyState icon="🔒" title={t('inv_title', lang)} description={t('inv_denied', lang)} />
+      <PhoenixEmptyState icon="lock" title={t('inv_title', lang)} description={t('inv_denied', lang)} />
     );
   }
 
@@ -147,12 +148,12 @@ export function InventoryIntelligencePanel() {
           )}
           {canSuggest && (
             <PhoenixButton variant="secondary" size="sm" loading={busy} onClick={runSuggest}>
-              ✨ {t('inv_action_regenerate', lang)}
+              <PhoenixIcon name="refresh" size={15} /> {t('inv_action_regenerate', lang)}
             </PhoenixButton>
           )}
           {canThresholds && (
             <PhoenixButton variant="ghost" size="sm" onClick={() => { setEditingThreshold(null); setThresholdOpen(true); }}>
-              ⚙ {t('inv_threshold_add', lang)}
+              <PhoenixIcon name="settings" size={15} /> {t('inv_threshold_add', lang)}
             </PhoenixButton>
           )}
         </div>
@@ -166,7 +167,7 @@ export function InventoryIntelligencePanel() {
       )}
       {!alerts.loading && !alerts.error && sortedAlerts.length === 0 && (
         <div style={{ padding: '14px 16px', borderRadius: 'var(--r3)', background: 'var(--s)', border: '1px solid var(--brd)', color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center', marginBottom: '20px' }}>
-          ✓ {t('inv_empty_alerts', lang)}
+          <PhoenixIcon name="check" size={16} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('inv_empty_alerts', lang)}
         </div>
       )}
       {!alerts.loading && !alerts.error && sortedAlerts.length > 0 && (
@@ -183,7 +184,7 @@ export function InventoryIntelligencePanel() {
                   <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>
                     {t(SCOPE_LABEL_KEY[a.scopeKind], lang)} · {t(SEVERITY_LABEL_KEY[a.severity], lang)}
                     {a.observedAvailable != null && ` · ${t('avail', lang)}: ${a.observedAvailable}`}
-                    {a.expiryDate && <span dir="ltr"> · ⏱ {a.expiryDate}</span>}
+                    {a.expiryDate && <span dir="ltr"> · <PhoenixIcon name="clock" size={13} style={{ verticalAlign: 'text-bottom' }} /> {a.expiryDate}</span>}
                     {a.status !== 'open' && ` · ${a.status}`}
                   </div>
                 </div>
@@ -211,7 +212,7 @@ export function InventoryIntelligencePanel() {
       {/* ── Transfer recommendations (RECOMMENDATION-ONLY: no Accept) ──────────── */}
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('inv_suggestions_title', lang)}</h4>
       <div role="note" style={{ fontSize: '11.5px', color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 10px', marginBottom: '10px' }} dir="auto">
-        ⚠ {t('inv_recommendation_note', lang)}
+        <PhoenixIcon name="warning" size={15} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('inv_recommendation_note', lang)}
       </div>
       {suggestions.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!suggestions.loading && suggestions.error && (
@@ -245,7 +246,7 @@ export function InventoryIntelligencePanel() {
                     </div>
                     {stale && (
                       <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
-                        ⚠ {t('inv_stale_note', lang)}
+                        <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('inv_stale_note', lang)}
                       </div>
                     )}
                   </div>

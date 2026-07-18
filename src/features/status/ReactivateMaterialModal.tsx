@@ -9,6 +9,7 @@ import {
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A
@@ -168,7 +169,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
           {row.dosage_form && <span dir="auto">{row.dosage_form}</span>}
           {row.batch_number && <span dir="ltr">{row.batch_number}</span>}
           {row.expiry_date && <span dir="ltr">{row.expiry_date}</span>}
-          {dpName && <span dir="auto">🏥 {dpName}</span>}
+          {dpName && <span dir="auto"><PhoenixIcon name="location" size={13} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '4px' }} /> {dpName}</span>}
         </div>
       </div>
 
@@ -196,7 +197,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
             />
             {qtyInvalid && (
               <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>
-                ⚠ {t('sc_reactivate_qty_err', lang)}
+                <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('sc_reactivate_qty_err', lang)}
               </p>
             )}
           </div>
@@ -231,7 +232,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
 
           {error && (
             <p role="alert" style={{ fontSize: '12px', color: 'var(--err)', textAlign: 'center', marginBottom: '10px' }}>
-              ⚠ {error}
+              <PhoenixIcon name="warning" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {error}
             </p>
           )}
 

@@ -1,7 +1,8 @@
 import { CSSProperties } from 'react';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 interface Props {
-  icon: string;
+  icon: PhoenixIconName;
   value: string | number;
   label: string;
   badge?: string;
@@ -39,7 +40,7 @@ export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'o
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '17px', flexShrink: 0,
         }}>
-          {icon}
+          <PhoenixIcon name={icon} size={19} />
         </div>
         {badge && (
           <span style={{

@@ -7,6 +7,8 @@ import { normalizeWhatsappPhone, isValidWhatsappPhone } from '@/shared/lib/whats
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 
 const fieldStyle = {
@@ -160,8 +162,13 @@ export function MyAccountScreen() {
   }
 
   return (
-    <div style={{ maxWidth: '640px', animation: 'fs .3s ease' }}>
-      <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>{t('ma_title', lang)}</h2>
+    <div className="premium-page nexus-account-page" style={{ maxWidth: '720px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="account"
+        eyebrow={lang === 'ar' ? 'PHOENIX IDENTITY · حساب آمن' : 'PHOENIX IDENTITY · SECURE ACCOUNT'}
+        title={t('ma_title', lang)}
+        description={lang === 'ar' ? 'إدارة الهوية والتواصل والتنبيهات ضمن نطاق الحساب الحالي' : 'Identity, contact and notification preferences for the current account'}
+      />
 
       {/* Account info */}
       <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
@@ -261,7 +268,7 @@ export function MyAccountScreen() {
             {t('ma_reset_desc', lang)}
           </p>
           <PhoenixButton variant="ghost" size="md" loading={resetBusy} onClick={onRequestReset}>
-            📧 {t('ma_reset_btn', lang)}
+            <PhoenixIcon name="mail" size={15} /> {t('ma_reset_btn', lang)}
           </PhoenixButton>
         </PhoenixCard>
       )}

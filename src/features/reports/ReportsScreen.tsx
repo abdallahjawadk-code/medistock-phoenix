@@ -12,6 +12,8 @@ import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 type ReportTab = 'summary' | 'low' | 'missing' | 'comparison' | 'global' | 'audit';
 
@@ -80,14 +82,14 @@ export function ReportsScreen() {
   const needsOrg = (tab === 'low' || tab === 'missing') && !activeOrgId;
 
   return (
-    <div style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('nav_reports', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('reports_sub', lang)}</p>
-        </div>
-        <PhoenixOrgScope />
-      </div>
+    <div className="premium-page nexus-reports-page" style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
+      <PhoenixScreenHeader
+        icon="reports"
+        eyebrow={lang === 'ar' ? 'PHOENIX REPORTS · قراءة موثّقة' : 'PHOENIX REPORTS · VERIFIED READOUT'}
+        title={t('nav_reports', lang)}
+        description={t('reports_sub', lang)}
+        actions={<PhoenixOrgScope />}
+      />
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '20px', background: 'var(--s2)', borderRadius: 'var(--r3)', padding: '4px', border: '1px solid var(--brd)' }}>
@@ -96,7 +98,7 @@ export function ReportsScreen() {
         ))}
       </div>
 
-      {needsOrg && <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {needsOrg && <PhoenixEmptyState icon="institutions" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {/* Summary */}
       {tab === 'summary' && (
@@ -126,7 +128,7 @@ export function ReportsScreen() {
         <>
           {lowStock.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!lowStock.loading && lowStock.error && <PhoenixErrorState title={t('load_error', lang)} message={lowStock.error} onRetry={lowStock.reload} />}
-          {!lowStock.loading && !lowStock.error && lowOnly.length === 0 && <PhoenixEmptyState icon="✅" title={t('empty_avail', lang)} />}
+          {!lowStock.loading && !lowStock.error && lowOnly.length === 0 && <PhoenixEmptyState icon="check" title={t('empty_avail', lang)} />}
           {!lowStock.loading && !lowStock.error && lowOnly.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fs .25s ease' }}>
               {lowOnly.map(r => (
@@ -136,8 +138,8 @@ export function ReportsScreen() {
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 700 }}>{r.quantity} {t('units', lang)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--t2)' }}>
-                    <span>🏥 {pointName(r)}</span>
-                    {r.expiry_date && <span dir="ltr">⏱ {r.expiry_date}</span>}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="location" size={12} /> {pointName(r)}</span>
+                    {r.expiry_date && <span dir="ltr"><PhoenixIcon name="clock" size={12} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '4px' }} /> {r.expiry_date}</span>}
                   </div>
                 </div>
               ))}
@@ -151,7 +153,7 @@ export function ReportsScreen() {
         <>
           {lowStock.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!lowStock.loading && lowStock.error && <PhoenixErrorState title={t('load_error', lang)} message={lowStock.error} onRetry={lowStock.reload} />}
-          {!lowStock.loading && !lowStock.error && missing.length === 0 && <PhoenixEmptyState icon="✅" title={t('empty_avail', lang)} />}
+          {!lowStock.loading && !lowStock.error && missing.length === 0 && <PhoenixEmptyState icon="check" title={t('empty_avail', lang)} />}
           {!lowStock.loading && !lowStock.error && missing.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fs .25s ease' }}>
               {missing.map(r => (
@@ -160,7 +162,7 @@ export function ReportsScreen() {
                     <span style={{ fontSize: '13px', fontWeight: 600 }}>{itemName(r)}</span>
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--rpill)', background: 'var(--err2)', color: 'var(--err)', fontSize: '10.5px', fontWeight: 700 }}>{t('miss', lang)}</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--t2)' }}>🏥 {pointName(r)}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="location" size={12} /> {pointName(r)}</div>
                 </div>
               ))}
             </div>
@@ -173,7 +175,7 @@ export function ReportsScreen() {
         <>
           {overview.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!overview.loading && overview.error && <PhoenixErrorState title={t('load_error', lang)} message={overview.error} onRetry={overview.reload} />}
-          {!overview.loading && !overview.error && (overview.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="🏥" title={t('empty_orgs', lang)} />}
+          {!overview.loading && !overview.error && (overview.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="institutions" title={t('empty_orgs', lang)} />}
           {!overview.loading && !overview.error && (overview.data?.length ?? 0) > 0 && (
             <PhoenixCard padding="18px" style={{ animation: 'fs .25s ease' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

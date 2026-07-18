@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" fill="none">
+  <title>Phoenix Nexus circuit field</title>
+  <defs>
+    <linearGradient id="g" x1="120" y1="60" x2="1480" y2="840" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#14B8A6" stop-opacity=".42"/>
+      <stop offset=".48" stop-color="#0891B2" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#F97316" stop-opacity=".34"/>
+    </linearGradient>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M80 0H0V80" stroke="#0F766E" stroke-opacity=".1"/>
+      <circle cx="0" cy="0" r="2" fill="#14B8A6" fill-opacity=".28"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#grid)"/>
+  <g stroke="url(#g)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 178h216l82 82h226l70 70h226"/>
+    <path d="M130 650h180l94-94h250l86-86h286l90-90h356"/>
+    <path d="M430 102v90l76 76v124l82 82v244"/>
+    <path d="M1180 72v128l-92 92v176l82 82v238"/>
+    <path d="M820 0v164l-64 64v172l68 68v250l-84 84"/>
+  </g>
+  <g fill="#14B8A6" fill-opacity=".42">
+    <circle cx="88" cy="178" r="5"/><circle cx="386" cy="260" r="5"/><circle cx="682" cy="330" r="5"/>
+    <circle cx="130" cy="650" r="5"/><circle cx="404" cy="556" r="5"/><circle cx="740" cy="470" r="5"/>
+    <circle cx="430" cy="102" r="5"/><circle cx="506" cy="268" r="5"/><circle cx="588" cy="474" r="5"/>
+  </g>
+  <g fill="#F97316" fill-opacity=".4">
+    <circle cx="908" cy="330" r="5"/><circle cx="1026" cy="470" r="5"/><circle cx="1170" cy="550" r="5"/>
+    <circle cx="1472" cy="380" r="5"/><circle cx="1180" cy="72" r="5"/><circle cx="1088" cy="292" r="5"/>
+    <circle cx="820" cy="164" r="5"/><circle cx="824" cy="468" r="5"/><circle cx="740" cy="802" r="5"/>
+  </g>
+</svg>

@@ -1,4 +1,4 @@
-import { CSSProperties } from 'react';
+import { CSSProperties, type ReactNode } from 'react';
 
 type BadgeVariant = 'ok' | 'warn' | 'err' | 'info' | 'neutral' | 'primary' | 'frozen';
 
@@ -6,6 +6,7 @@ interface Props {
   variant: BadgeVariant;
   label: string;
   dot?: boolean;
+  icon?: ReactNode;
   style?: CSSProperties;
 }
 
@@ -19,7 +20,7 @@ const badgeMap: Record<BadgeVariant, CSSProperties> = {
   frozen:  { background: 'var(--skel)',  color: 'var(--t2)', opacity: 0.8 },
 };
 
-export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props) {
+export function PhoenixStatusBadge({ variant, label, dot = false, icon, style }: Props) {
   return (
     <span className="premium-status-badge" style={{
       padding: '2px 8px',
@@ -28,7 +29,7 @@ export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props
       fontWeight: 700,
       display: 'inline-flex',
       alignItems: 'center',
-      gap: dot ? '4px' : undefined,
+      gap: dot || icon ? '4px' : undefined,
       flexShrink: 0,
       whiteSpace: 'nowrap',
       ...badgeMap[variant],
@@ -40,6 +41,7 @@ export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props
           background: 'currentColor', display: 'inline-block',
         }} />
       )}
+      {icon}
       {label}
     </span>
   );

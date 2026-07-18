@@ -14,6 +14,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useAuthzDecision } from './useAuthorization';
 import type { AuthzReasonCode } from './diagnostics';
 import type { AuthzScope } from './authorization';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /** Reason code → i18n key. Exhaustive: a new code will not typecheck without one. */
 export const AUTHZ_REASON_STRING_KEY: Record<AuthzReasonCode, string> = {
@@ -61,7 +62,7 @@ export function PhoenixPermissionExplanation({ reason, onRetry }: ExplanationPro
         fontSize: '12.5px',
       }}
     >
-      <span aria-hidden="true">{recoverable ? '⚠️' : '🔒'}</span>
+      <span aria-hidden="true"><PhoenixIcon name={recoverable ? 'warning' : 'lock'} size={17} /></span>
       <span>{message}</span>
       {recoverable && onRetry && (
         <button

@@ -70,7 +70,7 @@ export function NetworkManagementScreen() {
 
   if (tabs.length === 0) {
     return (
-      <PhoenixEmptyState icon="🔒" title={t('net_denied', lang)} />
+      <PhoenixEmptyState icon="lock" title={t('net_denied', lang)} />
     );
   }
 
@@ -214,8 +214,8 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
         />
       )}
 
-      {!orgId && <PhoenixEmptyState icon="🏢" title={t('net_select_org_first', lang)} />}
-      {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="🏬" title={t('net_wh_empty', lang)} />}
+      {!orgId && <PhoenixEmptyState icon="institutions" title={t('net_select_org_first', lang)} />}
+      {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="warehouse" title={t('net_wh_empty', lang)} />}
 
       {central.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_central', lang)} rows={central} onChanged={(r) => { setStatus(r); reload(); }} />}
       {institution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={institution} onChanged={(r) => { setStatus(r); reload(); }} />}
@@ -381,7 +381,7 @@ function SupplyRoutesPanel({ lang }: { lang: Lang }) {
         />
       )}
 
-      {list.length === 0 && <PhoenixEmptyState icon="🔀" title={t('net_sr_empty', lang)} />}
+      {list.length === 0 && <PhoenixEmptyState icon="route" title={t('net_sr_empty', lang)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
         {list.map(r => (
@@ -540,7 +540,7 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
       </div>
 
       {status && <StatusLine msg={status.msg} error={status.error} />}
-      {!orgId && <PhoenixEmptyState icon="🏢" title={t('net_select_org_first', lang)} />}
+      {!orgId && <PhoenixEmptyState icon="institutions" title={t('net_select_org_first', lang)} />}
 
       {orgId && (profiles.loading || warehouses.loading || outlets.loading || assigns.loading) && <PhoenixLoadingState />}
 
@@ -558,7 +558,7 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
         />
       )}
 
-      {orgId && !assigns.loading && (assigns.data ?? []).length === 0 && <PhoenixEmptyState icon="🧭" title={t('net_sc_empty', lang)} />}
+      {orgId && !assigns.loading && (assigns.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_sc_empty', lang)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
         {orgId && (assigns.data ?? []).map(a => {

@@ -11,6 +11,7 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { MaterialTimeline, type MaterialTimelineEntry } from '@/shared/ui/MaterialTimeline';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { AdjustQuantityRow } from './AdjustQuantityModal';
 
 /**
@@ -122,7 +123,7 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
         <div style={{ color: 'var(--t2)', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           {row.concentration && <span dir="auto">{row.concentration}</span>}
           {row.dosage_form && <span dir="auto">{row.dosage_form}</span>}
-          {dpName && <span dir="auto">🏥 {dpName}</span>}
+          {dpName && <span dir="auto"><PhoenixIcon name="location" size={13} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '4px' }} /> {dpName}</span>}
         </div>
         <div style={{ marginTop: '6px', fontSize: '13px' }}>
           {t('mvmt_current_qty', lang)}: <strong>{row.quantity}</strong>
@@ -135,7 +136,7 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
           disabled={loading}
           style={{ padding: '6px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: loading ? 'default' : 'pointer' }}
         >
-          🔄 {t('mvmt_history_refresh', lang)}
+          <PhoenixIcon name="refresh" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('mvmt_history_refresh', lang)}
         </button>
       </div>
 
@@ -161,14 +162,14 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
             aria-pressed={viewMode === 'table'}
             style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
-            📋 {t('mt_view_table', lang)}
+            <PhoenixIcon name="table" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('mt_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('timeline')}
             aria-pressed={viewMode === 'timeline'}
             style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
-            🕒 {t('mt_view_timeline', lang)}
+            <PhoenixIcon name="clock" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {t('mt_view_timeline', lang)}
           </button>
         </div>
       )}

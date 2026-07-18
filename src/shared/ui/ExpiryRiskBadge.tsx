@@ -5,6 +5,7 @@ import {
   getExpiryRiskTone,
   isExpiryRiskCritical,
 } from '@/shared/lib/expiry-risk';
+import { PhoenixIcon } from './PhoenixIcon';
 
 interface Props {
   expiryDate: string | Date | null | undefined;
@@ -37,7 +38,8 @@ export function ExpiryRiskBadge({ expiryDate, lang, now }: Props) {
   return (
     <PhoenixStatusBadge
       variant={tone}
-      label={strong ? `⚠ ${label}` : label}
+      label={label}
+      icon={strong ? <PhoenixIcon name="warning" size={11} /> : undefined}
       style={strong ? { fontWeight: 800 } : undefined}
     />
   );

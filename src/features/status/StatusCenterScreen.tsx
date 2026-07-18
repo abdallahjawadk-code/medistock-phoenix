@@ -447,12 +447,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   const quickActions: QuickAction[] = useMemo(() => {
     const actions: QuickAction[] = [
-      { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-      { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-      { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-      { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+      { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+      { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+      { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
+      { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
     ];
-    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: '👥', labelKey: 'nav_users' });
+    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: 'users', labelKey: 'nav_users' });
     return actions;
   }, [canSeeUsers]);
 
@@ -501,47 +501,47 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // only toggles the client-side state above; no new reads, no backend calls.
   const smartFilterChips: SmartFilterChipItem[] = [
     {
-      key: 'all', labelKey: 'sc_all', icon: '🔎',
+      key: 'all', labelKey: 'sc_all', icon: 'search',
       active: filterStatus === '' && quantityFilter === 'all' && !recentOnly,
       onClick: () => { setFilterStatus(''); setQuantityFilter('all'); setRecentOnly(false); },
     },
     {
-      key: 'available', labelKey: 'cond_available', icon: '✅',
+      key: 'available', labelKey: 'cond_available', icon: 'check',
       active: filterStatus === 'available',
       onClick: () => setFilterStatus(prev => (prev === 'available' ? '' : 'available')),
     },
     {
-      key: 'low_stock', labelKey: 'cond_low_stock', icon: '⚠️',
+      key: 'low_stock', labelKey: 'cond_low_stock', icon: 'warning',
       active: filterStatus === 'low_stock',
       onClick: () => setFilterStatus(prev => (prev === 'low_stock' ? '' : 'low_stock')),
     },
     {
-      key: 'missing', labelKey: 'cond_missing', icon: '❌',
+      key: 'missing', labelKey: 'cond_missing', icon: 'close',
       active: filterStatus === 'missing',
       onClick: () => setFilterStatus(prev => (prev === 'missing' ? '' : 'missing')),
     },
     {
-      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: '⏱️',
+      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: 'clock',
       active: filterStatus === 'near_expiry',
       onClick: () => setFilterStatus(prev => (prev === 'near_expiry' ? '' : 'near_expiry')),
     },
     {
-      key: 'expired', labelKey: 'cond_expired', icon: '🚫',
+      key: 'expired', labelKey: 'cond_expired', icon: 'lock',
       active: filterStatus === 'expired',
       onClick: () => setFilterStatus(prev => (prev === 'expired' ? '' : 'expired')),
     },
     {
-      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: '📦',
+      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: 'package',
       active: quantityFilter === 'has_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'has_quantity' ? 'all' : 'has_quantity')),
     },
     {
-      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: '🕳️',
+      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: 'archive',
       active: quantityFilter === 'zero_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'zero_quantity' ? 'all' : 'zero_quantity')),
     },
     {
-      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: '🕒',
+      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: 'clock',
       active: recentOnly,
       onClick: () => setRecentOnly(prev => !prev),
     },
@@ -784,8 +784,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <span className="nexus-live-pill">LIVE</span>
         </div>
         <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          {orgName && <span>🏥 {orgName}</span>}
-          <span>🕒 {t('sc_generated_at', lang)}: {generatedAt()}</span>
+          {orgName && <span><PhoenixIcon name="institutions" size={13} /> {orgName}</span>}
+          <span><PhoenixIcon name="clock" size={13} /> {t('sc_generated_at', lang)}: {generatedAt()}</span>
           <span>Σ {t('sc_total_rows', lang)}: {rows.length}</span>
         </div>
         {/* Counts by status */}
@@ -825,9 +825,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
+            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="download" size={14} /> {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} /> {t('sc_print_pdf', lang)}</button>
           </div>
         </div>
 
@@ -846,13 +846,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             onClick={() => setViewMode('table')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📋 {t('sc_view_table', lang)}
+            <PhoenixIcon name="table" size={14} /> {t('sc_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('outlet')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📦 {t('sc_view_outlet', lang)}
+            <PhoenixIcon name="package" size={14} /> {t('sc_view_outlet', lang)}
           </button>
         </div>
 
@@ -1017,7 +1017,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           display name. */}
                       {isRemoved ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <PhoenixStatusBadge variant="err" label={`🚫 ${t('sc_removed_badge', lang)}`} />
+                          <PhoenixStatusBadge variant="err" icon={<PhoenixIcon name="archive" size={12} />} label={t('sc_removed_badge', lang)} />
                           <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
                             {removalReasonLabel(r.removal_reason, lang)}
                           </span>
@@ -1056,7 +1056,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                                 aria-label={t('sc_reactivate_action', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--ok)', background: 'var(--s)', color: 'var(--ok)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                               >
-                                ↩ {t('sc_reactivate_action', lang)}
+                                <PhoenixIcon name="refresh" size={13} /> {t('sc_reactivate_action', lang)}
                               </button>
                             )
                           ) : (
@@ -1066,7 +1066,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                                 aria-label={t('sc_adjust_qty', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                               >
-                                ✏️ {t('sc_adjust_qty', lang)}
+                                <PhoenixIcon name="editor" size={13} /> {t('sc_adjust_qty', lang)}
                               </button>
                             )
                           )}
@@ -1076,7 +1076,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                               aria-label={t('mvmt_history_action', lang)}
                               style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                             >
-                              🕘 {t('mvmt_history_action', lang)}
+                              <PhoenixIcon name="clock" size={13} /> {t('mvmt_history_action', lang)}
                             </button>
                           )}
                         </div>
@@ -1149,7 +1149,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       {/* Material Exchange Command Center CTA */}
       <div className="nexus-operation-cta" style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>🔄 {t('material_exchange_center', lang)}</div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="route" size={16} /> {t('material_exchange_center', lang)}</div>
           <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '3px', opacity: 0.85 }}>{t('duplicate_exchange_moved_notice', lang)}</div>
         </div>
         <button

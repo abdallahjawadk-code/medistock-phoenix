@@ -10,12 +10,15 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
+import { PhoenixScreenHeader } from '@/shared/ui/PhoenixScreenHeader';
+import { PhoenixNotice } from '@/shared/ui/PhoenixNotice';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /* ── Types ── */
 
@@ -227,33 +230,23 @@ export function QrScreen() {
   ];
 
   return (
-    <div style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
+    <div className="premium-page nexus-qr-page" style={{ maxWidth: '1000px', animation: 'fs .3s ease' }}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
-            {t('nav_qr_audit', lang)}
-          </h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
-            {t('qr_audit_center_subtitle', lang)}
-          </p>
-        </div>
-        <PhoenixOrgScope />
-      </div>
+      <PhoenixScreenHeader
+        icon="qr"
+        eyebrow={lang === 'ar' ? 'PHOENIX QR · بوابة عامة آمنة' : 'PHOENIX QR · SAFE PUBLIC GATEWAY'}
+        title={t('nav_qr_audit', lang)}
+        description={t('qr_audit_center_subtitle', lang)}
+        actions={<PhoenixOrgScope />}
+      />
 
       {/* ── Privacy notice ── */}
-      <div style={{
-        background: 'var(--p2)', border: '1px solid var(--p)',
-        borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '20px',
-        fontSize: '12px', color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '8px',
-      }}>
-        🔐 {t('qr_no_expose', lang)}
-      </div>
+      <PhoenixNotice tone="neutral" icon="shield">{t('qr_no_expose', lang)}</PhoenixNotice>
 
       {/* ── No org scope ── */}
       {!activeOrgId && (
-        <PhoenixEmptyState icon="📱" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="qr" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       )}
 
       {activeOrgId && loading && <PhoenixLoadingState label={t('loading', lang)} />}
@@ -271,7 +264,7 @@ export function QrScreen() {
           {/* ── Summary metric cards ── */}
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '160px'}, 1fr))`, gap: '10px', marginBottom: '24px' }}>
             <PhoenixMetricCard
-              icon="✅"
+              icon="check"
               value={activeRows.length}
               label={t('d_qr_active', lang)}
               valueColor="#059669"
@@ -279,7 +272,7 @@ export function QrScreen() {
               onClick={() => setFilter('active')}
             />
             <PhoenixMetricCard
-              icon="🚫"
+              icon="lock"
               value={disabledRows.length}
               label={t('d_qr_disabled', lang)}
               valueColor="var(--t3)"
@@ -288,7 +281,7 @@ export function QrScreen() {
             />
             {riskRows.length > 0 && (
               <PhoenixMetricCard
-                icon="⚠️"
+                icon="warning"
                 value={riskRows.length}
                 label={t('qr_linked_inactive_port', lang)}
                 badge={lang === 'ar' ? 'خطر' : 'Risk'}
@@ -300,7 +293,7 @@ export function QrScreen() {
             )}
             {portsWithoutQr.length > 0 && (
               <PhoenixMetricCard
-                icon="📵"
+                icon="qr"
                 value={portsWithoutQr.length}
                 label={t('qr_ports_no_qr', lang)}
                 badge={lang === 'ar' ? 'تنبيه' : 'Alert'}
@@ -311,7 +304,7 @@ export function QrScreen() {
               />
             )}
             <PhoenixMetricCard
-              icon="📊"
+              icon="reports"
               value={totalScans}
               label={t('qr_total_scans', lang)}
               valueColor="var(--p)"
@@ -326,7 +319,7 @@ export function QrScreen() {
               borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px',
               fontSize: '12px', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '8px',
             }}>
-              ⚠️ {lang === 'ar'
+              <PhoenixIcon name="warning" size={16} /> {lang === 'ar'
                 ? `${riskRows.length} رمز QR نشط مرتبط بمنفذ غير نشط — راجع هذه الرموز أو عطّلها`
                 : `${riskRows.length} active QR code(s) linked to inactive port(s) — review or revoke them`}
             </div>
@@ -352,7 +345,7 @@ export function QrScreen() {
             ))}
 
             <div style={{ position: 'relative', marginInlineStart: 'auto', minWidth: '180px' }}>
-              <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', pointerEvents: 'none' }}>🔍</span>
+              <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><PhoenixIcon name="search" size={14} /></span>
               <input
                 type="search"
                 placeholder={lang === 'ar' ? 'ابحث بالاسم أو المعرّف...' : 'Search label or ID...'}
@@ -372,10 +365,10 @@ export function QrScreen() {
           {filter === 'no_qr' && (
             <div style={{ marginBottom: '24px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px', color: '#d97706' }}>
-                📵 {t('qr_ports_no_qr', lang)} ({portsWithoutQr.length})
+                <PhoenixIcon name="qr" size={16} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('qr_ports_no_qr', lang)} ({portsWithoutQr.length})
               </h3>
               {portsWithoutQr.length === 0 ? (
-                <PhoenixEmptyState icon="✅" title={lang === 'ar' ? 'جميع المنافذ النشطة لديها QR' : 'All active ports have a QR'} description="" />
+                <PhoenixEmptyState icon="check" title={lang === 'ar' ? 'جميع المنافذ النشطة لديها QR' : 'All active ports have a QR'} description="" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {portsWithoutQr.map(p => (
@@ -413,7 +406,7 @@ export function QrScreen() {
             <>
               {rows.length === 0 && (
                 <PhoenixEmptyState
-                  icon="📱"
+                  icon="qr"
                   title={t('qr_no_registered', lang)}
                   description={t('empty_hint', lang)}
                 />
@@ -421,7 +414,7 @@ export function QrScreen() {
 
               {rows.length > 0 && filteredRows.length === 0 && (
                 <PhoenixEmptyState
-                  icon="🔍"
+                  icon="search"
                   title={lang === 'ar' ? 'لا نتائج' : 'No results'}
                   description={lang === 'ar' ? 'جرّب فلتراً مختلفاً أو كلمة بحث مختلفة' : 'Try a different filter or search term'}
                 />
@@ -464,7 +457,7 @@ export function QrScreen() {
                   border: '1px solid #6ee7b7', fontSize: '12px', color: '#059669',
                   display: 'flex', alignItems: 'center', gap: '8px',
                 }}>
-                  ✅ {t('qr_no_critical_issues', lang)}
+                  <PhoenixIcon name="check" size={16} /> {t('qr_no_critical_issues', lang)}
                 </div>
               )}
             </>
@@ -476,7 +469,7 @@ export function QrScreen() {
             background: 'var(--s2)', border: '1px solid var(--brd)',
             fontSize: '11px', color: 'var(--t3)',
           }}>
-            🔒 {t('qr_no_expose', lang)}
+            <PhoenixIcon name="shield" size={15} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '6px' }} /> {t('qr_no_expose', lang)}
           </div>
         </>
       )}
@@ -491,7 +484,7 @@ export function QrScreen() {
           {t('qr_confirm_revoke', lang)}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--ok)', fontWeight: 600, marginBottom: '16px' }}>
-          🔒 {lang === 'ar' ? 'إلغاء QR لا يحذف المنفذ.' : 'Revoking QR does not delete the port.'}
+          <PhoenixIcon name="shield" size={14} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '5px' }} /> {lang === 'ar' ? 'إلغاء QR لا يحذف المنفذ.' : 'Revoking QR does not delete the port.'}
         </p>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmRevokeId(null)}>
@@ -502,7 +495,7 @@ export function QrScreen() {
             loading={confirmRevokeId !== null && busyId === confirmRevokeId}
             onClick={() => { if (confirmRevokeId) onRevoke(confirmRevokeId); }}
           >
-            🚫 {t('qr_revoke', lang)}
+            <PhoenixIcon name="lock" size={15} /> {t('qr_revoke', lang)}
           </PhoenixButton>
         </div>
       </PhoenixDialog>
@@ -552,7 +545,7 @@ function AuditTokenCard({
               background: '#fef2f2', border: '1px solid #dc2626',
               color: '#dc2626', fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap',
             }}>
-              ⚠ {t('qr_linked_inactive_port', lang)}
+              <PhoenixIcon name="warning" size={13} style={{ verticalAlign: 'text-bottom', marginInlineEnd: '4px' }} /> {t('qr_linked_inactive_port', lang)}
             </span>
           )}
         </div>
@@ -633,7 +626,7 @@ function AuditTokenCard({
             transition: 'all 100ms',
           }}
         >
-          📋 {t('qr_copy_link', lang)}
+          <PhoenixIcon name="file" size={14} /> {t('qr_copy_link', lang)}
         </button>
 
         <button
@@ -645,7 +638,7 @@ function AuditTokenCard({
             transition: 'all 100ms',
           }}
         >
-          🔗 {t('qr_open_public', lang)}
+          <PhoenixIcon name="route" size={14} /> {t('qr_open_public', lang)}
         </button>
 
         {isActive && (
@@ -658,7 +651,7 @@ function AuditTokenCard({
               transition: 'all 100ms',
             }}
           >
-            🖨 {t('qr_print', lang)}
+            <PhoenixIcon name="print" size={14} /> {t('qr_print', lang)}
           </button>
         )}
 
@@ -668,7 +661,7 @@ function AuditTokenCard({
             loading={busyId === row.id}
             onClick={onRevoke}
           >
-            🚫 {t('qr_revoke', lang)}
+            <PhoenixIcon name="lock" size={14} /> {t('qr_revoke', lang)}
           </PhoenixButton>
         )}
 
