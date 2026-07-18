@@ -21,17 +21,30 @@ function readPhoenix(rel: string) {
 }
 
 describe('Role hierarchy helpers', () => {
-  it('super_admin can assign any role', () => {
-    const roles: Role[] = ['super_admin', 'hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'];
+  it('super_admin can assign every role accepted by migration 066', () => {
+    const roles: Role[] = [
+      'super_admin', 'institution_admin', 'central_warehouse_manager',
+      'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+      'hospital_admin', 'warehouse_manager', 'port_officer', 'point_operator',
+      'transfer_manager',
+    ];
     roles.forEach(r => expect(canAssignRole('super_admin', r)).toBe(true));
   });
 
-  it('hospital_admin can assign all roles except super_admin', () => {
-    expect(canAssignRole('hospital_admin', 'hospital_admin')).toBe(true);
-    expect(canAssignRole('hospital_admin', 'warehouse_manager')).toBe(true);
-    expect(canAssignRole('hospital_admin', 'point_operator')).toBe(true);
-    expect(canAssignRole('hospital_admin', 'viewer')).toBe(true);
-    expect(canAssignRole('hospital_admin', 'super_admin')).toBe(false);
+  it('institution admins and legacy hospital admins assign only lower official roles', () => {
+    const allowed: Role[] = [
+      'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+    ];
+    const denied: Role[] = [
+      'super_admin', 'institution_admin', 'central_warehouse_manager',
+      'hospital_admin', 'warehouse_manager', 'port_officer', 'point_operator',
+      'transfer_manager',
+    ];
+
+    for (const actor of ['institution_admin', 'hospital_admin'] as const) {
+      allowed.forEach(r => expect(canAssignRole(actor, r)).toBe(true));
+      denied.forEach(r => expect(canAssignRole(actor, r)).toBe(false));
+    }
   });
 
   it('warehouse_manager cannot assign any role', () => {
@@ -48,8 +61,11 @@ describe('Role hierarchy helpers', () => {
 
   it('isAdminRole identifies admin-level roles', () => {
     expect(isAdminRole('super_admin')).toBe(true);
+    expect(isAdminRole('institution_admin')).toBe(true);
     expect(isAdminRole('hospital_admin')).toBe(true);
+    expect(isAdminRole('central_warehouse_manager')).toBe(false);
     expect(isAdminRole('warehouse_manager')).toBe(false);
+    expect(isAdminRole('outlet_officer')).toBe(false);
     expect(isAdminRole('point_operator')).toBe(false);
     expect(isAdminRole('viewer')).toBe(false);
   });
@@ -60,14 +76,19 @@ describe('Role hierarchy helpers', () => {
     expect(canManageOrg('warehouse_manager')).toBe(false);
   });
 
-  it('ASSIGNABLE_ROLES_BY_ACTOR: hospital_admin cannot assign super_admin', () => {
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.hospital_admin).not.toContain('super_admin');
+  it('ASSIGNABLE_ROLES_BY_ACTOR keeps admin assignment on the official lower roles', () => {
+    const expected = ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'];
+    expect(ASSIGNABLE_ROLES_BY_ACTOR.institution_admin).toEqual(expected);
+    expect(ASSIGNABLE_ROLES_BY_ACTOR.hospital_admin).toEqual(expected);
   });
 
   it('ASSIGNABLE_ROLES_BY_ACTOR: non-admin roles have empty assignable list', () => {
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.warehouse_manager).toHaveLength(0);
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.point_operator).toHaveLength(0);
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.viewer).toHaveLength(0);
+    const roles: Role[] = [
+      'central_warehouse_manager', 'warehouse_officer', 'warehouse_manager',
+      'outlet_officer', 'port_officer', 'point_operator',
+      'monthly_status_officer', 'transfer_manager', 'viewer',
+    ];
+    roles.forEach(r => expect(ASSIGNABLE_ROLES_BY_ACTOR[r]).toHaveLength(0));
   });
 });
 
