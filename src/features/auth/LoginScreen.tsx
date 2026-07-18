@@ -125,7 +125,7 @@ export function LoginScreen() {
             <PhoenixMark size={44} title="" />
           </div>
           <div>
-            <div className="nexus-login__brand-name">MediStock Phoenix</div>
+            <div className="nexus-login__brand-name">MediStock-Babil Phoenix</div>
             <div className="nexus-login__brand-department" dir="auto">{t('login_department_subtitle', lang)}</div>
           </div>
         </div>
@@ -230,7 +230,7 @@ export function LoginScreen() {
             </>
           )}
 
-          <div className="nexus-login__rights">
+          <div className="premium-login__rights nexus-login__rights">
             <div dir="ltr">{t('login_rights_code', lang)}</div>
             <span dir="auto">{t('login_supervision_line', lang)}</span>
           </div>
