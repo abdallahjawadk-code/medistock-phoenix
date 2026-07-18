@@ -99,11 +99,10 @@ describe('Mobile bottom nav does not reintroduce legacy pages', () => {
 });
 
 // ============================================================================
-// 4. Reports is restored to desktop navigation for super_admin only.
-//    Mobile navigation remains unchanged.
+// 4. Reports is restored to desktop/mobile navigation for super_admin only.
 // ============================================================================
 
-describe('Reports has a scoped desktop entry without reopening legacy pages', () => {
+describe('Reports has scoped entries without reopening legacy pages', () => {
   it('nav_reports is present and guarded in desktop NAV_ITEMS', () => {
     const navBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const ROLE_MAP'));
     expect(navBlock).toContain("'nav_reports'");
@@ -111,9 +110,11 @@ describe('Reports has a scoped desktop entry without reopening legacy pages', ()
     expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
-  it('nav_reports remains absent from the unchanged mobile drawer', () => {
+  it('nav_reports is present and guarded in mobile ALL_NAV', () => {
     const drawerBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
-    expect(drawerBlock).not.toContain("'nav_reports'");
+    expect(drawerBlock).toContain("'nav_reports'");
+    expect(drawerBlock).toContain('superAdminOnly: true');
+    expect(mobileDrawer).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 });
 
