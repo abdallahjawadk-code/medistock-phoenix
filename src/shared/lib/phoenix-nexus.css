@@ -1,0 +1,519 @@
+/* ─── PHOENIX NEXUS — Cinematic production design layer ─────────────────────
+   W1 establishes the visual system without changing application behavior.
+   The same tokens and surfaces will host the later WebGL scene progressively.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+  --nx-obsidian: #060b16;
+  --nx-navy: #0b1830;
+  --nx-ink: #102a4a;
+  --nx-pearl: #f6f9fc;
+  --nx-ice: #eaf3fa;
+  --nx-cyan: #58e4ef;
+  --nx-emerald: #0ea58a;
+  --nx-ember: #f47621;
+  --nx-gold: #d9b45c;
+  --nx-danger: #d9424d;
+  --nx-glow-cyan: rgba(88, 228, 239, .22);
+  --nx-glow-emerald: rgba(14, 165, 138, .22);
+  --nx-glow-ember: rgba(244, 118, 33, .18);
+  --nx-line: rgba(41, 103, 142, .18);
+  --nx-line-strong: rgba(38, 128, 151, .28);
+  --nx-surface: rgba(255, 255, 255, .86);
+  --nx-surface-solid: #ffffff;
+  --nx-surface-raised: rgba(250, 253, 255, .95);
+  --nx-shadow-soft: 0 16px 44px rgba(11, 35, 63, .10);
+  --nx-shadow-deep: 0 28px 80px rgba(7, 28, 52, .16);
+  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .88);
+  --nx-ease: cubic-bezier(.2, .8, .2, 1);
+
+  --bg: #eef5fa;
+  --s: #ffffff;
+  --s2: #f3f8fb;
+  --sh: #e6f0f6;
+  --glass: rgba(255, 255, 255, .78);
+  --glass-strong: rgba(255, 255, 255, .93);
+  --ambient-a: rgba(14, 165, 138, .15);
+  --ambient-b: rgba(45, 137, 197, .14);
+  --ambient-c: rgba(244, 118, 33, .08);
+  --highlight: rgba(255, 255, 255, .9);
+  --t: #102a4a;
+  --t2: #58708a;
+  --t3: #91a4b8;
+  --p: #0e9f8a;
+  --p2: #d8f7f1;
+  --pd: #087a6d;
+  --sec: #267ba5;
+  --sec2: #e1f2fa;
+  --brd: rgba(52, 103, 139, .18);
+  --skel: #e4edf3;
+  --sw: 264px;
+  --tbh: 68px;
+  --bnh: 74px;
+  --r1: 8px;
+  --r2: 12px;
+  --r3: 16px;
+  --r4: 22px;
+  --r5: 28px;
+  --sh-xs: 0 2px 4px rgba(11, 35, 63, .04);
+  --sh-sm: 0 5px 16px rgba(11, 35, 63, .07);
+  --sh-md: var(--nx-shadow-soft);
+  --sh-lg: 0 22px 58px rgba(11, 35, 63, .13);
+  --sh-xl: var(--nx-shadow-deep);
+  --sh-depth: 0 18px 48px rgba(11, 35, 63, .13), var(--nx-bevel);
+  --sh-float: 0 34px 88px rgba(7, 28, 52, .22), var(--nx-bevel);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --nx-line: rgba(105, 215, 232, .12);
+  --nx-line-strong: rgba(105, 215, 232, .24);
+  --nx-surface: rgba(8, 22, 41, .82);
+  --nx-surface-solid: #0a1729;
+  --nx-surface-raised: rgba(13, 31, 53, .94);
+  --nx-shadow-soft: 0 18px 52px rgba(0, 0, 0, .38);
+  --nx-shadow-deep: 0 32px 96px rgba(0, 0, 0, .58);
+  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .06);
+
+  --bg: #050b15;
+  --s: #09182a;
+  --s2: #0d2137;
+  --sh: #102a44;
+  --glass: rgba(8, 22, 40, .76);
+  --glass-strong: rgba(8, 22, 40, .94);
+  --ambient-a: rgba(14, 199, 167, .16);
+  --ambient-b: rgba(50, 142, 201, .14);
+  --ambient-c: rgba(244, 118, 33, .09);
+  --highlight: rgba(255, 255, 255, .055);
+  --t: #e9f5fb;
+  --t2: #91adc2;
+  --t3: #55758f;
+  --p: #24c5aa;
+  --p2: rgba(25, 191, 163, .15);
+  --pd: #6de9d5;
+  --sec: #62c8ee;
+  --sec2: rgba(77, 175, 220, .15);
+  --brd: rgba(110, 180, 211, .16);
+  --skel: #10243a;
+  --sh-xs: 0 2px 6px rgba(0, 0, 0, .28);
+  --sh-sm: 0 6px 18px rgba(0, 0, 0, .34);
+  --sh-md: var(--nx-shadow-soft);
+  --sh-lg: 0 24px 64px rgba(0, 0, 0, .48);
+  --sh-xl: var(--nx-shadow-deep);
+  --sh-depth: 0 20px 58px rgba(0, 0, 0, .45), var(--nx-bevel);
+  --sh-float: 0 38px 100px rgba(0, 0, 0, .64), var(--nx-bevel);
+}
+
+html body {
+  min-width: 320px;
+  background-color: var(--bg);
+}
+
+.premium-shell.nexus-shell {
+  min-height: 100dvh;
+  overflow: clip;
+  background:
+    radial-gradient(60rem 48rem at -8% -8%, var(--nx-glow-emerald), transparent 62%),
+    radial-gradient(54rem 44rem at 105% 0%, var(--nx-glow-cyan), transparent 64%),
+    radial-gradient(42rem 30rem at 55% 108%, var(--nx-glow-ember), transparent 72%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg) 94%, var(--s2)), var(--bg));
+}
+
+.premium-shell.nexus-shell::before {
+  opacity: .32;
+  background-image:
+    linear-gradient(var(--nx-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nx-line) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 90% 72% at 54% 18%, #000 8%, transparent 74%);
+}
+
+.premium-shell.nexus-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 49.7%, color-mix(in srgb, var(--nx-cyan) 12%, transparent) 50%, transparent 50.3%) 0 0 / 180px 180px,
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--highlight) 48%, transparent), transparent 40%);
+  opacity: .26;
+}
+
+.nexus-app-column {
+  position: relative;
+  isolation: isolate;
+}
+
+.nexus-app-column::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--highlight) 32%, transparent), transparent 24%);
+}
+
+.nexus-shell .premium-main {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.nexus-shell .premium-main > * {
+  animation: nexus-page-enter .42s var(--nx-ease) both;
+}
+
+.nexus-shell .premium-sidebar {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nx-surface-solid) 94%, var(--p2)), var(--nx-surface-solid) 44%, color-mix(in srgb, var(--nx-surface-solid) 96%, var(--sec2)));
+  border-inline-end-color: var(--nx-line-strong) !important;
+  box-shadow: 14px 0 52px rgba(9, 32, 57, .08);
+  backdrop-filter: blur(22px) saturate(138%);
+}
+
+[data-theme="dark"] .nexus-shell .premium-sidebar {
+  background:
+    radial-gradient(28rem 22rem at 18% 4%, rgba(36, 197, 170, .09), transparent 68%),
+    linear-gradient(180deg, rgba(7, 20, 36, .97), rgba(8, 23, 41, .97));
+  box-shadow: 18px 0 60px rgba(0, 0, 0, .28);
+}
+
+.nexus-shell .premium-sidebar-brand {
+  position: relative;
+  padding: 22px 18px 18px !important;
+  border-color: var(--nx-line) !important;
+}
+
+.nexus-shell .premium-sidebar-brand::after {
+  content: '';
+  position: absolute;
+  inset-inline: 18px;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--p), var(--sec), transparent);
+  opacity: .5;
+}
+
+.nexus-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nexus-brand-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border: 1px solid color-mix(in srgb, var(--nx-gold) 38%, var(--brd));
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 225, 151, .20), transparent 52%),
+    linear-gradient(145deg, rgba(16, 42, 74, .98), rgba(5, 15, 29, .98));
+  box-shadow:
+    0 12px 28px rgba(7, 28, 52, .22),
+    0 0 24px rgba(244, 118, 33, .10),
+    inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+
+.nexus-brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border: 1px solid color-mix(in srgb, var(--nx-ember) 22%, transparent);
+  border-radius: 20px;
+  opacity: .72;
+  pointer-events: none;
+}
+
+.nexus-brand-title {
+  color: var(--t);
+  font-size: 13.5px;
+  font-weight: 760;
+  letter-spacing: -.015em;
+}
+
+.nexus-brand-subtitle {
+  margin-top: 2px;
+  color: var(--t2);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.nexus-shell .premium-nav-item {
+  position: relative;
+  min-height: 46px;
+  padding: 11px 12px !important;
+  border: 1px solid transparent !important;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.nexus-shell .premium-nav-item::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, var(--nx-cyan), var(--p), var(--nx-gold));
+  opacity: 0;
+  transform: scaleY(.25);
+  transition: opacity .18s ease, transform .26s var(--nx-ease);
+}
+
+.nexus-shell .premium-nav-item[data-active="true"] {
+  color: var(--pd) !important;
+  border-color: color-mix(in srgb, var(--p) 23%, var(--brd)) !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--p) 15%, transparent), color-mix(in srgb, var(--sec) 7%, transparent)) !important;
+  box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px rgba(14, 159, 138, .08);
+}
+
+.nexus-shell .premium-nav-item[data-active="true"]::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.nexus-nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 10px;
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  transition: transform .24s var(--nx-ease), background .18s ease, color .18s ease;
+}
+
+.nexus-shell .premium-nav-item[data-active="true"] .nexus-nav-icon {
+  color: var(--p);
+  background: color-mix(in srgb, var(--p) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 13%, transparent);
+}
+
+.nexus-shell .premium-sidebar-user {
+  margin: 10px;
+  padding: 11px 12px !important;
+  border: 1px solid var(--nx-line);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--nx-surface) 92%, var(--p2));
+  box-shadow: var(--nx-bevel), 0 10px 28px rgba(9, 32, 57, .07);
+}
+
+.nexus-role-orb {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  color: var(--nx-gold);
+  border: 1px solid color-mix(in srgb, var(--nx-gold) 30%, var(--brd));
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(16, 42, 74, .97), rgba(7, 18, 34, .97));
+  box-shadow: 0 8px 20px rgba(7, 28, 52, .18);
+}
+
+.nexus-shell .premium-topbar {
+  min-height: var(--tbh);
+  border-color: var(--nx-line) !important;
+  background: color-mix(in srgb, var(--nx-surface) 94%, transparent) !important;
+  box-shadow: 0 8px 30px rgba(9, 32, 57, .055);
+  backdrop-filter: blur(24px) saturate(145%);
+}
+
+.nexus-topbar-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.nexus-topbar-eyebrow {
+  color: var(--p);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.nexus-topbar-heading {
+  margin-top: 4px;
+  color: var(--t);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nexus-control {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--nx-line-strong);
+  border-radius: 12px;
+  color: var(--t);
+  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent);
+  box-shadow: var(--nx-bevel);
+}
+
+.nexus-control--language {
+  padding-inline: 12px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.nexus-shell .premium-drawer-backdrop {
+  background: rgba(3, 10, 20, .66);
+  backdrop-filter: blur(7px);
+}
+
+.nexus-shell .premium-mobile-drawer {
+  border-inline-end: 1px solid var(--nx-line-strong);
+  box-shadow: 34px 0 90px rgba(0, 0, 0, .4);
+}
+
+.nexus-shell .premium-bottom-nav-item {
+  position: relative;
+  color: var(--t2);
+}
+
+.nexus-shell .premium-bottom-nav-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--nx-cyan), var(--p));
+  opacity: 0;
+  transform: scaleX(.35);
+  transition: .2s var(--nx-ease);
+}
+
+.nexus-shell .premium-bottom-nav-item[data-active="true"]::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.nexus-shell .premium-bottom-nav-item[data-active="true"] .nexus-nav-icon {
+  color: var(--p);
+  transform: translateY(-2px);
+}
+
+.nexus-shell .premium-command-trigger {
+  color: var(--p) !important;
+  border-color: color-mix(in srgb, var(--p) 28%, var(--brd)) !important;
+  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent) !important;
+  box-shadow: var(--nx-shadow-soft), 0 0 0 5px color-mix(in srgb, var(--p) 6%, transparent) !important;
+  backdrop-filter: blur(18px);
+}
+
+.nexus-command-backdrop {
+  background: rgba(3, 10, 20, .58) !important;
+  backdrop-filter: blur(10px) saturate(120%);
+}
+
+.nexus-command-panel {
+  border-color: var(--nx-line-strong) !important;
+  background: var(--nx-surface-raised) !important;
+  box-shadow: var(--nx-shadow-deep), var(--nx-bevel) !important;
+}
+
+.nexus-shell :is(.premium-card, .card, section[style*="background: var(--s)"]) {
+  border-color: var(--nx-line);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nexus-shell .premium-nav-item:hover {
+    color: var(--t) !important;
+    border-color: var(--nx-line) !important;
+    background: color-mix(in srgb, var(--p) 6%, transparent) !important;
+    transform: translateX(var(--nexus-nav-shift, 2px));
+  }
+
+  [dir="rtl"] .nexus-shell .premium-nav-item:hover {
+    --nexus-nav-shift: -2px;
+  }
+
+  .nexus-shell .premium-nav-item:hover .nexus-nav-icon {
+    transform: scale(1.06);
+  }
+
+  .nexus-control:hover {
+    border-color: color-mix(in srgb, var(--p) 44%, var(--brd));
+    color: var(--p);
+    box-shadow: 0 8px 22px rgba(14, 159, 138, .12), var(--nx-bevel);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes nexus-page-enter {
+  from { opacity: 0; transform: translateY(8px); filter: saturate(.88); }
+  to { opacity: 1; transform: translateY(0); filter: saturate(1); }
+}
+
+@keyframes nexus-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nexus-breathe {
+  0%, 100% { opacity: .64; transform: scale(.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --tbh: 64px;
+    --bnh: 72px;
+  }
+
+  .premium-shell.nexus-shell {
+    background:
+      radial-gradient(34rem 28rem at 5% -6%, var(--nx-glow-emerald), transparent 64%),
+      radial-gradient(32rem 26rem at 104% 5%, var(--nx-glow-cyan), transparent 66%),
+      var(--bg);
+  }
+
+  .nexus-shell .premium-topbar {
+    padding-inline: 12px !important;
+  }
+
+  .nexus-topbar-eyebrow {
+    display: none;
+  }
+
+  .nexus-topbar-heading {
+    margin-top: 0;
+    font-size: 14px;
+  }
+
+  .nexus-shell .premium-main {
+    padding-inline: 12px !important;
+  }
+
+  .nexus-shell .premium-command-trigger {
+    bottom: calc(var(--bnh) + 14px) !important;
+    inset-inline-end: 14px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-shell *,
+  .nexus-shell *::before,
+  .nexus-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
