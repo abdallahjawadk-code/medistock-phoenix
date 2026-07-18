@@ -293,3 +293,395 @@ export function revokeProfileScope(assignmentId: string, reason: string): Promis
     p_assignment_id: assignmentId, p_reason: reason,
   });
 }
+
+// ─── Direct forward lifecycle — build / review / send / receive (068 + 077) ───
+// The operational surface behind the Direct Supply tab. Every write is a
+// SECURITY DEFINER RPC that re-checks source/destination scope server-side; every
+// read is an RLS-scoped SELECT. Legacy warehouse_supply_routes is never consulted.
+
+export interface TransferRequest {
+  id: string; routeId: string | null; direct: boolean;
+  sourceWarehouseId: string; sourceOrganizationId: string;
+  destinationWarehouseId: string; destinationOrganizationId: string;
+  requestNumber: string; status: string; notes: string | null; createdAt: string;
+}
+interface TransferRequestRow {
+  id: string; route_id: string | null;
+  source_warehouse_id: string; source_organization_id: string;
+  destination_warehouse_id: string; destination_organization_id: string;
+  request_number: string; status: string; notes: string | null; created_at: string;
+}
+function mapTransferRequest(r: TransferRequestRow): TransferRequest {
+  return {
+    id: r.id, routeId: r.route_id, direct: r.route_id === null,
+    sourceWarehouseId: r.source_warehouse_id, sourceOrganizationId: r.source_organization_id,
+    destinationWarehouseId: r.destination_warehouse_id, destinationOrganizationId: r.destination_organization_id,
+    requestNumber: r.request_number, status: r.status, notes: r.notes, createdAt: r.created_at,
+  };
+}
+
+/** Transfer requests visible to the caller (RLS-scoped). `directOnly` hides legacy routed rows. */
+export async function getTransferRequests(directOnly = true): Promise<TransferRequest[]> {
+  if (!supabaseConfigured) return [];
+  let q = supabase
+    .from('warehouse_transfer_requests')
+    .select('id, route_id, source_warehouse_id, source_organization_id, destination_warehouse_id, destination_organization_id, request_number, status, notes, created_at')
+    .order('created_at', { ascending: false });
+  if (directOnly) q = q.is('route_id', null);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as TransferRequestRow[] | null ?? []).map(mapTransferRequest);
+}
+
+export interface TransferRequestLine {
+  id: string; transferRequestId: string; scientificName: string;
+  concentration: string | null; dosageForm: string | null; unit: string | null;
+  requestedQuantity: number; approvedQuantity: number | null; fulfilledQuantity: number;
+  status: string; notes: string | null;
+}
+interface TransferRequestLineRow {
+  id: string; transfer_request_id: string; scientific_name: string;
+  concentration: string | null; dosage_form: string | null; unit: string | null;
+  requested_quantity: number; approved_quantity: number | null; fulfilled_quantity: number;
+  status: string; notes: string | null;
+}
+export async function getTransferRequestLines(transferRequestId: string): Promise<TransferRequestLine[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('warehouse_transfer_request_lines')
+    .select('id, transfer_request_id, scientific_name, concentration, dosage_form, unit, requested_quantity, approved_quantity, fulfilled_quantity, status, notes')
+    .eq('transfer_request_id', transferRequestId)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as TransferRequestLineRow[] | null ?? []).map(r => ({
+    id: r.id, transferRequestId: r.transfer_request_id, scientificName: r.scientific_name,
+    concentration: r.concentration, dosageForm: r.dosage_form, unit: r.unit,
+    requestedQuantity: r.requested_quantity, approvedQuantity: r.approved_quantity,
+    fulfilledQuantity: r.fulfilled_quantity, status: r.status, notes: r.notes,
+  }));
+}
+
+export function updateTransferRequestLine(input: {
+  transferRequestLineId: string; requestedQuantity: number; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_update_warehouse_transfer_request_line', {
+    p_transfer_request_line_id: input.transferRequestLineId,
+    p_requested_quantity: input.requestedQuantity,
+    p_notes: input.notes ?? null,
+  });
+}
+
+export function deleteTransferRequestLine(transferRequestLineId: string): Promise<RpcResult> {
+  return callRpc('phoenix_delete_warehouse_transfer_request_line', {
+    p_transfer_request_line_id: transferRequestLineId,
+  });
+}
+
+/** Batches physically present in a warehouse (RLS-scoped) — the send picker. */
+export interface WarehouseStockBatch {
+  id: string; warehouseId: string; scientificName: string;
+  batchNumber: string | null; expiryDate: string | null;
+  onHandQuantity: number; reservedQuantity: number; availableQuantity: number;
+  nationalCode: string | null;
+}
+interface WarehouseStockRow {
+  id: string; warehouse_id: string; scientific_name: string;
+  batch_number: string | null; expiry_date: string | null;
+  on_hand_quantity: number; reserved_quantity: number; available_quantity: number;
+  national_code: string | null;
+}
+export async function getWarehouseStock(warehouseId: string): Promise<WarehouseStockBatch[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('warehouse_stock')
+    .select('id, warehouse_id, scientific_name, batch_number, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, national_code')
+    .eq('warehouse_id', warehouseId)
+    .gt('on_hand_quantity', 0)
+    .order('expiry_date', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data as WarehouseStockRow[] | null ?? []).map(r => ({
+    id: r.id, warehouseId: r.warehouse_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    onHandQuantity: r.on_hand_quantity, reservedQuantity: r.reserved_quantity,
+    availableQuantity: r.available_quantity, nationalCode: r.national_code,
+  }));
+}
+
+export interface Transfer {
+  id: string; routeId: string | null; direct: boolean; transferRequestId: string | null;
+  sourceWarehouseId: string; destinationWarehouseId: string; destinationOrganizationId: string;
+  transferNumber: string; status: string; documentNumber: string | null;
+}
+interface TransferRow {
+  id: string; route_id: string | null; transfer_request_id: string | null;
+  source_warehouse_id: string; destination_warehouse_id: string; destination_organization_id: string;
+  transfer_number: string; status: string; document_number: string | null;
+}
+/** In-flight / completed transfers into an institution warehouse (RLS-scoped) — the receive queue. */
+export async function getTransfers(destinationWarehouseId?: string, directOnly = true): Promise<Transfer[]> {
+  if (!supabaseConfigured) return [];
+  let q = supabase
+    .from('warehouse_transfers')
+    .select('id, route_id, transfer_request_id, source_warehouse_id, destination_warehouse_id, destination_organization_id, transfer_number, status, document_number')
+    .order('sent_at', { ascending: false });
+  if (directOnly) q = q.is('route_id', null);
+  if (destinationWarehouseId) q = q.eq('destination_warehouse_id', destinationWarehouseId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as TransferRow[] | null ?? []).map(r => ({
+    id: r.id, routeId: r.route_id, direct: r.route_id === null, transferRequestId: r.transfer_request_id,
+    sourceWarehouseId: r.source_warehouse_id, destinationWarehouseId: r.destination_warehouse_id,
+    destinationOrganizationId: r.destination_organization_id,
+    transferNumber: r.transfer_number, status: r.status, documentNumber: r.document_number,
+  }));
+}
+
+export interface TransferLine {
+  id: string; transferId: string; scientificName: string;
+  batchNumber: string | null; expiryDate: string | null;
+  sentQuantity: number; receivedQuantity: number | null; status: string;
+}
+interface TransferLineRow {
+  id: string; transfer_id: string; scientific_name: string;
+  batch_number: string | null; expiry_date: string | null;
+  sent_quantity: number; received_quantity: number | null; status: string;
+}
+export async function getTransferLines(transferId: string): Promise<TransferLine[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('warehouse_transfer_lines')
+    .select('id, transfer_id, scientific_name, batch_number, expiry_date, sent_quantity, received_quantity, status')
+    .eq('transfer_id', transferId)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as TransferLineRow[] | null ?? []).map(r => ({
+    id: r.id, transferId: r.transfer_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    sentQuantity: r.sent_quantity, receivedQuantity: r.received_quantity, status: r.status,
+  }));
+}
+
+/** Institution receives one in-transit forward line (068, already route-free). */
+export function receiveTransferLine(input: {
+  requestId: string; transferLineId: string; receivedQuantity: number;
+  differenceReason?: string | null; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_receive_warehouse_transfer_line', {
+    p_request_id: input.requestId,
+    p_transfer_line_id: input.transferLineId,
+    p_received_quantity: input.receivedQuantity,
+    p_difference_reason: input.differenceReason ?? null,
+    p_notes: input.notes ?? null,
+  });
+}
+
+// ─── Direct return lifecycle — institution → central, route-free (069 + 077) ──
+
+export function requestDirectReturn(input: {
+  sourceWarehouseId: string; destinationWarehouseId: string; returnNumber: string; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_request_direct_warehouse_return', {
+    p_source_warehouse_id: input.sourceWarehouseId,
+    p_destination_warehouse_id: input.destinationWarehouseId,
+    p_return_number: input.returnNumber,
+    p_notes: input.notes ?? null,
+  });
+}
+
+export function recallDirectTransfer(input: {
+  sourceWarehouseId: string; destinationWarehouseId: string; returnNumber: string; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_recall_direct_warehouse_transfer', {
+    p_source_warehouse_id: input.sourceWarehouseId,
+    p_destination_warehouse_id: input.destinationWarehouseId,
+    p_return_number: input.returnNumber,
+    p_notes: input.notes ?? null,
+  });
+}
+
+export function addDirectReturnLine(input: {
+  returnRequestId: string; originalTransferLineId: string; requestedQuantity: number;
+  reasonCode: string; reasonText?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_add_direct_warehouse_return_request_line', {
+    p_return_request_id: input.returnRequestId,
+    p_original_transfer_line_id: input.originalTransferLineId,
+    p_requested_quantity: input.requestedQuantity,
+    p_reason_code: input.reasonCode,
+    p_reason_text: input.reasonText ?? null,
+  });
+}
+
+export function deleteReturnRequestLine(returnRequestLineId: string): Promise<RpcResult> {
+  return callRpc('phoenix_delete_warehouse_return_request_line', {
+    p_return_request_line_id: returnRequestLineId,
+  });
+}
+
+export function submitReturnRequest(returnRequestId: string): Promise<RpcResult> {
+  return callRpc('phoenix_submit_warehouse_return_request', { p_return_request_id: returnRequestId });
+}
+
+export function cancelReturnRequest(returnRequestId: string, reason: string): Promise<RpcResult> {
+  return callRpc('phoenix_cancel_warehouse_return_request', {
+    p_return_request_id: returnRequestId, p_cancellation_reason: reason,
+  });
+}
+
+export function reviewReturnRequest(
+  returnRequestId: string,
+  decisions: Array<{ line_id: string; approved_quantity: number }>,
+): Promise<RpcResult> {
+  return callRpc('phoenix_review_warehouse_return_request', {
+    p_return_request_id: returnRequestId, p_decisions: decisions,
+  });
+}
+
+/** Ships one line of a DIRECT return. `requestId` is a fresh idempotency token. */
+export function sendDirectReturnLine(input: {
+  requestId: string; returnRequestLineId: string; quantity: number;
+  shipmentNumber: string; documentNumber?: string | null; notes?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_send_direct_warehouse_return_shipment_line', {
+    p_request_id: input.requestId,
+    p_return_request_line_id: input.returnRequestLineId,
+    p_quantity: input.quantity,
+    p_shipment_number: input.shipmentNumber,
+    p_document_number: input.documentNumber ?? null,
+    p_notes: input.notes ?? null,
+  });
+}
+
+/** Central receives one in-transit return line (069, already route-free). */
+export function receiveReturnShipmentLine(input: {
+  requestId: string; shipmentLineId: string; receivedQuantity: number;
+  differenceReason?: string | null; notes?: string | null; dispositionDecision?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_receive_warehouse_return_shipment_line', {
+    p_request_id: input.requestId,
+    p_shipment_line_id: input.shipmentLineId,
+    p_received_quantity: input.receivedQuantity,
+    p_difference_reason: input.differenceReason ?? null,
+    p_notes: input.notes ?? null,
+    p_disposition_decision: input.dispositionDecision ?? null,
+  });
+}
+
+export interface ReturnRequest {
+  id: string; routeId: string | null; direct: boolean; requestedBySide: string;
+  sourceWarehouseId: string; sourceOrganizationId: string;
+  destinationWarehouseId: string; destinationOrganizationId: string;
+  returnNumber: string; status: string; notes: string | null; createdAt: string;
+}
+interface ReturnRequestRow {
+  id: string; route_id: string | null; requested_by_side: string;
+  source_warehouse_id: string; source_organization_id: string;
+  destination_warehouse_id: string; destination_organization_id: string;
+  return_number: string; status: string; notes: string | null; created_at: string;
+}
+export async function getReturnRequests(directOnly = true): Promise<ReturnRequest[]> {
+  if (!supabaseConfigured) return [];
+  let q = supabase
+    .from('warehouse_return_requests')
+    .select('id, route_id, requested_by_side, source_warehouse_id, source_organization_id, destination_warehouse_id, destination_organization_id, return_number, status, notes, created_at')
+    .order('created_at', { ascending: false });
+  if (directOnly) q = q.is('route_id', null);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as ReturnRequestRow[] | null ?? []).map(r => ({
+    id: r.id, routeId: r.route_id, direct: r.route_id === null, requestedBySide: r.requested_by_side,
+    sourceWarehouseId: r.source_warehouse_id, sourceOrganizationId: r.source_organization_id,
+    destinationWarehouseId: r.destination_warehouse_id, destinationOrganizationId: r.destination_organization_id,
+    returnNumber: r.return_number, status: r.status, notes: r.notes, createdAt: r.created_at,
+  }));
+}
+
+export interface ReturnRequestLine {
+  id: string; returnRequestId: string; originalTransferLineId: string; scientificName: string;
+  batchNumber: string | null; expiryDate: string | null; reasonCode: string;
+  requestedQuantity: number; approvedQuantity: number | null; fulfilledQuantity: number; status: string;
+}
+interface ReturnRequestLineRow {
+  id: string; return_request_id: string; original_transfer_line_id: string; scientific_name: string;
+  batch_number: string | null; expiry_date: string | null; reason_code: string;
+  requested_quantity: number; approved_quantity: number | null; fulfilled_quantity: number; status: string;
+}
+export async function getReturnRequestLines(returnRequestId: string): Promise<ReturnRequestLine[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('warehouse_return_request_lines')
+    .select('id, return_request_id, original_transfer_line_id, scientific_name, batch_number, expiry_date, reason_code, requested_quantity, approved_quantity, fulfilled_quantity, status')
+    .eq('return_request_id', returnRequestId)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as ReturnRequestLineRow[] | null ?? []).map(r => ({
+    id: r.id, returnRequestId: r.return_request_id, originalTransferLineId: r.original_transfer_line_id,
+    scientificName: r.scientific_name, batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    reasonCode: r.reason_code, requestedQuantity: r.requested_quantity, approvedQuantity: r.approved_quantity,
+    fulfilledQuantity: r.fulfilled_quantity, status: r.status,
+  }));
+}
+
+export interface ReturnShipmentLine {
+  id: string; shipmentId: string; scientificName: string;
+  batchNumber: string | null; expiryDate: string | null;
+  sentQuantity: number; receivedQuantity: number | null; status: string;
+  disposition: string | null; custodyState: string | null;
+}
+interface ReturnShipmentLineRow {
+  id: string; shipment_id: string; scientific_name: string;
+  batch_number: string | null; expiry_date: string | null;
+  sent_quantity: number; received_quantity: number | null; status: string;
+  disposition: string | null; custody_state: string | null;
+}
+export async function getReturnShipmentLines(shipmentId: string): Promise<ReturnShipmentLine[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('warehouse_return_shipment_lines')
+    .select('id, shipment_id, scientific_name, batch_number, expiry_date, sent_quantity, received_quantity, status, disposition, custody_state')
+    .eq('shipment_id', shipmentId)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as ReturnShipmentLineRow[] | null ?? []).map(r => ({
+    id: r.id, shipmentId: r.shipment_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    sentQuantity: r.sent_quantity, receivedQuantity: r.received_quantity, status: r.status,
+    disposition: r.disposition, custodyState: r.custody_state,
+  }));
+}
+
+export interface ReturnShipment {
+  id: string; routeId: string | null; direct: boolean; returnRequestId: string;
+  sourceWarehouseId: string; destinationWarehouseId: string;
+  shipmentNumber: string; status: string;
+}
+interface ReturnShipmentRow {
+  id: string; route_id: string | null; return_request_id: string;
+  source_warehouse_id: string; destination_warehouse_id: string;
+  shipment_number: string; status: string;
+}
+export async function getReturnShipments(destinationWarehouseId?: string, directOnly = true): Promise<ReturnShipment[]> {
+  if (!supabaseConfigured) return [];
+  let q = supabase
+    .from('warehouse_return_shipments')
+    .select('id, route_id, return_request_id, source_warehouse_id, destination_warehouse_id, shipment_number, status')
+    .order('created_at', { ascending: false });
+  if (directOnly) q = q.is('route_id', null);
+  if (destinationWarehouseId) q = q.eq('destination_warehouse_id', destinationWarehouseId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data as ReturnShipmentRow[] | null ?? []).map(r => ({
+    id: r.id, routeId: r.route_id, direct: r.route_id === null, returnRequestId: r.return_request_id,
+    sourceWarehouseId: r.source_warehouse_id, destinationWarehouseId: r.destination_warehouse_id,
+    shipmentNumber: r.shipment_number, status: r.status,
+  }));
+}
+
+/** The return reason codes the 069 CHECK constraint allows, for the add-line picker. */
+export const RETURN_REASON_CODES = [
+  'near_expiry', 'excess', 'shipment_error',
+  'expired', 'damaged', 'recalled', 'quality_issue', 'temperature_excursion', 'other',
+] as const;
+
+/** Reasons the receiver must classify explicitly at receive (fail-closed in the RPC). */
+export const RETURN_DISPOSITION_REASONS = ['near_expiry', 'excess', 'shipment_error'] as const;

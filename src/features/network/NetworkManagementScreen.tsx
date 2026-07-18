@@ -14,11 +14,12 @@ import { getOrganizations, getProfilesByOrg } from '@/shared/supabase/services/o
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAllWarehouses, createWarehouse, updateWarehouse, setWarehouseActive,
-  getSupplyRoutes, createDirectTransferRequest,
+  getSupplyRoutes,
   getScopeAssignments, assignProfileScope, revokeProfileScope,
   type NetworkWarehouse, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
 import { NetworkTopologyStage } from './NetworkTopologyStage';
+import { DirectSupplyOperations } from './DirectSupplyOperations';
 
 /**
  * PHASE-B-NETWORK-UI-A — super_admin network structure management, plus the
@@ -101,7 +102,7 @@ export function NetworkManagementScreen() {
       </div>
 
       {activeTab === 'warehouses' && isSuper && <WarehousesPanel lang={lang} />}
-      {activeTab === 'supply' && canSupply && <DirectSupplyPanel lang={lang} />}
+      {activeTab === 'supply' && canSupply && <DirectSupplyOperations lang={lang} />}
       {activeTab === 'scopes' && canEditScope && <ScopeAssignmentsPanel lang={lang} isSuper={isSuper} />}
     </div>
   );
@@ -324,83 +325,10 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
   );
 }
 
-// ─── Direct central→institution supply panel (077) ───────────────────────────
-// Replaces the retired "supply routes" tab. A central warehouse officer picks
-// the institution, sees ITS active warehouses (مذاخر), picks a source central
-// warehouse, and opens a DIRECT request — no route is created or consulted.
-// The server (phoenix_create_direct_warehouse_transfer_request) re-validates the
-// endpoints and the officer's source-warehouse scope.
-
-function DirectSupplyPanel({ lang }: { lang: Lang }) {
-  const warehouses = useAsync(() => getAllWarehouses(), []);
-  const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
-  const [sourceId, setSourceId] = useState('');
-  const [targetId, setTargetId] = useState('');
-  const [number, setNumber] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
-
-  const centrals = (warehouses.data ?? []).filter(w => w.warehouseKind === 'central' && w.status === 'active');
-  // Only the SELECTED institution's active warehouses (مذاخر) are offered.
-  const institutions = (warehouses.data ?? [])
-    .filter(w => w.warehouseKind === 'institution' && w.status === 'active' && w.organizationId === orgId);
-
-  const effSource = sourceId || (centrals[0]?.id ?? '');
-  const effTarget = institutions.some(w => w.id === targetId) ? targetId : (institutions[0]?.id ?? '');
-  const canSubmit = orgId !== '' && effSource !== '' && effTarget !== '' && number.trim() !== '' && !busy;
-
-  if (orgs.loading || warehouses.loading) return <PhoenixLoadingState />;
-  if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={() => location.reload()} />;
-  if (warehouses.error) return <PhoenixErrorState message={warehouses.error} onRetry={() => location.reload()} />;
-
-  async function create() {
-    if (!canSubmit) return;
-    setBusy(true);
-    const res = await createDirectTransferRequest({
-      sourceWarehouseId: effSource,
-      destinationOrganizationId: orgId,
-      destinationWarehouseId: effTarget,
-      requestNumber: number.trim(),
-    });
-    setBusy(false);
-    if (res.ok) { setStatus({ msg: t('net_ds_created', lang), error: false }); setNumber(''); }
-    else setStatus({ msg: networkErrorMessage(res.error, lang), error: true });
-  }
-
-  return (
-    <div>
-      <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: '0 0 12px' }}>{t('net_ds_hint', lang)}</p>
-
-      {status && <StatusLine msg={status.msg} error={status.error} />}
-
-      <PhoenixCard padding="16px" style={{ borderColor: 'var(--p)' }}>
-        <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-          <PhoenixSelect label={t('net_ds_source', lang)} value={effSource} onChange={e => setSourceId(e.target.value)}
-            options={centrals.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-          <PhoenixSelect label={t('net_ds_institution', lang)} value={orgId} options={options}
-            onChange={e => { setOrgId(e.target.value); setTargetId(''); }} />
-          <PhoenixSelect label={t('net_ds_warehouse', lang)} value={effTarget} onChange={e => setTargetId(e.target.value)}
-            options={institutions.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-          <PhoenixInput label={t('net_ds_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
-        </div>
-
-        {orgId !== '' && institutions.length === 0 && (
-          <div style={{ marginTop: '10px' }}>
-            <PhoenixEmptyState icon="🏬" title={t('net_ds_no_warehouses', lang)} />
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-          <PhoenixButton loading={busy} disabled={!canSubmit} onClick={create}>{t('net_ds_create', lang)}</PhoenixButton>
-        </div>
-      </PhoenixCard>
-
-      {centrals.length === 0 && (
-        <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '12px' }}>{t('net_ds_no_central', lang)}</p>
-      )}
-    </div>
-  );
-}
+// The full operational direct-supply surface (forward + return lifecycle) lives
+// in DirectSupplyOperations.tsx and is rendered by the 'supply' tab above. The
+// legacy "supply routes" tab stays retired; warehouse_supply_routes is never
+// shown or consulted here.
 
 // ─── Scope assignments panel (076) ───────────────────────────────────────────
 

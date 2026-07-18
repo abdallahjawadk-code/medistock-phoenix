@@ -19,6 +19,7 @@ const read = (rel: string) => readFileSync(join(FEAT, rel), 'utf8');
 
 const screen = read('NetworkManagementScreen.tsx');
 const service = read('network.service.ts');
+const operations = read('DirectSupplyOperations.tsx');
 
 describe('077 UI — the manual supply-routes tab is retired', () => {
   it('has no routes tab id and no SupplyRoutesPanel component', () => {
@@ -36,23 +37,51 @@ describe('077 UI — the manual supply-routes tab is retired', () => {
 });
 
 describe('077 UI — direct supply flow (institution -> active warehouse)', () => {
-  it('renders a Direct Supply tab and panel', () => {
+  it('renders a Direct Supply tab wired to the operational surface', () => {
     expect(screen).toMatch(/id:\s*'supply'/);
     expect(screen).toMatch(/net_tab_supply/);
-    expect(screen).toMatch(/function DirectSupplyPanel/);
-    expect(screen).toMatch(/<DirectSupplyPanel/);
+    expect(screen).toMatch(/<DirectSupplyOperations/);
+    expect(operations).toMatch(/export function DirectSupplyOperations/);
   });
   it('offers ONLY the selected institution\'s active warehouses', () => {
-    expect(screen).toMatch(/warehouseKind === 'institution'\s*&&\s*w\.status === 'active'\s*&&\s*w\.organizationId === orgId/);
+    expect(operations).toMatch(/warehouseKind === 'institution'\s*&&\s*w\.status === 'active'\s*&&\s*w\.organizationId === orgId/);
   });
   it('creates a DIRECT request via the route-free RPC wrapper', () => {
-    expect(screen).toMatch(/createDirectTransferRequest\(/);
-    expect(screen).toMatch(/destinationOrganizationId:\s*orgId/);
-    expect(screen).toMatch(/destinationWarehouseId:\s*effTarget/);
-    expect(screen).toMatch(/sourceWarehouseId:\s*effSource/);
+    expect(operations).toMatch(/createDirectTransferRequest\(/);
+    expect(operations).toMatch(/destinationOrganizationId:\s*orgId/);
+    expect(operations).toMatch(/destinationWarehouseId:\s*effTarget/);
+    expect(operations).toMatch(/sourceWarehouseId:\s*effSource/);
   });
   it('the supply tab is gated on send authority (RPC re-checks server-side)', () => {
     expect(screen).toMatch(/myPermissions\.has\('warehouse_transfer\.send'\)/);
+  });
+});
+
+describe('077 UI — the operational surface drives the WHOLE lifecycle (not create-only)', () => {
+  it('forward: add / update / delete line, submit, cancel, review, send, receive', () => {
+    for (const rx of [
+      /addTransferRequestLine\(/, /updateTransferRequestLine\(/, /deleteTransferRequestLine\(/,
+      /submitTransferRequest\(/, /cancelTransferRequest\(/, /reviewTransferRequest\(/,
+      /sendDirectTransferLine\(/, /receiveTransferLine\(/,
+    ]) expect(operations).toMatch(rx);
+  });
+  it('return: request / recall / add / submit / cancel / review / send / receive', () => {
+    for (const rx of [
+      /requestDirectReturn\(/, /recallDirectTransfer\(/, /addDirectReturnLine\(/,
+      /submitReturnRequest\(/, /cancelReturnRequest\(/, /reviewReturnRequest\(/,
+      /sendDirectReturnLine\(/, /receiveReturnShipmentLine\(/,
+    ]) expect(operations).toMatch(rx);
+  });
+  it('reads only DIRECT (route_id NULL) rows — legacy routed rows never surface', () => {
+    expect(operations).toMatch(/getTransferRequests\(true\)/);
+    expect(operations).toMatch(/getReturnRequests\(true\)/);
+    // the read layer defaults to route_id IS NULL
+    expect(service).toMatch(/if \(directOnly\) q = q\.is\('route_id', null\)/);
+  });
+  it('never renders or consults warehouse_supply_routes in the operational UI', () => {
+    expect(operations).not.toMatch(/warehouse_supply_routes/);
+    expect(operations).not.toMatch(/SupplyRoute/);
+    expect(operations).not.toMatch(/route_id/);
   });
 });
 
