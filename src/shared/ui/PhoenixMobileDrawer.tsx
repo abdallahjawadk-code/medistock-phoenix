@@ -90,7 +90,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
               <PhoenixMark size={39} title="" />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="nexus-brand-title">MediStock Phoenix</div>
+              <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
               <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
             <button
