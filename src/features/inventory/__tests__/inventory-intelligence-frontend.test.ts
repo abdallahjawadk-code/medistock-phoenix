@@ -33,6 +33,7 @@ const display = read('inventory-display.ts');
 const panel = read('InventoryIntelligencePanel.tsx');
 const summary = read('InventoryIntelligenceSummary.tsx');
 const thresholdModal = read('InventoryThresholdModal.tsx');
+const scopesHook = read('useInventoryScopes.ts');
 const reasonDialog = read('InventoryReasonDialog.tsx');
 const dashboard = readSrc('features/dashboard/DashboardScreen.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
@@ -241,7 +242,77 @@ describe('phase scope guards', () => {
     });
     expect(status).not.toMatch(/073[_\w-]*\.sql/);
   });
-  it('the threshold modal writes org-default rows (scope_id NULL) only', () => {
-    expect(thresholdModal).toMatch(/scopeId: null/);
+});
+
+// ── ROUND 2: threshold scope selector + fixed near-expiry policy ─────────────
+describe('round 2: near_expiry_days is a fixed 270-day policy, never editable', () => {
+  it('the modal has NO near_expiry_days input and no setter', () => {
+    expect(thresholdModal).not.toMatch(/setNearExpiryDays/);
+    expect(thresholdModal).not.toMatch(/nearExpiryDays,\s*setNearExpiryDays/);
+    // the old editable field label must no longer drive an <input>
+    expect(thresholdModal).not.toMatch(/value=\{nearExpiryDays\}/);
+  });
+  it('it always sends the fixed 270-day window (never NULL, never user value)', () => {
+    expect(thresholdModal).toMatch(/FIXED_NEAR_EXPIRY_DAYS = 270/);
+    expect(thresholdModal).toMatch(/nearExpiryDays: FIXED_NEAR_EXPIRY_DAYS/);
+  });
+  it('it shows the fixed tier policy as read-only text (expired/critical/warning/watch)', () => {
+    for (const k of ['inv_near_policy_window', 'inv_near_policy_expired', 'inv_near_policy_critical', 'inv_near_policy_warning', 'inv_near_policy_watch']) {
+      expect(thresholdModal).toContain(k);
+    }
+  });
+});
+
+describe('round 2: real scope selector (not always org-default)', () => {
+  it('save sends the real scope_id — null ONLY on the explicit org-default path', () => {
+    expect(thresholdModal).toMatch(/scopeId:\s*effectiveApplyTo === 'org_default' \? null : scopeId/);
+    // the always-null form is gone
+    expect(thresholdModal).not.toMatch(/scopeId:\s*null,/);
+  });
+  it('scope options come from the RLS-filtered catalog, not free-text/UUID entry', () => {
+    expect(scopesHook).toMatch(/getWarehouses/);
+    expect(scopesHook).toMatch(/getPointsByOrg/);
+    expect(thresholdModal).toMatch(/useInventoryScopes\(organizationId\)/);
+    // scope is chosen from a <select> over the fetched options (label = name, value = id)
+    expect(thresholdModal).toMatch(/options\.map\(o => \(\{ value: o\.id, label:/);
+  });
+  it('the named picker shows names (ar/en), never a raw UUID column', () => {
+    expect(thresholdModal).toMatch(/o\.nameAr \|\| o\.name/);
+    expect(thresholdModal).not.toMatch(/label:\s*o\.id/);
+  });
+  it('org-default is offered ONLY behind org-level manage_thresholds (authz canForOrganization)', () => {
+    expect(thresholdModal).toMatch(/useAuthzDecision\(authz, PK\.manageThresholds, \{ organizationId \}\)/);
+    expect(thresholdModal).toMatch(/const canOrgDefault = orgLevel\.allowed/);
+    // apply-to collapses to scope-only when org-default is not allowed
+    expect(thresholdModal).toMatch(/canOrgDefault \? applyTo : 'scope'/);
+  });
+  it('save is blocked until a valid scope is chosen (or an allowed org-default)', () => {
+    expect(thresholdModal).toMatch(/const scopeChosen =/);
+    expect(thresholdModal).toMatch(/canSave = nameOk && bandOk && scopeChosen/);
+  });
+  it('scope loading/empty/error states exist in the picker', () => {
+    expect(thresholdModal).toMatch(/scopes\.loading/);
+    expect(thresholdModal).toMatch(/scopes\.error/);
+    expect(thresholdModal).toMatch(/inv_th_no_scopes/);
+  });
+});
+
+describe('round 2: threshold band rules + availability semantics', () => {
+  it('enforces 0 <= reorder_point < target_max (blocks reorder >= target)', () => {
+    expect(thresholdModal).toMatch(/reorderNum >= 0 && reorderNum < targetNum/);
+    expect(thresholdModal).toMatch(/inv_th_band_invalid/);
+  });
+  it('explains available = on-hand - reserved and the missing/low/surplus rules', () => {
+    expect(thresholdModal).toMatch(/inv_available_explain/);
+    expect(thresholdModal).toMatch(/inv_signal_rules_missing/);
+    expect(T.inv_available_explain.en).toMatch(/on-hand/i);
+    expect(T.inv_available_explain.en).toMatch(/reserved/i);
+    expect(T.inv_available_explain.ar).toMatch(/المحجوز/);
+  });
+  it('shows organization name first, then scope name, and labels scope-specific vs org-default', () => {
+    expect(panel).toMatch(/orgLabel \? `\$\{orgLabel\}/);
+    expect(panel).toMatch(/scopes\.data\?\.resolve\(th\.scopeKind, th\.scopeId\)/);
+    expect(panel).toMatch(/inv_th_scope_specific/);
+    expect(panel).toMatch(/inv_th_org_default/);
   });
 });

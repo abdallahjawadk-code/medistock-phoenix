@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
+import { getOrganization } from '@/shared/supabase/services/organizations.service';
+import { useInventoryScopes } from './useInventoryScopes';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -51,6 +54,9 @@ export function InventoryIntelligencePanel() {
   const alerts = useInventoryAlerts();
   const suggestions = useInventoryTransferSuggestions();
   const thresholds = useInventoryThresholds();
+  const scopes = useInventoryScopes(activeOrgId);
+  const org = useAsync(() => (activeOrgId ? getOrganization(activeOrgId) : Promise.resolve(null)), [activeOrgId]);
+  const orgLabel = org.data ? (lang === 'ar' ? org.data.name_ar : org.data.name) : null;
 
   const [pending, setPending] = useState<PendingAction>(null);
   const [busy, setBusy] = useState(false);
@@ -271,9 +277,17 @@ export function InventoryIntelligencePanel() {
             <div key={th.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', flexWrap: 'wrap' }}>
               <div style={{ minWidth: 0 }}>
                 <span style={{ fontSize: '12px', fontWeight: 600 }} dir="auto">{th.scientificName}</span>
-                <span style={{ fontSize: '10.5px', color: 'var(--t2)', marginInlineStart: '8px' }}>
+                <span style={{ fontSize: '10.5px', color: 'var(--t2)', marginInlineStart: '8px' }} dir="auto">
+                  {/* Organization name first, then the scope name (UX spec). */}
+                  {orgLabel ? `${orgLabel} · ` : ''}
                   {t(SCOPE_LABEL_KEY[th.scopeKind], lang)}
-                  {th.scopeId === null ? ` · ${t('inv_th_org_default', lang)}` : ''}
+                  {th.scopeId === null
+                    ? ` · ${t('inv_th_org_default', lang)}`
+                    : (() => {
+                        const s = scopes.data?.resolve(th.scopeKind, th.scopeId);
+                        const nm = s ? (lang === 'ar' ? (s.nameAr || s.name) : (s.name || s.nameAr)) : null;
+                        return ` · ${t('inv_th_scope_specific', lang)}${nm ? `: ${nm}` : ''}`;
+                      })()}
                   {th.nationalCode === null ? ` · ${t('inv_th_wildcard', lang)}` : ` · ${th.nationalCode}`}
                 </span>
               </div>
@@ -301,8 +315,9 @@ export function InventoryIntelligencePanel() {
         <InventoryThresholdModal
           open={thresholdOpen}
           organizationId={activeOrgId}
+          organizationLabel={orgLabel}
           onCancel={() => setThresholdOpen(false)}
-          onSaved={() => { setThresholdOpen(false); flash(t('inv_saved', lang)); thresholds.reload(); }}
+          onSaved={() => { setThresholdOpen(false); flash(t('inv_saved', lang)); thresholds.reload(); scopes.reload(); }}
         />
       )}
       {toast && <PhoenixToast message={toast} />}

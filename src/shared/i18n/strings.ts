@@ -1415,6 +1415,35 @@ export const T: Dict = {
   inv_batch:                { ar: 'الدفعة',                                      en: 'Batch' },
   inv_view_all:             { ar: 'عرض الكل',                                    en: 'View all' },
   inv_dismiss_popup:        { ar: 'إخفاء',                                       en: 'Dismiss' },
+
+  /* ── Threshold scope selector + fixed near-expiry policy (Round 2) ── */
+  inv_org_label:            { ar: 'المؤسسة',                                     en: 'Organization' },
+  inv_th_apply_to:          { ar: 'يُطبَّق على',                                  en: 'Apply to' },
+  inv_th_specific_scope:    { ar: 'نطاق محدّد',                                   en: 'Specific scope' },
+  inv_th_select_scope:      { ar: 'اختر المذخر/المنفذ',                            en: 'Select warehouse / outlet' },
+  inv_th_select_placeholder:{ ar: '— اختر —',                                     en: '— select —' },
+  inv_th_no_scopes:         { ar: 'لا توجد نطاقات متاحة لك في هذه المؤسسة',        en: 'No scopes available to you in this organization' },
+  inv_th_scope_required:    { ar: 'اختر نطاقًا صالحًا',                            en: 'Select a valid scope' },
+  inv_th_scope_specific:    { ar: 'خاص بالنطاق',                                  en: 'Scope-specific' },
+  inv_th_loading_scopes:    { ar: 'جارٍ تحميل النطاقات…',                          en: 'Loading scopes…' },
+  inv_th_denied:            { ar: 'لا تملك صلاحية إدارة الحدود.',                  en: 'You do not have permission to manage thresholds.' },
+
+  /* Near-expiry is a FIXED policy (270-day window) — never user-editable. A DB
+     migration to pin 270 server-side will follow separately. */
+  inv_near_policy_title:    { ar: 'سياسة قرب النفاذ (ثابتة)',                       en: 'Near-expiry policy (fixed)' },
+  inv_near_policy_window:   { ar: 'نافذة قرب النفاذ ثابتة عند 270 يومًا — غير قابلة للتعديل.', en: 'Near-expiry window is fixed at 270 days — not editable.' },
+  inv_near_policy_expired:  { ar: 'منتهية: تجاوزت تاريخ الصلاحية',                   en: 'Expired: past the expiry date' },
+  inv_near_policy_critical: { ar: 'حرجة: خلال ≤ 3 أشهر',                            en: 'Critical: within ≤ 3 months' },
+  inv_near_policy_warning:  { ar: 'تحذير: من >3 إلى 6 أشهر',                        en: 'Warning: >3 to 6 months' },
+  inv_near_policy_watch:    { ar: 'مراقبة: من >6 إلى 9 أشهر',                       en: 'Watch: >6 to 9 months' },
+
+  /* Threshold rule hints + availability explanation */
+  inv_th_reorder_hint:      { ar: 'حدّ الشحّة: available ≤ هذا الرقم ⇐ مخزون منخفض', en: 'Scarcity threshold: available ≤ this ⇒ low stock' },
+  inv_th_target_hint:       { ar: 'بداية الفائض: available > هذا الرقم ⇐ فائض',      en: 'Surplus starts: available > this ⇒ surplus' },
+  inv_th_band_invalid:      { ar: 'يجب أن يكون: 0 ≤ حدّ إعادة الطلب < الحدّ الأقصى', en: 'Required: 0 ≤ reorder point < target max' },
+  inv_th_both_required:     { ar: 'حدّ إعادة الطلب والحدّ الأقصى مطلوبان',           en: 'Reorder point and target max are both required' },
+  inv_available_explain:    { ar: 'المتاح = المخزون الفعلي − المحجوز. المحجوز = كميات مرتبطة بطلبات/تحويلات قيد التنفيذ لم تُصرف بعد.', en: 'Available = on-hand − reserved. Reserved = quantities tied to in-progress requests/transfers not yet dispatched.' },
+  inv_signal_rules_missing: { ar: 'نقص كامل: المادة متوقعة في النطاق والمخزون الفعلي = 0', en: 'Missing: material expected in the scope and on-hand = 0' },
 };
 
 export function t(key: string, lang: Lang): string {
