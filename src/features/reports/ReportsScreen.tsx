@@ -5,6 +5,7 @@ import { useAsync } from '@/shared/lib/useAsync';
 import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/services/dashboard.service';
 import { getLowStockItems } from '@/shared/supabase/services/availability.service';
 import { AuditLogSection } from './AuditLogSection';
+import { GlobalMaterialSearchPanel } from './GlobalMaterialSearchPanel';
 import { useShadowObservation } from '@/shared/authz/useAuthorization';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
@@ -12,7 +13,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
-type ReportTab = 'summary' | 'low' | 'missing' | 'comparison' | 'audit';
+type ReportTab = 'summary' | 'low' | 'missing' | 'comparison' | 'global' | 'audit';
 
 interface LowRow {
   id: string;
@@ -29,7 +30,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 export function ReportsScreen() {
-  const { lang, activeOrgId, authz } = useApp();
+  const { lang, activeOrgId, authz, role } = useApp();
   const [tab, setTab] = useState<ReportTab>('summary');
 
   // PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: observe only. This screen
@@ -60,6 +61,7 @@ export function ReportsScreen() {
     { id: 'low',        labelKey: 'tab_low' },
     { id: 'missing',    labelKey: 'tab_miss' },
     { id: 'comparison', labelKey: 'tab_comp' },
+    ...(role === 'super_admin' ? [{ id: 'global' as const, labelKey: 'global_material_search' }] : []),
     { id: 'audit',      labelKey: 'tab_audit' },
   ];
 
@@ -90,7 +92,7 @@ export function ReportsScreen() {
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '20px', background: 'var(--s2)', borderRadius: 'var(--r3)', padding: '4px', border: '1px solid var(--brd)' }}>
         {TABS.map(tb => (
-          <button key={tb.id} style={tabStyle(tab === tb.id)} onClick={() => setTab(tb.id)}>{t(tb.labelKey, lang)}</button>
+          <button key={tb.id} style={tabStyle(tab === tb.id)} onClick={() => setTab(tb.id)}>{tb.id === 'global' ? (lang === 'ar' ? 'البحث الشامل عن مادة' : 'Global material search') : t(tb.labelKey, lang)}</button>
         ))}
       </div>
 
@@ -196,6 +198,9 @@ export function ReportsScreen() {
           )}
         </>
       )}
+
+      {/* Super-admin-only live stock search across one or multiple institutions. */}
+      {tab === 'global' && role === 'super_admin' && <GlobalMaterialSearchPanel />}
 
       {/* Audit — extracted into AuditLogSection (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A), also reused by StatusCenterScreen's new Audit Log tab. */}
       {tab === 'audit' && <AuditLogSection />}
