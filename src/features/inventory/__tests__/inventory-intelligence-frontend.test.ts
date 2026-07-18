@@ -347,6 +347,12 @@ describe('round 3: exact manageable scopes and stale-id safety', () => {
     expect(thresholdModal).toMatch(/organizationLabel \|\| t\('inv_org_loading', lang\)/);
     expect(thresholdModal).not.toMatch(/organizationLabel \|\| organizationId/);
   });
+
+  it('rejects a retained catalog from the previous organization before rendering or saving', () => {
+    expect(scopesHook).toMatch(/organizationId: orgId, warehouses:/);
+    expect(scopesHook).toMatch(/visible\.data\.organizationId !== orgId/);
+    expect(scopesHook).toMatch(/Boolean\(orgId\) && data === null/);
+  });
 });
 
 describe('round 3: real threshold edit mode', () => {
