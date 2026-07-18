@@ -1,14 +1,12 @@
 /* ─── MEDISTOCK PHOENIX — Core Types ──────────────────────────────────────── */
 
+import type { AnyRole } from './roles';
+
 export type Lang = 'ar' | 'en';
 export type Theme = 'light' | 'dark';
-// Mirrors the DB CHECK constraint on public.profiles.role (migration 001).
-export type Role =
-  | 'super_admin'
-  | 'hospital_admin'
-  | 'warehouse_manager'
-  | 'point_operator'
-  | 'viewer';
+// Mirrors the current DB CHECK on public.profiles.role (migration 066), including
+// legacy values that remain readable during controlled migration.
+export type Role = AnyRole;
 
 export type AvailabilityStatus = 'available' | 'low' | 'missing' | 'near_expiry';
 // Exact values accepted by the item_availability.condition CHECK
@@ -107,21 +105,30 @@ export interface PurgeImpact {
 /* ── Role hierarchy helpers ── */
 
 const ROLE_RANK: Record<Role, number> = {
-  super_admin: 5,
-  hospital_admin: 4,
-  warehouse_manager: 3,
-  point_operator: 2,
+  super_admin: 10,
+  institution_admin: 8,
+  hospital_admin: 8,
+  central_warehouse_manager: 6,
+  warehouse_officer: 5,
+  warehouse_manager: 5,
+  outlet_officer: 4,
+  port_officer: 4,
+  point_operator: 4,
+  monthly_status_officer: 3,
+  transfer_manager: 3,
   viewer: 1,
 };
 
 export function canAssignRole(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === 'super_admin') return true;
-  if (actorRole === 'hospital_admin') return targetRole !== 'super_admin';
+  if (actorRole === 'institution_admin' || actorRole === 'hospital_admin') {
+    return ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'].includes(targetRole);
+  }
   return false;
 }
 
 export function isAdminRole(role: Role): boolean {
-  return ROLE_RANK[role] >= ROLE_RANK.hospital_admin;
+  return ROLE_RANK[role] >= ROLE_RANK.institution_admin;
 }
 
 export function canManageOrg(role: Role): boolean {
@@ -129,9 +136,19 @@ export function canManageOrg(role: Role): boolean {
 }
 
 export const ASSIGNABLE_ROLES_BY_ACTOR: Record<Role, readonly Role[]> = {
-  super_admin: ['super_admin', 'hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'],
-  hospital_admin: ['hospital_admin', 'warehouse_manager', 'point_operator', 'viewer'],
+  super_admin: [
+    'super_admin', 'institution_admin', 'central_warehouse_manager',
+    'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+  ],
+  institution_admin: ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'],
+  hospital_admin: ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'],
+  central_warehouse_manager: [],
+  warehouse_officer: [],
   warehouse_manager: [],
+  outlet_officer: [],
+  port_officer: [],
   point_operator: [],
+  monthly_status_officer: [],
+  transfer_manager: [],
   viewer: [],
 };
