@@ -1,14 +1,15 @@
 /**
- * INVENTORY-INTELLIGENCE-072-A — Review Round 4
+ * INVENTORY-INTELLIGENCE-072-A — Review Round 5
  *
  * Static SQL-source tests for migration 072 (manual-apply-only; no DB
  * connection), matching the convention of 044-071. Every regression block is
- * keyed to a mandatory review item (1..10); Round 4 adds blocks for the
- * mandate's six fixes: cross-org acceptance disabled (item 1), deterministic
- * concurrency locks + conservation under contention, structural-guard
- * re-validation on the full identity (incl. service_role UPDATE), accept
- * recomputing live surplus/shortfall by committed total, and stable cross-org
- * rerun + wildcard code exclusion.
+ * keyed to a mandatory review item (1..10). Round 5 adds blocks for the
+ * mandate's fixes: acceptance DISABLED for every corridor / no reachable
+ * accepted state (items 1/3/9), full conservation re-validation on identity
+ * moves (item 1), FOR SHARE coordination with the real 065/067/071 ledger with
+ * a deadlock-free lock order (item 2), and batch-identity re-check under the
+ * real row lock (item 4). Round 4's cross-org rerun-stability and wildcard
+ * blocks carry over unchanged.
  *
  * WHAT A STATIC TEST CAN AND CANNOT PROVE
  * ---------------------------------------
@@ -87,12 +88,14 @@ const PERMISSION_KEYS = [
   'inventory.purge',
 ] as const;
 
+// Human-action RPCs that MUTATE state and therefore must write an audit row.
+// accept is excluded: acceptance is disabled (Round 5) — the RPC only raises
+// and mutates nothing, so it has nothing to audit.
 const HUMAN_ACTION_RPCS = [
   'phoenix_upsert_inventory_threshold',
   'phoenix_acknowledge_inventory_alert',
   'phoenix_resolve_inventory_alert',
   'phoenix_dismiss_inventory_alert',
-  'phoenix_accept_inventory_transfer_suggestion',
   'phoenix_reject_inventory_transfer_suggestion',
   'phoenix_purge_inventory_terminal',
 ] as const;
@@ -128,39 +131,56 @@ describe('0. migration 072 exists, is registered, manual-apply-only', () => {
 });
 
 // ============================================================================
-// ITEM 1 — 036-041 integration: cross-org ACCEPTANCE IS DISABLED (Round 4).
-// A sound warehouse_stock <-> item_availability bridge cannot be built, so a
-// cross-org suggestion stays a RECOMMENDATION only and can never be accepted.
+// ITEM 1 / ITEM 3 — ACCEPTANCE IS DISABLED FOR EVERY CORRIDOR (Round 5).
+// No corridor (068/070/071) has a provable single-call Draft-workflow bridge,
+// so 072 is recommendation-only: no suggestion can ever be accepted. This
+// eliminates the phantom unlinked acceptance that consumed capacity forever.
 // ============================================================================
-describe('item 1: cross-org acceptance is disabled (recommendation-only)', () => {
+describe('item 1/3: acceptance is disabled for every corridor (recommendation-only)', () => {
   it('exchange_request_id survives only as an OPTIONAL advisory back-reference FK', () => {
     expect(m072).toMatch(/exchange_request_id\s+uuid REFERENCES public\.inter_org_exchange_requests\(id\) ON DELETE SET NULL/);
     expect(m072).toMatch(/OPTIONAL ADVISORY BACK-REFERENCE/i);
   });
-  it('a cross-org suggestion can NEVER reach accepted — structural CHECK, no exchange-link escape', () => {
-    expect(norm072).toMatch(/inventory_suggestions_no_cross_org_accept_chk CHECK \( status <> 'accepted' OR source_organization_id = target_organization_id \)/);
-    // the round-3 "OR exchange_request_id IS NOT NULL" escape hatch is gone
-    expect(norm072).not.toMatch(/status <> 'accepted' OR source_organization_id = target_organization_id OR exchange_request_id IS NOT NULL/);
+  it('a suggestion can NEVER reach accepted — one unconditional structural CHECK', () => {
+    expect(norm072).toMatch(/inventory_suggestions_no_accept_chk CHECK \(status <> 'accepted'\)/);
+    // the round-4 cross-org-only CHECK (and its exchange-link escape) is gone as
+    // a table constraint (the name may still be NAMED in a §18 "is-it-gone" guard)
+    expect(norm072).not.toMatch(/CONSTRAINT inventory_suggestions_no_cross_org_accept_chk/);
+    expect(norm072).not.toMatch(/status <> 'accepted' OR source_organization_id = target_organization_id/);
   });
-  it('regression: accept REFUSES any cross-org row (cross_org_acceptance_not_supported)', () => {
+  it('regression: the accept RPC is a disabled stub that raises and mutates nothing', () => {
     const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
-    expect(body).toMatch(/v_s\.source_organization_id <> v_s\.target_organization_id THEN RAISE EXCEPTION 'cross_org_acceptance_not_supported'/);
+    expect(body).toMatch(/RAISE EXCEPTION 'acceptance_disabled_recommendation_only'/);
+    // never sets accepted, never writes any row, never checks/locks anything
+    expect(body).not.toMatch(/status = 'accepted'/);
+    expect(body).not.toMatch(/UPDATE public\.inventory_transfer_suggestions/);
+    expect(body).not.toMatch(/INSERT INTO public\.audit_logs/);
+    expect(body).not.toMatch(/cross_org_acceptance_not_supported/);
   });
-  it('accept no longer takes an exchange-request parameter (single-arg signature only)', () => {
+  it('accept keeps its single-arg signature and RPC grants (no two-arg exchange variant)', () => {
     const src = sqlFunctionSource(m072, 'phoenix_accept_inventory_transfer_suggestion')!;
     const sig = src.slice(0, src.indexOf('RETURNS'));
     expect(sig).not.toMatch(/p_exchange_request_id/);
-    // and it never re-derives a cross-org accept path via the exchange tables
-    const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
-    expect(body).not.toMatch(/exchange_request_required_for_cross_org_accept/);
-    expect(body).not.toMatch(/exchange_request_terminal/);
     expect(m072).toMatch(/REVOKE ALL ON FUNCTION public\.phoenix_accept_inventory_transfer_suggestion\(uuid\) FROM PUBLIC, anon/);
     expect(m072).toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_accept_inventory_transfer_suggestion\(uuid\) TO authenticated/);
   });
-  it('§18 asserts the two-arg accept signature is gone and cross-org accept is disabled', () => {
-    expect(active072).toMatch(/the two-arg \(exchange-request\) accept signature still exists/);
-    expect(active072).toMatch(/cross-org acceptance is not structurally disabled/);
-    expect(active072).toMatch(/accept does not refuse cross-org rows/);
+  it('§18 asserts acceptance is disabled structurally and in the RPC, and the old CHECK is gone', () => {
+    expect(active072).toMatch(/acceptance is not structurally disabled for every corridor/);
+    expect(active072).toMatch(/the round-4 cross-org-only accept CHECK still exists/);
+    expect(active072).toMatch(/accept RPC does not disable acceptance/);
+    expect(active072).toMatch(/accept RPC still sets status accepted/);
+  });
+  it('documents the read-only audit of 068/070/071 draft-creation contracts', () => {
+    expect(m072).toMatch(/phoenix_create_warehouse_transfer_request/);
+    expect(m072).toMatch(/phoenix_create_warehouse_dispatch/);
+    expect(m072).toMatch(/phoenix_request_outlet_return/);
+    // the three disqualifiers: document number, different permission, header-only
+    expect(m072).toMatch(/document number/i);
+    expect(m072).toMatch(/DIFFERENT permission/i);
+    expect(m072).toMatch(/HEADER-ONLY/i);
+    // and the resolution: disabled + deferred, no invented link
+    expect(m072).toMatch(/deferred to a dedicated (later )?migration/i);
+    expect(m072).toMatch(/phantom/i);
   });
   it('NO function in 072 ever writes the 036-041 exchange tables', () => {
     for (const fn of [...RPCS, ...GUARDS]) {
@@ -173,14 +193,11 @@ describe('item 1: cross-org acceptance is disabled (recommendation-only)', () =>
     const created = [...active072.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?public\.([a-z_]+)/gi)].map(m => m[1]);
     expect(created).not.toContain('inter_org_exchange_requests');
   });
-  it('states WHY the bridge is impossible honestly (item_availability is outlet-level; no warehouse_id)', () => {
-    // Round 4: the gap is acknowledged AND resolved by disabling acceptance,
-    // not treated as a ready state.
-    expect(m072).toMatch(/KNOWN INTEGRATION GAP/);
+  it('states WHY the cross-org bridge is impossible (item_availability is outlet-level; no warehouse_id)', () => {
     expect(m072).toMatch(/item_availability/);
     expect(m072).toMatch(/requested_quantity/);
     expect(m072).toMatch(/alert_key/);
-    expect(m072).toMatch(/DISABLES cross-org acceptance/i);
+    expect(m072).toMatch(/no warehouse representation/i);
   });
 });
 
@@ -318,8 +335,10 @@ describe('item 4: outlet return suggestions require the proven 071 chain', () =>
     }
   });
   it('regression: the returnable cap is received_quantity - returned_quantity (071 formula)', () => {
+    // accept is a disabled stub (Round 5), so the cap lives in the read/suggest
+    // paths and — authoritatively for every writer — the structural guard.
     for (const fn of ['phoenix_inventory_fefo_batches', 'phoenix_suggest_inventory_transfers',
-                      'phoenix_inventory_suggestion_guard', 'phoenix_accept_inventory_transfer_suggestion']) {
+                      'phoenix_inventory_suggestion_guard']) {
       expect(functionBody(fn), fn).toMatch(/COALESCE\(wdl\.received_quantity, 0\) - wdl\.returned_quantity/);
     }
   });
@@ -445,15 +464,14 @@ describe('item 8: permissions are evaluated on the ACTUAL scopes', () => {
     const scoped = body.match(/FROM _scopes sc/g) ?? [];
     expect(scoped.length).toBeGreaterThanOrEqual(4);
   });
-  it('regression: accept/reject check act_on_suggestions on the suggestion source scope OR target scope — never (org, NULL, NULL)', () => {
-    for (const fn of ['phoenix_accept_inventory_transfer_suggestion', 'phoenix_reject_inventory_transfer_suggestion']) {
-      const body = functionBody(fn);
-      expect(body, fn).toMatch(/'inventory\.act_on_suggestions', v_s\.source_organization_id, v_s\.source_scope_id, NULL/);
-      expect(body, fn).toMatch(/'inventory\.act_on_suggestions', v_s\.source_organization_id, NULL, v_s\.source_scope_id/);
-      expect(body, fn).toMatch(/'inventory\.act_on_suggestions', v_s\.target_organization_id, v_s\.target_scope_id, NULL/);
-      expect(body, fn).toMatch(/'inventory\.act_on_suggestions', v_s\.target_organization_id, NULL, v_s\.target_scope_id/);
-      expect(body, fn).not.toMatch(/act_on_suggestions', v_s\.(source|target)_organization_id, NULL, NULL/);
-    }
+  it('regression: reject checks act_on_suggestions on the suggestion source scope OR target scope — never (org, NULL, NULL)', () => {
+    // accept is a disabled stub (Round 5); reject is the remaining act-on RPC.
+    const body = functionBody('phoenix_reject_inventory_transfer_suggestion');
+    expect(body).toMatch(/'inventory\.act_on_suggestions', v_s\.source_organization_id, v_s\.source_scope_id, NULL/);
+    expect(body).toMatch(/'inventory\.act_on_suggestions', v_s\.source_organization_id, NULL, v_s\.source_scope_id/);
+    expect(body).toMatch(/'inventory\.act_on_suggestions', v_s\.target_organization_id, v_s\.target_scope_id, NULL/);
+    expect(body).toMatch(/'inventory\.act_on_suggestions', v_s\.target_organization_id, NULL, v_s\.target_scope_id/);
+    expect(body).not.toMatch(/act_on_suggestions', v_s\.(source|target)_organization_id, NULL, NULL/);
   });
   it('org-level (org, NULL, NULL) checks remain ONLY for genuinely org-wide operations', () => {
     // org-wide recompute, org-default threshold rows, purge — and nothing else.
@@ -480,56 +498,32 @@ describe('item 8: permissions are evaluated on the ACTUAL scopes', () => {
 });
 
 // ============================================================================
-// ITEM 9 — accept revalidates against live data
+// ITEM 9 — accept is disabled (Round 5). Was "accept revalidates"; acceptance
+// no longer exists, so the checks that mattered are enforced by the guard
+// (see the conservation/ledger blocks) and no accepted state is reachable.
 // ============================================================================
-describe('item 9: acceptance re-verifies everything and expires stale rows', () => {
+describe('item 9: accept is disabled — no reachable accepted state', () => {
   const body = () => functionBody('phoenix_accept_inventory_transfer_suggestion');
 
-  it('re-verifies scope ownership', () => {
-    expect(body()).toMatch(/scope_ownership_changed/);
+  it('the RPC authenticates then raises acceptance_disabled_recommendation_only', () => {
+    expect(body()).toMatch(/IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'/);
+    expect(body()).toMatch(/RAISE EXCEPTION 'acceptance_disabled_recommendation_only'/);
   });
-  it('regression: re-verifies the route per corridor (accept after route disabled => expired)', () => {
-    expect(body()).toMatch(/warehouse_outlet_pairing_gone/);
-    expect(body()).toMatch(/outlet_warehouse_pairing_gone/);
-    expect(body()).toMatch(/supply_route_inactive/);
-    expect(body()).toMatch(/r\.is_active/);
-  });
-  it('regression: re-verifies the batch by COMMITTED TOTAL, not lone quantity (accept after stock change => expired)', () => {
-    expect(body()).toMatch(/source_batch_gone_or_expired/);
-    expect(body()).toMatch(/source_batch_quantity_insufficient/);
-    // Round 4: sum of open+accepted on the batch vs live availability
-    expect(body()).toMatch(/SELECT COALESCE\(SUM\(s\.suggested_quantity\), 0\) INTO v_committed[\s\S]*?s\.source_stock_id = v_s\.source_stock_id/);
-    expect(body()).toMatch(/v_committed > v_available/);
-    expect(body()).not.toMatch(/v_available < v_s\.suggested_quantity/);
-  });
-  it('regression: re-verifies the 071 returnable cap as a SUM per provenance line', () => {
-    expect(body()).toMatch(/returnable_quantity_insufficient/);
-    expect(body()).toMatch(/s\.provenance_dispatch_line_id = v_s\.provenance_dispatch_line_id/);
-    expect(body()).toMatch(/v_committed_line > v_returnable/);
-  });
-  it('regression: RECOMPUTES source surplus and target shortfall from live alerts (expire if gone/insufficient)', () => {
-    expect(body()).toMatch(/source_surplus_gone/);
-    expect(body()).toMatch(/source_surplus_insufficient/);
-    expect(body()).toMatch(/target_shortfall_gone/);
-    expect(body()).toMatch(/target_shortfall_insufficient/);
-    expect(body()).toMatch(/signal_type = 'surplus'/);
-    expect(body()).toMatch(/signal_type IN \('missing', 'low_stock'\)/);
-    // net of every OTHER commitment (this row excluded)
-    expect(body()).toMatch(/s\.id <> v_s\.id/);
-  });
-  it('regression: accept takes the deterministic batch/provline locks before reading any total', () => {
-    expect(body()).toMatch(/pg_advisory_xact_lock\(hashtextextended\('inv_stock:' \|\| v_s\.source_stock_id::text, 0\)\)/);
-    expect(body()).toMatch(/'inv_provline:' \|\| v_s\.provenance_dispatch_line_id::text/);
-  });
-  it('a stale suggestion becomes expired — audited — and is NOT accepted', () => {
-    expect(body()).toMatch(/SET status = 'expired', reason = v_stale/);
-    expect(body()).toMatch(/'lifecycle', 'expire_on_accept', 'cause', v_stale/);
-  });
-  it('accept remains intent-only: no stock/movement/dispatch/transfer write', () => {
-    expect(body()).toMatch(/status = 'accepted'/);
+  it('the RPC never mutates a suggestion, writes an audit row, or moves stock', () => {
+    expect(body()).not.toMatch(/UPDATE public\.inventory_transfer_suggestions/);
+    expect(body()).not.toMatch(/INSERT INTO public\.audit_logs/);
+    expect(body()).not.toMatch(/status = 'accepted'/);
     expect(body()).not.toMatch(/INSERT INTO public\.(warehouse_stock|outlet_stock|warehouse_stock_movements|outlet_stock_movements|warehouse_dispatches|warehouse_dispatch_lines|warehouse_transfers)\b/i);
     expect(body()).not.toMatch(/UPDATE public\.(warehouse_stock|outlet_stock)\b/i);
-    expect(m072).toMatch(/intent recorded; no stock moved/);
+  });
+  it('no reachable accepted state: the structural CHECK forbids it and §18 proves it', () => {
+    expect(norm072).toMatch(/inventory_suggestions_no_accept_chk CHECK \(status <> 'accepted'\)/);
+    expect(active072).toMatch(/acceptance is not structurally disabled for every corridor/);
+  });
+  it('the stale round-4 accept vocabulary is fully gone', () => {
+    expect(m072).not.toMatch(/intent recorded; no stock moved/);
+    expect(m072).not.toMatch(/expire_on_accept/);
+    expect(m072).not.toMatch(/cross_org_acceptance_not_supported/);
   });
 });
 
@@ -617,10 +611,98 @@ describe('round 4 / concurrency: batch & provenance-line conservation hold under
     expect(g).toMatch(/v_committed_line \+ NEW\.suggested_quantity > v_returnable THEN RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity'/);
     expect(g).toMatch(/COALESCE\(wdl\.received_quantity, 0\) - wdl\.returned_quantity/);
   });
-  it('accept serializes on the SAME lock keys as the guard (no accept/insert race)', () => {
+  it('accept holds NO locks and does no conservation work (it is a disabled stub)', () => {
     const a = functionBody('phoenix_accept_inventory_transfer_suggestion');
-    expect(a).toMatch(/hashtextextended\('inv_stock:' \|\| v_s\.source_stock_id::text, 0\)/);
-    expect(a).toMatch(/'inv_provline:' \|\| v_s\.provenance_dispatch_line_id::text/);
+    expect(a).not.toMatch(/pg_advisory_xact_lock/);
+    expect(a).not.toMatch(/FOR SHARE/);
+    expect(a).not.toMatch(/SUM\(s\.suggested_quantity\)/);
+  });
+});
+
+// ============================================================================
+// ROUND 5 — item 2: coordinate conservation with the REAL ledger writers via
+// FOR SHARE row locks (advisory locks alone don't bind 065/067/071), with a
+// deadlock-free lock order.
+// ============================================================================
+describe('round 5 / ledger coordination: FOR SHARE the real stock/line rows before summing', () => {
+  const guard = () => functionBody('phoenix_inventory_suggestion_guard');
+
+  it('locks the real warehouse_stock / outlet_stock row FOR SHARE before reading availability + SUM', () => {
+    const g = guard();
+    expect(g).toMatch(/FROM public\.warehouse_stock ws\s+WHERE ws\.id = NEW\.source_stock_id[\s\S]*?FOR SHARE/);
+    expect(g).toMatch(/FROM public\.outlet_stock os\s+WHERE os\.id = NEW\.source_stock_id[\s\S]*?FOR SHARE/);
+  });
+  it('locks the real warehouse_dispatch_lines row FOR SHARE before reading returnable + SUM (returns)', () => {
+    const g = guard();
+    expect(g).toMatch(/FROM public\.warehouse_dispatch_lines wdl\s+WHERE wdl\.id = NEW\.provenance_dispatch_line_id[\s\S]*?FOR SHARE/);
+  });
+  it('TOCTOU: the FOR SHARE stock read precedes the committed SUM (a concurrent dispatch cannot slip a decrement between)', () => {
+    const g = guard();
+    const shareIdx = g.indexOf('FOR SHARE');
+    const sumIdx = g.indexOf('SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed');
+    expect(shareIdx).toBeGreaterThan(-1);
+    expect(sumIdx).toBeGreaterThan(-1);
+    expect(shareIdx).toBeLessThan(sumIdx);
+  });
+  it('deadlock-free order: the STOCK row is FOR SHARE-locked before the DISPATCH LINE (matches 071 send stock->line)', () => {
+    const g = guard();
+    // first FOR SHARE is a stock row; the dispatch-line FOR SHARE comes later
+    const stockShare = Math.min(
+      ...['FROM public.warehouse_stock ws', 'FROM public.outlet_stock os']
+        .map(s => g.indexOf(s)).filter(i => i > -1)
+    );
+    const lineShare = g.indexOf('FROM public.warehouse_dispatch_lines wdl');
+    expect(stockShare).toBeGreaterThan(-1);
+    expect(lineShare).toBeGreaterThan(-1);
+    expect(stockShare).toBeLessThan(lineShare);
+    // and the doc records the deadlock-freedom argument
+    expect(m072).toMatch(/071's send RPC/);
+    expect(m072).toMatch(/deadlock/i);
+  });
+  it('identity is re-proven UNDER the row lock: scope, org, material, code-when-coded, unexpired', () => {
+    const g = guard();
+    // the locked SELECT carries the full identity predicate + expiry
+    expect(g).toMatch(/WHERE ws\.id = NEW\.source_stock_id\s+AND ws\.warehouse_id = NEW\.source_scope_id\s+AND ws\.organization_id = NEW\.source_organization_id\s+AND lower\(ws\.scientific_name\) = lower\(NEW\.scientific_name\)\s+AND \(NEW\.national_code IS NULL OR ws\.national_code = NEW\.national_code\)\s+AND \(ws\.expiry_date IS NULL OR ws\.expiry_date >= current_date\)\s+FOR SHARE/);
+  });
+});
+
+// ============================================================================
+// ROUND 5 — item 1: full conservation re-validation. A service_role UPDATE that
+// re-points an open/accepted row at a different batch or provenance line MUST
+// re-sum the NEW target and reject oversubscription.
+// ============================================================================
+describe('round 5 / full conservation re-validation on identity moves', () => {
+  const guard = () => functionBody('phoenix_inventory_suggestion_guard');
+
+  it('v_conservation_write fires on INSERT, quantity, source_stock_id, provenance line, identity and reopen', () => {
+    const g = guard();
+    // conservation gate = corridor-write (all identity incl. source_stock_id /
+    // provenance / material / scopes / reopen) OR quantity change
+    expect(g).toMatch(/v_conservation_write := v_corridor_write OR v_qty_write/);
+    expect(g).toMatch(/v_qty_write := \(TG_OP = 'INSERT'\) OR \(NEW\.suggested_quantity IS DISTINCT FROM OLD\.suggested_quantity\)/);
+    expect(g).toMatch(/NEW\.source_stock_id\s+IS DISTINCT FROM OLD\.source_stock_id/);
+    expect(g).toMatch(/NEW\.provenance_dispatch_line_id IS DISTINCT FROM OLD\.provenance_dispatch_line_id/);
+    // the conservation block is gated by the new predicate
+    expect(g).toMatch(/IF v_conservation_write AND NEW\.status IN \('open', 'accepted'\) THEN/);
+  });
+  it('regression: moving source_stock_id A -> crowded B re-sums B and can raise guard_072_batch_oversubscribed', () => {
+    const g = guard();
+    // because source_stock_id change => v_corridor_write => v_conservation_write,
+    // the SUM is taken against the NEW source_stock_id
+    expect(g).toMatch(/s\.source_stock_id = NEW\.source_stock_id\s+AND s\.status IN \('open', 'accepted'\)/);
+    expect(g).toMatch(/v_committed \+ NEW\.suggested_quantity > v_available THEN RAISE EXCEPTION 'guard_072_batch_oversubscribed'/);
+  });
+  it('regression: moving provenance_dispatch_line_id to an exhausted line re-sums that line and can raise', () => {
+    const g = guard();
+    expect(g).toMatch(/s\.provenance_dispatch_line_id = NEW\.provenance_dispatch_line_id\s+AND s\.status IN \('open', 'accepted'\)/);
+    expect(g).toMatch(/v_committed_line \+ NEW\.suggested_quantity > v_returnable THEN RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity'/);
+  });
+  it('regression: a coded suggestion whose live national_code no longer matches the locked row is rejected', () => {
+    const g = guard();
+    // the coded predicate is enforced inside the FOR SHARE identity read
+    expect(g).toMatch(/\(NEW\.national_code IS NULL OR ws\.national_code = NEW\.national_code\)/);
+    expect(g).toMatch(/\(NEW\.national_code IS NULL OR os\.national_code = NEW\.national_code\)/);
+    expect(g).toMatch(/guard_072_source_stock_row_mismatch/);
   });
 });
 
@@ -768,9 +850,9 @@ describe('carried over: split permissions', () => {
   });
   it('suggestion CREATION and ACT-ON are different permissions', () => {
     expect(functionBody('phoenix_suggest_inventory_transfers')).toContain("'inventory.suggest_transfers'");
-    for (const fn of ['phoenix_accept_inventory_transfer_suggestion', 'phoenix_reject_inventory_transfer_suggestion']) {
-      expect(functionBody(fn), fn).toContain("'inventory.act_on_suggestions'");
-    }
+    // reject uses act_on_suggestions; accept is a disabled stub with no perm check.
+    expect(functionBody('phoenix_reject_inventory_transfer_suggestion')).toContain("'inventory.act_on_suggestions'");
+    expect(functionBody('phoenix_accept_inventory_transfer_suggestion')).not.toContain("'inventory.act_on_suggestions'");
   });
 });
 
@@ -839,10 +921,13 @@ describe('structural: additive, advisory-only, ACL, RLS, frugal', () => {
     expect(policy).toMatch(/source_organization_id, source_scope_kind, source_scope_id/);
     expect(policy).toMatch(/target_organization_id, target_scope_kind, target_scope_id/);
   });
-  it('a third organization cannot accept either: act permission is bound to the suggestion endpoint orgs', () => {
+  it('nobody — including a third organization — can accept: acceptance is disabled outright', () => {
     const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
-    expect(body).toMatch(/v_s\.source_organization_id/);
-    expect(body).toMatch(/v_s\.target_organization_id/);
+    expect(body).toMatch(/RAISE EXCEPTION 'acceptance_disabled_recommendation_only'/);
+    // reject remains bound to the suggestion endpoint orgs (no third-org act)
+    const rej = functionBody('phoenix_reject_inventory_transfer_suggestion');
+    expect(rej).toMatch(/v_s\.source_organization_id/);
+    expect(rej).toMatch(/v_s\.target_organization_id/);
   });
   it('frugal: no image/blob/whatsapp column, no cron, no WhatsApp fan-out', () => {
     expect(exec072).not.toMatch(/whatsapp|twilio|sendgrid|nodemailer|smtp/i);

@@ -1,5 +1,5 @@
 -- ============================================================================
--- INVENTORY-INTELLIGENCE-072-A  (Review Round 4)
+-- INVENTORY-INTELLIGENCE-072-A  (Review Round 5)
 --
 -- MANUAL APPLY ONLY. DO NOT use supabase db push or any automated runner.
 --
@@ -25,40 +25,46 @@
 -- images, no snapshots, no cron, no WhatsApp).
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- ROUND-4 CORRECTNESS BOUNDARIES (why this file looks the way it does)
+-- ROUND-5 CORRECTNESS BOUNDARIES (why this file looks the way it does)
 -- ─────────────────────────────────────────────────────────────────────────────
---  1. 036-041 INTEGRATION — CROSS-ORG IS RECOMMENDATION-ONLY; ACCEPTANCE IS
---     DISABLED. Cross-organization movement stays the job of the approved
---     036-041 inter-org alert/exchange system. A cross-org suggestion here is
---     a RECOMMENDATION ONLY and can NEVER be accepted inside 072: the accept
---     RPC refuses it (cross_org_acceptance_not_supported) and a structural
---     CHECK (inventory_suggestions_no_cross_org_accept_chk) makes an accepted
---     cross-org row impossible for EVERY writer, service_role included.
+--  1. RECOMMENDATION-ONLY — ACCEPTANCE IS DISABLED FOR EVERY CORRIDOR. 072 is a
+--     read-only intelligence + advisory layer. NO suggestion — intra-org or
+--     cross-org — can ever be accepted: the accept RPC raises
+--     acceptance_disabled_recommendation_only and a structural CHECK
+--     (inventory_suggestions_no_accept_chk) makes status='accepted' impossible
+--     for EVERY writer, service_role included.
 --
---     WHY ACCEPTANCE IS DISABLED, NOT BRIDGED (Round 4 honesty). Round 3 tried
---     to anchor a cross-org acceptance to a live inter_org_exchange_requests
---     row (matching organizations + material + non-terminal status). Round 4's
---     mandate is explicit: an org/scientific_name/status match is NOT a
---     sufficient bridge. A sound bridge would additionally have to prove that
---     the exchange request's requested_quantity equals this suggestion's
---     suggested_quantity, and that the request's alert_key and its
---     source_item_availability_id / target_item_availability_id actually
---     correspond to the two WAREHOUSE scopes this suggestion draws on. That
---     correspondence CANNOT be built: inter_org_exchange_requests is anchored
---     on item_availability (an OUTLET / distribution_point projection; see 040
---     — NOT NULL FKs to item_availability, alert_key derived from those ids)
---     and has no warehouse_id and no representation of warehouse-level stock,
+--     WHY (Round 5 audit). A read-only audit of the DRAFT-creation contracts in
+--     the approved ledger — 068 phoenix_create_warehouse_transfer_request,
+--     070 phoenix_create_warehouse_dispatch, 071 phoenix_request_outlet_return —
+--     found NO corridor whose Draft workflow can be created atomically and
+--     provably from a single suggestion accept: each requires a caller-supplied
+--     UNIQUE human document number (request/dispatch/return number), each
+--     demands a DIFFERENT permission than inventory.act_on_suggestions
+--     (warehouse_transfer.request / warehouse_dispatch.create /
+--     outlet_stock.return_request), and each yields a HEADER-ONLY draft whose
+--     batch+quantity need SEPARATE add-line calls. A single-call bridge would
+--     have to INVENT a document identifier or silently couple permissions and
+--     multi-step flows — neither is honest. Round 3/4 kept an "accepted" status
+--     that recorded intent, linked to nothing, and consumed batch/returnable
+--     capacity FOREVER (a phantom acceptance). Round 5 removes that at the root:
+--     rather than keep an unlinked accepted row or invent an unproven link,
+--     acceptance is DISABLED and binding a suggestion to a real, verifiable
+--     Draft workflow (action_kind/action_id/actioned_at +
+--     actioned/fulfilled/cancelled/expired lifecycle + reconciliation) is
+--     DEFERRED to a dedicated later migration.
+--
+--     For CROSS-ORG specifically the bridge is doubly impossible:
+--     inter_org_exchange_requests (036-041) is anchored on item_availability
+--     (an OUTLET / distribution_point projection — NOT NULL FKs to
+--     item_availability, alert_key derived from those ids, requested_quantity
+--     per item_availability pair; see 040) with no warehouse representation,
 --     while a 072 cross-org suggestion is warehouse->warehouse over
---     warehouse_stock. There is no join that proves a warehouse batch equals
---     an item_availability row. Because a correct bridge is impossible, Round 4
---     refuses to treat the KNOWN INTEGRATION GAP as a ready state and instead
---     DISABLES cross-org acceptance outright, leaving cross-org suggestions as
---     open recommendations that an operator actions through the EXISTING 041
---     RPC path. This migration still NEVER writes to
---     inter_org_exchange_requests/events and never transitions their status.
---     The exchange_request_id column survives only as an OPTIONAL advisory
---     back-reference (validated for org+material agreement by the §9 guard when
---     set); it is no longer, and can no longer become, an acceptance gate.
+--     warehouse_stock. This migration still NEVER writes
+--     inter_org_exchange_requests/events. The exchange_request_id column
+--     survives only as an OPTIONAL advisory back-reference (validated for
+--     org+material agreement by the §9 guard when set); it is not, and can
+--     never become, an acceptance gate.
 --  2. DATA-DERIVED CROSS-ORG QUANTITIES. There is NO client-supplied quantity
 --     anywhere in suggestion generation. Cross-org suggestions require a real
 --     surplus alert at the source, a real missing/low_stock alert at the
@@ -110,43 +116,48 @@
 --  8. REAL-SCOPE PERMISSIONS. No (organization_id, NULL, NULL) check remains
 --     on any warehouse/outlet-bound operation. Suggestion generation
 --     evaluates inventory.suggest_transfers against EVERY concrete scope and
---     only allocates over scopes the caller actually holds; accept/reject
---     evaluate inventory.act_on_suggestions against the suggestion's ACTUAL
---     source scope or target scope. SECURITY DEFINER never becomes an IDOR
---     bypass. Org-level (org, NULL, NULL) checks remain ONLY for genuinely
---     org-wide operations: org-wide recompute, org-default threshold rows,
---     and purge.
---  9. ACCEPT REVALIDATES (INTRA-ORG ONLY) UNDER A DETERMINISTIC LOCK ORDER.
---     Cross-org rows are refused outright (item 1). For an intra-org row,
---     accept first takes the suggestion row FOR UPDATE, then the SAME
---     deterministic advisory locks the §9 guard uses (batch stock id, then —
---     for returns — the provenance dispatch line), in a fixed order, before it
---     reads any live total. It then re-verifies against LIVE data: scope
---     ownership, the route/pairing, the batch (existence, material, expiry),
---     the 071 returnable cap, AND it RECOMPUTES the source surplus and the
---     target shortfall from live alerts. Every quantity check is against the
---     SUM of open+accepted commitments (per batch, per provenance line, per
---     source surplus, per target shortfall), never the lone suggestion
---     quantity. If the surplus or the shortfall has vanished, or the route /
---     provenance / batch quantity no longer supports the committed total, the
---     suggestion is atomically classified 'expired' with an audited cause — it
---     is NOT accepted. Accept remains INTENT ONLY and never moves stock.
--- 10. STRUCTURAL GUARD, CONCURRENCY-SAFE. A fail-closed BEFORE trigger on each
---     new table — applying to EVERY writer including service_role — proves
---     scope→org ownership, route_kind↔scope-kind pairing, live route/pairing
---     existence, return provenance presence, batch-level and provenance-line
---     non-oversubscription, and exchange-request org/material agreement.
---     Corridor/identity and conservation re-checks re-fire on the FULL set of
---     identity columns (scopes, orgs, route, source_stock_id, scientific_name,
---     national_code, BOTH provenance columns, exchange_request_id) and on any
---     status transition INTO open/accepted — not only on insert. Before any
---     conservation SUM, the guard takes a DETERMINISTIC advisory lock on the
---     source_stock_id (and, for returns, the provenance dispatch line), so two
---     concurrent INSERT/UPDATE writers on the same batch or line serialize and
---     cannot jointly exceed available_quantity or (received-returned). The two
---     conservation invariants therefore hold under concurrency:
+--     only allocates over scopes the caller actually holds; reject evaluates
+--     inventory.act_on_suggestions against the suggestion's ACTUAL source or
+--     target scope. SECURITY DEFINER never becomes an IDOR bypass. Org-level
+--     (org, NULL, NULL) checks remain ONLY for genuinely org-wide operations:
+--     org-wide recompute, org-default threshold rows, and purge.
+--  9. ACCEPT IS DISABLED (see item 1). The accept RPC raises
+--     acceptance_disabled_recommendation_only and no writer can set
+--     status='accepted'. There is therefore no reachable 'accepted' state, and
+--     no unlinked acceptance can consume capacity. reject stays available.
+-- 10. STRUCTURAL GUARD, CONCURRENCY-SAFE AND LEDGER-COORDINATED. A fail-closed
+--     BEFORE trigger on each new table — applying to EVERY writer including
+--     service_role — proves scope→org ownership, route_kind↔scope-kind
+--     pairing, live route/pairing existence, return provenance presence,
+--     batch-level and provenance-line non-oversubscription, and
+--     exchange-request org/material agreement.
+--     * FULL CONSERVATION RE-VALIDATION (v_conservation_write): the batch and
+--       provenance-line SUMs re-fire on INSERT, on any suggested_quantity
+--       change, on any source_stock_id / provenance_dispatch_line_id change, on
+--       any source/target/material identity change, and on any transition into
+--       open/accepted — so a service_role UPDATE cannot move an open row onto a
+--       crowded batch B or an exhausted provenance line without the NEW target's
+--       total being re-summed and oversubscription refused.
+--     * BATCH IDENTITY under the real row lock: the locked SELECT re-checks
+--       existence, table, scope, organization, material, code-when-coded, and
+--       unexpired.
+--     * LEDGER COORDINATION: advisory locks alone are invisible to the
+--       065/067/071 dispatch/return RPCs, so the guard ALSO takes FOR SHARE on
+--       the real warehouse_stock/outlet_stock row (and, for returns, the
+--       warehouse_dispatch_lines row) before reading available / (received -
+--       returned) and the SUM — blocking the ledger's FOR UPDATE decrement and
+--       closing the TOCTOU against live dispatches/returns. Lock order is
+--       advisory(stock)→advisory(line)→FOR SHARE(stock)→FOR SHARE(line); rows
+--       are taken STOCK-then-LINE, matching 071's send RPC (the only ledger op
+--       that concurrently locks both a return's source stock and its dispatch
+--       line); 070's receive commits before any return suggestion can exist, so
+--       its line→stock order can never race this guard on the same pair — no
+--       deadlock. The two invariants hold under concurrency AND against real
+--       ledger writers:
 --       Σ(open+accepted) per source_stock_id            <= available_quantity
 --       Σ(open+accepted) per provenance_dispatch_line_id <= received - returned
+--       ('accepted' is unreachable per items 1/9, so in practice only 'open'
+--        rows contribute; the pair is kept for the future acceptance migration.)
 --     Composite FKs carry the 071 provenance chain; the trigger covers what a
 --     CHECK/FK cannot express (polymorphic scope + cross-table sums + locks).
 --
@@ -161,11 +172,12 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --   * No DROP/RENAME/REVOKE against any pre-existing object; no ALTER of any
 --     001-071 table; no row rewritten; no widened CHECK on existing constraints.
---   * No stock movement / dispatch / transfer execution — accept is advisory
---     intent ONLY (proven by §18).
+--   * No stock movement / dispatch / transfer execution, and no acceptance at
+--     all — 072 is recommendation-only; accept is disabled for every corridor
+--     (proven by §18).
 --   * No parallel cross-org exchange engine — 036-041 remains the inter-org
 --     path; this file only stores an OPTIONAL advisory reference to it, never
---     accepts a cross-org suggestion, and never inserts/updates
+--     accepts any suggestion, and never inserts/updates
 --     inter_org_exchange_requests or inter_org_exchange_events.
 --   * No RBAC enforcement change. Enforcement stays OFF; scope enforcement
 --     (phoenix_profile_has_scoped_permission) stays ON, as always.
@@ -415,7 +427,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
   -- 036-041 OPTIONAL ADVISORY BACK-REFERENCE: an inter_org_exchange_requests
   -- row (created through the EXISTING 041 engine, never by this file) an
   -- operator may attach to document a related exchange. It is NOT an
-  -- acceptance gate — cross-org acceptance is disabled (Round 4). When set,
+  -- acceptance gate — acceptance is disabled entirely (Round 5). When set,
   -- the §9 guard validates it agrees on organizations + material.
   exchange_request_id       uuid REFERENCES public.inter_org_exchange_requests(id) ON DELETE SET NULL,
 
@@ -423,6 +435,10 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
   status                    text NOT NULL DEFAULT 'open',
   reason                    text,
 
+  -- RESERVED for the future acceptance-workflow migration. Acceptance is
+  -- disabled in Round 5 (inventory_suggestions_no_accept_chk), so these are
+  -- never written today; they are kept so the later migration can populate them
+  -- without an ALTER of this table's shape.
   accepted_at               timestamptz,
   accepted_by               uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   rejected_at               timestamptz,
@@ -465,15 +481,16 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
          AND provenance_dispatch_line_id IS NULL
          AND provenance_inbound_movement_id IS NULL)
     ),
-  -- Cross-org acceptance is DISABLED (Round 4): a warehouse<->item_availability
-  -- bridge to the 036-041 engine cannot be built soundly, so a cross-org
-  -- suggestion can NEVER reach 'accepted' — structurally, for every writer.
-  -- Cross-org rows stay open recommendations actioned through the 041 RPC path.
-  CONSTRAINT inventory_suggestions_no_cross_org_accept_chk
-    CHECK (
-      status <> 'accepted'
-      OR source_organization_id = target_organization_id
-    ),
+  -- ACCEPTANCE IS DISABLED FOR EVERY CORRIDOR (Round 5): no corridor has a
+  -- provable single-call Draft-workflow bridge (068/070/071 each need a
+  -- caller-supplied document number, a different permission, and a header+line
+  -- multi-step create — see §12). Rather than keep a phantom unlinked 'accepted'
+  -- that consumes capacity forever, no suggestion may EVER reach 'accepted' —
+  -- structurally, for every writer including service_role. 072 is
+  -- recommendation-only; binding a real Draft workflow is deferred to a later
+  -- migration. (This subsumes Round 4's cross-org-only ban.)
+  CONSTRAINT inventory_suggestions_no_accept_chk
+    CHECK (status <> 'accepted'),
   -- THE PROVEN 071 CHAIN, same composite-FK targets 071 uses (MATCH SIMPLE:
   -- enforced exactly when the provenance columns are present):
   -- (1) the dispatch line RESULTED IN this outlet_stock row.
@@ -1203,16 +1220,21 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_corridor_write boolean;
-  v_qty_write      boolean;
-  v_reopen         boolean;
-  v_available      integer;
-  v_committed      integer;
-  v_committed_line integer;
-  v_returnable     integer;
+  v_corridor_write     boolean;
+  v_qty_write          boolean;
+  v_conservation_write boolean;
+  v_reopen             boolean;
+  v_available          integer;
+  v_committed          integer;
+  v_committed_line     integer;
+  v_returnable         integer;
 BEGIN
   -- Re-validate whenever the status transitions INTO open/accepted (not only
   -- from a terminal state): any writer that revives a row must re-prove it.
+  -- NOTE: 'accepted' is structurally unreachable (Round 5 disables acceptance —
+  -- inventory_suggestions_no_accept_chk), so in practice only 'open' rows reach
+  -- these checks; the 'accepted' arm is retained for the future acceptance
+  -- migration and is harmless while no accepted row can exist.
   v_reopen := (TG_OP = 'UPDATE')
     AND NEW.status IN ('open', 'accepted')
     AND NEW.status IS DISTINCT FROM OLD.status;
@@ -1237,6 +1259,19 @@ BEGIN
   );
   v_qty_write := (TG_OP = 'INSERT')
     OR (NEW.suggested_quantity IS DISTINCT FROM OLD.suggested_quantity);
+
+  -- FULL CONSERVATION RE-VALIDATION (Round 5, item 1). The conservation SUMs
+  -- must be re-proven not only when the quantity or status changes, but on ANY
+  -- write that could point the row at a different batch, provenance line, or
+  -- identity — otherwise a service_role UPDATE could move an open row from
+  -- batch A to a crowded batch B (or to an exhausted provenance line) WITHOUT
+  -- the new target's total being re-summed. v_corridor_write already captures
+  -- every identity/route/source_stock_id/provenance change and every reopen;
+  -- folding in v_qty_write makes the trigger fire on the full mandated set:
+  -- INSERT, suggested_quantity, source_stock_id, provenance_dispatch_line_id,
+  -- source/target identity, material identity, and any transition to
+  -- open/accepted.
+  v_conservation_write := v_corridor_write OR v_qty_write;
 
   -- Scope→organization ownership: always cheap, always on.
   IF public.phoenix_inventory_scope_org(NEW.source_scope_kind, NEW.source_scope_id)
@@ -1285,94 +1320,105 @@ BEGIN
     ELSE
       RAISE EXCEPTION 'guard_072_invalid_route_kind';
     END IF;
-
-    -- The named batch must exist in the RIGHT stock table, at the source
-    -- scope, with matching material (and code, when the suggestion is coded).
-    IF NEW.source_scope_kind = 'warehouse' THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM public.warehouse_stock ws
-        WHERE ws.id = NEW.source_stock_id
-          AND ws.warehouse_id = NEW.source_scope_id
-          AND ws.organization_id = NEW.source_organization_id
-          AND lower(ws.scientific_name) = lower(NEW.scientific_name)
-          AND (NEW.national_code IS NULL OR ws.national_code = NEW.national_code)
-      ) THEN
-        RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
-      END IF;
-    ELSE
-      IF NOT EXISTS (
-        SELECT 1 FROM public.outlet_stock os
-        WHERE os.id = NEW.source_stock_id
-          AND os.distribution_point_id = NEW.source_scope_id
-          AND os.organization_id = NEW.source_organization_id
-          AND lower(os.scientific_name) = lower(NEW.scientific_name)
-          AND (NEW.national_code IS NULL OR os.national_code = NEW.national_code)
-      ) THEN
-        RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
-      END IF;
-    END IF;
+    -- (The batch's identity — table/scope/org/material/code/expiry — is
+    -- re-proven UNDER THE REAL ROW LOCK in the conservation block below, so it
+    -- is not duplicated here as a weaker unlocked check.)
   END IF;
 
-  IF v_qty_write OR v_reopen THEN
+  IF v_conservation_write AND NEW.status IN ('open', 'accepted') THEN
+    -- ── CONSERVATION UNDER REAL LEDGER LOCKS (Round 5, items 1/2/4) ─────────
+    -- Advisory locks (deterministic, keyed on the ids) still serialize concurrent
+    -- 072 writers against EACH OTHER. But advisory locks are invisible to the
+    -- 065/067/071 dispatch/return RPCs, so on their own they cannot stop a
+    -- concurrent real dispatch from decrementing the batch between our read and
+    -- our commit (a TOCTOU against the live ledger). We therefore additionally
+    -- take a FOR SHARE lock on the ACTUAL warehouse_stock / outlet_stock row
+    -- (and, for returns, the warehouse_dispatch_lines row) before reading
+    -- available_quantity / (received - returned) and the committed SUM. FOR
+    -- SHARE blocks the ledger's FOR UPDATE decrement (and vice versa), so the
+    -- value we conserve against is the value that will still hold at commit.
+    --
+    -- LOCK ORDER (deadlock-freedom): advisory(stock) -> advisory(line) ->
+    -- FOR SHARE(stock row) -> FOR SHARE(dispatch line). Row locks are acquired
+    -- STOCK-then-LINE, matching 071's send RPC — the only ledger writer that
+    -- concurrently locks BOTH a return's source outlet_stock and its dispatch
+    -- line (it locks outlet_stock FOR UPDATE, then the dispatch line). 070's
+    -- receive locks the line before the stock, but a dispatch line's receive
+    -- necessarily COMMITS before any outlet_to_warehouse suggestion can exist
+    -- (the suggestion requires the proven accepted-line + dispatch_receive
+    -- chain), so it can never run concurrently with this guard on the same
+    -- pair. Warehouse-batch corridors lock a single row (the warehouse_stock
+    -- batch) and therefore have no cross-row ordering to invert.
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('inv_stock:' || NEW.source_stock_id::text, 0));
+    IF NEW.route_kind = 'outlet_to_warehouse' THEN
+      PERFORM pg_advisory_xact_lock(
+        hashtextextended('inv_provline:' || NEW.provenance_dispatch_line_id::text, 0));
+    END IF;
+
+    -- Real stock row FOR SHARE — this SELECT is ALSO the authoritative batch
+    -- identity re-check (item 4): existence, right table, scope, organization,
+    -- material, code-when-coded, and unexpired, all under the row lock.
+    IF NEW.source_scope_kind = 'warehouse' THEN
+      SELECT ws.available_quantity INTO v_available
+      FROM public.warehouse_stock ws
+      WHERE ws.id = NEW.source_stock_id
+        AND ws.warehouse_id = NEW.source_scope_id
+        AND ws.organization_id = NEW.source_organization_id
+        AND lower(ws.scientific_name) = lower(NEW.scientific_name)
+        AND (NEW.national_code IS NULL OR ws.national_code = NEW.national_code)
+        AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+      FOR SHARE;
+    ELSE
+      SELECT os.available_quantity INTO v_available
+      FROM public.outlet_stock os
+      WHERE os.id = NEW.source_stock_id
+        AND os.distribution_point_id = NEW.source_scope_id
+        AND os.organization_id = NEW.source_organization_id
+        AND lower(os.scientific_name) = lower(NEW.scientific_name)
+        AND (NEW.national_code IS NULL OR os.national_code = NEW.national_code)
+        AND (os.expiry_date IS NULL OR os.expiry_date >= current_date)
+      FOR SHARE;
+    END IF;
+    IF v_available IS NULL THEN
+      RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
+    END IF;
+
     -- Batch-level conservation: Σ open+accepted per source_stock_id (this row
     -- included) never exceeds the batch's live availability.
-    IF NEW.status IN ('open', 'accepted') THEN
-      -- CONCURRENCY (Round 4): serialize every writer touching this batch on a
-      -- DETERMINISTIC advisory lock BEFORE reading availability or the SUM, so
-      -- two concurrent INSERT/UPDATE rows on the same batch cannot both read a
-      -- stale total and jointly oversubscribe it. The lock is released at
-      -- transaction end; a fixed key text makes the order deterministic.
-      PERFORM pg_advisory_xact_lock(
-        hashtextextended('inv_stock:' || NEW.source_stock_id::text, 0));
+    SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.source_stock_id = NEW.source_stock_id
+      AND s.status IN ('open', 'accepted')
+      AND s.id <> NEW.id;
 
-      IF NEW.source_scope_kind = 'warehouse' THEN
-        SELECT ws.available_quantity INTO v_available
-        FROM public.warehouse_stock ws WHERE ws.id = NEW.source_stock_id;
-      ELSE
-        SELECT os.available_quantity INTO v_available
-        FROM public.outlet_stock os WHERE os.id = NEW.source_stock_id;
-      END IF;
-      IF v_available IS NULL THEN
-        RAISE EXCEPTION 'guard_072_source_stock_row_missing';
+    IF v_committed + NEW.suggested_quantity > v_available THEN
+      RAISE EXCEPTION 'guard_072_batch_oversubscribed';
+    END IF;
+
+    -- 071 returnable cap for outlet->warehouse rows, ENFORCED AS A SUM under
+    -- the dispatch line's FOR SHARE lock: Σ open+accepted per
+    -- provenance_dispatch_line_id (this row included) never exceeds the line's
+    -- live returnable (received - returned).
+    IF NEW.route_kind = 'outlet_to_warehouse' THEN
+      SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
+        INTO v_returnable
+      FROM public.warehouse_dispatch_lines wdl
+      WHERE wdl.id = NEW.provenance_dispatch_line_id
+        AND wdl.status IN ('accepted', 'accepted_with_difference')
+      FOR SHARE;
+      IF v_returnable IS NULL THEN
+        RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
       END IF;
 
-      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed
+      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed_line
       FROM public.inventory_transfer_suggestions s
-      WHERE s.source_stock_id = NEW.source_stock_id
+      WHERE s.provenance_dispatch_line_id = NEW.provenance_dispatch_line_id
         AND s.status IN ('open', 'accepted')
         AND s.id <> NEW.id;
 
-      IF v_committed + NEW.suggested_quantity > v_available THEN
-        RAISE EXCEPTION 'guard_072_batch_oversubscribed';
-      END IF;
-
-      -- 071 returnable cap for outlet->warehouse rows, ENFORCED AS A SUM
-      -- (Round 4): Σ open+accepted per provenance_dispatch_line_id (this row
-      -- included) never exceeds the line's returnable (received - returned).
-      -- A deterministic advisory lock on the line serializes concurrent
-      -- writers before the SUM so they cannot jointly exceed the cap.
-      IF NEW.route_kind = 'outlet_to_warehouse' THEN
-        PERFORM pg_advisory_xact_lock(
-          hashtextextended('inv_provline:' || NEW.provenance_dispatch_line_id::text, 0));
-
-        SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
-          INTO v_returnable
-        FROM public.warehouse_dispatch_lines wdl
-        WHERE wdl.id = NEW.provenance_dispatch_line_id
-          AND wdl.status IN ('accepted', 'accepted_with_difference');
-        IF v_returnable IS NULL THEN
-          RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
-        END IF;
-
-        SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed_line
-        FROM public.inventory_transfer_suggestions s
-        WHERE s.provenance_dispatch_line_id = NEW.provenance_dispatch_line_id
-          AND s.status IN ('open', 'accepted')
-          AND s.id <> NEW.id;
-
-        IF v_committed_line + NEW.suggested_quantity > v_returnable THEN
-          RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
-        END IF;
+      IF v_committed_line + NEW.suggested_quantity > v_returnable THEN
+        RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
       END IF;
     END IF;
   END IF;
@@ -1417,7 +1463,9 @@ REVOKE ALL ON FUNCTION public.phoenix_inventory_suggestion_guard() FROM PUBLIC, 
 -- ============================================================================
 -- Cross-organization surplus/shortage stays the job of the 036-041 inter-org
 -- alert/exchange system; §11 mints cross-org ADVISORY rows (super_admin only)
--- whose ACCEPTANCE must reference that engine.
+-- that are RECOMMENDATIONS ONLY — like every 072 suggestion, they can never be
+-- accepted here (acceptance is disabled, §12); an operator actions them through
+-- the existing 041 exchange RPC path.
 --
 -- Permission model (round-3 item 8): NO (org, NULL, NULL) check. The caller's
 -- inventory.suggest_transfers is evaluated against EVERY concrete warehouse/
@@ -1765,8 +1813,9 @@ GRANT EXECUTE ON FUNCTION public.phoenix_suggest_inventory_transfers(uuid) TO au
 -- where "remaining" subtracts every other open/accepted suggestion. Both
 -- organizations' allocator locks are taken in DETERMINISTIC (sorted) order so
 -- concurrent runs cannot jointly oversubscribe a source.
--- Advisory intent only; acceptance additionally requires a 036-041 exchange
--- request reference (§12).
+-- Recommendation only: cross-org rows (like all 072 suggestions) can never be
+-- accepted here — acceptance is disabled (§12). An operator actions them
+-- through the existing 041 exchange RPC path.
 CREATE OR REPLACE FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(
   p_source_organization_id uuid,
   p_source_warehouse_id    uuid,
@@ -1959,7 +2008,7 @@ BEGIN
       'warehouse', p_source_warehouse_id, 'warehouse', p_target_warehouse_id, 'central_to_institution',
       v_batch.stock_id, v_take, v_batch.batch_number, v_batch.expiry_date,
       v_batch.available_quantity, v_headroom_snapshot, v_deficit_snapshot,
-      'cross-org advisory: derived from a real surplus alert, a real shortfall alert, an active supply route and one FEFO batch; acceptance requires a 036-041 exchange request reference',
+      'cross-org recommendation: derived from a real surplus alert, a real shortfall alert, an active supply route and one FEFO batch; recommendation only — acceptance is disabled (act through the 041 exchange RPC path)',
       v_key, 'open', now(), now()
     )
     ON CONFLICT (suggestion_key) DO UPDATE SET
@@ -1997,14 +2046,38 @@ REVOKE ALL ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid,
 GRANT EXECUTE ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text) TO authenticated;
 
 -- ============================================================================
--- 12. SUGGESTION LIFECYCLE — accept (INTENT ONLY, revalidated) / reject
+-- 12. SUGGESTION LIFECYCLE — accept (DISABLED, recommendation-only) / reject
 -- ============================================================================
--- accept re-verifies EVERYTHING against live data before flipping the status:
--- route, scope ownership, batch existence/material/quantity, 071 returnable
--- cap, and — for cross-org — the 036-041 exchange-request reference. A stale
--- suggestion is atomically classified 'expired' with an audited cause, never
--- accepted. Accept records intent ONLY: no stock, movement, dispatch or
--- transfer row is ever written.
+-- ACCEPTANCE IS DISABLED FOR EVERY CORRIDOR (Round 5, item 3).
+--
+-- A read-only audit of the DRAFT-creation contracts in the approved ledger —
+--   * 068 phoenix_create_warehouse_transfer_request (central->institution),
+--   * 070 phoenix_create_warehouse_dispatch          (warehouse->outlet),
+--   * 071 phoenix_request_outlet_return              (outlet->warehouse) —
+-- found that NONE can be created atomically and provably from a single
+-- suggestion accept. Each one REQUIRES a caller-supplied UNIQUE human document
+-- number (request_number / dispatch_number / return_number), each demands a
+-- DIFFERENT permission than inventory.act_on_suggestions
+-- (warehouse_transfer.request / warehouse_dispatch.create /
+-- outlet_stock.return_request), and each produces a HEADER-ONLY draft whose
+-- batch and quantity require SEPARATE add-line calls. There is therefore no
+-- honest single-call bridge from an inventory suggestion to a real Draft
+-- workflow that does not invent a document identifier or silently couple
+-- permissions and multi-step flows.
+--
+-- Round 3/4 kept an "accepted" status that recorded intent but linked to
+-- nothing and consumed batch/returnable capacity FOREVER (a phantom
+-- acceptance). Round 5 removes that failure mode at the root: rather than keep
+-- an unlinked accepted row, or invent an unproven link, acceptance is DISABLED
+-- — structurally (inventory_suggestions_no_accept_chk forbids status
+-- 'accepted' for EVERY writer, service_role included) and in this RPC (it
+-- raises acceptance_disabled_recommendation_only). 072 stays a
+-- RECOMMENDATION-only intelligence layer. Binding a suggestion to a real,
+-- verifiable Draft workflow (with action_kind/action_id/actioned_at and an
+-- actioned/fulfilled/cancelled/expired lifecycle + reconciliation) is deferred
+-- to a dedicated LATER migration that can add the workflow contract properly.
+--
+-- reject stays available: rejecting a recommendation is always valid.
 CREATE OR REPLACE FUNCTION public.phoenix_accept_inventory_transfer_suggestion(
   p_suggestion_id uuid
 )
@@ -2013,243 +2086,14 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_actor uuid := auth.uid();
-  v_s public.inventory_transfer_suggestions%ROWTYPE;
-  v_stale text := NULL;
-  v_available integer;
-  v_returnable integer;
-  v_committed integer;
-  v_committed_line integer;
-  v_surplus integer;
-  v_shortfall integer;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
-  SELECT * INTO v_s FROM public.inventory_transfer_suggestions WHERE id = p_suggestion_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
-
-  -- Permission on the suggestion's ACTUAL endpoints — never (org, NULL, NULL).
-  IF NOT (
-    public.phoenix_my_role() = 'super_admin'
-    OR (v_s.source_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
-          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, v_s.source_scope_id, NULL))
-    OR (v_s.source_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
-          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, NULL, v_s.source_scope_id))
-    OR (v_s.target_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
-          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, v_s.target_scope_id, NULL))
-    OR (v_s.target_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
-          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, NULL, v_s.target_scope_id))
-  ) THEN RAISE EXCEPTION 'not_authorized_inventory_act'; END IF;
-  IF v_s.status <> 'open' THEN RAISE EXCEPTION 'suggestion_not_open'; END IF;
-
-  -- CROSS-ORG ACCEPTANCE IS DISABLED (Round 4, item 1). A sound
-  -- warehouse_stock <-> item_availability bridge to the 036-041 engine cannot
-  -- be built, so a cross-org suggestion stays an open RECOMMENDATION only; it
-  -- is actioned through the EXISTING 041 exchange RPC path, never accepted
-  -- here. The no-cross-org-accept CHECK makes this true for every writer; this
-  -- guard makes the RPC's refusal explicit and legible.
-  IF v_s.source_organization_id <> v_s.target_organization_id THEN
-    RAISE EXCEPTION 'cross_org_acceptance_not_supported';
-  END IF;
-
-  -- CONCURRENCY (Round 4): take the SAME deterministic advisory locks the §9
-  -- guard uses, in the same order (suggestion row already FOR UPDATE, then the
-  -- batch stock id, then — for returns — the provenance dispatch line), BEFORE
-  -- reading any live total, so accept serializes with concurrent guard writers.
-  PERFORM pg_advisory_xact_lock(hashtextextended('inv_stock:' || v_s.source_stock_id::text, 0));
-  IF v_s.route_kind = 'outlet_to_warehouse' THEN
-    PERFORM pg_advisory_xact_lock(
-      hashtextextended('inv_provline:' || v_s.provenance_dispatch_line_id::text, 0));
-  END IF;
-
-  -- ── REVALIDATION against live data ──────────────────────────────────────
-  -- 1. Scope ownership still holds.
-  IF public.phoenix_inventory_scope_org(v_s.source_scope_kind, v_s.source_scope_id)
-     IS DISTINCT FROM v_s.source_organization_id
-     OR public.phoenix_inventory_scope_org(v_s.target_scope_kind, v_s.target_scope_id)
-        IS DISTINCT FROM v_s.target_organization_id THEN
-    v_stale := 'scope_ownership_changed';
-  END IF;
-
-  -- 2. The route/pairing is still live.
-  IF v_stale IS NULL THEN
-    IF v_s.route_kind = 'warehouse_to_outlet' THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM public.distribution_points dp
-        WHERE dp.id = v_s.target_scope_id
-          AND dp.warehouse_id = v_s.source_scope_id
-          AND dp.organization_id = v_s.source_organization_id
-      ) THEN v_stale := 'warehouse_outlet_pairing_gone'; END IF;
-    ELSIF v_s.route_kind = 'outlet_to_warehouse' THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM public.distribution_points dp
-        WHERE dp.id = v_s.source_scope_id
-          AND dp.warehouse_id = v_s.target_scope_id
-          AND dp.organization_id = v_s.source_organization_id
-      ) THEN v_stale := 'outlet_warehouse_pairing_gone'; END IF;
-    ELSIF v_s.route_kind = 'central_to_institution' THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM public.warehouse_supply_routes r
-        JOIN public.warehouses sw ON sw.id = r.source_warehouse_id
-                                 AND sw.organization_id = v_s.source_organization_id
-        JOIN public.warehouses tw ON tw.id = r.target_warehouse_id
-                                 AND tw.organization_id = v_s.target_organization_id
-        WHERE r.source_warehouse_id = v_s.source_scope_id
-          AND r.target_warehouse_id = v_s.target_scope_id
-          AND r.is_active
-      ) THEN v_stale := 'supply_route_inactive'; END IF;
-    END IF;
-  END IF;
-
-  -- 3. The batch still exists and still matches; the COMMITTED TOTAL (Σ
-  --    open+accepted on this batch, this row included) — not this row's
-  --    quantity alone — still fits the batch's live availability.
-  IF v_stale IS NULL THEN
-    IF v_s.source_scope_kind = 'warehouse' THEN
-      SELECT ws.available_quantity INTO v_available
-      FROM public.warehouse_stock ws
-      WHERE ws.id = v_s.source_stock_id
-        AND ws.warehouse_id = v_s.source_scope_id
-        AND ws.organization_id = v_s.source_organization_id
-        AND lower(ws.scientific_name) = lower(v_s.scientific_name)
-        AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date);
-    ELSE
-      SELECT os.available_quantity INTO v_available
-      FROM public.outlet_stock os
-      WHERE os.id = v_s.source_stock_id
-        AND os.distribution_point_id = v_s.source_scope_id
-        AND os.organization_id = v_s.source_organization_id
-        AND lower(os.scientific_name) = lower(v_s.scientific_name)
-        AND (os.expiry_date IS NULL OR os.expiry_date >= current_date);
-    END IF;
-    IF v_available IS NULL THEN
-      v_stale := 'source_batch_gone_or_expired';
-    ELSE
-      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed
-      FROM public.inventory_transfer_suggestions s
-      WHERE s.source_stock_id = v_s.source_stock_id
-        AND s.status IN ('open', 'accepted');
-      IF v_committed > v_available THEN
-        v_stale := 'source_batch_quantity_insufficient';
-      END IF;
-    END IF;
-  END IF;
-
-  -- 4. outlet->warehouse: the COMMITTED TOTAL per provenance line (Σ
-  --    open+accepted, this row included) still fits the 071 returnable cap.
-  IF v_stale IS NULL AND v_s.route_kind = 'outlet_to_warehouse' THEN
-    SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
-      INTO v_returnable
-    FROM public.warehouse_dispatch_lines wdl
-    WHERE wdl.id = v_s.provenance_dispatch_line_id
-      AND wdl.status IN ('accepted', 'accepted_with_difference');
-    IF v_returnable IS NULL THEN
-      v_stale := 'returnable_quantity_insufficient';
-    ELSE
-      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed_line
-      FROM public.inventory_transfer_suggestions s
-      WHERE s.provenance_dispatch_line_id = v_s.provenance_dispatch_line_id
-        AND s.status IN ('open', 'accepted');
-      IF v_committed_line > v_returnable THEN
-        v_stale := 'returnable_quantity_insufficient';
-      END IF;
-    END IF;
-  END IF;
-
-  -- 5. The SOURCE SURPLUS is RECOMPUTED from live alerts. If the surplus alert
-  --    is gone, or the surplus left after every OTHER open+accepted outbound
-  --    commitment no longer covers this row, the suggestion is stale.
-  IF v_stale IS NULL THEN
-    SELECT GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0)
-      INTO v_surplus
-    FROM public.inventory_alerts a
-    WHERE a.organization_id = v_s.source_organization_id
-      AND a.scope_kind = v_s.source_scope_kind AND a.scope_id = v_s.source_scope_id
-      AND a.signal_type = 'surplus'
-      AND a.status IN ('open', 'acknowledged', 'in_progress')
-      AND lower(a.scientific_name) = lower(v_s.scientific_name)
-      AND a.national_code IS NOT DISTINCT FROM v_s.national_code
-    ORDER BY a.last_observed_at DESC
-    LIMIT 1;
-    IF v_surplus IS NULL OR v_surplus <= 0 THEN
-      v_stale := 'source_surplus_gone';
-    ELSE
-      v_surplus := v_surplus - COALESCE((
-        SELECT SUM(s.suggested_quantity)
-        FROM public.inventory_transfer_suggestions s
-        WHERE s.source_scope_kind = v_s.source_scope_kind
-          AND s.source_scope_id = v_s.source_scope_id
-          AND s.source_organization_id = v_s.source_organization_id
-          AND lower(s.scientific_name) = lower(v_s.scientific_name)
-          AND s.national_code IS NOT DISTINCT FROM v_s.national_code
-          AND s.status IN ('open', 'accepted')
-          AND s.id <> v_s.id
-      ), 0);
-      IF v_surplus < v_s.suggested_quantity THEN
-        v_stale := 'source_surplus_insufficient';
-      END IF;
-    END IF;
-  END IF;
-
-  -- 6. The TARGET SHORTFALL is RECOMPUTED from live alerts, likewise net of
-  --    every OTHER open+accepted inbound commitment.
-  IF v_stale IS NULL THEN
-    SELECT GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 0)
-      INTO v_shortfall
-    FROM public.inventory_alerts a
-    WHERE a.organization_id = v_s.target_organization_id
-      AND a.scope_kind = v_s.target_scope_kind AND a.scope_id = v_s.target_scope_id
-      AND a.signal_type IN ('missing', 'low_stock')
-      AND a.status IN ('open', 'acknowledged', 'in_progress')
-      AND lower(a.scientific_name) = lower(v_s.scientific_name)
-      AND a.national_code IS NOT DISTINCT FROM v_s.national_code
-    ORDER BY a.last_observed_at DESC
-    LIMIT 1;
-    IF v_shortfall IS NULL OR v_shortfall <= 0 THEN
-      v_stale := 'target_shortfall_gone';
-    ELSE
-      v_shortfall := v_shortfall - COALESCE((
-        SELECT SUM(s.suggested_quantity)
-        FROM public.inventory_transfer_suggestions s
-        WHERE s.target_scope_kind = v_s.target_scope_kind
-          AND s.target_scope_id = v_s.target_scope_id
-          AND s.target_organization_id = v_s.target_organization_id
-          AND lower(s.scientific_name) = lower(v_s.scientific_name)
-          AND s.national_code IS NOT DISTINCT FROM v_s.national_code
-          AND s.status IN ('open', 'accepted')
-          AND s.id <> v_s.id
-      ), 0);
-      IF v_shortfall < v_s.suggested_quantity THEN
-        v_stale := 'target_shortfall_insufficient';
-      END IF;
-    END IF;
-  END IF;
-
-  -- A stale suggestion is NOT accepted: it expires, audited.
-  IF v_stale IS NOT NULL THEN
-    UPDATE public.inventory_transfer_suggestions
-    SET status = 'expired', reason = v_stale, updated_at = now()
-    WHERE id = p_suggestion_id;
-
-    INSERT INTO public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
-    VALUES (v_s.target_organization_id, v_actor, public.phoenix_my_role(), 'update', 'inventory_transfer_suggestion',
-            p_suggestion_id, v_s.route_kind || ':' || v_s.scientific_name,
-            jsonb_build_object('lifecycle', 'expire_on_accept', 'cause', v_stale,
-                               'source_org', v_s.source_organization_id));
-
-    RETURN jsonb_build_object('id', p_suggestion_id, 'status', 'expired', 'cause', v_stale);
-  END IF;
-
-  -- INTENT ONLY. No stock/movement/dispatch/transfer write, by design.
-  UPDATE public.inventory_transfer_suggestions
-  SET status = 'accepted', accepted_at = now(), accepted_by = v_actor, updated_at = now()
-  WHERE id = p_suggestion_id;
-
-  INSERT INTO public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
-  VALUES (v_s.target_organization_id, v_actor, public.phoenix_my_role(), 'update', 'inventory_transfer_suggestion',
-          p_suggestion_id, v_s.route_kind || ':' || v_s.scientific_name,
-          jsonb_build_object('lifecycle', 'accept', 'intent_only', true,
-                             'source_org', v_s.source_organization_id));
-
-  RETURN jsonb_build_object('id', p_suggestion_id, 'status', 'accepted', 'note', 'intent recorded; no stock moved');
+  -- No corridor has a provable single-call Draft bridge (see the audit above),
+  -- so acceptance is disabled everywhere. This is enforced structurally too by
+  -- inventory_suggestions_no_accept_chk; the RPC refuses explicitly so callers
+  -- get a legible error instead of a raw CHECK violation. No suggestion is ever
+  -- moved to 'accepted', so no unlinked acceptance can consume capacity.
+  RAISE EXCEPTION 'acceptance_disabled_recommendation_only';
 END;
 $$;
 
@@ -2611,24 +2455,27 @@ BEGIN
   END IF;
 
   -- structural CHECKs: route pairing, same-org corridors, return provenance,
-  -- and the Round-4 no-cross-org-accept invariant.
+  -- and the Round-5 no-accept invariant.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_route_pairing_chk')
      OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_cross_org_route_chk')
      OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_return_provenance_chk')
-     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_no_cross_org_accept_chk') THEN
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_no_accept_chk') THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): a structural suggestion CHECK is missing';
   END IF;
 
-  -- Round-4: cross-org acceptance is structurally impossible — the CHECK
-  -- forbids an accepted row whose organizations differ, and it must NOT still
-  -- carry the round-3 exchange-link escape hatch.
+  -- Round-5: acceptance is structurally impossible for EVERY corridor — the
+  -- CHECK forbids status='accepted' unconditionally, and the round-4 cross-org
+  -- -only ban (with its exchange-link escape) must be gone.
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'inventory_suggestions_no_cross_org_accept_chk'
-      AND pg_get_constraintdef(oid) LIKE '%source_organization_id = target_organization_id%'
-      AND pg_get_constraintdef(oid) NOT LIKE '%exchange_request_id IS NOT NULL%'
+    WHERE conname = 'inventory_suggestions_no_accept_chk'
+      AND pg_get_constraintdef(oid) LIKE '%status <> ''accepted''%'
+      AND pg_get_constraintdef(oid) NOT LIKE '%source_organization_id = target_organization_id%'
   ) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (072): cross-org acceptance is not structurally disabled';
+    RAISE EXCEPTION 'VERIFY FAILED (072): acceptance is not structurally disabled for every corridor';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_no_cross_org_accept_chk') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): the round-4 cross-org-only accept CHECK still exists';
   END IF;
 
   -- structural guard triggers exist on all three tables.
@@ -2656,9 +2503,8 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (072): thresholds policy lacks the org-wide (scope_id IS NULL) branch';
   END IF;
 
-  -- accept is intent-only; recompute/suggest/cross-org never write physical
-  -- stock, never write the 036-041 exchange tables, and accept/reject check
-  -- the ACTUAL scopes (no (org, NULL, NULL) act_on shortcut).
+  -- recommendation-only: accept/reject/recompute/suggest/cross-org never write
+  -- physical stock and never write the 036-041 exchange tables.
   FOREACH v_t IN ARRAY ARRAY[
     'public.phoenix_accept_inventory_transfer_suggestion(uuid)',
     'public.phoenix_reject_inventory_transfer_suggestion(uuid,text)',
@@ -2675,38 +2521,40 @@ BEGIN
       RAISE EXCEPTION 'VERIFY FAILED (072): % writes the 036-041 exchange tables', v_t;
     END IF;
   END LOOP;
-  FOREACH v_t IN ARRAY ARRAY[
-    'public.phoenix_accept_inventory_transfer_suggestion(uuid)',
-    'public.phoenix_reject_inventory_transfer_suggestion(uuid,text)'
-  ] LOOP
-    v_body := pg_get_functiondef(v_t::regprocedure);
-    IF v_body ~* 'act_on_suggestions[^,]*,\s*v_s\.(source|target)_organization_id,\s*NULL,\s*NULL' THEN
-      RAISE EXCEPTION 'VERIFY FAILED (072): % still uses an org-level act_on shortcut', v_t;
-    END IF;
-  END LOOP;
+  -- reject still checks act_on_suggestions on the ACTUAL scopes (no
+  -- (org, NULL, NULL) shortcut).
+  v_body := pg_get_functiondef('public.phoenix_reject_inventory_transfer_suggestion(uuid,text)'::regprocedure);
+  IF v_body ~* 'act_on_suggestions[^,]*,\s*v_s\.(source|target)_organization_id,\s*NULL,\s*NULL' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): reject still uses an org-level act_on shortcut';
+  END IF;
 
-  -- Round-4: accept refuses cross-org rows and no longer takes an
-  -- exchange-request parameter (the two-arg accept signature is gone).
+  -- Round-5: acceptance is disabled in the RPC (raises) and no accepted state
+  -- is reachable; the two-arg exchange-request signature stays gone.
   v_body := pg_get_functiondef('public.phoenix_accept_inventory_transfer_suggestion(uuid)'::regprocedure);
-  IF v_body !~* 'cross_org_acceptance_not_supported' THEN
-    RAISE EXCEPTION 'VERIFY FAILED (072): accept does not refuse cross-org rows';
+  IF v_body !~* 'acceptance_disabled_recommendation_only' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): accept RPC does not disable acceptance';
+  END IF;
+  IF v_body ~* 'status = ''accepted''' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): accept RPC still sets status accepted';
   END IF;
   IF to_regprocedure('public.phoenix_accept_inventory_transfer_suggestion(uuid,uuid)') IS NOT NULL THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): the two-arg (exchange-request) accept signature still exists';
   END IF;
 
-  -- Round-4: accept RECOMPUTES surplus/shortfall from live alerts and checks
-  -- the COMMITTED TOTAL, not the lone quantity.
-  IF v_body !~* 'source_surplus_gone' OR v_body !~* 'target_shortfall_gone'
-     OR v_body !~* 'SUM\(s\.suggested_quantity\)' THEN
-    RAISE EXCEPTION 'VERIFY FAILED (072): accept does not recompute live surplus/shortfall by committed total';
-  END IF;
-
-  -- Round-4: the §9 suggestion guard serializes batch/provenance writers on a
-  -- deterministic advisory lock and enforces the provenance-line SUM cap.
+  -- Round-5: the §9 suggestion guard re-validates conservation on the FULL
+  -- write set, coordinates with the real ledger via FOR SHARE row locks, and
+  -- enforces the provenance-line SUM cap.
   v_body := pg_get_functiondef('public.phoenix_inventory_suggestion_guard()'::regprocedure);
   IF v_body !~* 'pg_advisory_xact_lock' OR v_body !~* 'inv_stock:' OR v_body !~* 'inv_provline:' THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): suggestion guard lacks deterministic batch/line locks';
+  END IF;
+  IF v_body !~* 'v_conservation_write' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): suggestion guard lacks a full conservation-write predicate';
+  END IF;
+  IF v_body !~* 'warehouse_stock ws[\s\S]*FOR SHARE'
+     OR v_body !~* 'outlet_stock os[\s\S]*FOR SHARE'
+     OR v_body !~* 'warehouse_dispatch_lines wdl[\s\S]*FOR SHARE' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): suggestion guard does not FOR SHARE the real ledger rows';
   END IF;
   IF v_body !~* 'v_committed_line \+ NEW\.suggested_quantity > v_returnable' THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): suggestion guard does not enforce Σ per provenance line <= returnable';
