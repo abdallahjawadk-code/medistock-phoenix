@@ -1,5 +1,5 @@
 -- ============================================================================
--- INVENTORY-INTELLIGENCE-072-A  (Review Round 5)
+-- INVENTORY-INTELLIGENCE-072-A  (Review Round 6)
 --
 -- MANUAL APPLY ONLY. DO NOT use supabase db push or any automated runner.
 --
@@ -25,14 +25,29 @@
 -- images, no snapshots, no cron, no WhatsApp).
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- ROUND-5 CORRECTNESS BOUNDARIES (why this file looks the way it does)
+-- ROUND-6 CORRECTNESS BOUNDARIES (why this file looks the way it does)
 -- ─────────────────────────────────────────────────────────────────────────────
 --  1. RECOMMENDATION-ONLY — ACCEPTANCE IS DISABLED FOR EVERY CORRIDOR. 072 is a
 --     read-only intelligence + advisory layer. NO suggestion — intra-org or
 --     cross-org — can ever be accepted: the accept RPC raises
 --     acceptance_disabled_recommendation_only and a structural CHECK
 --     (inventory_suggestions_no_accept_chk) makes status='accepted' impossible
---     for EVERY writer, service_role included.
+--     for EVERY writer, service_role included. There is NO auto-execution and no
+--     stock is ever moved. accepted_at/accepted_by are reserved and pinned NULL
+--     by inventory_suggestions_no_accept_fields_chk until a future migration
+--     re-enables acceptance. An OPEN suggestion is a RECOMMENDATION, never a
+--     permanent reservation: its conservation is proven under the §9 locks at
+--     each build (stamped in last_validated_at) and can go stale after a later
+--     stock movement, so any actionable-suggestion surface MUST re-validate
+--     against live stock before acting on it (§ items 4/5).
+--
+--     SCOPED RECOMPUTE IS ISOLATED (Round 6, item 1). phoenix_recompute_
+--     inventory_alerts run for ONE scope reads, writes, and clears alerts for
+--     THAT scope only. _thr admits solely org-wide defaults + the requested
+--     scope's rows; the scopes/_pos CTEs and the final upsert are each fenced
+--     to the requested scope — three independent defences, none relying on RLS
+--     (the function is SECURITY DEFINER). A caller authorized for warehouse A
+--     cannot create, update, or clear any alert for warehouse B.
 --
 --     WHY (Round 5 audit). A read-only audit of the DRAFT-creation contracts in
 --     the approved ledger — 068 phoenix_create_warehouse_transfer_request,
@@ -106,13 +121,25 @@
 --     A wildcard 'missing' therefore cannot fire while the material exists
 --     under any real code it covers. All matching is lower(scientific_name),
 --     deterministic.
+--  6b. QUANTITY SIGNAL SEMANTICS (Round 6, item 2), on_hand vs available so
+--     expected-but-unsellable stock is never silent:
+--       missing   : expected AND on_hand = 0.
+--       low_stock : on_hand > 0 AND available <= reorder_point — INCLUDING
+--                   available = 0 caused by reservation (on_hand=10, reserved=10,
+--                   reorder=5 => low_stock, not silence).
+--       surplus   : available > target_max.
+--     missing and low_stock are mutually exclusive by the on_hand=0 vs on_hand>0
+--     split (no double signal). No threshold => no quantity signal (not stocked).
 --  7. near_expiry_days IS IMPLEMENTED (option A). NULL = the 270-day default;
---     values are constrained to 1..270. The most specific active threshold
---     (scope+material+code beats scope+material beats org default) sets the
---     effective window. 'expired' ALWAYS surfaces; 'near_expiry' surfaces
---     only inside the effective window. Tier vocabulary and severities stay
---     exactly 048: expired/critical_3m/warning_6m/watch_9m with
---     high/high/medium/low.
+--     values are constrained to 1..270. The EFFECTIVE window is chosen by
+--     picking the MOST SPECIFIC applicable threshold row FIRST, in this
+--     precedence — (1) scope+material+code, (2) scope+material wildcard,
+--     (3) org-default coded, (4) org-default wildcard — and THEN applying
+--     COALESCE(winner.near_expiry_days, 270). A NULL on the winning row means
+--     270; it is NOT a reason to fall through to a less-specific row (Round 6,
+--     item 3). 'expired' ALWAYS surfaces; 'near_expiry' surfaces only inside the
+--     effective window. Tier vocabulary and severities stay exactly 048:
+--     expired/critical_3m/warning_6m/watch_9m with high/high/medium/low.
 --  8. REAL-SCOPE PERMISSIONS. No (organization_id, NULL, NULL) check remains
 --     on any warehouse/outlet-bound operation. Suggestion generation
 --     evaluates inventory.suggest_transfers against EVERY concrete scope and
@@ -446,6 +473,12 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
 
   first_suggested_at        timestamptz NOT NULL DEFAULT now(),
   last_suggested_at         timestamptz NOT NULL DEFAULT now(),
+  -- Round 6, item 4: the instant this row's conservation was last PROVEN under
+  -- the §9 guard's locks (at each INSERT / rebuild). An open suggestion is NOT
+  -- a permanent reservation — a later real stock movement can make it stale, so
+  -- a future actionable-suggestion API MUST re-validate against live stock
+  -- before presenting it, using this timestamp to reason about freshness.
+  last_validated_at         timestamptz NOT NULL DEFAULT now(),
   created_at                timestamptz NOT NULL DEFAULT now(),
   updated_at                timestamptz NOT NULL DEFAULT now(),
 
@@ -491,6 +524,11 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
   -- migration. (This subsumes Round 4's cross-org-only ban.)
   CONSTRAINT inventory_suggestions_no_accept_chk
     CHECK (status <> 'accepted'),
+  -- Round 6, item 5: while acceptance is disabled the accepted_* fields stay
+  -- reserved and MUST remain NULL for every writer. A future migration that
+  -- re-enables acceptance will relax this alongside the no-accept CHECK.
+  CONSTRAINT inventory_suggestions_no_accept_fields_chk
+    CHECK (accepted_at IS NULL AND accepted_by IS NULL),
   -- THE PROVEN 071 CHAIN, same composite-FK targets 071 uses (MATCH SIMPLE:
   -- enforced exactly when the provenance columns are present):
   -- (1) the dispatch line RESULTED IN this outlet_stock row.
@@ -793,6 +831,13 @@ BEGIN
     GROUP BY scope_kind, scope_id, lower(scientific_name), national_code;
 
   -- Active thresholds for this org; scope-specific rows are EXPECTATIONS.
+  -- SCOPED-RECOMPUTE ISOLATION (Round 6, item 1): when a single scope is
+  -- requested, _thr must admit ONLY (a) org-wide defaults (scope_id IS NULL,
+  -- needed for inheritance) and (b) the requested scope's OWN rows
+  -- (scope_id = p_scope_id). Admitting any other scope_id here would let the
+  -- scopes/_pos CTEs mint or clear alerts for a DIFFERENT scope the caller is
+  -- not authorized for — a SECURITY DEFINER function must enforce this itself
+  -- and never lean on RLS.
   CREATE TEMP TABLE _thr ON COMMIT DROP AS
     SELECT t.scope_kind, t.scope_id, lower(t.scientific_name) AS sci_lower,
            MAX(t.scientific_name) AS sci_display,
@@ -801,6 +846,7 @@ BEGIN
     WHERE t.organization_id = p_organization_id
       AND t.is_active
       AND (p_scope_kind IS NULL OR t.scope_kind = p_scope_kind)
+      AND (p_scope_id IS NULL OR t.scope_id IS NULL OR t.scope_id = p_scope_id)
     GROUP BY t.scope_kind, t.scope_id, lower(t.scientific_name),
              t.national_code, t.reorder_point, t.target_max, t.near_expiry_days;
 
@@ -816,9 +862,15 @@ BEGIN
   --     wildcard and a coded signal.
   CREATE TEMP TABLE _pos ON COMMIT DROP AS
   WITH scopes AS (
+    -- Second defence for item 1: even though _stock/_agg and _thr are already
+    -- scope-filtered above, restrict the concrete scope set explicitly so no
+    -- other scope_id can ever surface here.
     SELECT DISTINCT scope_kind, scope_id FROM _agg
+     WHERE (p_scope_id IS NULL OR scope_id = p_scope_id)
     UNION
-    SELECT DISTINCT scope_kind, scope_id FROM _thr WHERE scope_id IS NOT NULL
+    SELECT DISTINCT scope_kind, scope_id FROM _thr
+     WHERE scope_id IS NOT NULL
+       AND (p_scope_id IS NULL OR scope_id = p_scope_id)
   ),
   coded AS (
     SELECT s.scope_kind, s.scope_id, t.sci_lower,
@@ -900,11 +952,20 @@ BEGIN
       )
   ) tot
   CROSS JOIN LATERAL (
+    -- Signal semantics (Round 6, item 2), keyed off on_hand vs available so
+    -- expected-but-unsellable stock (fully reserved: on_hand>0, available=0) is
+    -- never silent:
+    --   missing   : expected AND on_hand = 0.
+    --   low_stock : on_hand > 0 AND available <= reorder_point (INCLUDES
+    --               available = 0 caused by reservation).
+    --   surplus   : available > target_max.
+    -- missing and low_stock are mutually exclusive by the on_hand=0 vs on_hand>0
+    -- split, so a single fact never raises both.
     SELECT
       CASE
         WHEN pos.expected AND cfg.reorder_point IS NOT NULL AND cfg.reorder_point > 0
              AND COALESCE(tot.on_hand, 0) = 0 THEN 'missing'
-        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.available, 0) > 0
+        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.on_hand, 0) > 0
              AND COALESCE(tot.available, 0) <= cfg.reorder_point THEN 'low_stock'
         WHEN cfg.target_max IS NOT NULL AND COALESCE(tot.available, 0) > cfg.target_max THEN 'surplus'
         ELSE NULL
@@ -912,7 +973,7 @@ BEGIN
       CASE
         WHEN pos.expected AND cfg.reorder_point IS NOT NULL AND cfg.reorder_point > 0
              AND COALESCE(tot.on_hand, 0) = 0 THEN 'high'
-        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.available, 0) > 0
+        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.on_hand, 0) > 0
              AND COALESCE(tot.available, 0) <= cfg.reorder_point THEN 'medium'
         ELSE 'low'
       END AS severity
@@ -935,6 +996,16 @@ BEGIN
     s.on_hand_quantity, s.available_quantity, NULL, NULL, win.eff_days, (s.expiry_date - current_date)
   FROM _stock s
   CROSS JOIN LATERAL (
+    -- near_expiry_days CONTRACT (Round 6, item 3): pick the MOST SPECIFIC
+    -- applicable threshold row FIRST, in this precedence —
+    --   1. scope + material + code   (scope_id NOT NULL, code matches)
+    --   2. scope + material wildcard (scope_id NOT NULL, code NULL)
+    --   3. org-default coded         (scope_id NULL,     code matches)
+    --   4. org-default wildcard      (scope_id NULL,     code NULL)
+    -- THEN read that winning row's near_expiry_days and default a NULL to 270.
+    -- We must NOT skip the winning row down to a less-specific row merely
+    -- because the winner's value is NULL — so the "IS NOT NULL" filter is gone
+    -- and COALESCE(winner.near_expiry_days, 270) is applied AFTER selection.
     SELECT COALESCE((
       SELECT t.near_expiry_days
       FROM _thr t
@@ -942,7 +1013,6 @@ BEGIN
         AND (t.scope_id = s.scope_id OR t.scope_id IS NULL)
         AND t.sci_lower = lower(s.scientific_name)
         AND (t.national_code IS NULL OR t.national_code = s.national_code)
-        AND t.near_expiry_days IS NOT NULL
       ORDER BY (t.scope_id IS NOT NULL) DESC, (t.national_code IS NOT NULL) DESC
       LIMIT 1
     ), 270) AS eff_days
@@ -983,6 +1053,10 @@ BEGIN
     n.on_hand, n.available, n.reorder, n.target_max, n.near_days, n.dte,
     n.alert_key, 'open', now(), now()
   FROM _now n
+  -- Third defence for item 1: the write itself is fenced to the requested
+  -- scope, so no INSERT/UPDATE can ever touch another scope's alerts.
+  WHERE (p_scope_kind IS NULL OR n.scope_kind = p_scope_kind)
+    AND (p_scope_id IS NULL OR n.scope_id = p_scope_id)
   ON CONFLICT (alert_key) DO UPDATE SET
     severity                = EXCLUDED.severity,
     expiry_tier             = EXCLUDED.expiry_tier,
@@ -1742,7 +1816,7 @@ BEGIN
           source_stock_id, suggested_quantity, fefo_batch_number, fefo_expiry_date,
           source_batch_available_snapshot, source_surplus_snapshot, target_shortfall_snapshot,
           provenance_dispatch_line_id, provenance_inbound_movement_id,
-          rationale, suggestion_key, status, first_suggested_at, last_suggested_at
+          rationale, suggestion_key, status, first_suggested_at, last_suggested_at, last_validated_at
         )
         VALUES (
           p_organization_id, p_organization_id, v_need.scientific_name, v_need.national_code,
@@ -1752,7 +1826,7 @@ BEGIN
           CASE WHEN v_src.route_kind = 'outlet_to_warehouse' THEN v_batch.dispatch_line_id ELSE NULL END,
           CASE WHEN v_src.route_kind = 'outlet_to_warehouse' THEN v_batch.inbound_movement_id ELSE NULL END,
           'deterministic allocation: one FEFO batch of a surplus source covers part of a shortage over a feasible route',
-          v_key, 'open', now(), now()
+          v_key, 'open', now(), now(), now()
         )
         ON CONFLICT (suggestion_key) DO UPDATE SET
           suggested_quantity              = EXCLUDED.suggested_quantity,
@@ -1764,6 +1838,8 @@ BEGIN
           target_shortfall_snapshot       = EXCLUDED.target_shortfall_snapshot,
           provenance_inbound_movement_id  = EXCLUDED.provenance_inbound_movement_id,
           last_suggested_at               = now(),
+          -- conservation just re-proven under the guard's locks for this rebuild
+          last_validated_at               = now(),
           updated_at                      = now(),
           status                          = 'open'
         WHERE su.status IN ('open', 'superseded', 'expired');
@@ -2001,7 +2077,7 @@ BEGIN
       source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
       source_stock_id, suggested_quantity, fefo_batch_number, fefo_expiry_date,
       source_batch_available_snapshot, source_surplus_snapshot, target_shortfall_snapshot,
-      rationale, suggestion_key, status, first_suggested_at, last_suggested_at
+      rationale, suggestion_key, status, first_suggested_at, last_suggested_at, last_validated_at
     )
     VALUES (
       p_source_organization_id, p_target_organization_id, v_name, v_code,
@@ -2009,7 +2085,7 @@ BEGIN
       v_batch.stock_id, v_take, v_batch.batch_number, v_batch.expiry_date,
       v_batch.available_quantity, v_headroom_snapshot, v_deficit_snapshot,
       'cross-org recommendation: derived from a real surplus alert, a real shortfall alert, an active supply route and one FEFO batch; recommendation only — acceptance is disabled (act through the 041 exchange RPC path)',
-      v_key, 'open', now(), now()
+      v_key, 'open', now(), now(), now()
     )
     ON CONFLICT (suggestion_key) DO UPDATE SET
       suggested_quantity              = EXCLUDED.suggested_quantity,
@@ -2019,6 +2095,8 @@ BEGIN
       source_surplus_snapshot         = EXCLUDED.source_surplus_snapshot,
       target_shortfall_snapshot       = EXCLUDED.target_shortfall_snapshot,
       last_suggested_at               = now(),
+      -- conservation just re-proven under the guard's locks for this rebuild
+      last_validated_at               = now(),
       updated_at                      = now(),
       status                          = 'open'
     WHERE su.status IN ('open', 'superseded', 'expired');
@@ -2418,6 +2496,29 @@ BEGIN
   IF v_body !~* 'near_expiry_days' OR v_body !~* 'eff_days' THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): recompute does not consume near_expiry_days';
   END IF;
+  -- Round-6 item 3: the window is chosen by MOST-SPECIFIC-row-first then
+  -- COALESCE(.,270); the winning row is NOT skipped just because its value is
+  -- NULL, so the old "near_expiry_days IS NOT NULL" pre-filter must be gone from
+  -- the window LATERAL.
+  IF v_body ~* 'AND t\.near_expiry_days IS NOT NULL\s+ORDER BY' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): near_expiry window still pre-filters NULLs instead of most-specific-then-COALESCE';
+  END IF;
+  IF v_body !~* 'LIMIT 1\s*\), 270\) AS eff_days' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): near_expiry window does not COALESCE the selected row to 270';
+  END IF;
+  -- Round-6 item 2: low_stock is keyed on on_hand>0 (covers available=0 from
+  -- reservation), NOT the old available>0 gate.
+  IF v_body !~* 'COALESCE\(tot\.on_hand, 0\) > 0\s+AND COALESCE\(tot\.available, 0\) <= cfg\.reorder_point THEN ''low_stock''' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): low_stock does not use the on_hand>0 semantics (available=0 would be silent)';
+  END IF;
+  -- Round-6 item 1: scoped recompute is isolated — _thr and the write are both
+  -- fenced by p_scope_id (defence in depth, not RLS).
+  IF v_body !~* 'p_scope_id IS NULL OR t\.scope_id IS NULL OR t\.scope_id = p_scope_id' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): scoped recompute does not fence _thr to the requested scope';
+  END IF;
+  IF v_body !~* 'p_scope_id IS NULL OR n\.scope_id = p_scope_id' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): scoped recompute does not fence the alert upsert to the requested scope';
+  END IF;
 
   -- episode + dedup + cross-org + batch + provenance + integration columns exist.
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
@@ -2433,8 +2534,10 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
                    AND table_name='inventory_transfer_suggestions' AND column_name='provenance_dispatch_line_id')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
-                   AND table_name='inventory_transfer_suggestions' AND column_name='exchange_request_id') THEN
-    RAISE EXCEPTION 'VERIFY FAILED (072): episode/cross-org/batch/provenance/integration columns missing';
+                   AND table_name='inventory_transfer_suggestions' AND column_name='exchange_request_id')
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+                   AND table_name='inventory_transfer_suggestions' AND column_name='last_validated_at') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): episode/cross-org/batch/provenance/integration/validation columns missing';
   END IF;
 
   -- the 036-041 integration reference is a REAL foreign key.
@@ -2476,6 +2579,17 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_no_cross_org_accept_chk') THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): the round-4 cross-org-only accept CHECK still exists';
+  END IF;
+
+  -- Round-6 item 5: accepted_at/accepted_by are pinned NULL while acceptance is
+  -- disabled.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'inventory_suggestions_no_accept_fields_chk'
+      AND pg_get_constraintdef(oid) LIKE '%accepted_at IS NULL%'
+      AND pg_get_constraintdef(oid) LIKE '%accepted_by IS NULL%'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): accepted_at/accepted_by are not pinned NULL';
   END IF;
 
   -- structural guard triggers exist on all three tables.

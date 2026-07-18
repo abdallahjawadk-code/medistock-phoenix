@@ -1,15 +1,15 @@
 /**
- * INVENTORY-INTELLIGENCE-072-A — Review Round 5
+ * INVENTORY-INTELLIGENCE-072-A — Review Round 6
  *
  * Static SQL-source tests for migration 072 (manual-apply-only; no DB
  * connection), matching the convention of 044-071. Every regression block is
- * keyed to a mandatory review item (1..10). Round 5 adds blocks for the
- * mandate's fixes: acceptance DISABLED for every corridor / no reachable
- * accepted state (items 1/3/9), full conservation re-validation on identity
- * moves (item 1), FOR SHARE coordination with the real 065/067/071 ledger with
- * a deadlock-free lock order (item 2), and batch-identity re-check under the
- * real row lock (item 4). Round 4's cross-org rerun-stability and wildcard
- * blocks carry over unchanged.
+ * keyed to a mandatory review item. Round 6 adds blocks for: scoped-recompute
+ * isolation A-vs-B (item 1, security blocker), available=0/on_hand>0 low_stock
+ * semantics (item 2), near_expiry most-specific-row-first then COALESCE(.,270)
+ * (item 3), recommendation semantics + last_validated_at (item 4), and the
+ * accepted-fields NULL guard (item 5). Round 5's acceptance-disabled,
+ * conservation, FOR SHARE ledger-coordination, and Round 4's cross-org
+ * rerun-stability / wildcard blocks carry over.
  *
  * WHAT A STATIC TEST CAN AND CANNOT PROVE
  * ---------------------------------------
@@ -423,9 +423,15 @@ describe('item 7: near_expiry_days is a real setting', () => {
     expect(norm072).toMatch(/inventory_thresholds_near_expiry_days_chk CHECK \(near_expiry_days IS NULL OR \(near_expiry_days >= 1 AND near_expiry_days <= 270\)\)/);
     expect(functionBody('phoenix_upsert_inventory_threshold')).toMatch(/near_expiry_days_out_of_range/);
   });
-  it('regression: recompute resolves the EFFECTIVE window — most specific wins, NULL defaults to 270', () => {
+  it('regression: window picks the MOST SPECIFIC row FIRST then COALESCE(.,270) — no NULL pre-filter (Round 6, item 3)', () => {
     const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/t\.near_expiry_days IS NOT NULL ORDER BY \(t\.scope_id IS NOT NULL\) DESC, \(t\.national_code IS NOT NULL\) DESC LIMIT 1 \), 270\) AS eff_days/);
+    // most-specific-first ordering, then default the WINNING row to 270
+    expect(body).toMatch(/ORDER BY \(t\.scope_id IS NOT NULL\) DESC, \(t\.national_code IS NOT NULL\) DESC LIMIT 1 \), 270\) AS eff_days/);
+    // the old "skip NULL winner to a less-specific row" pre-filter is gone
+    expect(body).not.toMatch(/t\.near_expiry_days IS NOT NULL\s+ORDER BY/);
+    // §18 enforces both at apply time
+    expect(active072).toMatch(/near_expiry window still pre-filters NULLs/);
+    expect(active072).toMatch(/near_expiry window does not COALESCE the selected row to 270/);
   });
   it('regression: expired ALWAYS surfaces; near_expiry only inside the effective window', () => {
     const body = functionBody('phoenix_recompute_inventory_alerts');
@@ -770,6 +776,108 @@ describe('round 4 / cross-org rerun stability + wildcard code exclusion', () => 
   });
   it('§18 asserts the cross-org supersede-then-rebuild post-condition', () => {
     expect(active072).toMatch(/cross-org suggest does not supersede-then-rebuild/);
+  });
+});
+
+// ============================================================================
+// ROUND 6 — item 1: scoped recompute is ISOLATED (A cannot touch B). The
+// function is SECURITY DEFINER, so isolation is enforced in the query, not RLS.
+// ============================================================================
+describe('round 6 / scoped recompute isolation (A vs B)', () => {
+  const body = () => functionBody('phoenix_recompute_inventory_alerts');
+
+  it('_thr admits only org-wide defaults and the requested scope (defence 1)', () => {
+    // when p_scope_id is given, a threshold row survives only if scope_id IS
+    // NULL (inheritance) or scope_id = p_scope_id — never another scope B.
+    expect(body()).toMatch(/p_scope_id IS NULL OR t\.scope_id IS NULL OR t\.scope_id = p_scope_id/);
+  });
+  it('the scopes CTE cannot surface any other scope_id (defence 2)', () => {
+    const b = body();
+    expect(b).toMatch(/FROM _agg\s+WHERE \(p_scope_id IS NULL OR scope_id = p_scope_id\)/);
+    expect(b).toMatch(/FROM _thr\s+WHERE scope_id IS NOT NULL\s+AND \(p_scope_id IS NULL OR scope_id = p_scope_id\)/);
+  });
+  it('the alert upsert is fenced to the requested scope (defence 3): B is never inserted/updated', () => {
+    const b = body();
+    expect(b).toMatch(/FROM _now n\s+[\s\S]*?WHERE \(p_scope_kind IS NULL OR n\.scope_kind = p_scope_kind\)\s+AND \(p_scope_id IS NULL OR n\.scope_id = p_scope_id\)\s+ON CONFLICT/);
+  });
+  it('clear detection is also scoped (B alerts are never auto-resolved by recompute(A))', () => {
+    expect(body()).toMatch(/UPDATE public\.inventory_alerts a[\s\S]*?a\.organization_id = p_organization_id\s+AND \(p_scope_kind IS NULL OR a\.scope_kind = p_scope_kind\)\s+AND \(p_scope_id IS NULL OR a\.scope_id = p_scope_id\)/);
+  });
+  it('org-wide recompute (p_scope_id NULL) still covers everyone who holds the org grant', () => {
+    // every p_scope_id fence is guarded by "p_scope_id IS NULL OR ...", so the
+    // org-wide path is unrestricted; the org-level permission branch remains.
+    expect(body()).toMatch(/'inventory\.recompute', p_organization_id, NULL, NULL/);
+    expect(body()).toMatch(/p_scope_id IS NULL OR/); // fences are all opt-in on a concrete scope
+    expect(active072).toMatch(/scoped recompute does not fence _thr to the requested scope/);
+    expect(active072).toMatch(/scoped recompute does not fence the alert upsert to the requested scope/);
+  });
+});
+
+// ============================================================================
+// ROUND 6 — item 2: available=0 with on_hand>0 must still signal (low_stock),
+// and missing/low_stock stay mutually exclusive.
+// ============================================================================
+describe('round 6 / quantity-signal semantics (on_hand vs available)', () => {
+  const body = () => functionBody('phoenix_recompute_inventory_alerts');
+
+  it('low_stock fires on on_hand>0 AND available<=reorder — covers available=0 from reservation', () => {
+    // on_hand=10, reserved=10, available=0, reorder=5 => low_stock (not silence)
+    expect(body()).toMatch(/COALESCE\(tot\.on_hand, 0\) > 0\s+AND COALESCE\(tot\.available, 0\) <= cfg\.reorder_point THEN 'low_stock'/);
+    // the old available>0 gate that silenced available=0 is gone
+    expect(body()).not.toMatch(/COALESCE\(tot\.available, 0\) > 0\s+AND COALESCE\(tot\.available, 0\) <= cfg\.reorder_point THEN 'low_stock'/);
+  });
+  it('missing (on_hand=0) and low_stock (on_hand>0) are mutually exclusive — no double signal', () => {
+    const b = body();
+    expect(b).toMatch(/pos\.expected AND cfg\.reorder_point IS NOT NULL AND cfg\.reorder_point > 0\s+AND COALESCE\(tot\.on_hand, 0\) = 0 THEN 'missing'/);
+    expect(b).toMatch(/COALESCE\(tot\.on_hand, 0\) > 0\s+AND COALESCE\(tot\.available, 0\) <= cfg\.reorder_point THEN 'low_stock'/);
+  });
+  it('surplus stays keyed on available>target_max; no-threshold => no quantity signal', () => {
+    expect(body()).toMatch(/cfg\.target_max IS NOT NULL AND COALESCE\(tot\.available, 0\) > cfg\.target_max THEN 'surplus'/);
+    expect(body()).toMatch(/WHERE q\.signal_type IS NOT NULL/); // reorder/target_max NULL => NULL => filtered out
+  });
+  it('severity mirrors the semantics (low_stock => medium on the on_hand>0 branch)', () => {
+    expect(body()).toMatch(/COALESCE\(tot\.on_hand, 0\) > 0\s+AND COALESCE\(tot\.available, 0\) <= cfg\.reorder_point THEN 'medium'/);
+  });
+  it('§18 asserts the low_stock on_hand>0 semantics at apply time', () => {
+    expect(active072).toMatch(/low_stock does not use the on_hand>0 semantics/);
+  });
+});
+
+// ============================================================================
+// ROUND 6 — items 4/5: recommendation semantics, last_validated_at, and the
+// accepted-fields NULL guard.
+// ============================================================================
+describe('round 6 / recommendation semantics + validation stamp + accepted-fields guard', () => {
+  it('open suggestions are documented as recommendations, NOT permanent reservations', () => {
+    expect(m072).toMatch(/(NOT|never)[\s\S]{0,30}permanent reservation/i);
+    expect(m072).toMatch(/re-validate against live stock/i);
+    // the doc explicitly disclaims auto-execution (and nothing sets accepted)
+    expect(m072).toMatch(/NO auto-execution/i);
+  });
+  it('last_validated_at exists and is stamped on every build/rebuild in both suggest paths', () => {
+    expect(m072).toMatch(/last_validated_at\s+timestamptz NOT NULL DEFAULT now\(\)/);
+    for (const fn of ['phoenix_suggest_inventory_transfers', 'phoenix_suggest_cross_org_inventory_transfer']) {
+      const b = functionBody(fn);
+      // present in the INSERT column list and set to now() on ON CONFLICT rebuild
+      expect(b, fn).toMatch(/last_suggested_at, last_validated_at/);
+      expect(b, fn).toMatch(/last_validated_at\s*=\s*now\(\)/);
+    }
+    expect(active072).toMatch(/validation columns missing/);
+  });
+  it('accepted_at and accepted_by are pinned NULL by a CHECK, and no_accept_chk is kept', () => {
+    expect(norm072).toMatch(/inventory_suggestions_no_accept_fields_chk CHECK \(accepted_at IS NULL AND accepted_by IS NULL\)/);
+    expect(norm072).toMatch(/inventory_suggestions_no_accept_chk CHECK \(status <> 'accepted'\)/);
+    expect(active072).toMatch(/accepted_at\/accepted_by are not pinned NULL/);
+  });
+  it('no writer sets accepted_at/accepted_by (acceptance stays disabled)', () => {
+    for (const fn of ['phoenix_accept_inventory_transfer_suggestion',
+                      'phoenix_suggest_inventory_transfers',
+                      'phoenix_suggest_cross_org_inventory_transfer',
+                      'phoenix_reject_inventory_transfer_suggestion']) {
+      const b = functionBody(fn);
+      expect(b, fn).not.toMatch(/accepted_at\s*=/);
+      expect(b, fn).not.toMatch(/accepted_by\s*=/);
+    }
   });
 });
 
