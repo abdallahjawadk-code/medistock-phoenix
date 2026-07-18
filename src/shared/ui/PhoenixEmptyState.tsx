@@ -32,7 +32,7 @@ export function PhoenixEmptyState({ icon = '📭', title, description, action }:
 
   return (
     <div className="nexus-empty anim-fs">
-      <div className="nexus-empty__icon">
+      <div className="premium-empty-icon nexus-empty__icon">
         {iconName ? <PhoenixIcon name={iconName} size={28} /> : <span aria-hidden="true">{icon}</span>}
       </div>
       <div className="nexus-empty__title">{title}</div>
