@@ -109,6 +109,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
           {ALL_NAV
             .filter(item => !item.superAdminOnly || role === 'super_admin')
             .filter(item => !item.requiresUsersView || canSeeUsers)
+            .filter(item => !item.requiresNetwork || canSeeNetwork)
             .map(item => {
             const s = ns(item.screen);
             return (
