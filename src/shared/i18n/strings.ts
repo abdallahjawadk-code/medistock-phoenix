@@ -945,11 +945,17 @@ export const T: Dict = {
   /* Official role labels (the ONLY labels shown in the role dropdown) */
   orole_super_admin:            { ar: 'مدير المنصة',             en: 'Platform Administrator' },
   orole_institution_admin:      { ar: 'مسؤول المؤسسة',           en: 'Institution Administrator' },
+  orole_central_warehouse_manager: { ar: 'مسؤول مخازن قسم الصيدلة', en: 'Pharmacy Department Warehouse Manager' },
   orole_warehouse_officer:      { ar: 'مسؤول المذخر',           en: 'Store Officer' },
+  orole_outlet_officer:         { ar: 'مسؤول المنفذ',           en: 'Outlet Officer' },
   orole_port_officer:           { ar: 'مسؤول المنفذ',           en: 'Port Officer' },
   orole_monthly_status_officer: { ar: 'مسؤول المواقف الشهرية',  en: 'Monthly Status Officer' },
   orole_viewer:                 { ar: 'مشاهد',                   en: 'Viewer' },
   orole_legacy_admin:           { ar: 'مدير مؤسسة (إرث)',        en: 'Institution Admin (legacy)' },
+  orole_legacy_warehouse_manager: { ar: 'مدير مذخر (إرث)',       en: 'Warehouse Manager (legacy)' },
+  orole_legacy_port_officer:    { ar: 'مسؤول منفذ (إرث)',        en: 'Port Officer (legacy)' },
+  orole_legacy_point_operator:  { ar: 'مشغل نقطة (إرث)',         en: 'Point Operator (legacy)' },
+  orole_legacy_transfer_manager:{ ar: 'مسؤول ترحيل (إرث)',       en: 'Transfer Manager (legacy)' },
 
   /* Permission module headers */
   permmod_dashboard:                { ar: 'لوحة التحكم',          en: 'Dashboard' },
