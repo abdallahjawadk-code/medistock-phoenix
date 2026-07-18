@@ -378,6 +378,14 @@ describe('round 3: real threshold edit mode', () => {
   });
 });
 
+describe('final review: audit reason isolation', () => {
+  it('clears the previous reason whenever a new lifecycle action opens', () => {
+    expect(reasonDialog).toMatch(/useEffect\(\(\) => \{/);
+    expect(reasonDialog).toMatch(/if \(open\) setReason\(''\)/);
+    expect(reasonDialog).toMatch(/\[open, title\]/);
+  });
+});
+
 describe('round 2: threshold band rules + availability semantics', () => {
   it('enforces 0 <= reorder_point < target_max (blocks reorder >= target)', () => {
     expect(thresholdModal).toMatch(/reorderNum >= 0 && reorderNum < targetNum/);
