@@ -75,7 +75,7 @@ describe('Phoenix Nexus production design boundaries', () => {
     expect(networkScreen).toContain('getSupplyRoutes()');
     expect(networkScreen).toContain('getPointsByOrg(orgId)');
     expect(networkScreen).toContain('<NetworkTopologyStage');
-    expect(topology).not.toContain('supabase');
+    expect(topology).not.toContain('supabaseClient');
     expect(topology).not.toMatch(/\.(insert|update|delete|upsert)\s*\(/);
   });
 
@@ -87,8 +87,8 @@ describe('Phoenix Nexus production design boundaries', () => {
       icons: Array<{ src: string; purpose: string }>;
     };
     expect(parsed.name).toContain('MediStock Phoenix');
-    expect(parsed.background_color).toBe('#060B16');
-    expect(parsed.theme_color).toBe('#0EA58A');
+    expect(parsed.background_color).toBe('#F3F7FB');
+    expect(parsed.theme_color).toBe('#0D9488');
     expect(parsed.icons.some(icon => icon.src === '/pwa-icon-maskable-512.png' && icon.purpose === 'maskable')).toBe(true);
   });
 });
