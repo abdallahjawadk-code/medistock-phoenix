@@ -48,7 +48,11 @@ function toOutletOption(p: DistributionPoint): InventoryScopeOption {
   return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId };
 }
 
-export function useInventoryScopes(orgId: string | null): AsyncState<InventoryScopeCatalog> {
+export function useInventoryScopes(
+  orgId: string | null,
+  /** Exact organization-level inventory.manage_thresholds decision. */
+  canManageOrganization = false,
+): AsyncState<InventoryScopeCatalog> {
   const { authz, profile } = useApp();
   const assigned = useCurrentScopes(authz);
 
@@ -66,6 +70,11 @@ export function useInventoryScopes(orgId: string | null): AsyncState<InventorySc
     for (const o of [...warehouses, ...outlets]) readable.set(`${o.kind}:${o.id}`, o);
 
     const superAdmin = profile?.role === 'super_admin';
+    // An exact organization-level grant intentionally covers every scope in
+    // that organization even when the profile has no individual assignment
+    // rows (for example an institution administrator). The selected scope is
+    // still re-checked by migration 062 immediately before the write.
+    const managesWholeOrganization = superAdmin || canManageOrganization;
     const relevantAssignments = assigned.scopes.filter(a => a.organizationId === orgId);
     const assignedWarehouses = new Set(
       relevantAssignments.map(a => a.warehouseId).filter((id): id is string => Boolean(id)),
@@ -74,10 +83,10 @@ export function useInventoryScopes(orgId: string | null): AsyncState<InventorySc
       relevantAssignments.map(a => a.distributionPointId).filter((id): id is string => Boolean(id)),
     );
 
-    const manageableWarehouses = superAdmin
+    const manageableWarehouses = managesWholeOrganization
       ? warehouses
       : warehouses.filter(w => assignedWarehouses.has(w.id));
-    const manageableOutlets = superAdmin
+    const manageableOutlets = managesWholeOrganization
       ? outlets
       : outlets.filter(o => assignedPoints.has(o.id) || (o.warehouseId !== null && assignedWarehouses.has(o.warehouseId)));
 
@@ -92,14 +101,14 @@ export function useInventoryScopes(orgId: string | null): AsyncState<InventorySc
       resolve: (kind, id) => (id ? readable.get(`${kind}:${id}`) ?? null : null),
       canManage: (kind, id) => Boolean(id && manageable.has(`${kind}:${id}`)),
     };
-  }, [visible.data, assigned.scopes, orgId, profile?.role]);
+  }, [visible.data, assigned.scopes, orgId, profile?.role, canManageOrganization]);
 
   return {
     ...visible,
     data,
     // Fail closed while assignments are unresolved. super_admin needs no
     // assignment rows and may use the readable catalog immediately.
-    loading: visible.loading || (profile?.role !== 'super_admin' && assigned.pending),
+    loading: visible.loading || (!canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
   };
 }
 
