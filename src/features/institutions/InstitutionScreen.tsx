@@ -61,13 +61,21 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { AvailabilityItemDetailsModal } from './AvailabilityItemDetailsModal';
 
-// Display legacy DB roles with the official role labels (no old labels in UI).
+// Every role accepted by migration 066 must remain renderable. Official roles
+// use their approved labels; retained values are visibly marked as legacy.
 const ROLE_LABEL_KEY: Record<Role, string> = {
   super_admin: roleLabelKey('super_admin'),
+  institution_admin: roleLabelKey('institution_admin'),
+  central_warehouse_manager: roleLabelKey('central_warehouse_manager'),
+  warehouse_officer: roleLabelKey('warehouse_officer'),
+  outlet_officer: roleLabelKey('outlet_officer'),
+  monthly_status_officer: roleLabelKey('monthly_status_officer'),
+  viewer: roleLabelKey('viewer'),
   hospital_admin: roleLabelKey('hospital_admin'),
   warehouse_manager: roleLabelKey('warehouse_manager'),
+  port_officer: roleLabelKey('port_officer'),
   point_operator: roleLabelKey('point_operator'),
-  viewer: roleLabelKey('viewer'),
+  transfer_manager: roleLabelKey('transfer_manager'),
 };
 
 const STATUS_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
