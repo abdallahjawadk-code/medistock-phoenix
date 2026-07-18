@@ -226,13 +226,13 @@ export async function searchGlobalMaterialStock(
     stockPromises.push(searchStockTable('outlet_stock', 'distribution_point_id', organizationIds, term));
   }
 
-  const [organizationsResult, warehousesResult, outletsResult, alerts, ...stockSets] = await Promise.all([
+  const [organizationsResult, warehousesResult, outletsResult, alerts] = await Promise.all([
     supabase.from('organizations').select('id,name,name_ar').in('id', organizationIds),
     supabase.from('warehouses').select('id,name,name_ar').in('organization_id', organizationIds),
     supabase.from('distribution_points').select('id,name,name_ar').in('organization_id', organizationIds),
     searchAlertRows(organizationIds, term, input.scope),
-    ...stockPromises,
   ]);
+  const stockSets = await Promise.all(stockPromises);
 
   if (organizationsResult.error) throw organizationsResult.error;
   if (warehousesResult.error) throw warehousesResult.error;
