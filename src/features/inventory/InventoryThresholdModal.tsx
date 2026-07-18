@@ -1,7 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
-import { useAuthzDecision } from '@/shared/authz/useAuthorization';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
@@ -11,9 +10,9 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import {
   upsertInventoryThreshold,
   type InventoryScopeKind,
+  type InventoryThreshold,
 } from './inventory-intelligence.service';
-import { INVENTORY_PERMISSION_KEYS as PK } from './useInventoryIntelligence';
-import { useInventoryScopes } from './useInventoryScopes';
+import { useExactThresholdPermission, useInventoryScopes } from './useInventoryScopes';
 
 /**
  * Create/update an inventory threshold for a REAL scope the caller may manage.
@@ -33,6 +32,8 @@ interface Props {
   open: boolean;
   organizationId: string;
   organizationLabel?: string | null;
+  /** Existing row to edit. Its identity tuple remains immutable. */
+  editing?: InventoryThreshold | null;
   onCancel: () => void;
   onSaved: () => void;
 }
@@ -49,13 +50,8 @@ function numOrNull(v: string): number | null {
   return Number.isInteger(n) ? n : null;
 }
 
-export function InventoryThresholdModal({ open, organizationId, organizationLabel, onCancel, onSaved }: Props) {
-  const { lang, authz } = useApp();
-
-  // Org-wide default rows are a genuinely org-level setting: offer that choice
-  // ONLY to a caller with org-level manage_thresholds. The RPC re-checks it.
-  const orgLevel = useAuthzDecision(authz, PK.manageThresholds, { organizationId });
-  const canOrgDefault = orgLevel.allowed;
+export function InventoryThresholdModal({ open, organizationId, organizationLabel, editing = null, onCancel, onSaved }: Props) {
+  const { lang } = useApp();
 
   const scopes = useInventoryScopes(organizationId);
 
@@ -70,16 +66,61 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const options = scopeKind === 'warehouse' ? (scopes.data?.warehouses ?? []) : (scopes.data?.outlets ?? []);
+  const options = scopeKind === 'warehouse'
+    ? (scopes.data?.manageableWarehouses ?? [])
+    : (scopes.data?.manageableOutlets ?? []);
+  const selectedScope = options.find(o => o.id === scopeId) ?? null;
+  const identityLocked = editing !== null;
+  const orgPermission = useExactThresholdPermission(organizationId, null, null, open);
+  const selectedPermission = useExactThresholdPermission(
+    organizationId,
+    scopeKind,
+    selectedScope?.id ?? null,
+    open && selectedScope !== null,
+  );
+  const canOrgDefault = orgPermission.data === true;
 
   const reorderNum = numOrNull(reorderPoint);
   const targetNum = numOrNull(targetMax);
   const nameOk = scientificName.trim() !== '';
   const bothPresent = reorderNum !== null && targetNum !== null;
   const bandOk = bothPresent && reorderNum >= 0 && reorderNum < targetNum;
-  const effectiveApplyTo: ApplyTo = canOrgDefault ? applyTo : 'scope';
-  const scopeChosen = effectiveApplyTo === 'org_default' ? canOrgDefault : scopeId !== '';
-  const canSave = nameOk && bandOk && scopeChosen && !busy;
+  const effectiveApplyTo: ApplyTo = editing
+    ? (editing.scopeId === null ? 'org_default' : 'scope')
+    : canOrgDefault ? applyTo : 'scope';
+  const scopeChosen = effectiveApplyTo === 'org_default' ? canOrgDefault : selectedScope !== null;
+  const scopeAuthorized = effectiveApplyTo === 'org_default'
+    ? orgPermission.data === true
+    : selectedPermission.data === true;
+  const permissionPending = effectiveApplyTo === 'org_default' ? orgPermission.loading : selectedPermission.loading;
+  const canSave = nameOk && bandOk && scopeChosen && scopeAuthorized && !permissionPending && !scopes.loading && !scopes.error && !busy;
+
+  useEffect(() => {
+    if (!open) return;
+    if (editing && editing.organizationId === organizationId) {
+      setScopeKind(editing.scopeKind);
+      setApplyTo(editing.scopeId === null ? 'org_default' : 'scope');
+      setScopeId(editing.scopeId ?? '');
+      setScientificName(editing.scientificName);
+      setNationalCode(editing.nationalCode ?? '');
+      setReorderPoint(editing.reorderPoint?.toString() ?? '');
+      setTargetMax(editing.targetMax?.toString() ?? '');
+      setIsActive(editing.isActive);
+    } else {
+      // New organization/new row: never retain a scope id from the previous
+      // organization or a previously closed dialog.
+      setScopeKind('warehouse');
+      setApplyTo('scope');
+      setScopeId('');
+      setScientificName('');
+      setNationalCode('');
+      setReorderPoint('');
+      setTargetMax('');
+      setIsActive(true);
+    }
+    setBusy(false);
+    setError(null);
+  }, [open, organizationId, editing]);
 
   const bandError = useMemo(() => {
     if (reorderPoint === '' || targetMax === '') return bothPresent ? undefined : t('inv_th_both_required', lang);
@@ -94,10 +135,12 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
     setError(null);
     const res = await upsertInventoryThreshold({
       organizationId,
-      scopeKind,
-      scopeId: effectiveApplyTo === 'org_default' ? null : scopeId,
-      scientificName: scientificName.trim(),
-      nationalCode: nationalCode.trim() || null,
+      // In edit mode the identity tuple comes from the existing row rather
+      // than mutable form state. Changing identity means creating a new row.
+      scopeKind: editing?.scopeKind ?? scopeKind,
+      scopeId: editing ? editing.scopeId : effectiveApplyTo === 'org_default' ? null : selectedScope!.id,
+      scientificName: editing?.scientificName ?? scientificName.trim(),
+      nationalCode: editing ? editing.nationalCode : (nationalCode.trim() || null),
       reorderPoint: reorderNum,
       targetMax: targetNum,
       nearExpiryDays: FIXED_NEAR_EXPIRY_DAYS, // fixed policy — never user-supplied, never NULL
@@ -109,10 +152,10 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
   }
 
   return (
-    <PhoenixDialog open={open} onClose={onCancel} title={t('inv_threshold_add', lang)} maxWidth={520}>
+    <PhoenixDialog open={open} onClose={onCancel} title={t(editing ? 'inv_threshold_edit' : 'inv_threshold_add', lang)} maxWidth={520}>
       {/* Organization context (name first, per UX spec) */}
       <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '12px' }} dir="auto">
-        {t('inv_org_label', lang)}: <strong>{organizationLabel || organizationId}</strong>
+        {t('inv_org_label', lang)}: <strong>{organizationLabel || t('inv_org_loading', lang)}</strong>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -121,6 +164,7 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
           label={t('inv_th_scope', lang)}
           value={scopeKind}
           onChange={e => { setScopeKind(e.target.value as InventoryScopeKind); setScopeId(''); }}
+          disabled={identityLocked}
           options={[
             { value: 'warehouse', label: t('inv_scope_warehouse', lang) },
             { value: 'outlet', label: t('inv_scope_outlet', lang) },
@@ -132,7 +176,7 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
           label={t('inv_th_apply_to', lang)}
           value={effectiveApplyTo}
           onChange={e => setApplyTo(e.target.value as ApplyTo)}
-          disabled={!canOrgDefault}
+          disabled={identityLocked || !canOrgDefault}
           options={
             canOrgDefault
               ? [
@@ -156,16 +200,24 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
               </div>
             )}
             {!scopes.loading && !scopes.error && options.length > 0 && (
-              <PhoenixSelect
-                label={t('inv_th_select_scope', lang)}
-                value={scopeId}
-                onChange={e => setScopeId(e.target.value)}
-                error={scopeId === '' ? t('inv_th_scope_required', lang) : undefined}
-                options={[
-                  { value: '', label: t('inv_th_select_placeholder', lang) },
-                  ...options.map(o => ({ value: o.id, label: lang === 'ar' ? (o.nameAr || o.name) : (o.name || o.nameAr) })),
-                ]}
-              />
+              <>
+                <PhoenixSelect
+                  label={t('inv_th_select_scope', lang)}
+                  value={scopeId}
+                  onChange={e => setScopeId(e.target.value)}
+                  disabled={identityLocked}
+                  error={scopeId !== '' && selectedScope === null ? t('inv_th_scope_invalid', lang) : scopeId === '' ? t('inv_th_scope_required', lang) : undefined}
+                  options={[
+                    { value: '', label: t('inv_th_select_placeholder', lang) },
+                    ...options.map(o => ({ value: o.id, label: lang === 'ar' ? (o.nameAr || o.name) : (o.name || o.nameAr) })),
+                  ]}
+                />
+                {selectedScope && !selectedPermission.loading && selectedPermission.data !== true && (
+                  <div role="alert" style={{ fontSize: '11.5px', color: 'var(--err)', marginTop: '6px' }} dir="auto">
+                    {t('inv_th_denied', lang)}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -174,13 +226,21 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
           label={t('inv_th_scientific_name', lang)}
           value={scientificName}
           onChange={e => setScientificName(e.target.value)}
+          disabled={identityLocked}
           dir="auto"
         />
         <PhoenixInput
           label={t('inv_th_national_code', lang)}
           value={nationalCode}
           onChange={e => setNationalCode(e.target.value)}
+          disabled={identityLocked}
         />
+
+        {identityLocked && (
+          <div role="note" style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">
+            {t('inv_th_identity_locked', lang)}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
