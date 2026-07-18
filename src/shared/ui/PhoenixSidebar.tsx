@@ -6,6 +6,7 @@ interface NavItem {
   icon: string;
   labelKey: string;
   frozen?: boolean;
+  superAdminOnly?: boolean;
 }
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_status_editor, nav_reg, and nav_qr_audit are
@@ -21,15 +22,14 @@ interface NavItem {
 // PRODUCTION-READINESS-CLEANUP-A: nav_dash (screen 2, the central dashboard)
 // was removed here — App.tsx now redirects screen 2 to Status Center
 // (screen 12, nav_status_center below), the real-data landing screen.
-// PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports (screen 9,
-// ReportsScreen) is intentionally NOT listed here (hidden from navigation
-// only, same hide-only convention as the other legacy items above). Its
-// route (screen 9) remains fully wired in App.tsx and the page itself is
-// untouched — only the sidebar entry point was removed. Its most-used
-// content (Audit Log) is now also available as a tab inside Status Center.
+// SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A: ReportsScreen remains available
+// at screen 9, and its global material search is a super_admin-only feature.
+// Restore the sidebar entry for super_admin only; other roles retain the
+// Phase-2 navigation surface and Audit Log remains in Status Center.
 const NAV_ITEMS: NavItem[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
+  { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
@@ -94,7 +94,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Navigation">
-        {NAV_ITEMS.map(item => {
+        {NAV_ITEMS
+          .filter(item => !item.superAdminOnly || role === 'super_admin')
+          .map(item => {
           const s = ns(item.screen);
           return (
             <button
