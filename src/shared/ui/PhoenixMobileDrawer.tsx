@@ -10,13 +10,19 @@ import { t } from '@/shared/i18n/strings';
 // page (nav_intake, screen 8) hidden, which is why it no longer appears
 // below. Its route (screen 8 — IntakeFrozenScreen) remains fully wired in
 // App.tsx; only the drawer entry point was removed.
-// PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports (screen 9,
-// ReportsScreen) is intentionally NOT listed here (hidden from navigation
-// only). Its route remains fully wired in App.tsx; only the drawer entry
-// point was removed — mirrors the same change in PhoenixSidebar.tsx.
-const ALL_NAV: { screen: number; icon: string; labelKey: string; frozen?: boolean }[] = [
+// SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A: ReportsScreen is restored here
+// for super_admin only so its responsive global material search is reachable
+// on phones as well as desktop. Other roles retain the Phase-2 nav surface.
+const ALL_NAV: {
+  screen: number;
+  icon: string;
+  labelKey: string;
+  frozen?: boolean;
+  superAdminOnly?: boolean;
+}[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
+  { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
@@ -38,7 +44,7 @@ interface Props {
 }
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
-  const { lang, dir } = useApp();
+  const { lang, dir, role } = useApp();
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',
@@ -91,7 +97,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         </div>
 
         <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
-          {ALL_NAV.map(item => {
+          {ALL_NAV
+            .filter(item => !item.superAdminOnly || role === 'super_admin')
+            .map(item => {
             const s = ns(item.screen);
             return (
               <button
