@@ -25,7 +25,7 @@ describe('super-admin global material search boundary', () => {
     expect(panel).toContain("if (role !== 'super_admin') return null");
   });
 
-  it('never embeds elevated credentials or performs direct writes', () => {
+  it('never embeds elevated credentials or performs direct database writes', () => {
     const source = [service, panel, exporter].join('\n');
     expect(source).not.toContain('service_role');
     expect(source).not.toMatch(/\.insert\s*\(/);
