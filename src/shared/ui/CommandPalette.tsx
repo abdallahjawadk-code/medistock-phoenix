@@ -16,6 +16,7 @@ interface PaletteItem {
   screen: number;
   icon: string;
   labelKey: string;
+  superAdminOnly?: boolean;
 }
 
 // Mirrors the routes already reachable via the sidebar / mobile drawer
@@ -28,7 +29,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 9,  icon: '📈', labelKey: 'nav_reports' },
+  { screen: 9,  icon: '📈', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
   { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
 ];
@@ -42,16 +43,18 @@ export function CommandPalette({ onNavigate }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  // Respects existing permission visibility: UserManagementScreen itself only
-  // renders its content for users.view holders (or super_admin) — mirror that
-  // exact check here so the palette never offers an entry point the screen
-  // would otherwise gate. Every other item here has no view-level permission
-  // gate anywhere else in the app (sidebar/drawer show them unconditionally).
+  // Keep the command palette consistent with every visible navigation surface:
+  // User Management follows users.view, while Reports is deliberately exposed
+  // only to super_admin because it contains the cross-organization global stock
+  // search. Hidden legacy QR remains an intentional quick jump.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
 
   const items = useMemo(
-    () => PALETTE_ITEMS.filter(i => i.screen !== 14 || canSeeUsers),
-    [canSeeUsers],
+    () => PALETTE_ITEMS.filter(i =>
+      (!i.superAdminOnly || role === 'super_admin') &&
+      (i.screen !== 14 || canSeeUsers),
+    ),
+    [canSeeUsers, role],
   );
 
   const filtered = useMemo(() => {
