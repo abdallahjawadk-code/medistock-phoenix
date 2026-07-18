@@ -30,6 +30,8 @@ export interface InventoryScopeOption {
 }
 
 export interface InventoryScopeCatalog {
+  /** Organization for which this exact catalog was fetched. */
+  organizationId: string | null;
   warehouses: InventoryScopeOption[];
   outlets: InventoryScopeOption[];
   manageableWarehouses: InventoryScopeOption[];
@@ -57,13 +59,16 @@ export function useInventoryScopes(
   const assigned = useCurrentScopes(authz);
 
   const visible = useAsync(async () => {
-    if (!orgId) return { warehouses: [], outlets: [] };
+    if (!orgId) return { organizationId: null, warehouses: [], outlets: [] };
     const [whs, pts] = await Promise.all([getWarehouses(orgId), getPointsByOrg(orgId)]);
-    return { warehouses: whs.map(toWhOption), outlets: pts.map(toOutletOption) };
+    return { organizationId: orgId, warehouses: whs.map(toWhOption), outlets: pts.map(toOutletOption) };
   }, [orgId]);
 
   const data = useMemo<InventoryScopeCatalog | null>(() => {
-    if (!visible.data) return null;
+    // useAsync may retain the previous result for one render while a new
+    // organization loads. Reject that result before deriving any option so a
+    // fast organization switch can never reuse the former org's scope UUID.
+    if (!visible.data || visible.data.organizationId !== orgId) return null;
 
     const { warehouses, outlets } = visible.data;
     const readable = new Map<string, InventoryScopeOption>();
@@ -94,6 +99,7 @@ export function useInventoryScopes(
     for (const o of [...manageableWarehouses, ...manageableOutlets]) manageable.add(`${o.kind}:${o.id}`);
 
     return {
+      organizationId: orgId,
       warehouses,
       outlets,
       manageableWarehouses,
@@ -108,7 +114,9 @@ export function useInventoryScopes(
     data,
     // Fail closed while assignments are unresolved. super_admin needs no
     // assignment rows and may use the readable catalog immediately.
-    loading: visible.loading || (!canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
+    loading: visible.loading
+      || (Boolean(orgId) && data === null)
+      || (!canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
   };
 }
 
