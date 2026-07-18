@@ -17,12 +17,23 @@ const reports = readFileSync(
   new URL('../ReportsScreen.tsx', import.meta.url),
   'utf8',
 );
+const sidebar = readFileSync(
+  new URL('../../../shared/ui/PhoenixSidebar.tsx', import.meta.url),
+  'utf8',
+);
 
 describe('super-admin global material search boundary', () => {
   it('renders the tab and panel only for super_admin', () => {
     expect(reports).toContain("role === 'super_admin'");
     expect(reports).toContain("tab === 'global' && role === 'super_admin'");
     expect(panel).toContain("if (role !== 'super_admin') return null");
+  });
+
+  it('keeps Reports reachable from navigation for super_admin only', () => {
+    expect(sidebar).toContain("screen: 9");
+    expect(sidebar).toContain("labelKey: 'nav_reports'");
+    expect(sidebar).toContain('superAdminOnly: true');
+    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
   it('never embeds elevated credentials or performs direct database writes', () => {
