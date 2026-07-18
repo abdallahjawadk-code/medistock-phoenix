@@ -680,6 +680,14 @@ describe('Types include new material fields', () => {
   it('supply_type still exists', () => {
     expect(types).toContain('supply_type');
   });
+
+  it('availability conditions include the onboarding-safe unknown state', () => {
+    expect(types).toContain("| 'unknown'");
+  });
+
+  it('availability conditions include not_stocked without misreporting it as missing', () => {
+    expect(types).toContain("| 'not_stocked'");
+  });
 });
 
 // ============================================================================
