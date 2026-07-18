@@ -6,8 +6,8 @@
  * its route and Command Palette entry. After the authenticated smoke test
  * proved the new global material search unreachable, desktop navigation now
  * restores Reports for super_admin only in desktop and mobile drawer
- * navigation. Mobile bottom navigation and Status Center Quick Actions remain
- * unchanged.
+ * navigation. The Command Palette now mirrors the same super-admin boundary;
+ * Mobile bottom navigation and Status Center Quick Actions remain unchanged.
  *
  * Also extracts ReportsScreen.tsx's existing Audit tab into a reusable,
  * read-only AuditLogSection component (same getAuditLog data source, same
@@ -104,10 +104,17 @@ describe('D) Status Center still shows its full nav item; Quick Actions no longe
   });
 });
 
-describe('E) CommandPalette keeps its Reports quick-jump entry (established precedent: hidden-from-primary-nav items stay reachable via Ctrl+K, e.g. nav_qr already does this)', () => {
-  it('CommandPalette PALETTE_ITEMS still contains nav_reports', () => {
+describe('E) CommandPalette mirrors the super-admin Reports boundary', () => {
+  it('keeps nav_reports but marks it superAdminOnly', () => {
     const block = commandPalette.slice(commandPalette.indexOf('const PALETTE_ITEMS'), commandPalette.indexOf('interface Props'));
     expect(block).toContain("'nav_reports'");
+    expect(block).toContain('superAdminOnly: true');
+  });
+
+  it('filters the item by the authenticated role while preserving the intentional QR quick jump', () => {
+    expect(commandPalette).toContain("!i.superAdminOnly || role === 'super_admin'");
+    const block = commandPalette.slice(commandPalette.indexOf('const PALETTE_ITEMS'), commandPalette.indexOf('interface Props'));
+    expect(block).toContain("'nav_qr'");
   });
 });
 
