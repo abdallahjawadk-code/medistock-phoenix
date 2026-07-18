@@ -65,19 +65,29 @@
 --   recommendation-only. route_kind stays as a movement-type label (it was
 --   never a FK to a route) so the table and the frontend are unchanged.
 --
--- OUT OF SCOPE (tracked follow-up on this same branch, additive-only):
---   * The DIRECT RETURN path (069): this migration makes the two return tables'
---     route_id NULLable as forward-prep, but adds NO direct-return RPCs yet.
---     Legacy routed returns are unaffected. Direct returns land next, deriving
---     both endpoints from the pinned original transfer (no route), before the
---     later CONTRACT that retires warehouse_supply_routes.
---   * phoenix_suggest_cross_org_inventory_transfer (072 §11): the privileged
---     super_admin cross-ORG minting path still consults an active supply route,
---     intentionally left as-is — it belongs to the 041 inter-org exchange
---     feature, not the intra-network direct supply this PR builds, and routes
---     remain as legacy compatibility. The route-free post-conditions below are
---     therefore scoped to the three functions this migration actually replaces
---     (direct SEND, the intra-org suggest engine, the suggestion guard).
+-- DIRECT RETURN (069) — institution -> central, route-free (section 7)
+--   The reverse corridor is derived from PROVENANCE, never a route: a direct
+--   return may only be opened between an active institution warehouse and an
+--   active central warehouse that a real direct (route_id NULL) forward transfer
+--   already connected, and every returned line must name an original transfer
+--   line of THAT direct forward delivery. Endpoints are pinned on the return row
+--   and never mutated. Caps (per-line approved / per-original returned), ledger
+--   conservation, the fail-closed quarantine classification at receive,
+--   idempotency by (reference_type, reference_id) + fingerprint, advisory-lock-
+--   first / row-lock-second ordering, audit, and RLS/ACL are all reproduced from
+--   069 unchanged. RECEIVE (069 §11) is already route-free and is reused as-is.
+--
+-- CROSS-ORG SUGGESTION (072 §11) — route-free (section 6c)
+--   phoenix_suggest_cross_org_inventory_transfer is CREATE OR REPLACE'd so the
+--   super_admin cross-ORG corridor is judged feasible by an active central
+--   source + active institution target, each owned by its claimed organization,
+--   NOT by a supply route. It remains recommendation-only (acceptance disabled;
+--   operators act through the 041 exchange RPC path) and mints NO stock movement.
+--
+-- OUT OF SCOPE (later CONTRACT migration, not this PR):
+--   * Physically RETIRING warehouse_supply_routes and its 066/075 RPCs. They are
+--     LEFT INTACT here as legacy compatibility (historical routed rows stay
+--     valid and fully FK-enforced); nothing new depends on them.
 -- ============================================================================
 
 begin;
@@ -121,10 +131,9 @@ $guard$;
 ALTER TABLE public.warehouse_transfer_requests ALTER COLUMN route_id DROP NOT NULL;
 ALTER TABLE public.warehouse_transfers         ALTER COLUMN route_id DROP NOT NULL;
 
--- Forward-prep for the direct RETURN path (RPCs land in the follow-up). Legacy
--- routed returns keep route_id populated and fully FK-enforced.
-ALTER TABLE public.warehouse_return_requests   ALTER COLUMN route_id DROP NOT NULL;
-ALTER TABLE public.warehouse_return_shipments  ALTER COLUMN route_id DROP NOT NULL;
+-- NOTE: the two 069 RETURN tables' route_id is made NULLable in section 7 below,
+-- immediately ABOVE the direct-return RPCs that are the ONLY writers of a
+-- NULL-route return row. Nullability is never introduced ahead of a safe writer.
 
 COMMENT ON COLUMN public.warehouse_transfer_requests.route_id IS
   'NULL for a 077 DIRECT central->institution request (endpoints pinned on the '
@@ -1610,6 +1619,1098 @@ $$;
 REVOKE ALL ON FUNCTION public.phoenix_suggest_inventory_transfers(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.phoenix_suggest_inventory_transfers(uuid) TO authenticated;
 
+-- 6c. CROSS-ORG SUGGESTION (072 §11) — route-free feasibility.
+-- The privileged super_admin cross-ORG minting path no longer consults a supply
+-- route. Feasibility is now "an active central source + an active institution
+-- target, each owned by its claimed organization" (warehouse_kind + status),
+-- the same corridor test the intra-org engine uses. EVERYTHING else — the
+-- data-derived quantities (no quantity parameter), the dual-org deterministic
+-- lock order, the real surplus/shortfall alert requirement, the FEFO batch loop
+-- with per-batch remaining caps, and recommendation-only (acceptance disabled,
+-- §12) — is 072 §11 unchanged. Mints NO stock movement.
+CREATE OR REPLACE FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(
+  p_source_organization_id uuid,
+  p_source_warehouse_id    uuid,
+  p_target_organization_id uuid,
+  p_target_warehouse_id    uuid,
+  p_scientific_name        text,
+  p_national_code          text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_name  text := NULLIF(btrim(p_scientific_name), '');
+  v_code  text := NULLIF(btrim(p_national_code), '');
+  v_lock_a text;
+  v_lock_b text;
+  v_surplus integer;
+  v_shortfall integer;
+  v_deficit_snapshot integer;
+  v_headroom_snapshot integer;
+  v_batch record;
+  v_take integer;
+  v_batch_remaining integer;
+  v_minted integer := 0;
+  v_rows integer;
+  v_key text;
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+  IF public.phoenix_my_role() <> 'super_admin' THEN
+    RAISE EXCEPTION 'cross_org_suggestion_requires_super_admin';
+  END IF;
+  IF v_name IS NULL THEN RAISE EXCEPTION 'scientific_name_required'; END IF;
+  IF p_source_organization_id = p_target_organization_id THEN
+    RAISE EXCEPTION 'use_intra_org_suggest_for_same_org';
+  END IF;
+
+  -- Deterministic dual-org lock order (sorted): concurrent suggest runs in
+  -- either organization serialize against this computation.
+  v_lock_a := LEAST(p_source_organization_id::text, p_target_organization_id::text);
+  v_lock_b := GREATEST(p_source_organization_id::text, p_target_organization_id::text);
+  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggest:' || v_lock_a, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggest:' || v_lock_b, 0));
+
+  -- 077: route-free feasibility — an active central source + active institution
+  -- target, each owned by its claimed organization (no supply-route lookup).
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.warehouses sw
+    JOIN public.warehouses tw ON tw.id = p_target_warehouse_id
+    WHERE sw.id = p_source_warehouse_id
+      AND sw.warehouse_kind = 'central'     AND sw.status = 'active'
+      AND sw.organization_id = p_source_organization_id
+      AND tw.warehouse_kind = 'institution' AND tw.status = 'active'
+      AND tw.organization_id = p_target_organization_id
+  ) THEN
+    RAISE EXCEPTION 'no_active_central_institution_pairing';
+  END IF;
+
+  -- STABLE RERUN (Round 4): supersede THIS run's own prior open rows for this
+  -- exact corridor tuple FIRST, so the "remaining" computations below do not
+  -- subtract the very suggestions this run is about to rebuild. Superseded rows
+  -- are excluded from the open+accepted SUMs and reopened by ON CONFLICT if
+  -- still valid. Both org locks are already held, so this is atomic.
+  UPDATE public.inventory_transfer_suggestions s
+  SET status = 'superseded', updated_at = now()
+  WHERE s.route_kind = 'central_to_institution'
+    AND s.source_organization_id = p_source_organization_id
+    AND s.target_organization_id = p_target_organization_id
+    AND s.source_scope_kind = 'warehouse' AND s.source_scope_id = p_source_warehouse_id
+    AND s.target_scope_kind = 'warehouse' AND s.target_scope_id = p_target_warehouse_id
+    AND lower(s.scientific_name) = lower(v_name)
+    AND s.national_code IS NOT DISTINCT FROM v_code
+    AND s.status = 'open';
+
+  -- REAL surplus at the source (an active surplus alert for this material).
+  SELECT GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0)
+    INTO v_surplus
+  FROM public.inventory_alerts a
+  WHERE a.organization_id = p_source_organization_id
+    AND a.scope_kind = 'warehouse' AND a.scope_id = p_source_warehouse_id
+    AND a.signal_type = 'surplus'
+    AND a.status IN ('open', 'acknowledged', 'in_progress')
+    AND lower(a.scientific_name) = lower(v_name)
+    AND a.national_code IS NOT DISTINCT FROM v_code
+  ORDER BY a.last_observed_at DESC
+  LIMIT 1;
+  IF v_surplus IS NULL OR v_surplus <= 0 THEN
+    RAISE EXCEPTION 'no_source_surplus';
+  END IF;
+  v_headroom_snapshot := v_surplus;
+
+  -- REAL shortfall at the target (an active missing/low_stock alert).
+  SELECT GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1)
+    INTO v_shortfall
+  FROM public.inventory_alerts a
+  WHERE a.organization_id = p_target_organization_id
+    AND a.scope_kind = 'warehouse' AND a.scope_id = p_target_warehouse_id
+    AND a.signal_type IN ('missing', 'low_stock')
+    AND a.status IN ('open', 'acknowledged', 'in_progress')
+    AND lower(a.scientific_name) = lower(v_name)
+    AND a.national_code IS NOT DISTINCT FROM v_code
+  ORDER BY a.last_observed_at DESC
+  LIMIT 1;
+  IF v_shortfall IS NULL OR v_shortfall <= 0 THEN
+    RAISE EXCEPTION 'no_target_shortfall';
+  END IF;
+  v_deficit_snapshot := v_shortfall;
+
+  -- Remaining = data minus every other still-consuming suggestion.
+  v_surplus := v_surplus - COALESCE((
+    SELECT SUM(s.suggested_quantity)
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.source_scope_kind = 'warehouse'
+      AND s.source_scope_id = p_source_warehouse_id
+      AND s.source_organization_id = p_source_organization_id
+      AND lower(s.scientific_name) = lower(v_name)
+      AND s.national_code IS NOT DISTINCT FROM v_code
+      AND s.status IN ('open', 'accepted')
+  ), 0);
+  IF v_surplus <= 0 THEN
+    RAISE EXCEPTION 'source_surplus_already_committed';
+  END IF;
+
+  v_shortfall := v_shortfall - COALESCE((
+    SELECT SUM(s.suggested_quantity)
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.target_scope_kind = 'warehouse'
+      AND s.target_scope_id = p_target_warehouse_id
+      AND s.target_organization_id = p_target_organization_id
+      AND lower(s.scientific_name) = lower(v_name)
+      AND s.national_code IS NOT DISTINCT FROM v_code
+      AND s.status IN ('open', 'accepted')
+  ), 0);
+  IF v_shortfall <= 0 THEN
+    RAISE EXCEPTION 'target_shortfall_already_covered';
+  END IF;
+
+  -- One suggestion per eligible FEFO batch until surplus or shortfall runs
+  -- out. No eligible batch at all => no suggestion, by exception.
+  FOR v_batch IN
+    SELECT ws.id AS stock_id, ws.batch_number, ws.expiry_date, ws.available_quantity
+    FROM public.warehouse_stock ws
+    WHERE ws.organization_id = p_source_organization_id
+      AND ws.warehouse_id = p_source_warehouse_id
+      AND lower(ws.scientific_name) = lower(v_name)
+      AND (v_code IS NULL OR ws.national_code IS NOT DISTINCT FROM v_code)
+      -- WILDCARD request (§6): exclude codes that have their own active coded
+      -- threshold at the source warehouse — those are governed by their coded
+      -- position and must not be drawn by a wildcard cross-org suggestion.
+      AND (v_code IS NOT NULL OR NOT EXISTS (
+             SELECT 1 FROM public.inventory_signal_thresholds tc
+             WHERE tc.organization_id = p_source_organization_id
+               AND tc.scope_kind = 'warehouse'
+               AND (tc.scope_id = p_source_warehouse_id OR tc.scope_id IS NULL)
+               AND tc.is_active
+               AND lower(tc.scientific_name) = lower(v_name)
+               AND tc.national_code IS NOT NULL
+               AND tc.national_code = ws.national_code))
+      AND ws.available_quantity > 0
+      AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+    ORDER BY ws.expiry_date ASC NULLS LAST, ws.id ASC
+  LOOP
+    EXIT WHEN v_surplus <= 0 OR v_shortfall <= 0;
+
+    v_batch_remaining := v_batch.available_quantity - COALESCE((
+      SELECT SUM(s.suggested_quantity)
+      FROM public.inventory_transfer_suggestions s
+      WHERE s.source_stock_id = v_batch.stock_id
+        AND s.status IN ('open', 'accepted')
+    ), 0);
+    CONTINUE WHEN v_batch_remaining <= 0;
+
+    v_take := LEAST(v_surplus, v_shortfall, v_batch_remaining);
+    CONTINUE WHEN v_take <= 0;
+
+    v_key := 'xorg|' || p_source_warehouse_id::text || '|' || p_target_warehouse_id::text
+      || '|' || lower(v_name) || '|' || COALESCE(v_code, '')
+      || '|' || v_batch.stock_id::text;
+
+    INSERT INTO public.inventory_transfer_suggestions AS su (
+      source_organization_id, target_organization_id, scientific_name, national_code,
+      source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
+      source_stock_id, suggested_quantity, fefo_batch_number, fefo_expiry_date,
+      source_batch_available_snapshot, source_surplus_snapshot, target_shortfall_snapshot,
+      rationale, suggestion_key, status, first_suggested_at, last_suggested_at, last_validated_at
+    )
+    VALUES (
+      p_source_organization_id, p_target_organization_id, v_name, v_code,
+      'warehouse', p_source_warehouse_id, 'warehouse', p_target_warehouse_id, 'central_to_institution',
+      v_batch.stock_id, v_take, v_batch.batch_number, v_batch.expiry_date,
+      v_batch.available_quantity, v_headroom_snapshot, v_deficit_snapshot,
+      'cross-org recommendation: derived from a real surplus alert, a real shortfall alert, an active central->institution pairing and one FEFO batch; recommendation only — acceptance is disabled (act through the 041 exchange RPC path)',
+      v_key, 'open', now(), now(), now()
+    )
+    ON CONFLICT (suggestion_key) DO UPDATE SET
+      suggested_quantity              = EXCLUDED.suggested_quantity,
+      fefo_batch_number               = EXCLUDED.fefo_batch_number,
+      fefo_expiry_date                = EXCLUDED.fefo_expiry_date,
+      source_batch_available_snapshot = EXCLUDED.source_batch_available_snapshot,
+      source_surplus_snapshot         = EXCLUDED.source_surplus_snapshot,
+      target_shortfall_snapshot       = EXCLUDED.target_shortfall_snapshot,
+      last_suggested_at               = now(),
+      last_validated_at               = now(),
+      updated_at                      = now(),
+      status                          = 'open'
+    WHERE su.status IN ('open', 'superseded', 'expired');
+
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    CONTINUE WHEN v_rows = 0;
+
+    v_minted := v_minted + 1;
+    v_surplus := v_surplus - v_take;
+    v_shortfall := v_shortfall - v_take;
+  END LOOP;
+
+  IF v_minted = 0 THEN
+    RAISE EXCEPTION 'no_eligible_fefo_batch';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'route_kind', 'central_to_institution',
+    'suggestions', v_minted
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text) TO authenticated;
+
+-- ============================================================================
+-- 7. DIRECT RETURN — institution -> central, route-free, provenance-derived
+-- ============================================================================
+-- The mirror image of the direct forward path. 069 modelled every return as
+-- travelling a warehouse_supply_route (route_id NOT NULL + composite FK). 077
+-- adds a DIRECT return: the reverse corridor is derived from the ORIGINAL DIRECT
+-- FORWARD TRANSFER (provenance), never from a route. A direct return may only be
+-- opened between an active institution warehouse and an active central warehouse
+-- that a real direct (route_id NULL) forward transfer already connected, and
+-- every returned line must name an original transfer line of THAT direct
+-- delivery. Everything else — per-line and per-original caps, ledger
+-- conservation, idempotency, advisory-lock-first ordering, audit — is 069's
+-- contract unchanged. The receive (069 §11, with its fail-closed quarantine
+-- classification) is ALREADY route-free and is reused verbatim for direct
+-- shipments; no new receive function is defined.
+--
+-- route_id becomes NULLable on the two 069 return tables HERE — deliberately
+-- adjacent to (and never ahead of) the RPCs below that are the only writers of a
+-- NULL-route return row. Legacy routed returns keep route_id populated and fully
+-- FK-enforced; MATCH SIMPLE exempts only the NULL-route direct rows.
+ALTER TABLE public.warehouse_return_requests   ALTER COLUMN route_id DROP NOT NULL;
+ALTER TABLE public.warehouse_return_shipments  ALTER COLUMN route_id DROP NOT NULL;
+
+COMMENT ON COLUMN public.warehouse_return_requests.route_id IS
+  'NULL for a 077 DIRECT return (endpoints pinned on the row, corridor derived '
+  'from the original direct forward transfer). Non-NULL for a legacy 069 routed '
+  'return (composite FK to warehouse_supply_routes enforced).';
+COMMENT ON COLUMN public.warehouse_return_shipments.route_id IS
+  'NULL for a 077 DIRECT return shipment; non-NULL for a legacy 069 routed one.';
+
+CREATE INDEX IF NOT EXISTS wrr_direct_idx
+  ON public.warehouse_return_requests (source_warehouse_id, status)
+  WHERE route_id IS NULL;
+CREATE INDEX IF NOT EXISTS wrs_direct_idx
+  ON public.warehouse_return_shipments (destination_warehouse_id, status)
+  WHERE route_id IS NULL;
+
+-- 7a. REVERSE-CORRIDOR VALIDATOR — the direct return's replacement for the route
+-- FK. Asserts (institution source -> central destination) is a legitimate
+-- reverse corridor: source is an ACTIVE institution warehouse, destination is an
+-- ACTIVE central warehouse, and a real DIRECT (route_id NULL) forward transfer
+-- actually connected central -> institution (the provenance the route used to
+-- stand in for). Both warehouse rows are locked FOR SHARE so a concurrent
+-- deactivation cannot slip past. Returns the resolved organization ids.
+-- Deliberately NOT gated on the ORIGINAL transfer's current state — returning
+-- material that already moved must not depend on anything but the endpoints
+-- still being an active institution/central pair with real provenance.
+CREATE OR REPLACE FUNCTION public.phoenix_assert_direct_return_endpoints(
+  p_institution_warehouse_id uuid,   -- return SOURCE
+  p_central_warehouse_id     uuid,   -- return DESTINATION
+  OUT o_institution_organization_id uuid,
+  OUT o_central_organization_id     uuid
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_inst public.warehouses%ROWTYPE;
+  v_cent public.warehouses%ROWTYPE;
+BEGIN
+  IF p_institution_warehouse_id IS NULL OR p_central_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'source_and_destination_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_institution_warehouse_id = p_central_warehouse_id THEN
+    RAISE EXCEPTION 'source_and_destination_must_differ' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_inst FROM public.warehouses WHERE id = p_institution_warehouse_id FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'source_warehouse_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_inst.warehouse_kind <> 'institution' OR v_inst.status <> 'active' THEN
+    RAISE EXCEPTION 'source_must_be_active_institution_warehouse' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_cent FROM public.warehouses WHERE id = p_central_warehouse_id FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'destination_warehouse_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_cent.warehouse_kind <> 'central' OR v_cent.status <> 'active' THEN
+    RAISE EXCEPTION 'destination_must_be_active_central_warehouse' USING ERRCODE = '23514';
+  END IF;
+
+  -- PROVENANCE: a real direct forward transfer must have connected these two
+  -- warehouses. This is what the composite route FK gave the routed path, here
+  -- derived from the movement history instead of a pre-approved route.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.warehouse_transfers tr
+    WHERE tr.route_id IS NULL
+      AND tr.source_warehouse_id = p_central_warehouse_id
+      AND tr.destination_warehouse_id = p_institution_warehouse_id
+  ) THEN
+    RAISE EXCEPTION 'no_direct_forward_provenance_between_warehouses' USING ERRCODE = '42501';
+  END IF;
+
+  o_institution_organization_id := v_inst.organization_id;
+  o_central_organization_id     := v_cent.organization_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_assert_direct_return_endpoints(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_assert_direct_return_endpoints(uuid, uuid) TO authenticated;
+
+-- 7b. REQUEST (institution-initiated) — the institution asks to send stock back
+-- to a central warehouse it was directly supplied from. route_id NULL.
+CREATE OR REPLACE FUNCTION public.phoenix_request_direct_warehouse_return(
+  p_source_warehouse_id      uuid,   -- the institution (return source)
+  p_destination_warehouse_id uuid,   -- the central (return destination)
+  p_return_number            text,
+  p_notes                    text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor       uuid := auth.uid();
+  v_actor_role  text;
+  v_src_org     uuid;
+  v_dest_org    uuid;
+  v_number      text := NULLIF(btrim(p_return_number), '');
+  v_notes       text := NULLIF(btrim(p_notes), '');
+  v_request     public.warehouse_return_requests%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_source_warehouse_id IS NULL OR p_destination_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'source_and_destination_required' USING ERRCODE = '23514';
+  END IF;
+  IF v_number IS NULL THEN
+    RAISE EXCEPTION 'return_number_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_source_warehouse_id::text, 69069));
+
+  SELECT o_institution_organization_id, o_central_organization_id
+    INTO v_src_org, v_dest_org
+  FROM public.phoenix_assert_direct_return_endpoints(
+         p_source_warehouse_id, p_destination_warehouse_id);
+
+  -- THE IDOR GATE. The institution side owns the request: authority is the
+  -- actor's scoped assignment to the SOURCE (institution) warehouse.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.return_request', v_src_org, p_source_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_return_request' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.warehouse_return_requests (
+    route_id, source_warehouse_id, source_organization_id,
+    destination_warehouse_id, destination_organization_id,
+    return_number, status, requested_by_side, notes, created_by
+  ) VALUES (
+    NULL, p_source_warehouse_id, v_src_org,
+    p_destination_warehouse_id, v_dest_org,
+    v_number, 'draft', 'receiver', v_notes, v_actor
+  )
+  RETURNING * INTO v_request;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_src_org, v_actor, v_actor_role,
+    'warehouse_transfer.return_requested', 'warehouse_return_requests', v_request.id, v_number,
+    jsonb_build_object('direct', true, 'source_warehouse_id', p_source_warehouse_id,
+                       'destination_warehouse_id', p_destination_warehouse_id)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'return_request_id', v_request.id,
+                            'status', v_request.status, 'direct', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_request_direct_warehouse_return(uuid, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_request_direct_warehouse_return(uuid, uuid, text, text) TO authenticated;
+
+-- 7c. RECALL (central-initiated) — central asks the institution to send stock
+-- back. Same row/lifecycle; only requested_by_side and the permission gate
+-- differ (scoped to central's own DESTINATION warehouse).
+CREATE OR REPLACE FUNCTION public.phoenix_recall_direct_warehouse_transfer(
+  p_source_warehouse_id      uuid,   -- the institution (return source)
+  p_destination_warehouse_id uuid,   -- the central (return destination)
+  p_return_number            text,
+  p_notes                    text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor       uuid := auth.uid();
+  v_actor_role  text;
+  v_src_org     uuid;
+  v_dest_org    uuid;
+  v_number      text := NULLIF(btrim(p_return_number), '');
+  v_notes       text := NULLIF(btrim(p_notes), '');
+  v_request     public.warehouse_return_requests%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_source_warehouse_id IS NULL OR p_destination_warehouse_id IS NULL THEN
+    RAISE EXCEPTION 'source_and_destination_required' USING ERRCODE = '23514';
+  END IF;
+  IF v_number IS NULL THEN
+    RAISE EXCEPTION 'return_number_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_source_warehouse_id::text, 69069));
+
+  SELECT o_institution_organization_id, o_central_organization_id
+    INTO v_src_org, v_dest_org
+  FROM public.phoenix_assert_direct_return_endpoints(
+         p_source_warehouse_id, p_destination_warehouse_id);
+
+  -- THE IDOR GATE. A recall is central exercising authority over ITS OWN
+  -- warehouse's incoming returns: authority scoped to the DESTINATION (central)
+  -- warehouse, never the institution's.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.recall', v_dest_org, p_destination_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_recall' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.warehouse_return_requests (
+    route_id, source_warehouse_id, source_organization_id,
+    destination_warehouse_id, destination_organization_id,
+    return_number, status, requested_by_side, notes, created_by
+  ) VALUES (
+    NULL, p_source_warehouse_id, v_src_org,
+    p_destination_warehouse_id, v_dest_org,
+    v_number, 'draft', 'sender', v_notes, v_actor
+  )
+  RETURNING * INTO v_request;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_dest_org, v_actor, v_actor_role,
+    'warehouse_transfer.recall_requested', 'warehouse_return_requests', v_request.id, v_number,
+    jsonb_build_object('direct', true, 'source_warehouse_id', p_source_warehouse_id,
+                       'destination_warehouse_id', p_destination_warehouse_id)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'return_request_id', v_request.id,
+                            'status', v_request.status, 'direct', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_recall_direct_warehouse_transfer(uuid, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_recall_direct_warehouse_transfer(uuid, uuid, text, text) TO authenticated;
+
+-- 7d. ADD LINE (direct) — names an EXACT prior receipt from a DIRECT forward
+-- delivery on this corridor, bounded by what THAT original line has left to
+-- return. The provenance link (original line's transfer is direct and its
+-- endpoints match the pinned return corridor) is what makes a route unnecessary.
+CREATE OR REPLACE FUNCTION public.phoenix_add_direct_warehouse_return_request_line(
+  p_return_request_id         uuid,
+  p_original_transfer_line_id uuid,
+  p_requested_quantity        integer,
+  p_reason_code               text,
+  p_reason_text               text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor     uuid := auth.uid();
+  v_request   public.warehouse_return_requests%ROWTYPE;
+  v_orig      public.warehouse_transfer_lines%ROWTYPE;
+  v_transfer  public.warehouse_transfers%ROWTYPE;
+  v_remaining integer;
+  v_line_id   uuid;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_return_request_id IS NULL OR p_original_transfer_line_id IS NULL THEN
+    RAISE EXCEPTION 'request_and_original_line_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_requested_quantity IS NULL OR p_requested_quantity <= 0 THEN
+    RAISE EXCEPTION 'quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+  IF p_reason_code IS NULL THEN
+    RAISE EXCEPTION 'reason_code_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_return_requests WHERE id = p_return_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_request.route_id IS NOT NULL THEN
+    RAISE EXCEPTION 'not_a_direct_return' USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.return_request',
+    v_request.source_organization_id, v_request.source_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_return_request' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'return_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  -- Lock the original receipt while reading its remaining returnable quantity.
+  SELECT * INTO v_orig
+  FROM public.warehouse_transfer_lines WHERE id = p_original_transfer_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'original_transfer_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- PROVENANCE: the original line must belong to a DIRECT forward transfer whose
+  -- endpoints are exactly this return's corridor (central -> institution). This
+  -- ties every returned batch to a real direct delivery, the guarantee the route
+  -- gave the legacy path.
+  SELECT * INTO v_transfer
+  FROM public.warehouse_transfers WHERE id = v_orig.transfer_id;
+  IF NOT FOUND
+     OR v_transfer.route_id IS NOT NULL
+     OR v_transfer.source_warehouse_id IS DISTINCT FROM v_request.destination_warehouse_id
+     OR v_transfer.destination_warehouse_id IS DISTINCT FROM v_request.source_warehouse_id THEN
+    RAISE EXCEPTION 'original_line_not_from_this_direct_corridor' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_orig.resulting_warehouse_stock_id IS NULL THEN
+    RAISE EXCEPTION 'original_line_not_received' USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.warehouse_stock s
+    WHERE s.id = v_orig.resulting_warehouse_stock_id
+      AND s.organization_id = v_request.source_organization_id
+      AND s.warehouse_id = v_request.source_warehouse_id
+  ) THEN
+    RAISE EXCEPTION 'original_line_not_at_this_institution' USING ERRCODE = '42501';
+  END IF;
+
+  v_remaining := COALESCE(v_orig.received_quantity, 0) - v_orig.returned_quantity;
+  IF p_requested_quantity > v_remaining THEN
+    RAISE EXCEPTION 'requested_quantity_exceeds_returnable' USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO public.warehouse_return_request_lines (
+    return_request_id, source_organization_id, original_transfer_line_id,
+    scientific_name, concentration, dosage_form, unit,
+    national_code, batch_number, internal_batch_reference, expiry_date,
+    reason_code, reason_text, requested_quantity
+  ) VALUES (
+    v_request.id, v_request.source_organization_id, v_orig.id,
+    v_orig.scientific_name, v_orig.concentration, v_orig.dosage_form, v_orig.unit,
+    v_orig.national_code, v_orig.batch_number, v_orig.internal_batch_reference, v_orig.expiry_date,
+    p_reason_code, NULLIF(btrim(p_reason_text), ''), p_requested_quantity
+  )
+  RETURNING id INTO v_line_id;
+
+  RETURN jsonb_build_object('ok', true, 'return_request_line_id', v_line_id, 'direct', true);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_add_direct_warehouse_return_request_line(uuid, uuid, integer, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_add_direct_warehouse_return_request_line(uuid, uuid, integer, text, text) TO authenticated;
+
+-- 7e. Fail-closed guard on the LEGACY routed add-line: now that direct
+-- (route_id NULL) return requests exist, the 069 routed add-line must refuse
+-- them and point callers at the direct variant (its provenance-endpoint check
+-- would otherwise be skipped). The routed path is preserved byte-for-byte.
+CREATE OR REPLACE FUNCTION public.phoenix_add_warehouse_return_request_line(
+  p_return_request_id         uuid,
+  p_original_transfer_line_id uuid,
+  p_requested_quantity        integer,
+  p_reason_code                text,
+  p_reason_text                 text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor    uuid := auth.uid();
+  v_request  public.warehouse_return_requests%ROWTYPE;
+  v_orig     public.warehouse_transfer_lines%ROWTYPE;
+  v_remaining integer;
+  v_line_id  uuid;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_return_request_id IS NULL OR p_original_transfer_line_id IS NULL THEN
+    RAISE EXCEPTION 'request_and_original_line_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_requested_quantity IS NULL OR p_requested_quantity <= 0 THEN
+    RAISE EXCEPTION 'quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+  IF p_reason_code IS NULL THEN
+    RAISE EXCEPTION 'reason_code_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_return_requests WHERE id = p_return_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- 077: a direct return must use phoenix_add_direct_warehouse_return_request_line.
+  IF v_request.route_id IS NULL THEN
+    RAISE EXCEPTION 'use_direct_add_line_for_direct_return' USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.return_request',
+    v_request.source_organization_id, v_request.source_warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_return_request' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'return_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_orig
+  FROM public.warehouse_transfer_lines WHERE id = p_original_transfer_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'original_transfer_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_orig.resulting_warehouse_stock_id IS NULL THEN
+    RAISE EXCEPTION 'original_line_not_received' USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.warehouse_stock s
+    WHERE s.id = v_orig.resulting_warehouse_stock_id
+      AND s.organization_id = v_request.source_organization_id
+  ) THEN
+    RAISE EXCEPTION 'original_line_not_at_this_institution' USING ERRCODE = '42501';
+  END IF;
+
+  v_remaining := COALESCE(v_orig.received_quantity, 0) - v_orig.returned_quantity;
+  IF p_requested_quantity > v_remaining THEN
+    RAISE EXCEPTION 'requested_quantity_exceeds_returnable' USING ERRCODE = '23514';
+  END IF;
+
+  INSERT INTO public.warehouse_return_request_lines (
+    return_request_id, source_organization_id, original_transfer_line_id,
+    scientific_name, concentration, dosage_form, unit,
+    national_code, batch_number, internal_batch_reference, expiry_date,
+    reason_code, reason_text, requested_quantity
+  ) VALUES (
+    v_request.id, v_request.source_organization_id, v_orig.id,
+    v_orig.scientific_name, v_orig.concentration, v_orig.dosage_form, v_orig.unit,
+    v_orig.national_code, v_orig.batch_number, v_orig.internal_batch_reference, v_orig.expiry_date,
+    p_reason_code, NULLIF(btrim(p_reason_text), ''), p_requested_quantity
+  )
+  RETURNING id INTO v_line_id;
+
+  RETURN jsonb_build_object('ok', true, 'return_request_line_id', v_line_id);
+END;
+$$;
+
+-- 7f. SUBMIT — CREATE OR REPLACE'd so the route lookup runs ONLY for a legacy
+-- routed request; a direct (route_id NULL) request never touches
+-- warehouse_supply_routes. Every other line is 069 §9e byte-for-byte.
+CREATE OR REPLACE FUNCTION public.phoenix_submit_warehouse_return_request(
+  p_return_request_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
+  v_request    public.warehouse_return_requests%ROWTYPE;
+  v_line_count integer;
+  v_permission_key text;
+  v_org        uuid;
+  v_warehouse  uuid;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_return_request_id IS NULL THEN
+    RAISE EXCEPTION 'return_request_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_return_request_id::text, 69069));
+
+  SELECT * INTO v_request
+  FROM public.warehouse_return_requests WHERE id = p_return_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_request.requested_by_side = 'receiver' THEN
+    v_permission_key := 'warehouse_transfer.return_request';
+    v_org := v_request.source_organization_id;
+    v_warehouse := v_request.source_warehouse_id;
+  ELSE
+    v_permission_key := 'warehouse_transfer.recall';
+    v_org := v_request.destination_organization_id;
+    v_warehouse := v_request.destination_warehouse_id;
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(v_actor, v_permission_key, v_org, v_warehouse, NULL) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_return_submit' USING ERRCODE = '42501';
+  END IF;
+
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'return_request_not_draft' USING ERRCODE = '23514';
+  END IF;
+
+  IF v_request.route_id IS NOT NULL THEN
+    -- Legacy routed: fix the route's identity for the transaction (FOR SHARE,
+    -- not gated on is_active — see 069 §9e). Direct requests skip this entirely.
+    PERFORM 1 FROM public.warehouse_supply_routes WHERE id = v_request.route_id FOR SHARE;
+  ELSE
+    -- Direct: re-assert the endpoints are still an active reverse corridor with
+    -- real provenance, so a warehouse deactivated after draft cannot be submitted.
+    PERFORM public.phoenix_assert_direct_return_endpoints(
+      v_request.source_warehouse_id, v_request.destination_warehouse_id);
+  END IF;
+
+  SELECT count(*) INTO v_line_count
+  FROM public.warehouse_return_request_lines WHERE return_request_id = v_request.id;
+  IF v_line_count = 0 THEN
+    RAISE EXCEPTION 'return_request_has_no_lines' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+
+  UPDATE public.warehouse_return_requests
+     SET status = 'submitted', requested_by = v_actor, requested_at = now()
+   WHERE id = v_request.id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_org, v_actor, v_actor_role,
+    'warehouse_transfer.return_submitted', 'warehouse_return_requests', v_request.id,
+    v_request.return_number, jsonb_build_object('line_count', v_line_count,
+                                                'direct', v_request.route_id IS NULL)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'return_request_id', v_request.id, 'status', 'submitted');
+END;
+$$;
+
+-- 7g. DIRECT RETURN-SEND — stock leaves the institution warehouse, no route.
+-- Mirrors phoenix_send_warehouse_return_shipment_line (069 §10) EXACTLY except
+-- the endpoints come from the pinned DIRECT return request (route_id NULL)
+-- instead of a route, and the shipment header is written with route_id NULL.
+-- Same idempotency namespace (reference_type='warehouse_return_send'), same
+-- deliberate absence of an expiry-refusal, same caps, ledger and audit rows.
+CREATE OR REPLACE FUNCTION public.phoenix_send_direct_warehouse_return_shipment_line(
+  p_request_id              uuid,   -- idempotency token for THIS send
+  p_return_request_line_id  uuid,
+  p_quantity                integer,
+  p_shipment_number         text,
+  p_document_number         text DEFAULT NULL,
+  p_notes                   text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor        uuid := auth.uid();
+  v_actor_role   text;
+  v_actor_name   text;
+  v_reqline      public.warehouse_return_request_lines%ROWTYPE;
+  v_request      public.warehouse_return_requests%ROWTYPE;
+  v_orig         public.warehouse_transfer_lines%ROWTYPE;
+  v_stock        public.warehouse_stock%ROWTYPE;
+  v_shipment     public.warehouse_return_shipments%ROWTYPE;
+  v_existing     public.warehouse_stock_movements%ROWTYPE;
+  v_number       text := NULLIF(btrim(p_shipment_number), '');
+  v_doc          text := NULLIF(btrim(p_document_number), '');
+  v_notes        text := NULLIF(btrim(p_notes), '');
+  v_before       integer;
+  v_after        integer;
+  v_line_id      uuid;
+  v_movement_id  uuid;
+  v_fingerprint  text;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_request_id IS NULL OR p_return_request_line_id IS NULL THEN
+    RAISE EXCEPTION 'request_and_line_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_quantity IS NULL OR p_quantity <= 0 THEN
+    RAISE EXCEPTION 'quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+  IF v_number IS NULL THEN
+    RAISE EXCEPTION 'shipment_number_required' USING ERRCODE = '23514';
+  END IF;
+
+  v_fingerprint := encode(sha256(convert_to(jsonb_build_object(
+    'operation', 'direct_return_send',
+    'return_request_line_id', p_return_request_line_id,
+    'quantity', p_quantity,
+    'shipment_number', v_number,
+    'document_number', v_doc,
+    'notes', v_notes
+  )::text, 'UTF8')), 'hex');
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 69069));
+
+  SELECT * INTO v_existing
+  FROM public.warehouse_stock_movements m
+  WHERE m.reference_type = 'warehouse_return_send' AND m.reference_id = p_request_id;
+
+  IF FOUND THEN
+    IF v_existing.request_fingerprint IS DISTINCT FROM v_fingerprint THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok', true, 'idempotent_replay', true,
+      'warehouse_stock_id', v_existing.warehouse_stock_id,
+      'movement_id', v_existing.id,
+      'quantity_before', v_existing.on_hand_before,
+      'quantity_delta', v_existing.on_hand_delta,
+      'quantity_after', v_existing.on_hand_after
+    );
+  END IF;
+
+  -- The return request line, joined to a DIRECT (route_id NULL) request.
+  SELECT l.* INTO v_reqline
+  FROM public.warehouse_return_request_lines l
+  JOIN public.warehouse_return_requests r ON r.id = l.return_request_id
+  WHERE l.id = p_return_request_line_id AND r.route_id IS NULL
+  FOR UPDATE OF l;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_line_not_found_for_direct' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_reqline.status NOT IN ('approved', 'partially_fulfilled') THEN
+    RAISE EXCEPTION 'return_request_line_not_approved' USING ERRCODE = '23514';
+  END IF;
+  IF v_reqline.fulfilled_quantity + p_quantity > v_reqline.approved_quantity THEN
+    RAISE EXCEPTION 'return_line_would_be_over_fulfilled' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.warehouse_return_requests WHERE id = v_reqline.return_request_id FOR UPDATE;
+
+  -- Endpoints still an active reverse corridor (re-asserted; both warehouse rows
+  -- locked FOR SHARE against concurrent deactivation).
+  PERFORM public.phoenix_assert_direct_return_endpoints(
+    v_request.source_warehouse_id, v_request.destination_warehouse_id);
+
+  SELECT * INTO v_orig
+  FROM public.warehouse_transfer_lines WHERE id = v_reqline.original_transfer_line_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'original_transfer_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_orig.returned_quantity + p_quantity > COALESCE(v_orig.received_quantity, 0) THEN
+    RAISE EXCEPTION 'original_line_would_be_over_returned' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_stock
+  FROM public.warehouse_stock WHERE id = v_orig.resulting_warehouse_stock_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'warehouse_stock_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- The stock must sit in the return's SOURCE (institution) warehouse — the
+  -- IDOR gate the route's target_warehouse_id gave the legacy path.
+  IF v_stock.warehouse_id IS DISTINCT FROM v_request.source_warehouse_id THEN
+    RAISE EXCEPTION 'stock_not_in_source_warehouse' USING ERRCODE = '42501';
+  END IF;
+  IF v_stock.organization_id IS DISTINCT FROM v_reqline.source_organization_id THEN
+    RAISE EXCEPTION 'stock_organization_mismatch' USING ERRCODE = '42501';
+  END IF;
+
+  -- Authority: the actor's scoped assignment to the SOURCE (institution) warehouse.
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'warehouse_transfer.return_send', v_stock.organization_id, v_stock.warehouse_id, NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_warehouse_return_send' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role, p.full_name INTO v_actor_role, v_actor_name
+  FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  -- Deliberately NO expiry-refusal here — a return is frequently OF an expired
+  -- batch (069 §10).
+  v_before := v_stock.on_hand_quantity;
+  v_after  := v_before - p_quantity;
+  IF v_after < 0 THEN
+    RAISE EXCEPTION 'warehouse_quantity_cannot_go_negative' USING ERRCODE = '23514';
+  END IF;
+  IF v_after < v_stock.reserved_quantity THEN
+    RAISE EXCEPTION 'warehouse_quantity_below_reserved' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_shipment
+  FROM public.warehouse_return_shipments
+  WHERE source_organization_id = v_stock.organization_id
+    AND btrim(shipment_number) = v_number
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    INSERT INTO public.warehouse_return_shipments (
+      route_id, return_request_id,
+      source_warehouse_id, source_organization_id,
+      destination_warehouse_id, destination_organization_id,
+      shipment_number, status, document_number, notes, sent_by, sent_at
+    ) VALUES (
+      NULL, v_reqline.return_request_id,
+      v_request.source_warehouse_id, v_stock.organization_id,
+      v_request.destination_warehouse_id, v_request.destination_organization_id,
+      v_number, 'in_transit', v_doc, v_notes, v_actor, now()
+    )
+    RETURNING * INTO v_shipment;
+  ELSE
+    -- An existing direct shipment must not be re-pointed at a routed shipment,
+    -- nor at a different source/destination.
+    IF v_shipment.route_id IS NOT NULL
+       OR v_shipment.source_warehouse_id IS DISTINCT FROM v_request.source_warehouse_id
+       OR v_shipment.destination_warehouse_id IS DISTINCT FROM v_request.destination_warehouse_id THEN
+      RAISE EXCEPTION 'shipment_number_endpoint_conflict' USING ERRCODE = '23505';
+    END IF;
+    IF v_shipment.status <> 'in_transit' THEN
+      RAISE EXCEPTION 'shipment_already_being_received' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  UPDATE public.warehouse_return_request_lines
+     SET fulfilled_quantity = fulfilled_quantity + p_quantity,
+         status = CASE WHEN fulfilled_quantity + p_quantity >= approved_quantity
+                       THEN 'fulfilled' ELSE 'partially_fulfilled' END
+   WHERE id = v_reqline.id;
+
+  UPDATE public.warehouse_return_requests
+     SET status = CASE WHEN NOT EXISTS (
+                         SELECT 1 FROM public.warehouse_return_request_lines x
+                         WHERE x.return_request_id = v_reqline.return_request_id
+                           AND x.status NOT IN ('fulfilled', 'rejected', 'cancelled'))
+                       THEN 'fulfilled' ELSE 'partially_fulfilled' END
+   WHERE id = v_reqline.return_request_id;
+
+  UPDATE public.warehouse_transfer_lines
+     SET returned_quantity = returned_quantity + p_quantity
+   WHERE id = v_orig.id;
+
+  UPDATE public.warehouse_stock
+     SET on_hand_quantity = v_after,
+         updated_by       = v_actor
+   WHERE id = v_stock.id;
+
+  INSERT INTO public.warehouse_return_shipment_lines (
+    shipment_id, source_organization_id, source_warehouse_stock_id,
+    return_request_line_id, original_transfer_line_id, central_item_id,
+    scientific_name, trade_name, concentration, dosage_form, unit,
+    national_code, has_no_national_code,
+    batch_number, has_no_batch_number, internal_batch_reference,
+    expiry_date, unit_price, price_basis, currency, supply_type_text,
+    sent_quantity, status
+  ) VALUES (
+    v_shipment.id, v_stock.organization_id, v_stock.id,
+    v_reqline.id, v_orig.id, v_stock.central_item_id,
+    v_stock.scientific_name, v_stock.trade_name, v_stock.concentration,
+    v_stock.dosage_form, v_stock.unit,
+    v_stock.national_code, v_stock.has_no_national_code,
+    v_stock.batch_number, v_stock.has_no_batch_number, v_stock.internal_batch_reference,
+    v_stock.expiry_date, v_stock.unit_price, v_stock.price_basis,
+    v_stock.currency, v_stock.supply_type_text,
+    p_quantity, 'in_transit'
+  )
+  RETURNING id INTO v_line_id;
+
+  INSERT INTO public.warehouse_stock_movements (
+    warehouse_stock_id, organization_id, warehouse_id, movement_type,
+    on_hand_before, on_hand_delta, on_hand_after,
+    reserved_before, reserved_delta, reserved_after,
+    reason, reference_type, reference_id, request_fingerprint,
+    source_document_number, actor_id, actor_role, actor_name,
+    scientific_name_snapshot, concentration_snapshot,
+    dosage_form_snapshot, batch_number_snapshot,
+    internal_batch_reference_snapshot
+  ) VALUES (
+    v_stock.id, v_stock.organization_id, v_stock.warehouse_id, 'dispatch_return',
+    v_before, -p_quantity, v_after,
+    v_stock.reserved_quantity, 0, v_stock.reserved_quantity,
+    'warehouse_transfer_return', 'warehouse_return_send', p_request_id, v_fingerprint,
+    v_doc, v_actor, v_actor_role, v_actor_name,
+    v_stock.scientific_name, v_stock.concentration,
+    v_stock.dosage_form, v_stock.batch_number,
+    v_stock.internal_batch_reference
+  )
+  RETURNING id INTO v_movement_id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role,
+    action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_stock.organization_id, v_actor, v_actor_role,
+    'warehouse_transfer.return_send', 'warehouse_return_shipment_lines', v_line_id,
+    v_stock.scientific_name,
+    jsonb_build_object(
+      'request_id', p_request_id,
+      'direct', true,
+      'return_request_id', v_request.id,
+      'shipment_id', v_shipment.id,
+      'source_warehouse_id', v_request.source_warehouse_id,
+      'destination_warehouse_id', v_request.destination_warehouse_id,
+      'movement_id', v_movement_id,
+      'quantity_before', v_before,
+      'quantity_delta', -p_quantity,
+      'quantity_after', v_after
+    )
+  );
+
+  RETURN jsonb_build_object(
+    'ok', true, 'idempotent_replay', false,
+    'shipment_id', v_shipment.id,
+    'shipment_line_id', v_line_id,
+    'warehouse_stock_id', v_stock.id,
+    'movement_id', v_movement_id,
+    'in_transit_quantity', p_quantity,
+    'quantity_before', v_before,
+    'quantity_delta', -p_quantity,
+    'quantity_after', v_after
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_send_direct_warehouse_return_shipment_line(uuid, uuid, integer, text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_direct_warehouse_return_shipment_line(uuid, uuid, integer, text, text, text) TO authenticated;
+
 -- ============================================================================
 -- POST-CONDITIONS — run on staging AFTER apply; every one must hold.
 -- ============================================================================
@@ -1631,16 +2732,50 @@ BEGIN
     RAISE EXCEPTION 'POSTCOND 077: a legacy route FK was dropped — it must be retained.';
   END IF;
 
-  -- 3. The new direct functions exist and are SECURITY DEFINER.
-  IF to_regprocedure('public.phoenix_create_direct_warehouse_transfer_request(uuid,uuid,uuid,text,text)') IS NULL
-     OR to_regprocedure('public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)') IS NULL THEN
-    RAISE EXCEPTION 'POSTCOND 077: a direct-supply RPC is missing.';
+  -- 1b. route_id is now nullable on the two 069 RETURN tables too.
+  IF (SELECT is_nullable FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='warehouse_return_requests' AND column_name='route_id') <> 'YES'
+     OR (SELECT is_nullable FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='warehouse_return_shipments' AND column_name='route_id') <> 'YES' THEN
+    RAISE EXCEPTION 'POSTCOND 077: route_id did not become nullable on the return tables.';
   END IF;
 
-  -- 4. The direct path and the intelligence engine no longer read supply routes.
+  -- 2b. The legacy RETURN composite route FKs are STILL present.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wrr_route_endpoints_fk' AND contype='f')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='wrs_route_endpoints_fk' AND contype='f') THEN
+    RAISE EXCEPTION 'POSTCOND 077: a legacy RETURN route FK was dropped — it must be retained.';
+  END IF;
+
+  -- 3. The new direct forward + return functions exist and are SECURITY DEFINER.
+  IF to_regprocedure('public.phoenix_create_direct_warehouse_transfer_request(uuid,uuid,uuid,text,text)') IS NULL
+     OR to_regprocedure('public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)') IS NULL
+     OR to_regprocedure('public.phoenix_assert_direct_return_endpoints(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.phoenix_request_direct_warehouse_return(uuid,uuid,text,text)') IS NULL
+     OR to_regprocedure('public.phoenix_recall_direct_warehouse_transfer(uuid,uuid,text,text)') IS NULL
+     OR to_regprocedure('public.phoenix_add_direct_warehouse_return_request_line(uuid,uuid,integer,text,text)') IS NULL
+     OR to_regprocedure('public.phoenix_send_direct_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'POSTCOND 077: a direct-supply/return RPC is missing.';
+  END IF;
+
+  -- 4. The direct paths, the intelligence engine and the cross-org suggest path
+  -- no longer read supply routes.
   IF pg_get_functiondef('public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'::regprocedure)
        LIKE '%warehouse_supply_routes%' THEN
     RAISE EXCEPTION 'POSTCOND 077: direct SEND still references warehouse_supply_routes.';
+  END IF;
+  IF pg_get_functiondef('public.phoenix_send_direct_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)'::regprocedure)
+       LIKE '%warehouse_supply_routes%' THEN
+    RAISE EXCEPTION 'POSTCOND 077: direct RETURN-SEND still references warehouse_supply_routes.';
+  END IF;
+  IF pg_get_functiondef('public.phoenix_request_direct_warehouse_return(uuid,uuid,text,text)'::regprocedure)
+       LIKE '%warehouse_supply_routes%'
+     OR pg_get_functiondef('public.phoenix_recall_direct_warehouse_transfer(uuid,uuid,text,text)'::regprocedure)
+       LIKE '%warehouse_supply_routes%'
+     OR pg_get_functiondef('public.phoenix_add_direct_warehouse_return_request_line(uuid,uuid,integer,text,text)'::regprocedure)
+       LIKE '%warehouse_supply_routes%'
+     OR pg_get_functiondef('public.phoenix_assert_direct_return_endpoints(uuid,uuid)'::regprocedure)
+       LIKE '%warehouse_supply_routes%' THEN
+    RAISE EXCEPTION 'POSTCOND 077: a direct RETURN build RPC still references warehouse_supply_routes.';
   END IF;
   IF pg_get_functiondef('public.phoenix_suggest_inventory_transfers(uuid)'::regprocedure)
        LIKE '%warehouse_supply_routes%' THEN
@@ -1649,6 +2784,15 @@ BEGIN
   IF pg_get_functiondef('public.phoenix_inventory_suggestion_guard()'::regprocedure)
        LIKE '%warehouse_supply_routes%' THEN
     RAISE EXCEPTION 'POSTCOND 077: suggestion guard still references warehouse_supply_routes.';
+  END IF;
+  IF pg_get_functiondef('public.phoenix_suggest_cross_org_inventory_transfer(uuid,uuid,uuid,uuid,text,text)'::regprocedure)
+       LIKE '%warehouse_supply_routes%' THEN
+    RAISE EXCEPTION 'POSTCOND 077: cross-org suggest still references warehouse_supply_routes.';
+  END IF;
+
+  -- 4b. The direct RETURN reuses the (route-free) 069 RECEIVE unchanged.
+  IF to_regprocedure('public.phoenix_receive_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'POSTCOND 077: the 069 return RECEIVE is missing (reused by the direct path).';
   END IF;
 
   -- 5. warehouse_supply_routes and its RPCs are UNTOUCHED (legacy compatibility).
@@ -1665,11 +2809,19 @@ commit;
 
 -- ============================================================================
 -- ROLLBACK (manual)
+--   DROP FUNCTION IF EXISTS public.phoenix_send_direct_warehouse_return_shipment_line(uuid,uuid,integer,text,text,text);
+--   DROP FUNCTION IF EXISTS public.phoenix_add_direct_warehouse_return_request_line(uuid,uuid,integer,text,text);
+--   DROP FUNCTION IF EXISTS public.phoenix_recall_direct_warehouse_transfer(uuid,uuid,text,text);
+--   DROP FUNCTION IF EXISTS public.phoenix_request_direct_warehouse_return(uuid,uuid,text,text);
+--   DROP FUNCTION IF EXISTS public.phoenix_assert_direct_return_endpoints(uuid,uuid);
 --   DROP FUNCTION IF EXISTS public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text);
 --   DROP FUNCTION IF EXISTS public.phoenix_create_direct_warehouse_transfer_request(uuid,uuid,uuid,text,text);
 --   DROP FUNCTION IF EXISTS public._phoenix_authorize_transfer_request_write(uuid, public.warehouse_transfer_requests);
 --   DROP FUNCTION IF EXISTS public.phoenix_assert_direct_supply_endpoints(uuid,uuid,uuid);
---   -- restore the 068/072 bodies from their original migrations (CREATE OR REPLACE),
---   -- then: ALTER TABLE ... ALTER COLUMN route_id SET NOT NULL (only once no direct
---   -- rows exist). DROP the two partial indexes wtr_direct_idx / wt_direct_idx.
+--   -- restore the 068/069/072 bodies from their original migrations (CREATE OR REPLACE:
+--   -- phoenix_add_warehouse_return_request_line, phoenix_submit_warehouse_return_request,
+--   -- phoenix_suggest_cross_org_inventory_transfer, and the 068 build/send bodies),
+--   -- then: ALTER TABLE ... ALTER COLUMN route_id SET NOT NULL on all four tables (only
+--   -- once no direct rows exist). DROP the partial indexes wtr_direct_idx / wt_direct_idx
+--   -- / wrr_direct_idx / wrs_direct_idx.
 -- ============================================================================
