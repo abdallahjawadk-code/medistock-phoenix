@@ -138,7 +138,9 @@ describe('Login screen: professional rights/supervision block', () => {
 
   it('login_supervision_line contains the exact required Arabic text', () => {
     const line = strings.split('\n').find(l => l.includes('login_supervision_line:'));
-    expect(line).toContain('بأشراف الصيدلاني باسم كاظم رمح');
+    // Canonical spelling uses hamzat qaṭʿ: "بإشراف" (under the supervision of),
+    // matching PhoenixWelcomeExperience. "بأشراف" (أشراف/nobles) was a typo.
+    expect(line).toContain('بإشراف الصيدلاني باسم كاظم رمح');
   });
 
   it('rights block uses a dedicated, styled CSS class (not a security-internals badge)', () => {

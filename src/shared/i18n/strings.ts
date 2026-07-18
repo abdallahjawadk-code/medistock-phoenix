@@ -17,7 +17,7 @@ export const T: Dict = {
   /* ── Login rights/supervision block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
      Replaces the removed technical badges (RLS / QR Public Safe / Intake Frozen). */
   login_rights_code:      { ar: 'ph.Abdallahjawadk@2026',                              en: 'ph.Abdallahjawadk@2026' },
-  login_supervision_line: { ar: 'بأشراف الصيدلاني باسم كاظم رمح',                      en: 'Under the supervision of Pharmacist Basim Kazim Ramh' },
+  login_supervision_line: { ar: 'بإشراف الصيدلاني باسم كاظم رمح',                      en: 'Under the supervision of Pharmacist Basim Kazim Ramh' },
 
   /* ── Mobile logout (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ── */
   auth_sign_out: { ar: 'تسجيل الخروج', en: 'Sign out' },
