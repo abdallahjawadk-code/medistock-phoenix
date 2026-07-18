@@ -1,5 +1,5 @@
 -- ============================================================================
--- INVENTORY-INTELLIGENCE-072-A  (Review Round 2)
+-- INVENTORY-INTELLIGENCE-072-A  (Review Round 3)
 --
 -- MANUAL APPLY ONLY. DO NOT use supabase db push or any automated runner.
 --
@@ -7,7 +7,7 @@
 -- disposable PostgreSQL database. Validation used static analysis and the
 -- test suite only (matching 044-071's own convention). Apply to a
 -- staging/preview database and confirm every post-condition passes BEFORE
--- this is treated as ready for production. Round 2 hardening below; still a
+-- this is treated as ready for production. Round 3 hardening below; still a
 -- pre-live-apply authoring pass.
 --
 -- STRATEGY: Expand -> Frontend Migration -> Contract. This is an EXPAND step.
@@ -20,60 +20,105 @@
 -- A read-only intelligence layer over warehouse_stock (060/065) and
 -- outlet_stock (067). It classifies stock into signals, orders batches FEFO,
 -- raises deduplicated in-app alerts with an episode-aware lifecycle, and
--- suggests FEASIBLE, NON-OVERSUBSCRIBING surplus->shortage transfers WITHOUT
--- executing them. It moves no stock and is frugal (no images, no snapshots,
--- no cron, no WhatsApp).
+-- suggests FEASIBLE, NON-OVERSUBSCRIBING, BATCH-LEVEL surplus->shortage
+-- transfers WITHOUT executing them. It moves no stock and is frugal (no
+-- images, no snapshots, no cron, no WhatsApp).
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- ROUND-2 CORRECTNESS BOUNDARIES (why this file looks the way it does)
+-- ROUND-3 CORRECTNESS BOUNDARIES (why this file looks the way it does)
 -- ─────────────────────────────────────────────────────────────────────────────
---  1. FAIL CLOSED. scope_kind is ONLY 'warehouse' or 'outlet' — there is no
---     ELSE branch that treats an unknown value as an outlet. Every scope_id is
---     validated to EXIST, MATCH its kind, and BELONG to organization_id, and
---     every permission check is made against that EXACT scope, never (org,
---     NULL, NULL).
---  2. EXPECTATION-DRIVEN 'missing'. A material is "missing" only where a
---     scope-specific threshold EXPECTS it (reorder_point > 0) and stock is
---     absent/zero. A material with no threshold at a scope is NOT_STOCKED — it
---     never raises an alert. Signals join thresholds LEFT-to-stock, not the
---     reverse.
---  3. NO CARTESIAN OVERSUBSCRIPTION. Suggestions are produced by a
---     deterministic, priority + FEFO ordered allocation loop that tracks
---     remaining source headroom and remaining target deficit, so the sum of a
---     source's suggestions never exceeds its surplus and the sum arriving at a
---     target never exceeds its deficit. Only FEASIBLE routes are suggested:
---       warehouse<->outlet  ONLY via distribution_points.warehouse_id
---       central->institution ONLY via warehouse_supply_routes (066)
---     Cross-organization surplus/shortage handling REUSES the 036-041 inter-org
---     alert/exchange system rather than duplicating it (see below).
---  4. CROSS-ORG SUPPORT. A suggestion pins BOTH source_organization_id and
---     target_organization_id. RLS shows a suggestion only to the source org,
---     the target org, or super_admin — never a third organization. A
---     cross-organization suggestion (source_org <> target_org) can be generated
---     ONLY by super_admin; an ordinary user cannot mint suggestions off other
---     organizations' balances.
---  5. FEFO returns EXACTLY ONE batch: the earliest-expiry, still-usable batch,
---     excluding expired, zero-available, and quarantined stock (quarantine
---     lives in warehouse_quarantine_stock (069), a separate table the live
---     stock tables never include).
---  6. EPISODE-AWARE LIFECYCLE. Alerts carry occurrence_count + cleared_at. When
---     a condition clears it is marked cleared_at (and auto-resolved if it was
---     active). A later recurrence opens a NEW episode (occurrence_count++,
---     cleared_at reset) even if a human had dismissed/resolved the prior one —
---     a dismissal never hides a future, distinct recurrence forever.
---  7. MANUAL PURGE. phoenix_purge_inventory_terminal deletes only TERMINAL rows
---     older than an explicit retention (>= 30 days), scoped + permissioned, no
---     cron, and NEVER deletes an audit_logs row.
---  8. AUDIT. Every HUMAN action (threshold upsert, acknowledge, resolve,
---     dismiss, accept, reject, purge) writes an audit_logs row.
---  9. SPLIT PERMISSIONS. Threshold writes need inventory.manage_thresholds;
---     generating suggestions needs inventory.suggest_transfers; acting on one
---     (accept/reject) needs inventory.act_on_suggestions; purge needs
---     inventory.purge. Alert triage keeps inventory.manage_alerts; reading
---     keeps inventory.view_signals; recompute keeps inventory.recompute.
--- 10. EXPIRY TIERS kept from 048: expired / critical_3m / warning_6m / watch_9m,
---     with DIFFERENT severities (high / high / medium / low) — not one flat
---     270-day bucket.
+--  1. 036-041 INTEGRATION, NOT A PARALLEL ENGINE. Cross-organization movement
+--     stays the job of the approved 036-041 inter-org alert/exchange system.
+--     A cross-org suggestion here is a RECOMMENDATION ONLY: accepting it
+--     REQUIRES a reference to a live inter_org_exchange_requests row (created
+--     through the EXISTING 041 RPC contract, never by this file), stored in
+--     inventory_transfer_suggestions.exchange_request_id and validated for
+--     matching organizations + material. This migration NEVER writes to
+--     inter_org_exchange_requests/events and never transitions their status.
+--     KNOWN INTEGRATION GAP, stated honestly: the 036-041 engine models
+--     exchanges at the item_availability (outlet projection) level; it has no
+--     representation of warehouse-level stock. A warehouse-level cross-org
+--     suggestion can therefore only be ACCEPTED once the two organizations
+--     have opened a corresponding exchange request through the existing
+--     engine. Until then it stays an open recommendation. That is the safe
+--     boundary; writing warehouse rows into the exchange tables on unproven
+--     assumptions is exactly what this round refuses to do.
+--  2. DATA-DERIVED CROSS-ORG QUANTITIES. There is NO client-supplied quantity
+--     anywhere in suggestion generation. Cross-org suggestions require a real
+--     surplus alert at the source, a real missing/low_stock alert at the
+--     target, an active warehouse_supply_route between the two warehouses,
+--     and at least one eligible FEFO batch. Each minted suggestion is capped:
+--       suggested_quantity <= remaining source surplus
+--       suggested_quantity <= remaining target shortfall
+--       suggested_quantity <= remaining batch availability
+--     where "remaining" subtracts every other open/accepted suggestion drawing
+--     on the same source, batch, or target. super_admin can RUN the
+--     computation across organizations but cannot invent a quantity.
+--  3. BATCH-LEVEL FEFO. Every suggestion names EXACTLY ONE stock row
+--     (source_stock_id) and never exceeds that batch's availability. A target
+--     needing more than one batch gets SEPARATE suggestions, one per batch,
+--     ordered expiry_date ASC NULLS LAST then id ASC. suggestion_key embeds
+--     the stock row (and provenance line) so batches never collide.
+--     Conservation, enforced by the structural guard (§9) and the allocation:
+--       Σ suggestions per batch  <= that batch's available_quantity
+--       Σ suggestions per source <= that source's surplus headroom
+--       Σ suggestions per target <= that target's shortfall
+--  4. PROVEN outlet->warehouse RETURNABILITY (071). An outlet->warehouse
+--     suggestion is minted ONLY from stock whose 071 provenance chain is
+--     proven: a real accepted 070 dispatch line, its 'dispatch_receive'
+--     movement, and the exact outlet_stock row — pinned by the SAME composite
+--     FKs 071 itself uses — with
+--       suggested_quantity <= received_quantity - returned_quantity
+--     (the returnable cap 071's own ADD-LINE RPC enforces). No provable
+--     chain => the corridor is NOT feasible and no suggestion exists.
+--  5. ORG-WIDE THRESHOLD RLS. inventory_signal_thresholds rows with
+--     scope_id=NULL (org-wide defaults) are readable by super_admin or a
+--     holder of an org-level inventory.view_signals grant for THAT
+--     organization — and by nobody else. Scoped rows keep the exact-scope
+--     gate. A third organization can never read either shape.
+--  6. national_code SEMANTICS. A threshold with a specific national_code
+--     governs THAT code only. A threshold with national_code=NULL is a
+--     WILDCARD for the material at the scope: its quantities aggregate every
+--     code of the material EXCEPT codes that have their own coded threshold
+--     (those are governed by the coded row — no double signal for one fact).
+--     A wildcard 'missing' therefore cannot fire while the material exists
+--     under any real code it covers. All matching is lower(scientific_name),
+--     deterministic.
+--  7. near_expiry_days IS IMPLEMENTED (option A). NULL = the 270-day default;
+--     values are constrained to 1..270. The most specific active threshold
+--     (scope+material+code beats scope+material beats org default) sets the
+--     effective window. 'expired' ALWAYS surfaces; 'near_expiry' surfaces
+--     only inside the effective window. Tier vocabulary and severities stay
+--     exactly 048: expired/critical_3m/warning_6m/watch_9m with
+--     high/high/medium/low.
+--  8. REAL-SCOPE PERMISSIONS. No (organization_id, NULL, NULL) check remains
+--     on any warehouse/outlet-bound operation. Suggestion generation
+--     evaluates inventory.suggest_transfers against EVERY concrete scope and
+--     only allocates over scopes the caller actually holds; accept/reject
+--     evaluate inventory.act_on_suggestions against the suggestion's ACTUAL
+--     source scope or target scope. SECURITY DEFINER never becomes an IDOR
+--     bypass. Org-level (org, NULL, NULL) checks remain ONLY for genuinely
+--     org-wide operations: org-wide recompute, org-default threshold rows,
+--     and purge.
+--  9. ACCEPT REVALIDATES. Before a suggestion flips to accepted, the route,
+--     the scope ownership, the batch (existence, material, quantity), the 071
+--     return provenance, and — for cross-org — the linked exchange request
+--     are ALL re-verified against live data. A stale suggestion is not
+--     accepted: it is atomically classified 'expired' with an audited reason.
+--     Accept remains INTENT ONLY and never moves stock.
+-- 10. STRUCTURAL GUARD. A fail-closed BEFORE trigger on each new table —
+--     applying to EVERY writer including service_role — proves scope→org
+--     ownership, route_kind↔scope-kind pairing, live route/pairing existence,
+--     return provenance presence, batch-level non-oversubscription, and
+--     exchange-request org/material agreement. Composite FKs carry the 071
+--     provenance chain; the trigger covers what a CHECK/FK cannot express
+--     (polymorphic scope + cross-table sums).
+--
+-- Carried over from Round 2 (all still hold): fail-closed scope resolution
+-- (no ELSE->outlet), expectation-driven 'missing', episode-aware lifecycle
+-- (occurrence_count/cleared_at), manual >=30-day purge that never touches
+-- audit_logs, an audit_logs row for every human action, seven split
+-- permission keys, and the 048 expiry tiers.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- WHAT THIS MIGRATION DELIBERATELY DOES **NOT** DO
@@ -81,8 +126,10 @@
 --   * No DROP/RENAME/REVOKE against any pre-existing object; no ALTER of any
 --     001-071 table; no row rewritten; no widened CHECK on existing constraints.
 --   * No stock movement / dispatch / transfer execution — accept is advisory
---     intent ONLY (proven by §15).
---   * No parallel cross-org exchange engine — 036-041 remains the inter-org path.
+--     intent ONLY (proven by §18).
+--   * No parallel cross-org exchange engine — 036-041 remains the inter-org
+--     path; this file only stores a validated REFERENCE to it and never
+--     inserts/updates inter_org_exchange_requests or inter_org_exchange_events.
 --   * No RBAC enforcement change. Enforcement stays OFF; scope enforcement
 --     (phoenix_profile_has_scoped_permission) stays ON, as always.
 --   * No cron / pg_cron / scheduled job; no images/blobs; no WhatsApp.
@@ -128,6 +175,33 @@ BEGIN
     RAISE EXCEPTION 'ABORT 072: distribution_points.warehouse_id (warehouse<->outlet link) is absent.';
   END IF;
 
+  -- 070/071 return-provenance infrastructure (read-only feasibility source for
+  -- outlet->warehouse suggestions; the composite-FK targets below must exist).
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'warehouse_dispatch_lines'
+      AND column_name = 'resulting_outlet_stock_id'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'warehouse_dispatch_lines'
+      AND column_name = 'returned_quantity'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'outlet_stock_movements'
+      AND column_name = 'dispatch_line_id'
+  ) THEN
+    RAISE EXCEPTION 'ABORT 072: 070/071 return-provenance columns are absent.';
+  END IF;
+
+  -- 036-041 inter-org exchange engine (integration REFERENCE target; this file
+  -- never writes it).
+  IF to_regclass('public.inter_org_exchange_requests') IS NULL THEN
+    RAISE EXCEPTION 'ABORT 072: 040 inter_org_exchange_requests is absent (cross-org integration target).';
+  END IF;
+  IF to_regprocedure('public.phoenix_create_inter_org_exchange_request(text,uuid,uuid,uuid,integer,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'ABORT 072: 041 phoenix_create_inter_org_exchange_request is absent (the existing engine''s create contract).';
+  END IF;
+
   IF to_regclass('public.permission_keys') IS NULL
      OR to_regclass('public.role_permission_defaults') IS NULL
      OR to_regclass('public.audit_logs') IS NULL THEN
@@ -146,10 +220,10 @@ CREATE TABLE IF NOT EXISTS public.inventory_signal_thresholds (
   scope_kind         text NOT NULL,
   scope_id           uuid,                       -- NULL = org-wide default values (never an expectation)
   scientific_name    text NOT NULL,
-  national_code      text,
+  national_code      text,                       -- NULL = wildcard for the material at the scope (§6 of header)
   reorder_point      integer,                    -- available <= this (and > 0) => low_stock; expectation => missing
   target_max         integer,                    -- available >  this           => surplus
-  near_expiry_days   integer,                    -- reserved override; tiers (048) are the default
+  near_expiry_days   integer,                    -- effective near-expiry window; NULL = 270-day default (option A)
   is_active          boolean NOT NULL DEFAULT true,
   created_by         uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   updated_by         uuid REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -168,8 +242,9 @@ CREATE TABLE IF NOT EXISTS public.inventory_signal_thresholds (
     CHECK (target_max IS NULL OR target_max >= 0),
   CONSTRAINT inventory_thresholds_band_chk
     CHECK (reorder_point IS NULL OR target_max IS NULL OR target_max >= reorder_point),
+  -- near_expiry_days is IMPLEMENTED (not a dead setting): 1..270, NULL = default 270.
   CONSTRAINT inventory_thresholds_near_expiry_days_chk
-    CHECK (near_expiry_days IS NULL OR near_expiry_days > 0)
+    CHECK (near_expiry_days IS NULL OR (near_expiry_days >= 1 AND near_expiry_days <= 270))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS inventory_thresholds_identity_uniq
@@ -202,7 +277,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_alerts (
   observed_available       integer,
   threshold_reorder_point  integer,
   threshold_target_max     integer,
-  near_expiry_days         integer,
+  near_expiry_days         integer,               -- the EFFECTIVE window used for this date signal
   days_to_expiry           integer,
 
   alert_key                text NOT NULL,
@@ -210,7 +285,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_alerts (
   reason                   text,
   auto_resolved            boolean NOT NULL DEFAULT false,
 
-  -- Episode tracking (round-2 item 6).
+  -- Episode tracking.
   occurrence_count         integer NOT NULL DEFAULT 1,
   cleared_at               timestamptz,
 
@@ -259,7 +334,7 @@ CREATE INDEX IF NOT EXISTS inventory_alerts_org_scope_status_idx
   ON public.inventory_alerts (organization_id, scope_kind, scope_id, status);
 
 -- ============================================================================
--- 3. TRANSFER SUGGESTIONS — advisory, feasible-route, cross-org aware
+-- 3. TRANSFER SUGGESTIONS — advisory, batch-level, feasible-route, cross-org aware
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
   id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -279,13 +354,32 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
   -- The only feasible physical corridors this file will ever suggest.
   route_kind                text NOT NULL,
 
+  -- BATCH-LEVEL: the exact stock row (warehouse_stock.id or outlet_stock.id,
+  -- per source_scope_kind) this suggestion draws from. One suggestion = one
+  -- batch. Polymorphic, so pinned by the §9 guard trigger (and, for outlet
+  -- provenance, by the composite FKs below).
+  source_stock_id           uuid NOT NULL,
   suggested_quantity        integer NOT NULL,
   fefo_batch_number         text,
   fefo_expiry_date          date,
 
+  source_batch_available_snapshot integer,
   source_surplus_snapshot   integer,
   target_shortfall_snapshot integer,
   rationale                 text,
+
+  -- 071 RETURN PROVENANCE (outlet->warehouse ONLY): the accepted 070 dispatch
+  -- line and its 'dispatch_receive' movement this return would trace to —
+  -- the SAME proven chain outlet_return_request_lines (071) requires, pinned
+  -- by the same composite-FK targets.
+  provenance_dispatch_line_id    uuid REFERENCES public.warehouse_dispatch_lines(id) ON DELETE RESTRICT,
+  provenance_inbound_movement_id uuid REFERENCES public.outlet_stock_movements(id) ON DELETE RESTRICT,
+
+  -- 036-041 INTEGRATION REFERENCE: the inter_org_exchange_requests row
+  -- (created through the EXISTING 041 engine, never by this file) that a
+  -- cross-org acceptance is anchored to. Required at accept for cross-org
+  -- rows (inventory_suggestions_cross_org_accept_link_chk).
+  exchange_request_id       uuid REFERENCES public.inter_org_exchange_requests(id) ON DELETE SET NULL,
 
   suggestion_key            text NOT NULL,
   status                    text NOT NULL DEFAULT 'open',
@@ -307,6 +401,58 @@ CREATE TABLE IF NOT EXISTS public.inventory_transfer_suggestions (
     CHECK (target_scope_kind IN ('warehouse', 'outlet')),
   CONSTRAINT inventory_suggestions_route_kind_chk
     CHECK (route_kind IN ('warehouse_to_outlet', 'outlet_to_warehouse', 'central_to_institution')),
+  -- route_kind must MATCH the source/target scope kinds — structurally.
+  CONSTRAINT inventory_suggestions_route_pairing_chk
+    CHECK (
+      (route_kind = 'warehouse_to_outlet'
+         AND source_scope_kind = 'warehouse' AND target_scope_kind = 'outlet')
+      OR (route_kind = 'outlet_to_warehouse'
+         AND source_scope_kind = 'outlet' AND target_scope_kind = 'warehouse')
+      OR (route_kind = 'central_to_institution'
+         AND source_scope_kind = 'warehouse' AND target_scope_kind = 'warehouse')
+    ),
+  -- warehouse<->outlet corridors are same-organization by construction; only
+  -- central_to_institution may span organizations.
+  CONSTRAINT inventory_suggestions_cross_org_route_chk
+    CHECK (source_organization_id = target_organization_id
+           OR route_kind = 'central_to_institution'),
+  -- outlet->warehouse rows MUST carry the 071 provenance pair; all other
+  -- corridors must NOT.
+  CONSTRAINT inventory_suggestions_return_provenance_chk
+    CHECK (
+      (route_kind = 'outlet_to_warehouse'
+         AND provenance_dispatch_line_id IS NOT NULL
+         AND provenance_inbound_movement_id IS NOT NULL)
+      OR (route_kind <> 'outlet_to_warehouse'
+         AND provenance_dispatch_line_id IS NULL
+         AND provenance_inbound_movement_id IS NULL)
+    ),
+  -- A cross-org suggestion can only be ACCEPTED with a stored reference to the
+  -- 036-041 engine's request (the integration boundary, structurally).
+  CONSTRAINT inventory_suggestions_cross_org_accept_link_chk
+    CHECK (
+      status <> 'accepted'
+      OR source_organization_id = target_organization_id
+      OR exchange_request_id IS NOT NULL
+    ),
+  -- THE PROVEN 071 CHAIN, same composite-FK targets 071 uses (MATCH SIMPLE:
+  -- enforced exactly when the provenance columns are present):
+  -- (1) the dispatch line RESULTED IN this outlet_stock row.
+  CONSTRAINT inventory_suggestions_prov_line_stock_fk
+    FOREIGN KEY (provenance_dispatch_line_id, source_stock_id)
+    REFERENCES public.warehouse_dispatch_lines (id, resulting_outlet_stock_id)
+    ON DELETE RESTRICT,
+  -- (2) the movement was produced BY this dispatch line's receive.
+  CONSTRAINT inventory_suggestions_prov_movement_line_fk
+    FOREIGN KEY (provenance_inbound_movement_id, provenance_dispatch_line_id)
+    REFERENCES public.outlet_stock_movements (id, dispatch_line_id)
+    ON DELETE RESTRICT,
+  -- (3) the movement credited THIS outlet_stock row.
+  CONSTRAINT inventory_suggestions_prov_movement_stock_fk
+    FOREIGN KEY (provenance_inbound_movement_id, source_stock_id)
+    REFERENCES public.outlet_stock_movements (id, outlet_stock_id)
+    ON DELETE RESTRICT,
+
   CONSTRAINT inventory_suggestions_sci_name_chk
     CHECK (btrim(scientific_name) = scientific_name AND scientific_name <> ''),
   CONSTRAINT inventory_suggestions_qty_chk
@@ -323,6 +469,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS inventory_suggestions_key_uniq
   ON public.inventory_transfer_suggestions (suggestion_key);
 CREATE INDEX IF NOT EXISTS inventory_suggestions_orgs_status_idx
   ON public.inventory_transfer_suggestions (source_organization_id, target_organization_id, status);
+CREATE INDEX IF NOT EXISTS inventory_suggestions_source_stock_idx
+  ON public.inventory_transfer_suggestions (source_stock_id, status);
+CREATE INDEX IF NOT EXISTS inventory_suggestions_target_scope_idx
+  ON public.inventory_transfer_suggestions (target_scope_kind, target_scope_id, status);
 
 -- ============================================================================
 -- 4. SCOPE VALIDATION — resolve the org that owns a (kind, scope), fail closed
@@ -384,19 +534,35 @@ REVOKE ALL ON FUNCTION public.phoenix_can_read_inventory_signal(uuid, text, uuid
 GRANT EXECUTE ON FUNCTION public.phoenix_can_read_inventory_signal(uuid, text, uuid) TO authenticated;
 
 -- ============================================================================
--- 6. FEFO PICK — exactly one batch, excludes expired / unavailable / quarantine
+-- 6. FEFO — batch-level eligibility, excludes expired / unavailable / quarantine
 -- ============================================================================
 -- Quarantine stock lives in warehouse_quarantine_stock (069), a table the live
 -- warehouse_stock/outlet_stock never include — so reading only those tables is
--- already quarantine-free. Returns at most one row (LIMIT 1).
-CREATE OR REPLACE FUNCTION public.phoenix_inventory_fefo_pick(
+-- already quarantine-free.
+--
+-- phoenix_inventory_fefo_batches lists EVERY eligible batch, FEFO-ordered
+-- (expiry_date ASC NULLS LAST, then id ASC — a total, deterministic order).
+-- For OUTLET scopes, a batch is eligible ONLY when its 071 return-provenance
+-- chain is provable (accepted 070 dispatch line + 'dispatch_receive' movement
+-- + the exact outlet_stock row), and transferable_quantity is additionally
+-- capped by the line's returnable quantity
+-- (received_quantity - returned_quantity), exactly like 071's ADD-LINE RPC.
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_fefo_batches(
   p_organization_id uuid,
   p_scope_kind      text,
   p_scope_id        uuid,
   p_scientific_name text,
   p_national_code   text DEFAULT NULL
 )
-RETURNS TABLE (batch_number text, expiry_date date, available_quantity integer)
+RETURNS TABLE (
+  stock_id              uuid,
+  batch_number          text,
+  expiry_date           date,
+  available_quantity    integer,
+  transferable_quantity integer,
+  dispatch_line_id      uuid,
+  inbound_movement_id   uuid
+)
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
@@ -416,7 +582,8 @@ BEGIN
 
   IF p_scope_kind = 'warehouse' THEN
     RETURN QUERY
-      SELECT ws.batch_number, ws.expiry_date, ws.available_quantity
+      SELECT ws.id, ws.batch_number, ws.expiry_date, ws.available_quantity,
+             ws.available_quantity, NULL::uuid, NULL::uuid
       FROM public.warehouse_stock ws
       WHERE ws.organization_id = p_organization_id
         AND ws.warehouse_id = p_scope_id
@@ -424,21 +591,60 @@ BEGIN
         AND (p_national_code IS NULL OR ws.national_code IS NOT DISTINCT FROM p_national_code)
         AND ws.available_quantity > 0
         AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
-      ORDER BY ws.expiry_date ASC NULLS LAST, ws.available_quantity DESC, ws.id ASC
-      LIMIT 1;
+      ORDER BY ws.expiry_date ASC NULLS LAST, ws.id ASC;
   ELSE
     RETURN QUERY
-      SELECT os.batch_number, os.expiry_date, os.available_quantity
+      SELECT os.id, os.batch_number, os.expiry_date, os.available_quantity,
+             LEAST(os.available_quantity,
+                   COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity),
+             wdl.id, osm.id
       FROM public.outlet_stock os
+      JOIN public.warehouse_dispatch_lines wdl
+        ON wdl.resulting_outlet_stock_id = os.id
+       AND wdl.organization_id = os.organization_id
+       AND wdl.status IN ('accepted', 'accepted_with_difference')
+      JOIN public.outlet_stock_movements osm
+        ON osm.dispatch_line_id = wdl.id
+       AND osm.movement_type = 'dispatch_receive'
+       AND osm.outlet_stock_id = os.id
+       AND osm.organization_id = os.organization_id
       WHERE os.organization_id = p_organization_id
         AND os.distribution_point_id = p_scope_id
         AND lower(os.scientific_name) = lower(p_scientific_name)
         AND (p_national_code IS NULL OR os.national_code IS NOT DISTINCT FROM p_national_code)
         AND os.available_quantity > 0
         AND (os.expiry_date IS NULL OR os.expiry_date >= current_date)
-      ORDER BY os.expiry_date ASC NULLS LAST, os.available_quantity DESC, os.id ASC
-      LIMIT 1;
+        AND (COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity) > 0
+      ORDER BY os.expiry_date ASC NULLS LAST, os.id ASC, wdl.id ASC;
   END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_inventory_fefo_batches(uuid, text, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_inventory_fefo_batches(uuid, text, uuid, text, text) TO authenticated;
+
+-- Single-batch convenience wrapper: the FIRST eligible FEFO batch.
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_fefo_pick(
+  p_organization_id uuid,
+  p_scope_kind      text,
+  p_scope_id        uuid,
+  p_scientific_name text,
+  p_national_code   text DEFAULT NULL
+)
+RETURNS TABLE (batch_number text, expiry_date date, available_quantity integer)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RETURN QUERY
+    SELECT b.batch_number, b.expiry_date, b.available_quantity
+    FROM public.phoenix_inventory_fefo_batches(
+           p_organization_id, p_scope_kind, p_scope_id,
+           p_scientific_name, p_national_code) b
+    ORDER BY b.expiry_date ASC NULLS LAST, b.stock_id ASC
+    LIMIT 1;
 END;
 $$;
 
@@ -446,7 +652,7 @@ REVOKE ALL ON FUNCTION public.phoenix_inventory_fefo_pick(uuid, text, uuid, text
 GRANT EXECUTE ON FUNCTION public.phoenix_inventory_fefo_pick(uuid, text, uuid, text, text) TO authenticated;
 
 -- ============================================================================
--- 7. RECOMPUTE — expectation-driven, tiered, episode-aware. Fail closed.
+-- 7. RECOMPUTE — expectation-driven, wildcard-aware, tiered, episode-aware
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_recompute_inventory_alerts(
   p_organization_id uuid,
@@ -487,7 +693,8 @@ BEGIN
       RAISE EXCEPTION 'not_authorized_inventory_recompute';
     END IF;
   ELSE
-    -- org-wide recompute needs an org-level grant (or super_admin)
+    -- org-wide recompute is a genuinely org-wide operation: org-level grant
+    -- (or super_admin) — the one legitimate (org, NULL, NULL) use here.
     IF NOT (
       public.phoenix_my_role() = 'super_admin'
       OR public.phoenix_profile_has_scoped_permission(
@@ -517,24 +724,73 @@ BEGIN
       AND (p_scope_kind IS NULL OR p_scope_kind = 'outlet')
       AND (p_scope_id IS NULL OR os.distribution_point_id = p_scope_id);
 
-  -- Aggregate per (scope, material).
+  -- Aggregate per (scope, material, code) — CASE-INSENSITIVELY and
+  -- deterministically on lower(scientific_name).
   CREATE TEMP TABLE _agg ON COMMIT DROP AS
-    SELECT scope_kind, scope_id, scientific_name, national_code,
-           SUM(on_hand_quantity)  AS on_hand,
+    SELECT scope_kind, scope_id,
+           lower(scientific_name) AS sci_lower,
+           MAX(scientific_name)   AS sci_display,
+           national_code,
+           SUM(on_hand_quantity)   AS on_hand,
            SUM(available_quantity) AS available
     FROM _stock
-    GROUP BY scope_kind, scope_id, scientific_name, national_code;
+    GROUP BY scope_kind, scope_id, lower(scientific_name), national_code;
 
   -- Active thresholds for this org; scope-specific rows are EXPECTATIONS.
   CREATE TEMP TABLE _thr ON COMMIT DROP AS
     SELECT t.scope_kind, t.scope_id, lower(t.scientific_name) AS sci_lower,
-           t.national_code, t.reorder_point, t.target_max, t.near_expiry_days,
-           (CASE WHEN t.scope_id IS NULL THEN 0 ELSE 1 END)
-           + (CASE WHEN t.national_code IS NULL THEN 0 ELSE 1 END) AS specificity
+           MAX(t.scientific_name) AS sci_display,
+           t.national_code, t.reorder_point, t.target_max, t.near_expiry_days
     FROM public.inventory_signal_thresholds t
     WHERE t.organization_id = p_organization_id
       AND t.is_active
-      AND (p_scope_kind IS NULL OR t.scope_kind = p_scope_kind);
+      AND (p_scope_kind IS NULL OR t.scope_kind = p_scope_kind)
+    GROUP BY t.scope_kind, t.scope_id, lower(t.scientific_name),
+             t.national_code, t.reorder_point, t.target_max, t.near_expiry_days;
+
+  -- POSITIONS (wildcard-aware, §6 of the header):
+  --   * a CODED position exists per (scope, material, code) wherever a coded
+  --     threshold applies (scope-specific row = expectation; org-default row
+  --     = configuration only). It measures that exact code's stock.
+  --   * a WILDCARD position (national_code NULL) exists per (scope, material)
+  --     wherever a wildcard threshold applies. It measures the SUM of every
+  --     code of the material EXCEPT codes covered by their own coded
+  --     threshold — so a generic 'missing' can never fire while the material
+  --     exists under a real covered code, and one fact never produces both a
+  --     wildcard and a coded signal.
+  CREATE TEMP TABLE _pos ON COMMIT DROP AS
+  WITH scopes AS (
+    SELECT DISTINCT scope_kind, scope_id FROM _agg
+    UNION
+    SELECT DISTINCT scope_kind, scope_id FROM _thr WHERE scope_id IS NOT NULL
+  ),
+  coded AS (
+    SELECT s.scope_kind, s.scope_id, t.sci_lower,
+           MAX(t.sci_display) AS sci_display,
+           t.national_code,
+           bool_or(t.scope_id IS NOT NULL) AS expected
+    FROM scopes s
+    JOIN _thr t
+      ON t.scope_kind = s.scope_kind
+     AND (t.scope_id = s.scope_id OR t.scope_id IS NULL)
+     AND t.national_code IS NOT NULL
+    GROUP BY s.scope_kind, s.scope_id, t.sci_lower, t.national_code
+  ),
+  wildcard AS (
+    SELECT s.scope_kind, s.scope_id, t.sci_lower,
+           MAX(t.sci_display) AS sci_display,
+           NULL::text AS national_code,
+           bool_or(t.scope_id IS NOT NULL) AS expected
+    FROM scopes s
+    JOIN _thr t
+      ON t.scope_kind = s.scope_kind
+     AND (t.scope_id = s.scope_id OR t.scope_id IS NULL)
+     AND t.national_code IS NULL
+    GROUP BY s.scope_kind, s.scope_id, t.sci_lower
+  )
+  SELECT * FROM coded
+  UNION ALL
+  SELECT * FROM wildcard;
 
   CREATE TEMP TABLE _now (
     alert_key   text PRIMARY KEY,
@@ -543,73 +799,75 @@ BEGIN
     on_hand integer, available integer, reorder integer, target_max integer, near_days integer, dte integer
   ) ON COMMIT DROP;
 
-  -- ── Quantity signals: expectation-driven positions ──────────────────────
-  -- A position = a scope-specific expectation (drives 'missing'), OR a stock
-  -- position that resolves to a threshold (drives low_stock/surplus). A stock
-  -- position with NO resolvable threshold is NOT_STOCKED and produces no row.
-  CREATE TEMP TABLE _pos ON COMMIT DROP AS
-    SELECT scope_kind, scope_id, sci_lower, national,
-           MAX(sci_name)   AS sci_name,
-           bool_or(expected) AS expected
-    FROM (
-      -- scope-specific expectations
-      SELECT t.scope_kind, t.scope_id, t.sci_lower AS sci_lower,
-             t.national_code AS national, t.sci_lower AS sci_name, true AS expected
-      FROM _thr t
-      WHERE t.scope_id IS NOT NULL
-      UNION ALL
-      -- stock positions (real-case identity carried through for display)
-      SELECT g.scope_kind, g.scope_id, lower(g.scientific_name),
-             g.national_code, g.scientific_name, false
-      FROM _agg g
-    ) u
-    GROUP BY scope_kind, scope_id, sci_lower, national;
-
+  -- ── Quantity signals ─────────────────────────────────────────────────────
   INSERT INTO _now
   SELECT
     p_organization_id::text || '|' || pos.scope_kind || '|' || pos.scope_id::text || '|'
-      || q.signal_type || '|' || pos.sci_lower || '|' || COALESCE(pos.national, '') || '||',
+      || q.signal_type || '|' || pos.sci_lower || '|' || COALESCE(pos.national_code, '') || '||',
     pos.scope_kind, pos.scope_id, q.signal_type, q.severity, NULL,
-    pos.sci_name, pos.national, NULL, NULL,
-    COALESCE(a.on_hand, 0), COALESCE(a.available, 0), cfg.reorder_point, cfg.target_max, NULL, NULL
+    COALESCE(tot.sci_display, pos.sci_display), pos.national_code, NULL, NULL,
+    COALESCE(tot.on_hand, 0), COALESCE(tot.available, 0), cfg.reorder_point, cfg.target_max, NULL, NULL
   FROM _pos pos
   CROSS JOIN LATERAL (
-    -- resolve the effective threshold: most specific active row wins
+    -- resolve the effective threshold: the scope-specific row beats the
+    -- org default; the position's code key is matched EXACTLY (a coded
+    -- position resolves only coded rows; a wildcard position only wildcards).
     SELECT thr.reorder_point, thr.target_max
     FROM _thr thr
     WHERE thr.scope_kind = pos.scope_kind
       AND (thr.scope_id = pos.scope_id OR thr.scope_id IS NULL)
       AND thr.sci_lower = pos.sci_lower
-      AND (thr.national_code = pos.national OR thr.national_code IS NULL)
-    ORDER BY thr.specificity DESC
+      AND thr.national_code IS NOT DISTINCT FROM pos.national_code
+    ORDER BY (thr.scope_id IS NOT NULL) DESC
     LIMIT 1
   ) cfg
-  LEFT JOIN _agg a
-    ON a.scope_kind = pos.scope_kind AND a.scope_id = pos.scope_id
-   AND lower(a.scientific_name) = pos.sci_lower
-   AND a.national_code IS NOT DISTINCT FROM pos.national
+  CROSS JOIN LATERAL (
+    -- the position's measured stock: exact code for coded positions; for the
+    -- wildcard, every code NOT covered by its own applicable coded threshold.
+    SELECT MAX(a.sci_display) AS sci_display,
+           SUM(a.on_hand)     AS on_hand,
+           SUM(a.available)   AS available
+    FROM _agg a
+    WHERE a.scope_kind = pos.scope_kind
+      AND a.scope_id = pos.scope_id
+      AND a.sci_lower = pos.sci_lower
+      AND (
+        (pos.national_code IS NOT NULL AND a.national_code IS NOT DISTINCT FROM pos.national_code)
+        OR (pos.national_code IS NULL AND NOT EXISTS (
+              SELECT 1 FROM _thr tc
+              WHERE tc.scope_kind = pos.scope_kind
+                AND (tc.scope_id = pos.scope_id OR tc.scope_id IS NULL)
+                AND tc.sci_lower = pos.sci_lower
+                AND tc.national_code IS NOT NULL
+                AND tc.national_code = a.national_code
+           ))
+      )
+  ) tot
   CROSS JOIN LATERAL (
     SELECT
       CASE
         WHEN pos.expected AND cfg.reorder_point IS NOT NULL AND cfg.reorder_point > 0
-             AND COALESCE(a.on_hand, 0) = 0 THEN 'missing'
-        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(a.available, 0) > 0
-             AND COALESCE(a.available, 0) <= cfg.reorder_point THEN 'low_stock'
-        WHEN cfg.target_max IS NOT NULL AND COALESCE(a.available, 0) > cfg.target_max THEN 'surplus'
+             AND COALESCE(tot.on_hand, 0) = 0 THEN 'missing'
+        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.available, 0) > 0
+             AND COALESCE(tot.available, 0) <= cfg.reorder_point THEN 'low_stock'
+        WHEN cfg.target_max IS NOT NULL AND COALESCE(tot.available, 0) > cfg.target_max THEN 'surplus'
         ELSE NULL
       END AS signal_type,
       CASE
         WHEN pos.expected AND cfg.reorder_point IS NOT NULL AND cfg.reorder_point > 0
-             AND COALESCE(a.on_hand, 0) = 0 THEN 'high'
-        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(a.available, 0) > 0
-             AND COALESCE(a.available, 0) <= cfg.reorder_point THEN 'medium'
+             AND COALESCE(tot.on_hand, 0) = 0 THEN 'high'
+        WHEN cfg.reorder_point IS NOT NULL AND COALESCE(tot.available, 0) > 0
+             AND COALESCE(tot.available, 0) <= cfg.reorder_point THEN 'medium'
         ELSE 'low'
       END AS severity
   ) q
   WHERE q.signal_type IS NOT NULL
   ON CONFLICT (alert_key) DO NOTHING;
 
-  -- ── Date signals: per-batch, tiered by 048 windows (item 10) ────────────
+  -- ── Date signals: per-batch, tiered by 048 windows, near_expiry_days-aware ─
+  -- 'expired' ALWAYS surfaces. 'near_expiry' surfaces only inside the
+  -- EFFECTIVE window: the most specific active near_expiry_days
+  -- (scope+material+code > scope+material > org default), NULL => 270 days.
   INSERT INTO _now
   SELECT
     p_organization_id::text || '|' || s.scope_kind || '|' || s.scope_id::text || '|'
@@ -618,8 +876,21 @@ BEGIN
       || COALESCE(s.expiry_date::text, ''),
     s.scope_kind, s.scope_id, sig.signal_type, sig.severity, sig.tier,
     s.scientific_name, s.national_code, s.batch_number, s.expiry_date,
-    s.on_hand_quantity, s.available_quantity, NULL, NULL, NULL, (s.expiry_date - current_date)
+    s.on_hand_quantity, s.available_quantity, NULL, NULL, win.eff_days, (s.expiry_date - current_date)
   FROM _stock s
+  CROSS JOIN LATERAL (
+    SELECT COALESCE((
+      SELECT t.near_expiry_days
+      FROM _thr t
+      WHERE t.scope_kind = s.scope_kind
+        AND (t.scope_id = s.scope_id OR t.scope_id IS NULL)
+        AND t.sci_lower = lower(s.scientific_name)
+        AND (t.national_code IS NULL OR t.national_code = s.national_code)
+        AND t.near_expiry_days IS NOT NULL
+      ORDER BY (t.scope_id IS NOT NULL) DESC, (t.national_code IS NOT NULL) DESC
+      LIMIT 1
+    ), 270) AS eff_days
+  ) win
   CROSS JOIN LATERAL (
     SELECT
       CASE WHEN s.expiry_date < current_date THEN 'expired' ELSE 'near_expiry' END AS signal_type,
@@ -638,14 +909,11 @@ BEGIN
   ) sig
   WHERE s.on_hand_quantity > 0
     AND s.expiry_date IS NOT NULL
-    AND s.expiry_date <= (current_date + interval '9 months')::date
+    AND (s.expiry_date < current_date                       -- expired: always
+         OR s.expiry_date <= (current_date + win.eff_days)) -- near: inside window
   ON CONFLICT (alert_key) DO NOTHING;
 
   -- ── Upsert violations with EPISODE semantics ────────────────────────────
-  -- A recurrence whose prior row had cleared (cleared_at set) opens a NEW
-  -- episode (occurrence_count++, cleared_at reset, status back to open) — even
-  -- if a human had dismissed/resolved it. A still-uncleared human decision is
-  -- respected (its status/timestamps are left intact) but last_observed bumps.
   INSERT INTO public.inventory_alerts AS al (
     organization_id, scope_kind, scope_id, signal_type, severity, expiry_tier,
     scientific_name, national_code, batch_number, expiry_date,
@@ -666,6 +934,7 @@ BEGIN
     observed_available      = EXCLUDED.observed_available,
     threshold_reorder_point = EXCLUDED.threshold_reorder_point,
     threshold_target_max    = EXCLUDED.threshold_target_max,
+    near_expiry_days        = EXCLUDED.near_expiry_days,
     days_to_expiry          = EXCLUDED.days_to_expiry,
     last_observed_at        = now(),
     updated_at              = now(),
@@ -682,10 +951,7 @@ BEGIN
 
   GET DIAGNOSTICS v_upserted = ROW_COUNT;
 
-  -- ── Clear detection: mark cleared_at on any alert in scope not now violating ─
-  -- Active ones auto-resolve; terminal (human) ones just get cleared_at set so
-  -- a future recurrence can safely reopen a fresh episode. cleared_at is only
-  -- set once per clear (guarded by cleared_at IS NULL).
+  -- ── Clear detection ─────────────────────────────────────────────────────
   UPDATE public.inventory_alerts a
   SET status        = CASE WHEN a.status IN ('open','acknowledged','in_progress') THEN 'resolved' ELSE a.status END,
       auto_resolved = CASE WHEN a.status IN ('open','acknowledged','in_progress') THEN true ELSE a.auto_resolved END,
@@ -698,9 +964,6 @@ BEGIN
     AND (p_scope_kind IS NULL OR a.scope_kind = p_scope_kind)
     AND (p_scope_id IS NULL OR a.scope_id = p_scope_id)
     AND a.cleared_at IS NULL
-    -- Every not-currently-violating alert in scope gets cleared_at stamped,
-    -- INCLUDING dismissed/manually-resolved ones, so a future recurrence opens a
-    -- fresh episode. Only active ones additionally flip to auto-resolved (above).
     AND NOT EXISTS (SELECT 1 FROM _now n WHERE n.alert_key = a.alert_key);
 
   GET DIAGNOSTICS v_cleared = ROW_COUNT;
@@ -825,82 +1088,463 @@ REVOKE ALL ON FUNCTION public.phoenix_dismiss_inventory_alert(uuid, text) FROM P
 GRANT EXECUTE ON FUNCTION public.phoenix_dismiss_inventory_alert(uuid, text) TO authenticated;
 
 -- ============================================================================
--- 9. SUGGEST — feasible routes, deterministic non-oversubscribing allocation
+-- 9. STRUCTURAL GUARDS — fail-closed BEFORE triggers on every new table.
+--    They bind EVERY writer, including service_role and any SECURITY DEFINER
+--    body in this file: RPC discipline is not the only line of defence.
 -- ============================================================================
--- INTRA-ORG ONLY here. Cross-organization surplus/shortage stays the job of the
--- 036-041 inter-org alert/exchange system; a separate super_admin server path
--- (phoenix_suggest_cross_org_inventory_transfer, §10) mints cross-org rows.
--- Allocation is a deterministic loop: needs and sources are ordered by severity
--- then FEFO/id; each need pulls from feasible sources, decrementing a running
--- source-headroom table, so no source is oversubscribed and no target receives
--- more than its deficit. INSERTS ONLY into inventory_transfer_suggestions.
+
+-- 9a. Thresholds: a named scope must exist, match its kind, and belong to the
+--     row's organization. (scope_id NULL = org-wide default, allowed.)
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_threshold_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.scope_kind NOT IN ('warehouse', 'outlet') THEN
+    RAISE EXCEPTION 'guard_072_invalid_scope_kind';
+  END IF;
+  IF NEW.scope_id IS NOT NULL
+     AND public.phoenix_inventory_scope_org(NEW.scope_kind, NEW.scope_id)
+         IS DISTINCT FROM NEW.organization_id THEN
+    RAISE EXCEPTION 'guard_072_threshold_scope_not_in_organization';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS inventory_threshold_guard ON public.inventory_signal_thresholds;
+CREATE TRIGGER inventory_threshold_guard
+  BEFORE INSERT OR UPDATE ON public.inventory_signal_thresholds
+  FOR EACH ROW EXECUTE FUNCTION public.phoenix_inventory_threshold_guard();
+
+-- 9b. Alerts: the scope must exist, match its kind, and belong to the org.
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_alert_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.scope_kind NOT IN ('warehouse', 'outlet') THEN
+    RAISE EXCEPTION 'guard_072_invalid_scope_kind';
+  END IF;
+  IF public.phoenix_inventory_scope_org(NEW.scope_kind, NEW.scope_id)
+     IS DISTINCT FROM NEW.organization_id THEN
+    RAISE EXCEPTION 'guard_072_alert_scope_not_in_organization';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS inventory_alert_guard ON public.inventory_alerts;
+CREATE TRIGGER inventory_alert_guard
+  BEFORE INSERT OR UPDATE ON public.inventory_alerts
+  FOR EACH ROW EXECUTE FUNCTION public.phoenix_inventory_alert_guard();
+
+-- 9c. Suggestions: the full structural contract —
+--     * source scope belongs to source org; target scope to target org;
+--     * route_kind's live pairing exists (dp.warehouse_id / active supply
+--       route), re-proven whenever corridor-defining columns are written;
+--     * the named batch (source_stock_id) exists in the right stock table, at
+--       the right scope, with matching material/code;
+--     * Σ open+accepted suggestions per batch never exceeds that batch's
+--       available_quantity (checked on INSERT, quantity change, or reopen);
+--     * outlet->warehouse rows respect the 071 returnable cap
+--       (received_quantity - returned_quantity);
+--     * a stored exchange_request_id must agree on organizations + material.
+--     Lifecycle-only status updates (open->accepted/rejected/superseded/
+--     expired) deliberately skip the LIVE-state re-checks: the accept RPC
+--     revalidates and must remain able to classify a stale row 'expired'.
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_suggestion_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_corridor_write boolean;
+  v_qty_write      boolean;
+  v_reopen         boolean;
+  v_available      integer;
+  v_committed      integer;
+  v_returnable     integer;
+BEGIN
+  v_corridor_write := (TG_OP = 'INSERT') OR (
+       NEW.source_scope_kind IS DISTINCT FROM OLD.source_scope_kind
+    OR NEW.source_scope_id   IS DISTINCT FROM OLD.source_scope_id
+    OR NEW.target_scope_kind IS DISTINCT FROM OLD.target_scope_kind
+    OR NEW.target_scope_id   IS DISTINCT FROM OLD.target_scope_id
+    OR NEW.route_kind        IS DISTINCT FROM OLD.route_kind
+    OR NEW.source_organization_id IS DISTINCT FROM OLD.source_organization_id
+    OR NEW.target_organization_id IS DISTINCT FROM OLD.target_organization_id
+    OR NEW.source_stock_id   IS DISTINCT FROM OLD.source_stock_id
+    OR NEW.provenance_dispatch_line_id IS DISTINCT FROM OLD.provenance_dispatch_line_id
+  );
+  v_qty_write := (TG_OP = 'INSERT')
+    OR (NEW.suggested_quantity IS DISTINCT FROM OLD.suggested_quantity);
+  v_reopen := (TG_OP = 'UPDATE')
+    AND NEW.status IN ('open', 'accepted')
+    AND OLD.status IN ('superseded', 'expired', 'rejected');
+
+  -- Scope→organization ownership: always cheap, always on.
+  IF public.phoenix_inventory_scope_org(NEW.source_scope_kind, NEW.source_scope_id)
+     IS DISTINCT FROM NEW.source_organization_id THEN
+    RAISE EXCEPTION 'guard_072_source_scope_not_in_source_organization';
+  END IF;
+  IF public.phoenix_inventory_scope_org(NEW.target_scope_kind, NEW.target_scope_id)
+     IS DISTINCT FROM NEW.target_organization_id THEN
+    RAISE EXCEPTION 'guard_072_target_scope_not_in_target_organization';
+  END IF;
+
+  IF v_corridor_write THEN
+    -- Live route/pairing per corridor.
+    IF NEW.route_kind = 'warehouse_to_outlet' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = NEW.target_scope_id
+          AND dp.warehouse_id = NEW.source_scope_id
+          AND dp.organization_id = NEW.source_organization_id
+      ) THEN
+        RAISE EXCEPTION 'guard_072_no_warehouse_outlet_pairing';
+      END IF;
+    ELSIF NEW.route_kind = 'outlet_to_warehouse' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = NEW.source_scope_id
+          AND dp.warehouse_id = NEW.target_scope_id
+          AND dp.organization_id = NEW.source_organization_id
+      ) THEN
+        RAISE EXCEPTION 'guard_072_no_outlet_warehouse_pairing';
+      END IF;
+    ELSIF NEW.route_kind = 'central_to_institution' THEN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM public.warehouse_supply_routes r
+        JOIN public.warehouses sw ON sw.id = r.source_warehouse_id
+                                 AND sw.organization_id = NEW.source_organization_id
+        JOIN public.warehouses tw ON tw.id = r.target_warehouse_id
+                                 AND tw.organization_id = NEW.target_organization_id
+        WHERE r.source_warehouse_id = NEW.source_scope_id
+          AND r.target_warehouse_id = NEW.target_scope_id
+          AND r.is_active
+      ) THEN
+        RAISE EXCEPTION 'guard_072_no_active_supply_route';
+      END IF;
+    ELSE
+      RAISE EXCEPTION 'guard_072_invalid_route_kind';
+    END IF;
+
+    -- The named batch must exist in the RIGHT stock table, at the source
+    -- scope, with matching material (and code, when the suggestion is coded).
+    IF NEW.source_scope_kind = 'warehouse' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.warehouse_stock ws
+        WHERE ws.id = NEW.source_stock_id
+          AND ws.warehouse_id = NEW.source_scope_id
+          AND ws.organization_id = NEW.source_organization_id
+          AND lower(ws.scientific_name) = lower(NEW.scientific_name)
+          AND (NEW.national_code IS NULL OR ws.national_code = NEW.national_code)
+      ) THEN
+        RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
+      END IF;
+    ELSE
+      IF NOT EXISTS (
+        SELECT 1 FROM public.outlet_stock os
+        WHERE os.id = NEW.source_stock_id
+          AND os.distribution_point_id = NEW.source_scope_id
+          AND os.organization_id = NEW.source_organization_id
+          AND lower(os.scientific_name) = lower(NEW.scientific_name)
+          AND (NEW.national_code IS NULL OR os.national_code = NEW.national_code)
+      ) THEN
+        RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_qty_write OR v_reopen THEN
+    -- Batch-level conservation: Σ open+accepted per source_stock_id (this row
+    -- included) never exceeds the batch's live availability.
+    IF NEW.status IN ('open', 'accepted') THEN
+      IF NEW.source_scope_kind = 'warehouse' THEN
+        SELECT ws.available_quantity INTO v_available
+        FROM public.warehouse_stock ws WHERE ws.id = NEW.source_stock_id;
+      ELSE
+        SELECT os.available_quantity INTO v_available
+        FROM public.outlet_stock os WHERE os.id = NEW.source_stock_id;
+      END IF;
+      IF v_available IS NULL THEN
+        RAISE EXCEPTION 'guard_072_source_stock_row_missing';
+      END IF;
+
+      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed
+      FROM public.inventory_transfer_suggestions s
+      WHERE s.source_stock_id = NEW.source_stock_id
+        AND s.status IN ('open', 'accepted')
+        AND s.id <> NEW.id;
+
+      IF v_committed + NEW.suggested_quantity > v_available THEN
+        RAISE EXCEPTION 'guard_072_batch_oversubscribed';
+      END IF;
+
+      -- 071 returnable cap for outlet->warehouse rows.
+      IF NEW.route_kind = 'outlet_to_warehouse' THEN
+        SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
+          INTO v_returnable
+        FROM public.warehouse_dispatch_lines wdl
+        WHERE wdl.id = NEW.provenance_dispatch_line_id
+          AND wdl.status IN ('accepted', 'accepted_with_difference');
+        IF v_returnable IS NULL OR NEW.suggested_quantity > v_returnable THEN
+          RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
+        END IF;
+      END IF;
+    END IF;
+  END IF;
+
+  -- Stored 036-041 reference must agree on organizations + material.
+  IF NEW.exchange_request_id IS NOT NULL
+     AND (TG_OP = 'INSERT'
+          OR NEW.exchange_request_id IS DISTINCT FROM OLD.exchange_request_id) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.inter_org_exchange_requests x
+      WHERE x.id = NEW.exchange_request_id
+        AND x.source_organization_id = NEW.source_organization_id
+        AND x.target_organization_id = NEW.target_organization_id
+        AND lower(x.scientific_name) = lower(NEW.scientific_name)
+    ) THEN
+      RAISE EXCEPTION 'guard_072_exchange_request_mismatch';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS inventory_suggestion_guard ON public.inventory_transfer_suggestions;
+CREATE TRIGGER inventory_suggestion_guard
+  BEFORE INSERT OR UPDATE ON public.inventory_transfer_suggestions
+  FOR EACH ROW EXECUTE FUNCTION public.phoenix_inventory_suggestion_guard();
+
+-- Guard trigger functions are internal: no direct EXECUTE for clients.
+REVOKE ALL ON FUNCTION public.phoenix_inventory_threshold_guard() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.phoenix_inventory_alert_guard() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.phoenix_inventory_suggestion_guard() FROM PUBLIC, anon;
+
+-- ============================================================================
+-- 10. SUGGEST (INTRA-ORG) — batch-level FEFO, real-scope permissions,
+--     deterministic non-oversubscribing allocation
+-- ============================================================================
+-- Cross-organization surplus/shortage stays the job of the 036-041 inter-org
+-- alert/exchange system; §11 mints cross-org ADVISORY rows (super_admin only)
+-- whose ACCEPTANCE must reference that engine.
+--
+-- Permission model (round-3 item 8): NO (org, NULL, NULL) check. The caller's
+-- inventory.suggest_transfers is evaluated against EVERY concrete warehouse/
+-- outlet of the organization; allocation (and the supersede pass) only cover
+-- scopes the caller actually holds. super_admin covers all scopes.
+--
+-- Order of operations (deliberate): stale open rows inside the caller's scope
+-- set are superseded FIRST, then the allocator re-mints what still holds —
+-- so the §9 batch-conservation guard never counts a row that is about to be
+-- replaced, and re-minted keys are simply reopened by ON CONFLICT.
 CREATE OR REPLACE FUNCTION public.phoenix_suggest_inventory_transfers(p_organization_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_actor    uuid := auth.uid();
+  v_is_super boolean;
   v_need     record;
   v_src      record;
+  v_batch    record;
   v_take     integer;
-  v_remaining integer;
+  v_need_remaining integer;
+  v_src_remaining  integer;
   v_upserted integer := 0;
-  v_fefo_batch text;
-  v_fefo_expiry date;
+  v_superseded integer := 0;
+  v_rows     integer;
+  v_key      text;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
-  IF NOT (
-    public.phoenix_my_role() = 'super_admin'
-    OR public.phoenix_profile_has_scoped_permission(v_actor, 'inventory.suggest_transfers', p_organization_id, NULL, NULL)
-  ) THEN RAISE EXCEPTION 'not_authorized_inventory_suggest'; END IF;
+  v_is_super := (public.phoenix_my_role() = 'super_admin');
 
   PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggest:' || p_organization_id::text, 0));
 
-  -- Needs: open/active missing+low_stock alerts, with a positive deficit.
+  -- The EXACT scopes this caller may allocate over — never (org, NULL, NULL).
+  CREATE TEMP TABLE _scopes (scope_kind text, scope_id uuid, PRIMARY KEY (scope_kind, scope_id)) ON COMMIT DROP;
+  INSERT INTO _scopes
+    SELECT 'warehouse', w.id
+    FROM public.warehouses w
+    WHERE w.organization_id = p_organization_id
+      AND (v_is_super OR public.phoenix_profile_has_scoped_permission(
+             v_actor, 'inventory.suggest_transfers', p_organization_id, w.id, NULL))
+    UNION ALL
+    SELECT 'outlet', dp.id
+    FROM public.distribution_points dp
+    WHERE dp.organization_id = p_organization_id
+      AND (v_is_super OR public.phoenix_profile_has_scoped_permission(
+             v_actor, 'inventory.suggest_transfers', p_organization_id, NULL, dp.id));
+
+  IF NOT EXISTS (SELECT 1 FROM _scopes) THEN
+    RAISE EXCEPTION 'not_authorized_inventory_suggest';
+  END IF;
+
+  -- Supersede FIRST: open intra-org suggestions whose BOTH endpoints sit in
+  -- the caller's scope set are about to be recomputed; anything still valid
+  -- is re-opened by the allocator below. Rows with an endpoint outside the
+  -- caller's authority are left untouched (and counted as consumed headroom).
+  UPDATE public.inventory_transfer_suggestions s
+  SET status = 'superseded', updated_at = now()
+  WHERE s.source_organization_id = p_organization_id
+    AND s.target_organization_id = p_organization_id
+    AND s.status = 'open'
+    AND EXISTS (SELECT 1 FROM _scopes sc
+                WHERE sc.scope_kind = s.source_scope_kind AND sc.scope_id = s.source_scope_id)
+    AND EXISTS (SELECT 1 FROM _scopes sc
+                WHERE sc.scope_kind = s.target_scope_kind AND sc.scope_id = s.target_scope_id);
+  GET DIAGNOSTICS v_superseded = ROW_COUNT;
+
+  -- Needs: active missing/low_stock alerts at permitted scopes, with the
+  -- remaining deficit reduced by every still-consuming inbound suggestion
+  -- (accepted anywhere, or open rows this run cannot supersede).
   CREATE TEMP TABLE _need ON COMMIT DROP AS
-    SELECT a.id AS alert_id, a.scope_kind, a.scope_id, a.scientific_name, a.national_code,
+    SELECT a.id AS alert_id, a.scope_kind, a.scope_id,
+           a.scientific_name, lower(a.scientific_name) AS sci_lower, a.national_code,
            GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1) AS deficit,
-           GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1) AS remaining,
+           GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1)
+             - COALESCE((
+                 SELECT SUM(s.suggested_quantity)
+                 FROM public.inventory_transfer_suggestions s
+                 WHERE s.target_scope_kind = a.scope_kind
+                   AND s.target_scope_id = a.scope_id
+                   AND s.target_organization_id = a.organization_id
+                   AND lower(s.scientific_name) = lower(a.scientific_name)
+                   AND s.national_code IS NOT DISTINCT FROM a.national_code
+                   AND s.status IN ('open', 'accepted')
+               ), 0) AS remaining,
            CASE a.severity WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END AS prio
     FROM public.inventory_alerts a
     WHERE a.organization_id = p_organization_id
       AND a.status IN ('open', 'acknowledged', 'in_progress')
-      AND a.signal_type IN ('missing', 'low_stock');
+      AND a.signal_type IN ('missing', 'low_stock')
+      AND EXISTS (SELECT 1 FROM _scopes sc
+                  WHERE sc.scope_kind = a.scope_kind AND sc.scope_id = a.scope_id);
 
-  -- Sources: open/active surplus alerts, with positive headroom (mutable remaining).
+  -- Sources: active surplus alerts at permitted scopes, headroom reduced by
+  -- every still-consuming outbound suggestion.
   CREATE TEMP TABLE _src ON COMMIT DROP AS
-    SELECT a.id AS alert_id, a.scope_kind, a.scope_id, a.scientific_name, a.national_code,
+    SELECT a.id AS alert_id, a.scope_kind, a.scope_id,
+           a.scientific_name, lower(a.scientific_name) AS sci_lower, a.national_code,
            GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0) AS headroom,
-           GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0) AS remaining
+           GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0)
+             - COALESCE((
+                 SELECT SUM(s.suggested_quantity)
+                 FROM public.inventory_transfer_suggestions s
+                 WHERE s.source_scope_kind = a.scope_kind
+                   AND s.source_scope_id = a.scope_id
+                   AND s.source_organization_id = a.organization_id
+                   AND lower(s.scientific_name) = lower(a.scientific_name)
+                   AND s.national_code IS NOT DISTINCT FROM a.national_code
+                   AND s.status IN ('open', 'accepted')
+               ), 0) AS remaining
     FROM public.inventory_alerts a
     WHERE a.organization_id = p_organization_id
       AND a.status IN ('open', 'acknowledged', 'in_progress')
-      AND a.signal_type = 'surplus';
+      AND a.signal_type = 'surplus'
+      AND EXISTS (SELECT 1 FROM _scopes sc
+                  WHERE sc.scope_kind = a.scope_kind AND sc.scope_id = a.scope_id);
 
-  CREATE TEMP TABLE _live_keys (suggestion_key text PRIMARY KEY) ON COMMIT DROP;
+  -- Eligible FEFO batches at every source scope: one row per (stock row,
+  -- provenance line). Outlet batches REQUIRE the proven 071 chain and are
+  -- capped by the returnable quantity. remaining is reduced by every
+  -- still-consuming suggestion already drawing on the same batch.
+  CREATE TEMP TABLE _batch ON COMMIT DROP AS
+    SELECT b.scope_kind, b.scope_id, b.sci_lower, b.national_code,
+           b.stock_id, b.batch_number, b.expiry_date, b.available_quantity,
+           b.dispatch_line_id, b.inbound_movement_id,
+           b.transferable_quantity
+             - COALESCE((
+                 SELECT SUM(s.suggested_quantity)
+                 FROM public.inventory_transfer_suggestions s
+                 WHERE s.source_stock_id = b.stock_id
+                   AND s.provenance_dispatch_line_id IS NOT DISTINCT FROM b.dispatch_line_id
+                   AND s.status IN ('open', 'accepted')
+               ), 0) AS remaining
+    FROM (
+      SELECT 'warehouse'::text AS scope_kind, ws.warehouse_id AS scope_id,
+             lower(ws.scientific_name) AS sci_lower, ws.national_code,
+             ws.id AS stock_id, ws.batch_number, ws.expiry_date,
+             ws.available_quantity, ws.available_quantity AS transferable_quantity,
+             NULL::uuid AS dispatch_line_id, NULL::uuid AS inbound_movement_id
+      FROM public.warehouse_stock ws
+      WHERE ws.organization_id = p_organization_id
+        AND ws.available_quantity > 0
+        AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+        AND EXISTS (SELECT 1 FROM _scopes sc
+                    WHERE sc.scope_kind = 'warehouse' AND sc.scope_id = ws.warehouse_id)
+      UNION ALL
+      SELECT 'outlet', os.distribution_point_id,
+             lower(os.scientific_name), os.national_code,
+             os.id, os.batch_number, os.expiry_date,
+             os.available_quantity,
+             LEAST(os.available_quantity,
+                   COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity),
+             wdl.id, osm.id
+      FROM public.outlet_stock os
+      JOIN public.warehouse_dispatch_lines wdl
+        ON wdl.resulting_outlet_stock_id = os.id
+       AND wdl.organization_id = os.organization_id
+       AND wdl.status IN ('accepted', 'accepted_with_difference')
+      JOIN public.outlet_stock_movements osm
+        ON osm.dispatch_line_id = wdl.id
+       AND osm.movement_type = 'dispatch_receive'
+       AND osm.outlet_stock_id = os.id
+       AND osm.organization_id = os.organization_id
+      WHERE os.organization_id = p_organization_id
+        AND os.available_quantity > 0
+        AND (os.expiry_date IS NULL OR os.expiry_date >= current_date)
+        AND (COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity) > 0
+        AND EXISTS (SELECT 1 FROM _scopes sc
+                    WHERE sc.scope_kind = 'outlet' AND sc.scope_id = os.distribution_point_id)
+    ) b;
 
-  -- Deterministic allocation loop.
+  -- Batch-shared conservation across positions: a stock row referenced by
+  -- several provenance lines must never emit more than its availability.
+  CREATE TEMP TABLE _stock_cap ON COMMIT DROP AS
+    SELECT b.stock_id,
+           MAX(b.available_quantity)
+             - COALESCE((
+                 SELECT SUM(s.suggested_quantity)
+                 FROM public.inventory_transfer_suggestions s
+                 WHERE s.source_stock_id = b.stock_id
+                   AND s.status IN ('open', 'accepted')
+               ), 0) AS remaining
+    FROM _batch b
+    GROUP BY b.stock_id;
+
+  -- Deterministic allocation: needs by severity then material/scope/id;
+  -- sources by remaining headroom then scope/id; batches FEFO
+  -- (expiry_date ASC NULLS LAST, then stock id, then provenance line id).
   FOR v_need IN
-    SELECT * FROM _need ORDER BY prio DESC, scientific_name, scope_id, alert_id
+    SELECT * FROM _need WHERE remaining > 0
+    ORDER BY prio DESC, sci_lower, scope_id, alert_id
   LOOP
-    v_remaining := v_need.remaining;
+    v_need_remaining := v_need.remaining;
 
     FOR v_src IN
       SELECT s.*,
              CASE
-               -- warehouse -> outlet: the outlet's parent warehouse is the source
                WHEN s.scope_kind = 'warehouse' AND v_need.scope_kind = 'outlet'
                     AND EXISTS (SELECT 1 FROM public.distribution_points dp
                                  WHERE dp.id = v_need.scope_id AND dp.warehouse_id = s.scope_id
                                    AND dp.organization_id = p_organization_id)
                  THEN 'warehouse_to_outlet'
-               -- outlet -> warehouse: the outlet returns up to its own parent warehouse
                WHEN s.scope_kind = 'outlet' AND v_need.scope_kind = 'warehouse'
                     AND EXISTS (SELECT 1 FROM public.distribution_points dp
                                  WHERE dp.id = s.scope_id AND dp.warehouse_id = v_need.scope_id
                                    AND dp.organization_id = p_organization_id)
                  THEN 'outlet_to_warehouse'
-               -- central -> institution: an active supply route links the warehouses
                WHEN s.scope_kind = 'warehouse' AND v_need.scope_kind = 'warehouse'
                     AND EXISTS (SELECT 1 FROM public.warehouse_supply_routes r
                                  WHERE r.source_warehouse_id = s.scope_id
@@ -911,74 +1555,101 @@ BEGIN
              END AS route_kind
       FROM _src s
       WHERE s.remaining > 0
-        AND lower(s.scientific_name) = lower(v_need.scientific_name)
+        AND s.sci_lower = v_need.sci_lower
         AND s.national_code IS NOT DISTINCT FROM v_need.national_code
         AND NOT (s.scope_kind = v_need.scope_kind AND s.scope_id = v_need.scope_id)
       ORDER BY s.remaining DESC, s.scope_id, s.alert_id
     LOOP
-      EXIT WHEN v_remaining <= 0;
+      EXIT WHEN v_need_remaining <= 0;
       CONTINUE WHEN v_src.route_kind IS NULL;   -- infeasible corridor: never suggest it
 
-      v_take := LEAST(v_remaining, v_src.remaining);
-      CONTINUE WHEN v_take <= 0;
+      SELECT remaining INTO v_src_remaining FROM _src WHERE alert_id = v_src.alert_id;
+      CONTINUE WHEN v_src_remaining <= 0;
 
-      -- FEFO batch at the source (single batch, excludes expired/unavailable/quarantine).
-      v_fefo_batch := NULL; v_fefo_expiry := NULL;
-      SELECT f.batch_number, f.expiry_date INTO v_fefo_batch, v_fefo_expiry
-      FROM public.phoenix_inventory_fefo_pick(
-             p_organization_id, v_src.scope_kind, v_src.scope_id,
-             v_need.scientific_name, v_need.national_code) f;
+      FOR v_batch IN
+        SELECT b.*, sc.remaining AS stock_remaining
+        FROM _batch b
+        JOIN _stock_cap sc ON sc.stock_id = b.stock_id
+        WHERE b.scope_kind = v_src.scope_kind
+          AND b.scope_id = v_src.scope_id
+          AND b.sci_lower = v_src.sci_lower
+          AND (v_src.national_code IS NULL OR b.national_code IS NOT DISTINCT FROM v_src.national_code)
+          AND b.remaining > 0
+          AND sc.remaining > 0
+        ORDER BY b.expiry_date ASC NULLS LAST, b.stock_id ASC,
+                 COALESCE(b.dispatch_line_id, '00000000-0000-0000-0000-000000000000'::uuid) ASC
+      LOOP
+        EXIT WHEN v_need_remaining <= 0 OR v_src_remaining <= 0;
 
-      INSERT INTO public.inventory_transfer_suggestions AS su (
-        source_organization_id, target_organization_id, scientific_name, national_code,
-        source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
-        suggested_quantity, fefo_batch_number, fefo_expiry_date,
-        source_surplus_snapshot, target_shortfall_snapshot, rationale,
-        suggestion_key, status, first_suggested_at, last_suggested_at
-      )
-      VALUES (
-        p_organization_id, p_organization_id, v_need.scientific_name, v_need.national_code,
-        v_src.scope_kind, v_src.scope_id, v_need.scope_kind, v_need.scope_id, v_src.route_kind,
-        v_take, v_fefo_batch, v_fefo_expiry,
-        v_src.headroom, v_need.deficit,
-        'deterministic allocation: surplus source covers a shortage over a feasible route; move FEFO batch first',
-        p_organization_id::text || '|' || v_src.scope_kind || '|' || v_src.scope_id::text || '|'
-          || v_need.scope_kind || '|' || v_need.scope_id::text || '|'
-          || lower(v_need.scientific_name) || '|' || COALESCE(v_need.national_code, ''),
-        'open', now(), now()
-      )
-      ON CONFLICT (suggestion_key) DO UPDATE SET
-        suggested_quantity        = EXCLUDED.suggested_quantity,
-        route_kind                = EXCLUDED.route_kind,
-        fefo_batch_number         = EXCLUDED.fefo_batch_number,
-        fefo_expiry_date          = EXCLUDED.fefo_expiry_date,
-        source_surplus_snapshot   = EXCLUDED.source_surplus_snapshot,
-        target_shortfall_snapshot = EXCLUDED.target_shortfall_snapshot,
-        last_suggested_at         = now(),
-        updated_at                = now(),
-        status = CASE WHEN su.status IN ('superseded', 'expired') THEN 'open' ELSE su.status END;
+        -- outlet->warehouse rows MUST ride a proven 071 chain (outlet batches
+        -- always carry one by construction; this is defence in depth).
+        CONTINUE WHEN v_src.route_kind = 'outlet_to_warehouse' AND v_batch.dispatch_line_id IS NULL;
 
-      INSERT INTO _live_keys VALUES (
-        p_organization_id::text || '|' || v_src.scope_kind || '|' || v_src.scope_id::text || '|'
-          || v_need.scope_kind || '|' || v_need.scope_id::text || '|'
-          || lower(v_need.scientific_name) || '|' || COALESCE(v_need.national_code, '')
-      ) ON CONFLICT DO NOTHING;
+        v_take := LEAST(v_need_remaining, v_src_remaining, v_batch.remaining, v_batch.stock_remaining);
+        CONTINUE WHEN v_take <= 0;
 
-      v_upserted := v_upserted + 1;
-      v_remaining := v_remaining - v_take;
-      UPDATE _src SET remaining = remaining - v_take WHERE alert_id = v_src.alert_id;
+        v_key := p_organization_id::text
+          || '|' || v_src.scope_kind  || '|' || v_src.scope_id::text
+          || '|' || v_need.scope_kind || '|' || v_need.scope_id::text
+          || '|' || v_need.sci_lower  || '|' || COALESCE(v_need.national_code, '')
+          || '|' || v_batch.stock_id::text
+          || '|' || COALESCE(v_batch.dispatch_line_id::text, '');
+
+        INSERT INTO public.inventory_transfer_suggestions AS su (
+          source_organization_id, target_organization_id, scientific_name, national_code,
+          source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
+          source_stock_id, suggested_quantity, fefo_batch_number, fefo_expiry_date,
+          source_batch_available_snapshot, source_surplus_snapshot, target_shortfall_snapshot,
+          provenance_dispatch_line_id, provenance_inbound_movement_id,
+          rationale, suggestion_key, status, first_suggested_at, last_suggested_at
+        )
+        VALUES (
+          p_organization_id, p_organization_id, v_need.scientific_name, v_need.national_code,
+          v_src.scope_kind, v_src.scope_id, v_need.scope_kind, v_need.scope_id, v_src.route_kind,
+          v_batch.stock_id, v_take, v_batch.batch_number, v_batch.expiry_date,
+          v_batch.available_quantity, v_src.headroom, v_need.deficit,
+          CASE WHEN v_src.route_kind = 'outlet_to_warehouse' THEN v_batch.dispatch_line_id ELSE NULL END,
+          CASE WHEN v_src.route_kind = 'outlet_to_warehouse' THEN v_batch.inbound_movement_id ELSE NULL END,
+          'deterministic allocation: one FEFO batch of a surplus source covers part of a shortage over a feasible route',
+          v_key, 'open', now(), now()
+        )
+        ON CONFLICT (suggestion_key) DO UPDATE SET
+          suggested_quantity              = EXCLUDED.suggested_quantity,
+          route_kind                      = EXCLUDED.route_kind,
+          fefo_batch_number               = EXCLUDED.fefo_batch_number,
+          fefo_expiry_date                = EXCLUDED.fefo_expiry_date,
+          source_batch_available_snapshot = EXCLUDED.source_batch_available_snapshot,
+          source_surplus_snapshot         = EXCLUDED.source_surplus_snapshot,
+          target_shortfall_snapshot       = EXCLUDED.target_shortfall_snapshot,
+          provenance_inbound_movement_id  = EXCLUDED.provenance_inbound_movement_id,
+          last_suggested_at               = now(),
+          updated_at                      = now(),
+          status                          = 'open'
+        WHERE su.status IN ('open', 'superseded', 'expired');
+
+        GET DIAGNOSTICS v_rows = ROW_COUNT;
+        -- An accepted/rejected row keeps its key: nothing was written, and its
+        -- quantity was already counted as consumed headroom above.
+        CONTINUE WHEN v_rows = 0;
+
+        v_upserted := v_upserted + 1;
+        v_need_remaining := v_need_remaining - v_take;
+        v_src_remaining  := v_src_remaining - v_take;
+        UPDATE _src SET remaining = remaining - v_take WHERE alert_id = v_src.alert_id;
+        UPDATE _batch SET remaining = remaining - v_take
+          WHERE stock_id = v_batch.stock_id
+            AND dispatch_line_id IS NOT DISTINCT FROM v_batch.dispatch_line_id
+            AND scope_kind = v_batch.scope_kind AND scope_id = v_batch.scope_id;
+        UPDATE _stock_cap SET remaining = remaining - v_take WHERE stock_id = v_batch.stock_id;
+      END LOOP;
     END LOOP;
   END LOOP;
 
-  -- Supersede intra-org open suggestions no longer backed by a live allocation.
-  UPDATE public.inventory_transfer_suggestions s
-  SET status = 'superseded', updated_at = now()
-  WHERE s.source_organization_id = p_organization_id
-    AND s.target_organization_id = p_organization_id
-    AND s.status = 'open'
-    AND NOT EXISTS (SELECT 1 FROM _live_keys k WHERE k.suggestion_key = s.suggestion_key);
-
-  RETURN jsonb_build_object('organization_id', p_organization_id, 'suggestions', v_upserted);
+  RETURN jsonb_build_object(
+    'organization_id', p_organization_id,
+    'suggestions', v_upserted,
+    'superseded', v_superseded
+  );
 END;
 $$;
 
@@ -986,20 +1657,30 @@ REVOKE ALL ON FUNCTION public.phoenix_suggest_inventory_transfers(uuid) FROM PUB
 GRANT EXECUTE ON FUNCTION public.phoenix_suggest_inventory_transfers(uuid) TO authenticated;
 
 -- ============================================================================
--- 10. CROSS-ORG SUGGESTION — super_admin / server path ONLY, feasible route
+-- 11. CROSS-ORG SUGGESTION — super_admin path, FULLY DATA-DERIVED quantities
 -- ============================================================================
--- Minting a suggestion off ANOTHER organization's balances is a privileged act.
--- Only super_admin may call this. It validates a real central->institution
--- supply route exists between the two organizations' warehouses; it does not
--- let an ordinary user read foreign balances. It records advisory intent only.
+-- Minting a suggestion off ANOTHER organization's balances is a privileged
+-- act: only super_admin may run it, and even super_admin CANNOT invent a
+-- quantity — there is no quantity parameter. Every minted row is derived:
+--   * a REAL active 'surplus' alert at the source warehouse,
+--   * a REAL active 'missing'/'low_stock' alert at the target warehouse,
+--   * an ACTIVE central->institution supply route between the two warehouses
+--     (ownership of both endpoints verified),
+--   * at least one eligible FEFO batch at the source,
+-- and each per-batch suggestion is capped by
+--   LEAST(remaining surplus, remaining shortfall, remaining batch availability)
+-- where "remaining" subtracts every other open/accepted suggestion. Both
+-- organizations' allocator locks are taken in DETERMINISTIC (sorted) order so
+-- concurrent runs cannot jointly oversubscribe a source.
+-- Advisory intent only; acceptance additionally requires a 036-041 exchange
+-- request reference (§12).
 CREATE OR REPLACE FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(
   p_source_organization_id uuid,
   p_source_warehouse_id    uuid,
   p_target_organization_id uuid,
   p_target_warehouse_id    uuid,
   p_scientific_name        text,
-  p_national_code          text,
-  p_quantity               integer
+  p_national_code          text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
@@ -1007,20 +1688,38 @@ AS $$
 DECLARE
   v_actor uuid := auth.uid();
   v_name  text := NULLIF(btrim(p_scientific_name), '');
-  v_id    uuid;
-  v_fefo_batch text; v_fefo_expiry date;
+  v_code  text := NULLIF(btrim(p_national_code), '');
+  v_lock_a text;
+  v_lock_b text;
+  v_surplus integer;
+  v_shortfall integer;
+  v_deficit_snapshot integer;
+  v_headroom_snapshot integer;
+  v_batch record;
+  v_take integer;
+  v_batch_remaining integer;
+  v_minted integer := 0;
+  v_rows integer;
+  v_key text;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   IF public.phoenix_my_role() <> 'super_admin' THEN
     RAISE EXCEPTION 'cross_org_suggestion_requires_super_admin';
   END IF;
   IF v_name IS NULL THEN RAISE EXCEPTION 'scientific_name_required'; END IF;
-  IF p_quantity IS NULL OR p_quantity <= 0 THEN RAISE EXCEPTION 'quantity_must_be_positive'; END IF;
   IF p_source_organization_id = p_target_organization_id THEN
     RAISE EXCEPTION 'use_intra_org_suggest_for_same_org';
   END IF;
 
-  -- Feasibility: a real active central->institution route between the warehouses.
+  -- Deterministic dual-org lock order (sorted): concurrent suggest runs in
+  -- either organization serialize against this computation.
+  v_lock_a := LEAST(p_source_organization_id::text, p_target_organization_id::text);
+  v_lock_b := GREATEST(p_source_organization_id::text, p_target_organization_id::text);
+  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggest:' || v_lock_a, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggest:' || v_lock_b, 0));
+
+  -- Feasibility: a real active central->institution route between the
+  -- warehouses, each owned by its claimed organization.
   IF NOT EXISTS (
     SELECT 1 FROM public.warehouse_supply_routes r
     JOIN public.warehouses sw ON sw.id = r.source_warehouse_id AND sw.organization_id = p_source_organization_id
@@ -1032,68 +1731,319 @@ BEGIN
     RAISE EXCEPTION 'no_active_supply_route_between_warehouses';
   END IF;
 
-  SELECT f.batch_number, f.expiry_date INTO v_fefo_batch, v_fefo_expiry
-  FROM public.phoenix_inventory_fefo_pick(
-         p_source_organization_id, 'warehouse', p_source_warehouse_id, v_name, p_national_code) f;
+  -- REAL surplus at the source (an active surplus alert for this material).
+  SELECT GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0)
+    INTO v_surplus
+  FROM public.inventory_alerts a
+  WHERE a.organization_id = p_source_organization_id
+    AND a.scope_kind = 'warehouse' AND a.scope_id = p_source_warehouse_id
+    AND a.signal_type = 'surplus'
+    AND a.status IN ('open', 'acknowledged', 'in_progress')
+    AND lower(a.scientific_name) = lower(v_name)
+    AND a.national_code IS NOT DISTINCT FROM v_code
+  ORDER BY a.last_observed_at DESC
+  LIMIT 1;
+  IF v_surplus IS NULL OR v_surplus <= 0 THEN
+    RAISE EXCEPTION 'no_source_surplus';
+  END IF;
+  v_headroom_snapshot := v_surplus;
 
-  INSERT INTO public.inventory_transfer_suggestions AS su (
-    source_organization_id, target_organization_id, scientific_name, national_code,
-    source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
-    suggested_quantity, fefo_batch_number, fefo_expiry_date, rationale,
-    suggestion_key, status, first_suggested_at, last_suggested_at
-  )
-  VALUES (
-    p_source_organization_id, p_target_organization_id, v_name, NULLIF(btrim(p_national_code), ''),
-    'warehouse', p_source_warehouse_id, 'warehouse', p_target_warehouse_id, 'central_to_institution',
-    p_quantity, v_fefo_batch, v_fefo_expiry, 'cross-org advisory over an active supply route (super_admin)',
-    'xorg|' || p_source_warehouse_id::text || '|' || p_target_warehouse_id::text || '|'
-      || lower(v_name) || '|' || COALESCE(NULLIF(btrim(p_national_code), ''), ''),
-    'open', now(), now()
-  )
-  ON CONFLICT (suggestion_key) DO UPDATE SET
-    suggested_quantity = EXCLUDED.suggested_quantity,
-    fefo_batch_number  = EXCLUDED.fefo_batch_number,
-    fefo_expiry_date   = EXCLUDED.fefo_expiry_date,
-    last_suggested_at  = now(), updated_at = now(),
-    status = CASE WHEN su.status IN ('superseded', 'expired') THEN 'open' ELSE su.status END
-  RETURNING id INTO v_id;
+  -- REAL shortfall at the target (an active missing/low_stock alert).
+  SELECT GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1)
+    INTO v_shortfall
+  FROM public.inventory_alerts a
+  WHERE a.organization_id = p_target_organization_id
+    AND a.scope_kind = 'warehouse' AND a.scope_id = p_target_warehouse_id
+    AND a.signal_type IN ('missing', 'low_stock')
+    AND a.status IN ('open', 'acknowledged', 'in_progress')
+    AND lower(a.scientific_name) = lower(v_name)
+    AND a.national_code IS NOT DISTINCT FROM v_code
+  ORDER BY a.last_observed_at DESC
+  LIMIT 1;
+  IF v_shortfall IS NULL OR v_shortfall <= 0 THEN
+    RAISE EXCEPTION 'no_target_shortfall';
+  END IF;
+  v_deficit_snapshot := v_shortfall;
 
-  RETURN jsonb_build_object('id', v_id, 'route_kind', 'central_to_institution');
+  -- Remaining = data minus every other still-consuming suggestion.
+  v_surplus := v_surplus - COALESCE((
+    SELECT SUM(s.suggested_quantity)
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.source_scope_kind = 'warehouse'
+      AND s.source_scope_id = p_source_warehouse_id
+      AND s.source_organization_id = p_source_organization_id
+      AND lower(s.scientific_name) = lower(v_name)
+      AND s.national_code IS NOT DISTINCT FROM v_code
+      AND s.status IN ('open', 'accepted')
+  ), 0);
+  IF v_surplus <= 0 THEN
+    RAISE EXCEPTION 'source_surplus_already_committed';
+  END IF;
+
+  v_shortfall := v_shortfall - COALESCE((
+    SELECT SUM(s.suggested_quantity)
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.target_scope_kind = 'warehouse'
+      AND s.target_scope_id = p_target_warehouse_id
+      AND s.target_organization_id = p_target_organization_id
+      AND lower(s.scientific_name) = lower(v_name)
+      AND s.national_code IS NOT DISTINCT FROM v_code
+      AND s.status IN ('open', 'accepted')
+  ), 0);
+  IF v_shortfall <= 0 THEN
+    RAISE EXCEPTION 'target_shortfall_already_covered';
+  END IF;
+
+  -- One suggestion per eligible FEFO batch until surplus or shortfall runs
+  -- out. No eligible batch at all => no suggestion, by exception.
+  FOR v_batch IN
+    SELECT ws.id AS stock_id, ws.batch_number, ws.expiry_date, ws.available_quantity
+    FROM public.warehouse_stock ws
+    WHERE ws.organization_id = p_source_organization_id
+      AND ws.warehouse_id = p_source_warehouse_id
+      AND lower(ws.scientific_name) = lower(v_name)
+      AND (v_code IS NULL OR ws.national_code IS NOT DISTINCT FROM v_code)
+      AND ws.available_quantity > 0
+      AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+    ORDER BY ws.expiry_date ASC NULLS LAST, ws.id ASC
+  LOOP
+    EXIT WHEN v_surplus <= 0 OR v_shortfall <= 0;
+
+    v_batch_remaining := v_batch.available_quantity - COALESCE((
+      SELECT SUM(s.suggested_quantity)
+      FROM public.inventory_transfer_suggestions s
+      WHERE s.source_stock_id = v_batch.stock_id
+        AND s.status IN ('open', 'accepted')
+    ), 0);
+    CONTINUE WHEN v_batch_remaining <= 0;
+
+    v_take := LEAST(v_surplus, v_shortfall, v_batch_remaining);
+    CONTINUE WHEN v_take <= 0;
+
+    v_key := 'xorg|' || p_source_warehouse_id::text || '|' || p_target_warehouse_id::text
+      || '|' || lower(v_name) || '|' || COALESCE(v_code, '')
+      || '|' || v_batch.stock_id::text;
+
+    INSERT INTO public.inventory_transfer_suggestions AS su (
+      source_organization_id, target_organization_id, scientific_name, national_code,
+      source_scope_kind, source_scope_id, target_scope_kind, target_scope_id, route_kind,
+      source_stock_id, suggested_quantity, fefo_batch_number, fefo_expiry_date,
+      source_batch_available_snapshot, source_surplus_snapshot, target_shortfall_snapshot,
+      rationale, suggestion_key, status, first_suggested_at, last_suggested_at
+    )
+    VALUES (
+      p_source_organization_id, p_target_organization_id, v_name, v_code,
+      'warehouse', p_source_warehouse_id, 'warehouse', p_target_warehouse_id, 'central_to_institution',
+      v_batch.stock_id, v_take, v_batch.batch_number, v_batch.expiry_date,
+      v_batch.available_quantity, v_headroom_snapshot, v_deficit_snapshot,
+      'cross-org advisory: derived from a real surplus alert, a real shortfall alert, an active supply route and one FEFO batch; acceptance requires a 036-041 exchange request reference',
+      v_key, 'open', now(), now()
+    )
+    ON CONFLICT (suggestion_key) DO UPDATE SET
+      suggested_quantity              = EXCLUDED.suggested_quantity,
+      fefo_batch_number               = EXCLUDED.fefo_batch_number,
+      fefo_expiry_date                = EXCLUDED.fefo_expiry_date,
+      source_batch_available_snapshot = EXCLUDED.source_batch_available_snapshot,
+      source_surplus_snapshot         = EXCLUDED.source_surplus_snapshot,
+      target_shortfall_snapshot       = EXCLUDED.target_shortfall_snapshot,
+      last_suggested_at               = now(),
+      updated_at                      = now(),
+      status                          = 'open'
+    WHERE su.status IN ('open', 'superseded', 'expired');
+
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    CONTINUE WHEN v_rows = 0;
+
+    v_minted := v_minted + 1;
+    v_surplus := v_surplus - v_take;
+    v_shortfall := v_shortfall - v_take;
+  END LOOP;
+
+  IF v_minted = 0 THEN
+    RAISE EXCEPTION 'no_eligible_fefo_batch';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'route_kind', 'central_to_institution',
+    'suggestions', v_minted
+  );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text, integer) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(uuid, uuid, uuid, uuid, text, text) TO authenticated;
 
 -- ============================================================================
--- 11. SUGGESTION LIFECYCLE — accept (INTENT ONLY) / reject (audited)
+-- 12. SUGGESTION LIFECYCLE — accept (INTENT ONLY, revalidated) / reject
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.phoenix_accept_inventory_transfer_suggestion(p_suggestion_id uuid)
+-- accept re-verifies EVERYTHING against live data before flipping the status:
+-- route, scope ownership, batch existence/material/quantity, 071 returnable
+-- cap, and — for cross-org — the 036-041 exchange-request reference. A stale
+-- suggestion is atomically classified 'expired' with an audited cause, never
+-- accepted. Accept records intent ONLY: no stock, movement, dispatch or
+-- transfer row is ever written.
+CREATE OR REPLACE FUNCTION public.phoenix_accept_inventory_transfer_suggestion(
+  p_suggestion_id       uuid,
+  p_exchange_request_id uuid DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-DECLARE v_actor uuid := auth.uid(); v_s public.inventory_transfer_suggestions%ROWTYPE;
+DECLARE
+  v_actor uuid := auth.uid();
+  v_s public.inventory_transfer_suggestions%ROWTYPE;
+  v_stale text := NULL;
+  v_available integer;
+  v_returnable integer;
+  v_x public.inter_org_exchange_requests%ROWTYPE;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   SELECT * INTO v_s FROM public.inventory_transfer_suggestions WHERE id = p_suggestion_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
-  -- either endpoint org may act on it
+
+  -- Permission on the suggestion's ACTUAL endpoints — never (org, NULL, NULL).
   IF NOT (
     public.phoenix_my_role() = 'super_admin'
-    OR public.phoenix_profile_has_scoped_permission(v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, NULL, NULL)
-    OR public.phoenix_profile_has_scoped_permission(v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, NULL, NULL)
+    OR (v_s.source_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, v_s.source_scope_id, NULL))
+    OR (v_s.source_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, NULL, v_s.source_scope_id))
+    OR (v_s.target_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, v_s.target_scope_id, NULL))
+    OR (v_s.target_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, NULL, v_s.target_scope_id))
   ) THEN RAISE EXCEPTION 'not_authorized_inventory_act'; END IF;
   IF v_s.status <> 'open' THEN RAISE EXCEPTION 'suggestion_not_open'; END IF;
 
+  -- ── REVALIDATION against live data ──────────────────────────────────────
+  -- 1. Scope ownership still holds.
+  IF public.phoenix_inventory_scope_org(v_s.source_scope_kind, v_s.source_scope_id)
+     IS DISTINCT FROM v_s.source_organization_id
+     OR public.phoenix_inventory_scope_org(v_s.target_scope_kind, v_s.target_scope_id)
+        IS DISTINCT FROM v_s.target_organization_id THEN
+    v_stale := 'scope_ownership_changed';
+  END IF;
+
+  -- 2. The route/pairing is still live.
+  IF v_stale IS NULL THEN
+    IF v_s.route_kind = 'warehouse_to_outlet' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = v_s.target_scope_id
+          AND dp.warehouse_id = v_s.source_scope_id
+          AND dp.organization_id = v_s.source_organization_id
+      ) THEN v_stale := 'warehouse_outlet_pairing_gone'; END IF;
+    ELSIF v_s.route_kind = 'outlet_to_warehouse' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = v_s.source_scope_id
+          AND dp.warehouse_id = v_s.target_scope_id
+          AND dp.organization_id = v_s.source_organization_id
+      ) THEN v_stale := 'outlet_warehouse_pairing_gone'; END IF;
+    ELSIF v_s.route_kind = 'central_to_institution' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.warehouse_supply_routes r
+        JOIN public.warehouses sw ON sw.id = r.source_warehouse_id
+                                 AND sw.organization_id = v_s.source_organization_id
+        JOIN public.warehouses tw ON tw.id = r.target_warehouse_id
+                                 AND tw.organization_id = v_s.target_organization_id
+        WHERE r.source_warehouse_id = v_s.source_scope_id
+          AND r.target_warehouse_id = v_s.target_scope_id
+          AND r.is_active
+      ) THEN v_stale := 'supply_route_inactive'; END IF;
+    END IF;
+  END IF;
+
+  -- 3. The batch still exists, still matches, and still covers the quantity.
+  IF v_stale IS NULL THEN
+    IF v_s.source_scope_kind = 'warehouse' THEN
+      SELECT ws.available_quantity INTO v_available
+      FROM public.warehouse_stock ws
+      WHERE ws.id = v_s.source_stock_id
+        AND ws.warehouse_id = v_s.source_scope_id
+        AND ws.organization_id = v_s.source_organization_id
+        AND lower(ws.scientific_name) = lower(v_s.scientific_name)
+        AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date);
+    ELSE
+      SELECT os.available_quantity INTO v_available
+      FROM public.outlet_stock os
+      WHERE os.id = v_s.source_stock_id
+        AND os.distribution_point_id = v_s.source_scope_id
+        AND os.organization_id = v_s.source_organization_id
+        AND lower(os.scientific_name) = lower(v_s.scientific_name)
+        AND (os.expiry_date IS NULL OR os.expiry_date >= current_date);
+    END IF;
+    IF v_available IS NULL THEN
+      v_stale := 'source_batch_gone_or_expired';
+    ELSIF v_available < v_s.suggested_quantity THEN
+      v_stale := 'source_batch_quantity_insufficient';
+    END IF;
+  END IF;
+
+  -- 4. outlet->warehouse: the 071 returnable cap still covers the quantity.
+  IF v_stale IS NULL AND v_s.route_kind = 'outlet_to_warehouse' THEN
+    SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
+      INTO v_returnable
+    FROM public.warehouse_dispatch_lines wdl
+    WHERE wdl.id = v_s.provenance_dispatch_line_id
+      AND wdl.status IN ('accepted', 'accepted_with_difference');
+    IF v_returnable IS NULL OR v_returnable < v_s.suggested_quantity THEN
+      v_stale := 'returnable_quantity_insufficient';
+    END IF;
+  END IF;
+
+  -- A stale suggestion is NOT accepted: it expires, audited.
+  IF v_stale IS NOT NULL THEN
+    UPDATE public.inventory_transfer_suggestions
+    SET status = 'expired', reason = v_stale, updated_at = now()
+    WHERE id = p_suggestion_id;
+
+    INSERT INTO public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
+    VALUES (v_s.target_organization_id, v_actor, public.phoenix_my_role(), 'update', 'inventory_transfer_suggestion',
+            p_suggestion_id, v_s.route_kind || ':' || v_s.scientific_name,
+            jsonb_build_object('lifecycle', 'expire_on_accept', 'cause', v_stale,
+                               'source_org', v_s.source_organization_id));
+
+    RETURN jsonb_build_object('id', p_suggestion_id, 'status', 'expired', 'cause', v_stale);
+  END IF;
+
+  -- 5. Cross-org acceptance is anchored to the 036-041 engine: a live
+  --    exchange request (created through the EXISTING 041 RPC path) whose
+  --    organizations and material match. This file never writes that table.
+  IF v_s.source_organization_id <> v_s.target_organization_id THEN
+    IF p_exchange_request_id IS NULL THEN
+      RAISE EXCEPTION 'exchange_request_required_for_cross_org_accept';
+    END IF;
+    SELECT * INTO v_x FROM public.inter_org_exchange_requests WHERE id = p_exchange_request_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'exchange_request_not_found'; END IF;
+    IF v_x.source_organization_id <> v_s.source_organization_id
+       OR v_x.target_organization_id <> v_s.target_organization_id THEN
+      RAISE EXCEPTION 'exchange_request_organization_mismatch';
+    END IF;
+    IF lower(v_x.scientific_name) <> lower(v_s.scientific_name) THEN
+      RAISE EXCEPTION 'exchange_request_material_mismatch';
+    END IF;
+    IF v_x.status IN ('source_rejected', 'cancelled', 'completed') THEN
+      RAISE EXCEPTION 'exchange_request_terminal';
+    END IF;
+  ELSIF p_exchange_request_id IS NOT NULL THEN
+    RAISE EXCEPTION 'exchange_request_only_for_cross_org';
+  END IF;
+
   -- INTENT ONLY. No stock/movement/dispatch/transfer write, by design.
   UPDATE public.inventory_transfer_suggestions
-  SET status = 'accepted', accepted_at = now(), accepted_by = v_actor, updated_at = now()
+  SET status = 'accepted', accepted_at = now(), accepted_by = v_actor,
+      exchange_request_id = CASE WHEN v_s.source_organization_id <> v_s.target_organization_id
+                                 THEN p_exchange_request_id ELSE exchange_request_id END,
+      updated_at = now()
   WHERE id = p_suggestion_id;
 
   INSERT INTO public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
   VALUES (v_s.target_organization_id, v_actor, public.phoenix_my_role(), 'update', 'inventory_transfer_suggestion',
           p_suggestion_id, v_s.route_kind || ':' || v_s.scientific_name,
-          jsonb_build_object('lifecycle', 'accept', 'intent_only', true, 'source_org', v_s.source_organization_id));
+          jsonb_build_object('lifecycle', 'accept', 'intent_only', true,
+                             'source_org', v_s.source_organization_id,
+                             'exchange_request_id', p_exchange_request_id));
 
   RETURN jsonb_build_object('id', p_suggestion_id, 'status', 'accepted', 'note', 'intent recorded; no stock moved');
 END;
@@ -1109,10 +2059,17 @@ BEGIN
   IF v_reason IS NULL THEN RAISE EXCEPTION 'reject_reason_required'; END IF;
   SELECT * INTO v_s FROM public.inventory_transfer_suggestions WHERE id = p_suggestion_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
+  -- Permission on the suggestion's ACTUAL endpoints — never (org, NULL, NULL).
   IF NOT (
     public.phoenix_my_role() = 'super_admin'
-    OR public.phoenix_profile_has_scoped_permission(v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, NULL, NULL)
-    OR public.phoenix_profile_has_scoped_permission(v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, NULL, NULL)
+    OR (v_s.source_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, v_s.source_scope_id, NULL))
+    OR (v_s.source_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.source_organization_id, NULL, v_s.source_scope_id))
+    OR (v_s.target_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, v_s.target_scope_id, NULL))
+    OR (v_s.target_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.act_on_suggestions', v_s.target_organization_id, NULL, v_s.target_scope_id))
   ) THEN RAISE EXCEPTION 'not_authorized_inventory_act'; END IF;
   IF v_s.status <> 'open' THEN RAISE EXCEPTION 'suggestion_not_open'; END IF;
 
@@ -1129,13 +2086,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.phoenix_accept_inventory_transfer_suggestion(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.phoenix_accept_inventory_transfer_suggestion(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_accept_inventory_transfer_suggestion(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_accept_inventory_transfer_suggestion(uuid, uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.phoenix_reject_inventory_transfer_suggestion(uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.phoenix_reject_inventory_transfer_suggestion(uuid, text) TO authenticated;
 
 -- ============================================================================
--- 12. THRESHOLD WRITE — manage_thresholds permission + audit
+-- 13. THRESHOLD WRITE — manage_thresholds permission + audit
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_upsert_inventory_threshold(
   p_organization_id  uuid,
@@ -1160,6 +2117,10 @@ BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   IF p_scope_kind NOT IN ('warehouse', 'outlet') THEN RAISE EXCEPTION 'invalid_scope_kind'; END IF;
   IF v_name IS NULL THEN RAISE EXCEPTION 'scientific_name_required'; END IF;
+  -- near_expiry_days is a REAL setting (option A): 1..270, NULL = default 270.
+  IF p_near_expiry_days IS NOT NULL AND (p_near_expiry_days < 1 OR p_near_expiry_days > 270) THEN
+    RAISE EXCEPTION 'near_expiry_days_out_of_range';
+  END IF;
   -- If a specific scope is named, it must belong to the org.
   IF p_scope_id IS NOT NULL
      AND public.phoenix_inventory_scope_org(p_scope_kind, p_scope_id) IS DISTINCT FROM p_organization_id THEN
@@ -1171,6 +2132,8 @@ BEGIN
           v_actor, 'inventory.manage_thresholds', p_organization_id, p_scope_id, NULL))
     OR (p_scope_id IS NOT NULL AND p_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
           v_actor, 'inventory.manage_thresholds', p_organization_id, NULL, p_scope_id))
+    -- org-DEFAULT rows (scope_id NULL) are a genuinely org-wide setting: the
+    -- one legitimate org-level check on this write path.
     OR (p_scope_id IS NULL AND public.phoenix_profile_has_scoped_permission(
           v_actor, 'inventory.manage_thresholds', p_organization_id, NULL, NULL))
   ) THEN RAISE EXCEPTION 'not_authorized_inventory_manage_thresholds'; END IF;
@@ -1205,11 +2168,12 @@ REVOKE ALL ON FUNCTION public.phoenix_upsert_inventory_threshold(uuid, text, uui
 GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_threshold(uuid, text, uuid, text, text, integer, integer, integer, boolean) TO authenticated;
 
 -- ============================================================================
--- 13. PURGE — manual, safe, retention-bounded, NEVER touches audit_logs
+-- 14. PURGE — manual, safe, retention-bounded, NEVER touches audit_logs
 -- ============================================================================
 -- Deletes only TERMINAL alerts/suggestions older than an explicit retention
 -- (>= 30 days), scoped to the org, permissioned, and NEVER an audit_logs row.
 -- No cron: an operator calls this deliberately. Writes its own audit entry.
+-- Purge is a genuinely org-wide operation (org-level grant or super_admin).
 CREATE OR REPLACE FUNCTION public.phoenix_purge_inventory_terminal(
   p_organization_id uuid,
   p_older_than_days integer
@@ -1260,16 +2224,29 @@ REVOKE ALL ON FUNCTION public.phoenix_purge_inventory_terminal(uuid, integer) FR
 GRANT EXECUTE ON FUNCTION public.phoenix_purge_inventory_terminal(uuid, integer) TO authenticated;
 
 -- ============================================================================
--- 14. RLS — org-scoped; suggestions visible to source OR target OR super_admin
+-- 15. RLS — org-scoped; org-wide threshold rows readable at org level;
+--     suggestions visible to source OR target OR super_admin
 -- ============================================================================
 ALTER TABLE public.inventory_signal_thresholds     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_alerts                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_transfer_suggestions  ENABLE ROW LEVEL SECURITY;
 
+-- Thresholds: scoped rows demand the exact-scope read gate; org-wide default
+-- rows (scope_id IS NULL) demand super_admin or an org-level
+-- inventory.view_signals grant FOR THAT ORGANIZATION. A third organization
+-- fails the organization check in both branches; anon holds no grant and
+-- auth.uid() is NULL.
 DROP POLICY IF EXISTS inventory_thresholds_select_scoped ON public.inventory_signal_thresholds;
 CREATE POLICY inventory_thresholds_select_scoped
   ON public.inventory_signal_thresholds FOR SELECT TO authenticated
-  USING (public.phoenix_can_read_inventory_signal(organization_id, scope_kind, scope_id));
+  USING (
+    (scope_id IS NOT NULL
+       AND public.phoenix_can_read_inventory_signal(organization_id, scope_kind, scope_id))
+    OR (scope_id IS NULL
+       AND (public.phoenix_my_role() = 'super_admin'
+            OR public.phoenix_profile_has_scoped_permission(
+                 auth.uid(), 'inventory.view_signals', organization_id, NULL, NULL)))
+  );
 
 DROP POLICY IF EXISTS inventory_alerts_select_scoped ON public.inventory_alerts;
 CREATE POLICY inventory_alerts_select_scoped
@@ -1288,7 +2265,7 @@ CREATE POLICY inventory_suggestions_select_scoped
   );
 
 -- ============================================================================
--- 15. ACL — authenticated reads via RLS only; writes RPC-only; anon nothing
+-- 16. ACL — authenticated reads via RLS only; writes RPC-only; anon nothing
 -- ============================================================================
 GRANT SELECT ON TABLE public.inventory_signal_thresholds    TO authenticated;
 GRANT SELECT ON TABLE public.inventory_alerts               TO authenticated;
@@ -1303,7 +2280,7 @@ REVOKE ALL ON TABLE public.inventory_alerts               FROM anon;
 REVOKE ALL ON TABLE public.inventory_transfer_suggestions FROM anon;
 
 -- ============================================================================
--- 16. PERMISSION CATALOG — seven keys, split by action. ENFORCEMENT STAYS OFF.
+-- 17. PERMISSION CATALOG — seven keys, split by action. ENFORCEMENT STAYS OFF.
 -- ============================================================================
 INSERT INTO public.permission_keys (key, module, action, label_en, label_ar, is_dangerous) VALUES
   ('inventory.view_signals',      'inventory', 'view_signals',      'View inventory signals and alerts',       'عرض إشارات وتنبيهات المخزون',    false),
@@ -1362,10 +2339,10 @@ CROSS JOIN (VALUES ('inventory.view_signals'),('inventory.recompute'),('inventor
 ON CONFLICT (role, permission_key) DO NOTHING;
 
 -- ============================================================================
--- 17. POST-CONDITIONS (§ VERIFY)
+-- 18. POST-CONDITIONS (§ VERIFY)
 -- ============================================================================
 DO $$
-DECLARE v_t text; v_body text;
+DECLARE v_t text; v_body text; v_qual text;
 BEGIN
   FOREACH v_t IN ARRAY ARRAY['inventory_signal_thresholds','inventory_alerts','inventory_transfer_suggestions'] LOOP
     IF to_regclass('public.' || v_t) IS NULL THEN RAISE EXCEPTION 'VERIFY FAILED (072): table % missing', v_t; END IF;
@@ -1384,7 +2361,17 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (072): expiry tiers not the 048 vocabulary';
   END IF;
 
-  -- episode + dedup + cross-org columns exist.
+  -- near_expiry_days is implemented: bounded 1..270 and consumed by recompute.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_thresholds_near_expiry_days_chk'
+                   AND pg_get_constraintdef(oid) LIKE '%270%') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): near_expiry_days is not bounded to 1..270';
+  END IF;
+  v_body := pg_get_functiondef('public.phoenix_recompute_inventory_alerts(uuid,text,uuid)'::regprocedure);
+  IF v_body !~* 'near_expiry_days' OR v_body !~* 'eff_days' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): recompute does not consume near_expiry_days';
+  END IF;
+
+  -- episode + dedup + cross-org + batch + provenance + integration columns exist.
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
                    AND table_name='inventory_alerts' AND column_name='occurrence_count')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
@@ -1392,8 +2379,50 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
                    AND table_name='inventory_transfer_suggestions' AND column_name='source_organization_id')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
-                   AND table_name='inventory_transfer_suggestions' AND column_name='target_organization_id') THEN
-    RAISE EXCEPTION 'VERIFY FAILED (072): episode/cross-org columns missing';
+                   AND table_name='inventory_transfer_suggestions' AND column_name='target_organization_id')
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+                   AND table_name='inventory_transfer_suggestions' AND column_name='source_stock_id')
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+                   AND table_name='inventory_transfer_suggestions' AND column_name='provenance_dispatch_line_id')
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+                   AND table_name='inventory_transfer_suggestions' AND column_name='exchange_request_id') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): episode/cross-org/batch/provenance/integration columns missing';
+  END IF;
+
+  -- the 036-041 integration reference is a REAL foreign key.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    WHERE c.conrelid = 'public.inventory_transfer_suggestions'::regclass
+      AND c.contype = 'f'
+      AND c.confrelid = 'public.inter_org_exchange_requests'::regclass
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): exchange_request_id FK to inter_org_exchange_requests missing';
+  END IF;
+
+  -- the 071 provenance chain composite FKs exist.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_prov_line_stock_fk' AND contype='f')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_prov_movement_line_fk' AND contype='f')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_prov_movement_stock_fk' AND contype='f') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): 071 provenance composite FKs missing';
+  END IF;
+
+  -- structural CHECKs: route pairing, same-org corridors, return provenance,
+  -- cross-org accept linkage.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_route_pairing_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_cross_org_route_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_return_provenance_chk')
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_cross_org_accept_link_chk') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): a structural suggestion CHECK is missing';
+  END IF;
+
+  -- structural guard triggers exist on all three tables.
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_threshold_guard'
+                   AND tgrelid = 'public.inventory_signal_thresholds'::regclass)
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_alert_guard'
+                   AND tgrelid = 'public.inventory_alerts'::regclass)
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'inventory_suggestion_guard'
+                   AND tgrelid = 'public.inventory_transfer_suggestions'::regclass) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): a structural guard trigger is missing';
   END IF;
 
   IF to_regclass('public.inventory_alerts_alert_key_uniq') IS NULL
@@ -1402,18 +2431,52 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (072): a dedup unique index is missing';
   END IF;
 
-  -- accept is intent-only; recompute/suggest never write physical stock.
+  -- org-wide threshold rows are readable: the policy carries an explicit
+  -- scope_id IS NULL branch gated at org level.
+  SELECT qual INTO v_qual FROM pg_policies
+  WHERE schemaname='public' AND tablename='inventory_signal_thresholds'
+    AND policyname='inventory_thresholds_select_scoped';
+  IF v_qual IS NULL OR v_qual NOT LIKE '%scope_id IS NULL%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): thresholds policy lacks the org-wide (scope_id IS NULL) branch';
+  END IF;
+
+  -- accept is intent-only; recompute/suggest/cross-org never write physical
+  -- stock, never write the 036-041 exchange tables, and accept/reject check
+  -- the ACTUAL scopes (no (org, NULL, NULL) act_on shortcut).
   FOREACH v_t IN ARRAY ARRAY[
-    'public.phoenix_accept_inventory_transfer_suggestion(uuid)',
+    'public.phoenix_accept_inventory_transfer_suggestion(uuid,uuid)',
+    'public.phoenix_reject_inventory_transfer_suggestion(uuid,text)',
     'public.phoenix_recompute_inventory_alerts(uuid,text,uuid)',
-    'public.phoenix_suggest_inventory_transfers(uuid)'
+    'public.phoenix_suggest_inventory_transfers(uuid)',
+    'public.phoenix_suggest_cross_org_inventory_transfer(uuid,uuid,uuid,uuid,text,text)'
   ] LOOP
     v_body := pg_get_functiondef(v_t::regprocedure);
     IF v_body ~* 'INSERT\s+INTO\s+public\.(warehouse_stock|outlet_stock|warehouse_stock_movements|outlet_stock_movements|warehouse_dispatches|warehouse_dispatch_lines|warehouse_transfers)'
        OR v_body ~* 'UPDATE\s+public\.(warehouse_stock|outlet_stock)\b' THEN
       RAISE EXCEPTION 'VERIFY FAILED (072): % moves physical stock', v_t;
     END IF;
+    IF v_body ~* '(INSERT\s+INTO|UPDATE)\s+public\.inter_org_exchange_(requests|events)' THEN
+      RAISE EXCEPTION 'VERIFY FAILED (072): % writes the 036-041 exchange tables', v_t;
+    END IF;
   END LOOP;
+  FOREACH v_t IN ARRAY ARRAY[
+    'public.phoenix_accept_inventory_transfer_suggestion(uuid,uuid)',
+    'public.phoenix_reject_inventory_transfer_suggestion(uuid,text)'
+  ] LOOP
+    v_body := pg_get_functiondef(v_t::regprocedure);
+    IF v_body ~* 'act_on_suggestions[^,]*,\s*v_s\.(source|target)_organization_id,\s*NULL,\s*NULL' THEN
+      RAISE EXCEPTION 'VERIFY FAILED (072): % still uses an org-level act_on shortcut', v_t;
+    END IF;
+  END LOOP;
+
+  -- the cross-org path takes NO client quantity: only the derived signature
+  -- exists.
+  IF to_regprocedure('public.phoenix_suggest_cross_org_inventory_transfer(uuid,uuid,uuid,uuid,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): derived cross-org signature missing';
+  END IF;
+  IF to_regprocedure('public.phoenix_suggest_cross_org_inventory_transfer(uuid,uuid,uuid,uuid,text,text,integer)') IS NOT NULL THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): a client-quantity cross-org signature still exists';
+  END IF;
 
   -- purge never targets audit_logs.
   v_body := pg_get_functiondef('public.phoenix_purge_inventory_terminal(uuid,integer)'::regprocedure);
@@ -1442,6 +2505,12 @@ BEGIN
      OR has_table_privilege('anon', 'public.inventory_signal_thresholds', 'SELECT')
      OR has_table_privilege('anon', 'public.inventory_transfer_suggestions', 'SELECT') THEN
     RAISE EXCEPTION 'VERIFY FAILED (072): anon can read inventory intelligence';
+  END IF;
+  IF has_function_privilege('anon', 'public.phoenix_recompute_inventory_alerts(uuid,text,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.phoenix_suggest_inventory_transfers(uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.phoenix_accept_inventory_transfer_suggestion(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.phoenix_suggest_cross_org_inventory_transfer(uuid,uuid,uuid,uuid,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (072): anon can execute an inventory RPC';
   END IF;
 
   -- all seven permission keys registered.
