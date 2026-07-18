@@ -101,7 +101,9 @@ describe('B3. transfer_manager inherits no new 062 permission', () => {
     // the safeguard has to already be in place.
     const src = readFileSync(join(__dirname, '../permissions.ts'), 'utf8');
     expect(src).toContain('const TRANSFER_MANAGER_LEGACY_DEFAULTS = [');
-    expect(src).toContain("if (n === 'transfer_manager') return new Set(TRANSFER_MANAGER_LEGACY_DEFAULTS);");
+    expect(src).toMatch(
+      /if \(n === 'transfer_manager'\)\s+return new Set\(TRANSFER_MANAGER_LEGACY_DEFAULTS\);/,
+    );
     // It must not be derived from the other role's list.
     expect(src).not.toContain('TRANSFER_MANAGER_LEGACY_DEFAULTS = MONTHLY_STATUS_OFFICER_DEFAULTS');
     expect(src).not.toContain('...MONTHLY_STATUS_OFFICER_DEFAULTS');
