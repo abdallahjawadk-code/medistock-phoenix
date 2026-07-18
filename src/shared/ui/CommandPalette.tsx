@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 /**
  * UX-COMMAND-CENTER-SMART-A — lightweight Ctrl+K / Cmd+K command palette.
@@ -14,7 +15,7 @@ import { t } from '@/shared/i18n/strings';
 
 interface PaletteItem {
   screen: number;
-  icon: string;
+  icon: PhoenixIconName;
   labelKey: string;
   superAdminOnly?: boolean;
 }
@@ -24,15 +25,15 @@ interface PaletteItem {
 // route (screen 6) remains fully wired in App.tsx even though it was
 // deliberately hidden from the primary nav (UI-LEGACY-PAGES-NAV-HIDE-A).
 const PALETTE_ITEMS: PaletteItem[] = [
-  { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
-  { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-  { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: '👥', labelKey: 'nav_users' },
-  { screen: 17, icon: '🗺️', labelKey: 'nav_network' },
-  { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
-  { screen: 9,  icon: '📈', labelKey: 'nav_reports', superAdminOnly: true },
-  { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-  { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
+  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+  { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+  { screen: 14, icon: 'users', labelKey: 'nav_users' },
+  { screen: 17, icon: 'network', labelKey: 'nav_network' },
+  { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
+  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
+  { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
+  { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
 ];
 
 interface Props {
@@ -116,7 +117,7 @@ export function CommandPalette({ onNavigate }: Props) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <span aria-hidden="true">🔎</span>
+        <PhoenixIcon name="search" size={19} />
       </button>
 
       {open && (
@@ -125,6 +126,7 @@ export function CommandPalette({ onNavigate }: Props) {
           aria-modal="true"
           aria-label={t('cc_palette_title', lang)}
           onClick={close}
+          className="nexus-command-backdrop"
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
             background: 'rgba(15, 23, 42, .45)',
@@ -133,6 +135,7 @@ export function CommandPalette({ onNavigate }: Props) {
           }}
         >
           <div
+            className="nexus-command-panel"
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%', maxWidth: '480px', maxHeight: '80vh',
@@ -175,7 +178,7 @@ export function CommandPalette({ onNavigate }: Props) {
                     transition: 'background 100ms',
                   }}
                 >
-                  <span style={{ fontSize: '16px', flexShrink: 0 }} aria-hidden="true">{item.icon}</span>
+                  <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t(item.labelKey, lang)}
                   </span>
