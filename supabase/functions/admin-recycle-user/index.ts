@@ -57,8 +57,9 @@ const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const OFFICIAL_ROLES = [
   'super_admin',
   'institution_admin',
+  'central_warehouse_manager',
   'warehouse_officer',
-  'port_officer',
+  'outlet_officer',
   'monthly_status_officer',
   'viewer',
 ];
@@ -203,7 +204,11 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN' }, 403);
     }
     // Cannot assign super_admin or institution_admin as new_role.
-    if (newRole === 'super_admin' || newRole === 'institution_admin') {
+    if (
+      newRole === 'super_admin'
+      || newRole === 'institution_admin'
+      || newRole === 'central_warehouse_manager'
+    ) {
       return json({ ok: false, error: 'CANNOT_ASSIGN_ELEVATED_ROLE' }, 403);
     }
     // institution_admin cannot change organization (can only recycle within own org).
