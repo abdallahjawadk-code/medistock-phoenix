@@ -32,6 +32,7 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
           style={{ width: '42px', height: '42px', flexShrink: 0 }}
           aria-label={t('menu', lang)}
         >
+          {/* The legacy ☰ control is rendered as a deterministic accessible SVG. */}
           <PhoenixIcon name="menu" size={20} />
         </button>
       )}
