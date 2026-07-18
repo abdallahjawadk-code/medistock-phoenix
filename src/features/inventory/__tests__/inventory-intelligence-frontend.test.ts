@@ -272,7 +272,7 @@ describe('round 2: real scope selector (not always org-default)', () => {
   it('scope options come from the RLS-filtered catalog, not free-text/UUID entry', () => {
     expect(scopesHook).toMatch(/getWarehouses/);
     expect(scopesHook).toMatch(/getPointsByOrg/);
-    expect(thresholdModal).toMatch(/useInventoryScopes\(organizationId\)/);
+    expect(thresholdModal).toMatch(/useInventoryScopes\(organizationId, canOrgDefault\)/);
     // scope is chosen from a <select> over the fetched options (label = name, value = id)
     expect(thresholdModal).toMatch(/options\.map\(o => \(\{ value: o\.id, label:/);
   });
@@ -301,13 +301,22 @@ describe('round 2: real scope selector (not always org-default)', () => {
 
 // ── ROUND 3: stale-scope safety + manageable catalog + true editing ─────────
 describe('round 3: exact manageable scopes and stale-id safety', () => {
-  it('filters the readable catalog through active scope assignments (super_admin bypass only)', () => {
+  it('filters the readable catalog through active scope assignments with explicit broad-grant bypasses', () => {
     expect(scopesHook).toMatch(/useCurrentScopes\(authz\)/);
     expect(scopesHook).toMatch(/profile\?\.role === 'super_admin'/);
     expect(scopesHook).toMatch(/assignedWarehouses\.has\(w\.id\)/);
     expect(scopesHook).toMatch(/assignedPoints\.has\(o\.id\)/);
     expect(scopesHook).toMatch(/manageableWarehouses/);
     expect(scopesHook).toMatch(/manageableOutlets/);
+  });
+
+  it('lets an exact organization-level grant cover every scope without requiring assignment rows', () => {
+    expect(scopesHook).toMatch(/canManageOrganization = false/);
+    expect(scopesHook).toMatch(/const managesWholeOrganization = superAdmin \|\| canManageOrganization/);
+    expect(scopesHook).toMatch(/const manageableWarehouses = managesWholeOrganization/);
+    expect(scopesHook).toMatch(/const manageableOutlets = managesWholeOrganization/);
+    expect(thresholdModal).toMatch(/useInventoryScopes\(organizationId, canOrgDefault\)/);
+    expect(panel).toMatch(/useInventoryScopes\(activeOrgId, canManageOrgDefault\)/);
   });
 
   it('uses only manageable options in the write modal, while preserving readable name resolution', () => {
