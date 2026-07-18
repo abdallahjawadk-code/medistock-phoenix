@@ -96,7 +96,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
             <PhoenixMark size={39} title="" />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="nexus-brand-title">MediStock Phoenix</div>
+            <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
             <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
           </div>
         </div>
