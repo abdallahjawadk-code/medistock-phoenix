@@ -25,15 +25,22 @@ const EMPTY_ICON_MAP: Record<string, PhoenixIconName> = {
   '🗺': 'network',
   '💊': 'outlet',
   '✅': 'check',
+  '🔀': 'route',
+  '🧭': 'scope',
+  '🕘': 'clock',
+  '🕒': 'clock',
+  '⏳': 'clock',
 };
 
 export function PhoenixEmptyState({ icon = '📭', title, description, action }: Props) {
-  const iconName = EMPTY_ICON_MAP[icon];
+  // Every empty state renders a deterministic SVG glyph — an unmapped key
+  // falls back to the neutral 'status' icon, never a raw emoji.
+  const iconName: PhoenixIconName = EMPTY_ICON_MAP[icon] ?? 'status';
 
   return (
     <div className="nexus-empty anim-fs">
       <div className="premium-empty-icon nexus-empty__icon">
-        {iconName ? <PhoenixIcon name={iconName} size={28} /> : <span aria-hidden="true">{icon}</span>}
+        <PhoenixIcon name={iconName} size={28} />
       </div>
       <div className="nexus-empty__title">{title}</div>
       {description && <p>{description}</p>}

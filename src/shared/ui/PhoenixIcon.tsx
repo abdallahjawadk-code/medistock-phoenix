@@ -26,7 +26,8 @@ export type PhoenixIconName =
   | 'key'
   | 'mail'
   | 'lock'
-  | 'check';
+  | 'check'
+  | 'clock';
 
 interface PhoenixIconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: PhoenixIconName;
@@ -90,6 +91,8 @@ function iconPaths(name: PhoenixIconName): ReactNode {
       return <P><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></P>;
     case 'check':
       return <P><path d="m5 12 4 4L19 6" /></P>;
+    case 'clock':
+      return <P><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></P>;
   }
 }
 

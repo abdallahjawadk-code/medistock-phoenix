@@ -8,6 +8,7 @@ import {
   updatePassword as authUpdatePassword,
   signOut as authSignOut,
 } from '@/shared/supabase/services/auth.service';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 type RecoveryState = 'loading' | 'ready' | 'no_session' | 'done';
 
@@ -110,20 +111,20 @@ export function ResetPasswordScreen() {
         <button onClick={toggleLang} style={{ padding: '5px 13px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
           {lang === 'ar' ? 'EN' : 'عربي'}
         </button>
-        <button onClick={toggleTheme} aria-label="Toggle theme" style={{ width: '34px', height: '34px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '15px', cursor: 'pointer' }}>
-          {theme === 'dark' ? '☀️' : '🌙'}
+        <button onClick={toggleTheme} aria-label="Toggle theme" style={{ width: '34px', height: '34px', borderRadius: 'var(--rpill)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <PhoenixIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
         </button>
       </div>
 
       <div style={{ textAlign: 'center', marginBottom: '22px' }}>
-        <div style={{ width: '64px', height: '64px', borderRadius: 'var(--r4)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: '30px' }}>🔐</div>
+        <div style={{ width: '64px', height: '64px', borderRadius: 'var(--r4)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', color: '#fff' }}><PhoenixIcon name="lock" size={30} /></div>
         <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.4px' }}>MediStock-Babil</h1>
       </div>
 
       <div style={{ width: '100%', maxWidth: '375px', background: 'var(--s)', borderRadius: 'var(--r5)', boxShadow: 'var(--sh-xl)', padding: '26px', border: '1px solid var(--brd)' }}>
         {state === 'done' ? (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '36px', marginBottom: '12px' }}>✅</div>
+            <div style={{ marginBottom: '12px', color: 'var(--ok)', display: 'flex', justifyContent: 'center' }}><PhoenixIcon name="check" size={38} /></div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>{t('reset_success', lang)}</h2>
             <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '18px' }}>{t('reset_success_msg', lang)}</p>
             <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
@@ -133,13 +134,13 @@ export function ResetPasswordScreen() {
 
         ) : state === 'loading' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px', animation: 'fl 1.5s ease-in-out infinite' }}>🔐</div>
+            <div style={{ marginBottom: '12px', color: 'var(--p)', display: 'flex', justifyContent: 'center', animation: 'fl 1.5s ease-in-out infinite' }}><PhoenixIcon name="lock" size={30} /></div>
             <p style={{ fontSize: '13px', color: 'var(--t2)' }}>{t('recovery_verifying', lang)}</p>
           </div>
 
         ) : state === 'no_session' ? (
           <div style={{ textAlign: 'center', padding: '12px 0' }}>
-            <div style={{ fontSize: '28px', marginBottom: '12px' }}>⚠</div>
+            <div style={{ marginBottom: '12px', color: 'var(--err)', display: 'flex', justifyContent: 'center' }}><PhoenixIcon name="warning" size={30} /></div>
             <p style={{ fontSize: '13px', color: 'var(--err)', marginBottom: '18px' }} dir="auto">{t('recovery_no_session', lang)}</p>
             <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               {t('back_to_login', lang)}
