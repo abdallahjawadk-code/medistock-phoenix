@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
+import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
 import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -34,6 +35,7 @@ export function AuthenticatedApp() {
   // removed from navigation and no longer renders; Status Center (screen 12)
   // is the real-data landing screen.
   const [screen, setScreen] = useState(12);
+  const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
   if (passwordRecovery) {
@@ -51,6 +53,30 @@ export function AuthenticatedApp() {
 
   if (!session) {
     return <LoginScreen />;
+  }
+
+  const welcomeKey = `medistock-phoenix-welcome:${session.user.id}`;
+  let welcomeSeen = false;
+  try {
+    welcomeSeen = window.sessionStorage.getItem(welcomeKey) === 'complete';
+  } catch {
+    // Privacy-restricted browsers may deny sessionStorage. The in-memory
+    // completion state still prevents the sequence from looping.
+  }
+
+  if (!welcomeSeen && welcomeCompletedFor !== session.user.id) {
+    return (
+      <PhoenixWelcomeExperience
+        onComplete={() => {
+          try {
+            window.sessionStorage.setItem(welcomeKey, 'complete');
+          } catch {
+            // See the storage note above; completion remains in memory.
+          }
+          setWelcomeCompletedFor(session.user.id);
+        }}
+      />
+    );
   }
 
   const screenContent = () => {
@@ -80,7 +106,16 @@ export function AuthenticatedApp() {
     <PhoenixAppShell
       currentScreen={screen}
       onNavigate={setScreen}
-      onLogout={() => { void signOut(); setScreen(12); }}
+      onLogout={() => {
+        try {
+          window.sessionStorage.removeItem(welcomeKey);
+        } catch {
+          // A restricted storage environment needs no cleanup.
+        }
+        setWelcomeCompletedFor(null);
+        void signOut();
+        setScreen(12);
+      }}
     >
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
           renders screenContent() unchanged and only observes. It gates solely
