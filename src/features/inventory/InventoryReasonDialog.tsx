@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
@@ -24,6 +24,12 @@ export function InventoryReasonDialog({ open, title, variant = 'primary', busy =
   const { lang } = useApp();
   const [reason, setReason] = useState('');
   const trimmed = reason.trim();
+
+  // A reason is audit evidence for one specific lifecycle action. Never carry
+  // text from a previous resolve/dismiss/reject into a newly opened action.
+  useEffect(() => {
+    if (open) setReason('');
+  }, [open, title]);
 
   return (
     <PhoenixDialog open={open} onClose={onCancel} title={title}>
