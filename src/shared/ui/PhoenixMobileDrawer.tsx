@@ -21,12 +21,15 @@ const ALL_NAV: {
   superAdminOnly?: boolean;
   /** NAV-USERS-PARITY-A: gated by users.view, matching the sidebar and palette. */
   requiresUsersView?: boolean;
+  /** PHASE-B-NETWORK-UI-A: super_admin or users.edit_scope. */
+  requiresNetwork?: boolean;
 }[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 12, icon: '📋', labelKey: 'nav_status_center' },
   { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users', requiresUsersView: true },
+  { screen: 17, icon: '🗺️', labelKey: 'nav_network', requiresNetwork: true },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
 ];
 
@@ -49,6 +52,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
   const { lang, dir, role, myPermissions } = useApp();
   // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx / PhoenixSidebar.tsx.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
+  // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
+  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',

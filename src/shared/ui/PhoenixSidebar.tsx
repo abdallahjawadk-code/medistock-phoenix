@@ -10,6 +10,8 @@ interface NavItem {
   /** NAV-USERS-PARITY-A: shown only to super_admin or holders of users.view,
    *  matching the CommandPalette gate so every nav surface agrees. */
   requiresUsersView?: boolean;
+  /** PHASE-B-NETWORK-UI-A: super_admin (structure) or users.edit_scope (scope tab). */
+  requiresNetwork?: boolean;
 }
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_status_editor, nav_reg, and nav_qr_audit are
@@ -35,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 9,  icon: '📊', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users', requiresUsersView: true },
+  { screen: 17, icon: '🗺️', labelKey: 'nav_network', requiresNetwork: true },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
 ];
 
@@ -61,6 +64,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   const ri = ROLE_MAP[role] ?? ROLE_MAP.viewer;
   // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
+  // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
+  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
   const ns = (n: number) => ({
     background: currentScreen === n ? 'var(--p2)' : 'transparent',
@@ -102,6 +107,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
         {NAV_ITEMS
           .filter(item => !item.superAdminOnly || role === 'super_admin')
           .filter(item => !item.requiresUsersView || canSeeUsers)
+          .filter(item => !item.requiresNetwork || canSeeNetwork)
           .map(item => {
           const s = ns(item.screen);
           return (

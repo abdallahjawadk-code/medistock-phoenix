@@ -18,6 +18,7 @@ import { InterInstitutionAlertsScreen } from '@/features/alerts/InterInstitution
 import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
 import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
+import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -68,6 +69,7 @@ export function AuthenticatedApp() {
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;
       case 16: return <StatusEditorScreen />;
+      case 17: return <NetworkManagementScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;

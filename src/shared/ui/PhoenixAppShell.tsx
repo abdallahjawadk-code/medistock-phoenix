@@ -19,6 +19,7 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   14: 'nav_users',
   15: 'nav_my_account',
   16: 'nav_status_editor',
+  17: 'nav_network',
 };
 
 interface Props {

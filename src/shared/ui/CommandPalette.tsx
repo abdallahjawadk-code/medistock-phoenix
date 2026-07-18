@@ -28,6 +28,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
   { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: '👥', labelKey: 'nav_users' },
+  { screen: 17, icon: '🗺️', labelKey: 'nav_network' },
   { screen: 3,  icon: '✏️', labelKey: 'nav_editor' },
   { screen: 9,  icon: '📈', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
@@ -48,13 +49,18 @@ export function CommandPalette({ onNavigate }: Props) {
   // only to super_admin because it contains the cross-organization global stock
   // search. Hidden legacy QR remains an intentional quick jump.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
+  // PHASE-B-NETWORK-UI-A: identical predicate to PhoenixSidebar.tsx /
+  // PhoenixMobileDrawer.tsx — network structure (super_admin) or scope
+  // assignment (users.edit_scope).
+  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
   const items = useMemo(
     () => PALETTE_ITEMS.filter(i =>
       (!i.superAdminOnly || role === 'super_admin') &&
-      (i.screen !== 14 || canSeeUsers),
+      (i.screen !== 14 || canSeeUsers) &&
+      (i.screen !== 17 || canSeeNetwork),
     ),
-    [canSeeUsers, role],
+    [canSeeUsers, canSeeNetwork, role],
   );
 
   const filtered = useMemo(() => {
