@@ -1,0 +1,1212 @@
+/* ─── PHOENIX NEXUS W2 — Product-wide operational workspace ────────────────
+   Presentation-only layer. It deliberately contains no data selectors,
+   permission rules, service calls or workflow state. The existing screens and
+   ScreenAuthzGuard remain the sole functional/authorization surface.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --nx-workspace-max: 1680px;
+  --nx-readable-max: 1180px;
+  --nx-control-height: 44px;
+  --nx-table-row: 46px;
+  --nx-panel-gap: clamp(12px, 1.5vw, 20px);
+  --nx-page-gap: clamp(16px, 2vw, 26px);
+}
+
+/* ─── Shell, focus entry and cinematic workspace ─────────────────────────── */
+
+.nexus-skip-link {
+  position: fixed;
+  inset-block-start: 10px;
+  inset-inline-start: 50%;
+  z-index: 1000;
+  min-height: 42px;
+  padding: 10px 18px;
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--nx-cyan) 46%, transparent);
+  border-radius: var(--r3);
+  background: linear-gradient(120deg, var(--pd), var(--nx-ink));
+  box-shadow: var(--nx-shadow-deep);
+  font-size: 12px;
+  font-weight: 760;
+  text-decoration: none;
+  transform: translate(-50%, calc(-100% - 18px));
+  transition: transform .2s var(--nx-ease);
+}
+
+[dir="rtl"] .nexus-skip-link {
+  transform: translate(50%, calc(-100% - 18px));
+}
+
+.nexus-skip-link:focus {
+  transform: translate(-50%, 0);
+}
+
+[dir="rtl"] .nexus-skip-link:focus {
+  transform: translate(50%, 0);
+}
+
+.nexus-shell .premium-main {
+  container-name: phoenix-workspace;
+  container-type: inline-size;
+  isolation: isolate;
+}
+
+.nexus-workspace {
+  position: relative;
+  width: min(100%, var(--nx-workspace-max));
+  min-height: 100%;
+  margin-inline: auto;
+  isolation: isolate;
+}
+
+.nexus-workspace::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  z-index: -2;
+  pointer-events: none;
+  border-radius: 32px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--highlight) 24%, transparent), transparent 24%),
+    radial-gradient(42rem 24rem at 8% 0%, color-mix(in srgb, var(--p) 7%, transparent), transparent 70%),
+    radial-gradient(38rem 26rem at 100% 16%, color-mix(in srgb, var(--sec) 6%, transparent), transparent 72%);
+}
+
+.nexus-workspace__atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.nexus-workspace__atmosphere > span {
+  position: absolute;
+  display: block;
+  border: 1px solid var(--nx-line);
+  border-radius: 50%;
+  opacity: .34;
+}
+
+.nexus-workspace__atmosphere > span:nth-child(1) {
+  width: 300px;
+  height: 300px;
+  inset-block-start: -170px;
+  inset-inline-end: 8%;
+  box-shadow: inset 0 0 70px color-mix(in srgb, var(--nx-cyan) 5%, transparent);
+}
+
+.nexus-workspace__atmosphere > span:nth-child(2) {
+  width: 180px;
+  height: 180px;
+  inset-block-start: 32%;
+  inset-inline-start: -120px;
+  border-color: color-mix(in srgb, var(--p) 16%, transparent);
+}
+
+.nexus-workspace__atmosphere > span:nth-child(3) {
+  width: 240px;
+  height: 240px;
+  inset-block-end: -170px;
+  inset-inline-end: 12%;
+  border-color: color-mix(in srgb, var(--nx-ember) 12%, transparent);
+}
+
+.nexus-workspace__content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+.nexus-workspace__content > * {
+  width: 100%;
+  max-width: none !important;
+  margin-inline: auto;
+}
+
+.nexus-workspace:is([data-screen="3"], [data-screen="4"], [data-screen="6"], [data-screen="7"], [data-screen="8"], [data-screen="15"], [data-screen="16"]) .nexus-workspace__content > * {
+  max-width: var(--nx-readable-max) !important;
+}
+
+/* Every routed screen receives a small visual identity without changing its
+   component, screen number or permission gate. */
+.nexus-workspace[data-screen="3"]  { --nx-screen-accent: var(--nx-ember); }
+.nexus-workspace[data-screen="4"]  { --nx-screen-accent: var(--sec); }
+.nexus-workspace[data-screen="5"]  { --nx-screen-accent: var(--nx-cyan); }
+.nexus-workspace[data-screen="6"]  { --nx-screen-accent: var(--nx-gold); }
+.nexus-workspace[data-screen="7"]  { --nx-screen-accent: var(--p); }
+.nexus-workspace[data-screen="8"]  { --nx-screen-accent: var(--warn); }
+.nexus-workspace[data-screen="9"]  { --nx-screen-accent: var(--sec); }
+.nexus-workspace[data-screen="10"] { --nx-screen-accent: var(--nx-cyan); }
+.nexus-workspace[data-screen="11"] { --nx-screen-accent: var(--nx-emerald); }
+.nexus-workspace[data-screen="12"] { --nx-screen-accent: var(--p); }
+.nexus-workspace[data-screen="13"] { --nx-screen-accent: var(--nx-ember); }
+.nexus-workspace[data-screen="14"] { --nx-screen-accent: var(--nx-gold); }
+.nexus-workspace[data-screen="15"] { --nx-screen-accent: var(--sec); }
+.nexus-workspace[data-screen="16"] { --nx-screen-accent: var(--p); }
+.nexus-workspace[data-screen="17"] { --nx-screen-accent: var(--nx-cyan); }
+
+/* ─── Page hierarchy ──────────────────────────────────────────────────────── */
+
+.nexus-workspace :where(h1, h2, h3, h4) {
+  text-wrap: balance;
+}
+
+.nexus-workspace h2 {
+  color: var(--t);
+  font-weight: 780 !important;
+  letter-spacing: -.026em !important;
+}
+
+.nexus-workspace h3 {
+  color: var(--t);
+  font-weight: 730;
+  letter-spacing: -.018em;
+}
+
+.nexus-workspace :where(p, small) {
+  text-wrap: pretty;
+}
+
+.nexus-page-header,
+.nexus-dashboard__header,
+.nexus-workspace__content > :where(div, section, main) > :first-child:has(> div > h2),
+.nexus-workspace__content > :where(div, section, main) > :first-child:has(> h2) {
+  position: relative;
+}
+
+.nexus-page-header::after,
+.nexus-dashboard__header::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-end: -10px;
+  width: min(160px, 42%);
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--nx-screen-accent, var(--p)), transparent);
+  opacity: .72;
+}
+
+.nexus-workspace .premium-page-header {
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 22%, var(--nx-line)) !important;
+  background:
+    radial-gradient(28rem 15rem at 100% 0%, color-mix(in srgb, var(--nx-screen-accent, var(--p)) 10%, transparent), transparent 70%),
+    linear-gradient(135deg, color-mix(in srgb, var(--nx-surface-raised) 97%, var(--p2)), var(--nx-surface-raised)) !important;
+}
+
+/* ─── Cards, panels and grouped content ───────────────────────────────────── */
+
+.nexus-workspace .phoenix-card,
+.nexus-workspace .premium-depth-card,
+.nexus-workspace .premium-glass-panel {
+  border-color: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 11%, var(--nx-line)) !important;
+}
+
+.nexus-workspace .phoenix-card {
+  overflow: clip;
+}
+
+.nexus-workspace .phoenix-card::after {
+  content: '';
+  position: absolute;
+  width: 130px;
+  height: 130px;
+  inset-block-start: -96px;
+  inset-inline-end: -76px;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--nx-screen-accent, var(--p)) 12%, transparent);
+  border-radius: 50%;
+  opacity: .7;
+}
+
+.nexus-workspace .premium-section-header {
+  min-height: 22px;
+  padding-inline-start: 16px;
+}
+
+.nexus-workspace .premium-section-header::before {
+  width: 4px;
+  background: linear-gradient(180deg, var(--nx-screen-accent, var(--p)), var(--nx-cyan));
+}
+
+.nexus-workspace hr {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--nx-line-strong), transparent);
+}
+
+/* ─── Forms and action surfaces ───────────────────────────────────────────── */
+
+.nexus-workspace :where(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.premium-dialog-panel :where(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  min-height: var(--nx-control-height);
+  color: var(--t) !important;
+  border-color: var(--nx-line-strong) !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--nx-surface-raised) 96%, var(--s2)) !important;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--nx-obsidian) 5%, transparent), var(--nx-bevel);
+}
+
+.nexus-workspace :where(input, select, textarea)::placeholder,
+.premium-dialog-panel :where(input, select, textarea)::placeholder {
+  color: var(--t3);
+  opacity: .9;
+}
+
+.nexus-workspace :where(input, select, textarea):focus,
+.premium-dialog-panel :where(input, select, textarea):focus {
+  border-color: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 62%, var(--brd)) !important;
+  outline: none;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--nx-screen-accent, var(--p)) 10%, transparent),
+    inset 0 1px 2px color-mix(in srgb, var(--nx-obsidian) 4%, transparent) !important;
+}
+
+.nexus-workspace textarea,
+.premium-dialog-panel textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.nexus-workspace label,
+.premium-dialog-panel label {
+  color: var(--t2);
+  font-weight: 690;
+}
+
+.nexus-workspace button:not(.phoenix-button),
+.premium-dialog-panel button:not(.phoenix-button) {
+  border-radius: 11px;
+  font-weight: 650;
+  box-shadow: var(--nx-bevel);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nexus-workspace button:not(:disabled):hover,
+  .premium-dialog-panel button:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 36%, var(--brd)) !important;
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--nx-obsidian) 9%, transparent), var(--nx-bevel);
+    transform: translateY(-1px);
+  }
+}
+
+.nexus-workspace button:disabled,
+.premium-dialog-panel button:disabled {
+  cursor: not-allowed !important;
+  filter: saturate(.58);
+}
+
+.nexus-workspace input[type="checkbox"],
+.nexus-workspace input[type="radio"],
+.premium-dialog-panel input[type="checkbox"],
+.premium-dialog-panel input[type="radio"] {
+  accent-color: var(--p);
+}
+
+.nexus-workspace [role="tablist"] {
+  display: inline-flex !important;
+  width: fit-content;
+  max-width: 100%;
+  gap: 5px !important;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--nx-line);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--nx-surface) 93%, var(--s2));
+  box-shadow: var(--nx-bevel), 0 10px 26px color-mix(in srgb, var(--nx-obsidian) 6%, transparent);
+  scrollbar-width: none;
+}
+
+.nexus-workspace [role="tablist"]::-webkit-scrollbar {
+  display: none;
+}
+
+.nexus-workspace [role="tablist"] > [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 39px !important;
+  padding: 8px 14px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  white-space: nowrap;
+}
+
+.nexus-workspace [role="tablist"] > [role="tab"][aria-selected="true"] {
+  color: #fff !important;
+  background: linear-gradient(120deg, var(--nx-screen-accent, var(--p)), color-mix(in srgb, var(--nx-screen-accent, var(--p)) 72%, var(--nx-ink))) !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--nx-screen-accent, var(--p)) 20%, transparent), inset 0 1px 0 rgba(255,255,255,.24) !important;
+}
+
+/* ─── Tables and dense operational data ───────────────────────────────────── */
+
+.nexus-workspace table,
+.premium-dialog-panel table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--nx-line);
+  border-radius: 16px !important;
+  background: color-mix(in srgb, var(--nx-surface-solid) 96%, var(--s2)) !important;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--nx-obsidian) 7%, transparent), var(--nx-bevel);
+}
+
+.nexus-workspace thead,
+.premium-dialog-panel thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+}
+
+.nexus-workspace th,
+.premium-dialog-panel th {
+  height: 42px;
+  padding: 9px 11px !important;
+  color: var(--t2) !important;
+  border-block-end: 1px solid var(--nx-line-strong) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nx-surface-raised) 97%, var(--p2)), var(--nx-surface-raised));
+  font-size: 10.5px !important;
+  font-weight: 790 !important;
+  letter-spacing: .035em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.nexus-workspace td,
+.premium-dialog-panel td {
+  min-height: var(--nx-table-row);
+  padding: 10px 11px !important;
+  color: var(--t);
+  border-block-end: 1px solid var(--nx-line) !important;
+  background: transparent;
+  vertical-align: middle;
+}
+
+.nexus-workspace tbody tr:last-child td,
+.premium-dialog-panel tbody tr:last-child td {
+  border-block-end: 0 !important;
+}
+
+.nexus-workspace tbody tr:nth-child(even),
+.premium-dialog-panel tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--s2) 44%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nexus-workspace tbody tr:hover,
+  .premium-dialog-panel tbody tr:hover {
+    background: color-mix(in srgb, var(--nx-screen-accent, var(--p)) 6%, var(--nx-surface-raised));
+  }
+}
+
+.nexus-data-table,
+.nexus-workspace :where(div)[style*="overflow-x: auto"] {
+  border-radius: 17px;
+  scrollbar-color: color-mix(in srgb, var(--p) 38%, var(--brd)) transparent;
+  scrollbar-width: thin;
+}
+
+/* ─── Dialogs, overlays, toasts and transient states ──────────────────────── */
+
+.nexus-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 28px);
+}
+
+.nexus-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--nx-obsidian) 72%, transparent);
+  backdrop-filter: blur(10px) saturate(112%);
+}
+
+.premium-dialog-panel {
+  position: relative;
+  overflow: auto;
+  border-color: var(--nx-line-strong) !important;
+  background:
+    radial-gradient(24rem 16rem at 100% 0%, color-mix(in srgb, var(--p) 10%, transparent), transparent 72%),
+    var(--nx-surface-raised) !important;
+  box-shadow: var(--nx-shadow-deep), var(--nx-bevel) !important;
+}
+
+.nexus-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-block-end: 18px;
+  padding-block-end: 13px;
+  border-block-end: 1px solid var(--nx-line);
+}
+
+.nexus-dialog__header h2 {
+  margin: 0 !important;
+  font-size: clamp(17px, 2vw, 20px) !important;
+}
+
+.nexus-dialog__close {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  color: var(--t2);
+  border: 1px solid var(--nx-line);
+  border-radius: 12px;
+  background: var(--nx-surface);
+}
+
+.nexus-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(92vw, 560px);
+  min-height: 46px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--p) 26%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--nx-ink) 96%, var(--p)), var(--nx-obsidian)) !important;
+  box-shadow: var(--nx-shadow-deep), inset 0 1px 0 rgba(255,255,255,.12) !important;
+  text-overflow: ellipsis;
+}
+
+.nexus-toast svg {
+  color: var(--nx-cyan);
+  flex: 0 0 auto;
+}
+
+.nexus-workspace :where([role="status"], [role="alert"]) {
+  backdrop-filter: blur(12px) saturate(120%);
+}
+
+.nexus-workspace .nexus-empty,
+.nexus-workspace .nexus-loading {
+  min-height: 230px;
+  justify-content: center;
+  border: 1px dashed var(--nx-line-strong);
+  border-radius: 20px;
+  background:
+    radial-gradient(22rem 12rem at 50% 30%, color-mix(in srgb, var(--p) 7%, transparent), transparent 74%),
+    color-mix(in srgb, var(--nx-surface) 90%, transparent);
+}
+
+.nexus-workspace .nexus-error {
+  min-height: 78px;
+  backdrop-filter: blur(12px) saturate(120%);
+}
+
+/* ─── Organization scope and shared status controls ──────────────────────── */
+
+.nexus-org-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  max-width: min(100%, 280px);
+  padding: 7px 12px;
+  color: var(--pd);
+  border: 1px solid color-mix(in srgb, var(--p) 26%, var(--brd));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--p2) 58%, var(--nx-surface-raised));
+  box-shadow: var(--nx-bevel);
+  font-size: 11.5px;
+  font-weight: 720;
+}
+
+.nexus-org-scope svg {
+  flex: 0 0 auto;
+}
+
+.nexus-org-scope--select {
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.nexus-org-scope--select > select {
+  min-width: 150px;
+  min-height: 38px !important;
+  padding: 7px 4px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+.premium-status-badge,
+.nexus-workspace [style*="border-radius: var(--rpill)"] {
+  backdrop-filter: blur(8px);
+}
+
+/* ─── Status Center as the real operational landing dashboard ────────────── */
+
+.nexus-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.nexus-dashboard__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-block-end: var(--nx-page-gap) !important;
+  padding: clamp(18px, 2.4vw, 28px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--p) 22%, var(--nx-line));
+  border-radius: 24px;
+  background:
+    radial-gradient(30rem 20rem at 100% 0%, color-mix(in srgb, var(--nx-cyan) 10%, transparent), transparent 74%),
+    radial-gradient(24rem 16rem at 0 100%, color-mix(in srgb, var(--p) 9%, transparent), transparent 72%),
+    linear-gradient(135deg, color-mix(in srgb, var(--nx-surface-raised) 97%, var(--p2)), var(--nx-surface-raised));
+  box-shadow: var(--nx-shadow-soft), var(--nx-bevel);
+}
+
+.nexus-dashboard__header::before {
+  content: '';
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  inset-block-start: -108px;
+  inset-inline-end: 12%;
+  border: 1px solid color-mix(in srgb, var(--nx-gold) 20%, transparent);
+  border-radius: 50%;
+}
+
+.nexus-dashboard__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-block-end: 7px;
+  color: var(--p);
+  font-size: 9.5px;
+  font-weight: 820;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.nexus-dashboard__eyebrow::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--p);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--p) 9%, transparent), 0 0 16px var(--p);
+}
+
+.nexus-dashboard__tabs {
+  margin-block-end: var(--nx-panel-gap) !important;
+}
+
+.nexus-dashboard__section {
+  margin-block-end: var(--nx-panel-gap) !important;
+}
+
+.nexus-notice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 46px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: var(--nx-bevel);
+}
+
+.nexus-notice svg {
+  flex: 0 0 auto;
+  margin-block-start: 1px;
+}
+
+.nexus-notice--info {
+  color: var(--info);
+  border: 1px solid color-mix(in srgb, var(--info) 35%, var(--brd));
+  background: color-mix(in srgb, var(--info2) 68%, var(--nx-surface-raised));
+}
+
+.nexus-dashboard-summary {
+  margin-block-end: var(--nx-panel-gap) !important;
+  padding: clamp(16px, 2vw, 22px) !important;
+}
+
+.nexus-dashboard-summary__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.nexus-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 3px 9px;
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--brd));
+  border-radius: var(--rpill);
+  background: color-mix(in srgb, var(--ok2) 64%, var(--nx-surface));
+  font-size: 9px;
+  font-weight: 820;
+  letter-spacing: .1em;
+}
+
+.nexus-live-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.nexus-status-matrix {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px !important;
+  margin-block-start: 16px !important;
+}
+
+.nexus-status-tile {
+  position: relative;
+  min-width: 0 !important;
+  min-height: 86px;
+  padding: 13px 14px !important;
+  overflow: hidden;
+  border: 1px solid var(--nx-line) !important;
+  border-radius: 14px !important;
+  background: color-mix(in srgb, var(--nx-surface) 92%, var(--s2)) !important;
+  box-shadow: var(--nx-bevel);
+}
+
+.nexus-status-tile::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 13px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--nx-status-color, var(--p));
+  box-shadow: 0 0 13px var(--nx-status-color, var(--p));
+}
+
+.nexus-status-tile[data-status="available"] { --nx-status-color: var(--ok); }
+.nexus-status-tile[data-status="surplus"] { --nx-status-color: var(--sec); }
+.nexus-status-tile[data-status="low_stock"] { --nx-status-color: var(--warn); }
+.nexus-status-tile[data-status="near_expiry"] { --nx-status-color: var(--nx-ember); }
+.nexus-status-tile[data-status="missing"],
+.nexus-status-tile[data-status="expired"] { --nx-status-color: var(--err); }
+
+.nexus-status-tile__value {
+  color: var(--t);
+  font-size: clamp(20px, 2.2vw, 28px) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.nexus-filter-console {
+  margin-block-end: var(--nx-panel-gap) !important;
+  padding: clamp(15px, 2vw, 20px) !important;
+}
+
+.nexus-filter-console__primary {
+  display: grid !important;
+  grid-template-columns: minmax(150px, .7fr) minmax(150px, .7fr) minmax(220px, 1.4fr) auto;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.nexus-view-switch {
+  display: inline-flex !important;
+  width: fit-content;
+  gap: 5px !important;
+  padding: 4px;
+  border: 1px solid var(--nx-line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--s2) 72%, var(--nx-surface));
+}
+
+.nexus-operation-cta {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--p) 34%, var(--brd)) !important;
+  background:
+    radial-gradient(24rem 12rem at 100% 0%, color-mix(in srgb, var(--nx-cyan) 10%, transparent), transparent 72%),
+    linear-gradient(130deg, color-mix(in srgb, var(--p2) 76%, var(--nx-surface-raised)), var(--nx-surface-raised)) !important;
+  box-shadow: var(--nx-shadow-soft), var(--nx-bevel);
+}
+
+/* ─── Institutions, alerts, users, reports, QR and network ───────────────── */
+
+.nexus-workspace[data-screen="11"] .premium-org-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+}
+
+.nexus-workspace[data-screen="11"] .premium-org-card {
+  border-color: color-mix(in srgb, var(--nx-emerald) 18%, var(--nx-line)) !important;
+}
+
+.nexus-workspace[data-screen="11"] .premium-org-card__icon {
+  color: var(--p);
+  border: 1px solid color-mix(in srgb, var(--p) 18%, transparent);
+}
+
+.nexus-workspace[data-screen="13"] .premium-alerts-page,
+.nexus-workspace[data-screen="14"] > .nexus-workspace__content,
+.nexus-workspace[data-screen="17"] > .nexus-workspace__content {
+  min-width: 0;
+}
+
+.nexus-workspace[data-screen="13"] .phoenix-card {
+  border-inline-start-width: 3px !important;
+}
+
+.nexus-workspace[data-screen="14"] .phoenix-card,
+.nexus-workspace[data-screen="15"] .phoenix-card {
+  background:
+    radial-gradient(20rem 12rem at 100% 0%, color-mix(in srgb, var(--nx-gold) 5%, transparent), transparent 72%),
+    var(--nx-surface-raised) !important;
+}
+
+.nexus-workspace[data-screen="6"] .phoenix-card,
+.premium-qr-public-shell .phoenix-card {
+  border-color: color-mix(in srgb, var(--nx-gold) 18%, var(--nx-line)) !important;
+}
+
+.premium-qr-public-shell {
+  isolation: isolate;
+}
+
+.premium-qr-public-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .2;
+  background-image:
+    linear-gradient(var(--nx-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nx-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 75% 65% at 50% 30%, #000, transparent);
+}
+
+.nexus-network-page {
+  min-width: 0;
+}
+
+.nexus-network-page__header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-block-end: var(--nx-panel-gap);
+}
+
+.nexus-network-page__mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  color: var(--nx-cyan);
+  border: 1px solid color-mix(in srgb, var(--nx-cyan) 28%, var(--nx-line));
+  border-radius: 17px;
+  background: linear-gradient(145deg, var(--nx-ink), var(--nx-obsidian));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--nx-obsidian) 24%, transparent), inset 0 1px 0 rgba(255,255,255,.1);
+}
+
+.nexus-network-page__header h2 {
+  margin-block-start: 2px;
+  font-size: clamp(19px, 2.2vw, 26px);
+}
+
+.nexus-network-page__header p {
+  margin-block-start: 3px;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.nexus-network-tabs {
+  margin-block-end: var(--nx-panel-gap) !important;
+}
+
+.nexus-topology {
+  border-color: color-mix(in srgb, var(--nx-cyan) 22%, var(--nx-line)) !important;
+}
+
+.nexus-topology__nodes button {
+  min-height: 54px;
+  scroll-margin-inline: 12px;
+  content-visibility: auto;
+  contain-intrinsic-size: 150px 54px;
+}
+
+.nexus-topology__nodes button:focus-visible {
+  outline: 2px solid var(--nx-gold);
+  outline-offset: 3px;
+}
+
+.nexus-topology__selection {
+  min-height: 46px;
+}
+
+.nexus-topology__selection .nexus-topology__selection-status {
+  width: auto;
+  margin-inline-start: 0;
+}
+
+.nexus-topology__selection dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  align-items: center;
+  gap: 6px 14px;
+  margin-inline-start: auto;
+}
+
+.nexus-topology__selection dl > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.nexus-topology__selection dt {
+  color: var(--t3);
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.nexus-topology__selection dd {
+  color: var(--t);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+/* ─── Responsive composition ─────────────────────────────────────────────── */
+
+@container phoenix-workspace (max-width: 1120px) {
+  .nexus-status-matrix {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .nexus-filter-console__primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nexus-filter-console__primary > .premium-action-bar {
+    grid-column: 1 / -1;
+    margin-inline-start: 0 !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .nexus-shell .premium-main {
+    padding-inline: 20px !important;
+  }
+
+  .nexus-workspace::before {
+    inset: -8px;
+  }
+
+  .nexus-topology__selection dl {
+    width: 100%;
+    margin-inline-start: 26px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --nx-control-height: 46px;
+    --nx-panel-gap: 14px;
+    --nx-page-gap: 18px;
+  }
+
+  .nexus-shell .premium-main {
+    padding: 14px 12px calc(var(--bnh) + 18px) !important;
+    scroll-padding-block-start: 12px;
+  }
+
+  .nexus-workspace::before {
+    inset: -4px;
+    border-radius: 24px;
+  }
+
+  .nexus-workspace__atmosphere > span:nth-child(1) {
+    width: 210px;
+    height: 210px;
+  }
+
+  .nexus-dashboard__header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px 16px;
+    border-radius: 20px;
+  }
+
+  .nexus-dashboard__header .nexus-org-scope,
+  .nexus-dashboard__header select {
+    width: 100%;
+    max-width: none !important;
+  }
+
+  .nexus-dashboard__tabs,
+  .nexus-workspace [role="tablist"] {
+    width: 100%;
+  }
+
+  .nexus-workspace [role="tablist"] > [role="tab"] {
+    flex: 1 0 auto;
+    min-width: max-content;
+  }
+
+  .nexus-status-matrix {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nexus-status-tile {
+    min-height: 78px;
+  }
+
+  .nexus-filter-console__primary {
+    grid-template-columns: 1fr;
+  }
+
+  .nexus-filter-console__primary > .premium-action-bar {
+    grid-column: auto;
+  }
+
+  .nexus-filter-console__primary :where(input, select),
+  .nexus-filter-console__primary .premium-action-bar {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .nexus-view-switch {
+    width: 100%;
+  }
+
+  .nexus-view-switch > button {
+    flex: 1;
+    min-height: 42px;
+  }
+
+  .nexus-workspace table,
+  .premium-dialog-panel table {
+    min-width: 760px;
+  }
+
+  .nexus-workspace th,
+  .nexus-workspace td,
+  .premium-dialog-panel th,
+  .premium-dialog-panel td {
+    padding-inline: 9px !important;
+  }
+
+  .nexus-workspace .phoenix-card,
+  .premium-dialog-panel {
+    border-radius: 18px !important;
+  }
+
+  .nexus-workspace button,
+  .premium-dialog-panel button {
+    min-height: 42px;
+  }
+
+  .nexus-workspace td button,
+  .premium-dialog-panel td button {
+    min-height: 36px;
+  }
+
+  .nexus-dialog {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .premium-dialog-panel {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: calc(100dvh - 20px) !important;
+    padding: 20px 16px !important;
+    border-end-start-radius: 12px !important;
+    border-end-end-radius: 12px !important;
+  }
+
+  .nexus-toast {
+    width: calc(100vw - 24px);
+    justify-content: center;
+    white-space: normal !important;
+    text-align: center;
+  }
+
+  .nexus-topology__selection {
+    align-items: flex-start;
+  }
+
+  .nexus-topology__selection dl {
+    grid-template-columns: 1fr;
+    width: 100%;
+    margin-inline-start: 26px;
+  }
+
+  .nexus-topology__selection .nexus-topology__selection-status {
+    width: 100%;
+    margin-inline-start: 26px;
+  }
+
+  .nexus-network-page__header {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .nexus-network-page__mark {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 420px) {
+  .nexus-shell .premium-main {
+    padding-inline: 10px !important;
+  }
+
+  .nexus-status-matrix {
+    gap: 7px !important;
+  }
+
+  .nexus-status-tile {
+    min-height: 72px;
+    padding: 11px 12px !important;
+  }
+
+  .nexus-dashboard-summary,
+  .nexus-filter-console {
+    padding: 14px !important;
+  }
+
+  .nexus-workspace .premium-action-bar {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── Theme, motion, high contrast and print safety ───────────────────────── */
+
+[data-theme="dark"] .nexus-workspace::before {
+  opacity: .8;
+}
+
+[data-theme="dark"] .nexus-workspace table,
+[data-theme="dark"] .premium-dialog-panel table {
+  box-shadow: 0 16px 40px rgba(0,0,0,.30), var(--nx-bevel);
+}
+
+[data-theme="dark"] .nexus-dashboard__header {
+  background:
+    radial-gradient(30rem 20rem at 100% 0%, rgba(88,228,239,.08), transparent 74%),
+    radial-gradient(24rem 16rem at 0 100%, rgba(14,165,138,.08), transparent 72%),
+    linear-gradient(135deg, rgba(9,25,44,.94), rgba(7,19,35,.94));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-workspace__atmosphere,
+  .nexus-workspace::before,
+  .nexus-dashboard__header::before {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .nexus-workspace button,
+  .premium-dialog-panel button,
+  .nexus-workspace .premium-3d-hover {
+    transform: none !important;
+  }
+
+  .nexus-shell .premium-main {
+    scroll-behavior: auto;
+  }
+}
+
+@media (forced-colors: active) {
+  .nexus-workspace,
+  .nexus-workspace *,
+  .premium-dialog-panel,
+  .premium-dialog-panel * {
+    forced-color-adjust: auto;
+  }
+
+  .nexus-workspace__atmosphere,
+  .nexus-workspace::before,
+  .nexus-workspace .phoenix-card::after {
+    display: none;
+  }
+
+  .nexus-live-pill,
+  .premium-status-badge,
+  .nexus-org-scope {
+    border: 1px solid CanvasText;
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .nexus-workspace .phoenix-card,
+  .premium-dialog-panel,
+  .nexus-org-scope,
+  .nexus-toast {
+    background-color: var(--nx-surface-solid) !important;
+  }
+}
+
+@media print {
+  .nexus-shell .premium-sidebar,
+  .nexus-shell .premium-topbar,
+  .nexus-shell .premium-bottom-nav-item,
+  .nexus-shell .premium-command-trigger,
+  .nexus-workspace__atmosphere,
+  .nexus-skip-link {
+    display: none !important;
+  }
+
+  .nexus-shell .premium-main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .nexus-workspace,
+  .nexus-workspace__content,
+  .nexus-workspace__content > * {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .nexus-workspace::before,
+  .nexus-workspace .phoenix-card::before,
+  .nexus-workspace .phoenix-card::after {
+    display: none !important;
+  }
+
+  .nexus-workspace .phoenix-card,
+  .nexus-workspace table {
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .nexus-workspace thead {
+    position: static;
+  }
+}

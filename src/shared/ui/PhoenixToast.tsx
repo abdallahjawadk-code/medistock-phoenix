@@ -1,3 +1,5 @@
+import { PhoenixIcon } from './PhoenixIcon';
+
 interface Props { message: string; }
 
 export function PhoenixToast({ message }: Props) {
@@ -5,6 +7,7 @@ export function PhoenixToast({ message }: Props) {
     <div
       role="status"
       aria-live="polite"
+      className="nexus-toast"
       style={{
         position: 'fixed',
         bottom: 'calc(var(--bnh) + 12px)',
@@ -22,7 +25,8 @@ export function PhoenixToast({ message }: Props) {
         animation: 'ti .3s ease',
       }}
     >
-      ✅ {message}
+      <PhoenixIcon name="check" size={17} />
+      <span>{message}</span>
     </div>
   );
 }

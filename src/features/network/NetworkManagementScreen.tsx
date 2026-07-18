@@ -19,6 +19,7 @@ import {
   type NetworkWarehouse, type SupplyRoute, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
 import { NetworkTopologyStage } from './NetworkTopologyStage';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * PHASE-B-NETWORK-UI-A — super_admin network structure management, plus the
@@ -76,8 +77,21 @@ export function NetworkManagementScreen() {
   const activeTab = tabs.some(x => x.id === tab) ? tab : tabs[0].id;
 
   return (
-    <div dir={dir}>
-      <div role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
+    <div className="premium-page nexus-network-page" dir={dir}>
+      <header className="nexus-network-page__header premium-page-header">
+        <div className="nexus-network-page__mark" aria-hidden="true">
+          <PhoenixIcon name="network" size={24} />
+        </div>
+        <div>
+          <span className="nexus-dashboard__eyebrow">
+            {lang === 'ar' ? 'شبكة PHOENIX · قراءة حيّة' : 'PHOENIX NETWORK · LIVE READ'}
+          </span>
+          <h2>{t('nav_network', lang)}</h2>
+          <p>{lang === 'ar' ? 'إدارة مخازن قسم الصيدلة والمذاخر والمنافذ ومسارات التجهيز' : 'Pharmacy warehouses, institution stores, outlets and supply routes'}</p>
+        </div>
+      </header>
+
+      <div className="nexus-network-tabs" role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {tabs.map(x => (
           <button
             key={x.id}

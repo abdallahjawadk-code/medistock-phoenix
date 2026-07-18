@@ -258,6 +258,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
     let disposed = false;
     let tiltX = 0;
     let tiltY = -.08;
+    let pageVisible = !document.hidden;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const bindAttributes = (buffer: WebGLBuffer) => {
@@ -301,7 +302,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       gl.uniform1f(pointModeLocation, 1);
       gl.drawArrays(gl.POINTS, 0, pointData.length / 7);
 
-      if (motionEnabled && !reducedMotion) frame = window.requestAnimationFrame(draw);
+      if (motionEnabled && !reducedMotion && pageVisible) frame = window.requestAnimationFrame(draw);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -311,7 +312,25 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       if (!motionEnabled || reducedMotion) draw(performance.now());
     };
 
+    const onPointerLeave = () => {
+      tiltX = 0;
+      tiltY = -.08;
+      if (!motionEnabled || reducedMotion) draw(performance.now());
+    };
+
+    const onVisibilityChange = () => {
+      pageVisible = !document.hidden;
+      if (!pageVisible) {
+        if (frame) window.cancelAnimationFrame(frame);
+        frame = 0;
+        return;
+      }
+      draw(performance.now());
+    };
+
     canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerleave', onPointerLeave);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     const observer = new ResizeObserver(() => {
       resize();
       if (!motionEnabled || reducedMotion) draw(performance.now());
@@ -324,6 +343,8 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       if (frame) window.cancelAnimationFrame(frame);
       observer.disconnect();
       canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       gl.deleteBuffer(pointBuffer);
       gl.deleteBuffer(lineBuffer);
       gl.deleteProgram(program);
@@ -332,6 +353,15 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
 
   const selected = topology.nodes.find(node => node.id === selectedId) ?? null;
   const activeRoutes = topology.edges.filter(edge => edge.active).length;
+  const selectedEdges = selected
+    ? topology.edges.filter(edge => edge.source === selected.id || edge.target === selected.id)
+    : [];
+  const selectedActiveEdges = selectedEdges.filter(edge => edge.active).length;
+  const selectedKindLabel = selected?.kind === 'central'
+    ? (lang === 'ar' ? 'مخزن قسم الصيدلة' : 'Pharmacy warehouse')
+    : selected?.kind === 'institution'
+      ? (lang === 'ar' ? 'مذخر مؤسسة' : 'Institution store')
+      : (lang === 'ar' ? 'منفذ' : 'Outlet');
 
   return (
     <section className="nexus-topology" aria-label={lang === 'ar' ? 'التوأم الرقمي لشبكة المخزون' : 'Inventory network digital twin'}>
@@ -385,12 +415,16 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       </div>
 
       <div className="nexus-topology__nodes" aria-label={lang === 'ar' ? 'عقد الشبكة' : 'Network nodes'}>
-        {topology.nodes.slice(0, 12).map(node => (
+        {topology.nodes.map(node => (
           <button
             type="button"
             key={node.id}
             data-active={selectedId === node.id}
+            aria-pressed={selectedId === node.id}
+            aria-label={`${node.label} · ${node.active ? (lang === 'ar' ? 'فعّال' : 'Active') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}`}
             onClick={() => setSelectedId(current => current === node.id ? null : node.id)}
+            onFocus={() => setSelectedId(node.id)}
+            onPointerEnter={() => setSelectedId(node.id)}
           >
             <span data-kind={node.kind} />
             <b>{node.label}</b>
@@ -403,7 +437,21 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
         <div className="nexus-topology__selection">
           <PhoenixIcon name={selected.kind === 'outlet' ? 'outlet' : selected.kind === 'central' ? 'warehouse' : 'institutions'} size={18} />
           <strong>{selected.label}</strong>
-          <span>{selected.active ? (lang === 'ar' ? 'متصل بالشبكة' : 'Connected to network') : (lang === 'ar' ? 'العقدة غير فعّالة' : 'Node inactive')}</span>
+          <span className="nexus-topology__selection-status">{selected.active ? (lang === 'ar' ? 'متصل بالشبكة' : 'Connected to network') : (lang === 'ar' ? 'العقدة غير فعّالة' : 'Node inactive')}</span>
+          <dl>
+            <div>
+              <dt>{lang === 'ar' ? 'النوع' : 'Type'}</dt>
+              <dd>{selectedKindLabel}</dd>
+            </div>
+            <div>
+              <dt>{lang === 'ar' ? 'الروابط' : 'Links'}</dt>
+              <dd>{selectedEdges.length}</dd>
+            </div>
+            <div>
+              <dt>{lang === 'ar' ? 'الفعّالة' : 'Active'}</dt>
+              <dd>{selectedActiveEdges}</dd>
+            </div>
+          </dl>
         </div>
       )}
     </section>
