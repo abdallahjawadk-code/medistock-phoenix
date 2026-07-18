@@ -43,7 +43,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_status_center', lang);
 
   return (
-    <div dir={dir} className="premium-shell" style={{
+    <div dir={dir} className="premium-shell nexus-shell" style={{
       display: 'flex',
       flexDirection: 'row',
       minHeight: '100dvh',
@@ -66,7 +66,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
         />
       )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+      <div className="nexus-app-column" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <PhoenixTopbar
           title={title}
           isMobile={isMobile}
