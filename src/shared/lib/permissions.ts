@@ -131,7 +131,7 @@ const WAREHOUSE_OFFICER_DEFAULTS = [
   'inter_institution_alerts.resolve',
 ];
 
-// Port officer: can update existing availability rows but NOT create new ones
+// Legacy port officer: can update existing availability rows but NOT create new ones
 // (AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A). availability.manage is
 // intentionally NOT granted here — it would read as blanket create+update in
 // the UI. The RPC/RLS treat availability.create and availability.update as
@@ -146,6 +146,17 @@ const PORT_OFFICER_DEFAULTS = [
   // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — port_officer: acknowledge only.
   'inter_institution_alerts.acknowledge',
 ];
+
+// Migration 066 introduced these roles after the legacy catalog above. Their
+// operational permissions are loaded from the database. The fallback stays
+// deliberately narrow until those 066 keys are surfaced by the permission-
+// catalog PR: it may under-grant while offline, but it must never invent a
+// permission the database did not grant.
+const CENTRAL_WAREHOUSE_MANAGER_DEFAULTS = [
+  'warehouses.view',
+];
+
+const OUTLET_OFFICER_DEFAULTS: readonly string[] = [];
 
 const MONTHLY_STATUS_OFFICER_DEFAULTS = [
   'dashboard.view', 'availability.view',
@@ -229,11 +240,44 @@ const TRANSFER_MANAGER_LEGACY_DEFAULTS = [
   'inter_institution_alerts.acknowledge',
 ];
 
+// Migration 066 made the former aliases unsafe: it grants new operational keys
+// to warehouse_officer/outlet_officer while explicitly denying those keys to
+// warehouse_manager/port_officer/point_operator. Freeze the pre-066 fallback
+// snapshots so a later catalog expansion cannot widen a stored legacy role.
+const WAREHOUSE_MANAGER_LEGACY_DEFAULTS = [
+  'dashboard.view', 'organizations.view', 'warehouses.view',
+  'ports.view', 'qr.view', 'qr.generate',
+  'availability.view', 'availability.manage', 'availability.create', 'availability.update',
+  'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
+  'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port',
+  'availability.quantity.set', 'availability.quantity.add', 'availability.quantity.subtract',
+  'availability.movements.view', 'availability.movements.export', 'availability.movements.print',
+  'inter_institution_alerts.acknowledge', 'inter_institution_alerts.manage',
+  'inter_institution_alerts.resolve',
+];
+
+const PORT_OFFICER_LEGACY_DEFAULTS = [
+  'dashboard.view', 'organizations.view', 'ports.view', 'ports.edit',
+  'qr.view', 'availability.view', 'availability.update',
+  'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
+  'availability.quantity.add', 'availability.quantity.subtract', 'availability.movements.view',
+  'inter_institution_alerts.acknowledge',
+];
+
+const POINT_OPERATOR_LEGACY_DEFAULTS = [
+  'dashboard.view', 'organizations.view', 'ports.view', 'ports.edit',
+  'qr.view', 'availability.view', 'availability.update',
+  'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
+  'availability.quantity.add', 'availability.quantity.subtract', 'availability.movements.view',
+  'inter_institution_alerts.acknowledge',
+];
+
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   super_admin:            ALL_KEYS,
   institution_admin:      INSTITUTION_ADMIN_DEFAULTS,
+  central_warehouse_manager: CENTRAL_WAREHOUSE_MANAGER_DEFAULTS,
   warehouse_officer:      WAREHOUSE_OFFICER_DEFAULTS,
-  port_officer:           PORT_OFFICER_DEFAULTS,
+  outlet_officer:         OUTLET_OFFICER_DEFAULTS,
   monthly_status_officer: MONTHLY_STATUS_OFFICER_DEFAULTS,
   viewer:                 VIEWER_DEFAULTS,
 };
@@ -242,8 +286,10 @@ const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
 export function roleDefaults(role: string): Set<string> {
   const n = normalizeRole(role);
   if (n === 'hospital_admin')   return new Set(LEGACY_ADMIN_DEFAULTS);
-  // Its own frozen list — never resolved through monthly_status_officer.
-  if (n === 'transfer_manager') return new Set(TRANSFER_MANAGER_LEGACY_DEFAULTS);
+  if (n === 'warehouse_manager') return new Set(WAREHOUSE_MANAGER_LEGACY_DEFAULTS);
+  if (n === 'port_officer')      return new Set(PORT_OFFICER_LEGACY_DEFAULTS);
+  if (n === 'point_operator')    return new Set(POINT_OPERATOR_LEGACY_DEFAULTS);
+  if (n === 'transfer_manager')  return new Set(TRANSFER_MANAGER_LEGACY_DEFAULTS);
   return new Set(OFFICIAL_DEFAULTS[n]);
 }
 
