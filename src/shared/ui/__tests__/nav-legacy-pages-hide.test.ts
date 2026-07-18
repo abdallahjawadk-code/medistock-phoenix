@@ -22,11 +22,10 @@ const app             = readSrc('app/App.tsx');
 // QR-BUNDLE-CODE-SPLIT-A: screen-case routing moved into its own lazy chunk.
 const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 
-// PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A: nav_reports now joins
-// the hidden-from-nav list too (see nav-reports-hide.test.ts for the
-// dedicated, fully-documented test suite for that specific change — the
-// "Reports remains visible" describe block below is updated accordingly).
-const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor', 'nav_reports'];
+// Reports is no longer part of this legacy-hidden list: the authenticated
+// smoke test for the super-admin global material search restored a guarded
+// desktop entry. The original legacy pages remain hidden exactly as before.
+const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor'];
 
 // ============================================================================
 // 1. Desktop sidebar no longer lists the hidden nav items
@@ -100,19 +99,19 @@ describe('Mobile bottom nav does not reintroduce legacy pages', () => {
 });
 
 // ============================================================================
-// 4. Reports (nav_reports) is now ALSO hidden from nav
-//    (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — see
-//    nav-reports-hide.test.ts for the full, dedicated test suite covering
-//    the route/page preservation and the new Status Center Audit Log tab.
+// 4. Reports is restored to desktop navigation for super_admin only.
+//    Mobile navigation remains unchanged.
 // ============================================================================
 
-describe('Reports is now hidden from nav in this phase (see nav-reports-hide.test.ts for details)', () => {
-  it('nav_reports is no longer present in the desktop sidebar NAV_ITEMS/SECONDARY_ITEMS', () => {
+describe('Reports has a scoped desktop entry without reopening legacy pages', () => {
+  it('nav_reports is present and guarded in desktop NAV_ITEMS', () => {
     const navBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const ROLE_MAP'));
-    expect(navBlock).not.toContain("'nav_reports'");
+    expect(navBlock).toContain("'nav_reports'");
+    expect(navBlock).toContain('superAdminOnly: true');
+    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
-  it('nav_reports is no longer present in the mobile drawer ALL_NAV/SECONDARY_NAV', () => {
+  it('nav_reports remains absent from the unchanged mobile drawer', () => {
     const drawerBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
     expect(drawerBlock).not.toContain("'nav_reports'");
   });
