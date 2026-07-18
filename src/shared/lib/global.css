@@ -1,7 +1,8 @@
 /* ─── MEDISTOCK PHOENIX — Global Styles ─────────────────────────────────────
    Base reset + typography. Import tokens.css first.
+   Fonts are self-hosted via @fontsource-variable (imported in main.tsx) — no
+   external CDN, so the production CSP (font-src 'self' data:) is satisfied.
    ─────────────────────────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
 @import './tokens.css';
 @import './phoenix-nexus.css';
 

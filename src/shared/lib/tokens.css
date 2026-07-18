@@ -71,8 +71,8 @@
   --sp-6: 24px;  --sp-8: 32px;  --sp-10: 40px; --sp-12: 48px; --sp-16: 64px;
 
   /* Typography */
-  --font-sans: 'DM Sans', 'Noto Sans Arabic', system-ui, sans-serif;
-  --font-ar:   'Noto Sans Arabic', 'DM Sans', system-ui, sans-serif;
+  --font-sans: 'DM Sans Variable', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  --font-ar:   'Noto Sans Arabic Variable', 'DM Sans Variable', system-ui, sans-serif;
   --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-base: 14px;
   --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 26px; --fs-3xl: 34px;
   --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
