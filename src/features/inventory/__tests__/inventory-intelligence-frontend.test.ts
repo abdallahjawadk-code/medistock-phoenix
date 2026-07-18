@@ -265,7 +265,7 @@ describe('round 2: near_expiry_days is a fixed 270-day policy, never editable', 
 
 describe('round 2: real scope selector (not always org-default)', () => {
   it('save sends the real scope_id — null ONLY on the explicit org-default path', () => {
-    expect(thresholdModal).toMatch(/scopeId:\s*effectiveApplyTo === 'org_default' \? null : scopeId/);
+    expect(thresholdModal).toMatch(/scopeId:\s*editing \? editing\.scopeId : effectiveApplyTo === 'org_default' \? null : selectedScope!\.id/);
     // the always-null form is gone
     expect(thresholdModal).not.toMatch(/scopeId:\s*null,/);
   });
@@ -280,9 +280,11 @@ describe('round 2: real scope selector (not always org-default)', () => {
     expect(thresholdModal).toMatch(/o\.nameAr \|\| o\.name/);
     expect(thresholdModal).not.toMatch(/label:\s*o\.id/);
   });
-  it('org-default is offered ONLY behind org-level manage_thresholds (authz canForOrganization)', () => {
-    expect(thresholdModal).toMatch(/useAuthzDecision\(authz, PK\.manageThresholds, \{ organizationId \}\)/);
-    expect(thresholdModal).toMatch(/const canOrgDefault = orgLevel\.allowed/);
+  it('org-default is offered ONLY behind an exact server-side organization decision', () => {
+    expect(thresholdModal).toMatch(/useExactThresholdPermission\(organizationId, null, null, open\)/);
+    expect(thresholdModal).toMatch(/const canOrgDefault = orgPermission\.data === true/);
+    expect(scopesHook).toMatch(/supabaseRbacTransport\.hasScopedPermission/);
+    expect(scopesHook).toMatch(/permissionKey: 'inventory\.manage_thresholds'/);
     // apply-to collapses to scope-only when org-default is not allowed
     expect(thresholdModal).toMatch(/canOrgDefault \? applyTo : 'scope'/);
   });
@@ -294,6 +296,76 @@ describe('round 2: real scope selector (not always org-default)', () => {
     expect(thresholdModal).toMatch(/scopes\.loading/);
     expect(thresholdModal).toMatch(/scopes\.error/);
     expect(thresholdModal).toMatch(/inv_th_no_scopes/);
+  });
+});
+
+// ── ROUND 3: stale-scope safety + manageable catalog + true editing ─────────
+describe('round 3: exact manageable scopes and stale-id safety', () => {
+  it('filters the readable catalog through active scope assignments (super_admin bypass only)', () => {
+    expect(scopesHook).toMatch(/useCurrentScopes\(authz\)/);
+    expect(scopesHook).toMatch(/profile\?\.role === 'super_admin'/);
+    expect(scopesHook).toMatch(/assignedWarehouses\.has\(w\.id\)/);
+    expect(scopesHook).toMatch(/assignedPoints\.has\(o\.id\)/);
+    expect(scopesHook).toMatch(/manageableWarehouses/);
+    expect(scopesHook).toMatch(/manageableOutlets/);
+  });
+
+  it('uses only manageable options in the write modal, while preserving readable name resolution', () => {
+    expect(thresholdModal).toMatch(/scopes\.data\?\.manageableWarehouses/);
+    expect(thresholdModal).toMatch(/scopes\.data\?\.manageableOutlets/);
+    expect(scopesHook).toMatch(/resolve:/);
+    expect(scopesHook).toMatch(/canManage:/);
+  });
+
+  it('requires membership in the current option set — non-empty UUID is insufficient', () => {
+    expect(thresholdModal).toMatch(/const selectedScope = options\.find\(o => o\.id === scopeId\) \?\? null/);
+    expect(thresholdModal).toMatch(/scopeChosen = effectiveApplyTo === 'org_default' \? canOrgDefault : selectedScope !== null/);
+    expect(thresholdModal).not.toMatch(/scopeChosen = effectiveApplyTo === 'org_default' \? canOrgDefault : scopeId !== ''/);
+  });
+
+  it('preflights the selected exact scope against migration 062 before enabling save', () => {
+    expect(thresholdModal).toMatch(/useExactThresholdPermission\(/);
+    expect(thresholdModal).toMatch(/selectedPermission\.data === true/);
+    expect(thresholdModal).toMatch(/scopeAuthorized/);
+    expect(scopesHook).toMatch(/warehouseId: kind === 'warehouse' \? scopeId : null/);
+    expect(scopesHook).toMatch(/distributionPointId: kind === 'outlet' \? scopeId : null/);
+  });
+
+  it('resets all identity state on open/new organization and never displays raw organization UUID', () => {
+    expect(thresholdModal).toMatch(/useEffect\(\(\) => \{/);
+    expect(thresholdModal).toMatch(/\[open, organizationId, editing\]/);
+    expect(thresholdModal).toMatch(/setScopeId\(''\)/);
+    expect(thresholdModal).toMatch(/organizationLabel \|\| t\('inv_org_loading', lang\)/);
+    expect(thresholdModal).not.toMatch(/organizationLabel \|\| organizationId/);
+  });
+});
+
+describe('round 3: real threshold edit mode', () => {
+  it('opens an existing row from the panel and passes it into the modal', () => {
+    expect(panel).toMatch(/editingThreshold/);
+    expect(panel).toMatch(/setEditingThreshold\(th\)/);
+    expect(panel).toMatch(/editing=\{editingThreshold\}/);
+    expect(panel).toMatch(/inv_action_edit/);
+  });
+
+  it('prefills existing values and locks the identity tuple', () => {
+    expect(thresholdModal).toMatch(/editing\?\.scopeKind/);
+    expect(thresholdModal).toMatch(/setScientificName\(editing\.scientificName\)/);
+    expect(thresholdModal).toMatch(/const identityLocked = editing !== null/);
+    expect(thresholdModal).toMatch(/disabled=\{identityLocked\}/);
+    expect(thresholdModal).toMatch(/inv_th_identity_locked/);
+  });
+
+  it('saves the immutable existing identity but updates values with fixed 270 days', () => {
+    expect(thresholdModal).toMatch(/scopeKind: editing\?\.scopeKind \?\? scopeKind/);
+    expect(thresholdModal).toMatch(/scopeId: editing \? editing\.scopeId/);
+    expect(thresholdModal).toMatch(/scientificName: editing\?\.scientificName/);
+    expect(thresholdModal).toMatch(/nearExpiryDays: FIXED_NEAR_EXPIRY_DAYS/);
+  });
+
+  it('shows edit only for an org-default grant or an exactly manageable scope', () => {
+    expect(panel).toMatch(/th\.scopeId === null\s*\? canManageOrgDefault\s*:\s*scopes\.data\?\.canManage/);
+    expect(panel).toMatch(/orgThresholdPermission\.data === true/);
   });
 });
 
