@@ -131,7 +131,7 @@ export async function createDistributionPoint(input: {
 
 export async function updateDistributionPoint(
   id: string,
-  input: { name?: string; name_ar?: string; pointType?: PointType; warehouseId?: string; status?: string },
+  input: { name?: string; name_ar?: string; pointType?: ApprovedPointType; warehouseId?: string; status?: string },
 ): Promise<void> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
