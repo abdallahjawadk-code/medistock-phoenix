@@ -86,7 +86,7 @@ describe('Phoenix Nexus production design boundaries', () => {
       theme_color: string;
       icons: Array<{ src: string; purpose: string }>;
     };
-    expect(parsed.name).toContain('MediStock Phoenix');
+    expect(parsed.name).toBe('MediStock-Babil Phoenix');
     expect(parsed.background_color).toBe('#F3F7FB');
     expect(parsed.theme_color).toBe('#0D9488');
     expect(parsed.icons.some(icon => icon.src === '/pwa-icon-maskable-512.png' && icon.purpose === 'maskable')).toBe(true);
