@@ -703,24 +703,25 @@ describe('Security: no service_role, no auth.admin in frontend', () => {
 });
 
 // ============================================================================
-// Warehouse retired from port workflow
+// Operational warehouse pairing in outlet workflow
 // ============================================================================
 
-describe('Warehouse retired from port workflow', () => {
+describe('Operational warehouse pairing in outlet workflow', () => {
   const instScreen = readSrc('features/institutions/InstitutionScreen.tsx');
 
-  it('AddPortForm does not have warehouse dropdown', () => {
-    // The AddPortForm function should not reference port_warehouse or whId
+  it('AddPortForm requires a warehouse selected from the RLS-scoped catalog', () => {
     const addFormStart = instScreen.indexOf('function AddPortForm');
     const addFormEnd = instScreen.indexOf('function PortCard');
     const addFormBody = instScreen.slice(addFormStart, addFormEnd);
-    expect(addFormBody).not.toContain('port_warehouse');
-    expect(addFormBody).not.toContain('whId');
+    expect(addFormBody).toContain("t('port_warehouse', lang)");
+    expect(addFormBody).toContain('value={warehouseId}');
+    expect(addFormBody).toContain('warehouses.map(w =>');
+    expect(addFormBody).not.toMatch(/placeholder=.*warehouseId/i);
   });
 
-  it('PortSection does not require warehouses prop', () => {
-    expect(instScreen).not.toContain('warehouses.length === 0');
-    expect(instScreen).not.toContain("port_no_wh");
+  it('AddPortForm fails closed when no eligible institution warehouse exists', () => {
+    expect(instScreen).toContain('warehouses.length === 0');
+    expect(instScreen).toContain("t('port_no_wh', lang)");
   });
 
   it('warehouse count not shown in org detail', () => {
@@ -728,14 +729,19 @@ describe('Warehouse retired from port workflow', () => {
     expect(instScreen).not.toContain("inst_warehouses");
   });
 
-  it('getWarehouses not imported in InstitutionScreen', () => {
-    expect(instScreen).not.toContain('getWarehouses');
+  it('loads only active institution warehouses for outlet pairing', () => {
+    expect(instScreen).toContain('getWarehouses(orgId)');
+    expect(instScreen).toContain("w.warehouseKind === 'institution'");
+    expect(instScreen).toContain("w.status === 'active'");
   });
 
-  it('createDistributionPoint does not require warehouseId', () => {
+  it('createDistributionPoint requires warehouseId and rejects an empty pairing', () => {
     const svc = readSrc('shared/supabase/services/warehouses.service.ts');
-    // warehouseId should be optional in the input type
-    expect(svc).toContain('warehouseId?:');
+    const fnStart = svc.indexOf('export async function createDistributionPoint');
+    const fnEnd = svc.indexOf('export async function updateDistributionPoint');
+    const body = svc.slice(fnStart, fnEnd);
+    expect(body).toContain('warehouseId: string;');
+    expect(body).toContain("if (!input.warehouseId) throw new Error('WAREHOUSE_REQUIRED')");
   });
 
   it('createDistributionPoint insert payload uses point_type, not type', () => {
@@ -767,12 +773,13 @@ describe('Warehouse retired from port workflow', () => {
     expect(body).toContain('name_ar:         input.name_ar');
   });
 
-  it('createDistributionPoint omits warehouse_id from row when not provided', () => {
+  it('createDistributionPoint always pins warehouse_id in the insert payload', () => {
     const svc = readSrc('shared/supabase/services/warehouses.service.ts');
     const fnStart = svc.indexOf('export async function createDistributionPoint');
     const fnEnd = svc.indexOf('export async function updateDistributionPoint');
     const body = svc.slice(fnStart, fnEnd);
-    expect(body).toMatch(/if \(input\.warehouseId\) row\.warehouse_id = input\.warehouseId;/);
+    expect(body).toContain('warehouse_id:   input.warehouseId');
+    expect(body).not.toMatch(/if \(input\.warehouseId\) row\.warehouse_id/);
   });
 
   it('createDistributionPoint logs dev-only diagnostics on insert error without secrets', () => {
@@ -1426,20 +1433,23 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(addFormBody).not.toContain("port_name_ar");
   });
 
-  it('AddPortForm has no port type dropdown', () => {
+  it('AddPortForm exposes only the three approved operational outlet types', () => {
     const addFormStart = instScreen.indexOf('function AddPortForm');
     const addFormEnd   = instScreen.indexOf('function PortCard');
     const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
-    expect(addFormBody).not.toContain("port_type");
-    expect(addFormBody).not.toContain("ptType");
-    expect(addFormBody).not.toContain("setPtType");
+    expect(addFormBody).toContain("t('port_type', lang)");
+    expect(addFormBody).toContain('APPROVED_POINT_TYPES.map(type =>');
+    expect(instScreen).toContain("value: 'pharmacy'");
+    expect(instScreen).toContain("value: 'crash_cabinet'");
+    expect(instScreen).toContain("value: 'rescue_cart'");
   });
 
-  it('AddPortForm defaults pointType to dispensing internally', () => {
+  it('AddPortForm defaults to pharmacy and never creates a legacy dispensing outlet', () => {
     const addFormStart = instScreen.indexOf('function AddPortForm');
     const addFormEnd   = instScreen.indexOf('function PortCard');
     const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
-    expect(addFormBody).toContain("dispensing");
+    expect(addFormBody).toContain("useState<ApprovedPointType>('pharmacy')");
+    expect(addFormBody).not.toContain("'dispensing'");
   });
 
   it('AddPortForm receives canCreate prop and guards submission', () => {
@@ -1471,7 +1481,7 @@ describe('Port management uses permission-based gating, not role-based', () => {
 
   it('PortCard QR generate button gated by canGenerateQr, not canEditPorts', () => {
     const cardStart = instScreen.indexOf('function PortCard');
-    const cardBody  = instScreen.slice(cardStart, cardStart + 4000);
+    const cardBody  = instScreen.slice(cardStart, instScreen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toContain('canGenerateQr');
     // generate/revoke buttons should NOT use canEditPorts as their sole QR gate
     expect(cardBody).not.toMatch(/canEditPorts\s*&&[^(]+qr_generate/);
@@ -1481,13 +1491,13 @@ describe('Port management uses permission-based gating, not role-based', () => {
     // regenerateQrForPoint = disableQrToken (needs qr.revoke) + createQrForTarget (needs qr.generate)
     // so regenerate must require both permissions to avoid a runtime error when revoke is missing
     const cardStart = instScreen.indexOf('function PortCard');
-    const cardBody  = instScreen.slice(cardStart, cardStart + 11000);
+    const cardBody  = instScreen.slice(cardStart, instScreen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toMatch(/canGenerateQr\s*&&\s*canRevokeQr/);
   });
 
   it('PortCard QR revoke button gated by canRevokeQr', () => {
     const cardStart = instScreen.indexOf('function PortCard');
-    const cardBody  = instScreen.slice(cardStart, cardStart + 4000);
+    const cardBody  = instScreen.slice(cardStart, instScreen.indexOf('function QrPreviewModal', cardStart));
     expect(cardBody).toContain('canRevokeQr');
   });
 
