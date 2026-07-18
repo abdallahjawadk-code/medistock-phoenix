@@ -11,14 +11,17 @@ export type Role =
   | 'viewer';
 
 export type AvailabilityStatus = 'available' | 'low' | 'missing' | 'near_expiry';
-// Exact values accepted by the item_availability.condition CHECK (migration 001).
+// Exact values accepted by the item_availability.condition CHECK
+// (migration 001, expanded by migration 066).
 export type AvailabilityCondition =
   | 'available'
   | 'low_stock'
   | 'missing'
   | 'surplus'
   | 'near_expiry'
-  | 'expired';
+  | 'expired'
+  | 'unknown'
+  | 'not_stocked';
 // Mirrors the DB CHECK constraint on public.organizations.status (migration 001).
 export type OrganizationStatus = 'active' | 'inactive' | 'suspended';
 export type ModuleStatus       = 'healthy' | 'safemode' | 'frozen';
