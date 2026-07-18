@@ -298,11 +298,10 @@ describe('Status Center remains visible', () => {
 });
 
 // ============================================================================
-// 12. Reports is restored to the desktop sidebar for super_admin only.
-//     Mobile drawer remains unchanged in this focused navigation fix.
+// 12. Reports is restored to desktop and mobile navigation for super_admin only.
 // ============================================================================
 
-describe('Reports is reachable only through the super-admin desktop entry', () => {
+describe('Reports is reachable only through super-admin navigation entries', () => {
   it('nav_reports is present and marked superAdminOnly in desktop NAV_ITEMS', () => {
     const navItemsBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
     expect(navItemsBlock).toContain("'nav_reports'");
@@ -310,9 +309,11 @@ describe('Reports is reachable only through the super-admin desktop entry', () =
     expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 
-  it('nav_reports is still absent from the unchanged mobile drawer ALL_NAV', () => {
+  it('nav_reports is present and marked superAdminOnly in mobile ALL_NAV', () => {
     const allNavBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
-    expect(allNavBlock).not.toContain("'nav_reports'");
+    expect(allNavBlock).toContain("'nav_reports'");
+    expect(allNavBlock).toContain('superAdminOnly: true');
+    expect(mobileDrawer).toContain("!item.superAdminOnly || role === 'super_admin'");
   });
 });
 
