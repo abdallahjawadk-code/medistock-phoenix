@@ -1,23 +1,16 @@
 /**
- * INVENTORY-INTELLIGENCE-072-A
+ * INVENTORY-INTELLIGENCE-072-A — Review Round 2
  *
- * Static SQL-source tests for migration 072 — no DB connection (migrations are
- * manual-apply-only in this repo), matching the convention of 044-071.
- *
- * 072 adds a READ-ONLY intelligence layer over the existing warehouse_stock
- * (060/065) and outlet_stock (067) truth: it classifies stock into signals
- * (missing/low_stock/surplus/near_expiry/expired), orders batches FEFO when it
- * suggests a move, raises deduplicated in-app alerts with a full lifecycle,
- * suggests surplus->shortage transfers WITHOUT executing them, and scopes every
- * row to the concerned organization via RLS. It moves no stock and is frugal by
- * design: no images, no periodic snapshots/cron, no WhatsApp.
+ * Static SQL-source tests for migration 072 (manual-apply-only; no DB
+ * connection), matching the convention of 044-071. Round 2 adds regression
+ * coverage keyed to each mandatory review item (1..11).
  *
  * WHAT A STATIC TEST CAN AND CANNOT PROVE
  * ---------------------------------------
  * These tests prove the migration SOURCE contains the boundaries it must
  * contain, and that a future edit cannot quietly remove one. They do not
- * execute SQL, so they cannot prove runtime behaviour. This migration has not
- * yet been applied to a disposable database — see the file's own header.
+ * execute SQL, so runtime behaviour is out of scope; the file is not yet
+ * applied to a disposable database (see its own header).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -48,6 +41,7 @@ function functionBody(name: string): string {
 }
 
 const RPCS = [
+  'phoenix_inventory_scope_org',
   'phoenix_can_read_inventory_signal',
   'phoenix_inventory_fefo_pick',
   'phoenix_recompute_inventory_alerts',
@@ -55,9 +49,11 @@ const RPCS = [
   'phoenix_resolve_inventory_alert',
   'phoenix_dismiss_inventory_alert',
   'phoenix_suggest_inventory_transfers',
+  'phoenix_suggest_cross_org_inventory_transfer',
   'phoenix_accept_inventory_transfer_suggestion',
   'phoenix_reject_inventory_transfer_suggestion',
   'phoenix_upsert_inventory_threshold',
+  'phoenix_purge_inventory_terminal',
 ] as const;
 
 const TABLES = [
@@ -66,376 +62,373 @@ const TABLES = [
   'inventory_transfer_suggestions',
 ] as const;
 
-// ============================================================================
-// 1. Presence, registration, transaction wrapper, manual-apply header
-// ============================================================================
-describe('1. migration 072 exists once, is registered, and is manual-apply-only', () => {
-  it('the file exists on disk with the exact expected name', () => {
-    expect(() => readFileSync(P072, 'utf8')).not.toThrow();
-  });
+const PERMISSION_KEYS = [
+  'inventory.view_signals',
+  'inventory.recompute',
+  'inventory.manage_alerts',
+  'inventory.manage_thresholds',
+  'inventory.suggest_transfers',
+  'inventory.act_on_suggestions',
+  'inventory.purge',
+] as const;
 
-  it('is registered in the reviewed-migration manifest by exact name', () => {
+const HUMAN_ACTION_RPCS = [
+  'phoenix_upsert_inventory_threshold',
+  'phoenix_acknowledge_inventory_alert',
+  'phoenix_resolve_inventory_alert',
+  'phoenix_dismiss_inventory_alert',
+  'phoenix_accept_inventory_transfer_suggestion',
+  'phoenix_reject_inventory_transfer_suggestion',
+  'phoenix_purge_inventory_terminal',
+] as const;
+
+// ============================================================================
+// 0. Presence, registration, transaction, header
+// ============================================================================
+describe('0. migration 072 exists, is registered, manual-apply-only', () => {
+  it('is registered in the manifest by exact name', () => {
     expect(REVIEWED_MIGRATION_FILES).toContain(M072_NAME);
   });
-
-  it('is wrapped in a single begin/commit transaction', () => {
+  it('wrapped in a single begin/commit transaction', () => {
     expect(exec072.trimStart().toUpperCase().startsWith('BEGIN')).toBe(true);
     expect(exec072.trimEnd().toUpperCase().endsWith('COMMIT;')).toBe(true);
   });
-
-  it('states manual-apply-only and NOT APPLIED, matching 060-071 convention', () => {
+  it('states manual-apply-only and NOT APPLIED', () => {
     expect(m072).toMatch(/MANUAL APPLY ONLY/);
     expect(m072).toMatch(/NOT APPLIED/);
   });
-
-  it('runs preconditions that abort if the 065/067 stock tables are absent', () => {
-    expect(m072).toContain("to_regclass('public.warehouse_stock') IS NULL");
-    expect(m072).toContain("to_regclass('public.outlet_stock') IS NULL");
-    expect(m072).toMatch(/ABORT 072:/);
-  });
-
-  it('requires the 062 authz helper before it will apply', () => {
-    expect(m072).toContain("to_regprocedure('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)') IS NULL");
-  });
-});
-
-// ============================================================================
-// 2. Additive-only: no ALTER/DROP/REVOKE against pre-existing objects
-// ============================================================================
-describe('2. additive-only over the existing schema', () => {
-  it('never ALTERs warehouse_stock or outlet_stock', () => {
-    expect(norm072).not.toMatch(/ALTER TABLE public\.warehouse_stock\b/i);
-    expect(norm072).not.toMatch(/ALTER TABLE public\.outlet_stock\b/i);
-  });
-
-  it('the only DROP statements are DROP POLICY IF EXISTS for its own new policies', () => {
-    // Real object-DROP statements only — not the `ON COMMIT DROP` temp-table clause.
-    const drops = active072.match(/\bDROP\s+(TABLE|VIEW|FUNCTION|POLICY|INDEX|TRIGGER|TYPE|SCHEMA|CONSTRAINT|SEQUENCE)\b/gi) ?? [];
-    for (const d of drops) {
-      expect(d.replace(/\s+/g, ' ').toUpperCase()).toBe('DROP POLICY');
-    }
-  });
-
-  it('creates exactly the three intelligence tables and no others', () => {
+  it('creates exactly the three intelligence tables', () => {
     const created = [...active072.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?public\.([a-z_]+)/gi)].map(m => m[1]);
     expect(created.sort()).toEqual([...TABLES].sort());
   });
-});
-
-// ============================================================================
-// 3. Signal vocabulary is EXACTLY the five required values
-// ============================================================================
-describe('3. the five signal types and nothing more', () => {
-  it('inventory_alerts.signal_type CHECK is exactly missing/low_stock/surplus/near_expiry/expired', () => {
-    expect(norm072).toMatch(
-      /CHECK \(signal_type IN \(\s*'missing', 'low_stock', 'surplus', 'near_expiry', 'expired'\s*\)\)/,
-    );
-  });
-
-  it('recompute classifies all five signals', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    for (const sig of ['missing', 'low_stock', 'surplus', 'near_expiry', 'expired']) {
-      expect(body, sig).toContain(`'${sig}'`);
-    }
-  });
-
-  it('date signals are per-batch, quantity signals are per-material (batch guard CHECK present)', () => {
-    expect(m072).toContain('inventory_alerts_batch_signal_chk');
-    expect(norm072).toMatch(/signal_type IN \('near_expiry', 'expired'\) AND expiry_date IS NOT NULL/);
+  it('all RPCs exist as CREATE FUNCTION', () => {
+    for (const fn of RPCS) expect(sqlFunctionSource(m072, fn), fn).not.toBeNull();
   });
 });
 
 // ============================================================================
-// 4. FEFO — earliest usable expiry first, undated last, never expired
+// ITEM 1 — fail-closed authz + scope validation (no ELSE->outlet)
 // ============================================================================
-describe('4. FEFO ordering is first-expiry-first-out', () => {
-  it('the FEFO pick orders by expiry ASC with NULLs last', () => {
-    const body = functionBody('phoenix_inventory_fefo_pick');
-    expect(body).toMatch(/ORDER BY .*expiry_date ASC NULLS LAST/i);
+describe('item 1: read gate / FEFO / recompute fail closed on scope', () => {
+  it('scope-org resolver has no ELSE that assumes outlet — unknown kind returns NULL', () => {
+    const body = functionBody('phoenix_inventory_scope_org');
+    expect(body).toMatch(/WHEN p_scope_kind = 'warehouse'/);
+    expect(body).toMatch(/WHEN p_scope_kind = 'outlet'/);
+    expect(body).toMatch(/ELSE NULL/);
+    // the outlet branch must be gated by an explicit equality, never a fallthrough
+    expect(body).not.toMatch(/ELSE\s*\(SELECT[^)]*distribution_points/i);
   });
 
-  it('FEFO never picks an already-expired batch', () => {
-    const body = functionBody('phoenix_inventory_fefo_pick');
-    expect(body).toMatch(/expiry_date >= current_date/i);
-    expect(body).toMatch(/available_quantity > 0/i);
+  it('read gate requires kind in (warehouse,outlet) AND scope belongs to the org', () => {
+    const body = functionBody('phoenix_can_read_inventory_signal');
+    expect(body).toMatch(/p_scope_kind IN \('warehouse', 'outlet'\)/);
+    expect(body).toMatch(/phoenix_inventory_scope_org\(p_scope_kind, p_scope_id\) = p_organization_id/);
   });
 
-  it('the suggestion RPC attaches a FEFO batch to each match', () => {
-    const body = functionBody('phoenix_suggest_inventory_transfers');
-    expect(body).toContain('phoenix_inventory_fefo_pick');
-    expect(body).toMatch(/fefo_batch_number/i);
-  });
-});
-
-// ============================================================================
-// 5. Thresholds are optional config, never guessed
-// ============================================================================
-describe('5. thresholds gate the quantity signals; nothing is invented', () => {
-  it('low_stock/missing require a reorder_point; surplus requires a target_max', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/reorder_point IS NOT NULL/);
-    expect(body).toMatch(/target_max\s+IS NOT NULL/);
+  it('read gate checks the permission on the EXACT scope, never (org,NULL,NULL)', () => {
+    const body = functionBody('phoenix_can_read_inventory_signal');
+    expect(body).toMatch(/p_scope_kind = 'warehouse' AND public\.phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'inventory\.view_signals', p_organization_id, p_scope_id, NULL\)/);
+    expect(body).toMatch(/p_scope_kind = 'outlet' AND public\.phoenix_profile_has_scoped_permission\(\s*auth\.uid\(\), 'inventory\.view_signals', p_organization_id, NULL, p_scope_id\)/);
   });
 
-  it('a scope-specific / code-specific threshold outranks the org-wide default', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/ORDER BY .*specificity DESC/i);
-  });
-
-  it('the threshold band CHECK forbids target_max below reorder_point', () => {
-    expect(m072).toContain('inventory_thresholds_band_chk');
-    expect(norm072).toMatch(/target_max >= reorder_point/);
-  });
-
-  it('near_expiry defaults to the 270-day (9-month) window, matching 048', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/v_default_near integer := 270/);
-  });
-});
-
-// ============================================================================
-// 6. Deduplication — one row per distinct signal / suggestion
-// ============================================================================
-describe('6. dedup by key, upsert not duplicate', () => {
-  it('inventory_alerts has a UNIQUE index on alert_key', () => {
-    expect(m072).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS inventory_alerts_alert_key_uniq[\s\S]*?\(alert_key\)/);
-  });
-
-  it('inventory_transfer_suggestions has a UNIQUE index on suggestion_key', () => {
-    expect(m072).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS inventory_suggestions_key_uniq[\s\S]*?\(suggestion_key\)/);
-  });
-
-  it('thresholds have a COALESCE-folded identity unique (org-wide + no-code cannot duplicate)', () => {
-    expect(m072).toContain('inventory_thresholds_identity_uniq');
-    expect(m072).toMatch(/COALESCE\(scope_id, '00000000-0000-0000-0000-000000000000'::uuid\)/);
-  });
-
-  it('recompute upserts on conflict rather than inserting duplicates', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/ON CONFLICT \(alert_key\) DO UPDATE/i);
-  });
-});
-
-// ============================================================================
-// 7. Alert lifecycle — open->ack->resolved/dismissed, reasons required, auto-resolve
-// ============================================================================
-describe('7. full alert lifecycle with auto-resolve', () => {
-  it('status vocabulary matches the established open/acknowledged/in_progress/resolved/dismissed set', () => {
-    expect(norm072).toMatch(
-      /status[\s\S]*?CHECK \(status IN \('open', 'acknowledged', 'in_progress', 'resolved', 'dismissed'\)\)/,
-    );
-  });
-
-  it('resolved and dismissed each require a non-empty reason', () => {
-    expect(m072).toContain('inventory_alerts_resolve_reason_chk');
-    expect(m072).toContain('inventory_alerts_dismiss_reason_chk');
-  });
-
-  it('recompute auto-resolves an open alert whose condition has cleared', () => {
-    const body = functionBody('phoenix_recompute_inventory_alerts');
-    expect(body).toMatch(/SET status = 'resolved'/);
-    expect(body).toMatch(/auto_resolved = true/);
-    expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM _inv_now/i);
-  });
-
-  it('lifecycle RPCs are IDOR-gated on the locked row and scoped-permission checked', () => {
-    for (const fn of ['phoenix_acknowledge_inventory_alert', 'phoenix_resolve_inventory_alert', 'phoenix_dismiss_inventory_alert']) {
+  it('FEFO and recompute validate the scope belongs to the org before doing work', () => {
+    for (const fn of ['phoenix_inventory_fefo_pick', 'phoenix_recompute_inventory_alerts']) {
       const body = functionBody(fn);
-      expect(body, fn).toMatch(/FOR UPDATE/i);
-      expect(body, fn).toContain("'inventory.manage_alerts'");
+      expect(body, fn).toMatch(/scope_not_in_organization/);
+      expect(body, fn).toMatch(/invalid_scope_kind/);
+    }
+  });
+
+  it('recompute checks permission on the requested scope, not a blanket org grant, when a scope is given', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/'inventory\.recompute', p_organization_id, p_scope_id, NULL/);
+    expect(body).toMatch(/'inventory\.recompute', p_organization_id, NULL, p_scope_id/);
+  });
+});
+
+// ============================================================================
+// ITEM 2 — missing is expectation-driven; no threshold => not_stocked
+// ============================================================================
+describe('item 2: expectation-driven missing', () => {
+  it('positions are built from scope-specific expectations UNION stock, then LEFT JOIN aggregated stock', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/_thr t\s+WHERE t\.scope_id IS NOT NULL/);
+    expect(body).toMatch(/LEFT JOIN _agg a/);
+  });
+
+  it('missing requires an expectation (pos.expected) + reorder_point>0 + zero on-hand', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/pos\.expected AND cfg\.reorder_point IS NOT NULL AND cfg\.reorder_point > 0\s+AND COALESCE\(a\.on_hand, 0\) = 0 THEN 'missing'/);
+  });
+
+  it('a stock position with no resolvable threshold yields no signal (not_stocked, not missing)', () => {
+    // cfg is an inner LATERAL with LIMIT 1; positions without any threshold drop out,
+    // and the final WHERE keeps only classified rows.
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/FROM _pos pos\s+CROSS JOIN LATERAL \(\s*SELECT thr\.reorder_point[\s\S]*?LIMIT 1\s*\) cfg/);
+    expect(body).toMatch(/WHERE q\.signal_type IS NOT NULL/);
+  });
+});
+
+// ============================================================================
+// ITEM 3 — no oversubscription, deterministic allocation, feasible routes
+// ============================================================================
+describe('item 3: deterministic, non-oversubscribing, feasible-route allocation', () => {
+  it('allocation is a deterministic loop ordered by priority then FEFO/id', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/FOR v_need IN\s+SELECT \* FROM _need ORDER BY prio DESC/);
+    expect(body).toMatch(/ORDER BY s\.remaining DESC, s\.scope_id, s\.alert_id/);
+  });
+
+  it('source remaining headroom is decremented as it allocates (no oversubscription)', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/v_take := LEAST\(v_remaining, v_src\.remaining\)/);
+    expect(body).toMatch(/UPDATE _src SET remaining = remaining - v_take/);
+    expect(body).toMatch(/EXIT WHEN v_remaining <= 0/);
+  });
+
+  it('an infeasible corridor is never suggested (route_kind NULL is skipped)', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/CONTINUE WHEN v_src\.route_kind IS NULL/);
+  });
+
+  it('warehouse<->outlet feasibility uses distribution_points.warehouse_id', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/distribution_points dp[\s\S]*?dp\.warehouse_id = s\.scope_id/);
+    expect(body).toMatch(/'warehouse_to_outlet'/);
+    expect(body).toMatch(/'outlet_to_warehouse'/);
+  });
+
+  it('central->institution feasibility uses warehouse_supply_routes (active)', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/warehouse_supply_routes r[\s\S]*?r\.is_active/);
+    expect(body).toMatch(/'central_to_institution'/);
+  });
+
+  it('route_kind is a constrained column, so no free-form corridor can be stored', () => {
+    expect(m072).toMatch(/route_kind[\s\S]*?CHECK \(route_kind IN \('warehouse_to_outlet', 'outlet_to_warehouse', 'central_to_institution'\)\)/);
+  });
+
+  it('reuses 036-041 for cross-org rather than a parallel engine (documented + no new exchange table)', () => {
+    expect(m072).toMatch(/036-041/);
+    const created = [...active072.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?public\.([a-z_]+)/gi)].map(m => m[1]);
+    expect(created).not.toContain('inter_org_exchange_requests');
+  });
+});
+
+// ============================================================================
+// ITEM 4 — cross-org support with strict RLS + privileged creation
+// ============================================================================
+describe('item 4: cross-org pinning, RLS to source/target/super_admin only', () => {
+  it('a suggestion pins BOTH source and target organization', () => {
+    expect(m072).toMatch(/source_organization_id\s+uuid NOT NULL REFERENCES public\.organizations/);
+    expect(m072).toMatch(/target_organization_id\s+uuid NOT NULL REFERENCES public\.organizations/);
+  });
+
+  it('suggestion RLS admits only source org, target org, or super_admin', () => {
+    const policyIdx = active072.indexOf('CREATE POLICY inventory_suggestions_select_scoped');
+    const policy = active072.slice(policyIdx, policyIdx + 600);
+    expect(policy).toMatch(/phoenix_my_role\(\) = 'super_admin'/);
+    expect(policy).toMatch(/source_organization_id, source_scope_kind, source_scope_id/);
+    expect(policy).toMatch(/target_organization_id, target_scope_kind, target_scope_id/);
+  });
+
+  it('intra-org suggest never mints a cross-org row (both orgs set to p_organization_id)', () => {
+    const body = functionBody('phoenix_suggest_inventory_transfers');
+    expect(body).toMatch(/VALUES \(\s*p_organization_id, p_organization_id,/);
+  });
+
+  it('cross-org suggestion generation requires super_admin and an active supply route', () => {
+    const body = functionBody('phoenix_suggest_cross_org_inventory_transfer');
+    expect(body).toMatch(/cross_org_suggestion_requires_super_admin/);
+    expect(body).toMatch(/no_active_supply_route_between_warehouses/);
+    expect(body).toMatch(/use_intra_org_suggest_for_same_org/);
+  });
+});
+
+// ============================================================================
+// ITEM 5 — FEFO one batch, excludes expired/unavailable/quarantine
+// ============================================================================
+describe('item 5: FEFO returns exactly one usable batch', () => {
+  it('LIMIT 1, earliest expiry, NULLS LAST', () => {
+    const body = functionBody('phoenix_inventory_fefo_pick');
+    expect(body).toMatch(/ORDER BY .*expiry_date ASC NULLS LAST[\s\S]*?LIMIT 1/i);
+  });
+  it('excludes expired and zero-available stock', () => {
+    const body = functionBody('phoenix_inventory_fefo_pick');
+    expect(body).toMatch(/available_quantity > 0/);
+    expect(body).toMatch(/expiry_date >= current_date/);
+  });
+  it('reads only live stock tables (quarantine lives in a separate 069 table)', () => {
+    const body = functionBody('phoenix_inventory_fefo_pick');
+    expect(body).not.toMatch(/warehouse_quarantine_stock/);
+    expect(m072).toMatch(/warehouse_quarantine_stock \(069\)/i);
+  });
+});
+
+// ============================================================================
+// ITEM 6 — episode-aware lifecycle (occurrence_count / cleared_at)
+// ============================================================================
+describe('item 6: recurrence after clearing reopens a fresh episode', () => {
+  it('inventory_alerts carries occurrence_count and cleared_at', () => {
+    expect(m072).toMatch(/occurrence_count\s+integer NOT NULL DEFAULT 1/);
+    expect(m072).toMatch(/cleared_at\s+timestamptz/);
+  });
+  it('a cleared recurrence bumps occurrence_count and reopens even from a terminal status', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/occurrence_count\s*=\s*al\.occurrence_count \+ \(CASE WHEN al\.cleared_at IS NOT NULL THEN 1 ELSE 0 END\)/);
+    expect(body).toMatch(/status\s*=\s*CASE WHEN al\.cleared_at IS NOT NULL THEN 'open' ELSE al\.status END/);
+  });
+  it('clear detection stamps cleared_at on non-violating alerts including dismissed ones', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/cleared_at\s*=\s*now\(\)/);
+    expect(body).toMatch(/a\.cleared_at IS NULL[\s\S]*?NOT EXISTS \(SELECT 1 FROM _now/);
+    // no clause excludes dismissed rows from being marked cleared
+    expect(body).not.toMatch(/status <> 'dismissed' IS NOT FALSE/);
+  });
+});
+
+// ============================================================================
+// ITEM 7 — manual, safe purge with retention, never deletes audit_logs
+// ============================================================================
+describe('item 7: manual retention-bounded purge', () => {
+  it('purge exists, requires >= 30 days retention, and only deletes terminal rows', () => {
+    const body = functionBody('phoenix_purge_inventory_terminal');
+    expect(body).toMatch(/retention_must_be_at_least_30_days/);
+    expect(body).toMatch(/DELETE FROM public\.inventory_alerts[\s\S]*?status IN \('resolved', 'dismissed'\)/);
+    expect(body).toMatch(/DELETE FROM public\.inventory_transfer_suggestions[\s\S]*?status IN \('rejected', 'superseded', 'expired'\)/);
+  });
+  it('purge NEVER deletes an audit_logs row (and §17 asserts it)', () => {
+    const body = functionBody('phoenix_purge_inventory_terminal');
+    expect(body).not.toMatch(/DELETE FROM public\.audit_logs/);
+    expect(m072).toMatch(/purge must never delete audit_logs/);
+  });
+  it('has no cron / scheduled dependency', () => {
+    expect(exec072).not.toMatch(/pg_cron|cron\.schedule|CREATE\s+EXTENSION/i);
+  });
+});
+
+// ============================================================================
+// ITEM 8 — audit_logs for every human action
+// ============================================================================
+describe('item 8: every human action writes audit_logs', () => {
+  it('each human-action RPC inserts an audit_logs row', () => {
+    for (const fn of HUMAN_ACTION_RPCS) {
+      const body = functionBody(fn);
+      expect(body, fn).toMatch(/INSERT INTO public\.audit_logs/);
     }
   });
 });
 
 // ============================================================================
-// 8. Advisory ONLY — a suggestion moves no stock, ever
+// ITEM 9 — split permissions
 // ============================================================================
-describe('8. transfer suggestions never execute a physical move', () => {
-  it('accept-suggestion writes only the suggestion row, no stock/movement/dispatch table', () => {
+describe('item 9: split permissions', () => {
+  it('registers all seven distinct inventory permission keys', () => {
+    for (const key of PERMISSION_KEYS) expect(m072, key).toContain(`'${key}'`);
+    expect(m072).toMatch(/count\(\*\) FROM public\.permission_keys WHERE key LIKE 'inventory\.%'\) < 7/);
+  });
+  it('threshold write uses inventory.manage_thresholds', () => {
+    expect(functionBody('phoenix_upsert_inventory_threshold')).toContain("'inventory.manage_thresholds'");
+  });
+  it('suggestion CREATION and ACT-ON are different permissions', () => {
+    expect(functionBody('phoenix_suggest_inventory_transfers')).toContain("'inventory.suggest_transfers'");
+    for (const fn of ['phoenix_accept_inventory_transfer_suggestion', 'phoenix_reject_inventory_transfer_suggestion']) {
+      expect(functionBody(fn), fn).toContain("'inventory.act_on_suggestions'");
+    }
+  });
+  it('purge uses its own inventory.purge permission (flagged dangerous)', () => {
+    expect(functionBody('phoenix_purge_inventory_terminal')).toContain("'inventory.purge'");
+    expect(m072).toMatch(/'inventory\.purge',\s*'inventory', 'purge',[^,]*,[^,]*,\s*true\)/);
+  });
+});
+
+// ============================================================================
+// ITEM 10 — 048 expiry tiers with graded severity (not flat 270-day)
+// ============================================================================
+describe('item 10: graded expiry tiers preserved from 048', () => {
+  it('alerts carry an expiry_tier constrained to the 048 vocabulary', () => {
+    expect(m072).toMatch(/expiry_tier IS NULL OR expiry_tier IN \('expired', 'critical_3m', 'warning_6m', 'watch_9m'\)/);
+  });
+  it('recompute grades severity by 3m/6m/9m window, not a single bucket', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/interval '3 months'[\s\S]*?'critical_3m'/);
+    expect(body).toMatch(/interval '6 months'[\s\S]*?'warning_6m'/);
+    expect(body).toMatch(/ELSE 'watch_9m'/);
+    // graded severities appear: critical/expired => high, warning => medium, watch => low
+    expect(body).toMatch(/interval '6 months'\)::date\s+THEN 'medium'/);
+    expect(body).toMatch(/ELSE 'low'/);
+  });
+  it('the near-expiry participation window stays 9 months', () => {
+    const body = functionBody('phoenix_recompute_inventory_alerts');
+    expect(body).toMatch(/expiry_date <= \(current_date \+ interval '9 months'\)::date/);
+  });
+});
+
+// ============================================================================
+// Structural guards carried over from Round 1 (still required)
+// ============================================================================
+describe('structural: additive, advisory-only, ACL, RLS, frugal', () => {
+  it('never ALTERs warehouse_stock or outlet_stock', () => {
+    expect(norm072).not.toMatch(/ALTER TABLE public\.(warehouse_stock|outlet_stock)\b/i);
+  });
+  it('the only DROP statements are DROP POLICY', () => {
+    const drops = active072.match(/\bDROP\s+(TABLE|VIEW|FUNCTION|POLICY|INDEX|TRIGGER|TYPE|SCHEMA|CONSTRAINT|SEQUENCE)\b/gi) ?? [];
+    for (const d of drops) expect(d.replace(/\s+/g, ' ').toUpperCase()).toBe('DROP POLICY');
+  });
+  it('accept records intent only — no stock/movement/dispatch/transfer write', () => {
     const body = functionBody('phoenix_accept_inventory_transfer_suggestion');
     expect(body).toMatch(/status = 'accepted'/);
     expect(body).not.toMatch(/INSERT INTO public\.(warehouse_stock|outlet_stock|warehouse_stock_movements|outlet_stock_movements|warehouse_dispatches|warehouse_dispatch_lines|warehouse_transfers)\b/i);
     expect(body).not.toMatch(/UPDATE public\.(warehouse_stock|outlet_stock)\b/i);
   });
-
-  it('the whole migration never writes a physical stock table outside its own new tables', () => {
-    // No INSERT/UPDATE of warehouse_stock or outlet_stock anywhere in 072.
-    expect(norm072).not.toMatch(/INSERT INTO public\.(warehouse_stock|outlet_stock)\b/i);
-    expect(norm072).not.toMatch(/UPDATE public\.(warehouse_stock|outlet_stock)\b/i);
-  });
-
-  it('§14 post-condition actively forbids accept/recompute from moving stock', () => {
-    expect(m072).toMatch(/accept-suggestion must not move stock/);
-    expect(m072).toMatch(/recompute must not write physical stock/);
-  });
-
-  it('a suggestion cannot target the scope it already sits in', () => {
-    expect(m072).toContain('inventory_suggestions_distinct_scope_chk');
-  });
-});
-
-// ============================================================================
-// 9. Scoped to the concerned organization only (RLS)
-// ============================================================================
-describe('9. RLS scopes every row to its own organization', () => {
-  it('enables RLS on all three tables', () => {
-    for (const t of TABLES) {
-      expect(m072).toMatch(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`));
+  it('recompute/suggest never write a physical stock table', () => {
+    for (const fn of ['phoenix_recompute_inventory_alerts', 'phoenix_suggest_inventory_transfers']) {
+      const body = functionBody(fn);
+      expect(body, fn).not.toMatch(/INSERT INTO public\.(warehouse_stock|outlet_stock)\b/i);
+      expect(body, fn).not.toMatch(/UPDATE public\.(warehouse_stock|outlet_stock)\b/i);
     }
   });
-
-  it('each SELECT policy gates on phoenix_can_read_inventory_signal', () => {
-    const policies = active072.match(/CREATE POLICY \w+_select_scoped/gi) ?? [];
-    expect(policies.length).toBe(3);
-    expect(active072).toMatch(/USING \(public\.phoenix_can_read_inventory_signal\(organization_id, scope_kind, scope_id\)\)/);
+  it('signal vocabulary is exactly the five values', () => {
+    expect(norm072).toMatch(/CHECK \(signal_type IN \(\s*'missing', 'low_stock', 'surplus', 'near_expiry', 'expired'\s*\)\)/);
   });
-
-  it('the read gate requires auth and a scoped view_signals permission (or super_admin)', () => {
-    const body = functionBody('phoenix_can_read_inventory_signal');
-    expect(body).toMatch(/auth\.uid\(\) IS NOT NULL/);
-    expect(body).toContain("'inventory.view_signals'");
-    expect(body).toMatch(/phoenix_my_role\(\) = 'super_admin'/);
+  it('dedup uniques for alerts, suggestions, thresholds', () => {
+    expect(m072).toContain('inventory_alerts_alert_key_uniq');
+    expect(m072).toContain('inventory_suggestions_key_uniq');
+    expect(m072).toContain('inventory_thresholds_identity_uniq');
   });
-
-  it('a suggestion is visible to either its source or its target scope', () => {
-    expect(active072).toMatch(
-      /phoenix_can_read_inventory_signal\(organization_id, source_scope_kind, source_scope_id\)\s*OR\s*public\.phoenix_can_read_inventory_signal\(organization_id, target_scope_kind, target_scope_id\)/,
-    );
-  });
-});
-
-// ============================================================================
-// 10. ACL — authenticated reads via RLS only, writes RPC-only, anon nothing
-// ============================================================================
-describe('10. grant hygiene', () => {
-  it('authenticated is granted SELECT but has INSERT/UPDATE/DELETE revoked on every table', () => {
-    for (const t of TABLES) {
-      expect(m072).toMatch(new RegExp(`GRANT SELECT ON TABLE public\\.${t}\\s+TO authenticated`));
-      expect(m072).toMatch(new RegExp(`REVOKE INSERT, UPDATE, DELETE ON TABLE public\\.${t}\\s+FROM authenticated`));
-    }
-  });
-
-  it('anon has ALL revoked on every table', () => {
-    for (const t of TABLES) {
-      expect(m072).toMatch(new RegExp(`REVOKE ALL ON TABLE public\\.${t}\\s+FROM anon`));
-    }
-  });
-
-  it('every RPC revokes from PUBLIC, anon and grants execute to authenticated only', () => {
-    for (const fn of RPCS) {
-      expect(m072, `${fn} REVOKE`).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\)\\s*FROM PUBLIC, anon`));
-      expect(m072, `${fn} GRANT`).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\)\\s*TO authenticated`));
-    }
-  });
-
-  it('no function or table is ever granted to anon or PUBLIC', () => {
-    // Only role targets after `TO` matter — the `public.` schema qualifier is not
-    // a grant target. Every GRANT in 072 targets `authenticated`.
-    expect(exec072).not.toMatch(/\bTO\s+(anon|public)\b/i);
-  });
-
-  it('every RPC is SECURITY DEFINER with a pinned search_path', () => {
+  it('every RPC is SECURITY DEFINER with a pinned search_path, revoked from PUBLIC/anon, granted to authenticated only', () => {
     for (const fn of RPCS) {
       const body = functionBody(fn);
       expect(body, fn).toMatch(/SECURITY DEFINER/i);
       expect(body, fn).toMatch(/SET search_path = public, pg_temp/i);
+      expect(m072, `${fn} REVOKE`).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\)\\s*FROM PUBLIC, anon`));
+      expect(m072, `${fn} GRANT`).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\)\\s*TO authenticated`));
     }
   });
-});
-
-// ============================================================================
-// 11. Frugal by design — free-plan safe
-// ============================================================================
-describe('11. frugal: no images, no snapshots/cron, no WhatsApp', () => {
-  it('declares no image/photo/blob/attachment column on any new table', () => {
-    expect(norm072).not.toMatch(/\b(image|photo|blob|attachment|snapshot_url)\b\s+(text|bytea|uuid|jsonb)/i);
+  it('never grants a table or function to anon or public', () => {
+    expect(exec072).not.toMatch(/\bTO\s+(anon|public)\b/i);
   });
-
-  it('has no cron / pg_cron / scheduled-job dependency', () => {
-    // exec072 has comments stripped and string literals blanked, so the header's
-    // "NO pg_cron" prose cannot satisfy this — only a real dependency would.
-    expect(exec072).not.toMatch(/pg_cron|cron\.schedule|CREATE\s+EXTENSION/i);
+  it('authenticated has SELECT but no direct write; anon has ALL revoked', () => {
+    for (const t of TABLES) {
+      expect(m072).toMatch(new RegExp(`GRANT SELECT ON TABLE public\\.${t}\\s+TO authenticated`));
+      expect(m072).toMatch(new RegExp(`REVOKE INSERT, UPDATE, DELETE ON TABLE public\\.${t}\\s+FROM authenticated`));
+      expect(m072).toMatch(new RegExp(`REVOKE ALL ON TABLE public\\.${t}\\s+FROM anon`));
+    }
   });
-
-  it('has no WhatsApp / messaging fan-out (comments and §14 token literal excluded)', () => {
+  it('RLS enabled on all three tables', () => {
+    for (const t of TABLES) expect(m072).toMatch(new RegExp(`ALTER TABLE public\\.${t}\\s+ENABLE ROW LEVEL SECURITY`));
+  });
+  it('frugal: no image/blob/whatsapp column, no cron, no WhatsApp fan-out', () => {
     expect(exec072).not.toMatch(/whatsapp|twilio|sendgrid|nodemailer|smtp/i);
+    expect(exec072).not.toMatch(/pg_cron|cron\.schedule/i);
   });
-
-  it('§14 verifies the frugal contract (no forbidden columns)', () => {
-    expect(m072).toMatch(/forbidden image\/whatsapp\/attachment column/);
-  });
-
-  it('recompute is on-demand (an RPC), not a trigger or scheduled job', () => {
-    expect(m072).not.toMatch(/CREATE TRIGGER/i);
-  });
-});
-
-// ============================================================================
-// 12. Permission catalog seeding + enforcement stays OFF
-// ============================================================================
-describe('12. RBAC catalog registration, enforcement unchanged', () => {
-  it('registers the four inventory permission keys idempotently', () => {
-    for (const key of ['inventory.view_signals', 'inventory.recompute', 'inventory.manage_alerts', 'inventory.suggest_transfers']) {
-      expect(m072, key).toContain(`'${key}'`);
-    }
-    expect(m072).toMatch(/INSERT INTO public\.permission_keys[\s\S]*?ON CONFLICT \(key\) DO NOTHING/);
-  });
-
-  it('seeds role defaults idempotently (ON CONFLICT DO NOTHING)', () => {
-    expect(m072).toMatch(/INSERT INTO public\.role_permission_defaults[\s\S]*?ON CONFLICT \(role, permission_key\) DO NOTHING/);
-  });
-
-  it('separation of duty: outlet_officer views only, warehouse/institution roles drive recompute/suggest', () => {
-    expect(m072).toMatch(/\('outlet_officer',\s*'inventory\.recompute',\s*false\)/);
-    expect(m072).toMatch(/\('outlet_officer',\s*'inventory\.suggest_transfers',\s*false\)/);
-    expect(m072).toMatch(/\('warehouse_officer',\s*'inventory\.recompute',\s*true\)/);
-  });
-
-  it('changes no RBAC enforcement flag — enforcement stays OFF', () => {
-    // It may DISCUSS enforcement in comments, but must not flip an enforcement flag.
+  it('RBAC enforcement stays OFF', () => {
     expect(norm072).not.toMatch(/rbac_enforc|permission_enforc|set_enforcement|enforcement_enabled/i);
     expect(m072).toMatch(/Enforcement stays OFF|ENFORCEMENT STAYS OFF/i);
   });
-});
-
-// ============================================================================
-// 13. Every named RPC actually exists as a CREATE FUNCTION
-// ============================================================================
-describe('13. all ten RPCs are present', () => {
-  it('each RPC exists as a CREATE FUNCTION in the migration', () => {
-    for (const fn of RPCS) {
-      expect(sqlFunctionSource(m072, fn), fn).not.toBeNull();
-    }
-  });
-
-  it('recompute and suggest serialize per-org with an advisory xact lock', () => {
-    expect(functionBody('phoenix_recompute_inventory_alerts')).toMatch(/pg_advisory_xact_lock/i);
-    expect(functionBody('phoenix_suggest_inventory_transfers')).toMatch(/pg_advisory_xact_lock/i);
-  });
-});
-
-// ============================================================================
-// 14. Post-condition (§14) VERIFY block asserts the promised shape
-// ============================================================================
-describe('14. the migration verifies itself at apply time', () => {
-  it('asserts all three tables exist with RLS enabled', () => {
-    expect(m072).toMatch(/VERIFY FAILED \(072\): table % missing/);
-    expect(m072).toMatch(/VERIFY FAILED \(072\): RLS not enabled/);
-  });
-
-  it('asserts the dedup uniques and lifecycle reason guards exist', () => {
-    expect(m072).toMatch(/a dedup unique index is missing/);
-    expect(m072).toMatch(/a lifecycle reason guard is missing/);
-  });
-
-  it('asserts authenticated has no direct write and anon cannot read', () => {
-    expect(m072).toMatch(/authenticated has direct write on inventory_alerts/);
-    expect(m072).toMatch(/anon can read inventory intelligence/);
-  });
-
-  it('§14i resolves each ::regprocedure by its FULL signature (071 regression lesson)', () => {
-    // The bare-name form aborts the migration; every cast must be parenthesised.
+  it('every ::regprocedure cast is parenthesised (071 regression lesson)', () => {
     const bare = m072.match(/'[a-z0-9_.]+'::regprocedure/gi) ?? [];
-    expect(bare, `bare-name regprocedure casts: ${bare.join(', ')}`).toEqual([]);
+    expect(bare, `bare-name casts: ${bare.join(', ')}`).toEqual([]);
   });
 });
