@@ -18,6 +18,7 @@ import {
   getScopeAssignments, assignProfileScope, revokeProfileScope,
   type NetworkWarehouse, type SupplyRoute, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
+import { NetworkTopologyStage } from './NetworkTopologyStage';
 
 /**
  * PHASE-B-NETWORK-UI-A — super_admin network structure management, plus the
@@ -137,6 +138,11 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const [reloadKey, setReloadKey] = useState(0);
   const warehouses = useAsync(() => getAllWarehouses(), [reloadKey]);
   const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
+  const routes = useAsync(() => getSupplyRoutes(), [reloadKey]);
+  const outlets = useAsync(
+    () => orgId ? getPointsByOrg(orgId) : Promise.resolve([]),
+    [orgId, reloadKey],
+  );
   const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -144,6 +150,18 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const inOrg = (warehouses.data ?? []).filter(w => w.organizationId === orgId);
   const central = inOrg.filter(w => w.warehouseKind === 'central');
   const institution = inOrg.filter(w => w.warehouseKind === 'institution');
+  const selectedWarehouseIds = new Set(inOrg.map(w => w.id));
+  const relatedWarehouseIds = new Set(selectedWarehouseIds);
+  (routes.data ?? []).forEach(route => {
+    if (selectedWarehouseIds.has(route.sourceWarehouseId) || selectedWarehouseIds.has(route.targetWarehouseId)) {
+      relatedWarehouseIds.add(route.sourceWarehouseId);
+      relatedWarehouseIds.add(route.targetWarehouseId);
+    }
+  });
+  const topologyWarehouses = (warehouses.data ?? []).filter(w => relatedWarehouseIds.has(w.id));
+  const topologyRoutes = (routes.data ?? []).filter(
+    route => relatedWarehouseIds.has(route.sourceWarehouseId) && relatedWarehouseIds.has(route.targetWarehouseId),
+  );
 
   if (orgs.loading || warehouses.loading) return <PhoenixLoadingState />;
   if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={reload} />;
@@ -160,6 +178,16 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
       </div>
 
       {status && <StatusLine msg={status.msg} error={status.error} />}
+
+      {orgId && (
+        <NetworkTopologyStage
+          lang={lang}
+          warehouses={topologyWarehouses}
+          routes={topologyRoutes}
+          outlets={outlets.data ?? []}
+          organizationName={options.find(option => option.value === orgId)?.label}
+        />
+      )}
 
       {adding && orgId && (
         <WarehouseForm
