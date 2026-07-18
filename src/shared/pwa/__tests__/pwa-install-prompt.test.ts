@@ -364,11 +364,14 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B), checked structurally, not just diff', () => {
+  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B) and the self-hosted W1 fonts, checked structurally, not just diff', () => {
     const pkg = JSON.parse(readRoot('package.json'));
-    expect(Object.keys(pkg.dependencies)).toEqual([
+    expect(Object.keys(pkg.dependencies).sort()).toEqual([
+      // W1: self-hosted variable fonts replacing the external Google Fonts CDN
+      // (CSP font-src 'self'). Weight-axis only; bundled by Vite.
+      '@fontsource-variable/dm-sans', '@fontsource-variable/noto-sans-arabic',
       '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
-    ]);
+    ].sort());
   });
 });
 
