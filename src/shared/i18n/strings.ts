@@ -1391,7 +1391,9 @@ export const T: Dict = {
 
   /* Thresholds */
   inv_thresholds_title:     { ar: 'حدود المخزون',                               en: 'Inventory thresholds' },
-  inv_threshold_add:        { ar: 'إضافة/تعديل حدّ',                            en: 'Add / edit threshold' },
+  inv_threshold_add:        { ar: 'إضافة حدّ',                                  en: 'Add threshold' },
+  inv_threshold_edit:       { ar: 'تعديل حدّ المخزون',                          en: 'Edit inventory threshold' },
+  inv_action_edit:          { ar: 'تعديل',                                      en: 'Edit' },
   inv_th_scientific_name:   { ar: 'الاسم العلمي',                               en: 'Scientific name' },
   inv_th_national_code:     { ar: 'الرمز الوطني (اختياري)',                      en: 'National code (optional)' },
   inv_th_reorder_point:     { ar: 'حدّ إعادة الطلب',                            en: 'Reorder point' },
@@ -1418,15 +1420,18 @@ export const T: Dict = {
 
   /* ── Threshold scope selector + fixed near-expiry policy (Round 2) ── */
   inv_org_label:            { ar: 'المؤسسة',                                     en: 'Organization' },
+  inv_org_loading:          { ar: 'جارٍ تحميل اسم المؤسسة…',                     en: 'Loading organization name…' },
   inv_th_apply_to:          { ar: 'يُطبَّق على',                                  en: 'Apply to' },
   inv_th_specific_scope:    { ar: 'نطاق محدّد',                                   en: 'Specific scope' },
   inv_th_select_scope:      { ar: 'اختر المذخر/المنفذ',                            en: 'Select warehouse / outlet' },
   inv_th_select_placeholder:{ ar: '— اختر —',                                     en: '— select —' },
   inv_th_no_scopes:         { ar: 'لا توجد نطاقات متاحة لك في هذه المؤسسة',        en: 'No scopes available to you in this organization' },
   inv_th_scope_required:    { ar: 'اختر نطاقًا صالحًا',                            en: 'Select a valid scope' },
+  inv_th_scope_invalid:     { ar: 'هذا النطاق لم يعد متاحًا لك',                    en: 'This scope is no longer available to you' },
   inv_th_scope_specific:    { ar: 'خاص بالنطاق',                                  en: 'Scope-specific' },
   inv_th_loading_scopes:    { ar: 'جارٍ تحميل النطاقات…',                          en: 'Loading scopes…' },
   inv_th_denied:            { ar: 'لا تملك صلاحية إدارة الحدود.',                  en: 'You do not have permission to manage thresholds.' },
+  inv_th_identity_locked:   { ar: 'هوية الحدّ ثابتة أثناء التعديل. لتغيير المادة أو النطاق أنشئ حدًّا جديدًا وعطّل القديم.', en: 'Threshold identity is locked while editing. To change material or scope, create a new threshold and disable the old one.' },
 
   /* Near-expiry is a FIXED policy (270-day window) — never user-editable. A DB
      migration to pin 270 server-side will follow separately. */
