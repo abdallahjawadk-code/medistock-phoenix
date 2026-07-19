@@ -4,7 +4,7 @@
  * The visual-QA harness renders real screens against deterministic local
  * fixtures so we can capture layout / theme / RTL / focus / responsive states
  * without a live session. It is NOT a functional or security surface:
- *   - never uses service_role or auth.admin,
+ *   - never uses any elevated/admin Supabase key or admin auth API,
  *   - never writes to Supabase, calls a mutating RPC, or bypasses RLS,
  *   - never stores fixtures in any database,
  *   - never modifies the real auth flow.

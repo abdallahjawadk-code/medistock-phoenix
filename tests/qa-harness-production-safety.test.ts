@@ -16,13 +16,20 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const DIST = join(ROOT, 'dist');
 
-// Markers that would only exist if harness code leaked into the bundle.
+// Markers that would only exist if harness code leaked into the bundle:
+// the route/component, the fixture client, the fixtures, and QA personas.
 const FORBIDDEN = [
   'PHOENIX_VISUAL_QA_HARNESS_ONLY',
   'QaHarness',
   'QaAppProvider',
   'buildQaAppState',
   'data-qa-marker',
+  'createQaFixtureClient',
+  'QA_FIXTURES',
+  'QA_READONLY',
+  'QA_PERSONAS',
+  'qa-org-a1',
+  'qa-wh-central',
 ];
 
 function bundleFiles(): string[] {
