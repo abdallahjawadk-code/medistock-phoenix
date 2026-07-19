@@ -1135,7 +1135,7 @@ html body {
   border-radius: 50%;
   background: rgba(213, 241, 255, .84);
   box-shadow: 0 0 10px rgba(98, 233, 255, .46);
-  opacity: calc(.18 + var(--particle-scale) * .22);
+  opacity: .46;
   transform: scale(var(--particle-scale));
   animation: nexus-welcome-star var(--particle-duration) ease-in-out var(--particle-delay) infinite;
 }
@@ -1168,7 +1168,7 @@ html body {
   position: absolute;
   top: 43%;
   left: var(--particle-x);
-  width: calc(3px + var(--particle-scale) * 2px);
+  width: 4px;
   height: 2px;
   border-radius: 70% 30% 70% 30%;
   background: linear-gradient(90deg, rgba(221,186,99,.58), rgba(82,91,102,.46));
@@ -1723,12 +1723,12 @@ html body {
 }
 
 @keyframes nexus-welcome-star {
-  0%, 100% { opacity: .16; transform: scale(calc(var(--particle-scale) * .72)); }
+  0%, 100% { opacity: .16; transform: scale(.52); }
   50% { opacity: .76; transform: scale(var(--particle-scale)); }
 }
 
 @keyframes nexus-welcome-ember {
-  0% { opacity: 0; transform: translate3d(0, 0, 0) scale(calc(var(--particle-scale) * .5)); }
+  0% { opacity: 0; transform: translate3d(0, 0, 0) scale(.34); }
   12% { opacity: .86; }
   68% { opacity: .55; }
   100% { opacity: 0; transform: translate3d(var(--particle-drift), -108vh, 0) scale(calc(var(--particle-scale) * 1.18)); }
