@@ -1736,7 +1736,7 @@ html body {
   0% { opacity: 0; transform: translate3d(0, 0, 0) scale(.34); }
   12% { opacity: .86; }
   68% { opacity: .55; }
-  100% { opacity: 0; transform: translate3d(var(--particle-drift), -108vh, 0) scale(calc(var(--particle-scale) * 1.18)); }
+  100% { opacity: 0; transform: translate3d(var(--particle-drift), -108vh, 0) scale(var(--particle-scale)); }
 }
 
 @keyframes nexus-welcome-ash {
