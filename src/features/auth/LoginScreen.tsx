@@ -65,6 +65,19 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
+      <picture className="nexus-login__hero-media" aria-hidden="true">
+        <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
+        <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
+        <img
+          src="/assets/phoenix/runtime/phoenix-login.webp"
+          alt=""
+          width="1672"
+          height="941"
+          loading="eager"
+          decoding="async"
+        />
+      </picture>
+
       <div className="nexus-login__atmosphere" aria-hidden="true">
         <div className="nexus-login__aurora nexus-login__aurora--emerald" />
         <div className="nexus-login__aurora nexus-login__aurora--cyan" />
