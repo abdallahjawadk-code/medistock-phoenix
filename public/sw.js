@@ -9,7 +9,10 @@
 // them, so the browser handles them exactly as if this worker did not
 // exist).
 
-const CACHE_VERSION = 'medistock-shell-v1';
+// Bump whenever a review branch replaces a major visual shell. Activation
+// removes the prior shell so a stable Vercel branch alias cannot fall back to
+// the rejected design after the cinematic release has deployed.
+const CACHE_VERSION = 'medistock-shell-v2-cinematic';
 
 function isSupabaseOrApiRequest(url) {
   return (

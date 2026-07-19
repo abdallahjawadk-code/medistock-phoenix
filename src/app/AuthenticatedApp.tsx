@@ -22,6 +22,23 @@ import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
+const DEFAULT_AUTHENTICATED_SCREEN = 12;
+
+/**
+ * A narrow, auth-preserving review deep-link. It never bypasses session or
+ * ScreenAuthzGuard; it only chooses the first screen shown after those gates.
+ * Keeping the accepted value deliberately small prevents URL input from
+ * turning into a general navigation or permission surface.
+ */
+export function resolveInitialAuthenticatedScreen(search: string): number {
+  try {
+    const requested = new URLSearchParams(search).get('screen');
+    return requested === 'network' || requested === '17' ? 17 : DEFAULT_AUTHENTICATED_SCREEN;
+  } catch {
+    return DEFAULT_AUTHENTICATED_SCREEN;
+  }
+}
+
 /**
  * QR-BUNDLE-CODE-SPLIT-A: everything that only an authenticated session
  * needs (login, password reset, the app shell, and every screen) lives here
@@ -34,7 +51,7 @@ export function AuthenticatedApp() {
   // PRODUCTION-READINESS-CLEANUP-A: the central dashboard (screen 2) was
   // removed from navigation and no longer renders; Status Center (screen 12)
   // is the real-data landing screen.
-  const [screen, setScreen] = useState(12);
+  const [screen, setScreen] = useState(() => resolveInitialAuthenticatedScreen(window.location.search));
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
@@ -114,7 +131,7 @@ export function AuthenticatedApp() {
         }
         setWelcomeCompletedFor(null);
         void signOut();
-        setScreen(12);
+        setScreen(DEFAULT_AUTHENTICATED_SCREEN);
       }}
     >
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
