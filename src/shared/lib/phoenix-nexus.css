@@ -231,7 +231,7 @@ html body {
   border-color: color-mix(in srgb, var(--p) 23%, var(--brd)) !important;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--p) 15%, transparent), color-mix(in srgb, var(--sec) 7%, transparent)) !important;
-  box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px rgba(14, 159, 138, .08);
+  box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px color-mix(in srgb, var(--cyan) 8%, transparent);
 }
 
 .nexus-shell .premium-nav-item[data-active="true"]::before {
@@ -420,7 +420,7 @@ html body {
   .nexus-control:hover {
     border-color: color-mix(in srgb, var(--p) 44%, var(--brd));
     color: var(--p);
-    box-shadow: 0 8px 22px rgba(14, 159, 138, .12), var(--nx-bevel);
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--cyan) 12%, transparent), var(--nx-bevel);
     transform: translateY(-1px);
   }
 }
@@ -1847,7 +1847,7 @@ html body {
   background:
     radial-gradient(circle at 45% 32%, color-mix(in srgb, var(--nx-cyan) 12%, transparent), transparent 55%),
     linear-gradient(145deg, var(--p2), color-mix(in srgb, var(--sec2) 58%, var(--p2)));
-  box-shadow: 0 14px 34px rgba(14,159,138,.12), var(--nx-bevel);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--cyan) 12%, transparent), var(--nx-bevel);
 }
 
 .nexus-empty__icon > span {
@@ -1875,7 +1875,7 @@ html body {
   border: 0;
   border-radius: 13px;
   background: linear-gradient(120deg, var(--p), var(--pd));
-  box-shadow: 0 10px 24px rgba(14,159,138,.22);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--cyan) 22%, transparent);
   font-size: 12.5px;
   font-weight: 680;
 }
