@@ -13,7 +13,8 @@ import {
   createDirectTransferRequest, addTransferRequestLine, updateTransferRequestLine,
   deleteTransferRequestLine, submitTransferRequest, cancelTransferRequest,
   reviewTransferRequest, sendDirectTransferLine, receiveTransferLine,
-  getTransferRequests, getTransferRequestLines, getTransfers, getTransferLines, getWarehouseStock,
+  getTransferRequests, getTransferRequestLines, getTransfers, getTransferLines,
+  getTransferLinesForTransfers, getWarehouseStock,
   requestDirectReturn, recallDirectTransfer, addDirectReturnLine, deleteReturnRequestLine,
   submitReturnRequest, cancelReturnRequest, reviewReturnRequest, sendDirectReturnLine,
   receiveReturnShipmentLine, getReturnRequests, getReturnRequestLines,
@@ -618,11 +619,13 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
 function AddReturnLineForm({ lang, requestId, transfers, sourceWarehouseId, onDone }: {
   lang: Lang; requestId: string; transfers: Transfer[]; sourceWarehouseId: string; onDone: (r: RpcResult) => void;
 }) {
-  // Flatten received lines of direct transfers into this institution warehouse.
-  const relevant = transfers.filter(tr => tr.destinationWarehouseId === sourceWarehouseId);
+  // Flatten received lines of direct transfers into this institution warehouse —
+  // one batched query, not one per transfer.
+  const relevantIds = transfers.filter(tr => tr.destinationWarehouseId === sourceWarehouseId).map(tr => tr.id);
+  const relevantKey = relevantIds.join(',');
   const linesByTransfer = useAsync(
-    () => Promise.all(relevant.map(tr => getTransferLines(tr.id))).then(a => a.flat()),
-    [relevant.map(t => t.id).join(',')],
+    () => getTransferLinesForTransfers(relevantKey === '' ? [] : relevantKey.split(',')),
+    [relevantKey],
   );
   const candidates = (linesByTransfer.data ?? []).filter(l => l.status !== 'in_transit');
   const [originalId, setOriginalId] = useState('');

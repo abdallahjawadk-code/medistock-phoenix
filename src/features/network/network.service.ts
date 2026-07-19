@@ -446,6 +446,14 @@ interface TransferLineRow {
   batch_number: string | null; expiry_date: string | null;
   sent_quantity: number; received_quantity: number | null; status: string;
 }
+function mapTransferLine(r: TransferLineRow): TransferLine {
+  return {
+    id: r.id, transferId: r.transfer_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    sentQuantity: r.sent_quantity, receivedQuantity: r.received_quantity, status: r.status,
+  };
+}
+
 export async function getTransferLines(transferId: string): Promise<TransferLine[]> {
   if (!supabaseConfigured) return [];
   const { data, error } = await supabase
@@ -454,11 +462,19 @@ export async function getTransferLines(transferId: string): Promise<TransferLine
     .eq('transfer_id', transferId)
     .order('scientific_name', { ascending: true });
   if (error) throw error;
-  return (data as TransferLineRow[] | null ?? []).map(r => ({
-    id: r.id, transferId: r.transfer_id, scientificName: r.scientific_name,
-    batchNumber: r.batch_number, expiryDate: r.expiry_date,
-    sentQuantity: r.sent_quantity, receivedQuantity: r.received_quantity, status: r.status,
-  }));
+  return (data as TransferLineRow[] | null ?? []).map(mapTransferLine);
+}
+
+/** Lines for many transfers in ONE query — the return add-line provenance picker. */
+export async function getTransferLinesForTransfers(transferIds: string[]): Promise<TransferLine[]> {
+  if (!supabaseConfigured || transferIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('warehouse_transfer_lines')
+    .select('id, transfer_id, scientific_name, batch_number, expiry_date, sent_quantity, received_quantity, status')
+    .in('transfer_id', transferIds)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as TransferLineRow[] | null ?? []).map(mapTransferLine);
 }
 
 /** Institution receives one in-transit forward line (068, already route-free). */
