@@ -49,6 +49,10 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
       minHeight: '100dvh',
       position: 'relative',
     }}>
+      {/* A11Y-SHELL-LANDMARKS-A: keyboard-only skip link — first focusable
+          element, visually hidden until focused (WCAG 2.4.1). */}
+      <a href="#phoenix-main" className="nexus-skip-link">{t('skip_to_content', lang)}</a>
+
       {!isMobile && (
         <PhoenixSidebar
           currentScreen={currentScreen}
@@ -73,13 +77,19 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onMenuClick={() => setSidebarOpen(s => !s)}
         />
 
-        <main className="premium-main" style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: isMobile ? '16px 14px' : '24px 28px',
-          paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
-        }}>
+        <main
+          id="phoenix-main"
+          tabIndex={-1}
+          aria-label={t('shell_main_region', lang)}
+          className="premium-main"
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: isMobile ? '16px 14px' : '24px 28px',
+            paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
+          }}
+        >
           {children}
         </main>
       </div>

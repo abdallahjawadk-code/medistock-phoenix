@@ -8,6 +8,7 @@
    ──────────────────────────────────────────────────────────────────────────── */
 
 import type { ReactNode } from 'react';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -61,7 +62,7 @@ export function PhoenixPermissionExplanation({ reason, onRetry }: ExplanationPro
         fontSize: '12.5px',
       }}
     >
-      <span aria-hidden="true">{recoverable ? '⚠️' : '🔒'}</span>
+      <PhoenixIcon name={recoverable ? 'warning' : 'lock'} size={15} inline aria-hidden="true" />
       <span>{message}</span>
       {recoverable && onRetry && (
         <button

@@ -328,7 +328,9 @@ describe('24. Existing button handlers remain connected', () => {
       userManagementScreen.indexOf('function ContactSection'),
       userManagementScreen.indexOf('function ContactSection') + 1500,
     );
-    expect(block).toContain('📞');
+    // The phone glyph is now a unified SVG icon (Wave A), so assert the actual
+    // tel: link (the test's real subject) rather than the retired 📞 emoji.
+    expect(block).toContain('href={`tel:${c.phone}`}');
     expect(block).toContain('WhatsAppContactButton');
   });
 });

@@ -14,12 +14,14 @@ import { getOrganizations, getProfilesByOrg } from '@/shared/supabase/services/o
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAllWarehouses, createWarehouse, updateWarehouse, setWarehouseActive,
-  getSupplyRoutes,
   getScopeAssignments, assignProfileScope, revokeProfileScope,
   type NetworkWarehouse, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
-import { NetworkTopologyStage } from './NetworkTopologyStage';
+import { NetworkTopologyStage, type NodeAlert } from './NetworkTopologyStage';
 import { DirectSupplyOperations } from './DirectSupplyOperations';
+import { getInventoryAlerts } from '@/features/inventory/inventory-intelligence.service';
+
+const ALERT_SEVERITY_RANK = { high: 0, medium: 1, low: 2 } as const;
 
 /**
  * PHASE-B-NETWORK-UI-A — super_admin network structure management, plus the
@@ -142,7 +144,10 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const [reloadKey, setReloadKey] = useState(0);
   const warehouses = useAsync(() => getAllWarehouses(), [reloadKey]);
   const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
-  const routes = useAsync(() => getSupplyRoutes(), [reloadKey]);
+  const inventoryAlerts = useAsync(
+    () => orgId ? getInventoryAlerts(orgId) : Promise.resolve([]),
+    [orgId, reloadKey],
+  );
   const outlets = useAsync(
     () => orgId ? getPointsByOrg(orgId) : Promise.resolve([]),
     [orgId, reloadKey],
@@ -150,22 +155,34 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // Aggregate real RLS-scoped inventory alerts by node (warehouse/outlet) id.
+  // Highest severity wins for the node's badge; count is the node's open total.
+  const nodeAlerts = useMemo(() => {
+    const map = new Map<string, NodeAlert>();
+    for (const alert of inventoryAlerts.data ?? []) {
+      const prev = map.get(alert.scopeId);
+      if (!prev) {
+        map.set(alert.scopeId, { severity: alert.severity, count: 1, topSignal: alert.signalType });
+      } else {
+        const escalates = ALERT_SEVERITY_RANK[alert.severity] < ALERT_SEVERITY_RANK[prev.severity];
+        map.set(alert.scopeId, {
+          severity: escalates ? alert.severity : prev.severity,
+          count: prev.count + 1,
+          topSignal: escalates ? alert.signalType : prev.topSignal,
+        });
+      }
+    }
+    return map;
+  }, [inventoryAlerts.data]);
+
   const reload = () => setReloadKey(k => k + 1);
   const inOrg = (warehouses.data ?? []).filter(w => w.organizationId === orgId);
   const central = inOrg.filter(w => w.warehouseKind === 'central');
   const institution = inOrg.filter(w => w.warehouseKind === 'institution');
-  const selectedWarehouseIds = new Set(inOrg.map(w => w.id));
-  const relatedWarehouseIds = new Set(selectedWarehouseIds);
-  (routes.data ?? []).forEach(route => {
-    if (selectedWarehouseIds.has(route.sourceWarehouseId) || selectedWarehouseIds.has(route.targetWarehouseId)) {
-      relatedWarehouseIds.add(route.sourceWarehouseId);
-      relatedWarehouseIds.add(route.targetWarehouseId);
-    }
-  });
-  const topologyWarehouses = (warehouses.data ?? []).filter(w => relatedWarehouseIds.has(w.id));
-  const topologyRoutes = (routes.data ?? []).filter(
-    route => relatedWarehouseIds.has(route.sourceWarehouseId) && relatedWarehouseIds.has(route.targetWarehouseId),
-  );
+  // The W077 operational model is route-free. Show every RLS-visible warehouse
+  // in the governorate twin, and let it derive direct central → institution →
+  // outlet relationships in memory. The selector below still scopes editing.
+  const topologyWarehouses = warehouses.data ?? [];
 
   if (orgs.loading || warehouses.loading) return <PhoenixLoadingState />;
   if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={reload} />;
@@ -187,9 +204,9 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
         <NetworkTopologyStage
           lang={lang}
           warehouses={topologyWarehouses}
-          routes={topologyRoutes}
           outlets={outlets.data ?? []}
           organizationName={options.find(option => option.value === orgId)?.label}
+          alerts={nodeAlerts}
         />
       )}
 

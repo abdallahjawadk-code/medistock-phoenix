@@ -13,6 +13,10 @@ export const T: Dict = {
   login_department_subtitle: { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
   /* MOBILE-NAV-BRAND-POLISH-A: sidebar/mobile-drawer brand subtitle, replaces the old "MASAR Health Network" phrase. */
   shell_brand_department: { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
+  /* A11Y-SHELL-LANDMARKS-A: keyboard skip link + landmark labels (WCAG 2.4.1). */
+  skip_to_content: { ar: 'تخطٍّ إلى المحتوى الرئيسي', en: 'Skip to main content' },
+  shell_primary_nav: { ar: 'التنقّل الرئيسي', en: 'Primary navigation' },
+  shell_main_region: { ar: 'المحتوى الرئيسي', en: 'Main content' },
 
   /* ── Login rights/supervision block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
      Replaces the removed technical badges (RLS / QR Public Safe / Intake Frozen). */
@@ -191,7 +195,7 @@ export const T: Dict = {
   safe_count:     { ar: 'آمن',                                en: 'safe' },
   blocker:        { ar: 'مانع',                               en: 'blocker' },
   warnings:       { ar: 'تحذيرات',                            en: 'warnings' },
-  blocker_msg:    { ar: '⚠ يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en: '⚠ Blocker found — review negative quantity before applying' },
+  blocker_msg:    { ar: 'يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en: 'Blocker found — review negative quantity before applying' },
   apply:          { ar: 'تطبيق التغييرات',                    en: 'Apply Changes' },
   apply_note:     { ar: 'سيُطلب التأكيد قبل التطبيق · لا تطبيق تلقائي', en: 'Confirmation required before applying · No auto-apply' },
   apply_success:  { ar: 'تم التطبيق بنجاح',                   en: 'Applied successfully' },

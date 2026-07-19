@@ -13,6 +13,8 @@ const login = read('../../../features/auth/LoginScreen.tsx');
 const welcome = read('../../../features/auth/PhoenixWelcomeExperience.tsx');
 const authenticatedApp = read('../../../app/AuthenticatedApp.tsx');
 const topology = read('../../../features/network/NetworkTopologyStage.tsx');
+const twinScene = read('../../webgl/NetworkTwin3DScene.tsx');
+const webglSupport = read('../../webgl/webglSupport.ts');
 const networkScreen = read('../../../features/network/NetworkManagementScreen.tsx');
 const manifest = read('../../../../public/manifest.webmanifest');
 
@@ -56,27 +58,37 @@ describe('Phoenix Nexus production design boundaries', () => {
 
   it('shows a skippable welcome once per authenticated session and clears it on logout', () => {
     expect(welcome).toContain('onClick={finish}');
-    expect(welcome).toContain('prefers-reduced-motion: reduce');
+    // Reduced-motion is now honoured via the shared prefersReducedMotion() helper
+    // (which checks '(prefers-reduced-motion: reduce)' and gates the WebGL rebirth
+    // to a short static path). The helper's query is covered by
+    // src/shared/webgl/__tests__/webgl-support-and-fallback.test.tsx.
+    expect(welcome).toContain('prefersReducedMotion');
+    expect(webglSupport).toContain('(prefers-reduced-motion: reduce)');
     expect(authenticatedApp).toContain('medistock-phoenix-welcome:');
     expect(authenticatedApp).toContain("sessionStorage.setItem(welcomeKey, 'complete')");
     expect(authenticatedApp).toContain('sessionStorage.removeItem(welcomeKey)');
   });
 
   it('renders a live WebGL twin with an explicit safe fallback', () => {
-    expect(topology).toContain("canvas.getContext('webgl'");
-    expect(topology).toContain('setWebglReady(false)');
-    expect(topology).toContain('SAFE MODE');
-    expect(topology).toContain('prefers-reduced-motion: reduce');
-    expect(topology).toContain('Math.min(window.devicePixelRatio || 1, 1.6)');
+    expect(twinScene).toContain('<Canvas');
+    expect(twinScene).toContain('<tubeGeometry');
+    expect(twinScene).toContain('<boxGeometry');
+    expect(twinScene).toContain('useFrame');
+    expect(twinScene).toContain('webglcontextlost');
+    expect(topology).toContain('onContextLost={() => setWebglFailed(true)}');
+    expect(topology).toContain('SAFE 2D');
+    expect(topology).toContain('resolveEffects');
   });
 
   it('binds the twin to RLS-protected network reads without introducing writes', () => {
     expect(networkScreen).toContain('getAllWarehouses()');
-    expect(networkScreen).toContain('getSupplyRoutes()');
+    expect(networkScreen).not.toContain('getSupplyRoutes()');
     expect(networkScreen).toContain('getPointsByOrg(orgId)');
     expect(networkScreen).toContain('<NetworkTopologyStage');
     expect(topology).not.toContain('supabaseClient');
+    expect(twinScene).not.toContain('supabaseClient');
     expect(topology).not.toMatch(/\.(insert|update|delete|upsert)\s*\(/);
+    expect(twinScene).not.toMatch(/\.(insert|update|delete|upsert)\s*\(/);
   });
 
   it('ships installable Phoenix identity assets and production colors', () => {

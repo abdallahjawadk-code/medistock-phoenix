@@ -93,6 +93,12 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// VISUAL-QA-HARNESS-A: exported ONLY so the DEV/TEST-only visual-QA harness can
+// supply a deterministic fixture context (src/features/qa). Production code must
+// keep using <AppProvider> — this export grants no new capability at runtime.
+export { AppContext };
+export type { AppState };
+
 interface AppProviderProps {
   children: ReactNode;
   /**

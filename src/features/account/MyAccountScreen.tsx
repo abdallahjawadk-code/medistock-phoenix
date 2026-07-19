@@ -8,6 +8,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 const fieldStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 'var(--r2)',
@@ -261,7 +262,7 @@ export function MyAccountScreen() {
             {t('ma_reset_desc', lang)}
           </p>
           <PhoenixButton variant="ghost" size="md" loading={resetBusy} onClick={onRequestReset}>
-            📧 {t('ma_reset_btn', lang)}
+<PhoenixIcon name="mail" size={15} inline /> {t('ma_reset_btn', lang)}
           </PhoenixButton>
         </PhoenixCard>
       )}

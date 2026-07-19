@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import type { InternalAlertMatch } from './internalAlerts';
@@ -40,7 +41,7 @@ export function InternalAlertsSection({ matches }: Props) {
     <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
         <div>
-          <div style={{ fontSize: '15px', fontWeight: 700 }}>🏥 {t('sc_internal_alerts_title', lang)}</div>
+          <div style={{ fontSize: '15px', fontWeight: 700 }}><PhoenixIcon name="hospital" size={15} inline /> {t('sc_internal_alerts_title', lang)}</div>
           <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('sc_internal_alerts_sub', lang)}</div>
         </div>
         {matches.length > 0 && (
@@ -61,7 +62,7 @@ export function InternalAlertsSection({ matches }: Props) {
 
       {matches.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '28px 12px', color: 'var(--t2)' }}>
-          <div style={{ fontSize: '26px', marginBottom: '6px', opacity: 0.6 }}>✅</div>
+          <div style={{ marginBottom: '6px', opacity: 0.6, color: 'var(--ok)' }}><PhoenixIcon name="check" size={26} /></div>
           <div style={{ fontSize: '12.5px' }}>{t('sc_internal_alerts_empty', lang)}</div>
         </div>
       ) : (

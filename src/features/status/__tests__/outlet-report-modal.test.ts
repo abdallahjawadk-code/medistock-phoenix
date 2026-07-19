@@ -82,8 +82,12 @@ describe('C) Modal shows the selected outlet name and narrows rows to it', () =>
   });
 
   it('renders the outlet name and institution name in the header', () => {
-    expect(modal).toContain('📦 {outletName');
-    expect(modal).toContain('🏥 {institutionName}');
+    // Icons are the unified SVG PhoenixIcon family (Wave A) — no raw emoji — but
+    // the header must still bind both real names next to their glyphs.
+    expect(modal).toContain('name="package"');
+    expect(modal).toContain('{outletName');
+    expect(modal).toContain('name="hospital"');
+    expect(modal).toContain('{institutionName}');
   });
 
   it('title is the required bilingual "تقرير مواد المنفذ" / "Outlet Availability Report"', () => {

@@ -2,6 +2,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { PhoenixIcon } from './PhoenixIcon';
 
 /**
  * Org scope selector used by org-scoped screens.
@@ -15,8 +16,9 @@ export function PhoenixOrgScope() {
 
   if (!isSuper) {
     return (
-      <span style={{ padding: '4px 12px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '11.5px', fontWeight: 700 }}>
-        🏥 {profile?.organization_id ? t('scope', lang) : t('no_org_scope', lang)}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: 'var(--rpill)', background: 'var(--p2)', color: 'var(--pd)', fontSize: '11.5px', fontWeight: 700 }}>
+        <PhoenixIcon name="hospital" size={14} inline />
+        <span>{profile?.organization_id ? t('scope', lang) : t('no_org_scope', lang)}</span>
       </span>
     );
   }

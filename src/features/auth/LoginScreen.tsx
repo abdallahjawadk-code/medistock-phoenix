@@ -4,6 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { PhoenixExperience, signalLoginIntent, preloadPhoenixWelcome } from '@/shared/webgl';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -47,6 +48,9 @@ export function LoginScreen() {
       return;
     }
     setBusy(true);
+    // Warm the welcome scene's three.js chunk IN PARALLEL with the auth request
+    // (not before it) so the rebirth is ready the moment sign-in succeeds.
+    preloadPhoenixWelcome();
     // Bare usernames resolve to the synthetic internal auth email. Whether a
     // username exists is never revealed — same generic error either way.
     const res = await signIn(resolveLoginIdentifier(email), password);
@@ -65,11 +69,32 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
-      <div className="nexus-login__atmosphere" aria-hidden="true">
-        <div className="nexus-login__aurora nexus-login__aurora--emerald" />
-        <div className="nexus-login__aurora nexus-login__aurora--cyan" />
-        <div className="nexus-login__mesh" />
-      </div>
+      {/* Real WebGL Phoenix scene overlays the CSS atmosphere, which stays as
+          the aria-hidden 2D fallback for no-WebGL / Save-Data / context-loss. */}
+      <PhoenixExperience
+        variant="login"
+        className="nexus-login__webgl"
+        fallback={
+          <div className="nexus-login__atmosphere" aria-hidden="true">
+            {/* 2D fallback: the approved photoreal Phoenix (AVIF→WebP) shown when
+                WebGL is unavailable / Save-Data / context-loss. */}
+            <picture>
+              <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
+              <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
+              <img
+                className="nexus-login__plate"
+                src="/assets/phoenix/runtime/phoenix-login.webp"
+                alt=""
+                width={1680}
+                height={941}
+                decoding="async"
+                loading="eager"
+              />
+            </picture>
+            <div className="nexus-login__mesh" />
+          </div>
+        }
+      />
 
       <div className="nexus-login__controls">
         <button onClick={toggleLang} className="nexus-control nexus-control--language">
@@ -96,20 +121,6 @@ export function LoginScreen() {
               ? 'من مخازن قسم الصيدلة إلى مذاخر المؤسسات ومنافذ الصرف، برؤية فورية وصلاحيات دقيقة.'
               : 'From Pharmacy Department warehouses to institution stores and dispensing outlets, with live visibility and exact scope control.'}
           </p>
-        </div>
-
-        <div className="nexus-login__network" aria-hidden="true">
-          <div className="nexus-login__network-orbit nexus-login__network-orbit--one" />
-          <div className="nexus-login__network-orbit nexus-login__network-orbit--two" />
-          <div className="nexus-login__phoenix-core">
-            <PhoenixMark size="100%" title="" />
-          </div>
-          <span className="nexus-login__node nexus-login__node--central"><PhoenixIcon name="warehouse" size={18} /></span>
-          <span className="nexus-login__node nexus-login__node--institution"><PhoenixIcon name="institutions" size={18} /></span>
-          <span className="nexus-login__node nexus-login__node--outlet"><PhoenixIcon name="outlet" size={18} /></span>
-          <span className="nexus-login__beam nexus-login__beam--one" />
-          <span className="nexus-login__beam nexus-login__beam--two" />
-          <span className="nexus-login__beam nexus-login__beam--three" />
         </div>
 
         <div className="nexus-login__trust-row">
@@ -178,6 +189,7 @@ export function LoginScreen() {
                   className="premium-field nexus-login__field"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  onFocus={signalLoginIntent}
                 />
               </div>
 
