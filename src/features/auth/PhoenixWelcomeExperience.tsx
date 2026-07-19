@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
-import { PhoenixMark } from '@/shared/ui/PhoenixMark';
 
 interface Props {
   onComplete: () => void;
@@ -59,7 +58,19 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
           <div className="nexus-welcome__orbit nexus-welcome__orbit--outer" />
           <div className="nexus-welcome__orbit nexus-welcome__orbit--inner" />
           <div className="nexus-welcome__flare" />
-          <PhoenixMark className="nexus-welcome__phoenix" size="100%" title="" />
+          <picture className="nexus-welcome__phoenix-media">
+            <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.avif" type="image/avif" />
+            <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.webp" type="image/webp" />
+            <img
+              className="nexus-welcome__phoenix"
+              src="/assets/phoenix/runtime/phoenix-welcome-clean.webp"
+              alt=""
+              width="1672"
+              height="941"
+              loading="eager"
+              decoding="async"
+            />
+          </picture>
         </div>
 
         <div className="nexus-welcome__copy">
