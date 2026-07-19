@@ -19,6 +19,22 @@ export const T: Dict = {
   login_rights_code:      { ar: 'ph.Abdallahjawadk@2026',                              en: 'ph.Abdallahjawadk@2026' },
   login_supervision_line: { ar: 'بإشراف الصيدلاني باسم كاظم رمح',                      en: 'Under the supervision of Pharmacist Basim Kazim Ramh' },
 
+  /* ── W2 cinematic post-login Phoenix welcome ── */
+  phoenix_welcome_skip:          { ar: 'تخطي المشهد', en: 'Skip sequence' },
+  phoenix_welcome_kicker:        { ar: 'منظومة الإمداد الدوائي الذكية', en: 'PHOENIX HEALTH SUPPLY NEXUS' },
+  phoenix_welcome_title:         { ar: 'MediStock-Babil Phoenix', en: 'MediStock-Babil Phoenix' },
+  phoenix_welcome_department:    { ar: 'دائرة صحة بابل - قسم الصيدلة', en: 'Babylon Health Directorate - Pharmacy Department' },
+  phoenix_welcome_issued_by:     { ar: 'تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم', en: 'System issued by Pharmacist Abdallah Jawad Kadhim' },
+  phoenix_welcome_supervised_by: { ar: 'بإشراف الصيدلاني باسم كاظم رمح', en: 'Supervised by Pharmacist Basim Kadhim Ramh' },
+  phoenix_welcome_entering:      { ar: 'تهيئة لوحة المعلومات', en: 'Preparing your dashboard' },
+  phoenix_welcome_reduced:       { ar: 'تم تقليل الحركة وفق إعدادات جهازك', en: 'Motion reduced for your device settings' },
+  phoenix_welcome_phase_ignite:  { ar: 'تجميع شرارة الفينيكس', en: 'Gathering the Phoenix ember' },
+  phoenix_welcome_phase_burn:    { ar: 'اشتعال الفينيكس', en: 'Phoenix ignition' },
+  phoenix_welcome_phase_ash:     { ar: 'التحول إلى الرماد', en: 'Returning to ash' },
+  phoenix_welcome_phase_rebirth: { ar: 'عودة الفينيكس إلى الحياة', en: 'Phoenix rebirth' },
+  phoenix_welcome_phase_reveal:  { ar: 'مرحبًا بك في النظام', en: 'Welcome to the system' },
+  phoenix_welcome_phase_depart:  { ar: 'فتح لوحة المعلومات', en: 'Opening the dashboard' },
+
   /* ── Mobile logout (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ── */
   auth_sign_out: { ar: 'تسجيل الخروج', en: 'Sign out' },
 
