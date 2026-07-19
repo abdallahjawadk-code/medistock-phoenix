@@ -14,7 +14,6 @@ import { getOrganizations, getProfilesByOrg } from '@/shared/supabase/services/o
 import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import {
   getAllWarehouses, createWarehouse, updateWarehouse, setWarehouseActive,
-  getSupplyRoutes,
   getScopeAssignments, assignProfileScope, revokeProfileScope,
   type NetworkWarehouse, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
@@ -145,7 +144,6 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const [reloadKey, setReloadKey] = useState(0);
   const warehouses = useAsync(() => getAllWarehouses(), [reloadKey]);
   const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
-  const routes = useAsync(() => getSupplyRoutes(), [reloadKey]);
   const inventoryAlerts = useAsync(
     () => orgId ? getInventoryAlerts(orgId) : Promise.resolve([]),
     [orgId, reloadKey],
@@ -181,18 +179,10 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const inOrg = (warehouses.data ?? []).filter(w => w.organizationId === orgId);
   const central = inOrg.filter(w => w.warehouseKind === 'central');
   const institution = inOrg.filter(w => w.warehouseKind === 'institution');
-  const selectedWarehouseIds = new Set(inOrg.map(w => w.id));
-  const relatedWarehouseIds = new Set(selectedWarehouseIds);
-  (routes.data ?? []).forEach(route => {
-    if (selectedWarehouseIds.has(route.sourceWarehouseId) || selectedWarehouseIds.has(route.targetWarehouseId)) {
-      relatedWarehouseIds.add(route.sourceWarehouseId);
-      relatedWarehouseIds.add(route.targetWarehouseId);
-    }
-  });
-  const topologyWarehouses = (warehouses.data ?? []).filter(w => relatedWarehouseIds.has(w.id));
-  const topologyRoutes = (routes.data ?? []).filter(
-    route => relatedWarehouseIds.has(route.sourceWarehouseId) && relatedWarehouseIds.has(route.targetWarehouseId),
-  );
+  // The W077 operational model is route-free. Show every RLS-visible warehouse
+  // in the governorate twin, and let it derive direct central → institution →
+  // outlet relationships in memory. The selector below still scopes editing.
+  const topologyWarehouses = warehouses.data ?? [];
 
   if (orgs.loading || warehouses.loading) return <PhoenixLoadingState />;
   if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={reload} />;
@@ -214,7 +204,6 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
         <NetworkTopologyStage
           lang={lang}
           warehouses={topologyWarehouses}
-          routes={topologyRoutes}
           outlets={outlets.data ?? []}
           organizationName={options.find(option => option.value === orgId)?.label}
           alerts={nodeAlerts}

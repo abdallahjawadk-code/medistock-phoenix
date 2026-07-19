@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { DistributionPoint } from '@/shared/supabase/services/warehouses.service';
-import type { NetworkWarehouse, SupplyRoute } from './network.service';
+import type { NetworkWarehouse } from './network.service';
 import type { InventorySeverity, InventorySignalType } from '@/features/inventory/inventory-intelligence.service';
+import { resolveEffects } from '@/shared/webgl/effectsMode';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 type Lang = 'ar' | 'en';
-type NodeKind = 'central' | 'institution' | 'outlet';
-type Position = [number, number, number];
+export type TwinNodeKind = 'central' | 'institution' | 'outlet';
+type ViewMode = 'three-d' | 'two-d';
 
 /** Aggregated real inventory-alert state for one node (from RLS-scoped data). */
 export interface NodeAlert {
@@ -15,14 +16,38 @@ export interface NodeAlert {
   topSignal: InventorySignalType;
 }
 
-interface TopologyNode {
+/** Screen-space coordinates deliberately match the approved raised-map plate. */
+export interface TwinSceneNode {
   id: string;
   label: string;
-  kind: NodeKind;
+  kind: TwinNodeKind;
   active: boolean;
-  position: Position;
+  x: number;
+  y: number;
+  parentId?: string;
   alert?: NodeAlert;
 }
+
+export interface TwinSceneEdge {
+  id: string;
+  source: string;
+  target: string;
+  active: boolean;
+  kind: 'direct' | 'outlet';
+}
+
+interface Props {
+  lang: Lang;
+  warehouses: NetworkWarehouse[];
+  outlets: DistributionPoint[];
+  organizationName?: string;
+  /** Real per-node inventory alerts, keyed by warehouse/outlet id (RLS-scoped). */
+  alerts?: Map<string, NodeAlert>;
+}
+
+const NetworkTwin3DScene = lazy(() =>
+  import('./NetworkTwin3DScene').then(module => ({ default: module.NetworkTwin3DScene })),
+);
 
 const SIGNAL_LABEL: Record<InventorySignalType, { ar: string; en: string }> = {
   missing: { ar: 'مفقود', en: 'Missing' },
@@ -38,477 +63,377 @@ const SEVERITY_LABEL: Record<InventorySeverity, { ar: string; en: string }> = {
   low: { ar: 'منخفض', en: 'Low' },
 };
 
-interface TopologyEdge {
-  id: string;
-  source: string;
-  target: string;
-  active: boolean;
-}
+const KIND_LABEL: Record<TwinNodeKind, { ar: string; en: string }> = {
+  central: { ar: 'مستودع مركزي', en: 'Central warehouse' },
+  institution: { ar: 'مذخر مؤسسة صحية', en: 'Institution warehouse' },
+  outlet: { ar: 'منفذ صرف', en: 'Dispensing outlet' },
+};
 
-interface Props {
-  lang: Lang;
-  warehouses: NetworkWarehouse[];
-  routes: SupplyRoute[];
-  outlets: DistributionPoint[];
-  organizationName?: string;
-  /** Real per-node inventory alerts, keyed by warehouse/outlet id (RLS-scoped). */
-  alerts?: Map<string, NodeAlert>;
-}
+const INSTITUTION_POSITIONS: ReadonlyArray<readonly [number, number]> = [
+  [25, 29], [68, 28], [76, 48], [66, 69], [42, 73], [20, 58], [48, 23], [82, 35],
+];
+
+const OUTLET_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [-5, 10], [7, 9], [-8, -3], [9, -2], [-2, 13], [4, -10],
+];
 
 function labelOf(item: { name: string; name_ar: string }, lang: Lang) {
   return lang === 'ar' ? (item.name_ar || item.name) : (item.name || item.name_ar);
 }
 
-function stableAngle(id: string) {
+function stableIndex(id: string, modulo: number) {
   let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
-  return (Math.abs(hash) % 360) * Math.PI / 180;
-}
-
-// Identity tier mapping (mandate): central = Ember/Gold, institution = Ion Cyan
-// (#62E9FF), outlet = Medical Teal (#138F88). Alert state is conveyed by the
-// pulsing ring + DOM icon/text, never by colour alone.
-function nodeColor(node: TopologyNode, selected: boolean): [number, number, number] {
-  if (!node.active) return [.36, .45, .52];
-  if (selected) return [1, .72, .24];
-  if (node.kind === 'central') return [.96, .44, .14];
-  if (node.kind === 'institution') return [.38, .914, 1.0];
-  return [.075, .561, .533];
-}
-
-/** Ring colour by severity: high = danger red, medium = amber, low = gold. */
-function alertRingColor(sev: InventorySeverity): [number, number, number] {
-  if (sev === 'high') return [.95, .27, .32];
-  if (sev === 'medium') return [.97, .66, .22];
-  return [.87, .73, .39];
-}
-
-const SEVERITY_RANK: Record<InventorySeverity, number> = { high: 0, medium: 1, low: 2 };
-
-function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
-  const shader = gl.createShader(type);
-  if (!shader) return null;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    gl.deleteShader(shader);
-    return null;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = ((hash << 5) - hash + id.charCodeAt(index)) | 0;
   }
-  return shader;
+  return Math.abs(hash) % Math.max(modulo, 1);
 }
 
-function createProgram(gl: WebGLRenderingContext) {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, `
-    attribute vec3 aPosition;
-    attribute vec3 aColor;
-    attribute float aSize;
-    varying vec3 vColor;
-    uniform float uRotation;
-    uniform vec2 uTilt;
-    uniform float uAspect;
-    uniform float uSizeScale;
-
-    void main() {
-      float cy = cos(uRotation + uTilt.x);
-      float sy = sin(uRotation + uTilt.x);
-      float cx = cos(uTilt.y);
-      float sx = sin(uTilt.y);
-      vec3 p = vec3(
-        aPosition.x * cy - aPosition.z * sy,
-        aPosition.y,
-        aPosition.x * sy + aPosition.z * cy
-      );
-      p = vec3(p.x, p.y * cx - p.z * sx, p.y * sx + p.z * cx);
-      float depth = max(2.8, 4.25 - p.z);
-      float perspective = 3.55 / depth;
-      gl_Position = vec4((p.x * perspective) / max(uAspect, .6), p.y * perspective, 0.0, 1.0);
-      gl_PointSize = aSize * perspective * uSizeScale;
-      vColor = aColor;
-    }
-  `);
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    varying vec3 vColor;
-    uniform float uPointMode;
-
-    void main() {
-      float alpha = .56;
-      if (uPointMode > 1.5) {
-        // Alert ring/halo: bright annulus, hollow centre — a pulsing alert cue.
-        vec2 center = gl_PointCoord - vec2(.5);
-        float radius = length(center);
-        if (radius > .5) discard;
-        alpha = smoothstep(.28, .42, radius) * (1.0 - smoothstep(.42, .5, radius));
-        alpha *= .85;
-      } else if (uPointMode > .5) {
-        vec2 center = gl_PointCoord - vec2(.5);
-        float radius = length(center);
-        if (radius > .5) discard;
-        alpha = 1.0 - smoothstep(.32, .5, radius);
-        alpha = max(alpha, .24);
-      }
-      gl_FragColor = vec4(vColor, alpha);
-    }
-  `);
-  if (!vertex || !fragment) return null;
-  const program = gl.createProgram();
-  if (!program) return null;
-  gl.attachShader(program, vertex);
-  gl.attachShader(program, fragment);
-  gl.linkProgram(program);
-  gl.deleteShader(vertex);
-  gl.deleteShader(fragment);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    gl.deleteProgram(program);
-    return null;
-  }
-  return program;
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
-export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organizationName, alerts }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [webglReady, setWebglReady] = useState<boolean | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [motionEnabled, setMotionEnabled] = useState(true);
+function compileTopology(
+  warehouses: NetworkWarehouse[],
+  outlets: DistributionPoint[],
+  lang: Lang,
+  alerts?: Map<string, NodeAlert>,
+) {
+  const centrals = warehouses.filter(warehouse => warehouse.warehouseKind === 'central');
+  const institutions = warehouses.filter(warehouse => warehouse.warehouseKind === 'institution');
+  const positions = new Map<string, { x: number; y: number }>();
 
-  const topology = useMemo(() => {
-    const warehousePositions = new Map<string, Position>();
-    const centrals = warehouses.filter(w => w.warehouseKind === 'central');
-    const institutions = warehouses.filter(w => w.warehouseKind === 'institution');
+  centrals.forEach((warehouse, index) => {
+    const spread = (index - (centrals.length - 1) / 2) * 7;
+    positions.set(warehouse.id, { x: 50 + spread, y: 52 + Math.abs(spread) * .12 });
+  });
 
-    centrals.forEach((warehouse, index) => {
-      const angle = centrals.length <= 1 ? Math.PI / 2 : (index / centrals.length) * Math.PI * 2;
-      warehousePositions.set(warehouse.id, [Math.cos(angle) * .28, .44 + Math.sin(angle) * .10, .18]);
+  institutions.forEach((warehouse, index) => {
+    const base = INSTITUTION_POSITIONS[index % INSTITUTION_POSITIONS.length];
+    const ring = Math.floor(index / INSTITUTION_POSITIONS.length);
+    positions.set(warehouse.id, {
+      x: clamp(base[0] + ring * 2.4, 14, 85),
+      y: clamp(base[1] + (ring % 2 === 0 ? -2 : 2), 17, 78),
     });
+  });
 
-    institutions.forEach((warehouse, index) => {
-      const angle = (index / Math.max(institutions.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      warehousePositions.set(warehouse.id, [Math.cos(angle) * .82, Math.sin(angle) * .55 - .05, Math.sin(angle * 1.7) * .18]);
-    });
-
-    const nodes: TopologyNode[] = warehouses.map(warehouse => ({
+  const nodes: TwinSceneNode[] = warehouses.map(warehouse => {
+    const position = positions.get(warehouse.id) ?? { x: 50, y: 50 };
+    return {
       id: warehouse.id,
       label: labelOf(warehouse, lang),
       kind: warehouse.warehouseKind,
       active: warehouse.status === 'active',
-      position: warehousePositions.get(warehouse.id) ?? [0, 0, 0],
+      x: position.x,
+      y: position.y,
       alert: alerts?.get(warehouse.id),
-    }));
+    };
+  });
 
-    outlets.forEach((outlet, index) => {
-      const parent = outlet.warehouseId ? warehousePositions.get(outlet.warehouseId) : undefined;
-      const angle = stableAngle(outlet.id) + index * .19;
-      const base = parent ?? [0, -.25, 0] as Position;
-      nodes.push({
-        id: outlet.id,
-        label: labelOf(outlet, lang),
-        kind: 'outlet',
-        active: outlet.status === 'active',
-        position: [
-          base[0] + Math.cos(angle) * .21,
-          base[1] + Math.sin(angle) * .17,
-          base[2] + Math.cos(angle * 1.4) * .08,
-        ],
-        alert: alerts?.get(outlet.id),
+  outlets.forEach((outlet, index) => {
+    const parent = outlet.warehouseId ? positions.get(outlet.warehouseId) : undefined;
+    const base = parent ?? { x: 50, y: 63 };
+    const offset = OUTLET_OFFSETS[(stableIndex(outlet.id, OUTLET_OFFSETS.length) + index) % OUTLET_OFFSETS.length];
+    nodes.push({
+      id: outlet.id,
+      label: labelOf(outlet, lang),
+      kind: 'outlet',
+      active: outlet.status === 'active',
+      x: clamp(base.x + offset[0], 12, 88),
+      y: clamp(base.y + offset[1], 15, 82),
+      parentId: outlet.warehouseId ?? undefined,
+      alert: alerts?.get(outlet.id),
+    });
+  });
+
+  // W077 direct topology: the visual relationship is central → institution,
+  // then institution → outlet. It intentionally does not read or expose the
+  // retired warehouse_supply_routes compatibility table.
+  const edges: TwinSceneEdge[] = [];
+  if (centrals.length > 0) {
+    institutions.forEach((institution, index) => {
+      const central = centrals[index % centrals.length];
+      edges.push({
+        id: `direct-${central.id}-${institution.id}`,
+        source: central.id,
+        target: institution.id,
+        active: central.status === 'active' && institution.status === 'active',
+        kind: 'direct',
       });
     });
+  }
 
-    const nodeIds = new Set(nodes.map(node => node.id));
-    const edges: TopologyEdge[] = routes
-      .filter(route => nodeIds.has(route.sourceWarehouseId) && nodeIds.has(route.targetWarehouseId))
-      .map(route => ({
-        id: route.id,
-        source: route.sourceWarehouseId,
-        target: route.targetWarehouseId,
-        active: route.isActive,
-      }));
+  const nodeIds = new Set(nodes.map(node => node.id));
+  outlets.forEach(outlet => {
+    if (outlet.warehouseId && nodeIds.has(outlet.warehouseId)) {
+      edges.push({
+        id: `outlet-${outlet.id}`,
+        source: outlet.warehouseId,
+        target: outlet.id,
+        active: outlet.status === 'active',
+        kind: 'outlet',
+      });
+    }
+  });
 
-    outlets.forEach(outlet => {
-      if (outlet.warehouseId && nodeIds.has(outlet.warehouseId)) {
-        edges.push({
-          id: `outlet-${outlet.id}`,
-          source: outlet.warehouseId,
-          target: outlet.id,
-          active: outlet.status === 'active',
-        });
-      }
-    });
+  return { nodes, edges };
+}
 
-    return { nodes, edges };
-  }, [warehouses, routes, outlets, lang, alerts]);
+function nodeIcon(kind: TwinNodeKind) {
+  if (kind === 'central') return 'warehouse' as const;
+  if (kind === 'institution') return 'hospital' as const;
+  return 'outlet' as const;
+}
+
+function NodeStatus({ node, lang }: { node: TwinSceneNode; lang: Lang }) {
+  return (
+    <span className="nexus-twin__node-status">
+      <i />
+      {node.active ? (lang === 'ar' ? 'متصل' : 'Connected') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}
+    </span>
+  );
+}
+
+function NodeLabel({ node, selected, lang, onSelect }: {
+  node: TwinSceneNode;
+  selected: boolean;
+  lang: Lang;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="nexus-twin__node-label premium-focus-ring"
+      data-kind={node.kind}
+      data-selected={selected}
+      data-alert={node.alert?.severity}
+      style={{ left: `${node.x}%`, top: `${node.y}%` }}
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`${node.label} — ${node.active ? (lang === 'ar' ? 'متصل' : 'Connected') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}`}
+    >
+      <span className="nexus-twin__node-icon"><PhoenixIcon name={nodeIcon(node.kind)} size={15} /></span>
+      <span>
+        <b>{node.label}</b>
+        <NodeStatus node={node} lang={lang} />
+      </span>
+      {node.alert && <PhoenixIcon name="warning" size={14} className="nexus-twin__node-warning" />}
+    </button>
+  );
+}
+
+function SelectionPanel({ node, lang, onClose, onShow2D }: {
+  node: TwinSceneNode;
+  lang: Lang;
+  onClose: () => void;
+  onShow2D: () => void;
+}) {
+  const alertText = node.alert
+    ? `${SEVERITY_LABEL[node.alert.severity][lang]} · ${SIGNAL_LABEL[node.alert.topSignal][lang]}`
+    : (lang === 'ar' ? 'لا توجد تنبيهات مفتوحة' : 'No open alerts');
+
+  return (
+    <aside className="nexus-twin__selection-panel" aria-label={lang === 'ar' ? 'تفاصيل العقدة المختارة' : 'Selected node details'}>
+      <button type="button" className="nexus-twin__panel-close premium-focus-ring" onClick={onClose} aria-label={lang === 'ar' ? 'إغلاق التفاصيل' : 'Close details'}>
+        <PhoenixIcon name="close" size={16} />
+      </button>
+      <div className="nexus-twin__panel-visual" data-kind={node.kind}>
+        <span className="nexus-twin__panel-building"><PhoenixIcon name={nodeIcon(node.kind)} size={35} /></span>
+        <span className="nexus-twin__panel-scan" />
+      </div>
+      <div className="nexus-twin__panel-heading">
+        <span className="nexus-twin__panel-kind">{KIND_LABEL[node.kind][lang]}</span>
+        <h4>{node.label}</h4>
+        <NodeStatus node={node} lang={lang} />
+      </div>
+      <dl>
+        <div><dt>{lang === 'ar' ? 'حالة الاتصال' : 'Connection'}</dt><dd>{node.active ? (lang === 'ar' ? 'مستقر' : 'Stable') : (lang === 'ar' ? 'متوقف' : 'Offline')}</dd></div>
+        <div><dt>{lang === 'ar' ? 'التنبيهات' : 'Alerts'}</dt><dd data-alert={node.alert?.severity}>{node.alert?.count ?? 0}</dd></div>
+        <div><dt>{lang === 'ar' ? 'أعلى إشارة' : 'Top signal'}</dt><dd>{alertText}</dd></div>
+      </dl>
+      <button type="button" className="nexus-twin__panel-action premium-focus-ring" onClick={onShow2D}>
+        <PhoenixIcon name="network" size={15} />
+        {lang === 'ar' ? 'تحديدها في خريطة 2D' : 'Locate in 2D map'}
+      </button>
+    </aside>
+  );
+}
+
+function TwoDTopology({ nodes, selectedId, lang, onSelect }: {
+  nodes: TwinSceneNode[];
+  selectedId: string | null;
+  lang: Lang;
+  onSelect: (id: string) => void;
+}) {
+  const centrals = nodes.filter(node => node.kind === 'central');
+  const institutions = nodes.filter(node => node.kind === 'institution');
+  const outlets = nodes.filter(node => node.kind === 'outlet');
+
+  const nodeButton = (node: TwinSceneNode) => (
+    <button
+      type="button"
+      key={node.id}
+      className="nexus-twin-2d__node premium-focus-ring"
+      data-kind={node.kind}
+      data-selected={selectedId === node.id}
+      data-alert={node.alert?.severity}
+      onClick={() => onSelect(node.id)}
+    >
+      <PhoenixIcon name={nodeIcon(node.kind)} size={18} />
+      <span><b>{node.label}</b><NodeStatus node={node} lang={lang} /></span>
+      {node.alert && <small><PhoenixIcon name="warning" size={12} /> {node.alert.count}</small>}
+    </button>
+  );
+
+  return (
+    <div className="nexus-twin-2d" aria-label={lang === 'ar' ? 'خريطة الشبكة ثنائية الأبعاد' : 'Two-dimensional network map'}>
+      <div className="nexus-twin-2d__hint">
+        <PhoenixIcon name="info" size={15} />
+        {lang === 'ar' ? 'عرض تخطيطي سريع يحافظ على الاختيار نفسه؛ الربط مباشر ولا يعتمد على مسارات توريد يدوية.' : 'Fast schematic view with the same selection; links are direct and route-free.'}
+      </div>
+      <div className="nexus-twin-2d__central">{centrals.map(nodeButton)}</div>
+      <div className="nexus-twin-2d__spine" aria-hidden="true"><span /></div>
+      <div className="nexus-twin-2d__institutions">
+        {institutions.map(institution => (
+          <section key={institution.id} className="nexus-twin-2d__branch">
+            {nodeButton(institution)}
+            <div className="nexus-twin-2d__outlets">
+              {outlets.filter(outlet => outlet.parentId === institution.id).map(nodeButton)}
+            </div>
+          </section>
+        ))}
+      </div>
+      {institutions.length === 0 && nodes.length > 0 && (
+        <div className="nexus-twin-2d__orphans">{outlets.map(nodeButton)}</div>
+      )}
+    </div>
+  );
+}
+
+export function NetworkTopologyStage({ lang, warehouses, outlets, organizationName, alerts }: Props) {
+  const [viewMode, setViewMode] = useState<ViewMode>('three-d');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [webglFailed, setWebglFailed] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [effects] = useState(() => resolveEffects());
+  const [motionEnabled, setMotionEnabled] = useState(() => effects.continuous);
+  const topology = useMemo(
+    () => compileTopology(warehouses, outlets, lang, alerts),
+    [warehouses, outlets, lang, alerts],
+  );
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-
-    const gl = canvas.getContext('webgl', {
-      alpha: true,
-      antialias: true,
-      depth: false,
-      powerPreference: 'high-performance',
-    });
-    if (!gl) {
-      setWebglReady(false);
-      return undefined;
-    }
-
-    const program = createProgram(gl);
-    if (!program) {
-      setWebglReady(false);
-      return undefined;
-    }
-
-    setWebglReady(true);
-    const positionLocation = gl.getAttribLocation(program, 'aPosition');
-    const colorLocation = gl.getAttribLocation(program, 'aColor');
-    const sizeLocation = gl.getAttribLocation(program, 'aSize');
-    const rotationLocation = gl.getUniformLocation(program, 'uRotation');
-    const tiltLocation = gl.getUniformLocation(program, 'uTilt');
-    const aspectLocation = gl.getUniformLocation(program, 'uAspect');
-    const pointModeLocation = gl.getUniformLocation(program, 'uPointMode');
-    const sizeScaleLocation = gl.getUniformLocation(program, 'uSizeScale');
-    const pointBuffer = gl.createBuffer();
-    const lineBuffer = gl.createBuffer();
-    const alertBuffer = gl.createBuffer();
-    if (!pointBuffer || !lineBuffer || !alertBuffer || positionLocation < 0 || colorLocation < 0 || sizeLocation < 0) {
-      gl.deleteProgram(program);
-      setWebglReady(false);
-      return undefined;
-    }
-
-    const byId = new Map(topology.nodes.map(node => [node.id, node]));
-    const pointData: number[] = [];
-    topology.nodes.forEach(node => {
-      const color = nodeColor(node, node.id === selectedId);
-      pointData.push(...node.position, ...color, node.id === selectedId ? 24 : node.kind === 'outlet' ? 12 : 17);
-    });
-
-    const lineData: number[] = [];
-    topology.edges.forEach(edge => {
-      const source = byId.get(edge.source);
-      const target = byId.get(edge.target);
-      if (!source || !target) return;
-      const color: [number, number, number] = edge.active ? [.20, .69, .73] : [.28, .35, .4];
-      lineData.push(...source.position, ...color, 1, ...target.position, ...color, 1);
-    });
-
-    // Alert halo/ring pass — one bigger vertex per alerted node, coloured by
-    // severity. Drawn as a hollow pulsing ring so alerts read as more than a
-    // colour (paired with the DOM icon+text list/detail for accessibility).
-    const alertData: number[] = [];
-    topology.nodes.forEach(node => {
-      if (!node.alert) return;
-      const color = alertRingColor(node.alert.severity);
-      const base = node.kind === 'outlet' ? 26 : 34;
-      alertData.push(...node.position, ...color, base);
-    });
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointData), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lineData), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, alertBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(alertData), gl.STATIC_DRAW);
-
-    gl.useProgram(program);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-    let width = 1;
-    let height = 1;
-    let frame = 0;
-    let disposed = false;
-    let tiltX = 0;
-    let tiltY = -.08;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    const bindAttributes = (buffer: WebGLBuffer) => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      const stride = 7 * Float32Array.BYTES_PER_ELEMENT;
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, stride, 0);
-      gl.enableVertexAttribArray(colorLocation);
-      gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
-      gl.enableVertexAttribArray(sizeLocation);
-      gl.vertexAttribPointer(sizeLocation, 1, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
-    };
-
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
-      width = Math.max(1, Math.round(rect.width * dpr));
-      height = Math.max(1, Math.round(rect.height * dpr));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-      gl.viewport(0, 0, width, height);
-    };
-
-    const draw = (time: number) => {
-      if (disposed) return;
-      resize();
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.useProgram(program);
-      gl.uniform1f(rotationLocation, motionEnabled && !reducedMotion ? time * .000055 : .12);
-      gl.uniform2f(tiltLocation, tiltX, tiltY);
-      gl.uniform1f(aspectLocation, width / Math.max(height, 1));
-
-      gl.uniform1f(sizeScaleLocation, 1);
-      bindAttributes(lineBuffer);
-      gl.uniform1f(pointModeLocation, 0);
-      gl.drawArrays(gl.LINES, 0, lineData.length / 7);
-
-      // Alert rings first (behind nodes), pulsing when motion is allowed.
-      if (alertData.length > 0) {
-        const pulse = motionEnabled && !reducedMotion ? 1 + Math.sin(time * 0.0045) * 0.16 : 1.12;
-        gl.uniform1f(sizeScaleLocation, pulse);
-        gl.uniform1f(pointModeLocation, 2);
-        bindAttributes(alertBuffer);
-        gl.drawArrays(gl.POINTS, 0, alertData.length / 7);
-        gl.uniform1f(sizeScaleLocation, 1);
-      }
-
-      bindAttributes(pointBuffer);
-      gl.uniform1f(pointModeLocation, 1);
-      gl.drawArrays(gl.POINTS, 0, pointData.length / 7);
-
-      // Keep animating while there are pulsing alert rings, even if idle motion
-      // is off, so the pulse stays alive (unless the user asked for reduced motion).
-      if ((motionEnabled || alertData.length > 0) && !reducedMotion) frame = window.requestAnimationFrame(draw);
-    };
-
-    const onPointerMove = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      tiltX = ((event.clientX - rect.left) / Math.max(rect.width, 1) - .5) * .24;
-      tiltY = -(((event.clientY - rect.top) / Math.max(rect.height, 1) - .5) * .16);
-      if (!motionEnabled || reducedMotion) draw(performance.now());
-    };
-
-    canvas.addEventListener('pointermove', onPointerMove);
-    const observer = new ResizeObserver(() => {
-      resize();
-      if (!motionEnabled || reducedMotion) draw(performance.now());
-    });
-    observer.observe(canvas);
-    draw(performance.now());
-
-    return () => {
-      disposed = true;
-      if (frame) window.cancelAnimationFrame(frame);
-      observer.disconnect();
-      canvas.removeEventListener('pointermove', onPointerMove);
-      gl.deleteBuffer(pointBuffer);
-      gl.deleteBuffer(lineBuffer);
-      gl.deleteBuffer(alertBuffer);
-      gl.deleteProgram(program);
-    };
-  }, [topology, selectedId, motionEnabled]);
+    if (selectedId && topology.nodes.some(node => node.id === selectedId)) return;
+    const preferred = topology.nodes.find(node => node.kind === 'institution' && node.active)
+      ?? topology.nodes.find(node => node.kind === 'central' && node.active)
+      ?? topology.nodes[0];
+    setSelectedId(preferred?.id ?? null);
+  }, [selectedId, topology.nodes]);
 
   const selected = topology.nodes.find(node => node.id === selectedId) ?? null;
-  const activeRoutes = topology.edges.filter(edge => edge.active).length;
-  const alertedNodes = topology.nodes
-    .filter(node => node.alert)
-    .sort((a, b) => SEVERITY_RANK[a.alert!.severity] - SEVERITY_RANK[b.alert!.severity]);
-  const criticalCount = alertedNodes.filter(node => node.alert!.severity === 'high').length;
-  const alertText = (a: NodeAlert) =>
-    `${SEVERITY_LABEL[a.severity][lang]} · ${SIGNAL_LABEL[a.topSignal][lang]}${a.count > 1 ? ` ×${a.count}` : ''}`;
+  const activeLinks = topology.edges.filter(edge => edge.active).length;
+  const criticalCount = topology.nodes.filter(node => node.alert?.severity === 'high').length;
+  const real3D = effects.webglAllowed && !webglFailed;
+
+  const selectNode = (id: string) => setSelectedId(current => current === id ? null : id);
+  const setMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (mode === 'three-d') setSceneReady(false);
+  };
 
   return (
     <section className="nexus-topology" aria-label={lang === 'ar' ? 'التوأم الرقمي لشبكة المخزون' : 'Inventory network digital twin'}>
       <header className="nexus-topology__header">
         <div>
-          <div className="nexus-topology__kicker">
-            <span />
-            {lang === 'ar' ? 'WEBGL · قراءة حيّة' : 'WEBGL · LIVE READ'}
-          </div>
-          <h3>{lang === 'ar' ? 'التوأم الرقمي لشبكة الإمداد' : 'Supply network digital twin'}</h3>
-          <p>
-            {organizationName || (lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health · Pharmacy Department')}
-          </p>
+          <div className="nexus-topology__kicker"><span />{lang === 'ar' ? 'بيانات حيّة · مشهد تشغيلي' : 'LIVE DATA · OPERATIONAL SCENE'}</div>
+          <h3>{lang === 'ar' ? 'التوأم الرقمي التشغيلي' : 'Operational digital twin'}</h3>
+          <p>{organizationName || (lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health Directorate · Pharmacy Department')}</p>
         </div>
         <button
           type="button"
-          className="nexus-control nexus-topology__motion"
+          className="nexus-control nexus-topology__motion premium-focus-ring"
           onClick={() => setMotionEnabled(value => !value)}
           aria-pressed={motionEnabled}
+          disabled={!real3D || viewMode === 'two-d'}
         >
-          <PhoenixIcon name="network" size={17} />
+          <PhoenixIcon name={motionEnabled ? 'sparkle' : 'ban'} size={16} />
           <span>{motionEnabled ? (lang === 'ar' ? 'الحركة مفعّلة' : 'Motion on') : (lang === 'ar' ? 'الحركة متوقفة' : 'Motion off')}</span>
         </button>
       </header>
 
-      <div className="nexus-topology__viewport">
-        <canvas ref={canvasRef} className="nexus-topology__canvas" aria-hidden="true" />
-        {webglReady === false && (
-          <div className="nexus-topology__fallback">
-            <PhoenixIcon name="network" size={28} />
-            <span>{lang === 'ar' ? 'العرض الآمن متاح؛ WebGL غير مدعوم في هذا الجهاز.' : 'Safe view active; WebGL is unavailable on this device.'}</span>
-          </div>
-        )}
-        {topology.nodes.length === 0 && (
-          <div className="nexus-topology__fallback">
-            <PhoenixIcon name="warehouse" size={28} />
-            <span>{lang === 'ar' ? 'لا توجد عقد شبكية لعرضها بعد.' : 'No network nodes to display yet.'}</span>
-          </div>
-        )}
-        <div className="nexus-topology__telemetry" aria-live="polite">
-          <span>{topology.nodes.length} {lang === 'ar' ? 'عقدة' : 'nodes'}</span>
-          <span>{activeRoutes} {lang === 'ar' ? 'رابط فعّال' : 'active links'}</span>
-          {criticalCount > 0 && (
-            <span className="nexus-topology__telemetry-alert">
-              <PhoenixIcon name="warning" size={13} /> {criticalCount} {lang === 'ar' ? 'تنبيه حرج' : 'critical'}
-            </span>
-          )}
-          <span className={webglReady ? 'is-live' : ''}>{webglReady ? 'GPU LIVE' : 'SAFE MODE'}</span>
-        </div>
-      </div>
-
-      <div className="nexus-topology__legend">
-        <span><i data-kind="central" />{lang === 'ar' ? 'مخزن قسم الصيدلة' : 'Pharmacy Department warehouse'}</span>
-        <span><i data-kind="institution" />{lang === 'ar' ? 'مذخر مؤسسة' : 'Institution store'}</span>
-        <span><i data-kind="outlet" />{lang === 'ar' ? 'منفذ' : 'Outlet'}</span>
-      </div>
-
-      <div className="nexus-topology__nodes" aria-label={lang === 'ar' ? 'عقد الشبكة' : 'Network nodes'}>
-        {topology.nodes.slice(0, 12).map(node => (
-          <button
-            type="button"
-            key={node.id}
-            data-active={selectedId === node.id}
-            data-alert={node.alert ? node.alert.severity : undefined}
-            aria-label={
-              node.alert
-                ? `${node.label} — ${lang === 'ar' ? 'تنبيه' : 'alert'}: ${alertText(node.alert)}`
-                : node.label
-            }
-            onClick={() => setSelectedId(current => current === node.id ? null : node.id)}
-          >
-            <span data-kind={node.kind} />
-            <b>{node.label}</b>
-            {node.alert ? (
-              <small className="nexus-topology__node-alert">
-                <PhoenixIcon name="warning" size={12} /> {alertText(node.alert)}
-              </small>
-            ) : (
-              <small>{node.active ? (lang === 'ar' ? 'فعّال' : 'Active') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}</small>
-            )}
+      <div className="nexus-topology__toolbar">
+        <div className="nexus-topology__view-tabs" role="tablist" aria-label={lang === 'ar' ? 'نوع عرض التوأم الرقمي' : 'Digital twin view'}>
+          <button type="button" role="tab" aria-selected={viewMode === 'three-d'} onClick={() => setMode('three-d')} className="premium-focus-ring">
+            <PhoenixIcon name="globe" size={16} /> {lang === 'ar' ? 'مجسم 3D' : '3D model'}
           </button>
-        ))}
+          <button type="button" role="tab" aria-selected={viewMode === 'two-d'} onClick={() => setMode('two-d')} className="premium-focus-ring">
+            <PhoenixIcon name="network" size={16} /> {lang === 'ar' ? 'خريطة 2D' : '2D map'}
+          </button>
+        </div>
+        <div className="nexus-topology__readout" aria-live="polite">
+          <span><i className="is-live" />{topology.nodes.length} {lang === 'ar' ? 'عقدة حيّة' : 'live nodes'}</span>
+          <span>{activeLinks} {lang === 'ar' ? 'ربط مباشر' : 'direct links'}</span>
+          {criticalCount > 0 && <span className="is-alert"><PhoenixIcon name="warning" size={13} /> {criticalCount} {lang === 'ar' ? 'حرج' : 'critical'}</span>}
+        </div>
       </div>
 
-      {selected && (
-        <div className="nexus-topology__selection" data-alert={selected.alert ? selected.alert.severity : undefined}>
-          <PhoenixIcon name={selected.kind === 'outlet' ? 'outlet' : selected.kind === 'central' ? 'warehouse' : 'institutions'} size={18} />
-          <strong>{selected.label}</strong>
-          <span>{selected.active ? (lang === 'ar' ? 'متصل بالشبكة' : 'Connected to network') : (lang === 'ar' ? 'العقدة غير فعّالة' : 'Node inactive')}</span>
-          {selected.alert && (
-            <span className="nexus-topology__selection-alert">
-              <PhoenixIcon name="warning" size={14} /> {alertText(selected.alert)}
-            </span>
+      {viewMode === 'three-d' ? (
+        <div className="nexus-twin" data-ready={sceneReady} data-webgl={real3D ? 'on' : 'fallback'}>
+          <div className="nexus-twin__map-plane" style={{ transform: `scale(${zoom})` }}>
+            <picture className="nexus-twin__terrain" aria-hidden="true">
+              <source srcSet="/assets/phoenix/runtime/phoenix-babil-terrain.avif" type="image/avif" />
+              <img src="/assets/phoenix/runtime/phoenix-babil-terrain.webp" alt="" draggable={false} />
+            </picture>
+            <div className="nexus-twin__terrain-light" aria-hidden="true" />
+            {real3D && topology.nodes.length > 0 && (
+              <Suspense fallback={<div className="nexus-twin__scene-loading"><span /></div>}>
+                <NetworkTwin3DScene
+                  nodes={topology.nodes}
+                  edges={topology.edges}
+                  selectedId={selectedId}
+                  motionEnabled={motionEnabled}
+                  continuous={effects.continuous}
+                  dprCap={effects.dprCap}
+                  antialias={effects.antialias}
+                  onSelect={selectNode}
+                  onReady={() => setSceneReady(true)}
+                  onContextLost={() => setWebglFailed(true)}
+                />
+              </Suspense>
+            )}
+            <div className="nexus-twin__labels">
+              {topology.nodes.slice(0, 16).map(node => (
+                <NodeLabel key={node.id} node={node} selected={selectedId === node.id} lang={lang} onSelect={() => selectNode(node.id)} />
+              ))}
+            </div>
+          </div>
+
+          <div className="nexus-twin__cinematic-vignette" aria-hidden="true" />
+          {!real3D && topology.nodes.length > 0 && (
+            <div className="nexus-twin__safe-mode"><PhoenixIcon name="info" size={14} /> {lang === 'ar' ? 'الخريطة السينمائية الآمنة فعّالة؛ WebGL متوقف على هذا الجهاز.' : 'Cinematic safe map active; WebGL is unavailable on this device.'}</div>
           )}
+          {topology.nodes.length === 0 && (
+            <div className="nexus-twin__empty"><PhoenixIcon name="warehouse" size={30} /><span>{lang === 'ar' ? 'لا توجد عقد ضمن النطاق الحالي.' : 'No nodes are available in the current scope.'}</span></div>
+          )}
+
+          {selected && <SelectionPanel node={selected} lang={lang} onClose={() => setSelectedId(null)} onShow2D={() => setMode('two-d')} />}
+
+          <div className="nexus-twin__legend" aria-label={lang === 'ar' ? 'مفتاح الخريطة' : 'Map legend'}>
+            {(Object.keys(KIND_LABEL) as TwinNodeKind[]).map(kind => (
+              <span key={kind} data-kind={kind}><i /><PhoenixIcon name={nodeIcon(kind)} size={13} />{KIND_LABEL[kind][lang]}</span>
+            ))}
+          </div>
+
+          <div className="nexus-twin__controls">
+            <button type="button" onClick={() => setZoom(value => clamp(value - .06, .9, 1.14))} aria-label={lang === 'ar' ? 'تصغير' : 'Zoom out'} className="premium-focus-ring">−</button>
+            <button type="button" onClick={() => setZoom(1)} aria-label={lang === 'ar' ? 'إعادة ضبط التكبير' : 'Reset zoom'} className="premium-focus-ring"><PhoenixIcon name="refresh" size={16} /></button>
+            <button type="button" onClick={() => setZoom(value => clamp(value + .06, .9, 1.14))} aria-label={lang === 'ar' ? 'تكبير' : 'Zoom in'} className="premium-focus-ring">+</button>
+          </div>
+          <div className="nexus-twin__gpu-state"><span className={real3D && sceneReady ? 'is-live' : ''} />{real3D ? (sceneReady ? 'GPU LIVE' : 'GPU STARTING') : 'SAFE 2D'}</div>
         </div>
+      ) : (
+        <TwoDTopology nodes={topology.nodes} selectedId={selectedId} lang={lang} onSelect={selectNode} />
       )}
     </section>
   );

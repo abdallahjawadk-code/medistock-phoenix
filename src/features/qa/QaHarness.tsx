@@ -30,9 +30,9 @@ import { createQaFixtureClient } from './qaFixtureClient';
 // is a no-op in a production build (see client.ts).
 __installQaSupabaseClient(createQaFixtureClient());
 
-type SceneId = 'shell' | 'states' | 'institutions';
+type SceneId = 'shell' | 'states' | 'institutions' | 'network';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'network'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -48,6 +48,9 @@ function readParams() {
  *  the fixture client drives an actual service-backed screen, not a mock view. */
 const InstitutionScreen = lazy(() =>
   import('@/features/institutions/InstitutionScreen').then(m => ({ default: m.InstitutionScreen })),
+);
+const NetworkManagementScreen = lazy(() =>
+  import('@/features/network/NetworkManagementScreen').then(m => ({ default: m.NetworkManagementScreen })),
 );
 
 function StatesScene({ lang }: { lang: Lang }) {
@@ -92,10 +95,14 @@ export function QaHarness() {
             <StatesScene lang={lang} />
           </div>
         ) : (
-          <PhoenixAppShell currentScreen={scene === 'institutions' ? 11 : 12} onNavigate={() => { /* QA: inert */ }} onLogout={() => { /* QA: inert */ }}>
+          <PhoenixAppShell currentScreen={scene === 'institutions' ? 11 : scene === 'network' ? 17 : 12} onNavigate={() => { /* QA: inert */ }} onLogout={() => { /* QA: inert */ }}>
             {scene === 'institutions' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <InstitutionScreen />
+              </Suspense>
+            ) : scene === 'network' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <NetworkManagementScreen />
               </Suspense>
             ) : (
               <div style={{ padding: 'var(--sp-4)' }}>
