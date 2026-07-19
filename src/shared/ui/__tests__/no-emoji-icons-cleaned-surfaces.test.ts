@@ -21,6 +21,10 @@ const CLEANED_SURFACES = [
   'shared/ui/PhoenixMobileBottomNav.tsx',
   'shared/ui/CommandPalette.tsx',
   'shared/ui/PhoenixTopbar.tsx',
+  // Wave A: shared primitives converted from residual rendered emoji to SVG.
+  'shared/ui/PhoenixToast.tsx',
+  'shared/ui/PhoenixOrgScope.tsx',
+  'shared/ui/WhatsAppContactButton.tsx',
 ];
 
 describe('cleaned surfaces stay emoji-free (icons are SVG PhoenixIcon)', () => {

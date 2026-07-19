@@ -16,6 +16,8 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { resolveEmojiIcon } from '@/shared/ui/emojiIcon';
 import { InventoryIntelligenceSummary } from '@/features/inventory/InventoryIntelligenceSummary';
 
 interface Props { onNavigate: (screen: number) => void; }
@@ -113,13 +115,13 @@ export function DashboardScreen({ onNavigate }: Props) {
           onClick={() => onNavigate(3)}
           className="premium-hero-cta premium-focus-ring" style={{ padding: '11px 18px', borderRadius: 'var(--r3)', border: 'none', background: 'linear-gradient(145deg, var(--p), var(--pd))', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 120ms', whiteSpace: 'nowrap' }}
         >
-          ✏️ {t('nav_editor', lang)}
+          <PhoenixIcon name="editor" size={15} inline /> {t('nav_editor', lang)}
         </button>
       </div>
 
       {!configured && (
         <div role="status" style={{ marginBottom: '18px', padding: '10px 14px', borderRadius: 'var(--r3)', background: 'var(--warn2)', border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: '12px', fontWeight: 600 }}>
-          ⚠ {t('config_msg', lang)}
+          <PhoenixIcon name="warning" size={14} inline /> {t('config_msg', lang)}
         </div>
       )}
 
@@ -250,7 +252,7 @@ export function DashboardScreen({ onNavigate }: Props) {
                         <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">{inst}</div>
                         {a.expiryDate && (
                           <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
-                            ⏱ {t('iia_expiry', lang)}: {a.expiryDate}
+                            <PhoenixIcon name="clock" size={11} inline /> {t('iia_expiry', lang)}: {a.expiryDate}
                           </div>
                         )}
                       </div>
@@ -341,7 +343,9 @@ export function DashboardScreen({ onNavigate }: Props) {
               cursor: 'pointer', transition: 'all 120ms',
             }}
           >
-            <span style={{ fontSize: '20px', flexShrink: 0 }}>{item.icon}</span>
+            <span style={{ display: 'flex', flexShrink: 0, color: 'var(--pd)' }}>
+              <PhoenixIcon name={resolveEmojiIcon(item.icon)} size={20} />
+            </span>
             <div>
               <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{t(item.labelKey, lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>{t(item.descKey, lang)}</div>

@@ -1,6 +1,9 @@
 import { CSSProperties } from 'react';
+import { PhoenixIcon } from './PhoenixIcon';
+import { resolveEmojiIcon } from './emojiIcon';
 
 interface Props {
+  /** Emoji key (legacy) or a PhoenixIcon name — resolved to a deterministic SVG. */
   icon: string;
   value: string | number;
   label: string;
@@ -37,9 +40,9 @@ export function PhoenixMetricCard({ icon, value, label, badge, badgeVariant = 'o
           width: '38px', height: '38px', borderRadius: 'var(--r2)',
           background: iconBg ?? 'var(--p2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '17px', flexShrink: 0,
+          color: valueColor ?? 'var(--pd)', flexShrink: 0,
         }}>
-          {icon}
+          <PhoenixIcon name={resolveEmojiIcon(icon)} size={20} />
         </div>
         {badge && (
           <span style={{

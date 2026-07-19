@@ -195,7 +195,7 @@ export const T: Dict = {
   safe_count:     { ar: 'آمن',                                en: 'safe' },
   blocker:        { ar: 'مانع',                               en: 'blocker' },
   warnings:       { ar: 'تحذيرات',                            en: 'warnings' },
-  blocker_msg:    { ar: '⚠ يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en: '⚠ Blocker found — review negative quantity before applying' },
+  blocker_msg:    { ar: 'يوجد مانع — يرجى مراجعة الكمية السالبة قبل التطبيق', en: 'Blocker found — review negative quantity before applying' },
   apply:          { ar: 'تطبيق التغييرات',                    en: 'Apply Changes' },
   apply_note:     { ar: 'سيُطلب التأكيد قبل التطبيق · لا تطبيق تلقائي', en: 'Confirmation required before applying · No auto-apply' },
   apply_success:  { ar: 'تم التطبيق بنجاح',                   en: 'Applied successfully' },

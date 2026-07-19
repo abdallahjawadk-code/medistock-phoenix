@@ -1,3 +1,5 @@
+import { PhoenixIcon } from './PhoenixIcon';
+
 interface Props { message: string; }
 
 export function PhoenixToast({ message }: Props) {
@@ -10,6 +12,9 @@ export function PhoenixToast({ message }: Props) {
         bottom: 'calc(var(--bnh) + 12px)',
         insetInlineStart: '50%',
         transform: 'translateX(-50%)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
         padding: '12px 20px',
         borderRadius: 'var(--rpill)',
         background: 'var(--t)',
@@ -22,7 +27,8 @@ export function PhoenixToast({ message }: Props) {
         animation: 'ti .3s ease',
       }}
     >
-      ✅ {message}
+      <PhoenixIcon name="check" size={16} inline />
+      <span>{message}</span>
     </div>
   );
 }
