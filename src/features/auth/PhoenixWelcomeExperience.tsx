@@ -2,14 +2,29 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { useApp } from '@/app/AppContext';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { PhoenixWelcomeStage, shouldRenderWebGL, prefersReducedMotion } from '@/shared/webgl';
 
 interface Props {
   onComplete: () => void;
 }
 
+const SEQUENCE_MS = 5200;
+const REDUCED_MS = 900;
+
+/**
+ * Phoenix rebirth welcome. When WebGL is available and motion is allowed, a real
+ * 3D rebirth sequence plays (ash → burst → re-form → ignite → rise, ~5.2s) and
+ * drives completion. On reduced-motion / no-WebGL / context-loss it degrades to
+ * the CSS atmosphere with a short static hold. The credits are always live React
+ * text — never baked into a texture. Skip is always available; the sequence
+ * shows once per session (gated by the caller).
+ */
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
   const [phase, setPhase] = useState<'ember' | 'rise'>('ember');
+  // Decide the render path once, on the client, at mount.
+  const [useWebGL] = useState(() => shouldRenderWebGL() && !prefersReducedMotion());
+  const [webglFailed, setWebglFailed] = useState(false);
   const completed = useRef(false);
 
   const finish = useCallback(() => {
@@ -19,23 +34,39 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
   }, [onComplete]);
 
   useEffect(() => {
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const riseTimer = window.setTimeout(() => setPhase('rise'), reducedMotion ? 80 : 780);
-    const finishTimer = window.setTimeout(finish, reducedMotion ? 950 : 5200);
+    const reducedMotion = prefersReducedMotion();
+    // CSS "ember → rise" pacing for the 2D path / overlay copy reveal.
+    const riseTimer = window.setTimeout(() => setPhase('rise'), reducedMotion ? 60 : 780);
+    // Safety net: always finish even if the WebGL onDone never fires (e.g. the
+    // tab was backgrounded and rAF stalled). Slightly longer than the sequence.
+    const total = reducedMotion ? REDUCED_MS : useWebGL ? SEQUENCE_MS + 900 : SEQUENCE_MS;
+    const finishTimer = window.setTimeout(finish, total);
     return () => {
       window.clearTimeout(riseTimer);
       window.clearTimeout(finishTimer);
     };
-  }, [finish]);
+  }, [finish, useWebGL]);
+
+  const webglActive = useWebGL && !webglFailed;
 
   return (
     <div
       className="nexus-welcome"
       data-phase={phase}
+      data-webgl={webglActive ? 'on' : 'off'}
       role="dialog"
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
+      {/* Real 3D rebirth layer. The CSS atmosphere below is the 2D fallback. */}
+      {webglActive && (
+        <PhoenixWelcomeStage
+          durationMs={SEQUENCE_MS}
+          onDone={finish}
+          onContextLost={() => setWebglFailed(true)}
+        />
+      )}
+
       <div className="nexus-welcome__atmosphere" aria-hidden="true">
         <div className="nexus-welcome__aurora nexus-welcome__aurora--one" />
         <div className="nexus-welcome__aurora nexus-welcome__aurora--two" />
@@ -55,12 +86,16 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       </button>
 
       <div className="nexus-welcome__content">
-        <div className="nexus-welcome__sigil" aria-hidden="true">
-          <div className="nexus-welcome__orbit nexus-welcome__orbit--outer" />
-          <div className="nexus-welcome__orbit nexus-welcome__orbit--inner" />
-          <div className="nexus-welcome__flare" />
-          <PhoenixMark className="nexus-welcome__phoenix" size="100%" title="" />
-        </div>
+        {/* The CSS sigil is decorative fallback art; hide it when the real 3D
+            phoenix is on screen so the two never overlap. */}
+        {!webglActive && (
+          <div className="nexus-welcome__sigil" aria-hidden="true">
+            <div className="nexus-welcome__orbit nexus-welcome__orbit--outer" />
+            <div className="nexus-welcome__orbit nexus-welcome__orbit--inner" />
+            <div className="nexus-welcome__flare" />
+            <PhoenixMark className="nexus-welcome__phoenix" size="100%" title="" />
+          </div>
+        )}
 
         <div className="nexus-welcome__copy">
           <div className="nexus-welcome__kicker">

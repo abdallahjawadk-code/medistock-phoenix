@@ -1064,6 +1064,20 @@ html body {
   overflow: hidden;
 }
 
+/* Real 3D rebirth layer — above the 2D atmosphere, below the live copy/skip. */
+.nexus-welcome__webgl {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* When the 3D phoenix is on screen, dim the CSS backdrop so it reads as depth. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__atmosphere {
+  opacity: .5;
+}
+
 .nexus-welcome__aurora {
   position: absolute;
   width: 60vw;
