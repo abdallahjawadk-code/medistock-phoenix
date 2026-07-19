@@ -62,11 +62,11 @@ export const EMBER_FRAGMENT = /* glsl */ `
     float core = smoothstep(0.20, 0.0, d);
 
     vec3 col = mix(uColorEdge, uColorCore, core);
-    // A minority of embers flash cyan at their hot core (ion sparks).
-    float spark = step(0.92, fract(vSeed * 97.31)) * core;
+    // A small minority of embers flash cyan at their hot core (ion sparks).
+    float spark = step(0.965, fract(vSeed * 97.31)) * core;
     col = mix(col, uColorSpark, spark);
 
-    float alpha = glow * (1.0 - smoothstep(0.62, 1.0, vLife)) * 0.9;
+    float alpha = glow * smoothstep(0.06, 0.22, vLife) * (1.0 - smoothstep(0.55, 1.0, vLife)) * 0.5;
     gl_FragColor = vec4(col * (0.55 + core * 0.9), alpha);
   }
 `;

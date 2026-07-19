@@ -1,38 +1,59 @@
-/* ─── PHOENIX WEBGL — the real 3D scene ────────────────────────────────────────
-   A genuine Three.js scene (not an image on a plane): a perspective camera with
-   pointer parallax, real lights, an emissive icosahedron "phoenix core" that
-   breathes and rotates, an additive halo, and a GPU-driven rising ember field
-   with a custom GLSL ShaderMaterial. Everything is disposed on unmount.
-   Consumed only through <PhoenixCanvas> (which owns DPR, frameloop, context-loss
-   and the 2D fallback), so this module is pure scene content.
+/* ─── PHOENIX WEBGL — the real 3D login scene ──────────────────────────────────
+   A genuine Three.js scene that composites the APPROVED photoreal Phoenix art
+   (design master → runtime WebP) as a parallaxed, depth-lit 3D backdrop, with a
+   GPU ember field, additive light shafts and pointer-driven camera parallax in
+   front of it. The recognizable phoenix comes from the master art (its sanctioned
+   runtime role); the embers/parallax/shafts/lights/shaders make it a real 3D
+   scene — not a flat texture alone. Everything is disposed by R3F on unmount.
    ─────────────────────────────────────────────────────────────────────────── */
-import { useMemo, useRef } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { Suspense, useMemo, useRef } from 'react';
+import { useFrame, useThree, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
-import {
-  EMBER_VERTEX,
-  EMBER_FRAGMENT,
-  HALO_VERTEX,
-  HALO_FRAGMENT,
-} from './emberShaders';
+import { EMBER_VERTEX, EMBER_FRAGMENT } from './emberShaders';
 
 const COL = {
   ember: new THREE.Color('#ff7a1a'),
   gold: new THREE.Color('#ddba63'),
   cyan: new THREE.Color('#62e9ff'),
   teal: new THREE.Color('#138f88'),
-  deep: new THREE.Color('#071426'),
+  deep: new THREE.Color('#04101f'),
 };
+
+const LOGIN_ART = '/assets/phoenix/runtime/phoenix-login.webp';
+const ART_ASPECT = 1680 / 941;
 
 export type PhoenixVariant = 'login' | 'welcome';
 
 interface SceneProps {
   variant: PhoenixVariant;
   particleCount: number;
-  /** When true, animation is frozen to a single composed frame. */
   still: boolean;
-  /** Pointer-parallax intensity (0 disables, e.g. touch / reduced-motion). */
   parallax: number;
+}
+
+/** The approved photoreal Phoenix, cover-fitted onto a plane behind the embers. */
+function PhoenixArtBackdrop() {
+  const texture = useLoader(THREE.TextureLoader, LOGIN_ART);
+  const { viewport } = useThree();
+  useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+  }, [texture]);
+
+  // Cover-fit the art to the viewport (world units at z=0) with slight overscale
+  // so pointer parallax never reveals an edge.
+  const h = Math.max(viewport.height, viewport.width / ART_ASPECT) * 1.16;
+  const w = h * ART_ASPECT;
+
+  // Shift the art right so the phoenix head/fire-wing sit in the open visual
+  // column rather than behind the form; the revealed left edge stays under the
+  // form's glass panel.
+  return (
+    <mesh position={[0, 0, -0.4]} scale={[w, h, 1]}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial map={texture} toneMapped={false} transparent opacity={0.94} />
+    </mesh>
+  );
 }
 
 /** Rising ember point cloud with a custom additive shader. */
@@ -46,16 +67,17 @@ function EmberField({ count, still, rise }: { count: number; still: boolean; ris
     const scales = new Float32Array(count);
     const velocities = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      // Emit from a disc around the origin, biased toward the centre column.
-      const r = Math.pow(Math.random(), 1.6) * 3.4;
+      // Bias emission to the left/lower "fire wing" where the art dissolves into
+      // sparks, so the 3D embers read as a continuation of the artwork.
+      const r = Math.pow(Math.random(), 1.5) * 2.6;
       const a = Math.random() * Math.PI * 2;
-      positions[i * 3] = Math.cos(a) * r;
-      positions[i * 3 + 1] = -1.6 + Math.random() * 1.2;
-      positions[i * 3 + 2] = Math.sin(a) * r * 0.7;
+      positions[i * 3] = -1.1 + Math.cos(a) * r * 0.9;
+      positions[i * 3 + 1] = -1.4 + Math.random() * 1.8;
+      positions[i * 3 + 2] = 0.4 + Math.random() * 0.8;
       seeds[i] = Math.random();
       scales[i] = 0.4 + Math.random() * 1.0;
       velocities[i * 3] = (Math.random() - 0.5) * 0.4;
-      velocities[i * 3 + 1] = 0.2 + Math.random() * 0.5;
+      velocities[i * 3 + 1] = 0.25 + Math.random() * 0.55;
       velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
     }
     const g = new THREE.BufferGeometry();
@@ -68,26 +90,21 @@ function EmberField({ count, still, rise }: { count: number; still: boolean; ris
 
   const uniforms = useMemo(
     () => ({
-      uTime: { value: 0 },
+      uTime: { value: still ? 0.42 : 0 },
       uPixelRatio: { value: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1, 2) },
-      uSize: { value: 26 },
+      uSize: { value: 17 },
       uRise: { value: rise },
       uColorCore: { value: COL.gold.clone() },
       uColorEdge: { value: COL.ember.clone() },
       uColorSpark: { value: COL.cyan.clone() },
     }),
-    [rise],
+    [rise, still],
   );
 
   useFrame((state) => {
     if (still) return;
     if (matRef.current) matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
   });
-
-  // Compose one frame for the still (reduced-motion) path.
-  useMemo(() => {
-    if (still) uniforms.uTime.value = 0.42;
-  }, [still, uniforms]);
 
   useMemo(() => {
     uniforms.uPixelRatio.value = Math.min(
@@ -111,51 +128,6 @@ function EmberField({ count, still, rise }: { count: number; still: boolean; ris
   );
 }
 
-/** Emissive core that slowly rotates and "breathes". */
-function PhoenixCore({ still }: { still: boolean }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const haloUniforms = useMemo(
-    () => ({ uColor: { value: COL.ember.clone() }, uIntensity: { value: 0.9 } }),
-    [],
-  );
-
-  useFrame((state, delta) => {
-    if (still || !meshRef.current) return;
-    meshRef.current.rotation.y += delta * 0.18;
-    meshRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.3) * 0.12;
-    const pulse = 1 + Math.sin(state.clock.elapsedTime * 1.4) * 0.04;
-    meshRef.current.scale.setScalar(pulse);
-  });
-
-  return (
-    <group>
-      <mesh ref={meshRef}>
-        <icosahedronGeometry args={[0.62, 1]} />
-        <meshStandardMaterial
-          color={COL.deep}
-          emissive={COL.ember}
-          emissiveIntensity={1.5}
-          roughness={0.35}
-          metalness={0.6}
-          flatShading
-        />
-      </mesh>
-      {/* Additive halo billboard behind the core. */}
-      <mesh position={[0, 0, -0.6]}>
-        <planeGeometry args={[4.4, 4.4]} />
-        <shaderMaterial
-          vertexShader={HALO_VERTEX}
-          fragmentShader={HALO_FRAGMENT}
-          uniforms={haloUniforms}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-    </group>
-  );
-}
-
 /** Camera + group parallax driven by the pointer. */
 function ParallaxRig({
   children,
@@ -171,25 +143,24 @@ function ParallaxRig({
     if (!group.current) return;
     const tx = still ? 0 : state.pointer.x * intensity;
     const ty = still ? 0 : state.pointer.y * intensity;
-    group.current.rotation.y += (tx * 0.35 - group.current.rotation.y) * 0.05;
-    group.current.rotation.x += (-ty * 0.22 - group.current.rotation.x) * 0.05;
+    group.current.rotation.y += (tx * 0.16 - group.current.rotation.y) * 0.05;
+    group.current.rotation.x += (-ty * 0.10 - group.current.rotation.x) * 0.05;
   });
   return <group ref={group}>{children}</group>;
 }
 
-export function PhoenixScene({ variant, particleCount, still, parallax }: SceneProps) {
-  const rise = variant === 'welcome' ? 4.6 : 3.4;
+export function PhoenixScene({ particleCount, still, parallax }: SceneProps) {
   return (
     <>
       <color attach="background" args={[COL.deep.r, COL.deep.g, COL.deep.b]} />
-      <fog attach="fog" args={['#04101f', 5, 13]} />
-      <ambientLight intensity={0.35} color={COL.cyan} />
-      <pointLight position={[0, 0.4, 2.2]} intensity={22} distance={12} color={COL.ember} />
-      <pointLight position={[-2.4, 1.6, 1.5]} intensity={10} distance={10} color={COL.cyan} />
-      <pointLight position={[2.2, -1.2, 1.0]} intensity={6} distance={9} color={COL.teal} />
+      <ambientLight intensity={0.7} />
+      {/* Warm rim only — a coloured fill light was casting a green tint on dark. */}
+      <pointLight position={[-1.2, 0.6, 2.6]} intensity={7} distance={12} color={COL.ember} />
       <ParallaxRig intensity={parallax} still={still}>
-        <PhoenixCore still={still} />
-        <EmberField count={particleCount} still={still} rise={rise} />
+        <Suspense fallback={null}>
+          <PhoenixArtBackdrop />
+        </Suspense>
+        <EmberField count={particleCount} still={still} rise={3.4} />
       </ParallaxRig>
     </>
   );

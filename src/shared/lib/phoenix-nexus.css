@@ -574,28 +574,25 @@ html body {
   pointer-events: none;
 }
 
-/* Real WebGL scene layer — above the 2D atmosphere, below all UI content. */
+/* Real WebGL scene layer — above the 2D atmosphere, below all UI content.
+   The phoenix reads across the whole canvas; the form stays legible via its own
+   glass panel, so no directional mask (an old left-biased mask fought the art). */
 .nexus-login__webgl {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
-  /* Blend the emissive scene into the surface so the form stays legible. */
-  opacity: .92;
-  mask-image: linear-gradient(100deg, #000 0%, rgba(0, 0, 0, .82) 52%, transparent 88%);
+  opacity: .8;
+  /* Vignette the bright edges of the art so the phoenix reads as depth, not a
+     full-bleed wash; the form's glass panel keeps the left legible. */
+  mask-image:
+    radial-gradient(140% 120% at 62% 42%, #000 34%, rgba(0, 0, 0, .35) 72%, transparent 100%);
 }
 
 [data-theme="light"] .nexus-login__webgl,
 :root:not([data-theme="dark"]) .nexus-login__webgl {
-  opacity: .5;
-  mix-blend-mode: multiply;
-}
-
-@media (max-width: 900px) {
-  .nexus-login__webgl {
-    mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 46%, transparent 74%);
-  }
+  opacity: .58;
 }
 
 .nexus-login__aurora {
@@ -619,6 +616,29 @@ html body {
   inset-inline-end: -18%;
   background: radial-gradient(circle, rgba(71, 179, 225, .20), transparent 70%);
   animation: nexus-breathe 10s ease-in-out infinite reverse;
+}
+
+.nexus-login__plate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 28% center;
+  opacity: .92;
+  mask-image: linear-gradient(100deg, #000 0%, rgba(0, 0, 0, .82) 52%, transparent 88%);
+}
+
+[data-theme="light"] .nexus-login__plate,
+:root:not([data-theme="dark"]) .nexus-login__plate {
+  opacity: .68;
+}
+
+@media (max-width: 900px) {
+  .nexus-login__plate {
+    object-position: center 30%;
+    mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 46%, transparent 76%);
+  }
 }
 
 .nexus-login__mesh {
