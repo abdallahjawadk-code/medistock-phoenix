@@ -27,16 +27,24 @@
 
 ## 2. The binding verdict — confirmed by code, not opinion
 
-**There is currently zero real WebGL / Three.js / R3F rendering in the application.**
+**At Phase 0 there was zero Three.js / R3F rendering, and no real cinematic 3D on
+the primary surfaces (Login, Welcome, dashboard).** (One raw-WebGL surface did
+exist — the network Digital Twin — see the correction below.)
 
 - `three@^0.169.0` + `@react-three/fiber@^8.18.0` are installed (React-18 compatible),
-  but the **only** references in `src/` are the dependency **contract test**
-  (`tests/webgl-deps-contract.test.ts`). No `<Canvas>`, no `useThree`, no
+  but at Phase 0 the **only** references in `src/` were the dependency **contract
+  test** (`tests/webgl-deps-contract.test.ts`). No `<Canvas>`, no `useThree`, no
   `three` import in any runtime `.tsx`.
-- `src/features/network/NetworkTopologyStage.tsx` (labelled "WebGL twin" in the
-  inventory) uses a **raw 2D `HTMLCanvasElement`** (`canvasRef`) — it is a 2D
-  canvas, not WebGL.
-- Login / Welcome are **CSS + SVG** scenes (auroras, orbits, CSS particles).
+- **Correction (post-Phase-0):** an earlier read here called
+  `src/features/network/NetworkTopologyStage.tsx` a "2D canvas". That was wrong —
+  it is a **raw WebGL** renderer (`canvas.getContext('webgl')`, hand-written GLSL
+  vertex/fragment shaders, 3D rotation/tilt uniforms) driving a real node/edge
+  topology from RLS data, with selection, a synced 2D detail panel, an accessible
+  node list, reduced-motion handling and GL disposal. It is a genuine (if minimal)
+  Digital Twin, since **enhanced** with live inventory-alert rings (see below). The
+  gap it did have was no R3F/three usage and no alert encoding — not "2D".
+- Login / Welcome were **CSS + SVG** scenes (auroras, orbits, CSS particles) — now
+  rebuilt on the real three.js/R3F engine.
 
 Per the mandate, none of the following count as "WebGL complete" and none are
 present as real 3D: image-in-div, CSS transforms, animated SVG, 2D canvas,
@@ -80,7 +88,7 @@ only) / **POLISH** (states/mobile/RTL gaps) / **REDESIGN** (hero/3D rebuild).
 |---|--------|----------|-----------------------|
 | 12 | Status Center (landing) | POLISH | mobile overflow @320, empty/denied clarity |
 | 11 | Institutions | POLISH | responsive table→card, detail modal RTL |
-| 17 | Network management | POLISH→REDESIGN | `NetworkTopologyStage` is 2D canvas; upgrade to real twin |
+| 17 | Network management | POLISH | `NetworkTopologyStage` is already raw-WebGL; ✅ enhanced with live RLS inventory-alert rings (icon+text+pulse) and identity tier colours |
 | 14 | Users | POLISH | permission matrix mobile, focus mgmt |
 | 13 | Inter-institution alerts | POLISH | non-colour severity, empty states |
 | 9 | Reports / global search (super_admin) | POLISH | large-table virtualisation, Excel affordance |
