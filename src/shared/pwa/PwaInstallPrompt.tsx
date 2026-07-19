@@ -1,5 +1,6 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { usePwaInstallPrompt } from './usePwaInstallPrompt';
 
 /**
@@ -31,7 +32,7 @@ export function PwaInstallPrompt({ isMobile }: Props) {
       role="region"
       aria-label={t('pwa_install_eyebrow', lang)}
     >
-      <div className="premium-pwa-install__icon" aria-hidden="true">⚕</div>
+      <div className="premium-pwa-install__icon" aria-hidden="true"><PhoenixIcon name="medical" size={22} /></div>
       <div className="premium-pwa-install__body">
         <div className="premium-pwa-install__title">{t('pwa_install_title', lang)}</div>
         <div className="premium-pwa-install__desc">

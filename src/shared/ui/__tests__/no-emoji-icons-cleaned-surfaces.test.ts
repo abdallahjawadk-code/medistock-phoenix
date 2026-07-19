@@ -25,6 +25,14 @@ const CLEANED_SURFACES = [
   'shared/ui/PhoenixToast.tsx',
   'shared/ui/PhoenixOrgScope.tsx',
   'shared/ui/WhatsAppContactButton.tsx',
+  'shared/ui/PhoenixMetricCard.tsx',
+  'shared/ui/MaterialTimeline.tsx',
+  'shared/ui/MobilePrintFallbackModal.tsx',
+  'shared/authz/PhoenixPermissionGate.tsx',
+  'shared/authz/ScreenAuthzGuard.tsx',
+  'shared/pwa/PwaInstallPrompt.tsx',
+  'features/admin/AvailabilityCleanupWizard.tsx',
+  'features/account/MyAccountScreen.tsx',
 ];
 
 describe('cleaned surfaces stay emoji-free (icons are SVG PhoenixIcon)', () => {
