@@ -726,7 +726,7 @@ html body {
   border: 1px solid color-mix(in srgb, var(--nx-cyan) 34%, var(--brd));
   border-radius: 15px;
   background: var(--nx-surface-raised);
-  box-shadow: 0 12px 30px rgba(7,28,52,.16), 0 0 22px rgba(88,228,239,.12), var(--nx-bevel);
+  box-shadow: var(--sh-md), 0 0 22px color-mix(in srgb, var(--cyan) 12%, transparent), var(--nx-bevel);
 }
 
 .nexus-login__node--central { top: 4%; left: 50%; transform: translateX(-50%); color: var(--nx-gold); }
@@ -936,8 +936,8 @@ html body {
   color: #fff;
   border: 1px solid rgba(255,255,255,.16);
   background:
-    linear-gradient(115deg, color-mix(in srgb, var(--p) 92%, #fff), var(--pd) 58%, color-mix(in srgb, var(--pd) 86%, var(--nx-navy)));
-  box-shadow: 0 14px 30px rgba(14,159,138,.27), inset 0 1px 0 rgba(255,255,255,.25);
+    linear-gradient(92deg, var(--ember), var(--ember2));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--ember) 30%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
 .nexus-login__submit:disabled { opacity: .62; cursor: wait; }
@@ -1261,7 +1261,7 @@ html body {
 @media (hover: hover) and (pointer: fine) {
   .nexus-login__submit:not(:disabled):hover {
     transform: translateY(-2px);
-    box-shadow: 0 18px 38px rgba(14,159,138,.34), inset 0 1px 0 rgba(255,255,255,.3);
+    box-shadow: 0 18px 38px color-mix(in srgb, var(--ember) 36%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
   }
 
   .nexus-login__secondary:hover {
@@ -1721,7 +1721,9 @@ html body {
 
 .phoenix-button {
   position: relative;
-  min-height: 38px;
+  /* The design source sizes every button at 44-46px, which also satisfies the
+     WCAG 2.5.5 / 2.5.8 minimum hit area without a separate rule. */
+  min-height: var(--touch-target);
   overflow: hidden;
   isolation: isolate;
 }
@@ -1736,9 +1738,15 @@ html body {
   transition: transform .7s var(--nx-ease);
 }
 
+/* The design source's committing action is the ember gradient, not a tinted
+   primary — see the transfer/entry submit buttons in MediStock-Phoenix.dc.html.
+   The glow is derived from --ember so it follows the theme instead of being a
+   baked teal rgba() as before. */
 .phoenix-button[data-variant="primary"] {
-  background: linear-gradient(120deg, color-mix(in srgb, var(--p) 94%, #fff), var(--pd)) !important;
-  box-shadow: 0 10px 24px rgba(14,159,138,.23), inset 0 1px 0 rgba(255,255,255,.22) !important;
+  background: linear-gradient(92deg, var(--ember), var(--ember2)) !important;
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--ember) 26%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.22) !important;
 }
 
 .phoenix-button__spinner {
@@ -1757,34 +1765,38 @@ html body {
 }
 
 .nexus-field > label {
-  color: var(--t2);
+  color: var(--muted);
   font-size: 10.5px;
   font-weight: 720;
   letter-spacing: .035em;
   text-transform: uppercase;
 }
 
+/* Fields in the design source sit on the recessed --field surface behind a
+   1.5px hairline, not on a raised glass panel — the extra half pixel is what
+   makes an input read as an input against --surface at these low contrasts. */
 .nexus-field__control {
   width: 100%;
-  min-height: 43px;
+  min-height: var(--touch-target);
   padding: 10px 12px;
-  color: var(--t);
-  border: 1px solid var(--nx-line-strong);
-  border-radius: 12px;
+  color: var(--text);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r2);
   outline: 0;
-  background: color-mix(in srgb, var(--nx-surface-raised) 94%, var(--s2));
-  box-shadow: inset 0 1px 2px rgba(7,28,52,.035);
-  font-size: 13px;
+  background: var(--field);
+  font-size: 13.5px;
 }
 
+.nexus-field__control::placeholder { color: var(--muted); }
+
 .nexus-field__control:focus {
-  border-color: color-mix(in srgb, var(--p) 64%, var(--brd));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--p) 10%, transparent), inset 0 1px 2px rgba(7,28,52,.03);
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 14%, transparent);
 }
 
 .nexus-field[data-error="true"] .nexus-field__control {
-  border-color: color-mix(in srgb, var(--err) 64%, var(--brd));
-  background: color-mix(in srgb, var(--err2) 62%, var(--nx-surface-raised));
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--chipD) 70%, var(--field));
 }
 
 .nexus-field__error {
@@ -1891,8 +1903,8 @@ html body {
   position: absolute;
   inset: 7px;
   border-radius: 18px;
-  background: linear-gradient(145deg, rgba(16,42,74,.98), rgba(5,15,29,.98));
-  box-shadow: 0 12px 28px rgba(7,28,52,.18), 0 0 28px rgba(244,118,33,.10);
+  background: linear-gradient(145deg, var(--surface2), var(--bg));
+  box-shadow: var(--sh-md), 0 0 28px color-mix(in srgb, var(--ember) 12%, transparent);
 }
 
 .nexus-loading__mark svg {
