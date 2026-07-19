@@ -1376,6 +1376,11 @@ html body {
   transition: transform .8s var(--nx-ease), opacity .55s ease, filter .55s ease;
 }
 
+.nexus-welcome[data-phase="ignite"] .nexus-welcome__solar-core {
+  opacity: .42;
+  transform: scale(.16);
+}
+
 .nexus-welcome[data-phase="burn"] .nexus-welcome__solar-core {
   opacity: 1;
   transform: scale(.82);
