@@ -111,6 +111,30 @@ html body {
   background-color: var(--bg);
 }
 
+/* A11Y-SHELL-LANDMARKS-A: skip link is off-screen until it receives keyboard
+   focus, then anchors to the top of the reading order over the topbar. */
+.nexus-skip-link {
+  position: fixed;
+  top: 8px;
+  inset-inline-start: 8px;
+  z-index: calc(var(--z-toast) + 1);
+  padding: 10px 16px;
+  color: #fff;
+  border-radius: var(--r2);
+  background: linear-gradient(120deg, var(--p), var(--pd));
+  box-shadow: var(--sh-lg);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  transform: translateY(-160%);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.nexus-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid var(--focus-ring-contrast);
+  outline-offset: 2px;
+}
+
 .premium-shell.nexus-shell {
   min-height: 100dvh;
   overflow: clip;

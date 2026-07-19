@@ -103,7 +103,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Navigation">
+      <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
         {NAV_ITEMS
           .filter(item => !item.superAdminOnly || role === 'super_admin')
           .filter(item => !item.requiresUsersView || canSeeUsers)
