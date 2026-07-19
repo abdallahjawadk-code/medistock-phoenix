@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
   applyAvailabilityMovement,
   classifyAvailabilityMovementError,
@@ -168,7 +169,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
           {row.dosage_form && <span dir="auto">{row.dosage_form}</span>}
           {row.batch_number && <span dir="ltr">{row.batch_number}</span>}
           {row.expiry_date && <span dir="ltr">{row.expiry_date}</span>}
-          {dpName && <span dir="auto">🏥 {dpName}</span>}
+          {dpName && <span dir="auto"><PhoenixIcon name="hospital" size={13} inline /> {dpName}</span>}
         </div>
       </div>
 
@@ -196,7 +197,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
             />
             {qtyInvalid && (
               <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>
-                ⚠ {t('sc_reactivate_qty_err', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('sc_reactivate_qty_err', lang)}
               </p>
             )}
           </div>
@@ -231,7 +232,7 @@ export function ReactivateMaterialModal({ open, row, lang, organizationId, myPer
 
           {error && (
             <p role="alert" style={{ fontSize: '12px', color: 'var(--err)', textAlign: 'center', marginBottom: '10px' }}>
-              ⚠ {error}
+<PhoenixIcon name="warning" size={13} inline /> {error}
             </p>
           )}
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
   applyAvailabilityMovement,
   classifyAvailabilityMovementError,
@@ -147,7 +148,7 @@ export function AdjustQuantityModal({ open, row, lang, myPermissions, onClose, o
         <div style={{ color: 'var(--t2)', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           {row.concentration && <span dir="auto">{row.concentration}</span>}
           {row.dosage_form && <span dir="auto">{row.dosage_form}</span>}
-          {dpName && <span dir="auto">🏥 {dpName}</span>}
+          {dpName && <span dir="auto"><PhoenixIcon name="hospital" size={13} inline /> {dpName}</span>}
         </div>
         <div style={{ marginTop: '6px', fontSize: '13px' }}>
           {t('mvmt_current_qty', lang)}: <strong>{currentQty}</strong>
@@ -189,7 +190,7 @@ export function AdjustQuantityModal({ open, row, lang, myPermissions, onClose, o
             />
             {amountInvalid && (
               <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>
-                ⚠ {t(isPositiveOnly ? 'mvmt_amount_err_positive' : 'mvmt_amount_err_non_negative', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t(isPositiveOnly ? 'mvmt_amount_err_positive' : 'mvmt_amount_err_non_negative', lang)}
               </p>
             )}
           </div>
@@ -209,7 +210,7 @@ export function AdjustQuantityModal({ open, row, lang, myPermissions, onClose, o
               style={{ ...fieldStyle, border: `1px solid ${reasonMissing ? 'var(--err)' : 'var(--brd)'}` }}
             />
             {reasonMissing && (
-              <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('mvmt_reason_required_err', lang)}</p>
+              <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}><PhoenixIcon name="warning" size={13} inline /> {t('mvmt_reason_required_err', lang)}</p>
             )}
           </div>
 
@@ -245,13 +246,13 @@ export function AdjustQuantityModal({ open, row, lang, myPermissions, onClose, o
           )}
           {previewNegative && (
             <p style={{ fontSize: '11.5px', color: 'var(--err)', textAlign: 'center', marginBottom: '10px' }}>
-              ⚠ {t('mvmt_preview_negative_err', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('mvmt_preview_negative_err', lang)}
             </p>
           )}
 
           {error && (
             <p role="alert" style={{ fontSize: '12px', color: 'var(--err)', textAlign: 'center', marginBottom: '10px' }}>
-              ⚠ {error}
+<PhoenixIcon name="warning" size={13} inline /> {error}
             </p>
           )}
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { formatStableDate } from '@/shared/lib/date';
 import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
 import {
@@ -518,8 +519,8 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
       ) : (
         <>
           <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 700 }} dir="auto">📦 {outletName || '—'}</div>
-            {institutionName && <div style={{ fontSize: '12px', color: 'var(--t2)' }} dir="auto">🏥 {institutionName}</div>}
+            <div style={{ fontSize: '15px', fontWeight: 700 }} dir="auto"><PhoenixIcon name="package" size={15} inline /> {outletName || '—'}</div>
+            {institutionName && <div style={{ fontSize: '12px', color: 'var(--t2)' }} dir="auto"><PhoenixIcon name="hospital" size={12} inline /> {institutionName}</div>}
           </div>
 
           {/* Summary cards */}
@@ -601,7 +602,7 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
               onClick={() => setFieldsOpen(v => !v)}
               style={{ ...fieldStyle, width: '100%', textAlign: 'start', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', background: 'transparent' }}
             >
-              <span>🧩 {t('sc_outlet_report_fields_title', lang)} ({selectedFields.size}/{FIELD_DEFINITIONS.length})</span>
+              <span><PhoenixIcon name="scope" size={14} inline /> {t('sc_outlet_report_fields_title', lang)} ({selectedFields.size}/{FIELD_DEFINITIONS.length})</span>
               <span>{fieldsOpen ? '▲' : '▼'}</span>
             </button>
             {fieldsOpen && (
@@ -628,10 +629,10 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <PhoenixButton variant="secondary" size="sm" loading={xlsxBusy} disabled={xlsxBusy || noFieldsSelected} onClick={exportXlsx}>
-              📊 {t('sc_outlet_report_export', lang)}
+<PhoenixIcon name="reports" size={14} inline /> {t('sc_outlet_report_export', lang)}
             </PhoenixButton>
             <PhoenixButton variant="ghost" size="sm" disabled={filteredRows.length === 0 || noFieldsSelected} onClick={printReport}>
-              📄 {t('sc_print_pdf', lang)}
+<PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}
             </PhoenixButton>
           </div>
 
