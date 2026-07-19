@@ -4,6 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { PhoenixExperience } from '@/shared/webgl';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -65,11 +66,19 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
-      <div className="nexus-login__atmosphere" aria-hidden="true">
-        <div className="nexus-login__aurora nexus-login__aurora--emerald" />
-        <div className="nexus-login__aurora nexus-login__aurora--cyan" />
-        <div className="nexus-login__mesh" />
-      </div>
+      {/* Real WebGL Phoenix scene overlays the CSS atmosphere, which stays as
+          the aria-hidden 2D fallback for no-WebGL / Save-Data / context-loss. */}
+      <PhoenixExperience
+        variant="login"
+        className="nexus-login__webgl"
+        fallback={
+          <div className="nexus-login__atmosphere" aria-hidden="true">
+            <div className="nexus-login__aurora nexus-login__aurora--emerald" />
+            <div className="nexus-login__aurora nexus-login__aurora--cyan" />
+            <div className="nexus-login__mesh" />
+          </div>
+        }
+      />
 
       <div className="nexus-login__controls">
         <button onClick={toggleLang} className="nexus-control nexus-control--language">

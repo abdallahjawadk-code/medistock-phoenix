@@ -574,6 +574,30 @@ html body {
   pointer-events: none;
 }
 
+/* Real WebGL scene layer — above the 2D atmosphere, below all UI content. */
+.nexus-login__webgl {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Blend the emissive scene into the surface so the form stays legible. */
+  opacity: .92;
+  mask-image: linear-gradient(100deg, #000 0%, rgba(0, 0, 0, .82) 52%, transparent 88%);
+}
+
+[data-theme="light"] .nexus-login__webgl,
+:root:not([data-theme="dark"]) .nexus-login__webgl {
+  opacity: .5;
+  mix-blend-mode: multiply;
+}
+
+@media (max-width: 900px) {
+  .nexus-login__webgl {
+    mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 46%, transparent 74%);
+  }
+}
+
 .nexus-login__aurora {
   position: absolute;
   width: min(54vw, 820px);
