@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<style>
+body{margin:0;background:#07111F;}
+*{box-sizing:border-box;}
+a{color:#4FC3DF;text-decoration:none;} a:hover{color:#62E9FF;}
+input,select,button,textarea{font-family:inherit;}
+button{cursor:pointer;}
+:focus-visible{outline:2px solid #62E9FF;outline-offset:2px;border-radius:4px;}
+[data-theme="light"] :focus-visible{outline-color:#0E5F86;}
+::-webkit-scrollbar{width:10px;height:10px;}::-webkit-scrollbar-thumb{background:rgba(120,150,180,.3);border-radius:6px;}::-webkit-scrollbar-track{background:transparent;}
+[data-theme="dark"]{--bg:#07111F;--surface:#0A1729;--surface2:#0E2036;--field:#081426;--line:rgba(98,233,255,.14);--line2:rgba(221,186,99,.3);--text:#F5F8FC;--muted:#8FA6BF;--cyan:#62E9FF;--cyanDim:#4FC3DF;--ember:#FF7A1A;--ember2:#FF9A4D;--gold:#DDBA63;--teal:#37B5AD;--ok:#2FBF8F;--warn:#FFB84D;--danger:#FF6B6B;--chip:rgba(98,233,255,.08);--chipW:rgba(255,184,77,.12);--chipD:rgba(255,107,107,.12);--hover:rgba(98,233,255,.06);--shadow:0 14px 34px rgba(0,0,0,.4);--heroGrad:linear-gradient(140deg,#0C1C33 0%,#081426 55%,#0A1020 100%);}
+[data-theme="light"]{--bg:#F0F4F9;--surface:#FFFFFF;--surface2:#F5F8FC;--field:#F7FAFD;--line:#D8E2EC;--line2:#E0D3B4;--text:#122335;--muted:#546B82;--cyan:#0E7EA6;--cyanDim:#0E7EA6;--ember:#C75B10;--ember2:#B25B0E;--gold:#8F7228;--teal:#0E8078;--ok:#0E8F5B;--warn:#A66E0A;--danger:#C43D3D;--chip:rgba(14,128,120,.08);--chipW:rgba(166,110,10,.1);--chipD:rgba(196,61,61,.1);--hover:rgba(14,128,120,.06);--shadow:0 10px 26px rgba(18,35,53,.1);--heroGrad:linear-gradient(140deg,#FFFFFF 0%,#F2F7FB 60%,#E9F1F8 100%);}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+@keyframes rowIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+@keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(255,122,26,.5);}100%{box-shadow:0 0 0 16px rgba(255,122,26,0);}}
+@keyframes svgPulse{0%{r:14;opacity:.7;}100%{r:30;opacity:0;}}
+@keyframes emberUp{0%{transform:translateY(0) translateX(0);opacity:0;}12%{opacity:.95;}100%{transform:translateY(-46vh) translateX(12px);opacity:0;}}
+@keyframes drift{from{transform:scale(1.04) translateX(-8px);}to{transform:scale(1.09) translateX(10px);}}
+@keyframes glowBreathe{from{opacity:.35;}to{opacity:.65;}}
+@keyframes shimmer{from{background-position:200% 0;}to{background-position:-200% 0;}}
+@keyframes welcomePlate{0%{filter:brightness(.12) saturate(.3);transform:scale(1.06);}12%{filter:brightness(.2) saturate(.45);}34%{filter:brightness(.55) saturate(.8);transform:scale(1.045);}58%{filter:brightness(1.05) saturate(1.15);}80%{filter:brightness(1) saturate(1.05);transform:scale(1.01);}100%{filter:brightness(1) saturate(1);transform:scale(1);}}
+@keyframes welcomeGlow{0%{opacity:0;}15%{opacity:.15;}55%{opacity:.8;}100%{opacity:.4;}}
+@keyframes sparkOnce{0%{opacity:0;transform:scale(.2);}8%{opacity:1;}20%{opacity:.9;transform:scale(1);}100%{opacity:0;transform:scale(2.4);}}
+@keyframes textReveal{0%{opacity:0;transform:translateY(14px);}100%{opacity:1;transform:none;}}
+@keyframes wProgress{from{width:0%;}to{width:100%;}}
+@keyframes barGrow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@keyframes dialogIn{from{opacity:0;transform:scale(.96) translateY(8px);}to{opacity:1;transform:none;}}
+@keyframes toastIn{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:none;}}
+@keyframes ringDraw{from{stroke-dashoffset:264;}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;}}
+</style>
+</helmet>
+<div data-theme="{{ theme }}" dir="{{ dir }}" style="min-height:100vh;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans Arabic','Inter',sans-serif;font-size:14px;">
+
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+<div style="min-height:100vh;display:flex;background:#05090F;position:relative;overflow:hidden;" data-screen-label="Login">
+  <sc-if value="{{ notMobile }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1.25;position:relative;overflow:hidden;" aria-hidden="true">
+    <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-login-master.png" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:drift 26s ease-in-out infinite alternate;animation-play-state:{{ fxPlay }};">
+    <div style="position:absolute;inset:0;background:radial-gradient(90% 70% at 38% 55%,transparent 30%,rgba(2,6,12,.55) 100%);"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(50% 60% at 40% 60%,rgba(255,122,26,.16),transparent 70%);animation:glowBreathe 5.5s ease-in-out infinite alternate;animation-play-state:{{ fxPlay }};"></div>
+    <sc-if value="{{ fxRich }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;animation-play-state:{{ fxPlay }};">
+        <span style="position:absolute;bottom:8%;left:30%;width:4px;height:4px;border-radius:50%;background:#FF9A4D;animation:emberUp 6s linear infinite;animation-play-state:{{ fxPlay }};"></span>
+        <span style="position:absolute;bottom:4%;left:38%;width:3px;height:3px;border-radius:50%;background:#DDBA63;animation:emberUp 7.5s linear 1.2s infinite;animation-play-state:{{ fxPlay }};"></span>
+        <span style="position:absolute;bottom:10%;left:24%;width:3px;height:3px;border-radius:50%;background:#FF7A1A;animation:emberUp 8s linear 2.6s infinite;animation-play-state:{{ fxPlay }};"></span>
+        <span style="position:absolute;bottom:6%;left:46%;width:2px;height:2px;border-radius:50%;background:#FFD9A8;animation:emberUp 9s linear 3.4s infinite;animation-play-state:{{ fxPlay }};"></span>
+      </div>
+    </sc-if>
+    <div style="position:absolute;bottom:40px;inset-inline-start:44px;max-width:520px;">
+      <div style="color:#DDBA63;font-size:13px;letter-spacing:3px;margin-bottom:8px;font-family:Inter;">MEDISTOCK PHOENIX</div>
+      <div style="color:#F5F8FC;font-size:26px;font-weight:700;line-height:1.5;">{{ t.loginHeroTitle }}</div>
+      <div style="color:#B9C9DA;font-size:14px;margin-top:8px;line-height:1.8;">{{ t.loginHeroSub }}</div>
+    </div>
+  </div>
+  </sc-if>
+  <div style="width:100%;max-width:500px;margin:0 auto;position:relative;display:flex;flex-direction:column;justify-content:center;padding:48px 44px;background:#070E1A;border-inline-start:1px solid rgba(221,186,99,.18);">
+    <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+      <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.07;pointer-events:none;">
+    </sc-if>
+    <div style="position:relative;display:flex;flex-direction:column;gap:20px;animation:fadeUp 500ms cubic-bezier(.2,.8,.2,1);">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="Phoenix" style="width:64px;height:64px;border-radius:16px;object-fit:cover;border:1px solid rgba(221,186,99,.4);">
+        <div>
+          <div style="color:#DDBA63;font-size:12px;">{{ t.org }}</div>
+          <div style="color:#F5F8FC;font-size:20px;font-weight:700;">{{ t.appName }}</div>
+        </div>
+        <button onClick="{{ toggleLangLogin }}" style="margin-inline-start:auto;min-height:44px;padding:0 14px;background:transparent;border:1px solid rgba(98,233,255,.3);color:#9DD8E8;border-radius:10px;font-size:13px;">{{ langBtn }}</button>
+      </div>
+      <div>
+        <div style="color:#F5F8FC;font-size:24px;font-weight:700;margin-bottom:4px;">{{ t.loginTitle }}</div>
+        <div style="color:#8FA6BF;font-size:13.5px;">{{ t.loginSub }}</div>
+      </div>
+      <label style="display:flex;flex-direction:column;gap:7px;color:#C9D6E4;font-size:13px;">{{ t.username }}
+        <input value="{{ user }}" onChange="{{ setUser }}" onFocus="{{ pauseFx }}" onBlur="{{ resumeFx }}" placeholder="pharmacist.babil" style="min-height:48px;background:#0A1729;border:1px solid rgba(98,233,255,.25);border-radius:12px;padding:0 14px;color:#F5F8FC;font-size:15px;" style-focus="border-color:#62E9FF;">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:7px;color:#C9D6E4;font-size:13px;">{{ t.password }}
+        <input type="password" value="{{ pass }}" onChange="{{ setPass }}" onFocus="{{ pauseFx }}" onBlur="{{ resumeFx }}" placeholder="••••••••" style="min-height:48px;background:#0A1729;border:1px solid rgba(98,233,255,.25);border-radius:12px;padding:0 14px;color:#F5F8FC;font-size:15px;" style-focus="border-color:#62E9FF;">
+      </label>
+      <sc-if value="{{ loginErr }}" hint-placeholder-val="{{ false }}">
+        <div role="alert" style="display:flex;gap:8px;align-items:center;background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.35);border-radius:10px;padding:10px 12px;color:#FF9B9B;font-size:13px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 15.5v.1"></path></svg>{{ loginErr }}
+        </div>
+      </sc-if>
+      <button onClick="{{ doLogin }}" style="min-height:50px;border:none;border-radius:12px;background:linear-gradient(92deg,#FF7A1A,#FFB459);color:#1A0E02;font-size:16px;font-weight:700;box-shadow:0 8px 24px rgba(255,122,26,.28);transition:transform 160ms;" style-hover="transform:translateY(-1px);" style-active="transform:translateY(0);">{{ t.loginBtn }}</button>
+      <div style="display:flex;align-items:center;gap:10px;color:#5B7186;font-size:12px;"><div style="flex:1;height:1px;background:rgba(139,166,191,.2);"></div>{{ t.demoQuick }}<div style="flex:1;height:1px;background:rgba(139,166,191,.2);"></div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button onClick="{{ demoSuper }}" style="flex:1;min-height:44px;background:rgba(98,233,255,.07);border:1px solid rgba(98,233,255,.25);color:#9DD8E8;border-radius:10px;font-size:13px;">super_admin</button>
+        <button onClick="{{ demoKeeper }}" style="flex:1;min-height:44px;background:rgba(221,186,99,.07);border:1px solid rgba(221,186,99,.3);color:#DDBA63;border-radius:10px;font-size:13px;">{{ t.roleKeeper }}</button>
+      </div>
+      <div style="color:#54687D;font-size:11.5px;line-height:1.8;border-top:1px solid rgba(139,166,191,.14);padding-top:14px;">{{ t.demoNote }}</div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isWelcome }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;inset:0;z-index:100;background:#020408;overflow:hidden;" data-screen-label="Welcome Rebirth">
+  <sc-if value="{{ fxRich }}" hint-placeholder-val="{{ false }}">
+    <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-welcome-clean-plate-master.png" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:welcomePlate 6.5s cubic-bezier(.3,.1,.25,1) forwards;">
+    <div style="position:absolute;inset:0;background:radial-gradient(46% 60% at 50% 52%,rgba(255,140,40,.22),transparent 72%);animation:welcomeGlow 6.5s ease forwards;"></div>
+    <div style="position:absolute;top:46%;left:50%;width:12px;height:12px;margin:-6px;border-radius:50%;background:radial-gradient(circle,#FFE9C4,#FF7A1A 60%,transparent);animation:sparkOnce 2.2s ease-out .3s both;"></div>
+    <div style="position:absolute;inset:0;">
+      <span style="position:absolute;bottom:14%;left:44%;width:4px;height:4px;border-radius:50%;background:#FF9A4D;animation:emberUp 5s linear 2.2s infinite;"></span>
+      <span style="position:absolute;bottom:10%;left:52%;width:3px;height:3px;border-radius:50%;background:#DDBA63;animation:emberUp 6s linear 2.8s infinite;"></span>
+      <span style="position:absolute;bottom:16%;left:58%;width:3px;height:3px;border-radius:50%;background:#FF7A1A;animation:emberUp 5.6s linear 3.4s infinite;"></span>
+      <span style="position:absolute;bottom:12%;left:36%;width:2px;height:2px;border-radius:50%;background:#FFD9A8;animation:emberUp 6.4s linear 3.8s infinite;"></span>
+    </div>
+  </sc-if>
+  <sc-if value="{{ fxStill }}" hint-placeholder-val="{{ false }}">
+    <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-welcome-clean-plate-master.png" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:fadeUp 600ms ease both;">
+    <div style="position:absolute;inset:0;background:rgba(2,4,8,.25);"></div>
+  </sc-if>
+  <button onClick="{{ skipWelcome }}" style="position:absolute;top:26px;inset-inline-start:26px;z-index:2;min-height:44px;min-width:92px;background:rgba(4,8,14,.55);border:1px solid rgba(221,186,99,.5);color:#EFD9A8;border-radius:999px;font-size:14px;cursor:pointer;">{{ t.skip }}</button>
+  <div dir="rtl" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;padding:clamp(64px,11vh,110px) 24px clamp(34px,7vh,72px);pointer-events:none;">
+    <div style="max-width:900px;animation:textReveal 900ms ease .4s both;">
+      <div style="color:#DDBA63;font-size:clamp(11px,1.3vw,14px);letter-spacing:clamp(3px,.5vw,6px);margin-bottom:12px;font-family:Inter;">MEDISTOCK PHOENIX</div>
+      <div style="color:#F4E6C0;font-size:clamp(21px,3vw,40px);font-weight:700;line-height:1.35;text-wrap:balance;text-shadow:0 3px 26px rgba(0,0,0,.8);">دائرة صحة بابل — قسم الصيدلة</div>
+    </div>
+    <div style="pointer-events:auto;align-self:center;box-sizing:border-box;width:min(720px,92vw);background:rgba(4,8,14,.62);border:1px solid rgba(221,186,99,.4);border-radius:18px;padding:clamp(20px,3.4vh,30px) clamp(22px,4vw,44px);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:textReveal 1s ease {{ creditsDelay }} both;">
+      <div style="color:#DDBA63;font-size:clamp(10px,1.1vw,12px);letter-spacing:3px;margin-bottom:14px;">إصدار وإشراف</div>
+      <div style="color:#F6ECD4;font-size:clamp(16px,1.9vw,22px);font-weight:600;line-height:1.7;">الصيدلاني عبدالله جواد كاظم</div>
+      <div style="width:64px;height:1px;background:rgba(221,186,99,.45);margin:14px auto;"></div>
+      <div style="color:#CBBB8E;font-size:clamp(13px,1.5vw,17px);line-height:1.7;">بإشراف الصيدلاني باسم كاظم رمح</div>
+      <sc-if value="{{ fxStill }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ skipWelcome }}" style="margin-top:22px;min-height:46px;padding:0 30px;background:linear-gradient(92deg,#FF7A1A,#FFB459);border:none;border-radius:12px;color:#1A0E02;font-weight:700;font-size:15px;cursor:pointer;">{{ t.continueBtn }}</button>
+      </sc-if>
+    </div>
+  </div>
+  <sc-if value="{{ fxRich }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(221,186,99,.15);"><div style="height:3px;background:linear-gradient(90deg,#FF7A1A,#DDBA63);animation:wProgress 6.5s linear forwards;"></div></div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isApp }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;min-height:100vh;">
+  <sc-if value="{{ notMobile }}" hint-placeholder-val="{{ true }}">
+  <nav aria-label="Main" style="width:258px;flex-shrink:0;background:var(--surface);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;gap:12px;padding:18px 16px;border-bottom:1px solid var(--line2);">
+      <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="" style="width:42px;height:42px;border-radius:11px;object-fit:cover;border:1px solid var(--line2);">
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.appName }}</div>
+        <div style="color:var(--gold);font-size:10.5px;line-height:1.5;">{{ t.org }}</div>
+      </div>
+    </div>
+    <div style="padding:12px 10px;display:flex;flex-direction:column;gap:2px;">
+      <sc-for list="{{ navMain }}" as="it" hint-placeholder-count="7">
+        <button onClick="{{ it.go }}" aria-current="{{ it.cur }}" style="display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border:none;border-radius:10px;background:{{ it.bg }};color:{{ it.c }};font-size:13.5px;font-weight:{{ it.w }};text-align:start;border-inline-start:3px solid {{ it.bar }};transition:background 140ms;" style-hover="background:var(--hover);">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ it.icon }}"></path></svg>{{ it.label }}
+          <sc-if value="{{ it.badge }}" hint-placeholder-val="{{ false }}"><span style="margin-inline-start:auto;background:var(--chipW);color:var(--warn);border-radius:999px;padding:2px 8px;font-size:11px;font-family:Inter;">{{ it.badge }}</span></sc-if>
+        </button>
+      </sc-for>
+      <div style="color:var(--muted);font-size:10.5px;letter-spacing:1.5px;padding:14px 12px 6px;">{{ t.navAdmin }}</div>
+      <sc-for list="{{ navAdmin }}" as="it" hint-placeholder-count="7">
+        <button onClick="{{ it.go }}" aria-current="{{ it.cur }}" style="display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border:none;border-radius:10px;background:{{ it.bg }};color:{{ it.c }};font-size:13.5px;font-weight:{{ it.w }};text-align:start;border-inline-start:3px solid {{ it.bar }};transition:background 140ms;" style-hover="background:var(--hover);">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ it.icon }}"></path></svg>{{ it.label }}
+        </button>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--cyanDim));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">ع</div>
+        <div style="min-width:0;"><div style="font-size:12.5px;font-weight:600;color:var(--text);">{{ t.demoUser }}</div><div style="color:var(--muted);font-size:11px;">super_admin</div></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;"><span style="background:var(--chipW);color:var(--warn);border:1px solid rgba(221,186,99,.3);border-radius:6px;padding:2px 8px;font-size:10.5px;">{{ t.demoBadge }}</span><span style="color:var(--muted);font-size:10.5px;font-family:Inter;">v2.0 Fable</span></div>
+    </div>
+  </nav>
+  </sc-if>
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;">
+    <header style="position:sticky;top:0;z-index:10;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:10px 18px;min-height:60px;flex-wrap:wrap;">
+      <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+        <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="" style="width:32px;height:32px;border-radius:8px;object-fit:cover;">
+      </sc-if>
+      <div style="min-width:0;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);">{{ screenTitle }}</div>
+        <sc-if value="{{ notMobile }}" hint-placeholder-val="{{ true }}"><div style="color:var(--muted);font-size:11px;">{{ t.scopeLine }}</div></sc-if>
+      </div>
+      <div style="margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11.5px;">{{ t.demoState }}
+          <select value="{{ demoState }}" onChange="{{ setDemoState }}" style="min-height:38px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:0 8px;font-size:12.5px;">
+            <option value="populated">{{ t.stPopulated }}</option><option value="loading">{{ t.stLoading }}</option><option value="empty">{{ t.stEmpty }}</option><option value="error">{{ t.stError }}</option><option value="denied">{{ t.stDenied }}</option><option value="offline">{{ t.stOffline }}</option><option value="stale">{{ t.stStale }}</option>
+          </select>
+        </label>
+        <select value="{{ effects }}" onChange="{{ setEffects }}" aria-label="Effects" style="min-height:38px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:0 8px;font-size:12.5px;">
+          <option value="auto">{{ t.fxAuto }}</option><option value="cinematic">{{ t.fxCinematic }}</option><option value="reduced">{{ t.fxReduced }}</option><option value="off">{{ t.fxOff }}</option>
+        </select>
+        <button onClick="{{ toggleTheme }}" aria-label="Theme" style="min-width:44px;min-height:44px;background:var(--field);border:1px solid var(--line);border-radius:10px;color:var(--text);display:flex;align-items:center;justify-content:center;">
+          <sc-if value="{{ isDark }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19"></path></svg></sc-if>
+          <sc-if value="{{ isLight }}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M20 13A8 8 0 1 1 11 4a6.5 6.5 0 0 0 9 9z"></path></svg></sc-if>
+        </button>
+        <button onClick="{{ toggleLang }}" style="min-width:44px;min-height:44px;background:var(--field);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:13px;font-weight:600;">{{ langBtn }}</button>
+        <button onClick="{{ logout }}" aria-label="Logout" style="min-width:44px;min-height:44px;background:var(--field);border:1px solid var(--line);border-radius:10px;color:var(--muted);display:flex;align-items:center;justify-content:center;" title="{{ t.logout }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l-5-5 5-5M5 12h11"></path></svg>
+        </button>
+      </div>
+    </header>
+    <sc-if value="{{ stOffline }}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="background:var(--chipW);border-bottom:1px solid rgba(221,186,99,.35);color:var(--warn);padding:9px 18px;font-size:12.5px;display:flex;gap:8px;align-items:center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7-7M5 12.5A9 9 0 0 1 8 10M12 5c3.5 0 6.6 1.6 8.5 4.5M12 20h.01"></path></svg>{{ t.offlineBanner }}
+      </div>
+    </sc-if>
+    <sc-if value="{{ stStale }}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="background:var(--chip);border-bottom:1px solid var(--line);color:var(--cyanDim);padding:9px 18px;font-size:12.5px;display:flex;gap:8px;align-items:center;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>{{ t.staleBanner }}
+      </div>
+    </sc-if>
+    <div style="flex:1;padding:{{ contentPad }};max-width:1480px;width:100%;margin:0 auto;padding-bottom:{{ contentPadB }};">
+
+      <sc-if value="{{ stLoading }}" hint-placeholder-val="{{ false }}">
+        <div aria-busy="true" style="display:flex;flex-direction:column;gap:16px;">
+          <div style="height:120px;border-radius:16px;background:linear-gradient(100deg,var(--surface) 40%,var(--surface2) 50%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.4s linear infinite;border:1px solid var(--line);"></div>
+          <div style="display:grid;grid-template-columns:{{ gridSkel }};gap:16px;">
+            <div style="height:110px;border-radius:14px;background:linear-gradient(100deg,var(--surface) 40%,var(--surface2) 50%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.4s linear .1s infinite;border:1px solid var(--line);"></div>
+            <div style="height:110px;border-radius:14px;background:linear-gradient(100deg,var(--surface) 40%,var(--surface2) 50%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.4s linear .2s infinite;border:1px solid var(--line);"></div>
+            <div style="height:110px;border-radius:14px;background:linear-gradient(100deg,var(--surface) 40%,var(--surface2) 50%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.4s linear .3s infinite;border:1px solid var(--line);"></div>
+          </div>
+          <div style="height:300px;border-radius:16px;background:linear-gradient(100deg,var(--surface) 40%,var(--surface2) 50%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.4s linear .2s infinite;border:1px solid var(--line);"></div>
+          <div style="color:var(--muted);font-size:12.5px;text-align:center;">{{ t.loadingHint }}</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="border:1px dashed var(--line);border-radius:18px;padding:56px 24px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;background:var(--surface);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5m0 0 9-5m-9 5v8"></path></svg>
+          <div style="font-size:17px;font-weight:700;color:var(--text);">{{ emptyTitle }}</div>
+          <div style="color:var(--muted);font-size:13.5px;max-width:420px;line-height:1.9;">{{ emptyBody }}</div>
+          <button onClick="{{ emptyAction }}" style="min-height:46px;padding:0 24px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;">{{ emptyCta }}</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stError }}" hint-placeholder-val="{{ false }}">
+        <div role="alert" style="border:1px solid rgba(255,107,107,.35);border-radius:18px;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;background:var(--surface);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3z"></path><path d="M12 10v4M12 17.2v.1"></path></svg>
+          <div style="font-size:17px;font-weight:700;color:var(--text);">{{ t.errorTitle }}</div>
+          <div style="color:var(--muted);font-size:13.5px;max-width:460px;line-height:1.9;">{{ t.errorBody }}</div>
+          <div style="display:flex;gap:10px;">
+            <button onClick="{{ retry }}" style="min-height:46px;padding:0 24px;border:none;border-radius:11px;background:var(--chip);border:1px solid var(--line);color:var(--cyanDim);font-weight:600;font-size:14px;">{{ t.retry }}</button>
+            <button onClick="{{ goDashboard }}" style="min-height:46px;padding:0 20px;border:1px solid var(--line);border-radius:11px;background:transparent;color:var(--muted);font-size:14px;">{{ t.backHome }}</button>
+          </div>
+          <div style="color:var(--muted);font-size:11px;font-family:Inter;">ERR-FIXTURE-500 · {{ t.errorRef }}</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ stDenied }}" hint-placeholder-val="{{ false }}">
+        <div style="border:1px solid var(--line2);border-radius:18px;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;background:var(--surface);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2.5"></path></svg>
+          <div style="font-size:17px;font-weight:700;color:var(--text);">{{ t.deniedTitle }}</div>
+          <div style="color:var(--muted);font-size:13.5px;max-width:480px;line-height:1.9;">{{ t.deniedBody }}</div>
+          <div style="background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px 16px;color:var(--cyanDim);font-size:12.5px;">{{ t.deniedScope }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ stShow }}" hint-placeholder-val="{{ true }}">
+
+      <sc-if value="{{ showDashboard }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Dashboard" style="display:flex;flex-direction:column;gap:18px;">
+        <div style="position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line2);background:var(--heroGrad);box-shadow:var(--shadow);">
+          <sc-if value="{{ fxRich }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;background:radial-gradient(60% 90% at 85% 20%,rgba(255,122,26,.1),transparent 65%);animation:glowBreathe 6s ease-in-out infinite alternate;"></div>
+          </sc-if>
+          <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="" aria-hidden="true" style="position:absolute;inset-inline-end:-30px;top:-38px;width:230px;height:230px;object-fit:cover;opacity:{{ heroImgOp }};mask-image:radial-gradient(60% 60% at 50% 50%,#000 30%,transparent 75%);-webkit-mask-image:radial-gradient(60% 60% at 50% 50%,#000 30%,transparent 75%);">
+          <div style="position:relative;padding:24px 26px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+            <svg width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="Stock health">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="var(--line)" stroke-width="8"></circle>
+              <circle cx="50" cy="50" r="42" fill="none" stroke="url(#hgrad)" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="{{ healthOffset }}" transform="rotate(-90 50 50)" style="animation:ringDraw 1.1s cubic-bezier(.2,.8,.2,1);"></circle>
+              <defs><linearGradient id="hgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#138F88"></stop><stop offset="1" stop-color="#62E9FF"></stop></linearGradient></defs>
+              <text x="50" y="47" text-anchor="middle" fill="var(--text)" font-size="19" font-weight="700" font-family="Inter">{{ kHealth }}</text>
+              <text x="50" y="63" text-anchor="middle" fill="var(--muted)" font-size="9">{{ t.health }}</text>
+            </svg>
+            <div style="flex:1;min-width:220px;">
+              <div style="color:var(--gold);font-size:13px;font-weight:600;margin-bottom:2px;">دائرة صحة بابل - قسم الصيدلة</div>
+              <div style="font-size:26px;font-weight:700;color:var(--text);">{{ t.dashboardTitle }}</div>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;">{{ t.heroSub }}</div>
+            </div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;">
+              <div style="text-align:center;"><div style="font-family:Inter;font-size:24px;font-weight:700;color:var(--cyan);">{{ kMoves }}</div><div style="color:var(--muted);font-size:11.5px;">{{ t.kMoves }}</div></div>
+              <div style="text-align:center;"><div style="font-family:Inter;font-size:24px;font-weight:700;color:var(--gold);">{{ kPending }}</div><div style="color:var(--muted);font-size:11.5px;">{{ t.kPending }}</div></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:{{ gridKpi }};gap:14px;">
+          <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+            <button onClick="{{ k.go }}" style="text-align:start;background:var(--surface);border:1px solid {{ k.border }};border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;animation:fadeUp 400ms ease both;animation-delay:{{ k.delay }};cursor:pointer;" style-hover="background:var(--hover);">
+              <div style="display:flex;align-items:center;gap:8px;color:{{ k.accent }};font-size:12px;font-weight:600;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ k.icon }}"></path></svg>{{ k.label }}
+              </div>
+              <div style="font-family:Inter;font-size:28px;font-weight:700;color:var(--text);">{{ k.value }}</div>
+              <div style="color:var(--muted);font-size:11.5px;">{{ k.sub }}</div>
+            </button>
+          </sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:{{ gridMain }};gap:16px;align-items:start;">
+          <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+            <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+              <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ember2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7zM10 20a2 2 0 0 0 4 0"></path></svg>
+                <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.alertsIntel }}</div>
+                <button onClick="{{ goAlerts }}" style="margin-inline-start:auto;background:none;border:none;color:var(--cyanDim);font-size:12.5px;min-height:44px;">{{ t.viewAll }}</button>
+              </div>
+              <sc-for list="{{ dashAlerts }}" as="a" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 18px;border-bottom:1px solid var(--line);animation:rowIn 300ms ease both;animation-delay:{{ a.delay }};">
+                  <span style="margin-top:3px;width:9px;height:9px;border-radius:50%;background:{{ a.dot }};flex-shrink:0;"></span>
+                  <div style="min-width:0;flex:1;">
+                    <div style="font-size:13.5px;font-weight:600;color:var(--text);">{{ a.title }}</div>
+                    <div style="color:var(--muted);font-size:12px;margin-top:2px;line-height:1.7;">{{ a.cause }}</div>
+                  </div>
+                  <div style="text-align:end;flex-shrink:0;"><div style="color:{{ a.dot }};font-size:11px;font-weight:600;">{{ a.sev }}</div><div style="color:var(--muted);font-size:10.5px;font-family:Inter;">{{ a.time }}</div></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+              <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--cyanDim)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v12m0 0-3-3m3 3 3-3M17 20V8m0 0-3 3m3-3 3 3"></path></svg>
+                <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.recentMoves }}</div>
+                <button onClick="{{ goMovements }}" style="margin-inline-start:auto;background:none;border:none;color:var(--cyanDim);font-size:12.5px;min-height:44px;">{{ t.viewAll }}</button>
+              </div>
+              <sc-for list="{{ dashMoves }}" as="m" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--line);">
+                  <span style="background:{{ m.chipBg }};color:{{ m.chipC }};border-radius:7px;padding:3px 9px;font-size:11px;font-weight:600;flex-shrink:0;">{{ m.type }}</span>
+                  <div style="min-width:0;flex:1;"><div style="font-size:13px;color:var(--text);font-weight:600;">{{ m.item }}</div><div style="color:var(--muted);font-size:11.5px;">{{ m.route }}</div></div>
+                  <div style="font-family:Inter;font-size:13.5px;font-weight:700;color:var(--text);flex-shrink:0;">{{ m.qty }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+            <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.expiryRadar }}</div>
+                <span style="margin-inline-start:auto;color:var(--muted);font-size:11px;">≤270 {{ t.days }}</span>
+              </div>
+              <sc-for list="{{ expiryBuckets }}" as="b" hint-placeholder-count="3">
+                <div style="margin-bottom:12px;">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>{{ b.label }}</span><span style="font-family:Inter;color:{{ b.color }};font-weight:700;">{{ b.count }}</span></div>
+                  <div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;"><div style="height:7px;width:{{ b.pct }};background:{{ b.color }};border-radius:4px;transform-origin:0 50%;animation:barGrow 800ms cubic-bezier(.2,.8,.2,1) both;animation-delay:{{ b.delay }};"></div></div>
+                </div>
+              </sc-for>
+              <button onClick="{{ goInventoryNear }}" style="width:100%;min-height:44px;background:var(--chipW);border:1px solid rgba(221,186,99,.3);color:var(--warn);border-radius:10px;font-size:12.5px;font-weight:600;margin-top:2px;">{{ t.reviewNear }}</button>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5m0 0 9-5m-9 5v8"></path></svg>
+                <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.stockHealth }}</div>
+              </div>
+              <sc-for list="{{ stockCats }}" as="c" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                  <div style="width:110px;color:var(--muted);font-size:12px;flex-shrink:0;">{{ c.label }}</div>
+                  <div style="flex:1;height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;"><div style="height:7px;width:{{ c.pct }};background:{{ c.color }};border-radius:4px;transform-origin:0 50%;animation:barGrow 800ms ease both;animation-delay:{{ c.delay }};"></div></div>
+                  <div style="width:40px;font-family:Inter;font-size:12px;color:var(--text);text-align:end;">{{ c.pct }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+              <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10zM9 12l2 2 4-4"></path></svg>
+                <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.approvalsQueue }}</div>
+                <button onClick="{{ goAudit }}" style="margin-inline-start:auto;background:none;border:none;color:var(--cyanDim);font-size:12.5px;min-height:44px;">{{ t.viewAll }}</button>
+              </div>
+              <sc-for list="{{ dashApprovals }}" as="p" hint-placeholder-count="2">
+                <div style="display:flex;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);">
+                  <div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:600;color:var(--text);">{{ p.title }}</div><div style="color:var(--muted);font-size:11.5px;">{{ p.sub }}</div></div>
+                  <button onClick="{{ p.act }}" style="min-height:40px;padding:0 14px;background:var(--chip);border:1px solid var(--line);color:var(--cyanDim);border-radius:9px;font-size:12px;font-weight:600;flex-shrink:0;">{{ t.review }}</button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showTwin }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Digital Twin" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.35-4.35"></path></svg>
+    <input value="{{ twinQ }}" onChange="{{ setTwinQ }}" placeholder="{{ t.twinSearchPh }}" style="flex:1;min-width:140px;min-height:40px;background:transparent;border:none;color:var(--text);font-size:13.5px;outline:none;">
+    <sc-for list="{{ twinChips }}" as="c" hint-placeholder-count="4">
+      <button onClick="{{ c.set }}" style="min-height:38px;padding:0 14px;border-radius:999px;border:1px solid {{ c.bc }};background:{{ c.bg }};color:{{ c.c }};font-size:12.5px;font-weight:600;">{{ c.label }}</button>
+    </sc-for>
+    <sc-if value="{{ has3D }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ toggle3D }}" style="min-height:40px;padding:0 14px;border:1px solid {{ view3DBorder }};background:{{ view3DBg }};color:{{ view3DColor }};border-radius:9px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5m0 0 9-5m-9 5v8"></path></svg>{{ view3DLabel }}
+      </button>
+    </sc-if>
+    <sc-if value="{{ show2DControls }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;gap:6px;">
+      <button onClick="{{ twinZoomOut }}" aria-label="Zoom out" style="min-width:40px;min-height:40px;border:1px solid var(--line);background:var(--field);color:var(--text);border-radius:9px;font-size:16px;">−</button>
+      <button onClick="{{ twinZoomIn }}" aria-label="Zoom in" style="min-width:40px;min-height:40px;border:1px solid var(--line);background:var(--field);color:var(--text);border-radius:9px;font-size:16px;">+</button>
+      <button onClick="{{ twinZoomReset }}" style="min-height:40px;padding:0 10px;border:1px solid var(--line);background:var(--field);color:var(--muted);border-radius:9px;font-size:12px;">100%</button>
+    </div>
+    </sc-if>
+  </div>
+  <div style="display:grid;grid-template-columns:{{ gridTwin }};gap:16px;align-items:start;">
+    <div style="position:relative;background:radial-gradient(90% 90% at 50% 0%,var(--surface2),var(--surface) 70%);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+      <sc-if value="{{ use3D }}" hint-placeholder-val="{{ true }}">
+        <div style="height:clamp(380px,54vh,580px);width:100%;">
+          <x-import component-from-global-scope="phoenix-twin-3d" from="./twin3d.js" nodes="{{ twinNodesJson }}" lang="{{ lang }}" theme="{{ theme }}" effects="{{ effects }}" selected="{{ twinSelAttr }}" hint-size="100%,100%" style="display:block;width:100%;height:100%;"></x-import>
+        </div>
+      </sc-if>
+      <sc-if value="{{ use2D }}" hint-placeholder-val="{{ false }}">
+      <svg viewBox="0 0 1000 660" style="width:100%;height:auto;display:block;" role="application" aria-label="Supply network map">
+        <g transform="{{ twinTx }}">
+          <sc-for list="{{ twinEdges }}" as="e" hint-placeholder-count="12">
+            <line x1="{{ e.x1 }}" y1="{{ e.y1 }}" x2="{{ e.x2 }}" y2="{{ e.y2 }}" stroke="{{ e.stroke }}" stroke-width="{{ e.sw }}" stroke-dasharray="{{ e.dash }}"></line>
+          </sc-for>
+          <sc-for list="{{ twinNodes }}" as="n" hint-placeholder-count="14">
+            <g transform="{{ n.tx }}" opacity="{{ n.op }}" onClick="{{ n.sel }}" style="cursor:pointer;">
+              <sc-if value="{{ n.alert }}" hint-placeholder-val="{{ false }}">
+                <circle r="16" fill="none" stroke="var(--ember)" stroke-width="2" style="animation:{{ n.pulse }};"></circle>
+              </sc-if>
+              <circle r="{{ n.r }}" fill="{{ n.fill }}" stroke="{{ n.stroke }}" stroke-width="{{ n.sw }}"></circle>
+              <text y="{{ n.ty }}" text-anchor="middle" fill="var(--text)" font-size="11.5" font-weight="600">{{ n.label }}</text>
+              <text y="{{ n.ty2 }}" text-anchor="middle" fill="var(--muted)" font-size="9.5">{{ n.sub }}</text>
+            </g>
+          </sc-for>
+        </g>
+      </svg>
+      </sc-if>
+      <div style="position:absolute;top:12px;inset-inline-start:14px;display:flex;gap:12px;flex-wrap:wrap;background:color-mix(in oklab,var(--surface) 82%,transparent);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:11px;color:var(--muted);z-index:2;pointer-events:none;">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--gold);"></span>{{ t.twinLegA }}</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--cyanDim);"></span>{{ t.twinLegB }}</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--teal);"></span>{{ t.twinLegC }}</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:50%;border:2px solid var(--ember);"></span>{{ t.twinPulseNote }}</span>
+      </div>
+      <span style="position:absolute;bottom:12px;inset-inline-end:14px;background:var(--chipW);color:var(--warn);border:1px solid rgba(221,186,99,.3);border-radius:6px;padding:3px 9px;font-size:10.5px;">{{ t.demoBadge }}</span>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;min-height:300px;">
+      <sc-if value="{{ tsOn }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px;animation:fadeUp 260ms ease;">
+          <div>
+            <span style="background:var(--chip);color:var(--cyanDim);border-radius:7px;padding:3px 10px;font-size:11px;font-weight:600;">{{ tsType }}</span>
+            <div style="font-size:17px;font-weight:700;color:var(--text);margin-top:8px;line-height:1.6;">{{ tsName }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px;"><div style="color:var(--muted);font-size:11px;">{{ t.twinHealthL }}</div><div style="font-family:Inter;font-size:20px;font-weight:700;color:var(--teal);">{{ tsHealth }}</div></div>
+            <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px;"><div style="color:var(--muted);font-size:11px;">{{ t.twinNearL }}</div><div style="font-family:Inter;font-size:20px;font-weight:700;color:var(--warn);">{{ tsNear }}</div></div>
+          </div>
+          <div>
+            <div style="color:var(--muted);font-size:11.5px;margin-bottom:8px;">{{ t.twinLowT }}</div>
+            <sc-for list="{{ tsLow }}" as="l" hint-placeholder-count="2">
+              <div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;"><span style="color:var(--text);">{{ l.n }}</span><span style="color:var(--danger);font-family:Inter;font-weight:600;">{{ l.v }}</span></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button onClick="{{ twinOpenStock }}" style="min-height:46px;border:none;border-radius:11px;background:var(--chip);border:1px solid var(--line);color:var(--cyanDim);font-weight:600;font-size:13.5px;">{{ t.twinOpenStock }}</button>
+            <button onClick="{{ twinMakeTransfer }}" style="min-height:46px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:13.5px;">{{ t.twinMakeTransfer }}</button>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ tsNone }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding:34px 8px;color:var(--muted);">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM5 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 7v4m0 0-6 6.5M12 11l6 6.5"></path></svg>
+          <div style="font-size:14px;font-weight:600;color:var(--text);">{{ t.twinSelectHint }}</div>
+          <div style="font-size:12.5px;line-height:1.9;max-width:240px;">{{ t.twinHintBody }}</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showInventory }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Inventory" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.35-4.35"></path></svg>
+    <input value="{{ invQ }}" onChange="{{ setInvQ }}" placeholder="{{ t.invSearchPh }}" style="flex:1;min-width:150px;min-height:40px;background:transparent;border:none;color:var(--text);font-size:13.5px;outline:none;">
+    <sc-for list="{{ invChips }}" as="c" hint-placeholder-count="6">
+      <button onClick="{{ c.set }}" style="min-height:38px;padding:0 13px;border-radius:999px;border:1px solid {{ c.bc }};background:{{ c.bg }};color:{{ c.c }};font-size:12px;font-weight:600;">{{ c.label }}</button>
+    </sc-for>
+    <span style="color:var(--muted);font-size:12px;font-family:Inter;">{{ invCount }}</span>
+  </div>
+  <sc-if value="{{ notMobile }}" hint-placeholder-val="{{ true }}">
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+    <div style="max-height:600px;overflow:auto;">
+      <div style="position:sticky;top:0;z-index:2;display:grid;grid-template-columns:2.2fr 1fr 1fr 1fr 1.3fr 1.1fr 44px;gap:8px;padding:11px 18px;background:var(--surface2);border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px;font-weight:600;">
+        <div>{{ t.colItem }}</div><div style="text-align:end;">{{ t.colOnHand }}</div><div style="text-align:end;">{{ t.colReserved }}</div><div style="text-align:end;">{{ t.colAvail }}</div><div>{{ t.colExpiry }}</div><div>{{ t.colStatus }}</div><div></div>
+      </div>
+      <sc-for list="{{ invRows }}" as="r" hint-placeholder-count="8">
+        <button onClick="{{ r.open }}" style="width:100%;text-align:start;display:grid;grid-template-columns:2.2fr 1fr 1fr 1fr 1.3fr 1.1fr 44px;gap:8px;align-items:center;padding:11px 18px;background:{{ r.bg }};border:none;border-bottom:1px solid var(--line);cursor:pointer;" style-hover="background:var(--hover);">
+          <div style="min-width:0;"><div style="font-size:13.5px;font-weight:600;color:var(--text);">{{ r.name }}</div><div style="color:var(--muted);font-size:11px;font-family:Inter;">{{ r.code }}</div></div>
+          <div style="text-align:end;font-family:Inter;font-size:13.5px;color:var(--text);">{{ r.onHand }}</div>
+          <div style="text-align:end;font-family:Inter;font-size:13px;color:var(--muted);">{{ r.reserved }}</div>
+          <div style="text-align:end;font-family:Inter;font-size:13.5px;font-weight:700;color:var(--text);">{{ r.avail }}</div>
+          <div style="font-family:Inter;font-size:12.5px;color:{{ r.expC }};">{{ r.expiry }}</div>
+          <div><span style="background:{{ r.chipBg }};color:{{ r.chipC }};border-radius:7px;padding:3px 10px;font-size:11px;font-weight:600;">{{ r.statusL }}</span></div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.75" stroke-linecap="round" style="transform:{{ chevFlip }};"><path d="m9 6 6 6-6 6"></path></svg>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <sc-for list="{{ invRows }}" as="r" hint-placeholder-count="6">
+      <button onClick="{{ r.open }}" style="text-align:start;background:var(--surface);border:1px solid {{ r.mBorder }};border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">{{ r.name }}</div>
+          <span style="background:{{ r.chipBg }};color:{{ r.chipC }};border-radius:7px;padding:3px 10px;font-size:11px;font-weight:600;flex-shrink:0;">{{ r.statusL }}</span>
+        </div>
+        <div style="display:flex;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap;">
+          <span>{{ t.colAvail }}: <b style="color:var(--text);font-family:Inter;">{{ r.avail }}</b></span>
+          <span>{{ t.colOnHand }}: <b style="color:var(--text);font-family:Inter;">{{ r.onHand }}</b></span>
+          <span style="color:{{ r.expC }};font-family:Inter;">{{ r.expiry }}</span>
+        </div>
+      </button>
+    </sc-for>
+  </div>
+  </sc-if>
+</div>
+</sc-if>
+<sc-if value="{{ invSelOn }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:45;">
+    <div onClick="{{ closeInv }}" style="position:absolute;inset:0;background:rgba(3,7,13,.55);"></div>
+    <div style="position:absolute;top:0;bottom:0;inset-inline-end:0;width:min(440px,100vw);background:var(--surface);border-inline-start:1px solid var(--line2);overflow-y:auto;padding:22px;animation:fadeUp 240ms ease;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:16px;">
+        <div><div style="font-size:18px;font-weight:700;color:var(--text);">{{ isName }}</div><div style="color:var(--muted);font-size:12px;font-family:Inter;">{{ isCode }}</div></div>
+        <button onClick="{{ closeInv }}" aria-label="Close" style="min-width:44px;min-height:44px;background:var(--field);border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:16px;">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:8px;">
+        <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px;"><div style="color:var(--muted);font-size:10.5px;">{{ t.colOnHand }}</div><div style="font-family:Inter;font-size:18px;font-weight:700;color:var(--text);">{{ isOnHand }}</div></div>
+        <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px;"><div style="color:var(--muted);font-size:10.5px;">{{ t.colReserved }}</div><div style="font-family:Inter;font-size:18px;font-weight:700;color:var(--warn);">{{ isReserved }}</div></div>
+        <div style="background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px;"><div style="color:var(--muted);font-size:10.5px;">{{ t.colAvail }}</div><div style="font-family:Inter;font-size:18px;font-weight:700;color:var(--teal);">{{ isAvail }}</div></div>
+      </div>
+      <div style="color:var(--muted);font-size:11.5px;line-height:1.8;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:18px;">{{ t.availNote }}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:14px;color:var(--text);">{{ t.batchesT }}</div>
+        <span style="background:var(--chipW);color:var(--warn);border-radius:6px;padding:2px 9px;font-size:10.5px;font-weight:600;">FEFO</span>
+      </div>
+      <sc-for list="{{ isBatches }}" as="b" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid {{ b.border }};background:{{ b.bg }};border-radius:11px;margin-bottom:8px;">
+          <div style="min-width:0;flex:1;"><div style="font-family:Inter;font-size:13px;font-weight:600;color:var(--text);">{{ b.b }}</div><div style="color:{{ b.dc }};font-size:11.5px;font-family:Inter;">{{ b.exp }} · {{ b.dTxt }}</div></div>
+          <div style="font-family:Inter;font-size:14px;font-weight:700;color:var(--text);">{{ b.qty }}</div>
+          <sc-if value="{{ b.first }}" hint-placeholder-val="{{ false }}"><span style="background:var(--chipW);color:var(--warn);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;flex-shrink:0;">{{ t.fefoFirst }}</span></sc-if>
+        </div>
+      </sc-for>
+      <div style="display:flex;gap:9px;margin-top:16px;">
+        <button onClick="{{ invAdjust }}" style="flex:1;min-height:46px;border:1px solid var(--line);border-radius:11px;background:var(--chip);color:var(--cyanDim);font-weight:600;font-size:13px;">{{ t.actAdjust }}</button>
+        <button onClick="{{ invQuar }}" style="flex:1;min-height:46px;border:1px solid rgba(255,107,107,.35);border-radius:11px;background:var(--chipD);color:var(--danger);font-weight:600;font-size:13px;">{{ t.actQuar }}</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ showMovements }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Movements" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;">
+    <sc-for list="{{ movChips }}" as="c" hint-placeholder-count="6">
+      <button onClick="{{ c.set }}" style="min-height:38px;padding:0 14px;border-radius:999px;border:1px solid {{ c.bc }};background:{{ c.bg }};color:{{ c.c }};font-size:12.5px;font-weight:600;">{{ c.label }}</button>
+    </sc-for>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+    <sc-for list="{{ movRows }}" as="m" hint-placeholder-count="7">
+      <div style="display:flex;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;animation:rowIn 280ms ease both;animation-delay:{{ m.delay }};">
+        <span style="background:{{ m.chipBg }};color:{{ m.chipC }};border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;flex-shrink:0;">{{ m.type }}</span>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:13.5px;font-weight:600;color:var(--text);">{{ m.item }}</div>
+          <div style="color:var(--muted);font-size:11.5px;">{{ m.route }}</div>
+        </div>
+        <div style="text-align:end;flex-shrink:0;">
+          <div style="font-family:Inter;font-size:14px;font-weight:700;color:{{ m.qc }};">{{ m.qty }}</div>
+          <div style="color:var(--muted);font-size:10.5px;">{{ m.by }} · <span style="font-family:Inter;">{{ m.when }}</span></div>
+        </div>
+        <span style="background:{{ m.stBg }};color:{{ m.stC }};border-radius:6px;padding:3px 9px;font-size:10.5px;font-weight:600;flex-shrink:0;">{{ m.stL }}</span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showTransfers }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Transfers" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <sc-for list="{{ trTabs }}" as="tb" hint-placeholder-count="3">
+      <button onClick="{{ tb.set }}" style="min-height:46px;padding:0 18px;border-radius:12px;border:1px solid {{ tb.bc }};background:{{ tb.bg }};color:{{ tb.c }};font-size:13.5px;font-weight:{{ tb.w }};display:flex;align-items:center;gap:8px;">{{ tb.label }}
+        <sc-if value="{{ tb.badge }}" hint-placeholder-val="{{ false }}"><span style="background:var(--chipW);color:var(--warn);border-radius:999px;padding:2px 8px;font-size:11px;font-family:Inter;">{{ tb.badge }}</span></sc-if>
+      </button>
+    </sc-for>
+  </div>
+  <sc-if value="{{ isWizard }}" hint-placeholder-val="{{ true }}">
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;">
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:20px;">
+      <sc-for list="{{ trSteps }}" as="sp" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:8px;flex:{{ sp.flex }};">
+          <div style="width:32px;height:32px;border-radius:50%;background:{{ sp.bg }};border:1.5px solid {{ sp.bc }};color:{{ sp.c }};display:flex;align-items:center;justify-content:center;font-family:Inter;font-size:13px;font-weight:700;flex-shrink:0;">{{ sp.n }}</div>
+          <div style="font-size:12.5px;font-weight:600;color:{{ sp.c }};white-space:nowrap;">{{ sp.label }}</div>
+          <sc-if value="{{ sp.line }}" hint-placeholder-val="{{ false }}"><div style="flex:1;height:1.5px;background:{{ sp.lineC }};margin:0 10px;"></div></sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <sc-if value="{{ tStep1 }}" hint-placeholder-val="{{ true }}">
+      <div style="color:var(--muted);font-size:12.5px;line-height:1.8;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px;">{{ t.noRoutesNote }}</div>
+      <div style="display:grid;grid-template-columns:{{ gridDest }};gap:10px;">
+        <sc-for list="{{ destOptions }}" as="d" hint-placeholder-count="4">
+          <button onClick="{{ d.set }}" style="text-align:start;background:{{ d.bg }};border:1.5px solid {{ d.bc }};border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:6px;">
+            <div style="font-size:13.5px;font-weight:700;color:var(--text);">{{ d.name }}</div>
+            <div style="color:var(--muted);font-size:11.5px;display:flex;align-items:center;gap:6px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"></path></svg>{{ d.store }}
+            </div>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ tStep2 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;gap:8px;align-items:center;background:var(--surface2);border:1px solid var(--line2);border-radius:10px;padding:10px 14px;margin-bottom:14px;color:var(--gold);font-size:12px;font-weight:600;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>{{ t.l4Note }}
+      </div>
+      <sc-for list="{{ twItems }}" as="w" hint-placeholder-count="5">
+        <div style="display:flex;gap:12px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap;">
+          <div style="min-width:0;flex:1;"><div style="font-size:13.5px;font-weight:600;color:var(--text);">{{ w.name }}</div><div style="color:var(--muted);font-size:11.5px;">{{ t.availLbl }}: <span style="font-family:Inter;">{{ w.avail }}</span></div></div>
+          <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;">{{ t.qtyLbl }}
+            <input type="number" min="0" value="{{ w.qty }}" onChange="{{ w.setQty }}" style="width:110px;min-height:44px;background:var(--field);border:1.5px solid {{ w.qBorder }};border-radius:10px;padding:0 10px;color:var(--text);font-family:Inter;font-size:14px;" style-focus="border-color:var(--cyan);">
+          </label>
+          <sc-if value="{{ w.err }}" hint-placeholder-val="{{ false }}"><div style="width:100%;color:var(--danger);font-size:11.5px;">{{ w.err }}</div></sc-if>
+        </div>
+      </sc-for>
+    </sc-if>
+    <sc-if value="{{ tStep3 }}" hint-placeholder-val="{{ false }}">
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:4px 16px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;"><span style="color:var(--muted);">{{ t.dlgSource }}</span><span style="color:var(--text);font-weight:600;">مخازن قسم الصيدلة - دائرة صحة بابل</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;"><span style="color:var(--muted);">{{ t.dlgDest }}</span><span style="color:var(--text);font-weight:600;">{{ tDestName }}</span></div>
+        <sc-for list="{{ tSummary }}" as="r" hint-placeholder-count="2">
+          <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;"><span style="color:var(--text);">{{ r.n }}</span><span style="font-family:Inter;font-weight:700;color:var(--text);">{{ r.q }}</span></div>
+        </sc-for>
+        <div style="display:flex;justify-content:space-between;padding:11px 0;font-size:13.5px;"><span style="color:var(--gold);font-weight:700;">{{ t.reviewTotal }}</span><span style="font-family:Inter;font-weight:700;color:var(--gold);">{{ tTotal }}</span></div>
+      </div>
+      <div style="color:var(--muted);font-size:12px;line-height:1.8;background:var(--chipW);border:1px solid rgba(221,186,99,.3);border-radius:10px;padding:10px 14px;">{{ t.receiveRule }}</div>
+    </sc-if>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
+      <sc-if value="{{ tCanBack }}" hint-placeholder-val="{{ false }}"><button onClick="{{ tBack }}" style="min-height:46px;padding:0 20px;border:1px solid var(--line);border-radius:11px;background:transparent;color:var(--muted);font-size:14px;">{{ t.stepBack }}</button></sc-if>
+      <sc-if value="{{ tShowNext }}" hint-placeholder-val="{{ true }}"><button onClick="{{ tNext }}" style="min-height:46px;padding:0 26px;border:none;border-radius:11px;background:{{ tNextBg }};color:{{ tNextC }};font-weight:700;font-size:14px;">{{ t.stepNext }}</button></sc-if>
+      <sc-if value="{{ tStep3 }}" hint-placeholder-val="{{ false }}"><button onClick="{{ tSubmit }}" style="min-height:46px;padding:0 26px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;">{{ t.submitTransfer }}</button></sc-if>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ isReceive }}" hint-placeholder-val="{{ false }}">
+    <div style="color:var(--muted);font-size:12.5px;line-height:1.8;background:var(--chipW);border:1px solid rgba(221,186,99,.3);border-radius:12px;padding:11px 15px;">{{ t.receiveRule }}</div>
+    <sc-for list="{{ pendingRows }}" as="p" hint-placeholder-count="2">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span style="font-family:Inter;font-size:11.5px;color:var(--cyanDim);background:var(--chip);border-radius:6px;padding:2px 8px;">{{ p.ref }}</span><span style="color:var(--muted);font-size:11px;">{{ p.age }}</span></div>
+          <div style="font-size:14.5px;font-weight:700;color:var(--text);margin-top:6px;">{{ p.item }} × <span style="font-family:Inter;">{{ p.qty }}</span></div>
+          <div style="color:var(--muted);font-size:12px;margin-top:3px;">{{ p.route }}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button onClick="{{ p.reject }}" style="min-height:46px;padding:0 16px;border:1px solid rgba(255,107,107,.35);border-radius:11px;background:var(--chipD);color:var(--danger);font-weight:600;font-size:13px;">{{ t.rejectBtn }}</button>
+          <button onClick="{{ p.accept }}" style="min-height:46px;padding:0 22px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--teal),var(--cyanDim));color:#fff;font-weight:700;font-size:13px;">{{ t.acceptBtn }}</button>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ pendingEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="border:1px dashed var(--line);border-radius:15px;padding:34px;text-align:center;color:var(--muted);font-size:13.5px;background:var(--surface);">{{ t.pendingEmptyMsg }}</div>
+    </sc-if>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showReturns }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Returns" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="color:var(--muted);font-size:12.5px;line-height:1.8;background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:11px 15px;">{{ t.retNote }}</div>
+  <sc-for list="{{ retRows }}" as="r" hint-placeholder-count="3">
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+      <div style="min-width:0;flex:1.4;">
+        <div style="font-size:14.5px;font-weight:700;color:var(--text);">{{ r.item }} × <span style="font-family:Inter;">{{ r.qty }}</span></div>
+        <div style="color:var(--muted);font-size:12px;margin-top:3px;">{{ r.route }}</div>
+        <div style="color:var(--muted);font-size:11.5px;margin-top:2px;">{{ r.reason }}</div>
+      </div>
+      <span style="background:{{ r.stBg }};color:{{ r.stC }};border-radius:7px;padding:4px 11px;font-size:11.5px;font-weight:600;flex-shrink:0;">{{ r.stL }}</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+        <select value="{{ r.disp }}" onChange="{{ r.setDisp }}" style="min-height:44px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:0 10px;font-size:12.5px;">
+          <option value="restock">{{ t.dispRestock }}</option><option value="quarantine">{{ t.dispQuar }}</option><option value="dispose">{{ t.dispDispose }}</option>
+        </select>
+        <button onClick="{{ r.doDisp }}" style="min-height:44px;padding:0 18px;border:none;border-radius:10px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:13px;">{{ t.dispDo }}</button>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ showAlerts }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Alerts" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <sc-for list="{{ sevChips }}" as="c" hint-placeholder-count="3">
+      <span style="display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:12.5px;color:var(--muted);"><span style="width:9px;height:9px;border-radius:50%;background:{{ c.dot }};"></span>{{ c.label }} <b style="font-family:Inter;color:var(--text);">{{ c.n }}</b></span>
+    </sc-for>
+    <span style="margin-inline-start:auto;color:var(--muted);font-size:11.5px;align-self:center;">{{ t.alertsScopeNote }}</span>
+  </div>
+  <sc-for list="{{ alertRows }}" as="a" hint-placeholder-count="5">
+    <div style="background:var(--surface);border:1px solid {{ a.border }};border-radius:15px;padding:16px 18px;display:flex;gap:14px;align-items:flex-start;animation:{{ a.anim }};">
+      <div style="width:38px;height:38px;border-radius:11px;background:{{ a.iconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ a.dot }}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ a.icon }}"></path></svg>
+      </div>
+      <div style="min-width:0;flex:1;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">{{ a.title }}</div>
+          <span style="color:{{ a.dot }};font-size:11px;font-weight:700;">{{ a.sev }}</span>
+        </div>
+        <div style="color:var(--muted);font-size:12.5px;line-height:1.8;margin-top:4px;">{{ a.cause }}</div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+          <span style="background:var(--chip);color:var(--cyanDim);border-radius:6px;padding:3px 10px;font-size:11px;">{{ a.scope }}</span>
+          <span style="color:var(--muted);font-size:11px;font-family:Inter;">{{ a.time }}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0;align-items:stretch;">
+        <button onClick="{{ a.doAction }}" style="min-height:42px;padding:0 14px;border:none;border-radius:10px;background:var(--chip);border:1px solid var(--line);color:var(--cyanDim);font-size:12px;font-weight:600;">{{ a.action }}</button>
+        <button onClick="{{ a.dismiss }}" style="min-height:42px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:12px;">{{ t.alDismiss }}</button>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ showEntry }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Entry OCR" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:8px;">
+    <button onClick="{{ setTabManual }}" style="min-height:46px;padding:0 20px;border-radius:12px;border:1px solid {{ enTabMB }};background:{{ enTabMBg }};color:{{ enTabMC }};font-size:13.5px;font-weight:700;">{{ t.enManual }}</button>
+    <button onClick="{{ setTabOcr }}" style="min-height:46px;padding:0 20px;border-radius:12px;border:1px solid {{ enTabOB }};background:{{ enTabOBg }};color:{{ enTabOC }};font-size:13.5px;font-weight:700;">{{ t.enOcr }}</button>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;background:var(--surface2);border:1px solid var(--line2);border-radius:10px;padding:10px 14px;color:var(--gold);font-size:12px;font-weight:600;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>{{ t.l4Note }}
+  </div>
+  <sc-if value="{{ isManual }}" hint-placeholder-val="{{ true }}">
+  <div style="display:grid;grid-template-columns:{{ gridEntry }};gap:16px;align-items:start;">
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:16px;">
+      <label style="display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12.5px;">{{ t.enItem }}
+        <select value="{{ enItem }}" onChange="{{ setEnItem }}" style="min-height:46px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:11px;padding:0 12px;font-size:14px;">
+          <sc-for list="{{ itemOpts }}" as="o" hint-placeholder-count="8"><option value="{{ o.id }}">{{ o.name }}</option></sc-for>
+        </select>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label style="display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12.5px;">{{ t.enBatch }}
+          <input value="{{ enBatch }}" onChange="{{ setEnBatch }}" placeholder="LOT-…" style="min-height:46px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:0 12px;color:var(--text);font-family:Inter;font-size:14px;" style-focus="border-color:var(--cyan);">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12.5px;">{{ t.enExpiry }}
+          <input type="date" value="{{ enExp }}" onChange="{{ setEnExp }}" style="min-height:46px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:0 12px;color:var(--text);font-family:Inter;font-size:14px;" style-focus="border-color:var(--cyan);">
+        </label>
+      </div>
+      <label style="display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12.5px;">{{ t.enQty }}
+        <input type="number" min="1" value="{{ enQty }}" onChange="{{ setEnQty }}" placeholder="0" style="min-height:46px;background:var(--field);border:1.5px solid {{ enQtyBorder }};border-radius:11px;padding:0 12px;color:var(--text);font-family:Inter;font-size:15px;" style-focus="border-color:var(--cyan);">
+        <span style="color:{{ enQtyMsgC }};font-size:11.5px;">{{ enQtyMsg }}</span>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12.5px;">{{ t.enSource }}
+        <select value="{{ enSrc }}" onChange="{{ setEnSrc }}" style="min-height:46px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:11px;padding:0 12px;font-size:14px;">
+          <option value="supplier">{{ t.enSrcSupplier }}</option><option value="donation">{{ t.enSrcDonation }}</option><option value="correction">{{ t.enSrcCorrection }}</option>
+        </select>
+      </label>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--line2);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.enSummary }}</div>
+      <sc-for list="{{ enSummaryRows }}" as="r" hint-placeholder-count="4">
+        <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;"><span style="color:var(--muted);">{{ r.k }}</span><span style="color:var(--text);font-weight:600;text-align:end;">{{ r.v }}</span></div>
+      </sc-for>
+      <button onClick="{{ saveEntry }}" style="min-height:48px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;margin-top:6px;">{{ t.enSave }}</button>
+      <div style="color:var(--muted);font-size:11px;line-height:1.7;">{{ t.enDirty }}</div>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ isOcr }}" hint-placeholder-val="{{ false }}">
+    <sc-if value="{{ ocrIdle }}" hint-placeholder-val="{{ true }}">
+      <div style="border:1.5px dashed var(--line);border-radius:16px;background:var(--surface);padding:44px 24px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="var(--cyanDim)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V4h3M17 4h3v3M21 17v3h-3M7 20H4v-3M7 12h10"></path></svg>
+        <div style="font-size:15.5px;font-weight:700;color:var(--text);">{{ t.ocrDrop }}</div>
+        <div style="color:var(--muted);font-size:12.5px;max-width:420px;line-height:1.9;">{{ t.ocrCam }}</div>
+        <button onClick="{{ startOcr }}" style="min-height:48px;padding:0 26px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;">{{ t.ocrBtn }}</button>
+        <div style="color:var(--muted);font-size:11px;">{{ t.ocrTransient }}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ ocrProc }}" hint-placeholder-val="{{ false }}">
+      <div aria-busy="true" style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:16px;">
+        <div style="width:min(380px,80%);height:8px;background:var(--surface2);border-radius:5px;overflow:hidden;"><div style="height:8px;width:40%;border-radius:5px;background:linear-gradient(90deg,var(--teal),var(--cyan));animation:shimmer 1.2s linear infinite;background-size:300% 100%;"></div></div>
+        <div style="color:var(--muted);font-size:13px;">{{ t.ocrProcessing }}</div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ ocrReview }}" hint-placeholder-val="{{ false }}">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;align-items:center;color:var(--warn);font-size:12.5px;font-weight:700;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"></path></svg>{{ t.ocrHuman }}
+        </div>
+        <div style="display:grid;grid-template-columns:{{ gridOcr }};gap:12px;">
+          <sc-for list="{{ ocrFields }}" as="f" hint-placeholder-count="5">
+            <div style="background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);font-size:11.5px;">{{ f.label }}</span><span style="color:{{ f.cc }};font-size:11px;font-family:Inter;font-weight:700;">{{ f.conf }}</span></div>
+              <input value="{{ f.val }}" readOnly style="min-height:42px;background:var(--field);border:1.5px solid {{ f.border }};border-radius:9px;padding:0 10px;color:var(--text);font-family:Inter;font-size:13.5px;">
+              <div style="height:4px;background:var(--field);border-radius:3px;overflow:hidden;"><div style="height:4px;width:{{ f.conf }};background:{{ f.cc }};border-radius:3px;"></div></div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="color:var(--muted);font-size:11.5px;">{{ t.ocrNational }} · {{ t.ocrTransient }}</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button onClick="{{ redoOcr }}" style="min-height:46px;padding:0 18px;border:1px solid var(--line);border-radius:11px;background:transparent;color:var(--muted);font-size:13.5px;">{{ t.ocrRedo }}</button>
+          <button onClick="{{ approveOcr }}" style="min-height:46px;padding:0 24px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--teal),var(--cyanDim));color:#fff;font-weight:700;font-size:14px;">{{ t.ocrApprove }}</button>
+        </div>
+      </div>
+    </sc-if>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showInstitutions }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Institutions" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="background:var(--surface);border:1.5px solid var(--line2);border-radius:16px;padding:18px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+    <div style="width:44px;height:44px;border-radius:12px;background:var(--chipW);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5m0 0 9-5m-9 5v8"></path></svg>
+    </div>
+    <div style="min-width:0;flex:1;">
+      <div style="font-size:16px;font-weight:700;color:var(--text);">مخازن قسم الصيدلة - دائرة صحة بابل</div>
+      <div style="color:var(--gold);font-size:11.5px;margin-top:2px;">{{ t.centralChip }}</div>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;">
+      <div style="text-align:center;"><div style="font-family:Inter;font-size:19px;font-weight:700;color:var(--text);">312</div><div style="color:var(--muted);font-size:10.5px;">{{ t.instItems }}</div></div>
+      <div style="text-align:center;"><div style="font-family:Inter;font-size:19px;font-weight:700;color:var(--teal);">96%</div><div style="color:var(--muted);font-size:10.5px;">{{ t.instHealth }}</div></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:{{ gridInst }};gap:14px;">
+    <sc-for list="{{ instCards }}" as="i" hint-placeholder-count="4">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:16px 18px;display:flex;flex-direction:column;gap:11px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+          <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.6;">{{ i.name }}</div>
+          <button onClick="{{ i.rename }}" title="{{ t.instRename }}" aria-label="{{ t.instRename }}" style="min-width:40px;min-height:40px;border:1px solid var(--line);border-radius:9px;background:var(--field);color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--cyanDim);font-size:12.5px;font-weight:600;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"></path></svg>{{ i.store }}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <sc-for list="{{ i.outlets }}" as="o" hint-placeholder-count="3">
+            <span style="background:var(--chip);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:11px;">{{ o }}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:16px;border-top:1px solid var(--line);padding-top:10px;">
+          <span style="color:var(--muted);font-size:11.5px;">{{ t.instItems }}: <b style="font-family:Inter;color:var(--text);">{{ i.items }}</b></span>
+          <span style="color:var(--muted);font-size:11.5px;">{{ t.instHealth }}: <b style="font-family:Inter;color:{{ i.hc }};">{{ i.health }}</b></span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="color:var(--muted);font-size:11.5px;">{{ t.renameNote }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showUsers }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Users" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="color:var(--muted);font-size:12.5px;background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:10px 15px;">{{ t.usersNote }}</div>
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+    <sc-for list="{{ usersRows }}" as="u" hint-placeholder-count="5">
+      <div style="display:flex;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;">
+        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--cyanDim));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;">{{ u.initial }}</div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:13.5px;font-weight:700;color:var(--text);">{{ u.name }}</div>
+          <div style="color:var(--muted);font-size:11.5px;">{{ u.scope }}</div>
+        </div>
+        <span style="background:{{ u.roleBg }};color:{{ u.roleC }};border-radius:7px;padding:4px 11px;font-size:11.5px;font-weight:600;flex-shrink:0;font-family:Inter;">{{ u.role }}</span>
+        <span style="display:flex;align-items:center;gap:6px;color:{{ u.stC }};font-size:11.5px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:{{ u.stC }};"></span>{{ u.stL }}</span>
+        <button onClick="{{ u.edit }}" style="min-height:42px;padding:0 15px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--cyanDim);font-size:12px;font-weight:600;flex-shrink:0;">{{ t.uEdit }}</button>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+<sc-if value="{{ uSelOn }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:45;">
+    <div onClick="{{ closeUser }}" style="position:absolute;inset:0;background:rgba(3,7,13,.55);"></div>
+    <div style="position:absolute;top:0;bottom:0;inset-inline-end:0;width:min(400px,100vw);background:var(--surface);border-inline-start:1px solid var(--line2);overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:16px;animation:fadeUp 240ms ease;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:17px;font-weight:700;color:var(--text);">{{ t.roleEditor }}</div>
+        <button onClick="{{ closeUser }}" aria-label="Close" style="min-width:44px;min-height:44px;background:var(--field);border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:16px;">✕</button>
+      </div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);">{{ uSelName }}</div>
+      <div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.uRole }}</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <sc-for list="{{ roleOpts }}" as="r" hint-placeholder-count="4">
+            <button onClick="{{ r.set }}" style="display:flex;align-items:center;gap:10px;min-height:46px;padding:0 14px;border:1.5px solid {{ r.bc }};border-radius:11px;background:{{ r.bg }};color:var(--text);font-size:13px;font-weight:600;text-align:start;">
+              <span style="width:16px;height:16px;border-radius:50%;border:2px solid {{ r.dotB }};background:{{ r.dot }};flex-shrink:0;"></span>{{ r.label }}
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.uScope }}</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          <sc-for list="{{ scopeOpts }}" as="sc" hint-placeholder-count="4">
+            <button onClick="{{ sc.set }}" style="display:flex;align-items:center;gap:10px;min-height:46px;padding:0 14px;border:1px solid {{ sc.bc }};border-radius:11px;background:{{ sc.bg }};color:var(--text);font-size:12.5px;text-align:start;">
+              <span style="width:16px;height:16px;border-radius:5px;border:2px solid {{ sc.dotB }};background:{{ sc.dot }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;">{{ sc.check }}</span>{{ sc.label }}
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <button onClick="{{ saveUser }}" style="min-height:48px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;margin-top:auto;">{{ t.uSave }}</button>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ showReports }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Reports" style="display:grid;grid-template-columns:{{ gridReports }};gap:16px;align-items:start;">
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px;">
+    <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.repBuilder }}</div>
+    <label style="display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:12px;">{{ t.repTypeL }}
+      <select value="{{ repType }}" onChange="{{ setRepType }}" style="min-height:44px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:0 10px;font-size:13px;">
+        <option value="stock">{{ t.repTypeStock }}</option><option value="expiry">{{ t.repTypeExpiry }}</option><option value="moves">{{ t.repTypeMoves }}</option>
+      </select>
+    </label>
+    <label style="display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:12px;">{{ t.repGroupL }}
+      <select value="{{ repGroup }}" onChange="{{ setRepGroup }}" style="min-height:44px;background:var(--field);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:0 10px;font-size:13px;">
+        <option value="inst">{{ t.grpInst }}</option><option value="item">{{ t.grpItem }}</option><option value="none">{{ t.grpNone }}</option>
+      </select>
+    </label>
+    <div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.repColsL }}</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <sc-for list="{{ repColOpts }}" as="c" hint-placeholder-count="5">
+          <button onClick="{{ c.toggle }}" style="display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border:1px solid {{ c.bc }};border-radius:10px;background:{{ c.bg }};color:var(--text);font-size:12.5px;text-align:start;">
+            <span style="width:16px;height:16px;border-radius:5px;border:2px solid {{ c.dotB }};background:{{ c.dot }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;flex-shrink:0;">{{ c.check }}</span>{{ c.label }}
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display:flex;gap:9px;">
+      <button onClick="{{ repExcel }}" style="flex:1;min-height:46px;border:1px solid rgba(47,191,143,.4);border-radius:11px;background:rgba(47,191,143,.1);color:var(--ok);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5zM14 3v5h5M9 12l6 6m0-6-6 6"></path></svg>Excel</button>
+      <button onClick="{{ repPrint }}" style="flex:1;min-height:46px;border:1px solid var(--line);border-radius:11px;background:var(--chip);color:var(--cyanDim);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6v-7z"></path></svg>{{ t.repPrint }}</button>
+    </div>
+    <div style="color:var(--muted);font-size:11px;line-height:1.7;">{{ t.repNote }}</div>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #D8E2EC;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:2px solid #DDBA63;">
+      <img src="uploads/phoenix-ui-next/design/phoenix-source/phoenix-app-icon-master.png" alt="" style="width:38px;height:38px;border-radius:9px;object-fit:cover;">
+      <div style="flex:1;"><div style="color:#122335;font-weight:700;font-size:14px;">دائرة صحة بابل - قسم الصيدلة</div><div style="color:#546B82;font-size:11px;">{{ repTitle }} · 2026-07-19</div></div>
+      <div style="color:#8F7228;font-size:10px;font-family:Inter;letter-spacing:1px;">MEDISTOCK PHOENIX</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <div style="display:grid;grid-template-columns:{{ repGridCols }};gap:8px;padding:10px 20px;background:#F5F8FC;border-bottom:1px solid #D8E2EC;color:#546B82;font-size:11px;font-weight:700;">
+        <sc-for list="{{ repHead }}" as="h" hint-placeholder-count="4"><div>{{ h }}</div></sc-for>
+      </div>
+      <sc-for list="{{ repRows }}" as="r" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:{{ repGridCols }};gap:8px;padding:9px 20px;border-bottom:1px solid #EDF2F7;color:#122335;font-size:12px;">
+          <sc-for list="{{ r.cells }}" as="cell" hint-placeholder-count="4"><div style="font-family:Inter;">{{ cell }}</div></sc-for>
+        </div>
+      </sc-for>
+      <div style="display:flex;justify-content:space-between;padding:11px 20px;background:#FBF7EC;color:#8F7228;font-size:12px;font-weight:700;">
+        <span>{{ t.totalRow }}</span><span style="font-family:Inter;">{{ repTotalQty }}</span>
+      </div>
+    </div>
+    <div style="padding:10px 20px;color:#8AA0B6;font-size:10px;display:flex;justify-content:space-between;"><span>{{ t.repFooter }}</span><span style="font-family:Inter;">1 / 1</span></div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showSearch }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Global Search" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:10px;align-items:center;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:6px 16px;">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--cyanDim)" stroke-width="1.75" stroke-linecap="round"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.35-4.35"></path></svg>
+    <input value="{{ searchQ }}" onChange="{{ setSearchQ }}" placeholder="{{ t.seaPh }}" style="flex:1;min-height:48px;background:transparent;border:none;color:var(--text);font-size:15px;outline:none;">
+    <span style="background:var(--chipW);color:var(--warn);border-radius:6px;padding:3px 9px;font-size:10.5px;flex-shrink:0;">super_admin</span>
+  </div>
+  <sc-if value="{{ seaHasQ }}" hint-placeholder-val="{{ false }}">
+    <sc-for list="{{ seaGroups }}" as="g" hint-placeholder-count="3">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:15px;overflow:hidden;">
+        <div style="padding:11px 16px;border-bottom:1px solid var(--line);color:var(--gold);font-size:12px;font-weight:700;display:flex;gap:8px;">{{ g.label }} <span style="font-family:Inter;color:var(--muted);">{{ g.n }}</span></div>
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+          <button onClick="{{ r.open }}" style="width:100%;display:flex;gap:10px;align-items:center;padding:11px 16px;border:none;border-bottom:1px solid var(--line);background:transparent;text-align:start;cursor:pointer;" style-hover="background:var(--hover);">
+            <div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:600;color:var(--text);">{{ r.title }}</div><div style="color:var(--muted);font-size:11.5px;">{{ r.sub }}</div></div>
+            <span style="color:var(--cyanDim);font-size:11.5px;flex-shrink:0;">{{ t.seaOpen }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </sc-for>
+    <sc-if value="{{ seaEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="border:1px dashed var(--line);border-radius:15px;padding:34px;text-align:center;color:var(--muted);font-size:13.5px;background:var(--surface);">{{ t.seaNoRes }}</div>
+    </sc-if>
+  </sc-if>
+  <sc-if value="{{ seaIdle }}" hint-placeholder-val="{{ true }}">
+    <div style="border:1px dashed var(--line);border-radius:15px;padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:2;background:var(--surface);">{{ t.seaHint }}</div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showAudit }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Audit" style="display:flex;flex-direction:column;gap:14px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <sc-for list="{{ audTabs }}" as="tb" hint-placeholder-count="3">
+      <button onClick="{{ tb.set }}" style="min-height:46px;padding:0 18px;border-radius:12px;border:1px solid {{ tb.bc }};background:{{ tb.bg }};color:{{ tb.c }};font-size:13.5px;font-weight:{{ tb.w }};">{{ tb.label }}</button>
+    </sc-for>
+  </div>
+  <sc-if value="{{ audIsApprovals }}" hint-placeholder-val="{{ true }}">
+    <sc-for list="{{ approvalRows }}" as="p" hint-placeholder-count="3">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:15px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <div style="min-width:0;flex:1;"><div style="font-size:14px;font-weight:700;color:var(--text);">{{ p.title }}</div><div style="color:var(--muted);font-size:12px;margin-top:3px;">{{ p.sub }}</div></div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button onClick="{{ p.reject }}" style="min-height:44px;padding:0 16px;border:1px solid rgba(255,107,107,.35);border-radius:10px;background:var(--chipD);color:var(--danger);font-weight:600;font-size:12.5px;">{{ t.audReject }}</button>
+          <button onClick="{{ p.approve }}" style="min-height:44px;padding:0 20px;border:none;border-radius:10px;background:linear-gradient(92deg,var(--teal),var(--cyanDim));color:#fff;font-weight:700;font-size:12.5px;">{{ t.audApprove }}</button>
+        </div>
+      </div>
+    </sc-for>
+  </sc-if>
+  <sc-if value="{{ audIsLog }}" hint-placeholder-val="{{ false }}">
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+      <sc-for list="{{ auditRows }}" as="a" hint-placeholder-count="5">
+        <div style="display:flex;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="{{ a.c }}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="{{ a.icon }}"></path></svg>
+          <div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:600;color:var(--text);">{{ a.act }}</div><div style="color:var(--muted);font-size:11.5px;">{{ a.by }} · {{ a.scope }}</div></div>
+          <span style="color:var(--muted);font-size:11px;font-family:Inter;flex-shrink:0;">{{ a.time }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+  <sc-if value="{{ audIsQr }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:{{ gridQr }};gap:16px;align-items:start;">
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center;">
+        <svg width="110" height="110" viewBox="0 0 90 90" role="img" aria-label="QR" style="border-radius:10px;background:#fff;padding:8px;">
+          <rect x="4" y="4" width="22" height="22" fill="#122335"></rect><rect x="9" y="9" width="12" height="12" fill="#fff"></rect><rect x="12" y="12" width="6" height="6" fill="#122335"></rect>
+          <rect x="64" y="4" width="22" height="22" fill="#122335"></rect><rect x="69" y="9" width="12" height="12" fill="#fff"></rect><rect x="72" y="12" width="6" height="6" fill="#122335"></rect>
+          <rect x="4" y="64" width="22" height="22" fill="#122335"></rect><rect x="9" y="69" width="12" height="12" fill="#fff"></rect><rect x="12" y="72" width="6" height="6" fill="#122335"></rect>
+          <rect x="34" y="8" width="6" height="6" fill="#122335"></rect><rect x="46" y="14" width="6" height="6" fill="#122335"></rect><rect x="34" y="26" width="6" height="6" fill="#122335"></rect><rect x="52" y="30" width="6" height="6" fill="#122335"></rect><rect x="34" y="44" width="6" height="6" fill="#122335"></rect><rect x="44" y="44" width="10" height="6" fill="#122335"></rect><rect x="64" y="40" width="6" height="6" fill="#122335"></rect><rect x="76" y="48" width="6" height="6" fill="#122335"></rect><rect x="40" y="58" width="6" height="6" fill="#122335"></rect><rect x="54" y="62" width="6" height="6" fill="#122335"></rect><rect x="66" y="70" width="6" height="6" fill="#122335"></rect><rect x="36" y="74" width="10" height="6" fill="#122335"></rect><rect x="56" y="78" width="6" height="6" fill="#122335"></rect><rect x="78" y="62" width="6" height="6" fill="#122335"></rect>
+        </svg>
+        <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.qrTitle }}</div>
+        <input value="{{ qrVal }}" onChange="{{ setQr }}" placeholder="TRF-2607-114" style="width:100%;min-height:46px;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:0 12px;color:var(--text);font-family:Inter;font-size:14px;text-align:center;" style-focus="border-color:var(--cyan);">
+        <button onClick="{{ qrCheckFn }}" style="width:100%;min-height:46px;border:none;border-radius:11px;background:var(--chip);border:1px solid var(--line);color:var(--cyanDim);font-weight:700;font-size:13.5px;">{{ t.qrCheck }}</button>
+        <sc-if value="{{ qrRes }}" hint-placeholder-val="{{ false }}">
+          <div style="width:100%;background:rgba(47,191,143,.1);border:1px solid rgba(47,191,143,.4);border-radius:11px;padding:11px;color:var(--ok);font-size:12.5px;font-weight:600;">{{ qrRes }}</div>
+        </sc-if>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;">
+        <div style="padding:13px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px;color:var(--text);">{{ t.qrRecent }}</div>
+        <sc-for list="{{ qrRecent }}" as="q" hint-placeholder-count="3">
+          <div style="display:flex;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);">
+            <span style="font-family:Inter;font-size:12px;color:var(--cyanDim);background:var(--chip);border-radius:6px;padding:3px 9px;flex-shrink:0;">{{ q.ref }}</span>
+            <div style="min-width:0;flex:1;color:var(--text);font-size:12.5px;">{{ q.txt }}</div>
+            <span style="color:{{ q.c }};font-size:11.5px;font-weight:700;flex-shrink:0;">{{ q.st }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showSettings }}" hint-placeholder-val="{{ false }}">
+<div data-screen-label="Settings" style="display:flex;flex-direction:column;gap:14px;max-width:760px;">
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+    <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--cyanDim));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;flex-shrink:0;">ع</div>
+    <div style="min-width:0;flex:1;">
+      <div style="font-size:15.5px;font-weight:700;color:var(--text);">{{ t.demoUser }}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:2px;">super_admin · {{ t.scopeLine }}</div>
+    </div>
+    <button onClick="{{ logout }}" style="min-height:44px;padding:0 18px;border:1px solid rgba(255,107,107,.35);border-radius:10px;background:var(--chipD);color:var(--danger);font-size:12.5px;font-weight:600;">{{ t.logout }}</button>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
+    <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.seDisplay }}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.seLang }}</div>
+        <div style="display:flex;gap:7px;">
+          <sc-for list="{{ langOpts }}" as="o" hint-placeholder-count="2"><button onClick="{{ o.set }}" style="flex:1;min-height:46px;border:1.5px solid {{ o.bc }};border-radius:11px;background:{{ o.bg }};color:var(--text);font-size:13px;font-weight:600;">{{ o.label }}</button></sc-for>
+        </div>
+      </div>
+      <div style="flex:1;min-width:200px;">
+        <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.seTheme }}</div>
+        <div style="display:flex;gap:7px;">
+          <sc-for list="{{ themeOpts }}" as="o" hint-placeholder-count="2"><button onClick="{{ o.set }}" style="flex:1;min-height:46px;border:1.5px solid {{ o.bc }};border-radius:11px;background:{{ o.bg }};color:var(--text);font-size:13px;font-weight:600;">{{ o.label }}</button></sc-for>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px;">{{ t.seFx }}</div>
+      <div style="display:grid;grid-template-columns:{{ gridFx }};gap:7px;">
+        <sc-for list="{{ fxOpts }}" as="o" hint-placeholder-count="4">
+          <button onClick="{{ o.set }}" style="min-height:56px;border:1.5px solid {{ o.bc }};border-radius:11px;background:{{ o.bg }};color:var(--text);font-size:12.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px;"><span>{{ o.label }}</span><span style="color:var(--muted);font-size:10px;font-weight:400;">{{ o.desc }}</span></button>
+        </sc-for>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-top:8px;line-height:1.7;">{{ t.seFxNote }}</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding-top:14px;flex-wrap:wrap;">
+      <div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:600;color:var(--text);">{{ t.seWelcome }}</div><div style="color:var(--muted);font-size:11.5px;">{{ t.seWelcomeSub }}</div></div>
+      <button onClick="{{ replayWelcome }}" style="min-height:44px;padding:0 18px;border:1px solid var(--line2);border-radius:10px;background:var(--chipW);color:var(--gold);font-size:12.5px;font-weight:600;">{{ t.seReplay }}</button>
+    </div>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;">
+    <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.seNotif }}</div>
+    <sc-for list="{{ notifOpts }}" as="n" hint-placeholder-count="3">
+      <div style="display:flex;gap:12px;align-items:center;padding:7px 0;">
+        <div style="min-width:0;flex:1;color:var(--text);font-size:13px;">{{ n.label }}</div>
+        <button onClick="{{ n.toggle }}" role="switch" aria-checked="{{ n.ariaOn }}" style="width:46px;height:26px;border-radius:14px;border:1px solid {{ n.bc }};background:{{ n.bg }};position:relative;flex-shrink:0;padding:0;">
+          <span style="position:absolute;top:2px;inset-inline-start:{{ n.knob }};width:20px;height:20px;border-radius:50%;background:#fff;transition:inset-inline-start 160ms;box-shadow:0 1px 3px rgba(0,0,0,.3);"></span>
+        </button>
+      </div>
+    </sc-for>
+    <div style="color:var(--muted);font-size:11.5px;line-height:1.8;">{{ t.seNotifNote }}</div>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+    <div style="font-weight:700;font-size:14.5px;color:var(--text);">{{ t.seAi }}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <span style="background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:12px;color:var(--muted);font-family:Inter;">ChatGPT</span>
+      <span style="background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:12px;color:var(--muted);font-family:Inter;">Claude</span>
+      <span style="background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:12px;color:var(--muted);font-family:Inter;">Grok</span>
+    </div>
+    <div style="color:var(--muted);font-size:12px;line-height:1.9;">{{ t.seAiNote }}</div>
+    <button disabled style="min-height:44px;padding:0 18px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);color:var(--muted);font-size:12.5px;cursor:not-allowed;align-self:flex-start;">{{ t.seAiConnect }}</button>
+  </div>
+</div>
+</sc-if>
+
+
+      </sc-if>
+    </div>
+    <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+      <nav aria-label="Bottom" style="position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom));">
+        <sc-for list="{{ navBottom }}" as="b" hint-placeholder-count="5">
+          <button onClick="{{ b.go }}" style="flex:1;min-height:52px;background:none;border:none;color:{{ b.c }};display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:{{ b.w }};">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ b.icon }}"></path></svg>{{ b.label }}
+          </button>
+        </sc-for>
+      </nav>
+    </sc-if>
+    <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;inset:0;z-index:40;">
+        <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:rgba(3,7,13,.6);"></div>
+        <div style="position:absolute;bottom:0;left:0;right:0;background:var(--surface);border-radius:20px 20px 0 0;border-top:1px solid var(--line2);padding:16px 16px calc(20px + env(safe-area-inset-bottom));max-height:75vh;overflow-y:auto;animation:dialogIn 260ms cubic-bezier(.2,.8,.2,1);">
+          <div style="width:44px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px;"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <sc-for list="{{ navAll }}" as="it" hint-placeholder-count="10">
+              <button onClick="{{ it.go }}" style="display:flex;align-items:center;gap:10px;min-height:50px;padding:0 14px;border:1px solid {{ it.dBorder }};border-radius:12px;background:{{ it.bg }};color:{{ it.c }};font-size:13px;font-weight:600;text-align:start;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{ it.icon }}"></path></svg>{{ it.label }}
+              </button>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ dialogOpen }}" hint-placeholder-val="{{ false }}">
+      <div role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;">
+        <div onClick="{{ cancelDialog }}" style="position:absolute;inset:0;background:rgba(3,7,13,.65);"></div>
+        <div style="position:relative;width:min(520px,100%);background:var(--surface);border:1px solid var(--line2);border-radius:18px;padding:22px;box-shadow:var(--shadow);animation:dialogIn 240ms cubic-bezier(.2,.8,.2,1);">
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;">
+            <div style="width:42px;height:42px;border-radius:12px;background:var(--chipW);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3z"></path><path d="M12 10v4M12 17.2v.1"></path></svg>
+            </div>
+            <div><div style="font-size:16.5px;font-weight:700;color:var(--text);">{{ dlgTitle }}</div><div style="color:var(--muted);font-size:12px;">{{ t.confirmSub }}</div></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:4px 16px;margin-bottom:12px;">
+            <sc-for list="{{ dlgRows }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;">
+                <span style="color:var(--muted);">{{ r.k }}</span><span style="color:var(--text);font-weight:600;text-align:end;">{{ r.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="background:var(--chipD);border:1px solid rgba(255,107,107,.3);border-radius:12px;padding:12px 14px;color:var(--danger);font-size:12.5px;line-height:1.8;margin-bottom:16px;">{{ dlgConsequence }}</div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button onClick="{{ cancelDialog }}" style="min-height:46px;padding:0 20px;background:transparent;border:1px solid var(--line);border-radius:11px;color:var(--muted);font-size:14px;">{{ t.cancel }}</button>
+            <button onClick="{{ confirmDialog }}" style="min-height:46px;padding:0 24px;border:none;border-radius:11px;background:linear-gradient(92deg,var(--ember),var(--ember2));color:#fff;font-weight:700;font-size:14px;">{{ dlgCta }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="position:fixed;bottom:{{ toastBottom }};left:50%;transform:translateX(-50%);z-index:60;background:var(--surface);border:1px solid rgba(47,191,143,.4);border-radius:12px;padding:12px 20px;display:flex;gap:10px;align-items:center;box-shadow:var(--shadow);animation:toastIn 240ms cubic-bezier(.2,.8,.2,1);max-width:90vw;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg>
+        <span style="color:var(--text);font-size:13.5px;font-weight:600;">{{ toast }}</span>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {
+    lang: 'ar', theme: 'dark', effects: 'auto', phase: 'login', nav: 'dashboard', demoState: 'populated',
+    isMobile: typeof window !== 'undefined' ? window.innerWidth < 860 : false,
+    reducedPref: false, fxPaused: false,
+    user: '', pass: '', loginErr: '',
+    kpiT: 1,
+    twinSel: null, twinQ: '', twinFilter: 'all', twinZoom: 1, twin3d: true, webglOK: null,
+    invQ: '', invStatus: 'all', invSel: null,
+    movType: 'all',
+    trTab: 'central', tStep: 1, tDest: 0, tQtys: {}, tDone: false,
+    retDisp: {}, ocrStage: 'idle',
+    usersSel: null, entryTab: 'manual',
+    repType: 'stock', repGroup: 'inst', repCols: { name: true, qty: true, expiry: true, inst: true, batch: false },
+    searchQ: '', auditTab: 'approvals',
+    dialog: null, toast: '', pendingIds: [101, 102], accepted: [], dismissed: [],
+    settingsSaved: false,
+    enItem: '3', enBatch: '', enExp: '', enQty: '', enSrc: 'supplier',
+    qrVal: '', qrRes: '',
+    uRoleDraft: 'roleKeep', uScopes: [2],
+    notif: { near: true, low: true, pending: true }
+  };
+
+  AR = {
+    appName: 'MediStock Phoenix', org: 'دائرة صحة بابل - قسم الصيدلة',
+    loginHeroTitle: 'منظومة الإمداد الدوائي الموحدة لمخازن قسم الصيدلة', loginHeroSub: 'رصيد حي، دفعات FEFO، تحويلات موثقة، وتنبيهات ذكية — من المخزن المركزي حتى المنفذ.',
+    loginTitle: 'تسجيل الدخول', loginSub: 'ادخل بحسابك المؤسسي للمتابعة', username: 'اسم المستخدم', password: 'كلمة المرور', loginBtn: 'دخول', demoQuick: 'دخول تجريبي سريع', roleKeeper: 'مسؤول مذخر',
+    demoNote: 'نسخة عرض مستقلة — كل البيانات fixtures موسومة "بيانات تجريبية". لا اتصال بأي خادم إنتاجي ولا مفاتيح.',
+    loginErrMsg: 'أدخل اسم المستخدم وكلمة المرور، أو استخدم الدخول التجريبي.',
+    skip: 'تخطي', continueBtn: 'متابعة',
+    navAdmin: 'الإدارة والنظام', demoUser: 'عبدالله جواد', demoBadge: 'بيانات تجريبية', logout: 'خروج',
+    scopeLine: 'النطاق: مخازن قسم الصيدلة - دائرة صحة بابل · super_admin',
+    demoState: 'حالة العرض', stPopulated: 'بيانات', stLoading: 'تحميل', stEmpty: 'فارغ', stError: 'خطأ', stDenied: 'صلاحية', stOffline: 'دون اتصال', stStale: 'قديم',
+    fxAuto: 'مؤثرات: تلقائي', fxCinematic: 'مؤثرات: سينمائي', fxReduced: 'مؤثرات: مخفف', fxOff: 'مؤثرات: إيقاف',
+    offlineBanner: 'لا يوجد اتصال — تعرض بيانات محفوظة محليًا، وستُزامن التغييرات عند عودة الاتصال.',
+    staleBanner: 'إعادة الاتصال… البيانات المعروضة آخر نسخة مؤكدة قبل 6 دقائق.',
+    loadingHint: 'جارٍ تحميل بيانات النطاق…',
+    errorTitle: 'تعذر تحميل البيانات', errorBody: 'حدث خطأ أثناء جلب بيانات هذه الشاشة. لم يفقد أي إدخال محلي. أعد المحاولة أو عد للوحة المعلومات.', retry: 'إعادة المحاولة', backHome: 'لوحة المعلومات', errorRef: 'أرسل هذا الرمز للدعم',
+    deniedTitle: 'خارج نطاق صلاحيتك', deniedBody: 'هذه الشاشة تتطلب صلاحية أعلى أو نطاقًا مختلفًا. لا يعرض النظام إلا بيانات النطاقات المسندة إليك.', deniedScope: 'نطاقك الحالي: مذخر مستشفى بابل التعليمي · دور: مسؤول مذخر',
+    emptyGeneric: 'لا توجد سجلات بعد', emptyBodyGeneric: 'لم تصل أي بيانات لهذا النطاق حتى الآن. ابدأ بإضافة إدخال جديد أو استقبل تحويلًا واردًا.', emptyCtaGeneric: 'إدخال جديد',
+    dashboardTitle: 'لوحة المعلومات', heroSub: 'ملخص حي لنطاقك · السبت 19 تموز 2026 · آخر تحديث قبل 40 ثانية',
+    health: 'صحة المخزون', kMoves: 'حركة اليوم', kPending: 'بانتظار القبول',
+    kNear: 'قرب انتهاء ≤270 يومًا', kNearSub: 'دفعة تحتاج قرار FEFO', kLow: 'ناقص عن الحد', kLowSub: 'مادة تحت حد مسؤول المذخر', kMissing: 'مفقود (رصيد صفر)', kMissingSub: 'مادة متوقعة برصيد 0', kSurplus: 'فائض', kSurplusSub: 'مادة فوق الحد الأعلى',
+    alertsIntel: 'ذكاء التنبيهات', viewAll: 'عرض الكل', recentMoves: 'أحدث الحركات', expiryRadar: 'رادار الانتهاء', days: 'يومًا', reviewNear: 'مراجعة دفعات قرب الانتهاء', stockHealth: 'صحة الرصيد حسب الفئة', approvalsQueue: 'موافقات معلقة', review: 'مراجعة',
+    confirmSub: 'راجع التفاصيل قبل التأكيد — إجراء حساس', cancel: 'إلغاء',
+    // screen titles
+    dashboardT: 'لوحة المعلومات', twinT: 'التوأم الرقمي', inventoryT: 'الرصيد والدفعات', movementsT: 'الحركات', transfersT: 'التحويلات', returnsT: 'المرتجعات', alertsT: 'التنبيهات', entryT: 'الإدخال وOCR', institutionsT: 'المؤسسات والمنافذ', usersT: 'المستخدمون والأدوار', reportsT: 'التقارير', searchT: 'البحث العام', auditT: 'الموافقات والتدقيق', settingsT: 'الإعدادات',
+    navDashboard: 'لوحة المعلومات', navTwin: 'التوأم الرقمي', navInventory: 'الرصيد والدفعات', navMovements: 'الحركات', navTransfers: 'التحويلات', navReturns: 'المرتجعات', navAlerts: 'التنبيهات', navEntry: 'الإدخال وOCR', navInstitutions: 'المؤسسات', navUsers: 'المستخدمون', navReports: 'التقارير', navSearch: 'البحث العام', navAudit: 'الموافقات والتدقيق', navSettings: 'الإعدادات', navMore: 'المزيد',
+    // twin
+    twinSearchPh: 'ابحث عن مؤسسة أو مذخر أو منفذ…', twinLegA: 'المركزية', twinLegB: 'مذخر مؤسسة', twinLegC: 'منفذ صرف', twinPulseNote: 'يحتاج انتباه',
+    twinHealthL: 'صحة الرصيد', twinNearL: 'قرب انتهاء', twinLowT: 'مواد تحت الحد', twinOpenStock: 'فتح الرصيد والدفعات', twinMakeTransfer: 'إنشاء تحويل لهذه الجهة',
+    twinSelectHint: 'اختر عقدة من الشبكة', twinHintBody: 'اضغط أي مؤسسة أو مذخر أو منفذ لعرض حالته الحية وإجراءاته.',
+    chAll: 'الكل', chCentral: 'المركزية', chStores: 'المذاخر', chOutlets: 'المنافذ',
+    // inventory
+    invSearchPh: 'ابحث بالاسم أو الرمز…', invCount: 'عنصر', colItem: 'المادة', colOnHand: 'الرصيد', colReserved: 'محجوز', colAvail: 'المتاح', colExpiry: 'أقرب انتهاء', colStatus: 'الحالة',
+    stOk: 'سليم', stNear: 'قرب انتهاء', stLow: 'ناقص', stMissing: 'مفقود', stSurplus: 'فائض',
+    availNote: 'المتاح = الرصيد − المحجوز. لا يُصرف أكثر من المتاح.', batchesT: 'الدفعات', fefoFirst: 'يُصرف أولًا', actAdjust: 'تصحيح رصيد', actQuar: 'حجر دفعة',
+    // movements
+    mvAll: 'الكل', mvTransfer: 'تحويل', mvIn: 'استلام', mvOut: 'صرف', mvReturn: 'مرتجع', mvAdjust: 'تصحيح',
+    stAccepted: 'مقبول', stQuarantine: 'حجر',
+    // transfers
+    trCentral: 'إنشاء تحويل', trReceive: 'الوارد للقبول', trStep1: 'الوجهة', trStep2: 'المواد والكميات', trStep3: 'المراجعة',
+    noRoutesNote: 'لا توجد مسارات إمداد ثابتة — اختر الوجهة يدويًا. المصدر دائمًا المخزن المركزي.',
+    l4Note: 'وضع الدقة القصوى مفعّل — أوقفت المؤثرات الخلفية لحماية إدخال الكميات.',
+    availLbl: 'المتاح', qtyLbl: 'الكمية', dlgSource: 'المصدر', dlgDest: 'الوجهة', reviewTotal: 'الإجمالي', receiveRule: 'لا يُضاف الرصيد للمستلم إلا بعد قبول صحيح للاستلام. الرفض أو النقص يبقي الرصيد بالمصدر.',
+    stepBack: 'السابق', stepNext: 'التالي', submitTransfer: 'تأكيد التحويل', rejectBtn: 'رفض', acceptBtn: 'قبول الاستلام', pendingEmptyMsg: 'لا يوجد وارد بانتظار القبول ضمن نطاقك.',
+    // returns
+    retNote: 'كل مرتجع يمر بقرار disposition صريح: إعادة للرصيد، حجر، أو إتلاف — مع أثر تدقيق.',
+    dispRestock: 'إعادة للرصيد', dispQuar: 'حجر', dispDispose: 'إتلاف', dispDo: 'تنفيذ',
+    // alerts
+    alertsScopeNote: 'تُعرض تنبيهات نطاقك فقط · قابلة للتخطي', alDismiss: 'تخطٍ',
+    // entry
+    enManual: 'إدخال يدوي', enOcr: 'مسح OCR', enItem: 'المادة', enBatch: 'رقم الدفعة', enExpiry: 'تاريخ الانتهاء', enQty: 'الكمية', enSource: 'مصدر الإدخال',
+    enSrcSupplier: 'استلام من مجهّز', enSrcDonation: 'تبرع', enSrcCorrection: 'تصحيح جرد', enSummary: 'ملخص الإدخال', enSave: 'حفظ الإدخال', enDirty: 'تُحفظ المسودة محليًا ولا تُرسل إلا بموافقتك.',
+    ocrDrop: 'أفلت صورة الفاتورة أو المستند هنا', ocrCam: 'أو استخدم الكاميرا لالتقاط الملصق. تُعالج الصورة محليًا للعرض فقط في هذه النسخة التجريبية.',
+    ocrBtn: 'محاكاة مسح مستند', ocrTransient: 'الصورة مؤقتة — لا تُخزَّن.', ocrProcessing: 'جارٍ استخراج الحقول…', ocrHuman: 'مراجعة بشرية إلزامية قبل الاعتماد', ocrNational: 'دواء ضمن القائمة الوطنية', ocrRedo: 'إعادة المسح', ocrApprove: 'اعتماد وإضافة',
+    ocrFItem: 'المادة', ocrFBatch: 'الدفعة', ocrFExp: 'الانتهاء', ocrFQty: 'الكمية', ocrFSup: 'المجهّز',
+    // institutions
+    centralChip: 'المخزن المركزي — قسم الصيدلة', instItems: 'المواد', instHealth: 'الصحة', instRename: 'إعادة تسمية', renameNote: 'إعادة التسمية متاحة حسب صلاحيتك وتُسجَّل في التدقيق. لا يمكن حذف المركزية.',
+    // users
+    usersNote: 'الأدوار تحدد ما يراه المستخدم؛ النطاق يحدد أي بيانات. كل تغيير يُسجَّل.',
+    uEdit: 'تعديل', roleEditor: 'محرر الدور والنطاق', uRole: 'الدور', uScope: 'النطاق', uSave: 'حفظ التغييرات',
+    roleSuper: 'super_admin', roleSup: 'إشراف', roleKeep: 'مسؤول مذخر', roleDisp: 'منفذ صرف',
+    stActive: 'نشط', stPaused: 'موقوف',
+    // reports
+    repBuilder: 'منشئ التقرير', repTypeL: 'نوع التقرير', repTypeStock: 'رصيد المخزون', repTypeExpiry: 'قرب الانتهاء', repTypeMoves: 'الحركات',
+    repGroupL: 'التجميع', grpInst: 'حسب المؤسسة', grpItem: 'حسب المادة', grpNone: 'بدون تجميع', repColsL: 'الأعمدة', repPrint: 'طباعة', repNote: 'المعاينة على اليمين تطابق مخرج الطباعة وExcel. بيانات تجريبية.',
+    colName: 'المادة', colQtyC: 'الكمية', colExpC: 'الانتهاء', colInst: 'المؤسسة', colBatchC: 'الدفعة', totalRow: 'الإجمالي', repFooter: 'دائرة صحة بابل - قسم الصيدلة · تقرير تجريبي',
+    // search
+    seaPh: 'ابحث في كل النطاقات: مواد، دفعات، تحويلات، مستخدمون…', seaOpen: 'فتح', seaNoRes: 'لا نتائج مطابقة.', seaHint: 'البحث العام متاح لـ super_admin فقط.\nاكتب اسم مادة أو رقم دفعة أو مرجع تحويل.',
+    seaGItems: 'مواد', seaGBatches: 'دفعات', seaGTransfers: 'تحويلات',
+    // audit
+    audApprovals: 'الموافقات', audLog: 'سجل التدقيق', audQr: 'تتبع QR', audApprove: 'موافقة', audReject: 'رفض',
+    qrTitle: 'تتبع حالة عبر QR', qrCheck: 'تحقق من الحالة', qrRecent: 'عمليات تتبع حديثة', qrResult: 'تحويل مقبول ومطابق — الرصيد أُضيف للوجهة.',
+    // settings
+    seDisplay: 'العرض واللغة', seLang: 'اللغة', seTheme: 'المظهر', seFx: 'مستوى المؤثرات', seThemeDark: 'ليلي', seThemeLight: 'نهاري',
+    seFxNote: 'التلقائي يقيس قدرة الجهاز ويحترم تفضيل تقليل الحركة في النظام. الإيقاف يعطّل كل الحركة غير الوظيفية.',
+    seWelcome: 'مشهد الترحيب Phoenix Rebirth', seWelcomeSub: 'يُعرض مرة كل جلسة — يمكنك إعادة تشغيله الآن.', seReplay: 'إعادة التشغيل',
+    seNotif: 'التنبيهات', seNotifNote: 'كل التنبيهات داخل النظام وضمن نطاقك فقط. لا رسائل واتساب ولا إشعارات خارجية.',
+    ntfNear: 'تنبيهات قرب الانتهاء', ntfLow: 'تنبيهات النقص والمفقود', ntfPending: 'تنبيهات وارد بانتظار القبول',
+    seAi: 'مساعد الذكاء الاصطناعي', seAiNote: 'الربط بمزوّد ذكاء يتم عبر الخادم لاحقًا فقط، دون مفاتيح في الواجهة. معطّل في هذه النسخة التجريبية.', seAiConnect: 'الربط عبر الخادم (لاحقًا)'
+  };
+  EN = {
+    appName: 'MediStock Phoenix', org: 'Babil Health Directorate - Pharmacy Dept.',
+    loginHeroTitle: 'Unified pharmaceutical supply nexus for the Pharmacy Department stores', loginHeroSub: 'Live stock, FEFO batches, audited transfers and intelligent alerts — from central store to outlet.',
+    loginTitle: 'Sign in', loginSub: 'Use your institutional account to continue', username: 'Username', password: 'Password', loginBtn: 'Sign in', demoQuick: 'Quick demo access', roleKeeper: 'Store keeper',
+    demoNote: 'Standalone demo build — all data are labelled fixtures. No production backend, no keys.',
+    loginErrMsg: 'Enter username and password, or use quick demo access.',
+    skip: 'Skip', continueBtn: 'Continue',
+    navAdmin: 'ADMIN & SYSTEM', demoUser: 'Abdullah Jawad', demoBadge: 'Fixture data', logout: 'Sign out',
+    scopeLine: 'Scope: Pharmacy Dept. Stores - Babil Health Directorate · super_admin',
+    demoState: 'Demo state', stPopulated: 'Populated', stLoading: 'Loading', stEmpty: 'Empty', stError: 'Error', stDenied: 'Denied', stOffline: 'Offline', stStale: 'Stale',
+    fxAuto: 'Effects: Auto', fxCinematic: 'Effects: Cinematic', fxReduced: 'Effects: Reduced', fxOff: 'Effects: Off',
+    offlineBanner: 'Offline — showing locally cached data; changes will sync on reconnect.',
+    staleBanner: 'Reconnecting… showing last confirmed snapshot from 6 minutes ago.',
+    loadingHint: 'Loading scope data…',
+    errorTitle: 'Failed to load data', errorBody: 'An error occurred while fetching this screen. No local input was lost. Retry or return to the dashboard.', retry: 'Retry', backHome: 'Dashboard', errorRef: 'Send this code to support',
+    deniedTitle: 'Outside your scope', deniedBody: 'This screen requires a higher role or a different scope. The system only shows data for scopes assigned to you.', deniedScope: 'Your scope: Babil Teaching Hospital store · Role: store keeper',
+    emptyGeneric: 'No records yet', emptyBodyGeneric: 'No data has arrived for this scope. Start with a new entry or receive an incoming transfer.', emptyCtaGeneric: 'New entry',
+    dashboardTitle: 'Dashboard', heroSub: 'Live summary of your scope · Sat, Jul 19 2026 · updated 40s ago',
+    health: 'Stock health', kMoves: 'Moves today', kPending: 'Awaiting acceptance',
+    kNear: 'Near expiry ≤270 days', kNearSub: 'batches needing FEFO action', kLow: 'Below minimum', kLowSub: 'items under keeper threshold', kMissing: 'Missing (zero stock)', kMissingSub: 'expected items at 0', kSurplus: 'Surplus', kSurplusSub: 'items above max threshold',
+    alertsIntel: 'Alert intelligence', viewAll: 'View all', recentMoves: 'Recent movements', expiryRadar: 'Expiry radar', days: 'days', reviewNear: 'Review near-expiry batches', stockHealth: 'Stock health by category', approvalsQueue: 'Pending approvals', review: 'Review',
+    confirmSub: 'Review details before confirming — sensitive action', cancel: 'Cancel',
+    dashboardT: 'Dashboard', twinT: 'Digital Twin', inventoryT: 'Stock & Batches', movementsT: 'Movements', transfersT: 'Transfers', returnsT: 'Returns', alertsT: 'Alerts', entryT: 'Entry & OCR', institutionsT: 'Institutions & Outlets', usersT: 'Users & Roles', reportsT: 'Reports', searchT: 'Global Search', auditT: 'Approvals & Audit', settingsT: 'Settings',
+    navDashboard: 'Dashboard', navTwin: 'Digital Twin', navInventory: 'Stock & Batches', navMovements: 'Movements', navTransfers: 'Transfers', navReturns: 'Returns', navAlerts: 'Alerts', navEntry: 'Entry & OCR', navInstitutions: 'Institutions', navUsers: 'Users', navReports: 'Reports', navSearch: 'Global search', navAudit: 'Approvals & Audit', navSettings: 'Settings', navMore: 'More',
+    twinSearchPh: 'Search institution, store or outlet…', twinLegA: 'Central', twinLegB: 'Institution store', twinLegC: 'Dispensing outlet', twinPulseNote: 'Needs attention',
+    twinHealthL: 'Stock health', twinNearL: 'Near expiry', twinLowT: 'Items below minimum', twinOpenStock: 'Open stock & batches', twinMakeTransfer: 'Create transfer to this node',
+    twinSelectHint: 'Select a node', twinHintBody: 'Tap any institution, store or outlet to see its live status and actions.',
+    chAll: 'All', chCentral: 'Central', chStores: 'Stores', chOutlets: 'Outlets',
+    invSearchPh: 'Search by name or code…', invCount: 'items', colItem: 'Item', colOnHand: 'On hand', colReserved: 'Reserved', colAvail: 'Available', colExpiry: 'Earliest expiry', colStatus: 'Status',
+    stOk: 'Healthy', stNear: 'Near expiry', stLow: 'Low', stMissing: 'Missing', stSurplus: 'Surplus',
+    availNote: 'Available = On hand − Reserved. Never issue more than available.', batchesT: 'Batches', fefoFirst: 'Issue first', actAdjust: 'Adjust stock', actQuar: 'Quarantine batch',
+    mvAll: 'All', mvTransfer: 'Transfer', mvIn: 'Inbound', mvOut: 'Issue', mvReturn: 'Return', mvAdjust: 'Adjust',
+    stAccepted: 'Accepted', stQuarantine: 'Quarantine',
+    trCentral: 'Create transfer', trReceive: 'Inbound to accept', trStep1: 'Destination', trStep2: 'Items & quantities', trStep3: 'Review',
+    noRoutesNote: 'No fixed supply routes — pick the destination manually. The source is always the central store.',
+    l4Note: 'Still Critical Mode on — background effects paused to protect quantity entry.',
+    availLbl: 'Available', qtyLbl: 'Qty', dlgSource: 'Source', dlgDest: 'Destination', reviewTotal: 'Total', receiveRule: 'Stock is added to the recipient only after a valid acceptance. Rejection or shortage keeps stock at the source.',
+    stepBack: 'Back', stepNext: 'Next', submitTransfer: 'Confirm transfer', rejectBtn: 'Reject', acceptBtn: 'Accept receipt', pendingEmptyMsg: 'No inbound awaiting acceptance in your scope.',
+    retNote: 'Every return goes through an explicit disposition: restock, quarantine, or dispose — with audit trail.',
+    dispRestock: 'Restock', dispQuar: 'Quarantine', dispDispose: 'Dispose', dispDo: 'Apply',
+    alertsScopeNote: 'Scope-only alerts · dismissable', alDismiss: 'Dismiss',
+    enManual: 'Manual entry', enOcr: 'OCR scan', enItem: 'Item', enBatch: 'Batch number', enExpiry: 'Expiry date', enQty: 'Quantity', enSource: 'Entry source',
+    enSrcSupplier: 'Supplier receipt', enSrcDonation: 'Donation', enSrcCorrection: 'Stock correction', enSummary: 'Entry summary', enSave: 'Save entry', enDirty: 'Draft is saved locally and only submitted with your approval.',
+    ocrDrop: 'Drop invoice or document image here', ocrCam: 'Or use the camera to capture the label. The image is processed locally for display only in this demo.',
+    ocrBtn: 'Simulate document scan', ocrTransient: 'Image is transient — not stored.', ocrProcessing: 'Extracting fields…', ocrHuman: 'Human review required before approval', ocrNational: 'National formulary item', ocrRedo: 'Rescan', ocrApprove: 'Approve & add',
+    ocrFItem: 'Item', ocrFBatch: 'Batch', ocrFExp: 'Expiry', ocrFQty: 'Quantity', ocrFSup: 'Supplier',
+    centralChip: 'Central store — Pharmacy Dept.', instItems: 'Items', instHealth: 'Health', instRename: 'Rename', renameNote: 'Renaming is available per your permission and is logged in audit. Central cannot be deleted.',
+    usersNote: 'Roles decide what a user sees; scope decides which data. Every change is logged.',
+    uEdit: 'Edit', roleEditor: 'Role & scope editor', uRole: 'Role', uScope: 'Scope', uSave: 'Save changes',
+    roleSuper: 'super_admin', roleSup: 'Supervisor', roleKeep: 'Store keeper', roleDisp: 'Dispenser',
+    stActive: 'Active', stPaused: 'Paused',
+    repBuilder: 'Report builder', repTypeL: 'Report type', repTypeStock: 'Stock balance', repTypeExpiry: 'Near expiry', repTypeMoves: 'Movements',
+    repGroupL: 'Group by', grpInst: 'By institution', grpItem: 'By item', grpNone: 'No grouping', repColsL: 'Columns', repPrint: 'Print', repNote: 'Preview on the right matches print and Excel output. Fixture data.',
+    colName: 'Item', colQtyC: 'Qty', colExpC: 'Expiry', colInst: 'Institution', colBatchC: 'Batch', totalRow: 'Total', repFooter: 'Babil Health Directorate - Pharmacy Dept. · demo report',
+    seaPh: 'Search across all scopes: items, batches, transfers, users…', seaOpen: 'Open', seaNoRes: 'No matching results.', seaHint: 'Global search is available to super_admin only.\nType an item name, batch number or transfer reference.',
+    seaGItems: 'Items', seaGBatches: 'Batches', seaGTransfers: 'Transfers',
+    audApprovals: 'Approvals', audLog: 'Audit log', audQr: 'QR tracking', audApprove: 'Approve', audReject: 'Reject',
+    qrTitle: 'Track status by QR', qrCheck: 'Check status', qrRecent: 'Recent scans', qrResult: 'Transfer accepted and matched — stock added to destination.',
+    seDisplay: 'Display & language', seLang: 'Language', seTheme: 'Theme', seFx: 'Effects level', seThemeDark: 'Dark', seThemeLight: 'Light',
+    seFxNote: 'Auto measures device capability and honors the system reduce-motion preference. Off disables all non-functional motion.',
+    seWelcome: 'Phoenix Rebirth welcome', seWelcomeSub: 'Shown once per session — you can replay it now.', seReplay: 'Replay',
+    seNotif: 'Notifications', seNotifNote: 'All alerts are in-app and scope-only. No WhatsApp, no external notifications.',
+    ntfNear: 'Near-expiry alerts', ntfLow: 'Low & missing alerts', ntfPending: 'Inbound-to-accept alerts',
+    seAi: 'AI assistant', seAiNote: 'Connecting an AI provider happens via the backend later only, with no keys in the UI. Disabled in this demo.', seAiConnect: 'Connect via backend (later)'
+  };
+
+  ICONS = {
+    dashboard: 'M4 4h7v7H4zM13 4h7v4h-7zM13 12h7v8h-7zM4 15h7v5H4z',
+    twin: 'M12 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM5 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 7v4m0 0-6 6.5M12 11l6 6.5',
+    inventory: 'M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5m0 0 9-5m-9 5v8',
+    movements: 'M7 4v12m0 0-3-3m3 3 3-3M17 20V8m0 0-3 3m3-3 3 3',
+    transfers: 'M4 7h13m0 0-3-3m3 3-3 3M20 17H7m0 0 3-3m-3 3 3 3',
+    returns: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4',
+    alerts: 'M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7zM10 20a2 2 0 0 0 4 0',
+    entry: 'M3 7V4h3M17 4h3v3M21 17v3h-3M7 20H4v-3M7 12h10M12 7.5v9',
+    institutions: 'M4 21V5a1 1 0 0 1 1-1h8v17M13 9h6a1 1 0 0 1 1 1v11M3 21h18M8 8h2m-2 4h2m-2 4h2M17 13h1m-1 4h1',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M15 3.1a4 4 0 0 1 0 7.8',
+    reports: 'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5zM14 3v5h5M9 13h6m-6 4h6',
+    search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.35-4.35',
+    audit: 'M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10zM9 12l2 2 4-4',
+    settings: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4',
+    more: 'M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'
+  };
+
+  INSTITUTIONS = [
+    { id: 1, name: 'مستشفى بابل التعليمي', en: 'Babil Teaching Hospital', store: 'مذخر مستشفى بابل التعليمي', outlets: ['صيدلية الطوارئ', 'صيدلية الردهات', 'صيدلية الاستشارية'] },
+    { id: 2, name: 'مستشفى الحلة التعليمي العام', en: 'Al-Hillah Teaching Hospital', store: 'مذخر مستشفى الحلة', outlets: ['صيدلية الطوارئ', 'صيدلية العمليات'] },
+    { id: 3, name: 'مستشفى المسيب العام', en: 'Al-Musayab General Hospital', store: 'مذخر مستشفى المسيب', outlets: ['صيدلية الطوارئ', 'الصيدلية الخارجية'] },
+    { id: 4, name: 'قطاع الرعاية الأولية - المحاويل', en: 'PHC Sector - Al-Mahawil', store: 'مذخر قطاع المحاويل', outlets: ['مركز صحي المحاويل الأول', 'مركز صحي النيل'] }
+  ];
+  ITEMS = [
+    { id: 1, code: 'AMX-500', name: 'Amoxicillin 500mg Cap', onHand: 12400, reserved: 800, expiry: '2027-04-10', dLeft: 630, status: 'ok', min: 3000, max: 20000 },
+    { id: 2, code: 'CFX-1G', name: 'Ceftriaxone 1g Vial', onHand: 1240, reserved: 140, expiry: '2027-02-11', dLeft: 572, status: 'ok', min: 600, max: 4000 },
+    { id: 3, code: 'INS-GLA', name: 'Insulin Glargine 100IU', onHand: 86, reserved: 12, expiry: '2026-09-02', dLeft: 45, status: 'near', min: 120, max: 800 },
+    { id: 4, code: 'PCM-500', name: 'Paracetamol 500mg Tab', onHand: 48200, reserved: 2000, expiry: '2028-01-20', dLeft: 915, status: 'surplus', min: 8000, max: 40000 },
+    { id: 5, code: 'ADR-1MG', name: 'Adrenaline 1mg/ml Amp', onHand: 310, reserved: 40, expiry: '2026-11-15', dLeft: 119, status: 'near', min: 200, max: 1200 },
+    { id: 6, code: 'MET-850', name: 'Metformin 850mg Tab', onHand: 940, reserved: 0, expiry: '2027-06-30', dLeft: 711, status: 'low', min: 2000, max: 12000 },
+    { id: 7, code: 'OND-4MG', name: 'Ondansetron 4mg Amp', onHand: 0, reserved: 0, expiry: '—', dLeft: null, status: 'missing', min: 300, max: 1500 },
+    { id: 8, code: 'HEP-5K', name: 'Heparin 5000IU Vial', onHand: 420, reserved: 60, expiry: '2026-12-28', dLeft: 162, status: 'near', min: 250, max: 1000 }
+  ];
+  BATCHES = {
+    3: [ { b: 'GLA-2603', exp: '2026-09-02', d: 45, qty: 30 }, { b: 'GLA-2611', exp: '2026-11-20', d: 124, qty: 26 }, { b: 'GLA-2702', exp: '2027-02-08', d: 204, qty: 30 } ],
+    def: [ { b: 'LOT-A114', exp: '2026-10-05', d: 78, qty: 400 }, { b: 'LOT-B221', exp: '2027-01-18', d: 183, qty: 520 }, { b: 'LOT-C307', exp: '2027-05-30', d: 315, qty: 320 } ]
+  };
+  MOVES = [
+    { id: 1, type: 'transfer', item: 'Ceftriaxone 1g', from: 'المركزية', to: 'مذخر مستشفى بابل', qty: 400, user: 'عبدالله ج.', time: '10:42', date: '2026-07-19', status: 'accepted' },
+    { id: 2, type: 'in', item: 'Paracetamol 500mg', from: 'استلام مجهز', to: 'المركزية', qty: 12000, user: 'باسم ك.', time: '09:58', date: '2026-07-19', status: 'accepted' },
+    { id: 3, type: 'out', item: 'Insulin Glargine', from: 'مذخر مستشفى بابل', to: 'صيدلية الطوارئ', qty: 24, user: 'س. الحسيني', time: '09:31', date: '2026-07-19', status: 'accepted' },
+    { id: 4, type: 'return', item: 'Heparin 5000IU', from: 'صيدلية الردهات', to: 'مذخر مستشفى بابل', qty: 18, user: 'م. الجبوري', time: '08:47', date: '2026-07-19', status: 'quarantine' },
+    { id: 5, type: 'adjust', item: 'Metformin 850mg', from: 'جرد', to: 'مذخر المسيب', qty: -60, user: 'ر. الخفاجي', time: '08:12', date: '2026-07-19', status: 'accepted' },
+    { id: 6, type: 'transfer', item: 'Adrenaline 1mg', from: 'المركزية', to: 'مذخر الحلة', qty: 150, user: 'عبدالله ج.', time: '14:20', date: '2026-07-18', status: 'accepted' },
+    { id: 7, type: 'out', item: 'Amoxicillin 500mg', from: 'مذخر قطاع المحاويل', to: 'مركز صحي النيل', qty: 900, user: 'ح. العامري', time: '11:05', date: '2026-07-18', status: 'accepted' }
+  ];
+  PENDING = [
+    { id: 101, item: 'Ceftriaxone 1g Vial', qty: 400, from: 'مخازن قسم الصيدلة - دائرة صحة بابل', to: 'مذخر مستشفى بابل التعليمي', ref: 'TRF-2607-114', ageH: 3 },
+    { id: 102, item: 'Insulin Glargine 100IU', qty: 60, from: 'مخازن قسم الصيدلة - دائرة صحة بابل', to: 'مذخر مستشفى الحلة', ref: 'TRF-2607-115', ageH: 5 }
+  ];
+  ALERTS = [
+    { id: 1, sevK: 'critical', title: 'مفقود: Ondansetron 4mg برصيد صفر', titleEn: 'Missing: Ondansetron 4mg at zero stock', cause: 'مادة متوقعة ضمن قائمة المذخر ورصيدها 0 منذ 4 أيام.', causeEn: 'Expected item at zero stock for 4 days.', scope: 'مذخر مستشفى بابل', time: '10:12', action: 'أنشئ طلب تحويل من المركزية', actionEn: 'Create transfer from central', nav: 'transfers' },
+    { id: 2, sevK: 'critical', title: 'قرب انتهاء: Insulin Glargine — 45 يومًا', titleEn: 'Near expiry: Insulin Glargine — 45 days', cause: 'دفعة GLA-2603 (30 قلم) تنتهي خلال 45 يومًا — ضمن حد 270 يومًا.', causeEn: 'Batch GLA-2603 (30 pens) expires in 45 days — within the 270-day window.', scope: 'المركزية', time: '09:40', action: 'طبق FEFO — اصرفها أولًا', actionEn: 'Apply FEFO — dispense first', nav: 'inventory' },
+    { id: 3, sevK: 'warn', title: 'ناقص: Metformin 850mg تحت الحد', titleEn: 'Low: Metformin 850mg below threshold', cause: 'الرصيد 940 والحد الأدنى لمسؤول المذخر 2000.', causeEn: 'On hand 940 vs keeper minimum 2000.', scope: 'مذخر المسيب', time: '08:55', action: 'توصية نقل من المركزية (توصية فقط)', actionEn: 'Transfer recommendation (advice only)', nav: 'transfers' },
+    { id: 4, sevK: 'warn', title: 'مرتجع بانتظار قرار disposition', titleEn: 'Return awaiting disposition', cause: 'Heparin 5000IU ×18 من صيدلية الردهات — في الحجر المؤقت.', causeEn: 'Heparin 5000IU ×18 from wards pharmacy — in quarantine.', scope: 'مذخر مستشفى بابل', time: '08:47', action: 'راجع المرتجعات', actionEn: 'Review returns', nav: 'returns' },
+    { id: 5, sevK: 'info', title: 'فائض: Paracetamol 500mg فوق الحد الأعلى', titleEn: 'Surplus: Paracetamol 500mg above max', cause: 'الرصيد 48,200 والحد الأعلى 40,000 — فرصة إعادة توزيع.', causeEn: 'On hand 48,200 vs max 40,000 — redistribution opportunity.', scope: 'المركزية', time: 'أمس', action: 'راجع توصيات إعادة التوزيع', actionEn: 'Review redistribution advice', nav: 'reports' }
+  ];
+  USERS = [
+    { id: 1, name: 'عبدالله جواد كاظم', role: 'super_admin', scope: 'كل النطاقات', status: 'active' },
+    { id: 2, name: 'باسم كاظم رمح', role: 'إشراف', scope: 'كل النطاقات', status: 'active' },
+    { id: 3, name: 'سارة الحسيني', role: 'مسؤول مذخر', scope: 'مذخر مستشفى بابل', status: 'active' },
+    { id: 4, name: 'محمد الجبوري', role: 'منفذ صرف', scope: 'صيدلية الطوارئ - بابل', status: 'active' },
+    { id: 5, name: 'رنا الخفاجي', role: 'مسؤول مذخر', scope: 'مذخر المسيب', status: 'paused' }
+  ];
+  APPROVALS = [
+    { id: 1, title: 'تصحيح رصيد Metformin 850mg (−60)', sub: 'جرد ميداني · مذخر المسيب · ر. الخفاجي', kind: 'adjust' },
+    { id: 2, title: 'إتلاف دفعة HEP-2606 (Heparin ×18)', sub: 'مرتجع تالف · مذخر مستشفى بابل', kind: 'dispose' },
+    { id: 3, title: 'تعديل حدود مادة Insulin Glargine', sub: 'حد أدنى 120 → 200 · طلب مسؤول المذخر', kind: 'threshold' }
+  ];
+  AUDIT = [
+    { id: 1, act: 'قبول تحويل TRF-2607-112', by: 'س. الحسيني', scope: 'مذخر مستشفى بابل', time: '10:42 · 2026-07-19', ok: true },
+    { id: 2, act: 'إنشاء تحويل TRF-2607-114', by: 'عبدالله ج.', scope: 'المركزية', time: '07:58 · 2026-07-19', ok: true },
+    { id: 3, act: 'رفض استلام ناقص TRF-2607-109', by: 'ح. العامري', scope: 'مذخر قطاع المحاويل', time: '16:22 · 2026-07-18', ok: false },
+    { id: 4, act: 'تعديل اسم منفذ: صيدلية العمليات', by: 'super_admin', scope: 'مستشفى الحلة', time: '13:04 · 2026-07-18', ok: true },
+    { id: 5, act: 'حجر مرتجع HEP-2606', by: 'س. الحسيني', scope: 'مذخر مستشفى بابل', time: '08:47 · 2026-07-19', ok: true }
+  ];
+
+  componentDidMount() {
+    this._onResize = () => this.setState({ isMobile: window.innerWidth < 860 });
+    window.addEventListener('resize', this._onResize);
+    this._mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.setState({ reducedPref: this._mq.matches });
+    this._mqFn = () => this.setState({ reducedPref: this._mq.matches });
+    this._mq.addEventListener('change', this._mqFn);
+    let ok = false;
+    try { const c = document.createElement('canvas'); ok = !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch (e) { ok = false; }
+    this.setState({ webglOK: ok });
+    this._twinSelFn = (e) => { if (e && e.detail && e.detail.id) this.setState({ twinSel: e.detail.id }); };
+    this._twinFailFn = () => this.setState({ twin3d: false });
+    document.addEventListener('phx-twin-select', this._twinSelFn);
+    document.addEventListener('phx-twin-3d-failed', this._twinFailFn);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    if (this._mq) this._mq.removeEventListener('change', this._mqFn);
+    if (this._twinSelFn) document.removeEventListener('phx-twin-select', this._twinSelFn);
+    if (this._twinFailFn) document.removeEventListener('phx-twin-3d-failed', this._twinFailFn);
+    clearTimeout(this._wTimer); cancelAnimationFrame(this._kpiRaf); clearTimeout(this._toastT); clearTimeout(this._ocrT);
+  }
+
+  fxLevel() {
+    const { effects, reducedPref } = this.state;
+    if (effects === 'off') return 'off';
+    if (effects === 'reduced' || reducedPref) return 'reduced';
+    return 'cinematic';
+  }
+  startWelcome() {
+    let seen = false;
+    try { seen = sessionStorage.getItem('phx-welcome-seen') === '1'; } catch (e) {}
+    if (seen || this.fxLevel() === 'off') { this.enterApp(); return; }
+    try { sessionStorage.setItem('phx-welcome-seen', '1'); } catch (e) {}
+    this.setState({ phase: 'welcome' });
+    if (this.fxLevel() === 'cinematic') {
+      this._wTimer = setTimeout(() => this.finishWelcome(), 6800);
+    }
+  }
+  finishWelcome() { clearTimeout(this._wTimer); this.enterApp(); }
+  enterApp() { this.setState({ phase: 'app', nav: 'dashboard' }); this.animateKpis(); }
+  animateKpis() {
+    cancelAnimationFrame(this._kpiRaf);
+    const start = performance.now(), dur = 950;
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      this.setState({ kpiT: 1 - Math.pow(1 - p, 3) });
+      if (p < 1) this._kpiRaf = requestAnimationFrame(tick);
+    };
+    if (this.fxLevel() === 'off') { this.setState({ kpiT: 1 }); return; }
+    this.setState({ kpiT: 0 });
+    this._kpiRaf = requestAnimationFrame(tick);
+  }
+  navTo(k) {
+    this.setState({ nav: k, drawer: false, invSel: null, usersSel: null, twinSel: null });
+    if (k === 'dashboard') this.animateKpis();
+  }
+  showToast(msg) {
+    clearTimeout(this._toastT);
+    this.setState({ toast: msg });
+    this._toastT = setTimeout(() => this.setState({ toast: '' }), 3200);
+  }
+  openDialog(cfg) { this.setState({ dialog: cfg }); }
+  startOcr() { this.setState({ ocrStage: 'processing' }); clearTimeout(this._ocrT); this._ocrT = setTimeout(() => this.setState({ ocrStage: 'review' }), 1400); }
+
+  TWIN = [
+    { id: 'central', k: 'central', x: 500, y: 80, r: 26, label: 'المركزية', labelEn: 'Central', sub: '312 صنف', subEn: '312 items', health: '96%', near: 5, low: [{ n: 'Ondansetron 4mg', v: '0' }], parent: null },
+    { id: 's1', k: 'store', x: 190, y: 300, r: 20, label: 'مذخر بابل', labelEn: 'Babil store', sub: 'مستشفى بابل', subEn: 'Babil Teaching', health: '91%', near: 4, low: [{ n: 'Ondansetron 4mg', v: '0' }, { n: 'Metformin 850', v: '940' }], parent: 'central', alert: true },
+    { id: 's2', k: 'store', x: 410, y: 320, r: 20, label: 'مذخر الحلة', labelEn: 'Hilla store', sub: 'مستشفى الحلة', subEn: 'Al-Hillah', health: '88%', near: 3, low: [{ n: 'Adrenaline 1mg', v: '120' }], parent: 'central' },
+    { id: 's3', k: 'store', x: 640, y: 320, r: 20, label: 'مذخر المسيب', labelEn: 'Musayab store', sub: 'مستشفى المسيب', subEn: 'Al-Musayab', health: '84%', near: 2, low: [{ n: 'Metformin 850', v: '940' }], parent: 'central', alert: true },
+    { id: 's4', k: 'store', x: 850, y: 300, r: 20, label: 'مذخر المحاويل', labelEn: 'Mahawil store', sub: 'قطاع المحاويل', subEn: 'PHC Mahawil', health: '93%', near: 1, low: [], parent: 'central' },
+    { id: 'o1', k: 'outlet', x: 120, y: 500, r: 15, label: 'الطوارئ', labelEn: 'Emergency', sub: 'صيدلية', subEn: 'pharmacy', health: '90%', near: 2, low: [], parent: 's1' },
+    { id: 'o2', k: 'outlet', x: 260, y: 510, r: 15, label: 'الردهات', labelEn: 'Wards', sub: 'صيدلية', subEn: 'pharmacy', health: '86%', near: 1, low: [], parent: 's1' },
+    { id: 'o3', k: 'outlet', x: 600, y: 520, r: 15, label: 'الطوارئ', labelEn: 'Emergency', sub: 'صيدلية', subEn: 'pharmacy', health: '82%', near: 1, low: [], parent: 's3' },
+    { id: 'o4', k: 'outlet', x: 720, y: 510, r: 15, label: 'الخارجية', labelEn: 'Outpatient', sub: 'صيدلية', subEn: 'pharmacy', health: '88%', near: 0, low: [], parent: 's3' }
+  ];
+
+  renderVals() {
+    const s = this.state;
+    const base = s.lang === 'ar' ? this.AR : this.EN;
+    const AR = this.AR;
+    const t = new Proxy(base, { get: (o, k) => (o[k] !== undefined ? o[k] : (AR[k] !== undefined ? AR[k] : String(k))) });
+    const fx = this.fxLevel();
+    const fxRich = fx === 'cinematic';
+    const fxStill = !fxRich;
+    const isMobile = s.isMobile, notMobile = !isMobile;
+    const nf = (n) => n.toLocaleString('en-US');
+    const ease = s.kpiT;
+
+    const mkNav = (keys) => keys.map((k) => {
+      const active = s.nav === k;
+      return {
+        key: k, label: t['nav' + k.charAt(0).toUpperCase() + k.slice(1)], icon: this.ICONS[k],
+        go: () => this.navTo(k), cur: active ? 'page' : undefined,
+        bg: active ? 'var(--chip)' : 'transparent', c: active ? 'var(--cyanDim)' : 'var(--muted)',
+        w: active ? 700 : 500, bar: active ? 'var(--ember)' : 'transparent',
+        dBorder: active ? 'var(--line)' : 'transparent',
+        badge: k === 'transfers' && s.pendingIds.length ? String(s.pendingIds.length) : (k === 'alerts' ? String(this.ALERTS.filter(a => !s.dismissed.includes(a.id)).length) : '')
+      };
+    });
+    const navMain = mkNav(['dashboard', 'twin', 'inventory', 'movements', 'transfers', 'returns', 'alerts', 'entry']);
+    const navAdmin = mkNav(['institutions', 'users', 'reports', 'search', 'audit', 'settings']);
+    const navAll = navMain.concat(navAdmin);
+    const navBottom = mkNav(['dashboard', 'inventory', 'transfers', 'alerts']).concat([{
+      key: 'more', label: t.navMore, icon: this.ICONS.more, go: () => this.setState({ drawer: true }),
+      c: 'var(--muted)', w: 500, bg: 'transparent', bar: 'transparent', badge: ''
+    }]);
+
+    const st = s.demoState;
+    const stShow = st === 'populated' || st === 'offline' || st === 'stale';
+    const sevColor = { critical: 'var(--danger)', warn: 'var(--warn)', info: 'var(--cyanDim)' };
+    const sevLabel = s.lang === 'ar' ? { critical: 'حرج', warn: 'تحذير', info: 'معلومة' } : { critical: 'Critical', warn: 'Warning', info: 'Info' };
+    const typeChip = (ty) => {
+      const map = {
+        transfer: ['var(--chip)', 'var(--cyanDim)', s.lang === 'ar' ? 'تحويل' : 'Transfer'],
+        in: ['rgba(47,191,143,.12)', 'var(--ok)', s.lang === 'ar' ? 'استلام' : 'Inbound'],
+        out: ['var(--chipW)', 'var(--warn)', s.lang === 'ar' ? 'صرف' : 'Issue'],
+        return: ['var(--chipD)', 'var(--danger)', s.lang === 'ar' ? 'مرتجع' : 'Return'],
+        adjust: ['rgba(139,166,191,.12)', 'var(--muted)', s.lang === 'ar' ? 'تصحيح' : 'Adjust']
+      };
+      return map[ty];
+    };
+
+    const kv = (v) => Math.round(v * ease);
+    const kpis = [
+      { label: t.kNear, value: nf(kv(17)), sub: t.kNearSub, icon: 'M12 3 2.5 20h19L12 3zM12 10v4M12 17.2v.1', accent: 'var(--warn)', border: 'rgba(221,186,99,.35)', go: () => this.navTo('inventory'), delay: '0ms' },
+      { label: t.kLow, value: nf(kv(9)), sub: t.kLowSub, icon: 'M12 5v14m0 0-5-5m5 5 5-5', accent: 'var(--ember2)', border: 'var(--line)', go: () => this.navTo('inventory'), delay: '60ms' },
+      { label: t.kMissing, value: nf(kv(3)), sub: t.kMissingSub, icon: 'M12 8v4m0 5.2v.1M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z', accent: 'var(--danger)', border: 'rgba(255,107,107,.35)', go: () => this.navTo('inventory'), delay: '120ms' },
+      { label: t.kSurplus, value: nf(kv(6)), sub: t.kSurplusSub, icon: 'M12 19V5m0 0-5 5m5-5 5 5', accent: 'var(--teal)', border: 'var(--line)', go: () => this.navTo('reports'), delay: '180ms' }
+    ];
+    const healthVal = 94.2 * ease;
+
+    const dashAlerts = this.ALERTS.slice(0, 4).map((a, i) => ({
+      title: s.lang === 'ar' ? a.title : a.titleEn, cause: s.lang === 'ar' ? a.cause : a.causeEn,
+      dot: sevColor[a.sevK], sev: sevLabel[a.sevK], time: a.time, delay: (i * 70) + 'ms'
+    }));
+    const dashMoves = this.MOVES.slice(0, 4).map((m) => {
+      const c = typeChip(m.type);
+      return { type: c[2], chipBg: c[0], chipC: c[1], item: m.item, route: m.from + ' ← ' + m.to, qty: nf(Math.abs(m.qty)) };
+    });
+    const dashApprovals = this.APPROVALS.slice(0, 2).map((p) => ({ title: p.title, sub: p.sub, act: () => this.navTo('audit') }));
+    const expiryBuckets = [
+      { label: s.lang === 'ar' ? '0–90 يومًا' : '0–90 days', count: 4, pct: '30%', color: 'var(--danger)', delay: '0ms' },
+      { label: s.lang === 'ar' ? '91–180 يومًا' : '91–180 days', count: 6, pct: '46%', color: 'var(--warn)', delay: '100ms' },
+      { label: s.lang === 'ar' ? '181–270 يومًا' : '181–270 days', count: 7, pct: '54%', color: 'var(--gold)', delay: '200ms' }
+    ];
+    const stockCats = [
+      { label: s.lang === 'ar' ? 'مضادات حيوية' : 'Antibiotics', pct: '92%', color: 'var(--teal)', delay: '0ms' },
+      { label: s.lang === 'ar' ? 'أدوية مزمنة' : 'Chronic meds', pct: '78%', color: 'var(--cyanDim)', delay: '80ms' },
+      { label: s.lang === 'ar' ? 'طوارئ وإنعاش' : 'Emergency', pct: '96%', color: 'var(--ok)', delay: '160ms' },
+      { label: s.lang === 'ar' ? 'مستلزمات' : 'Consumables', pct: '64%', color: 'var(--warn)', delay: '240ms' }
+    ];
+
+    const dlg = s.dialog;
+    return {
+      // globals
+      t, dir: s.lang === 'ar' ? 'rtl' : 'ltr', theme: s.theme, isDark: s.theme === 'dark', isLight: s.theme === 'light',
+      langBtn: s.lang === 'ar' ? 'EN' : 'عربي',
+      isLogin: s.phase === 'login', isWelcome: s.phase === 'welcome', isApp: s.phase === 'app',
+      isMobile, notMobile, fxRich, fxStill, fxPlay: s.fxPaused ? 'paused' : 'running',
+      creditsDelay: fxRich ? '5.2s' : '.3s',
+      effects: s.effects, demoState: s.demoState,
+      contentPad: isMobile ? '14px 12px' : '22px 24px', contentPadB: isMobile ? '86px' : '32px',
+      toastBottom: isMobile ? '86px' : '28px',
+      heroImgOp: s.theme === 'dark' ? '.5' : '.35',
+      gridSkel: isMobile ? '1fr' : '1fr 1fr 1fr', gridKpi: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gridMain: isMobile ? '1fr' : '1.25fr 1fr',
+      // login
+      user: s.user, pass: s.pass, loginErr: s.loginErr && t.loginErrMsg,
+      setUser: (e) => this.setState({ user: e.target.value, loginErr: false }),
+      setPass: (e) => this.setState({ pass: e.target.value, loginErr: false }),
+      doLogin: () => { if (!s.user || !s.pass) { this.setState({ loginErr: true }); return; } this.startWelcome(); },
+      demoSuper: () => { this.setState({ user: 'super.admin', pass: 'demo' }); setTimeout(() => this.startWelcome(), 60); },
+      demoKeeper: () => { this.setState({ user: 'store.keeper', pass: 'demo', demoState: 'denied' }); setTimeout(() => this.startWelcome(), 60); },
+      toggleLangLogin: () => this.setState({ lang: s.lang === 'ar' ? 'en' : 'ar' }),
+      pauseFx: () => this.setState({ fxPaused: true }), resumeFx: () => this.setState({ fxPaused: false }),
+      skipWelcome: () => this.finishWelcome(),
+      // shell
+      navMain, navAdmin, navAll, navBottom,
+      screenTitle: t[s.nav + 'T'],
+      toggleTheme: () => this.setState({ theme: s.theme === 'dark' ? 'light' : 'dark' }),
+      toggleLang: () => this.setState({ lang: s.lang === 'ar' ? 'en' : 'ar' }),
+      setEffects: (e) => this.setState({ effects: e.target.value }),
+      setDemoState: (e) => this.setState({ demoState: e.target.value }),
+      logout: () => this.setState({ phase: 'login', pass: '' }),
+      drawerOpen: !!s.drawer, closeDrawer: () => this.setState({ drawer: false }),
+      // states
+      stLoading: st === 'loading', stEmpty: st === 'empty', stError: st === 'error', stDenied: st === 'denied', stOffline: st === 'offline', stStale: st === 'stale', stShow,
+      emptyTitle: t.emptyGeneric, emptyBody: t.emptyBodyGeneric, emptyCta: t.emptyCtaGeneric,
+      emptyAction: () => { this.setState({ demoState: 'populated' }); this.navTo('entry'); },
+      retry: () => this.setState({ demoState: 'loading' }, setTimeout(() => this.setState({ demoState: 'populated' }), 1100)),
+      goDashboard: () => { this.setState({ demoState: 'populated' }); this.navTo('dashboard'); },
+      // screens flags
+      showDashboard: s.nav === 'dashboard', showTwin: s.nav === 'twin', showInventory: s.nav === 'inventory', showMovements: s.nav === 'movements', showTransfers: s.nav === 'transfers', showReturns: s.nav === 'returns', showAlerts: s.nav === 'alerts', showEntry: s.nav === 'entry', showInstitutions: s.nav === 'institutions', showUsers: s.nav === 'users', showReports: s.nav === 'reports', showSearch: s.nav === 'search', showAudit: s.nav === 'audit', showSettings: s.nav === 'settings',
+      // dashboard
+      kHealth: healthVal.toFixed(1) + '%', healthOffset: 264 - 264 * 0.942 * ease,
+      kMoves: nf(kv(28)), kPending: nf(s.pendingIds.length),
+      kpis, dashAlerts, dashMoves, dashApprovals, expiryBuckets, stockCats,
+      goAlerts: () => this.navTo('alerts'), goMovements: () => this.navTo('movements'), goAudit: () => this.navTo('audit'),
+      goInventoryNear: () => { this.setState({ invStatus: 'near' }); this.navTo('inventory'); },
+      // dialog + toast
+      dialogOpen: !!dlg, dlgTitle: dlg ? dlg.title : '', dlgRows: dlg ? dlg.rows : [], dlgConsequence: dlg ? dlg.consequence : '', dlgCta: dlg ? dlg.cta : '',
+      cancelDialog: () => this.setState({ dialog: null }),
+      confirmDialog: () => { const d = s.dialog; this.setState({ dialog: null }); if (d && d.onConfirm) d.onConfirm(); },
+      toast: s.toast,
+      chevFlip: s.lang === 'ar' ? 'scaleX(-1)' : 'none',
+
+      // ===== DIGITAL TWIN =====
+      lang: s.lang,
+      ...(() => {
+        if (this._webgl === undefined) { try { const c = document.createElement('canvas'); this._webgl = !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl'))); } catch (e) { this._webgl = false; } }
+        const can3d = this._webgl && s.twin3d && fx !== 'off';
+        return { has3D: this._webgl === true, use3D: can3d, use2D: !can3d, show2DControls: !can3d };
+      })(),
+      toggle3D: () => this.setState({ twin3d: !s.twin3d }),
+      view3DLabel: s.twin3d ? (s.lang === 'ar' ? 'ثنائي الأبعاد' : '2D view') : (s.lang === 'ar' ? '3D حي' : '3D live'),
+      view3DBorder: s.twin3d ? 'var(--cyan)' : 'var(--line)',
+      view3DBg: s.twin3d ? 'var(--chip)' : 'var(--field)',
+      view3DColor: s.twin3d ? 'var(--cyanDim)' : 'var(--muted)',
+      twinSelAttr: s.twinSel || '',
+      twinNodesJson: JSON.stringify(this.TWIN.map(n => ({ id: n.id, k: n.k, label: n.label, labelEn: n.labelEn, parent: n.parent, alert: !!n.alert }))),
+      twinQ: s.twinQ, setTwinQ: (e) => this.setState({ twinQ: e.target.value }),
+      gridTwin: isMobile ? '1fr' : '1.7fr 1fr',
+      twinTx: 'translate(' + (500 - 500 * s.twinZoom) + ',' + (330 - 330 * s.twinZoom) + ') scale(' + s.twinZoom + ')',
+      twinZoomIn: () => this.setState({ twinZoom: Math.min(1.8, s.twinZoom + 0.2) }),
+      twinZoomOut: () => this.setState({ twinZoom: Math.max(0.6, s.twinZoom - 0.2) }),
+      twinZoomReset: () => this.setState({ twinZoom: 1 }),
+      twinChips: [['all', t.chAll], ['central', t.chCentral], ['store', t.chStores], ['outlet', t.chOutlets]].map(([k, label]) => {
+        const on = s.twinFilter === k;
+        return { label, set: () => this.setState({ twinFilter: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'transparent', c: on ? 'var(--cyanDim)' : 'var(--muted)' };
+      }),
+      twinEdges: this.TWIN.filter(n => n.parent).map(n => {
+        const p = this.TWIN.find(x => x.id === n.parent);
+        const dim = (s.twinFilter !== 'all' && s.twinFilter !== n.k && s.twinFilter !== p.k);
+        return { x1: p.x, y1: p.y, x2: n.x, y2: n.y, stroke: n.alert ? 'var(--ember)' : 'var(--line)', sw: n.alert ? 2 : 1.4, dash: dim ? '2 6' : (n.k === 'outlet' ? '4 4' : '0') };
+      }),
+      twinNodes: this.TWIN.map(n => {
+        const dim = (s.twinFilter !== 'all' && s.twinFilter !== n.k);
+        const fill = n.k === 'central' ? 'var(--gold)' : n.k === 'store' ? 'var(--cyanDim)' : 'var(--teal)';
+        return {
+          tx: 'translate(' + n.x + ',' + n.y + ')', op: dim ? 0.28 : 1, r: n.r, fill,
+          stroke: s.twinSel === n.id ? 'var(--text)' : 'var(--surface)', sw: s.twinSel === n.id ? 3 : 2,
+          alert: !!n.alert && fxRich, pulse: 'pulseRing 2.6s ease-out infinite',
+          ty: n.r + 15, ty2: n.r + 28, label: s.lang === 'ar' ? n.label : n.labelEn, sub: s.lang === 'ar' ? n.sub : n.subEn,
+          sel: () => this.setState({ twinSel: n.id })
+        };
+      }),
+      tsOn: !!s.twinSel, tsNone: !s.twinSel,
+      tsType: (() => { const n = this.TWIN.find(x => x.id === s.twinSel); if (!n) return ''; return n.k === 'central' ? t.chCentral : n.k === 'store' ? t.twinLegB : t.twinLegC; })(),
+      tsName: (() => { const n = this.TWIN.find(x => x.id === s.twinSel); return n ? (s.lang === 'ar' ? n.label + ' — ' + n.sub : n.labelEn + ' — ' + n.subEn) : ''; })(),
+      tsHealth: (() => { const n = this.TWIN.find(x => x.id === s.twinSel); return n ? n.health : ''; })(),
+      tsNear: (() => { const n = this.TWIN.find(x => x.id === s.twinSel); return n ? String(n.near) : ''; })(),
+      tsLow: (() => { const n = this.TWIN.find(x => x.id === s.twinSel); return n && n.low.length ? n.low : [{ n: s.lang === 'ar' ? 'لا مواد تحت الحد' : 'None below minimum', v: '✓' }]; })(),
+      twinOpenStock: () => this.navTo('inventory'),
+      twinMakeTransfer: () => this.navTo('transfers'),
+
+      // ===== INVENTORY =====
+      invQ: s.invQ, setInvQ: (e) => this.setState({ invQ: e.target.value }),
+      invChips: [['all', t.chAll], ['near', t.stNear], ['low', t.stLow], ['missing', t.stMissing], ['surplus', t.stSurplus], ['ok', t.stOk]].map(([k, label]) => {
+        const on = s.invStatus === k;
+        return { label, set: () => this.setState({ invStatus: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'transparent', c: on ? 'var(--cyanDim)' : 'var(--muted)' };
+      }),
+      ...(() => {
+        const meta = {
+          ok: ['var(--chip)', 'var(--teal)', t.stOk, 'var(--muted)'], near: ['var(--chipW)', 'var(--warn)', t.stNear, 'var(--warn)'],
+          low: ['rgba(255,122,26,.12)', 'var(--ember2)', t.stLow, 'var(--ember2)'], missing: ['var(--chipD)', 'var(--danger)', t.stMissing, 'var(--danger)'],
+          surplus: ['rgba(19,143,136,.12)', 'var(--teal)', t.stSurplus, 'var(--muted)']
+        };
+        const q = s.invQ.trim().toLowerCase();
+        const rows = this.ITEMS.filter(it => (s.invStatus === 'all' || it.status === s.invStatus) && (!q || it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q)));
+        const sel = this.ITEMS.find(x => x.id === s.invSel);
+        const batchList = sel ? (this.BATCHES[sel.id] || this.BATCHES.def) : [];
+        return {
+          invCount: rows.length + ' ' + t.invCount,
+          invRows: rows.map(it => {
+            const m = meta[it.status];
+            return {
+              open: () => this.setState({ invSel: it.id }), bg: 'transparent', mBorder: it.status === 'missing' ? 'rgba(255,107,107,.35)' : (it.status === 'near' ? 'rgba(221,186,99,.35)' : 'var(--line)'),
+              name: it.name, code: it.code, onHand: nf(it.onHand), reserved: nf(it.reserved), avail: nf(it.onHand - it.reserved),
+              expiry: it.expiry, expC: it.status === 'near' || it.status === 'missing' ? m[3] : 'var(--muted)',
+              chipBg: m[0], chipC: m[1], statusL: m[2]
+            };
+          }),
+          invSelOn: !!sel, closeInv: () => this.setState({ invSel: null }),
+          isName: sel ? sel.name : '', isCode: sel ? sel.code : '', isOnHand: sel ? nf(sel.onHand) : '', isReserved: sel ? nf(sel.reserved) : '', isAvail: sel ? nf(sel.onHand - sel.reserved) : '',
+          isBatches: batchList.map((b, i) => {
+            const dc = b.d < 90 ? 'var(--danger)' : b.d < 180 ? 'var(--warn)' : 'var(--muted)';
+            return { b: b.b, exp: b.exp, dTxt: s.lang === 'ar' ? b.d + ' يومًا متبقيًا' : b.d + ' days left', qty: nf(b.qty), dc, first: i === 0, border: i === 0 ? 'rgba(221,186,99,.4)' : 'var(--line)', bg: i === 0 ? 'var(--chipW)' : 'transparent' };
+          }),
+          invAdjust: () => { this.setState({ invSel: null }); this.openDialog({ title: t.actAdjust, rows: [{ k: t.colItem, v: sel ? sel.name : '' }, { k: t.dlgSource, v: s.lang === 'ar' ? 'جرد ميداني' : 'Field count' }], consequence: s.lang === 'ar' ? 'سيُسجَّل تصحيح الرصيد في أثر التدقيق ويتطلب موافقة.' : 'The adjustment is logged in audit and requires approval.', cta: t.actAdjust, onConfirm: () => this.showToast(s.lang === 'ar' ? 'أُرسل التصحيح للموافقة' : 'Adjustment sent for approval') }); },
+          invQuar: () => { this.setState({ invSel: null }); this.openDialog({ title: t.actQuar, rows: [{ k: t.colItem, v: sel ? sel.name : '' }], consequence: s.lang === 'ar' ? 'ستُنقل الدفعة إلى الحجر ولن تكون متاحة للصرف.' : 'The batch moves to quarantine and becomes unavailable for issue.', cta: t.actQuar, onConfirm: () => this.showToast(s.lang === 'ar' ? 'حُجزت الدفعة' : 'Batch quarantined') }); }
+        };
+      })(),
+
+      // ===== MOVEMENTS =====
+      movChips: [['all', t.mvAll], ['transfer', t.mvTransfer], ['in', t.mvIn], ['out', t.mvOut], ['return', t.mvReturn], ['adjust', t.mvAdjust]].map(([k, label]) => {
+        const on = s.movType === k;
+        return { label, set: () => this.setState({ movType: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'transparent', c: on ? 'var(--cyanDim)' : 'var(--muted)' };
+      }),
+      movRows: this.MOVES.filter(m => s.movType === 'all' || m.type === s.movType).map((m, i) => {
+        const c = typeChip(m.type);
+        const acc = m.status === 'accepted';
+        return { delay: (i * 45) + 'ms', chipBg: c[0], chipC: c[1], type: c[2], item: m.item, route: m.from + ' → ' + m.to, qc: m.qty < 0 ? 'var(--danger)' : 'var(--text)', qty: (m.qty < 0 ? '−' : '') + nf(Math.abs(m.qty)), by: m.user, when: m.time + ' · ' + m.date, stBg: acc ? 'rgba(47,191,143,.12)' : 'var(--chipW)', stC: acc ? 'var(--ok)' : 'var(--warn)', stL: acc ? t.stAccepted : t.stQuarantine };
+      }),
+
+      // ===== TRANSFERS =====
+      trTabs: [['central', t.trCentral], ['receive', t.trReceive]].map(([k, label]) => {
+        const on = s.trTab === k;
+        return { label, set: () => this.setState({ trTab: k, tStep: 1 }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface)', c: on ? 'var(--cyanDim)' : 'var(--muted)', w: on ? 700 : 500, badge: k === 'receive' && s.pendingIds.length ? String(s.pendingIds.length) : '' };
+      }),
+      isWizard: s.trTab === 'central', isReceive: s.trTab === 'receive',
+      trSteps: [[1, t.trStep1], [2, t.trStep2], [3, t.trStep3]].map(([n, label], i) => {
+        const done = s.tStep > n, cur = s.tStep === n;
+        return { flex: i < 2 ? 1 : 0, n: done ? '✓' : String(n), label, bg: done ? 'var(--teal)' : cur ? 'var(--chip)' : 'transparent', bc: done ? 'var(--teal)' : cur ? 'var(--cyan)' : 'var(--line)', c: cur || done ? 'var(--text)' : 'var(--muted)', line: i < 2, lineC: done ? 'var(--teal)' : 'var(--line)' };
+      }),
+      tStep1: s.tStep === 1, tStep2: s.tStep === 2, tStep3: s.tStep === 3,
+      gridDest: isMobile ? '1fr' : '1fr 1fr',
+      destOptions: this.INSTITUTIONS.map((it, i) => ({ set: () => this.setState({ tDest: i }), name: s.lang === 'ar' ? it.name : it.en, store: it.store, bg: s.tDest === i ? 'var(--chip)' : 'var(--surface2)', bc: s.tDest === i ? 'var(--cyan)' : 'var(--line)' })),
+      tDestName: s.lang === 'ar' ? this.INSTITUTIONS[s.tDest].name : this.INSTITUTIONS[s.tDest].en,
+      twItems: this.ITEMS.filter(it => it.onHand - it.reserved > 0).slice(0, 5).map(it => {
+        const avail = it.onHand - it.reserved; const q = s.tQtys[it.id] || '';
+        const over = q !== '' && Number(q) > avail;
+        return { name: it.name, avail: nf(avail), qty: q, setQty: (e) => this.setState({ tQtys: { ...s.tQtys, [it.id]: e.target.value } }), qBorder: over ? 'var(--danger)' : 'var(--line)', err: over ? (s.lang === 'ar' ? 'يتجاوز المتاح — لا يُسمح' : 'Exceeds available — not allowed') : '' };
+      }),
+      tSummary: this.ITEMS.filter(it => Number(s.tQtys[it.id]) > 0).map(it => ({ n: it.name, q: nf(Number(s.tQtys[it.id])) })),
+      tTotal: nf(this.ITEMS.reduce((a, it) => a + (Number(s.tQtys[it.id]) > 0 ? Number(s.tQtys[it.id]) : 0), 0)),
+      tCanBack: s.tStep > 1, tBack: () => this.setState({ tStep: s.tStep - 1 }),
+      tShowNext: s.tStep < 3, tNextBg: 'linear-gradient(92deg,var(--cyan),var(--teal))', tNextC: '#04121a',
+      tNext: () => {
+        if (s.tStep === 2) {
+          const any = this.ITEMS.some(it => Number(s.tQtys[it.id]) > 0);
+          const over = this.ITEMS.some(it => Number(s.tQtys[it.id]) > (it.onHand - it.reserved));
+          if (!any) { this.showToast(s.lang === 'ar' ? 'أدخل كمية واحدة على الأقل' : 'Enter at least one quantity'); return; }
+          if (over) { this.showToast(s.lang === 'ar' ? 'صحّح الكميات المتجاوزة للمتاح' : 'Fix quantities exceeding available'); return; }
+        }
+        this.setState({ tStep: s.tStep + 1 });
+      },
+      tSubmit: () => this.openDialog({ title: s.lang === 'ar' ? 'تأكيد إنشاء التحويل' : 'Confirm transfer creation', rows: [{ k: t.dlgSource, v: 'المركزية' }, { k: t.dlgDest, v: s.lang === 'ar' ? this.INSTITUTIONS[s.tDest].name : this.INSTITUTIONS[s.tDest].en }, { k: t.reviewTotal, v: nf(this.ITEMS.reduce((a, it) => a + (Number(s.tQtys[it.id]) > 0 ? Number(s.tQtys[it.id]) : 0), 0)) }], consequence: t.receiveRule, cta: t.submitTransfer, onConfirm: () => { this.setState({ tStep: 1, tQtys: {} }); this.showToast(s.lang === 'ar' ? 'أُنشئ التحويل — بانتظار قبول الوجهة' : 'Transfer created — awaiting destination acceptance'); } }),
+      pendingRows: this.PENDING.filter(p => s.pendingIds.includes(p.id)).map(p => ({
+        ref: p.ref, age: (s.lang === 'ar' ? 'منذ ' + p.ageH + ' ساعات' : p.ageH + 'h ago'), item: p.item, qty: nf(p.qty), route: p.from + ' → ' + p.to,
+        accept: () => this.openDialog({ title: t.acceptBtn, rows: [{ k: t.colItem, v: p.item }, { k: t.qtyLbl, v: nf(p.qty) }, { k: t.dlgDest, v: p.to }], consequence: s.lang === 'ar' ? 'بالقبول يُضاف الرصيد لوجهتك ويُقفل التحويل. تأكد من مطابقة الكمية المستلمة فعليًا.' : 'On acceptance stock is added to your scope and the transfer closes. Verify the physically received quantity.', cta: t.acceptBtn, onConfirm: () => { this.setState({ pendingIds: s.pendingIds.filter(x => x !== p.id) }); this.showToast(s.lang === 'ar' ? 'قُبل الاستلام وأُضيف الرصيد' : 'Receipt accepted, stock added'); } }),
+        reject: () => this.openDialog({ title: t.rejectBtn, rows: [{ k: t.colItem, v: p.item }, { k: p.ref, v: nf(p.qty) }], consequence: s.lang === 'ar' ? 'بالرفض يبقى الرصيد بالمصدر ولا يُضاف لك. يُسجَّل السبب في التدقيق.' : 'On rejection stock stays at source and is not added to you. The reason is logged.', cta: t.rejectBtn, onConfirm: () => { this.setState({ pendingIds: s.pendingIds.filter(x => x !== p.id) }); this.showToast(s.lang === 'ar' ? 'رُفض الاستلام' : 'Receipt rejected'); } })
+      })),
+      pendingEmpty: s.pendingIds.length === 0,
+
+      // ===== RETURNS =====
+      retRows: [
+        { id: 'r1', item: 'Heparin 5000IU Vial', qty: 18, route: 'صيدلية الردهات → مذخر مستشفى بابل', reason: s.lang === 'ar' ? 'سبب: تلف تغليف — يحتاج فحص' : 'Reason: packaging damage — needs check', st: 'quarantine' },
+        { id: 'r2', item: 'Amoxicillin 500mg Cap', qty: 220, route: 'مركز صحي النيل → مذخر قطاع المحاويل', reason: s.lang === 'ar' ? 'سبب: فائض غير مصروف' : 'Reason: unissued surplus', st: 'pending' },
+        { id: 'r3', item: 'Insulin Glargine 100IU', qty: 6, route: 'صيدلية الطوارئ → مذخر مستشفى بابل', reason: s.lang === 'ar' ? 'سبب: انقطاع سلسلة تبريد' : 'Reason: cold-chain break', st: 'pending' }
+      ].map(r => {
+        const stMeta = r.st === 'quarantine' ? ['var(--chipW)', 'var(--warn)', t.dispQuar] : ['var(--chip)', 'var(--cyanDim)', s.lang === 'ar' ? 'بانتظار قرار' : 'Awaiting'];
+        const disp = s.retDisp[r.id] || 'restock';
+        return { item: r.item, qty: nf(r.qty), route: r.route, reason: r.reason, stBg: stMeta[0], stC: stMeta[1], stL: stMeta[2], disp,
+          setDisp: (e) => this.setState({ retDisp: { ...s.retDisp, [r.id]: e.target.value } }),
+          doDisp: () => { const d = s.retDisp[r.id] || 'restock'; const map = { restock: t.dispRestock, quarantine: t.dispQuar, dispose: t.dispDispose }; this.openDialog({ title: map[d], rows: [{ k: t.colItem, v: r.item }, { k: t.qtyLbl, v: nf(r.qty) }], consequence: d === 'dispose' ? (s.lang === 'ar' ? 'الإتلاف نهائي ويتطلب موافقة إشرافية — يُسجَّل بالكامل.' : 'Disposal is final and requires supervisor approval — fully logged.') : d === 'restock' ? (s.lang === 'ar' ? 'ستعاد الكمية للرصيد المتاح بعد الفحص.' : 'Quantity returns to available stock after check.') : (s.lang === 'ar' ? 'ستبقى الكمية في الحجر لحين القرار.' : 'Quantity stays in quarantine pending decision.'), cta: map[d], onConfirm: () => this.showToast(s.lang === 'ar' ? 'نُفّذ القرار وسُجّل' : 'Disposition applied and logged') }); }
+        };
+      }),
+
+      // ===== ALERTS =====
+      sevChips: [['critical', sevLabel.critical, 'var(--danger)'], ['warn', sevLabel.warn, 'var(--warn)'], ['info', sevLabel.info, 'var(--cyanDim)']].map(([k, label, dot]) => ({ label, dot, n: this.ALERTS.filter(a => a.sevK === k && !s.dismissed.includes(a.id)).length })),
+      alertRows: this.ALERTS.filter(a => !s.dismissed.includes(a.id)).map(a => ({
+        border: a.sevK === 'critical' ? 'rgba(255,107,107,.35)' : a.sevK === 'warn' ? 'rgba(221,186,99,.3)' : 'var(--line)',
+        anim: a.sevK === 'critical' && fxRich ? 'pulseRing 3s ease-out 2, fadeUp 320ms ease both' : 'fadeUp 320ms ease both',
+        iconBg: a.sevK === 'critical' ? 'var(--chipD)' : a.sevK === 'warn' ? 'var(--chipW)' : 'var(--chip)',
+        dot: sevColor[a.sevK], icon: a.sevK === 'critical' ? 'M12 3 2.5 20h19L12 3zM12 10v4M12 17.2v.1' : a.sevK === 'warn' ? 'M12 8v4m0 5.2v.1M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z' : 'M12 16v-4m0-4.5v.1M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z',
+        title: s.lang === 'ar' ? a.title : a.titleEn, sev: sevLabel[a.sevK], cause: s.lang === 'ar' ? a.cause : a.causeEn, scope: a.scope, time: a.time,
+        action: s.lang === 'ar' ? a.action : a.actionEn, doAction: () => this.navTo(a.nav), dismiss: () => this.setState({ dismissed: s.dismissed.concat(a.id) })
+      })),
+
+      // ===== ENTRY / OCR =====
+      setTabManual: () => this.setState({ entryTab: 'manual' }), setTabOcr: () => this.setState({ entryTab: 'ocr' }),
+      isManual: s.entryTab === 'manual', isOcr: s.entryTab === 'ocr',
+      enTabMB: s.entryTab === 'manual' ? 'var(--cyan)' : 'var(--line)', enTabMBg: s.entryTab === 'manual' ? 'var(--chip)' : 'var(--surface)', enTabMC: s.entryTab === 'manual' ? 'var(--cyanDim)' : 'var(--muted)',
+      enTabOB: s.entryTab === 'ocr' ? 'var(--cyan)' : 'var(--line)', enTabOBg: s.entryTab === 'ocr' ? 'var(--chip)' : 'var(--surface)', enTabOC: s.entryTab === 'ocr' ? 'var(--cyanDim)' : 'var(--muted)',
+      gridEntry: isMobile ? '1fr' : '1.3fr 1fr',
+      itemOpts: this.ITEMS.map(it => ({ id: String(it.id), name: it.name })),
+      enItem: s.enItem, setEnItem: (e) => this.setState({ enItem: e.target.value }),
+      enBatch: s.enBatch, setEnBatch: (e) => this.setState({ enBatch: e.target.value }),
+      enExp: s.enExp, setEnExp: (e) => this.setState({ enExp: e.target.value }),
+      enQty: s.enQty, setEnQty: (e) => this.setState({ enQty: e.target.value }),
+      enQtyBorder: s.enQty !== '' && Number(s.enQty) <= 0 ? 'var(--danger)' : 'var(--line)',
+      enQtyMsg: s.enQty === '' ? (s.lang === 'ar' ? 'أدخل كمية موجبة' : 'Enter a positive quantity') : Number(s.enQty) <= 0 ? (s.lang === 'ar' ? 'الكمية يجب أن تكون أكبر من صفر' : 'Quantity must be greater than zero') : (s.lang === 'ar' ? '✓ كمية صالحة' : '✓ Valid quantity'),
+      enQtyMsgC: s.enQty !== '' && Number(s.enQty) > 0 ? 'var(--ok)' : 'var(--muted)',
+      enSrc: s.enSrc, setEnSrc: (e) => this.setState({ enSrc: e.target.value }),
+      enSummaryRows: (() => { const it = this.ITEMS.find(x => String(x.id) === s.enItem); const srcMap = { supplier: t.enSrcSupplier, donation: t.enSrcDonation, correction: t.enSrcCorrection }; return [{ k: t.enItem, v: it ? it.name : '—' }, { k: t.enBatch, v: s.enBatch || '—' }, { k: t.enExpiry, v: s.enExp || '—' }, { k: t.enQty, v: s.enQty ? nf(Number(s.enQty)) : '—' }, { k: t.enSource, v: srcMap[s.enSrc] }]; })(),
+      saveEntry: () => { if (!s.enQty || Number(s.enQty) <= 0 || !s.enBatch) { this.showToast(s.lang === 'ar' ? 'أكمل الدفعة والكمية الصالحة' : 'Complete batch and a valid quantity'); return; } this.openDialog({ title: t.enSave, rows: this.ITEMS.filter(x => String(x.id) === s.enItem).map(it => ({ k: t.enItem, v: it.name })).concat([{ k: t.enBatch, v: s.enBatch }, { k: t.enQty, v: nf(Number(s.enQty)) }]), consequence: s.lang === 'ar' ? 'يُضاف الإدخال للرصيد المركزي بعد الموافقة، ويُسجَّل بالكامل.' : 'The entry is added to central stock after approval and is fully logged.', cta: t.enSave, onConfirm: () => { this.setState({ enBatch: '', enExp: '', enQty: '' }); this.showToast(s.lang === 'ar' ? 'حُفظ الإدخال وأُرسل للموافقة' : 'Entry saved and sent for approval'); } }); },
+      ocrIdle: s.ocrStage === 'idle', ocrProc: s.ocrStage === 'processing', ocrReview: s.ocrStage === 'review',
+      startOcr: () => this.startOcr(), redoOcr: () => this.setState({ ocrStage: 'idle' }),
+      approveOcr: () => { this.setState({ ocrStage: 'idle' }); this.showToast(s.lang === 'ar' ? 'اعتُمدت الحقول وأُضيفت للمسودة' : 'Fields approved and added to draft'); },
+      gridOcr: isMobile ? '1fr' : '1fr 1fr 1fr',
+      ocrFields: [
+        { label: t.ocrFItem, val: 'Ceftriaxone 1g Vial', conf: '97%', hi: false },
+        { label: t.ocrFBatch, val: 'CFX-2611-A', conf: '92%', hi: false },
+        { label: t.ocrFExp, val: '2027-02-11', conf: '74%', hi: true },
+        { label: t.ocrFQty, val: '400', conf: '96%', hi: false },
+        { label: t.ocrFSup, val: 'Kimadia / State Co.', conf: '68%', hi: true }
+      ].map(f => ({ label: f.label, val: f.val, conf: f.conf, cc: parseInt(f.conf) >= 90 ? 'var(--ok)' : parseInt(f.conf) >= 80 ? 'var(--warn)' : 'var(--danger)', border: f.hi ? 'var(--warn)' : 'var(--line)' })),
+
+      // ===== INSTITUTIONS =====
+      gridInst: isMobile ? '1fr' : '1fr 1fr',
+      instCards: this.INSTITUTIONS.map((it, i) => {
+        const health = ['91%', '88%', '84%', '93%'][i]; const items = ['186', '142', '98', '76'][i];
+        return { name: s.lang === 'ar' ? it.name : it.en, store: it.store, outlets: it.outlets, items, health, hc: parseInt(health) >= 90 ? 'var(--teal)' : 'var(--warn)',
+          rename: () => this.openDialog({ title: t.instRename, rows: [{ k: s.lang === 'ar' ? 'المؤسسة' : 'Institution', v: s.lang === 'ar' ? it.name : it.en }], consequence: t.renameNote, cta: t.instRename, onConfirm: () => this.showToast(s.lang === 'ar' ? 'حُفظ الاسم وسُجّل في التدقيق' : 'Name saved and logged') }) };
+      }),
+
+      // ===== USERS =====
+      usersRows: this.USERS.map(u => {
+        const roleMeta = u.role === 'super_admin' ? ['var(--chipD)', 'var(--danger)'] : u.role === 'إشراف' ? ['var(--chipW)', 'var(--gold)'] : ['var(--chip)', 'var(--cyanDim)'];
+        return { initial: u.name.charAt(0), name: u.name, scope: u.scope, role: u.role, roleBg: roleMeta[0], roleC: roleMeta[1], stC: u.status === 'active' ? 'var(--ok)' : 'var(--warn)', stL: u.status === 'active' ? t.stActive : t.stPaused, edit: () => this.setState({ usersSel: u.id }) };
+      }),
+      uSelOn: !!s.usersSel, closeUser: () => this.setState({ usersSel: null }),
+      uSelName: (() => { const u = this.USERS.find(x => x.id === s.usersSel); return u ? u.name : ''; })(),
+      roleOpts: [['roleSuper', t.roleSuper], ['roleSup', t.roleSup], ['roleKeep', t.roleKeep], ['roleDisp', t.roleDisp]].map(([k, label]) => { const on = s.uRoleDraft === k; return { label, set: () => this.setState({ uRoleDraft: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)', dotB: on ? 'var(--cyan)' : 'var(--muted)', dot: on ? 'var(--cyan)' : 'transparent' }; }),
+      scopeOpts: this.INSTITUTIONS.map((it, i) => { const on = s.uScopes.includes(i); return { label: it.store, set: () => this.setState({ uScopes: on ? s.uScopes.filter(x => x !== i) : s.uScopes.concat(i) }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)', dotB: on ? 'var(--cyan)' : 'var(--muted)', dot: on ? 'var(--cyan)' : 'transparent', check: on ? '✓' : '' }; }),
+      saveUser: () => { this.setState({ usersSel: null }); this.showToast(s.lang === 'ar' ? 'حُفظ الدور والنطاق وسُجّل' : 'Role & scope saved and logged'); },
+
+      // ===== REPORTS =====
+      gridReports: isMobile ? '1fr' : '300px 1fr',
+      repType: s.repType, setRepType: (e) => this.setState({ repType: e.target.value }),
+      repGroup: s.repGroup, setRepGroup: (e) => this.setState({ repGroup: e.target.value }),
+      repColOpts: [['name', t.colName], ['qty', t.colQtyC], ['expiry', t.colExpC], ['inst', t.colInst], ['batch', t.colBatchC]].map(([k, label]) => { const on = s.repCols[k]; return { label, toggle: () => this.setState({ repCols: { ...s.repCols, [k]: !s.repCols[k] } }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)', dotB: on ? 'var(--cyan)' : 'var(--muted)', dot: on ? 'var(--cyan)' : 'transparent', check: on ? '✓' : '' }; }),
+      repExcel: () => this.showToast(s.lang === 'ar' ? 'صُدّر ملف Excel (تجريبي)' : 'Excel exported (demo)'),
+      repPrint: () => this.showToast(s.lang === 'ar' ? 'فُتحت معاينة الطباعة (تجريبي)' : 'Print preview opened (demo)'),
+      repTitle: s.repType === 'stock' ? t.repTypeStock : s.repType === 'expiry' ? t.repTypeExpiry : t.repTypeMoves,
+      ...(() => {
+        const cols = [];
+        if (s.repCols.name) cols.push(['name', t.colName]);
+        if (s.repCols.qty) cols.push(['qty', t.colQtyC]);
+        if (s.repCols.expiry) cols.push(['expiry', t.colExpC]);
+        if (s.repCols.inst) cols.push(['inst', t.colInst]);
+        if (s.repCols.batch) cols.push(['batch', t.colBatchC]);
+        if (cols.length === 0) cols.push(['name', t.colName]);
+        const src = s.repType === 'expiry' ? this.ITEMS.filter(x => x.status === 'near' || x.status === 'missing') : this.ITEMS;
+        return {
+          repGridCols: cols.map(() => '1fr').join(' '),
+          repHead: cols.map(c => c[1]),
+          repRows: src.map(it => ({ cells: cols.map(c => c[0] === 'name' ? it.name : c[0] === 'qty' ? nf(it.onHand) : c[0] === 'expiry' ? it.expiry : c[0] === 'inst' ? 'المركزية' : (this.BATCHES[it.id] || this.BATCHES.def)[0].b) })),
+          repTotalQty: nf(src.reduce((a, it) => a + it.onHand, 0))
+        };
+      })(),
+
+      // ===== SEARCH =====
+      searchQ: s.searchQ, setSearchQ: (e) => this.setState({ searchQ: e.target.value }),
+      seaHasQ: s.searchQ.trim().length > 0, seaIdle: s.searchQ.trim().length === 0,
+      ...(() => {
+        const q = s.searchQ.trim().toLowerCase();
+        if (!q) return { seaGroups: [], seaEmpty: false };
+        const items = this.ITEMS.filter(it => it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q));
+        const batches = []; Object.keys(this.BATCHES).forEach(k => { if (k === 'def') return; this.BATCHES[k].forEach(b => { if (b.b.toLowerCase().includes(q)) { const it = this.ITEMS.find(x => x.id === Number(k)); batches.push({ b, it }); } }); });
+        const transfers = this.PENDING.concat(this.MOVES.map(m => ({ ref: 'MOV-' + m.id, item: m.item }))).filter(x => (x.ref || '').toLowerCase().includes(q) || (x.item || '').toLowerCase().includes(q));
+        const groups = [];
+        if (items.length) groups.push({ label: t.seaGItems, n: items.length, rows: items.map(it => ({ title: it.name, sub: it.code + ' · ' + nf(it.onHand - it.reserved) + ' ' + t.colAvail, open: () => { this.setState({ invSel: it.id }); this.navTo('inventory'); } })) });
+        if (batches.length) groups.push({ label: t.seaGBatches, n: batches.length, rows: batches.map(x => ({ title: x.b.b, sub: (x.it ? x.it.name : '') + ' · ' + x.b.exp, open: () => { this.setState({ invSel: x.it ? x.it.id : null }); this.navTo('inventory'); } })) });
+        if (transfers.length) groups.push({ label: t.seaGTransfers, n: transfers.length, rows: transfers.map(x => ({ title: x.ref, sub: x.item, open: () => this.navTo('transfers') })) });
+        return { seaGroups: groups, seaEmpty: groups.length === 0 };
+      })(),
+
+      // ===== AUDIT =====
+      audTabs: [['approvals', t.audApprovals], ['log', t.audLog], ['qr', t.audQr]].map(([k, label]) => { const on = s.auditTab === k; return { label, set: () => this.setState({ auditTab: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface)', c: on ? 'var(--cyanDim)' : 'var(--muted)', w: on ? 700 : 500 }; }),
+      audIsApprovals: s.auditTab === 'approvals', audIsLog: s.auditTab === 'log', audIsQr: s.auditTab === 'qr',
+      approvalRows: this.APPROVALS.map(p => ({ title: p.title, sub: p.sub,
+        approve: () => this.showToast(s.lang === 'ar' ? 'اعتُمد الطلب وسُجّل' : 'Request approved and logged'),
+        reject: () => this.openDialog({ title: t.audReject, rows: [{ k: s.lang === 'ar' ? 'الطلب' : 'Request', v: p.title }], consequence: s.lang === 'ar' ? 'سيُرفض الطلب ويُسجَّل السبب في التدقيق.' : 'The request is rejected and the reason logged.', cta: t.audReject, onConfirm: () => this.showToast(s.lang === 'ar' ? 'رُفض الطلب' : 'Request rejected') }) })),
+      auditRows: this.AUDIT.map(a => ({ act: a.act, by: a.by, scope: a.scope, time: a.time, c: a.ok ? 'var(--ok)' : 'var(--danger)', icon: a.ok ? 'M20 6 9 17l-5-5' : 'M18 6 6 18M6 6l12 12' })),
+      gridQr: isMobile ? '1fr' : '300px 1fr',
+      qrVal: s.qrVal, setQr: (e) => this.setState({ qrVal: e.target.value, qrRes: '' }),
+      qrCheckFn: () => this.setState({ qrRes: t.qrResult }), qrRes: s.qrRes,
+      qrRecent: [
+        { ref: 'TRF-2607-112', txt: s.lang === 'ar' ? 'استلام مذخر بابل' : 'Babil store receipt', st: t.stAccepted, c: 'var(--ok)' },
+        { ref: 'TRF-2607-109', txt: s.lang === 'ar' ? 'رفض نقص المحاويل' : 'Mahawil shortage reject', st: t.rejectBtn, c: 'var(--danger)' },
+        { ref: 'TRF-2607-114', txt: s.lang === 'ar' ? 'بانتظار قبول بابل' : 'Awaiting Babil accept', st: s.lang === 'ar' ? 'معلّق' : 'Pending', c: 'var(--warn)' }
+      ],
+
+      // ===== SETTINGS =====
+      langOpts: [['ar', 'العربية'], ['en', 'English']].map(([k, label]) => { const on = s.lang === k; return { label, set: () => this.setState({ lang: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)' }; }),
+      themeOpts: [['dark', t.seThemeDark], ['light', t.seThemeLight]].map(([k, label]) => { const on = s.theme === k; return { label, set: () => this.setState({ theme: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)' }; }),
+      gridFx: isMobile ? '1fr 1fr' : 'repeat(4,1fr)',
+      fxOpts: [['auto', t.fxAuto], ['cinematic', t.fxCinematic], ['reduced', t.fxReduced], ['off', t.fxOff]].map(([k, full]) => { const on = s.effects === k; const label = full.split(': ')[1] || full; const descMap = { auto: s.lang === 'ar' ? 'يقيس الجهاز' : 'device-aware', cinematic: 'L1–L4', reduced: s.lang === 'ar' ? 'حركة أقل' : 'less motion', off: s.lang === 'ar' ? 'بلا حركة' : 'no motion' }; return { label, desc: descMap[k], set: () => this.setState({ effects: k }), bc: on ? 'var(--cyan)' : 'var(--line)', bg: on ? 'var(--chip)' : 'var(--surface2)' }; }),
+      replayWelcome: () => { try { sessionStorage.removeItem('phx-welcome-seen'); } catch (e) {} this.setState({ phase: 'welcome' }); if (this.fxLevel() === 'cinematic') { clearTimeout(this._wTimer); this._wTimer = setTimeout(() => this.finishWelcome(), 6800); } },
+      notifOpts: [['near', t.ntfNear], ['low', t.ntfLow], ['pending', t.ntfPending]].map(([k, label]) => { const on = s.notif[k]; return { label, ariaOn: on ? 'true' : 'false', toggle: () => this.setState({ notif: { ...s.notif, [k]: !s.notif[k] } }), bc: on ? 'var(--teal)' : 'var(--line)', bg: on ? 'var(--teal)' : 'var(--field)', knob: on ? '22px' : '2px' }; })
+    };
+  }
+}
+</script>
+</body>
+</html>
