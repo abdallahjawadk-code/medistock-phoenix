@@ -116,11 +116,13 @@ export function PhoenixWelcomeScene({ particleCount, durationMs, onDone }: Props
 
     if (matRef.current) matRef.current.uniforms.uProgress.value = p;
 
-    // Core ignition: dark → blazing, growing as the bird forms.
+    // Core ignition: dark → blazing, growing as the bird forms. Kept small so it
+    // reads as the firebird's glowing heart behind the particles, not a separate
+    // faceted solid floating on its own.
     if (coreRef.current && coreMatRef.current) {
       const ignite = THREE.MathUtils.smoothstep(p, 0.05, 0.45);
       coreMatRef.current.emissiveIntensity = 0.2 + ignite * 2.6;
-      const s = 0.15 + ignite * 0.55;
+      const s = 0.1 + ignite * 0.32;
       coreRef.current.scale.setScalar(s);
       coreRef.current.rotation.y = p * 3.0;
     }

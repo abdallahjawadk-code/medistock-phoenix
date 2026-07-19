@@ -33,30 +33,107 @@ export function prefersReducedData(): boolean {
   return Boolean(conn?.saveData);
 }
 
+/** Coarse tiers that gate how heavy the WebGL scene is allowed to be. */
+export type DeviceTier = 'low' | 'medium' | 'high';
+
+export interface DeviceHints {
+  isMobile: boolean;
+  /** Logical CPU count (defaults to 4 when unknown). */
+  cores: number;
+  /** navigator.deviceMemory in GB, or undefined when the UA does not expose it. */
+  memory?: number;
+  /** True when the primary pointer is coarse (touch) — a proxy for phones/tablets. */
+  coarsePointer: boolean;
+  /** Narrowest viewport edge in CSS px (0 on the server). */
+  viewportMin: number;
+  saveData: boolean;
+  /** True only when a real WebGL2 context can be created. */
+  webgl2: boolean;
+}
+
+/** Read the cheap, safe device hints once. Never throws; safe on the server. */
+export function deviceHints(): DeviceHints {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    return {
+      isMobile: false,
+      cores: 4,
+      memory: undefined,
+      coarsePointer: false,
+      viewportMin: 0,
+      saveData: false,
+      webgl2: false,
+    };
+  }
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(nav.userAgent);
+  const coarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+  const viewportMin = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+  let webgl2 = false;
+  try {
+    webgl2 = Boolean(document.createElement('canvas').getContext('webgl2'));
+  } catch {
+    webgl2 = false;
+  }
+  return {
+    isMobile,
+    cores: nav.hardwareConcurrency ?? 4,
+    memory: nav.deviceMemory,
+    coarsePointer,
+    viewportMin,
+    saveData: prefersReducedData(),
+    webgl2,
+  };
+}
+
+/**
+ * Classify the device. Conservative on purpose: `high` is only granted to a
+ * clearly desktop-class machine (fast CPU, ≥8 GB, WebGL2, fine pointer, roomy
+ * viewport). When deviceMemory is unavailable we assume `medium`, never `high`,
+ * so an unknown 8 GB laptop is not treated as an unbounded cinematic device.
+ */
+export function deviceTier(hints: DeviceHints = deviceHints()): DeviceTier {
+  const { isMobile, cores, memory, coarsePointer, viewportMin, saveData, webgl2 } = hints;
+
+  // Anything explicitly constrained drops straight to the cheapest tier.
+  if (saveData || isMobile || coarsePointer || cores <= 4 || (memory !== undefined && memory <= 4)) {
+    return 'low';
+  }
+
+  const memoryKnownAmple = memory !== undefined && memory >= 8;
+  const roomyViewport = viewportMin >= 720; // narrowest edge, so portrait laptops still qualify
+  if (webgl2 && cores >= 8 && memoryKnownAmple && roomyViewport) {
+    return 'high';
+  }
+  return 'medium';
+}
+
 export interface DeviceProfile {
   isMobile: boolean;
+  tier: DeviceTier;
   /** Upper bound for devicePixelRatio passed to the renderer. */
   dprCap: number;
-  /** Number of GPU ember particles the device may afford. */
+  /** Number of GPU particles the device may afford in the login scene. */
   particleCount: number;
+  /** MSAA is expensive; reserved for the `high` tier only. */
+  antialias: boolean;
   lowPower: boolean;
 }
 
-/** Coarse device tiering from hints that are cheap and safe to read. */
-export function deviceProfile(): DeviceProfile {
-  const nav =
-    typeof navigator !== 'undefined'
-      ? (navigator as Navigator & { deviceMemory?: number })
-      : undefined;
-  const isMobile = nav ? /Mobi|Android|iPhone|iPad|iPod/i.test(nav.userAgent) : false;
-  const cores = nav?.hardwareConcurrency ?? 4;
-  const mem = nav?.deviceMemory ?? 4;
-  const lowPower = isMobile || cores <= 4 || mem <= 4;
+/** Per-tier render budget. Deliberately modest — identity over frame-burning. */
+export function deviceProfile(hints: DeviceHints = deviceHints()): DeviceProfile {
+  const tier = deviceTier(hints);
+  const byTier = {
+    high: { dprCap: 1.5, particleCount: 1100, antialias: true },
+    medium: { dprCap: 1.25, particleCount: 700, antialias: false },
+    low: { dprCap: 1, particleCount: 400, antialias: false },
+  }[tier];
   return {
-    isMobile,
-    dprCap: isMobile ? 1.5 : 2,
-    particleCount: isMobile ? 850 : lowPower ? 1400 : 2600,
-    lowPower,
+    isMobile: hints.isMobile,
+    tier,
+    dprCap: byTier.dprCap,
+    particleCount: byTier.particleCount,
+    antialias: byTier.antialias,
+    lowPower: tier === 'low',
   };
 }
 

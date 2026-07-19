@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { useApp } from '@/app/AppContext';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { PhoenixWelcomeStage, shouldRenderWebGL, prefersReducedMotion } from '@/shared/webgl';
+import { PhoenixWelcomeStage, resolveEffects, prefersReducedMotion } from '@/shared/webgl';
 
 interface Props {
   onComplete: () => void;
@@ -10,6 +10,9 @@ interface Props {
 
 const SEQUENCE_MS = 5200;
 const REDUCED_MS = 900;
+// If the first WebGL frame has not landed this fast, drop to the CSS fallback so
+// the sequence never stalls waiting on the three.js chunk.
+const WEBGL_READY_BUDGET_MS = 500;
 
 /**
  * Phoenix rebirth welcome. When WebGL is available and motion is allowed, a real
@@ -22,12 +25,18 @@ const REDUCED_MS = 900;
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
   const [phase, setPhase] = useState<'ember' | 'rise'>('ember');
-  // Decide the render path once, on the client, at mount.
-  const [useWebGL] = useState(() => shouldRenderWebGL() && !prefersReducedMotion());
+  // Resolve the render plan once, on the client, at mount.
+  const [effects] = useState(() => resolveEffects());
+  const useWebGL = effects.welcomeWebGL;
   const [webglFailed, setWebglFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+  // Once true the Canvas is unmounted immediately (dispose) — used by skip/done.
+  const [stopped, setStopped] = useState(false);
   const completed = useRef(false);
 
   const finish = useCallback(() => {
+    // Tear down the GL scene first so dispose runs before the overlay unmounts.
+    setStopped(true);
     if (completed.current) return;
     completed.current = true;
     onComplete();
@@ -47,7 +56,17 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
     };
   }, [finish, useWebGL]);
 
-  const webglActive = useWebGL && !webglFailed;
+  // Don't let a slow three.js chunk hold the sequence hostage: fall back to the
+  // CSS atmosphere if the first frame misses the budget.
+  useEffect(() => {
+    if (!useWebGL || ready) return;
+    const t = window.setTimeout(() => {
+      if (!ready) setWebglFailed(true);
+    }, WEBGL_READY_BUDGET_MS);
+    return () => window.clearTimeout(t);
+  }, [useWebGL, ready]);
+
+  const webglActive = useWebGL && !webglFailed && !stopped;
 
   return (
     <div
@@ -62,7 +81,9 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       {webglActive && (
         <PhoenixWelcomeStage
           durationMs={SEQUENCE_MS}
+          effects={effects}
           onDone={finish}
+          onReady={() => setReady(true)}
           onContextLost={() => setWebglFailed(true)}
         />
       )}

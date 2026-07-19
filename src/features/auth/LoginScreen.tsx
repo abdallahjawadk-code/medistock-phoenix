@@ -4,7 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { PhoenixExperience } from '@/shared/webgl';
+import { PhoenixExperience, signalLoginIntent, preloadPhoenixWelcome } from '@/shared/webgl';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -48,6 +48,9 @@ export function LoginScreen() {
       return;
     }
     setBusy(true);
+    // Warm the welcome scene's three.js chunk IN PARALLEL with the auth request
+    // (not before it) so the rebirth is ready the moment sign-in succeeds.
+    preloadPhoenixWelcome();
     // Bare usernames resolve to the synthetic internal auth email. Whether a
     // username exists is never revealed — same generic error either way.
     const res = await signIn(resolveLoginIdentifier(email), password);
@@ -186,6 +189,7 @@ export function LoginScreen() {
                   className="premium-field nexus-login__field"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  onFocus={signalLoginIntent}
                 />
               </div>
 

@@ -47,11 +47,14 @@ describe('Save-Data routing', () => {
 });
 
 describe('device tiering', () => {
-  it('deviceProfile() caps DPR ≤ 2 and keeps a positive, bounded particle budget', () => {
+  it('deviceProfile() caps DPR ≤ 1.5 and keeps a positive, bounded particle budget', () => {
     const p = deviceProfile();
     expect(p.dprCap).toBeGreaterThan(0);
-    expect(p.dprCap).toBeLessThanOrEqual(2);
+    // New adaptive ceiling: even the high tier never exceeds 1.5 DPR / 1200
+    // particles — the old 2.0 / 2600 budget was the source of the login jank.
+    expect(p.dprCap).toBeLessThanOrEqual(1.5);
     expect(p.particleCount).toBeGreaterThan(0);
-    expect(p.particleCount).toBeLessThanOrEqual(2600);
+    expect(p.particleCount).toBeLessThanOrEqual(1200);
+    expect(['low', 'medium', 'high']).toContain(p.tier);
   });
 });

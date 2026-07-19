@@ -1382,6 +1382,12 @@ html body {
   .nexus-welcome__content { padding-inline: 18px; }
   .nexus-welcome__credits > div { align-items: flex-start; font-size: 10px; line-height: 1.65; }
   .nexus-welcome__skip { top: 14px; inset-inline-end: 14px; }
+
+  /* Perf: a heavy backdrop blur is the single most expensive compositing cost on
+     phones and it runs on the GPU alongside any WebGL scene. Cap the login/
+     welcome glass surfaces to ≤8px here so the two never fight for the GPU. */
+  .nexus-login__auth { backdrop-filter: blur(8px) saturate(120%); }
+  .nexus-welcome__skip { backdrop-filter: blur(8px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2044,5 +2050,37 @@ html body {
   .nexus-error__retry {
     grid-column: 1 / -1;
     width: 100%;
+  }
+}
+
+/* ─── PHOENIX EFFECTS-MODE GATING ──────────────────────────────────────────────
+   The EffectsMode policy stamps data-effects="webgl|fallback" on the login
+   wrapper and data-webgl="on|off" on the welcome overlay. Use those to guarantee
+   only ONE layer draws at a time — never a full-bleed CSS scene AND a WebGL
+   scene compositing on top of each other. */
+
+/* 2.5D pointer parallax for medium/low login (no GL context). Driven by
+   --phoenix-px/--phoenix-py set on the wrapper by PhoenixExperience. The slight
+   overscale keeps edges hidden as the plate shifts. */
+[data-parallax="2d"] .nexus-login__plate {
+  transform:
+    translate3d(calc(var(--phoenix-px, 0) * -14px), calc(var(--phoenix-py, 0) * -10px), 0)
+    scale(1.06);
+  transition: transform .2s ease-out;
+  will-change: transform;
+}
+
+/* When the real WebGL welcome is on screen, stop the duplicated CSS embers and
+   the extra glow so the GPU only pays for one particle system. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__particle,
+.nexus-welcome[data-webgl="on"] .nexus-welcome__horizon {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A static plate must never carry a parallax transform. */
+  [data-parallax="2d"] .nexus-login__plate {
+    transform: none;
+    transition: none;
   }
 }
