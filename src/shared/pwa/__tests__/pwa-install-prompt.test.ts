@@ -364,12 +364,18 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B) and the self-hosted W1 fonts, checked structurally, not just diff', () => {
+  it('no package.json runtime dependency changes beyond the explicitly approved additions (exceljs, self-hosted W1 fonts, and the cinematic WebGL stack), checked structurally, not just diff', () => {
     const pkg = JSON.parse(readRoot('package.json'));
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       // W1: self-hosted variable fonts replacing the external Google Fonts CDN
       // (CSP font-src 'self'). Weight-axis only; bundled by Vite.
       '@fontsource-variable/dm-sans', '@fontsource-variable/noto-sans-arabic',
+      // Cinematic redesign: the real WebGL Phoenix stack. React-18-compatible
+      // and lazy/code-split — enforced by tests/webgl-deps-contract.test.ts and
+      // src/shared/ui/__tests__/premium-visual-system.test.ts (isolated to
+      // src/shared/webgl/**). Asset/capture tooling (sharp, playwright-core)
+      // lives in devDependencies, not here.
+      '@react-three/fiber', 'three',
       '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
     ].sort());
   });
