@@ -46,7 +46,7 @@ interface Props {
 }
 
 const NetworkTwin3DScene = lazy(() =>
-  import('./NetworkTwin3DScene').then(module => ({ default: module.NetworkTwin3DScene })),
+  import('@/shared/webgl/NetworkTwin3DScene').then(module => ({ default: module.NetworkTwin3DScene })),
 );
 
 const SIGNAL_LABEL: Record<InventorySignalType, { ar: string; en: string }> = {

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const FEATURE = join(__dirname, '..');
 const read = (path: string) => readFileSync(join(FEATURE, path), 'utf8');
 const stage = read('NetworkTopologyStage.tsx');
-const scene = read('NetworkTwin3DScene.tsx');
+const scene = readFileSync(join(FEATURE, '../../../shared/webgl/NetworkTwin3DScene.tsx'), 'utf8');
 const screen = read('NetworkManagementScreen.tsx');
 const css = read('../../shared/lib/phoenix-nexus.css');
 

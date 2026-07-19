@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { TwinSceneEdge, TwinSceneNode } from './NetworkTopologyStage';
+import type { TwinSceneEdge, TwinSceneNode } from '@/features/network/NetworkTopologyStage';
 
 interface Props {
   nodes: TwinSceneNode[];
