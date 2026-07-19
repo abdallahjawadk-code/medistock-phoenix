@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DistributionPoint } from '@/shared/supabase/services/warehouses.service';
 import type { NetworkWarehouse, SupplyRoute } from './network.service';
+import type { InventorySeverity, InventorySignalType } from '@/features/inventory/inventory-intelligence.service';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 type Lang = 'ar' | 'en';
 type NodeKind = 'central' | 'institution' | 'outlet';
 type Position = [number, number, number];
+
+/** Aggregated real inventory-alert state for one node (from RLS-scoped data). */
+export interface NodeAlert {
+  severity: InventorySeverity;
+  count: number;
+  topSignal: InventorySignalType;
+}
 
 interface TopologyNode {
   id: string;
@@ -13,7 +21,22 @@ interface TopologyNode {
   kind: NodeKind;
   active: boolean;
   position: Position;
+  alert?: NodeAlert;
 }
+
+const SIGNAL_LABEL: Record<InventorySignalType, { ar: string; en: string }> = {
+  missing: { ar: 'مفقود', en: 'Missing' },
+  low_stock: { ar: 'شحيح', en: 'Low stock' },
+  surplus: { ar: 'فائض', en: 'Surplus' },
+  near_expiry: { ar: 'قريب النفاذ', en: 'Near expiry' },
+  expired: { ar: 'منتهٍ', en: 'Expired' },
+};
+
+const SEVERITY_LABEL: Record<InventorySeverity, { ar: string; en: string }> = {
+  high: { ar: 'حرج', en: 'Critical' },
+  medium: { ar: 'متوسط', en: 'Elevated' },
+  low: { ar: 'منخفض', en: 'Low' },
+};
 
 interface TopologyEdge {
   id: string;
@@ -28,6 +51,8 @@ interface Props {
   routes: SupplyRoute[];
   outlets: DistributionPoint[];
   organizationName?: string;
+  /** Real per-node inventory alerts, keyed by warehouse/outlet id (RLS-scoped). */
+  alerts?: Map<string, NodeAlert>;
 }
 
 function labelOf(item: { name: string; name_ar: string }, lang: Lang) {
@@ -40,13 +65,25 @@ function stableAngle(id: string) {
   return (Math.abs(hash) % 360) * Math.PI / 180;
 }
 
+// Identity tier mapping (mandate): central = Ember/Gold, institution = Ion Cyan
+// (#62E9FF), outlet = Medical Teal (#138F88). Alert state is conveyed by the
+// pulsing ring + DOM icon/text, never by colour alone.
 function nodeColor(node: TopologyNode, selected: boolean): [number, number, number] {
   if (!node.active) return [.36, .45, .52];
   if (selected) return [1, .72, .24];
   if (node.kind === 'central') return [.96, .44, .14];
-  if (node.kind === 'institution') return [.08, .75, .62];
-  return [.28, .79, .94];
+  if (node.kind === 'institution') return [.38, .914, 1.0];
+  return [.075, .561, .533];
 }
+
+/** Ring colour by severity: high = danger red, medium = amber, low = gold. */
+function alertRingColor(sev: InventorySeverity): [number, number, number] {
+  if (sev === 'high') return [.95, .27, .32];
+  if (sev === 'medium') return [.97, .66, .22];
+  return [.87, .73, .39];
+}
+
+const SEVERITY_RANK: Record<InventorySeverity, number> = { high: 0, medium: 1, low: 2 };
 
 function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
   const shader = gl.createShader(type);
@@ -69,6 +106,7 @@ function createProgram(gl: WebGLRenderingContext) {
     uniform float uRotation;
     uniform vec2 uTilt;
     uniform float uAspect;
+    uniform float uSizeScale;
 
     void main() {
       float cy = cos(uRotation + uTilt.x);
@@ -84,7 +122,7 @@ function createProgram(gl: WebGLRenderingContext) {
       float depth = max(2.8, 4.25 - p.z);
       float perspective = 3.55 / depth;
       gl_Position = vec4((p.x * perspective) / max(uAspect, .6), p.y * perspective, 0.0, 1.0);
-      gl_PointSize = aSize * perspective;
+      gl_PointSize = aSize * perspective * uSizeScale;
       vColor = aColor;
     }
   `);
@@ -95,7 +133,14 @@ function createProgram(gl: WebGLRenderingContext) {
 
     void main() {
       float alpha = .56;
-      if (uPointMode > .5) {
+      if (uPointMode > 1.5) {
+        // Alert ring/halo: bright annulus, hollow centre — a pulsing alert cue.
+        vec2 center = gl_PointCoord - vec2(.5);
+        float radius = length(center);
+        if (radius > .5) discard;
+        alpha = smoothstep(.28, .42, radius) * (1.0 - smoothstep(.42, .5, radius));
+        alpha *= .85;
+      } else if (uPointMode > .5) {
         vec2 center = gl_PointCoord - vec2(.5);
         float radius = length(center);
         if (radius > .5) discard;
@@ -120,7 +165,7 @@ function createProgram(gl: WebGLRenderingContext) {
   return program;
 }
 
-export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organizationName }: Props) {
+export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organizationName, alerts }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [webglReady, setWebglReady] = useState<boolean | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -147,6 +192,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       kind: warehouse.warehouseKind,
       active: warehouse.status === 'active',
       position: warehousePositions.get(warehouse.id) ?? [0, 0, 0],
+      alert: alerts?.get(warehouse.id),
     }));
 
     outlets.forEach((outlet, index) => {
@@ -163,6 +209,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
           base[1] + Math.sin(angle) * .17,
           base[2] + Math.cos(angle * 1.4) * .08,
         ],
+        alert: alerts?.get(outlet.id),
       });
     });
 
@@ -188,7 +235,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
     });
 
     return { nodes, edges };
-  }, [warehouses, routes, outlets, lang]);
+  }, [warehouses, routes, outlets, lang, alerts]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -219,9 +266,11 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
     const tiltLocation = gl.getUniformLocation(program, 'uTilt');
     const aspectLocation = gl.getUniformLocation(program, 'uAspect');
     const pointModeLocation = gl.getUniformLocation(program, 'uPointMode');
+    const sizeScaleLocation = gl.getUniformLocation(program, 'uSizeScale');
     const pointBuffer = gl.createBuffer();
     const lineBuffer = gl.createBuffer();
-    if (!pointBuffer || !lineBuffer || positionLocation < 0 || colorLocation < 0 || sizeLocation < 0) {
+    const alertBuffer = gl.createBuffer();
+    if (!pointBuffer || !lineBuffer || !alertBuffer || positionLocation < 0 || colorLocation < 0 || sizeLocation < 0) {
       gl.deleteProgram(program);
       setWebglReady(false);
       return undefined;
@@ -243,10 +292,23 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       lineData.push(...source.position, ...color, 1, ...target.position, ...color, 1);
     });
 
+    // Alert halo/ring pass — one bigger vertex per alerted node, coloured by
+    // severity. Drawn as a hollow pulsing ring so alerts read as more than a
+    // colour (paired with the DOM icon+text list/detail for accessibility).
+    const alertData: number[] = [];
+    topology.nodes.forEach(node => {
+      if (!node.alert) return;
+      const color = alertRingColor(node.alert.severity);
+      const base = node.kind === 'outlet' ? 26 : 34;
+      alertData.push(...node.position, ...color, base);
+    });
+
     gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointData), gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lineData), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, alertBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(alertData), gl.STATIC_DRAW);
 
     gl.useProgram(program);
     gl.enable(gl.BLEND);
@@ -293,15 +355,28 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       gl.uniform2f(tiltLocation, tiltX, tiltY);
       gl.uniform1f(aspectLocation, width / Math.max(height, 1));
 
+      gl.uniform1f(sizeScaleLocation, 1);
       bindAttributes(lineBuffer);
       gl.uniform1f(pointModeLocation, 0);
       gl.drawArrays(gl.LINES, 0, lineData.length / 7);
+
+      // Alert rings first (behind nodes), pulsing when motion is allowed.
+      if (alertData.length > 0) {
+        const pulse = motionEnabled && !reducedMotion ? 1 + Math.sin(time * 0.0045) * 0.16 : 1.12;
+        gl.uniform1f(sizeScaleLocation, pulse);
+        gl.uniform1f(pointModeLocation, 2);
+        bindAttributes(alertBuffer);
+        gl.drawArrays(gl.POINTS, 0, alertData.length / 7);
+        gl.uniform1f(sizeScaleLocation, 1);
+      }
 
       bindAttributes(pointBuffer);
       gl.uniform1f(pointModeLocation, 1);
       gl.drawArrays(gl.POINTS, 0, pointData.length / 7);
 
-      if (motionEnabled && !reducedMotion) frame = window.requestAnimationFrame(draw);
+      // Keep animating while there are pulsing alert rings, even if idle motion
+      // is off, so the pulse stays alive (unless the user asked for reduced motion).
+      if ((motionEnabled || alertData.length > 0) && !reducedMotion) frame = window.requestAnimationFrame(draw);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -326,12 +401,19 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       canvas.removeEventListener('pointermove', onPointerMove);
       gl.deleteBuffer(pointBuffer);
       gl.deleteBuffer(lineBuffer);
+      gl.deleteBuffer(alertBuffer);
       gl.deleteProgram(program);
     };
   }, [topology, selectedId, motionEnabled]);
 
   const selected = topology.nodes.find(node => node.id === selectedId) ?? null;
   const activeRoutes = topology.edges.filter(edge => edge.active).length;
+  const alertedNodes = topology.nodes
+    .filter(node => node.alert)
+    .sort((a, b) => SEVERITY_RANK[a.alert!.severity] - SEVERITY_RANK[b.alert!.severity]);
+  const criticalCount = alertedNodes.filter(node => node.alert!.severity === 'high').length;
+  const alertText = (a: NodeAlert) =>
+    `${SEVERITY_LABEL[a.severity][lang]} · ${SIGNAL_LABEL[a.topSignal][lang]}${a.count > 1 ? ` ×${a.count}` : ''}`;
 
   return (
     <section className="nexus-topology" aria-label={lang === 'ar' ? 'التوأم الرقمي لشبكة المخزون' : 'Inventory network digital twin'}>
@@ -374,6 +456,11 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
         <div className="nexus-topology__telemetry" aria-live="polite">
           <span>{topology.nodes.length} {lang === 'ar' ? 'عقدة' : 'nodes'}</span>
           <span>{activeRoutes} {lang === 'ar' ? 'رابط فعّال' : 'active links'}</span>
+          {criticalCount > 0 && (
+            <span className="nexus-topology__telemetry-alert">
+              <PhoenixIcon name="warning" size={13} /> {criticalCount} {lang === 'ar' ? 'تنبيه حرج' : 'critical'}
+            </span>
+          )}
           <span className={webglReady ? 'is-live' : ''}>{webglReady ? 'GPU LIVE' : 'SAFE MODE'}</span>
         </div>
       </div>
@@ -390,20 +477,37 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
             type="button"
             key={node.id}
             data-active={selectedId === node.id}
+            data-alert={node.alert ? node.alert.severity : undefined}
+            aria-label={
+              node.alert
+                ? `${node.label} — ${lang === 'ar' ? 'تنبيه' : 'alert'}: ${alertText(node.alert)}`
+                : node.label
+            }
             onClick={() => setSelectedId(current => current === node.id ? null : node.id)}
           >
             <span data-kind={node.kind} />
             <b>{node.label}</b>
-            <small>{node.active ? (lang === 'ar' ? 'فعّال' : 'Active') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}</small>
+            {node.alert ? (
+              <small className="nexus-topology__node-alert">
+                <PhoenixIcon name="warning" size={12} /> {alertText(node.alert)}
+              </small>
+            ) : (
+              <small>{node.active ? (lang === 'ar' ? 'فعّال' : 'Active') : (lang === 'ar' ? 'غير فعّال' : 'Inactive')}</small>
+            )}
           </button>
         ))}
       </div>
 
       {selected && (
-        <div className="nexus-topology__selection">
+        <div className="nexus-topology__selection" data-alert={selected.alert ? selected.alert.severity : undefined}>
           <PhoenixIcon name={selected.kind === 'outlet' ? 'outlet' : selected.kind === 'central' ? 'warehouse' : 'institutions'} size={18} />
           <strong>{selected.label}</strong>
           <span>{selected.active ? (lang === 'ar' ? 'متصل بالشبكة' : 'Connected to network') : (lang === 'ar' ? 'العقدة غير فعّالة' : 'Node inactive')}</span>
+          {selected.alert && (
+            <span className="nexus-topology__selection-alert">
+              <PhoenixIcon name="warning" size={14} /> {alertText(selected.alert)}
+            </span>
+          )}
         </div>
       )}
     </section>

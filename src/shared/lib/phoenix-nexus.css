@@ -1638,6 +1638,74 @@ html body {
 .nexus-topology__selection strong { color: var(--t); }
 .nexus-topology__selection span { margin-inline-start: auto; }
 
+/* ── Digital-twin alert affordances — icon + text + pulsing ring (never colour
+   alone), driven by real RLS-scoped inventory alerts. ─────────────────────── */
+.nexus-topology__telemetry-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--nx-danger);
+  font-weight: 700;
+}
+.nexus-topology__telemetry-alert svg { color: var(--nx-danger); }
+
+.nexus-topology__node-alert {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  color: var(--nx-danger);
+  font-weight: 600;
+}
+.nexus-topology__node-alert svg { color: var(--nx-danger); }
+
+/* A pulsing ring on the node swatch marks an alerted node (severity by hue). */
+.nexus-topology__nodes button[data-alert] > span[data-kind] {
+  position: relative;
+}
+.nexus-topology__nodes button[data-alert] > span[data-kind]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--nx-danger);
+  animation: nexus-alert-pulse 1.8s var(--nx-ease) infinite;
+}
+.nexus-topology__nodes button[data-alert="medium"] > span[data-kind]::after,
+.nexus-topology__selection[data-alert="medium"] { border-color: var(--nx-ember); }
+.nexus-topology__nodes button[data-alert="medium"] > span[data-kind]::after {
+  border-color: var(--nx-ember);
+}
+.nexus-topology__nodes button[data-alert="low"] > span[data-kind]::after {
+  border-color: var(--nx-gold);
+}
+
+.nexus-topology__selection[data-alert] {
+  border-color: color-mix(in srgb, var(--nx-danger) 40%, var(--brd));
+  background: color-mix(in srgb, var(--nx-danger) 7%, var(--nx-surface));
+}
+.nexus-topology__selection-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: 0 !important;
+  color: var(--nx-danger);
+  font-weight: 700;
+}
+.nexus-topology__selection-alert svg { color: var(--nx-danger); }
+
+@keyframes nexus-alert-pulse {
+  0% { transform: scale(1); opacity: .9; }
+  70% { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-topology__nodes button[data-alert] > span[data-kind]::after {
+    animation: none;
+    opacity: .8;
+  }
+}
+
 @media (max-width: 620px) {
   .nexus-topology {
     padding: 14px;
