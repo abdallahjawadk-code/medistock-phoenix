@@ -1,109 +1,44 @@
 /* ─── PHOENIX NEXUS — Cinematic production design layer ─────────────────────
-   W1 establishes the visual system without changing application behavior.
-   The same tokens and surfaces will host the later WebGL scene progressively.
+   The component/class layer for the Phoenix visual system.
+
+   tokens.css is the SINGLE source of truth for the palette, the scales and the
+   shadows. This file used to re-declare all of them (and, being imported after
+   tokens.css, silently won) — it no longer does. Every --nx-* name below is now
+   a semantic alias resolving to a canonical token, so a palette change in
+   tokens.css reaches this layer automatically and the two can never drift.
    ─────────────────────────────────────────────────────────────────────────── */
 
+:root,
+[data-theme="dark"] { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+
 :root {
-  color-scheme: light;
-  --nx-obsidian: #060b16;
-  --nx-navy: #0b1830;
-  --nx-ink: #102a4a;
-  --nx-pearl: #f5f8fc;
-  --nx-ice: #eaf3fa;
-  --nx-teal: #138f88;
-  --nx-cyan: #62e9ff;
-  --nx-emerald: #0ea58a;
-  --nx-ember: #ff7a1a;
-  --nx-gold: #ddba63;
-  --nx-danger: #d9424d;
-  --nx-glow-cyan: rgba(98, 233, 255, .22);
-  --nx-glow-emerald: rgba(14, 165, 138, .22);
-  --nx-glow-ember: rgba(255, 122, 26, .18);
-  --nx-line: rgba(41, 103, 142, .18);
-  --nx-line-strong: rgba(38, 128, 151, .28);
-  --nx-surface: rgba(255, 255, 255, .86);
-  --nx-surface-solid: #ffffff;
-  --nx-surface-raised: rgba(250, 253, 255, .95);
-  --nx-shadow-soft: 0 16px 44px rgba(11, 35, 63, .10);
-  --nx-shadow-deep: 0 28px 80px rgba(7, 28, 52, .16);
-  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .88);
-  --nx-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Cinematic accent aliases → canonical tokens (tokens.css). */
+  --nx-obsidian: var(--bg);
+  --nx-navy: var(--surface);
+  --nx-ink: var(--text);
+  --nx-pearl: var(--text);
+  --nx-ice: var(--surface2);
+  --nx-teal: var(--teal);
+  --nx-cyan: var(--cyan);
+  --nx-emerald: var(--ok);
+  --nx-ember: var(--ember);
+  --nx-gold: var(--gold);
+  --nx-danger: var(--danger);
 
-  --bg: #eef5fa;
-  --s: #ffffff;
-  --s2: #f3f8fb;
-  --sh: #e6f0f6;
-  --glass: rgba(255, 255, 255, .78);
-  --glass-strong: rgba(255, 255, 255, .93);
-  --ambient-a: rgba(14, 165, 138, .15);
-  --ambient-b: rgba(45, 137, 197, .14);
-  --ambient-c: rgba(244, 118, 33, .08);
-  --highlight: rgba(255, 255, 255, .9);
-  --t: #102a4a;
-  --t2: #58708a;
-  --t3: #91a4b8;
-  --p: #0e9f8a;
-  --p2: #d8f7f1;
-  --pd: #087a6d;
-  --sec: #267ba5;
-  --sec2: #e1f2fa;
-  --brd: rgba(52, 103, 139, .18);
-  --skel: #e4edf3;
-  --sw: 264px;
-  --tbh: 68px;
-  --bnh: 74px;
-  --r1: 8px;
-  --r2: 12px;
-  --r3: 16px;
-  --r4: 22px;
-  --r5: 28px;
-  --sh-xs: 0 2px 4px rgba(11, 35, 63, .04);
-  --sh-sm: 0 5px 16px rgba(11, 35, 63, .07);
-  --sh-md: var(--nx-shadow-soft);
-  --sh-lg: 0 22px 58px rgba(11, 35, 63, .13);
-  --sh-xl: var(--nx-shadow-deep);
-  --sh-depth: 0 18px 48px rgba(11, 35, 63, .13), var(--nx-bevel);
-  --sh-float: 0 34px 88px rgba(7, 28, 52, .22), var(--nx-bevel);
-}
+  --nx-glow-cyan: color-mix(in srgb, var(--cyan) 20%, transparent);
+  --nx-glow-emerald: color-mix(in srgb, var(--teal) 20%, transparent);
+  --nx-glow-ember: color-mix(in srgb, var(--ember) 16%, transparent);
 
-[data-theme="dark"] {
-  color-scheme: dark;
-  --nx-line: rgba(105, 215, 232, .12);
-  --nx-line-strong: rgba(105, 215, 232, .24);
-  --nx-surface: rgba(8, 22, 41, .82);
-  --nx-surface-solid: #0a1729;
-  --nx-surface-raised: rgba(13, 31, 53, .94);
-  --nx-shadow-soft: 0 18px 52px rgba(0, 0, 0, .38);
-  --nx-shadow-deep: 0 32px 96px rgba(0, 0, 0, .58);
-  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .06);
-
-  --bg: #050b15;
-  --s: #09182a;
-  --s2: #0d2137;
-  --sh: #102a44;
-  --glass: rgba(8, 22, 40, .76);
-  --glass-strong: rgba(8, 22, 40, .94);
-  --ambient-a: rgba(14, 199, 167, .16);
-  --ambient-b: rgba(50, 142, 201, .14);
-  --ambient-c: rgba(244, 118, 33, .09);
-  --highlight: rgba(255, 255, 255, .055);
-  --t: #e9f5fb;
-  --t2: #91adc2;
-  --t3: #55758f;
-  --p: #24c5aa;
-  --p2: rgba(25, 191, 163, .15);
-  --pd: #6de9d5;
-  --sec: #62c8ee;
-  --sec2: rgba(77, 175, 220, .15);
-  --brd: rgba(110, 180, 211, .16);
-  --skel: #10243a;
-  --sh-xs: 0 2px 6px rgba(0, 0, 0, .28);
-  --sh-sm: 0 6px 18px rgba(0, 0, 0, .34);
-  --sh-md: var(--nx-shadow-soft);
-  --sh-lg: 0 24px 64px rgba(0, 0, 0, .48);
-  --sh-xl: var(--nx-shadow-deep);
-  --sh-depth: 0 20px 58px rgba(0, 0, 0, .45), var(--nx-bevel);
-  --sh-float: 0 38px 100px rgba(0, 0, 0, .64), var(--nx-bevel);
+  --nx-line: var(--line);
+  --nx-line-strong: color-mix(in srgb, var(--cyan) 26%, transparent);
+  --nx-surface: var(--glass);
+  --nx-surface-solid: var(--surface);
+  --nx-surface-raised: var(--glass-strong);
+  --nx-shadow-soft: var(--sh-md);
+  --nx-shadow-deep: var(--sh-xl);
+  --nx-bevel: inset 0 1px 0 var(--highlight);
+  --nx-ease: var(--ease-standard);
 }
 
 html body {

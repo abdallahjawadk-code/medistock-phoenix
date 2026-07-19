@@ -115,7 +115,10 @@ interface AppProviderProps {
 
 export function AppProvider({ children, skipAuthBootstrap = false }: AppProviderProps) {
   const [lang, setLangState]   = useState<Lang>('ar');
-  const [theme, setThemeState] = useState<Theme>('light');
+  // Dark-first: the Phoenix design source ships dark as its default theme, and
+  // index.html sets data-theme="dark" on <html> so the first paint agrees.
+  // Light stays fully supported through the topbar toggle.
+  const [theme, setThemeState] = useState<Theme>('dark');
 
   const [authReady, setAuthReady] = useState(false);
   const authReadyRef = useRef(false);
