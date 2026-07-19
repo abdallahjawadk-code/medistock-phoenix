@@ -58,7 +58,8 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
   });
 
   it('the initial/default screen (Status Center, 12) is unchanged', () => {
-    expect(authenticatedApp).toContain('useState(12)');
+    expect(authenticatedApp).toContain('const DEFAULT_AUTHENTICATED_SCREEN = 12');
+    expect(authenticatedApp).toContain('? 17 : DEFAULT_AUTHENTICATED_SCREEN');
   });
 });
 

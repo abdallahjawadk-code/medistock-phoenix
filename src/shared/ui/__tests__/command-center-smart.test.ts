@@ -40,8 +40,9 @@ describe('1. App screen map / routes unchanged', () => {
   });
 
   it('initial screen and post-logout screen remain Status Center (12)', () => {
-    expect(authenticatedApp).toContain('useState(12)');
-    expect(authenticatedApp).toContain('setScreen(12)');
+    expect(authenticatedApp).toContain('const DEFAULT_AUTHENTICATED_SCREEN = 12');
+    expect(authenticatedApp).toContain('? 17 : DEFAULT_AUTHENTICATED_SCREEN');
+    expect(authenticatedApp).toContain('setScreen(DEFAULT_AUTHENTICATED_SCREEN)');
   });
 
   it('unknown/default screens still redirect to Status Center', () => {

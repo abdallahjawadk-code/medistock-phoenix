@@ -49,8 +49,9 @@ describe('Central dashboard removed from navigation', () => {
   });
 
   it('the initial screen and post-logout screen are Status Center (12), not the removed dashboard (2)', () => {
-    expect(authenticatedApp).toContain('useState(12)');
-    expect(authenticatedApp).toContain('setScreen(12)');
+    expect(authenticatedApp).toContain('const DEFAULT_AUTHENTICATED_SCREEN = 12');
+    expect(authenticatedApp).toContain('? 17 : DEFAULT_AUTHENTICATED_SCREEN');
+    expect(authenticatedApp).toContain('setScreen(DEFAULT_AUTHENTICATED_SCREEN)');
     expect(authenticatedApp).not.toContain('useState(2)');
     expect(authenticatedApp).not.toContain('setScreen(2)');
   });

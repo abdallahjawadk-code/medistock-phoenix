@@ -12,7 +12,7 @@
 // Bump whenever a review branch replaces a major visual shell. Activation
 // removes the prior shell so a stable Vercel branch alias cannot fall back to
 // the rejected design after the cinematic release has deployed.
-const CACHE_VERSION = 'medistock-shell-v2-cinematic';
+const CACHE_VERSION = 'medistock-shell-v2';
 
 function isSupabaseOrApiRequest(url) {
   return (

@@ -19,7 +19,7 @@ describe('authenticated network review deep-link', () => {
   });
 
   it('invalidates the previous cached visual shell', () => {
-    expect(serviceWorker).toContain("const CACHE_VERSION = 'medistock-shell-v2-cinematic'");
+    expect(serviceWorker).toContain("const CACHE_VERSION = 'medistock-shell-v2'");
     expect(serviceWorker).not.toContain("const CACHE_VERSION = 'medistock-shell-v1'");
   });
 });
