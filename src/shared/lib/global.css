@@ -299,7 +299,16 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 }
 .premium-mobile-drawer { scroll-behavior: smooth; }
 .premium-drawer-nav { scroll-behavior: smooth; }
-.premium-drawer-brand { background: linear-gradient(135deg, var(--ambient-a), transparent 76%); }
+/* The drawer header reserves an inline-end gutter for the absolutely-placed
+   close button, so the brand text keeps a usable measure instead of being
+   squeezed into a ~100px column between the mark and the button. */
+/* The close button sits on its own row above the lockup (see
+   PhoenixMobileDrawer), so the brand text gets the same measure it has in the
+   desktop sidebar rather than a ~100px column beside a 44px button. */
+.nexus-shell .premium-drawer-brand,
+.premium-drawer-brand {
+  background: transparent;
+}
 .premium-drawer-logo { box-shadow: 0 10px 22px color-mix(in srgb, var(--cyan) 30%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
 @media (hover: hover) and (pointer: fine) {
   .premium-drawer-close:hover {

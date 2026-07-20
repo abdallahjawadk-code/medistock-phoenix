@@ -91,7 +91,28 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
-        <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px', borderRadius: 'var(--r3)' }}>
+        {/* The close button gets its own row so the brand lockup below keeps the
+            full drawer width. Sharing one row with a 44px button left the text
+            about 100px wide, which wrapped the title and the department line
+            into a five-line stack. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingInline: '8px' }}>
+          <button
+            onClick={onClose}
+            className="premium-drawer-close premium-focus-ring"
+            aria-label={t('close', lang)}
+            style={{
+              minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)',
+              flexShrink: 0, borderRadius: 'var(--r2)',
+              border: '1px solid var(--line)', background: 'var(--field)', color: 'var(--text)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 120ms',
+            }}
+          >
+            <PhoenixIcon name="close" size={18} />
+          </button>
+        </div>
+
+        <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px' }}>
           <div className="nexus-brand-lockup">
             <div className="nexus-brand-mark">
               <PhoenixMark size={39} title="" />
@@ -100,20 +121,6 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
               <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
               <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
-            <button
-              onClick={onClose}
-              className="premium-drawer-close premium-focus-ring"
-              aria-label={t('close', lang)}
-              style={{
-                minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)',
-                flexShrink: 0, borderRadius: 'var(--r2)',
-                border: '1px solid var(--line)', background: 'var(--field)', color: 'var(--text)',
-                fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', transition: 'all 120ms',
-              }}
-            >
-              <PhoenixIcon name="close" size={18} />
-            </button>
           </div>
         </div>
 
