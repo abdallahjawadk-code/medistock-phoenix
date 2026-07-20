@@ -65,7 +65,10 @@ export const T: Dict = {
 
   /* ── Navigation ── */
   nav_dash:       { ar: 'لوحة التحكم',                        en: 'Dashboard' },
-  nav_editor:     { ar: 'محرر التوفر',                        en: 'Availability Editor' },
+  /* INVENTORY-CENTER-INTAKE-A: screen 3 is no longer the Availability Editor.
+     The key name is kept so every nav surface (sidebar, drawer, bottom nav,
+     command palette, app shell, dashboard tile) retitles from one place. */
+  nav_editor:     { ar: 'مركز المخزون',                       en: 'Inventory Center' },
   nav_reg:        { ar: 'سجل العناصر',                        en: 'Item Registry' },
   nav_mesh:       { ar: 'عرض الشبكة',                         en: 'Mesh View' },
   nav_qr:         { ar: 'مركز QR',                            en: 'QR Center' },
@@ -1601,6 +1604,77 @@ export const T: Dict = {
   net_err_invalid:        { ar: 'مدخل غير صالح',                                en: 'Invalid input' },
   net_err_not_found:      { ar: 'العنصر غير موجود',                             en: 'Item not found' },
   net_err_generic:        { ar: 'تعذّر إتمام العملية',                          en: 'The operation could not be completed' },
+
+  /* ── Inventory Management & Intake Center (INVENTORY-CENTER-INTAKE-A) ──
+     Replaces the Availability Editor. There is deliberately NO manual
+     available/low/missing/surplus wording here: the operator states what
+     physically MOVED and the warehouse ledger derives the condition. */
+  inv_center_title:       { ar: 'مركز إدارة وإدخال المخزون',                    en: 'Inventory Management & Intake Center' },
+  inv_center_sub:         { ar: 'الإدخال والتصحيح عبر سجل المخزن — الحالة تُشتق آليًا', en: 'Intake and correction through the warehouse ledger — condition is derived automatically' },
+  inv_tab_intake:         { ar: 'إدخال مواد',                                   en: 'Material intake' },
+  inv_tab_stock:          { ar: 'رصيد المخزن',                                  en: 'Warehouse stock' },
+  inv_tab_ledger:         { ar: 'سجل الحركات',                                  en: 'Movement ledger' },
+
+  inv_warehouse:          { ar: 'المخزن',                                       en: 'Warehouse' },
+  inv_select_warehouse:   { ar: 'اختر المخزن',                                  en: 'Select a warehouse' },
+  inv_scientific_name:    { ar: 'الاسم العلمي',                                 en: 'Scientific name' },
+  inv_trade_name:         { ar: 'الاسم التجاري',                                en: 'Trade name' },
+  inv_concentration:      { ar: 'التركيز',                                      en: 'Concentration' },
+  inv_dosage_form:        { ar: 'الشكل الصيدلاني',                              en: 'Dosage form' },
+  inv_unit:               { ar: 'الوحدة',                                       en: 'Unit' },
+  inv_quantity_received:  { ar: 'الكمية المستلمة',                              en: 'Quantity received' },
+  inv_national_code:      { ar: 'الرمز الوطني',                                 en: 'National code' },
+  inv_no_national_code:   { ar: 'أؤكد عدم وجود رمز وطني لهذه المادة',           en: 'I confirm this material has no national code' },
+  inv_batch_number:       { ar: 'رقم التشغيلة',                                 en: 'Batch number' },
+  inv_no_batch_number:    { ar: 'أؤكد عدم وجود رقم تشغيلة',                     en: 'I confirm there is no batch number' },
+  inv_expiry_date:        { ar: 'تاريخ النفاد',                                 en: 'Expiry date' },
+  inv_unit_price:         { ar: 'سعر الوحدة',                                   en: 'Unit price' },
+  inv_supply_type:        { ar: 'نوع التجهيز',                                  en: 'Supply type' },
+  inv_source_document:    { ar: 'رقم المستند',                                  en: 'Source document number' },
+  inv_notes:              { ar: 'ملاحظات',                                      en: 'Notes' },
+  inv_submit_intake:      { ar: 'تسجيل الاستلام',                               en: 'Record receipt' },
+  inv_retry_intake:       { ar: 'إعادة المحاولة',                               en: 'Retry' },
+  inv_intake_ok:          { ar: 'تم تسجيل الاستلام في سجل المخزن',              en: 'Receipt posted to the warehouse ledger' },
+  inv_intake_replayed:    { ar: 'العملية مسجّلة مسبقًا — لم تُكرَّر الكمية',      en: 'Already recorded — the quantity was not posted twice' },
+
+  inv_movement:           { ar: 'حركة تصحيحية',                                 en: 'Correction movement' },
+  inv_mv_add:             { ar: 'إضافة',                                        en: 'Add' },
+  inv_mv_subtract:        { ar: 'خصم',                                          en: 'Subtract' },
+  inv_mv_correction:      { ar: 'تصحيح جردي',                                   en: 'Stock-count correction' },
+  inv_amount:             { ar: 'المقدار',                                      en: 'Amount' },
+  inv_reason:             { ar: 'السبب',                                        en: 'Reason' },
+  inv_apply_movement:     { ar: 'تنفيذ الحركة',                                 en: 'Post movement' },
+  inv_movement_ok:        { ar: 'تم تسجيل الحركة',                              en: 'Movement posted' },
+
+  inv_on_hand:            { ar: 'الرصيد',                                       en: 'On hand' },
+  inv_reserved:           { ar: 'محجوز',                                        en: 'Reserved' },
+  inv_available:          { ar: 'المتاح',                                       en: 'Available' },
+  inv_no_stock:           { ar: 'لا يوجد رصيد في هذا المخزن',                   en: 'No stock in this warehouse' },
+  inv_no_movements:       { ar: 'لا توجد حركات',                                en: 'No movements' },
+  inv_derived_notice:     { ar: 'حالة التوفر تُشتق من سجل المخزن ولا تُدخل يدويًا', en: 'Availability condition is derived from the ledger and is never entered by hand' },
+  inv_center_denied:      { ar: 'لا تملك صلاحية على أي مخزن',                   en: 'You have no warehouse permissions' },
+  inv_read_only_scope:    { ar: 'عرض فقط — لا تملك صلاحية الكتابة في هذا المخزن', en: 'Read-only — you cannot write to this warehouse' },
+
+  inv_err_not_authorized: { ar: 'لا تملك الصلاحية لهذه العملية',                en: 'You are not authorized for this operation' },
+  inv_err_cross_org:      { ar: 'لا يمكنك العمل خارج مؤسستك',                   en: 'You cannot act outside your own organization' },
+  inv_err_no_receive_permission: { ar: 'لا تملك صلاحية الاستلام في هذا المخزن', en: 'You cannot record receipts in this warehouse' },
+  inv_err_no_movement_permission: { ar: 'لا تملك صلاحية الحركة في هذا المخزن',  en: 'You cannot post movements in this warehouse' },
+  inv_err_identity_flags_required: { ar: 'أكّد وجود أو غياب الرمز الوطني ورقم التشغيلة', en: 'Confirm whether a national code and batch number exist' },
+  inv_err_national_code_mismatch: { ar: 'تعارض: أكّدت عدم وجود رمز وطني مع إدخال رمز', en: 'Conflict: a national code was entered but marked absent' },
+  inv_err_batch_mismatch: { ar: 'تعارض: أكّدت عدم وجود تشغيلة مع إدخال رقم',    en: 'Conflict: a batch number was entered but marked absent' },
+  inv_err_identity:       { ar: 'تعذّر تحديد هوية المادة',                      en: 'The material identity could not be resolved' },
+  inv_err_request_conflict: { ar: 'محاولة مكررة ببيانات مختلفة — ابدأ إدخالًا جديدًا', en: 'Retried with different data — start a new entry' },
+  inv_err_negative:       { ar: 'لا يمكن أن يصبح الرصيد سالبًا',                en: 'The balance cannot go negative' },
+  inv_err_below_reserved: { ar: 'لا يمكن أن يقل الرصيد عن الكمية المحجوزة',     en: 'The balance cannot drop below the reserved quantity' },
+  inv_err_qty_positive:   { ar: 'الكمية يجب أن تكون أكبر من صفر',               en: 'The quantity must be greater than zero' },
+  inv_err_qty_non_negative: { ar: 'الكمية لا يمكن أن تكون سالبة',               en: 'The quantity cannot be negative' },
+  inv_err_price_non_negative: { ar: 'السعر لا يمكن أن يكون سالبًا',             en: 'The price cannot be negative' },
+  inv_err_reason_required: { ar: 'السبب مطلوب لهذه الحركة',                     en: 'A reason is required for this movement' },
+  inv_err_projection_read_only: { ar: 'حالة التوفر مشتقة ولا تُكتب مباشرة',      en: 'Availability is derived and cannot be written directly' },
+  inv_err_warehouse_unavailable: { ar: 'المخزن غير موجود أو غير مفعّل',          en: 'The warehouse does not exist or is inactive' },
+  inv_err_not_found:      { ar: 'العنصر غير موجود',                             en: 'Item not found' },
+  inv_err_invalid:        { ar: 'مدخل غير صالح',                                en: 'Invalid input' },
+  inv_err_generic:        { ar: 'تعذّر إتمام العملية',                          en: 'The operation could not be completed' },
 };
 
 export function t(key: string, lang: Lang): string {
