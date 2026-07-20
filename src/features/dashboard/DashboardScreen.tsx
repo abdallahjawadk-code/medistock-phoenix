@@ -27,9 +27,9 @@ interface Props { onNavigate: (screen: number) => void; }
 
 const SEVERITY_BORDER_COLOR: Record<string, string> = {
   critical:    'var(--err)',
-  urgent:      '#dc2626',
+  urgent:      'var(--err)',
   high:        'var(--warn)',
-  watch:       '#d97706',
+  watch:       'var(--warn)',
   opportunity: 'var(--p)',
   info:        'var(--brd)',
 };
@@ -187,18 +187,18 @@ export function DashboardScreen({ onNavigate }: Props) {
       )}
       {!metrics.loading && !metrics.error && m && (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: isMobile ? '20px' : '28px' }}>
-          <PhoenixMetricCard icon="🏥" value={m.activeInstitutions} label={t('m_inst', lang)} iconBg="var(--p2)" />
-          <PhoenixMetricCard icon="🏬" value={m.activeWarehouses}   label={t('d_warehouses', lang)} iconBg="var(--p2)" />
-          <PhoenixMetricCard icon="📍" value={m.activePorts}        label={t('d_ports', lang)} iconBg="var(--p2)" />
-          <PhoenixMetricCard icon="📱" value={m.activeQrCodes}      label={t('d_qr_active', lang)} iconBg="var(--ok2)" />
-          <PhoenixMetricCard icon="🚫" value={m.disabledQrCodes}    label={t('d_qr_disabled', lang)} iconBg="var(--skel)" />
-          <PhoenixMetricCard icon="💊" value={m.availableItems}     label={t('m_avail', lang)} iconBg="var(--ok2)" />
-          <PhoenixMetricCard icon="⚠️" value={m.lowStockCount}      label={t('m_low', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-          <PhoenixMetricCard icon="❌" value={m.missingCount}       label={t('m_miss', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
+          <PhoenixMetricCard icon="hospital" value={m.activeInstitutions} label={t('m_inst', lang)} iconBg="var(--p2)" />
+          <PhoenixMetricCard icon="warehouse" value={m.activeWarehouses}   label={t('d_warehouses', lang)} iconBg="var(--p2)" />
+          <PhoenixMetricCard icon="pin" value={m.activePorts}        label={t('d_ports', lang)} iconBg="var(--p2)" />
+          <PhoenixMetricCard icon="mobile" value={m.activeQrCodes}      label={t('d_qr_active', lang)} iconBg="var(--ok2)" />
+          <PhoenixMetricCard icon="ban" value={m.disabledQrCodes}    label={t('d_qr_disabled', lang)} iconBg="var(--skel)" />
+          <PhoenixMetricCard icon="medical" value={m.availableItems}     label={t('m_avail', lang)} iconBg="var(--ok2)" />
+          <PhoenixMetricCard icon="warning" value={m.lowStockCount}      label={t('m_low', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
+          <PhoenixMetricCard icon="close" value={m.missingCount}       label={t('m_miss', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
           <PhoenixMetricCard icon="⏱️" value={m.nearExpiryCount}    label={t('m_exp', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-          <PhoenixMetricCard icon="📦" value={m.surplusCount}       label={t('d_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
-          <PhoenixMetricCard icon="🕐" value={m.lastUpdated}        label={t('m_upd', lang)} iconBg="var(--info2)" />
-          {sr && <PhoenixMetricCard icon="📋" value={sr.active} label={t('d_reports_active', lang)} iconBg="var(--info2)" />}
+          <PhoenixMetricCard icon="package" value={m.surplusCount}       label={t('d_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
+          <PhoenixMetricCard icon="clock" value={m.lastUpdated}        label={t('m_upd', lang)} iconBg="var(--info2)" />
+          {sr && <PhoenixMetricCard icon="clipboard" value={sr.active} label={t('d_reports_active', lang)} iconBg="var(--info2)" />}
         </div>
       )}
 
@@ -207,10 +207,10 @@ export function DashboardScreen({ onNavigate }: Props) {
         <>
           <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('d_status_reports', lang)}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: isMobile ? '20px' : '28px' }}>
-            <PhoenixMetricCard icon="⚠️" value={sr.scarce}     label={t('d_scarce', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-            <PhoenixMetricCard icon="📦" value={sr.surplus}     label={t('d_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
+            <PhoenixMetricCard icon="warning" value={sr.scarce}     label={t('d_scarce', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
+            <PhoenixMetricCard icon="package" value={sr.surplus}     label={t('d_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
             <PhoenixMetricCard icon="⏱️" value={sr.nearExpiry}  label={t('m_exp', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-            <PhoenixMetricCard icon="❌" value={sr.missing}     label={t('m_miss', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
+            <PhoenixMetricCard icon="close" value={sr.missing}     label={t('m_miss', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
           </div>
         </>
       )}
@@ -237,9 +237,9 @@ export function DashboardScreen({ onNavigate }: Props) {
           {!liveAlerts.loading && !liveAlerts.error && liveOk && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: '12px' }}>
-                <PhoenixMetricCard icon="🔔" value={liveTotal}      label={t('lia_summary_total', lang)} iconBg="var(--info2)" />
-                <PhoenixMetricCard icon="🔴" value={liveHigh}       label={t('lia_summary_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
-                <PhoenixMetricCard icon="📦" value={liveSurplus}    label={t('lia_summary_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
+                <PhoenixMetricCard icon="alerts" value={liveTotal}      label={t('lia_summary_total', lang)} iconBg="var(--info2)" />
+                <PhoenixMetricCard icon="warning" value={liveHigh}       label={t('lia_summary_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
+                <PhoenixMetricCard icon="package" value={liveSurplus}    label={t('lia_summary_surplus', lang)} iconBg="var(--ok2)" valueColor="var(--ok)" />
                 <PhoenixMetricCard icon="⏱️" value={liveNearExpiry} label={t('lia_summary_near_expiry', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
               </div>
 
@@ -250,7 +250,7 @@ export function DashboardScreen({ onNavigate }: Props) {
                   color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center',
                   marginBottom: isMobile ? '20px' : '28px',
                 }}>
-                  ✓ {t('lia_empty', lang)}
+                  <PhoenixIcon name="check" size={13} inline /> {t('lia_empty', lang)}
                 </div>
               ) : (
                 <div style={{ marginBottom: isMobile ? '20px' : '28px' }}>
@@ -287,7 +287,7 @@ export function DashboardScreen({ onNavigate }: Props) {
               color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center',
               marginBottom: isMobile ? '20px' : '28px',
             }}>
-              ✓ {t('no_critical_alerts_now', lang)}
+              <PhoenixIcon name="check" size={13} inline /> {t('no_critical_alerts_now', lang)}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: isMobile ? '20px' : '28px' }}>
@@ -333,7 +333,7 @@ export function DashboardScreen({ onNavigate }: Props) {
         <PhoenixErrorState title={t('load_error', lang)} message={insts.error} onRetry={insts.reload} />
       )}
       {!insts.loading && !insts.error && insts.data && insts.data.length === 0 && (
-        <PhoenixEmptyState icon="🏥" title={t('empty_orgs', lang)} description={t('d_no_data', lang)} />
+        <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} description={t('d_no_data', lang)} />
       )}
       {!insts.loading && !insts.error && insts.data && insts.data.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px', marginBottom: isMobile ? '20px' : '28px' }}>
@@ -381,10 +381,10 @@ export function DashboardScreen({ onNavigate }: Props) {
       <h3 className="premium-section-header" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('quick', lang)}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: isMobile ? undefined : '480px' }}>
         {[
-          { screen: 11, icon: '🏛️', labelKey: 'nav_institutions', descKey: 'inst_sub' },
-          { screen: 12, icon: '📋', labelKey: 'nav_status_center', descKey: 'sc_sub' },
-          { screen: 3,  icon: '✏️', labelKey: 'nav_editor', descKey: 'editor_desc' },
-          { screen: 9,  icon: '📈', labelKey: 'nav_reports', descKey: 'reports_desc' },
+          { screen: 11, icon: 'institutions', labelKey: 'nav_institutions', descKey: 'inst_sub' },
+          { screen: 12, icon: 'clipboard', labelKey: 'nav_status_center', descKey: 'sc_sub' },
+          { screen: 3,  icon: 'editor', labelKey: 'nav_editor', descKey: 'editor_desc' },
+          { screen: 9,  icon: 'reports', labelKey: 'nav_reports', descKey: 'reports_desc' },
         ].map(item => (
           <button
             key={item.screen}
