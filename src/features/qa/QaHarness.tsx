@@ -13,7 +13,7 @@
  * NO live data — data-backed screens arrive in a later increment behind a
  * network-free fixture client.
  */
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import type { Lang, Theme } from '@/shared/lib/types';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -116,8 +116,24 @@ function StatesScene({ lang }: { lang: Lang }) {
 }
 
 export function QaHarness() {
-  const { persona, lang, theme, scene } = useMemo(readParams, []);
+  const initial = useMemo(readParams, []);
+  const { persona, lang, theme } = initial;
   const active = qaPersona(persona);
+
+  // DEV-only: make the harness's OWN navigation functional so a screenshot
+  // runner (or a reviewer) reaches a scene through the REAL sidebar / drawer
+  // controls, not a URL shortcut. The nav items carry production screen numbers;
+  // map the ones the harness can render to their scene, and fall back to the
+  // shell placeholder for anything else. This is NOT a production navigation
+  // path — the whole harness is tree-shaken from production builds (proven by
+  // tests/qa-harness-production-safety.test.ts). The initial scene still comes
+  // from ?scene=, preserving the existing per-cell URL contract.
+  const [scene, setScene] = useState<SceneId>(initial.scene);
+  const handleNavigate = (n: number) =>
+    setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 2 ? 'dashboard' : 'shell');
+  // Reflect the active scene as the production screen number its nav item uses,
+  // so the correct sidebar/drawer item reads as current (twin = 17 / network).
+  const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11 : scene === 'dashboard' ? 2 : 1;
 
   return (
     <QaAppProvider persona={active} lang={lang} theme={theme}>
@@ -143,7 +159,7 @@ export function QaHarness() {
             <StatesScene lang={lang} />
           </div>
         ) : (
-          <PhoenixAppShell currentScreen={scene === 'institutions' ? 11 : scene === 'twin' ? 5 : 1} onNavigate={() => { /* QA: inert */ }} onLogout={() => { /* QA: inert */ }}>
+          <PhoenixAppShell currentScreen={currentScreen} onNavigate={handleNavigate} onLogout={() => { /* QA: inert */ }}>
             {scene === 'institutions' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <InstitutionScreen />

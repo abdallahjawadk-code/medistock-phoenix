@@ -1,8 +1,15 @@
 /* ─── PHOENIX Phase D visual evidence capture ─────────────────────────────────
    Drives a headless Chromium (Playwright) against the DEV-only visual QA harness
-   (?qa=1) and captures the three post-auth Phase D surfaces — the cinematic
-   welcome, the dashboard, and the digital twin — across AR/EN × dark/light ×
-   desktop/mobile. Theme/lang are URL-driven (deterministic per cell).
+   (?qa=1) and captures the post-auth Phase D surfaces — the cinematic welcome
+   and the dashboard — across AR/EN × dark/light × desktop/mobile. Theme/lang are
+   URL-driven (deterministic per cell).
+
+   The Digital Twin is NO LONGER captured here: direct ?scene=twin entry only ever
+   showed the 2D fallback under headless GL and never exercised the real 3D scene
+   or the visible navigation. It is now captured by scripts/phoenix-capture-twin.mjs,
+   which navigates through the real sidebar/drawer, selects the 3D tab, and waits
+   for the genuine data-ready GPU signal. Pass an optional scene filter to refresh
+   just one surface, e.g.  node scripts/phoenix-capture-d.mjs <baseURL> dashboard
 
    The harness is gated on import.meta.env.DEV AND VITE_ENABLE_VISUAL_QA=true and
    is tree-shaken from production — see src/features/qa/qaConfig.ts and
@@ -22,11 +29,11 @@ import { dirname, join } from 'node:path';
 const BASE = process.argv[2] || 'http://localhost:5175';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+const SCENE_FILTER = process.argv[3]; // optional: capture just one scene
 const SCENES = [
   { id: 'welcome', selector: '.nexus-welcome__credits' },
   { id: 'dashboard', selector: '.nexus-dash-hero' },
-  { id: 'twin', selector: '.nexus-topology' },
-];
+].filter(s => !SCENE_FILTER || s.id === SCENE_FILTER);
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 390, height: 844 },
