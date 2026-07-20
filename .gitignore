@@ -45,3 +45,6 @@ coverage/
 
 # OCR runtime assets — reproducible via scripts/ocr-assets.mjs (pinned SHA-256)
 public/assets/ocr/
+
+# OCR evaluation fixtures — regenerate with `npm run ocr:fixtures`
+tools/ocr-eval/fixtures/

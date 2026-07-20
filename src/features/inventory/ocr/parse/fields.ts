@@ -112,9 +112,36 @@ const CURRENCY_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(eur|€|يورو)\b/iu, 'EUR'],
 ];
 
+/**
+ * Words that are LABELS, never values. MEASURED (tools/ocr-eval): on a rotated
+ * scan, "Batch Number PC2291" was read with "Number" garbled to "NUM8ER"; the
+ * label matcher consumed "Batch", and "NUM8ER" passed the batch validator
+ * (alphanumeric, contains a digit) and was offered as the batch number. A WRONG
+ * value the operator might wave through is far worse than a missed one, so any
+ * candidate that folds onto a label word is rejected outright.
+ *
+ * Matching is done on a digit-folded, letter-only projection so OCR confusions
+ * (8→B, 0→O, 1→I) cannot smuggle a label past this check.
+ */
+const LABEL_WORDS = new Set([
+  'number', 'numbers', 'no', 'code', 'batch', 'lot', 'date', 'exp', 'expiry',
+  'qty', 'quantity', 'price', 'invoice', 'supplier', 'name', 'unit', 'total',
+]);
+
+function foldsOntoLabelWord(value: string): boolean {
+  const letters = value
+    .replace(/8/g, 'b').replace(/0/g, 'o').replace(/1/g, 'i')
+    .replace(/5/g, 's').replace(/2/g, 'z').replace(/6/g, 'g')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+  return letters.length >= 2 && LABEL_WORDS.has(letters);
+}
+
 /** Batch numbers are alphanumeric, 3–20 chars, and contain at least one digit. */
 export const isPlausibleBatch = (value: string): boolean =>
-  /^[A-Za-z0-9][A-Za-z0-9\-/]{1,18}[A-Za-z0-9]$/.test(value) && /\d/.test(value);
+  /^[A-Za-z0-9][A-Za-z0-9\-/]{1,18}[A-Za-z0-9]$/.test(value)
+  && /\d/.test(value)
+  && !foldsOntoLabelWord(value);
 
 /** National codes in this catalog are digit runs, optionally hyphen-grouped. */
 export const isPlausibleNationalCode = (value: string): boolean =>
@@ -230,7 +257,12 @@ export function extractPharmaFields(document: OcrDocumentResult): ExtractionResu
     // ── Batch: correction is allowed here because isPlausibleBatch can prove it ──
     const batch = splitLabelled(text, LABELS.batchNumber);
     if (batch) {
-      const token = batch.rest.split(/\s+/)[0];
+      // Batch/lot codes are case-insensitive identifiers in practice, and OCR
+      // routinely reads a printed 'X' as 'x'. Upper-casing is a presentation
+      // normalization, not a content change — the untouched reading is still
+      // kept as sourceText. (MEASURED: this was a recurring wrong-value class
+      // in tools/ocr-eval, and a WRONG batch is worse than a missed one.)
+      const token = batch.rest.split(/\s+/)[0].toUpperCase();
       const outcome = applyValidatedCorrection(normalizeDigits(token), isPlausibleBatch);
       if (isPlausibleBatch(outcome.value)) {
         push(candidates, 'batchNumber', outcome.value, line, outcome.original, batch.label, {
@@ -287,6 +319,21 @@ export function extractPharmaFields(document: OcrDocumentResult): ExtractionResu
     if (concentration) {
       push(candidates, 'concentration', concentration.formatted, line, concentration.raw, null);
       matchedAnything = true;
+
+      // MEASURED GAP (tools/ocr-eval): real delivery notes print the drug name
+      // as a headline — "Amoxicillin 500 mg Capsules" — not behind a "Generic
+      // Name:" label. Label-only extraction therefore missed scientificName on
+      // every fixture. The leading text before the strength is a legitimate
+      // NAME CANDIDATE; it carries no label, so it scores low and still
+      // requires explicit operator confirmation before any intake.
+      const headline = text.slice(0, text.indexOf(concentration.raw)).trim();
+      const cleaned = headline.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim();
+      // Two words at most: a headline like "Delivery Note Amoxicillin" would
+      // otherwise smuggle document chrome into the material name.
+      const words = cleaned.split(/\s+/).filter(Boolean);
+      if (words.length >= 1 && words.length <= 2 && cleaned.length >= 3) {
+        push(candidates, 'scientificName', cleaned, line, headline, null);
+      }
     }
     const dosageForm = parseDosageForm(text);
     if (dosageForm) {
