@@ -1666,6 +1666,87 @@ export const T: Dict = {
   inv_err_not_found:      { ar: 'العنصر غير موجود',                             en: 'Item not found' },
   inv_err_invalid:        { ar: 'مدخل غير صالح',                                en: 'Invalid input' },
   inv_err_generic:        { ar: 'تعذّر إتمام العملية',                          en: 'The operation could not be completed' },
+
+  /* ── Pharmaceutical Smart OCR (PHARMA-OCR-A) ──
+     OCR is an assistive READING aid. It never creates stock, never picks a
+     status and never submits — every string here is about review and consent. */
+  ocr_title:              { ar: 'قراءة ذكية للمستند',                           en: 'Smart document reading' },
+  ocr_open:               { ar: 'قراءة مستند بالكاميرا',                        en: 'Scan a document' },
+  ocr_use_manual_entry:   { ar: 'الإدخال اليدوي',                               en: 'Manual entry' },
+  ocr_language:           { ar: 'لغة المستند',                                  en: 'Document language' },
+  ocr_lang_ara:           { ar: 'العربية',                                      en: 'Arabic' },
+  ocr_lang_eng:           { ar: 'الإنكليزية',                                   en: 'English' },
+  ocr_lang_both:          { ar: 'العربية والإنكليزية',                          en: 'Arabic + English' },
+  ocr_choose_image:       { ar: 'اختر صورة أو التقطها',                         en: 'Choose or capture an image' },
+  ocr_accepted_formats:   { ar: 'JPEG أو PNG أو WebP فقط — لا يدعم PDF أو الخط اليدوي', en: 'JPEG, PNG or WebP only — PDF and handwriting are not supported' },
+  ocr_document_alt:       { ar: 'صورة المستند',                                 en: 'Document image' },
+  ocr_start_recognition:  { ar: 'ابدأ القراءة',                                 en: 'Start recognition' },
+  ocr_retake:             { ar: 'إعادة الالتقاط',                               en: 'Retake' },
+  ocr_cancel:             { ar: 'إلغاء',                                        en: 'Cancel' },
+  ocr_focus_field:        { ar: 'إظهار الحقل المرتبط',                          en: 'Focus the linked field' },
+
+  /* Keys are hyphenated to match OcrProgressPhase values verbatim. */
+  'ocr_phase_loading-engine':  { ar: 'تحميل محرك القراءة…',                     en: 'Loading the recognition engine…' },
+  'ocr_phase_loading-language': { ar: 'تحميل بيانات اللغة…',                    en: 'Loading language data…' },
+  ocr_phase_preparing:    { ar: 'تحضير…',                                       en: 'Preparing…' },
+  ocr_phase_recognizing:  { ar: 'جارٍ القراءة…',                                en: 'Recognizing…' },
+  ocr_phase_done:         { ar: 'اكتملت القراءة',                               en: 'Recognition complete' },
+
+  ocr_quality_good:       { ar: 'جودة الصورة جيدة',                             en: 'Image quality is good' },
+  ocr_quality_usable:     { ar: 'جودة مقبولة مع ملاحظات',                       en: 'Usable, with warnings' },
+  ocr_quality_poor:       { ar: 'جودة ضعيفة — يُنصح بإعادة الالتقاط',           en: 'Poor quality — retaking is recommended' },
+  ocr_quality_issue_blurry:  { ar: 'الصورة غير واضحة',                          en: 'The image is blurry' },
+  ocr_quality_issue_glare:   { ar: 'انعكاس ضوئي قوي',                           en: 'Strong glare' },
+  ocr_quality_issue_too_dark: { ar: 'الصورة مظلمة',                             en: 'The image is too dark' },
+  ocr_quality_issue_low_resolution: { ar: 'دقة منخفضة',                         en: 'Low resolution' },
+  ocr_quality_issue_edges_outside_frame: { ar: 'حواف المستند خارج الإطار',      en: 'Document edges fall outside the frame' },
+  ocr_quality_issue_rotated: { ar: 'الصورة مائلة',                              en: 'The image is rotated' },
+
+  ocr_band_high:          { ar: 'موثوق',                                        en: 'High' },
+  ocr_band_needs_review:  { ar: 'يحتاج مراجعة',                                 en: 'Needs review' },
+  ocr_band_uncertain:     { ar: 'غير مؤكد',                                     en: 'Uncertain' },
+  ocr_original_reading:   { ar: 'القراءة الأصلية',                              en: 'Original reading' },
+  ocr_confirm_field:      { ar: 'أؤكد صحة هذه القيمة',                          en: 'I confirm this value' },
+  ocr_outstanding_confirmations: { ar: 'حقول تنتظر التأكيد',                    en: 'Fields awaiting confirmation' },
+
+  ocr_reason_low_ocr_confidence: { ar: 'ثقة قراءة منخفضة',                      en: 'Low recognition confidence' },
+  ocr_reason_no_label_nearby: { ar: 'لا توجد تسمية مجاورة',                     en: 'No label found nearby' },
+  ocr_reason_format_invalid: { ar: 'الصيغة غير صالحة',                          en: 'Invalid format' },
+  ocr_reason_catalog_disagrees: { ar: 'لا يطابق سجل المواد',                    en: 'Disagrees with the catalog' },
+  ocr_reason_cross_field_conflict: { ar: 'تعارض بين الحقول',                    en: 'Cross-field conflict' },
+  ocr_reason_ocr_corrected: { ar: 'صُحّحت القراءة آليًا',                        en: 'Reading was auto-corrected' },
+  ocr_reason_ambiguous_reading: { ar: 'قراءة محتملة بأكثر من وجه',              en: 'More than one possible reading' },
+  ocr_reason_not_detected: { ar: 'لم يُقرأ من المستند',                          en: 'Not detected in the document' },
+
+  ocr_warnings_blocking:  { ar: 'تحذيرات تمنع المتابعة',                        en: 'Warnings that block submission' },
+  ocr_warnings_advisory:  { ar: 'ملاحظات',                                      en: 'Advisory notes' },
+  ocr_warn_no_match:      { ar: 'لم يُطابق أي مادة في السجل — اختر المادة يدويًا', en: 'No catalog material matched — select one manually' },
+  ocr_warn_ambiguous_match: { ar: 'أكثر من مادة محتملة — اختر المادة الصحيحة',   en: 'More than one possible material — choose the right one' },
+  ocr_warn_duplicate:     { ar: 'توجد تشغيلة مطابقة مسبقًا في هذا المخزن',       en: 'An identical batch already exists in this warehouse' },
+  ocr_warn_expiry_conflict: { ar: 'نفس التشغيلة مسجلة بتاريخ نفاد مختلف',        en: 'The same batch is on file with a different expiry' },
+  ocr_warn_national_code_conflict: { ar: 'نفس التشغيلة مسجلة برمز وطني مختلف',   en: 'The same batch is on file with a different national code' },
+  ocr_select_material_manually: { ar: 'يجب اختيار المادة يدويًا قبل المتابعة',   en: 'A material must be selected manually before continuing' },
+
+  ocr_go_to_preview:      { ar: 'المعاينة النهائية',                            en: 'Final preview' },
+  ocr_final_preview:      { ar: 'المعاينة النهائية قبل التسجيل',                en: 'Final preview before recording' },
+  ocr_final_preview_note: { ar: 'هذه هي البيانات التي سترسل تمامًا — لا يتم أي تسجيل قبل التأكيد.', en: 'This is exactly what will be sent. Nothing is recorded until you confirm.' },
+  ocr_confirm_and_submit: { ar: 'تأكيد وتسجيل الاستلام',                        en: 'Confirm and record receipt' },
+  ocr_back_to_review:     { ar: 'رجوع للمراجعة',                                en: 'Back to review' },
+  ocr_entry_method_note:  { ar: 'أُدخل عبر القراءة الذكية بعد مراجعة بشرية',     en: 'Entered via smart reading after human review' },
+
+  ocr_err_unavailable:    { ar: 'تعذّر تشغيل محرك القراءة — استخدم الإدخال اليدوي', en: 'The recognition engine could not start — use manual entry' },
+  ocr_err_failed:         { ar: 'فشلت القراءة — أعد المحاولة أو غيّر اللغة',     en: 'Recognition failed — retry or change the language' },
+
+  ocr_reject_empty_file:  { ar: 'الملف فارغ',                                   en: 'The file is empty' },
+  ocr_reject_file_too_large: { ar: 'حجم الملف كبير جدًا',                        en: 'The file is too large' },
+  ocr_reject_unsupported_type: { ar: 'نوع الملف غير مدعوم',                     en: 'Unsupported file type' },
+  ocr_reject_svg_rejected: { ar: 'ملفات SVG غير مقبولة لأسباب أمنية',           en: 'SVG files are refused for security reasons' },
+  ocr_reject_pdf_rejected: { ar: 'ملفات PDF غير مدعومة',                        en: 'PDF files are not supported' },
+  ocr_reject_signature_mismatch: { ar: 'محتوى الملف لا يطابق نوعه المعلن',       en: 'The file content does not match its declared type' },
+  ocr_reject_decode_failed: { ar: 'تعذّر فتح الصورة',                            en: 'The image could not be decoded' },
+  ocr_reject_too_small:   { ar: 'دقة الصورة منخفضة جدًا',                        en: 'The image resolution is too low' },
+  ocr_reject_too_large_dimensions: { ar: 'أبعاد الصورة كبيرة جدًا',              en: 'The image dimensions are too large' },
+  ocr_reject_too_many_pixels: { ar: 'الصورة كبيرة جدًا للمعالجة',                en: 'The image is too large to process' },
 };
 
 export function t(key: string, lang: Lang): string {
