@@ -44,11 +44,7 @@ export function AuthenticatedApp() {
 
   // ── Wait for the session check before deciding login vs app ──
   if (!authReady) {
-    return (
-      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <PhoenixLoadingState />
-      </div>
-    );
+    return <PhoenixLoadingState fullScreen />;
   }
 
   if (!session) {

@@ -28,7 +28,7 @@ function maybeQaHarness(): ReactNode {
     if (import.meta.env.VITE_ENABLE_VISUAL_QA === 'true' && requested) {
       const QaHarness = lazy(() => import('@/features/qa/QaHarness').then(m => ({ default: m.QaHarness })));
       return (
-        <Suspense fallback={<div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PhoenixLoadingState /></div>}>
+        <Suspense fallback={<PhoenixLoadingState fullScreen />}>
           <QaHarness />
         </Suspense>
       );
@@ -59,11 +59,7 @@ function publicQrId(): string | null {
 
 function LoadingFallback() {
   const { lang } = useApp();
-  return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <PhoenixLoadingState label={t('loading', lang)} />
-    </div>
-  );
+  return <PhoenixLoadingState fullScreen label={t('loading', lang)} />;
 }
 
 function AppInner({ qid }: { qid: string | null }) {

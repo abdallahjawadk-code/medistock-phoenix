@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { PhoenixExperience, signalLoginIntent, preloadPhoenixWelcome } from '@/shared/webgl';
+import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -48,9 +48,6 @@ export function LoginScreen() {
       return;
     }
     setBusy(true);
-    // Warm the welcome scene's three.js chunk IN PARALLEL with the auth request
-    // (not before it) so the rebirth is ready the moment sign-in succeeds.
-    preloadPhoenixWelcome();
     // Bare usernames resolve to the synthetic internal auth email. Whether a
     // username exists is never revealed — same generic error either way.
     const res = await signIn(resolveLoginIdentifier(email), password);
@@ -69,33 +66,6 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
-      {/* Real WebGL Phoenix scene overlays the CSS atmosphere, which stays as
-          the aria-hidden 2D fallback for no-WebGL / Save-Data / context-loss. */}
-      <PhoenixExperience
-        variant="login"
-        className="nexus-login__webgl"
-        fallback={
-          <div className="nexus-login__atmosphere" aria-hidden="true">
-            {/* 2D fallback: the approved photoreal Phoenix (AVIF→WebP) shown when
-                WebGL is unavailable / Save-Data / context-loss. */}
-            <picture>
-              <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
-              <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
-              <img
-                className="nexus-login__plate"
-                src="/assets/phoenix/runtime/phoenix-login.webp"
-                alt=""
-                width={1680}
-                height={941}
-                decoding="async"
-                loading="eager"
-              />
-            </picture>
-            <div className="nexus-login__mesh" />
-          </div>
-        }
-      />
-
       <div className="nexus-login__controls">
         <button onClick={toggleLang} className="nexus-control nexus-control--language">
           {lang === 'ar' ? 'EN' : 'عربي'}
@@ -109,25 +79,45 @@ export function LoginScreen() {
         </button>
       </div>
 
-      <section className="nexus-login__visual" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي' : 'Medicine supply network'}>
-        <div className="nexus-login__visual-copy">
+      {/* Two-column layout: the form panel stays on the LEFT; the approved
+          photoreal Phoenix master (AVIF→WebP) dominates the RIGHT art panel. It is
+          the permanent hero — never a procedural point-cloud. object-fit:cover +
+          object-position keep the COMPLETE bird (fiery wing, gold/pearl wing and
+          the teal medical chest) in frame; only restrained CSS embers move over
+          it, and three.js stays off the login critical path. Being the first
+          in-flow child, this panel resolves to the inline-start (physical right)
+          column under RTL. */}
+      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شعار طائر الفينيكس' : 'Phoenix emblem'}>
+        <picture>
+          <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
+          <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
+          <img
+            className="nexus-login__plate"
+            src="/assets/phoenix/runtime/phoenix-login.webp"
+            alt=""
+            width={1680}
+            height={941}
+            decoding="async"
+            loading="eager"
+          />
+        </picture>
+        <div className="nexus-login__art-embers" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, i) => (
+            <span key={i} className="nexus-login__ember" style={{ '--ember-index': i } as CSSProperties} />
+          ))}
+        </div>
+        <div className="nexus-login__art-caption">
           <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
           <h1>
             {lang === 'ar'
               ? 'منظومة الإمداد الدوائي — من المخزن المركزي إلى منفذ الصرف.'
               : 'The medicine supply fabric — from central store to dispensing outlet.'}
           </h1>
-          <p>
-            {lang === 'ar'
-              ? 'رؤية فورية للمخزون والحركة والصلاحية عبر مذاخر المؤسسات ومنافذ الصرف، بصلاحيات دقيقة لكل نطاق.'
-              : 'Live visibility over stock, movement and expiry across institution stores and dispensing outlets, with exact per-scope permissions.'}
-          </p>
-        </div>
-
-        <div className="nexus-login__trust-row">
-          <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
-          <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
-          <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
+          <div className="nexus-login__trust-row">
+            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
+            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
+            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
+          </div>
         </div>
       </section>
 
@@ -190,7 +180,6 @@ export function LoginScreen() {
                   className="premium-field nexus-login__field"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  onFocus={signalLoginIntent}
                 />
               </div>
 
@@ -244,6 +233,7 @@ export function LoginScreen() {
           )}
 
           <div className="premium-login__rights nexus-login__rights">
+            <MasarCopyrightSeal variant="credit" className="nexus-login__seal" />
             <div dir="ltr">{t('login_rights_code', lang)}</div>
             <span dir="auto">{t('login_supervision_line', lang)}</span>
           </div>

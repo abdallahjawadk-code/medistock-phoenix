@@ -64,6 +64,15 @@
       "sha256": "1887a1eeb6b491d2a13da8889783a2adb6b205638c9e0a60cd653b3135fba01c",
       "role": "desktop_mobile_pwa_icon_source",
       "notes": "Derived 2048px master with generous adaptive-mask safe zone; generate platform sizes from this file."
+    },
+    {
+      "file": "masar-copyright-master.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1905063,
+      "sha256": "05eae26fa2b3665e016b3a1440cd88ff98aeb85eafd85fc4abeb173330cca860",
+      "role": "masar_copyright_seal_master",
+      "notes": "Approved MASAR copyright seal (gold M + caduceus on navy). Square 1:1; never repaint, trace, stretch, crop or remove the navy background. Runtime seals derived to masar-seal-{128,256,512}.{avif,webp,png}; UI must pair the emblem with live copyright text for legibility."
     }
   ]
 }

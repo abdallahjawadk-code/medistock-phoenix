@@ -7,6 +7,7 @@ import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
+import { MasarCopyrightSeal } from './MasarCopyrightSeal';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
@@ -92,6 +93,14 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
         >
           {children}
         </main>
+
+        {/* PART 5 choke point: exactly one MASAR copyright seal per operational
+            route, inherited by every screen. Compact on desktop (slim footer
+            strip), minimal on mobile (pinned just above the bottom-nav safe
+            area). Inert (pointer-events:none) so it never blocks controls. */}
+        <footer className="nexus-shell__brand" aria-label={lang === 'ar' ? 'حقوق النشر' : 'Copyright'}>
+          <MasarCopyrightSeal variant={isMobile ? 'minimal' : 'compact'} />
+        </footer>
       </div>
 
       {isMobile && (

@@ -1,144 +1,100 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
-import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { PhoenixWelcomeStage, resolveEffects, prefersReducedMotion } from '@/shared/webgl';
+import { prefersReducedMotion } from '@/shared/webgl';
+import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 interface Props {
   onComplete: () => void;
 }
 
-const SEQUENCE_MS = 5200;
+const SEQUENCE_MS = 6000;
 const REDUCED_MS = 900;
-// If the first WebGL frame has not landed this fast, drop to the CSS fallback so
-// the sequence never stalls waiting on the three.js chunk.
-const WEBGL_READY_BUDGET_MS = 500;
 
 /**
- * Phoenix rebirth welcome. When WebGL is available and motion is allowed, a real
- * 3D rebirth sequence plays (ash → burst → re-form → ignite → rise, ~5.2s) and
- * drives completion. On reduced-motion / no-WebGL / context-loss it degrades to
- * the CSS atmosphere with a short static hold. The credits are always live React
- * text — never baked into a texture. Skip is always available; the sequence
- * shows once per session (gated by the caller).
+ * Phoenix rebirth welcome. The approved clean-plate master IS the dominant
+ * full-screen artwork (obsidian, no white overexposure) — it is never replaced
+ * by a WebGL reconstruction. Motion is a controlled cinematic reveal: a gentle
+ * fade-in, a slow camera push, and drifting embers over the plate. The title and
+ * the exact issuance/supervision credits are always live React text — never baked
+ * into the texture. Skip is available from the first frame; the sequence shows
+ * once per session (gated by the caller). On reduced-motion it holds the still
+ * keyframe with only a short fade.
  */
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
   const [phase, setPhase] = useState<'ember' | 'rise'>('ember');
-  // Resolve the render plan once, on the client, at mount.
-  const [effects] = useState(() => resolveEffects());
-  const useWebGL = effects.welcomeWebGL;
-  const [webglFailed, setWebglFailed] = useState(false);
-  const [ready, setReady] = useState(false);
-  // Once true the Canvas is unmounted immediately (dispose) — used by skip/done.
-  const [stopped, setStopped] = useState(false);
   const completed = useRef(false);
 
   const finish = useCallback(() => {
-    // Tear down the GL scene first so dispose runs before the overlay unmounts.
-    setStopped(true);
     if (completed.current) return;
     completed.current = true;
     onComplete();
   }, [onComplete]);
 
   useEffect(() => {
-    const reducedMotion = prefersReducedMotion();
-    // CSS "ember → rise" pacing for the 2D path / overlay copy reveal.
-    const riseTimer = window.setTimeout(() => setPhase('rise'), reducedMotion ? 60 : 780);
-    // Safety net: always finish even if the WebGL onDone never fires (e.g. the
-    // tab was backgrounded and rAF stalled). Slightly longer than the sequence.
-    const total = reducedMotion ? REDUCED_MS : useWebGL ? SEQUENCE_MS + 900 : SEQUENCE_MS;
-    const finishTimer = window.setTimeout(finish, total);
+    const reduced = prefersReducedMotion();
+    // ash → rise reveal pacing for the plate + copy.
+    const riseTimer = window.setTimeout(() => setPhase('rise'), reduced ? 60 : 700);
+    // Always finish, even if the tab is backgrounded and rAF stalls.
+    const finishTimer = window.setTimeout(finish, reduced ? REDUCED_MS : SEQUENCE_MS);
     return () => {
       window.clearTimeout(riseTimer);
       window.clearTimeout(finishTimer);
     };
-  }, [finish, useWebGL]);
-
-  // Don't let a slow three.js chunk hold the sequence hostage: fall back to the
-  // CSS atmosphere if the first frame misses the budget.
-  useEffect(() => {
-    if (!useWebGL || ready) return;
-    const t = window.setTimeout(() => {
-      if (!ready) setWebglFailed(true);
-    }, WEBGL_READY_BUDGET_MS);
-    return () => window.clearTimeout(t);
-  }, [useWebGL, ready]);
-
-  const webglActive = useWebGL && !webglFailed && !stopped;
+  }, [finish]);
 
   return (
     <div
       className="nexus-welcome"
       data-phase={phase}
-      data-webgl={webglActive ? 'on' : 'off'}
       role="dialog"
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
-      {/* Real 3D rebirth layer. The CSS atmosphere below is the 2D fallback. */}
-      {webglActive && (
-        <PhoenixWelcomeStage
-          durationMs={SEQUENCE_MS}
-          effects={effects}
-          onDone={finish}
-          onReady={() => setReady(true)}
-          onContextLost={() => setWebglFailed(true)}
-        />
-      )}
-
-      <div className="nexus-welcome__atmosphere" aria-hidden="true">
-        <div className="nexus-welcome__aurora nexus-welcome__aurora--one" />
-        <div className="nexus-welcome__aurora nexus-welcome__aurora--two" />
-        <div className="nexus-welcome__grid" />
-        <div className="nexus-welcome__horizon" />
-        {Array.from({ length: 24 }, (_, index) => (
-          <span
-            key={index}
-            className="nexus-welcome__particle"
-            style={{ '--particle-index': index } as CSSProperties}
+      {/* Dominant full-screen approved Phoenix (clean-plate master, AVIF→WebP). */}
+      <div className="nexus-welcome__stage" aria-hidden="true">
+        <picture>
+          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.avif" type="image/avif" />
+          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.webp" type="image/webp" />
+          <img
+            className="nexus-welcome__plate"
+            src="/assets/phoenix/runtime/phoenix-welcome-clean.webp"
+            alt=""
+            width={1680}
+            height={941}
+            decoding="async"
+            loading="eager"
           />
-        ))}
+        </picture>
+        <div className="nexus-welcome__scrim" />
+        <div className="nexus-welcome__embers">
+          {Array.from({ length: 18 }, (_, i) => (
+            <span
+              key={i}
+              className="nexus-welcome__particle"
+              style={{ '--particle-index': i } as CSSProperties}
+            />
+          ))}
+        </div>
       </div>
 
       <button type="button" className="nexus-welcome__skip nexus-control" onClick={finish}>
-        {lang === 'ar' ? 'تخطي المشهد' : 'Skip sequence'}
+        {lang === 'ar' ? 'تخطي' : 'Skip'}
       </button>
 
-      <div className="nexus-welcome__content">
-        {/* The CSS sigil is decorative fallback art; hide it when the real 3D
-            phoenix is on screen so the two never overlap. */}
-        {!webglActive && (
-          <div className="nexus-welcome__sigil" aria-hidden="true">
-            <div className="nexus-welcome__orbit nexus-welcome__orbit--outer" />
-            <div className="nexus-welcome__orbit nexus-welcome__orbit--inner" />
-            <div className="nexus-welcome__flare" />
-            <PhoenixMark className="nexus-welcome__phoenix" size="100%" title="" />
-          </div>
-        )}
+      <header className="nexus-welcome__masthead">
+        <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
+        <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
+      </header>
 
-        <div className="nexus-welcome__copy">
-          <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
-          <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل — قسم الصيدلة</h1>
-          <p className="nexus-welcome__department">
-            {lang === 'ar' ? 'منظومة الإمداد الدوائي الذكية' : 'Intelligent medicine supply network'}
-          </p>
-
-          {/* Issuance & supervision credits — the EXACT approved Arabic text,
-              verbatim per the authoritative handoff. Do not paraphrase either
-              line or replace the first with a shortened label. Always rendered
-              in Arabic (dir=rtl) so the official credit is never re-translated,
-              regardless of the UI language. */}
-          <div className="nexus-welcome__credits" dir="rtl">
-            <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
-            <div className="nexus-welcome__credits-rule" aria-hidden="true" />
-            <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
-          </div>
-        </div>
-
-        <div className="nexus-welcome__progress" aria-hidden="true">
-          <span />
-        </div>
+      {/* Approved issuance & supervision credits — the EXACT approved Arabic text,
+          verbatim per the authoritative handoff. Do not paraphrase either line.
+          Always rendered in Arabic (dir=rtl) regardless of the UI language. */}
+      <div className="nexus-welcome__credits" dir="rtl">
+        <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
+        <div className="nexus-welcome__credits-rule" aria-hidden="true" />
+        <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
+        <MasarCopyrightSeal variant="credit" className="nexus-welcome__seal" />
       </div>
     </div>
   );
