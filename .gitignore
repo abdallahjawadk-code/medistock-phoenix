@@ -42,3 +42,6 @@ Thumbs.db
 coverage/
 
 .vercel
+
+# OCR runtime assets — reproducible via scripts/ocr-assets.mjs (pinned SHA-256)
+public/assets/ocr/
