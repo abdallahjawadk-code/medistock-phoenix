@@ -20,6 +20,7 @@ const read = (base: string, rel: string) => readFileSync(join(base, rel), 'utf8'
 
 const operations = read(NET, 'DirectSupplyOperations.tsx');
 const composer = read(MOVE, 'DirectSupplyComposer.tsx');
+const returnComposer = read(MOVE, 'DirectReturnComposer.tsx');
 
 describe('composer is mounted as the forward create entry', () => {
   it('imports and renders DirectSupplyComposer in the operational surface', () => {
@@ -66,5 +67,35 @@ describe('the composer commits through the SAME lifecycle RPCs (one writer)', ()
 
   it('reads canonical central stock for the material picker (never invents it)', () => {
     expect(composer).toMatch(/getWarehouseStock\(/);
+  });
+});
+
+describe('return composer is mounted as the return create entry (one writer)', () => {
+  it('imports and renders DirectReturnComposer behind its rollback switch', () => {
+    expect(operations).toMatch(/import \{ DirectReturnComposer \} from '@\/features\/movement\/DirectReturnComposer'/);
+    expect(operations).toMatch(/<DirectReturnComposer/);
+    expect(operations).toMatch(/const RETURN_CREATE = \{ draftFirst: true \}/);
+    expect(operations).toMatch(/creating && RETURN_CREATE\.draftFirst/);
+  });
+
+  it('the legacy ReturnCreateForm is only reachable when the switch is OFF', () => {
+    expect(operations).toMatch(/creating && !RETURN_CREATE\.draftFirst && \(\s*<ReturnCreateForm/);
+    expect(operations.match(/<ReturnCreateForm/g)?.length).toBe(1);
+  });
+
+  it('hands the created return to the existing lifecycle container (setOpenId)', () => {
+    expect(operations).toMatch(/onCreated=\{\(returnRequestId\) => \{/);
+  });
+
+  it('persists only via the return lifecycle RPCs and keeps BOTH modes', () => {
+    expect(returnComposer).toMatch(/requestDirectReturn\(/);
+    expect(returnComposer).toMatch(/recallDirectTransfer\(/);
+    expect(returnComposer).toMatch(/addDirectReturnLine\(/);
+  });
+
+  it('anchors every line to original provenance — never free-text identity', () => {
+    expect(returnComposer).toMatch(/originalTransferLineId: line\.originalTransferLineId as string/);
+    expect(returnComposer).toMatch(/computeProvenanceCaps\(/);
+    expect(returnComposer).not.toMatch(/service_role/);
   });
 });

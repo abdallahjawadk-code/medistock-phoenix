@@ -25,6 +25,7 @@ import {
   type Transfer, type ReturnRequest, type ReturnRequestLine, type ReturnShipment,
 } from './network.service';
 import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
+import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
 import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
 
 /**
@@ -38,6 +39,15 @@ import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
  * removed in a follow-up cleanup commit once parity tests and screenshots pass.
  */
 const FORWARD_CREATE = { draftFirst: true };
+
+/**
+ * W077-COMPOSER — the return counterpart of FORWARD_CREATE. When `draftFirst` is
+ * true the provenance-anchored DirectReturnComposer owns the "new return" action
+ * (both institution-initiated request AND central recall modes preserved,
+ * safeReturnable caps, nothing persisted before review). Flip to false to restore
+ * the legacy header-first ReturnCreateForm. Same lifecycle RPCs, one writer.
+ */
+const RETURN_CREATE = { draftFirst: true };
 
 /**
  * W077 — the FULL operational surface for route-free direct supply. Not just a
@@ -520,15 +530,61 @@ function ReturnPanel({ lang, warehouses, whById }: {
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getReturnRequests(true), [reloadKey]);
   const incoming = useAsync(() => getReturnShipments(undefined, true), [reloadKey]);
+  const orgs = useAsync(() => getOrganizations(), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
 
+  // Party data for the provenance-anchored composer — same RLS-scoped list. The
+  // return source is an institution warehouse; the destination is a central one.
+  const orgNameById = useMemo(
+    () => new Map((orgs.data ?? []).map(o => [o.id, lang === 'ar' ? o.name_ar : o.name] as const)),
+    [orgs.data, lang],
+  );
+  const institutionParties = useMemo<PartyOption[]>(
+    () => warehouses
+      .filter(w => w.warehouseKind === 'institution' && w.status === 'active')
+      .map(w => ({
+        id: w.id,
+        organizationId: w.organizationId,
+        organizationName: orgNameById.get(w.organizationId) ?? '—',
+        warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
+      })),
+    [warehouses, orgNameById, lang],
+  );
+  const centralWarehouses = useMemo(
+    () => warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active'),
+    [warehouses],
+  );
+  const organizationOptions = useMemo(
+    () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
+    [orgs.data, lang],
+  );
+
   if (open) {
     return (
       <ReturnDetail lang={lang} request={open} whById={whById}
         onBack={() => { setOpenId(null); reload(); }} onStatus={setStatus} status={status} />
+    );
+  }
+
+  // Draft-first return authoring takes over the panel; nothing is persisted until
+  // the review step. Both request and recall modes live inside the composer.
+  if (creating && RETURN_CREATE.draftFirst) {
+    return (
+      <DirectReturnComposer
+        institutionWarehouses={institutionParties}
+        organizations={organizationOptions}
+        centralWarehouses={centralWarehouses}
+        onCancel={() => setCreating(false)}
+        onCreated={(returnRequestId) => {
+          setCreating(false);
+          setStatus({ msg: t('net_op_done', lang), error: false });
+          reload();
+          setOpenId(returnRequestId);
+        }}
+      />
     );
   }
 
@@ -541,7 +597,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
 
       <StatusLine status={status} />
 
-      {creating && (
+      {creating && !RETURN_CREATE.draftFirst && (
         <ReturnCreateForm lang={lang} warehouses={warehouses}
           onCancel={() => setCreating(false)}
           onDone={(res) => {
