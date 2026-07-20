@@ -114,8 +114,10 @@ describe('receive section upgraded in place to InstitutionIncomingSupplies', () 
     expect(operations.match(/<IncomingTransferRow/g)?.length).toBe(1);
   });
 
-  it('gates receive on the real receive permission (+ super_admin)', () => {
-    expect(operations).toMatch(/role === 'super_admin' \|\| myPermissions\.has\('warehouse_transfer\.receive'\)/);
+  it('the Network Supply tab is a READ-ONLY monitor — the sender cannot receive', () => {
+    // §1: this tab is gated on warehouse_transfer.send; receiving belongs to the
+    // institution officer, so here the incoming section can never mutate.
+    expect(operations).toMatch(/const canReceive = false/);
     expect(operations).toMatch(/canReceive=\{canReceive\}/);
   });
 

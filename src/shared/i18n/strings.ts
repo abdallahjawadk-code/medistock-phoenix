@@ -1614,6 +1614,7 @@ export const T: Dict = {
   inv_tab_intake:         { ar: 'إدخال مواد',                                   en: 'Material intake' },
   inv_tab_stock:          { ar: 'رصيد المخزن',                                  en: 'Warehouse stock' },
   inv_tab_ledger:         { ar: 'سجل الحركات',                                  en: 'Movement ledger' },
+  inv_tab_incoming: { ar: 'واردات تجهيز الدائرة', en: 'Incoming dept. supplies' },
 
   inv_warehouse:          { ar: 'المخزن',                                       en: 'Warehouse' },
   inv_select_warehouse:   { ar: 'اختر المخزن',                                  en: 'Select a warehouse' },

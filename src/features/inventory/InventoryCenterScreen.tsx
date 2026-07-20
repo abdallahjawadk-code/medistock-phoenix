@@ -11,6 +11,8 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
+import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
+import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
@@ -38,13 +40,20 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming';
 
 export function InventoryCenterScreen() {
-  const { lang, dir, activeOrgId } = useApp();
+  const { lang, dir, activeOrgId, role, myPermissions } = useApp();
 
   const scopes = useInventoryScopes(activeOrgId);
   const [warehouseId, setWarehouseId] = useState('');
+
+  // §1 receiver reachability — the institution officer's incoming-supplies
+  // surface lives HERE, gated on the real receive permission, so a receive-only
+  // actor (no warehouse_transfer.send, hence no Network → Supply tab) can still
+  // reach it. The RPC re-checks scope/permission server-side regardless.
+  const canReceive = role === 'super_admin' || myPermissions.has('warehouse_transfer.receive');
+  const orgs = useAsync(() => getOrganizations(), []);
 
   const manageableWarehouses = scopes.data?.manageableWarehouses ?? [];
   // Never leave a stale warehouse selected after an org switch — the catalog is
@@ -71,6 +80,13 @@ export function InventoryCenterScreen() {
     })),
     [manageableWarehouses, lang],
   );
+
+  // Cosmetic paired-identity for the incoming-supplies header (institution — depot).
+  const institutionName = useMemo(() => {
+    const o = (orgs.data ?? []).find(x => x.id === activeOrgId);
+    return o ? (lang === 'ar' ? o.name_ar : o.name) : '';
+  }, [orgs.data, activeOrgId, lang]);
+  const activeWarehouseName = warehouseOptions.find(o => o.value === activeWarehouseId)?.label ?? '';
 
   const header = (
     <div style={{ marginBottom: '16px' }}>
@@ -143,6 +159,9 @@ export function InventoryCenterScreen() {
           { id: 'intake' as const, labelKey: 'inv_tab_intake' },
           { id: 'stock' as const, labelKey: 'inv_tab_stock' },
           { id: 'ledger' as const, labelKey: 'inv_tab_ledger' },
+          // Shown only to holders of the receive permission — the authoritative
+          // institution incoming-supplies receipt entry.
+          ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -184,6 +203,13 @@ export function InventoryCenterScreen() {
           canCorrect={canCorrect}
           onSuccess={afterWrite}
           onError={showToast}
+        />
+      ) : tab === 'incoming' && canReceive ? (
+        <InstitutionIncomingSupplies
+          destinationWarehouseId={activeWarehouseId}
+          institutionName={institutionName}
+          warehouseName={activeWarehouseName}
+          canReceive={canReceive}
         />
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />

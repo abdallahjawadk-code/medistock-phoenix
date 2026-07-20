@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -162,7 +161,6 @@ export function DirectSupplyOperations({ lang }: { lang: Lang }) {
 function ForwardPanel({ lang, warehouses, whById }: {
   lang: Lang; warehouses: NetworkWarehouse[]; whById: Map<string, NetworkWarehouse>;
 }) {
-  const { role, myPermissions } = useApp();
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getTransferRequests(true), [reloadKey]);
@@ -175,9 +173,12 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
 
-  // Receiving is the institution officer's action — gate on the real receive
-  // permission (+ super_admin). The RPC re-checks server-side regardless.
-  const canReceive = role === 'super_admin' || myPermissions.has('warehouse_transfer.receive');
+  // §1 — this tab is the central SENDER's surface (gated on warehouse_transfer.send).
+  // Receiving belongs to the institution officer, so here the incoming section is
+  // a READ-ONLY in-transit monitor. The single authoritative receive-mutation
+  // entry lives in the Institution Inventory Center → Incoming tab, gated on
+  // warehouse_transfer.receive. A send-only actor therefore cannot receive.
+  const canReceive = false;
 
   // Party data for the draft-first composer. Same RLS-scoped warehouse list the
   // legacy form used, filtered to the eligible endpoints; the RPC re-checks
