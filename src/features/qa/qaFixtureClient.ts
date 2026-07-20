@@ -104,13 +104,15 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
 export function createQaFixtureClient(): SupabaseClient {
   const client = {
     from(table: string) {
-      return new QaQueryBuilder(QA_FIXTURES[table] ?? []);
+      const rows = QA_FIXTURES[table];
+      return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : []);
     },
     rpc(name: string) {
-      // SELECT-only: read RPCs registered in fixtures return data; anything
-      // else (mutations, unknown) resolves to the explicit QA read-only error.
+      // SELECT-only: read RPCs registered in fixtures return their data (an
+      // array OR an object, matching the real RPC's schema); anything else
+      // (mutations, unknown) resolves to the explicit QA read-only error.
       const fixture = QA_FIXTURES[`rpc:${name}`];
-      if (fixture) return Promise.resolve(ok(fixture));
+      if (fixture !== undefined) return Promise.resolve(ok(fixture));
       return Promise.resolve({ data: null, error: READONLY_ERROR, count: null });
     },
     // Auth surface the app touches at render time — inert, no network.
