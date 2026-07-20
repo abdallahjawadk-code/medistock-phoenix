@@ -20,6 +20,9 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { __installQaSupabaseClient } from '@/shared/supabase/client';
+import type { NetworkWarehouse, SupplyRoute } from '@/features/network/network.service';
+import type { DistributionPoint } from '@/shared/supabase/services/warehouses.service';
+import type { NodeAlert } from '@/features/network/NetworkTopologyStage';
 import { QaAppProvider } from './QaAppProvider';
 import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_PERSONAS, qaPersona, type QaPersonaId } from './qaFixtures';
@@ -30,9 +33,9 @@ import { createQaFixtureClient } from './qaFixtureClient';
 // is a no-op in a production build (see client.ts).
 __installQaSupabaseClient(createQaFixtureClient());
 
-type SceneId = 'shell' | 'states' | 'institutions';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -49,6 +52,36 @@ function readParams() {
 const InstitutionScreen = lazy(() =>
   import('@/features/institutions/InstitutionScreen').then(m => ({ default: m.InstitutionScreen })),
 );
+const DashboardScreen = lazy(() =>
+  import('@/features/dashboard/DashboardScreen').then(m => ({ default: m.DashboardScreen })),
+);
+const NetworkTopologyStage = lazy(() =>
+  import('@/features/network/NetworkTopologyStage').then(m => ({ default: m.NetworkTopologyStage })),
+);
+const PhoenixWelcomeExperience = lazy(() =>
+  import('@/features/auth/PhoenixWelcomeExperience').then(m => ({ default: m.PhoenixWelcomeExperience })),
+);
+
+// Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
+// match the real warehouse/route/outlet/alert types so the twin renders exactly
+// as it does against live RLS-scoped data.
+const TWIN_WAREHOUSES: NetworkWarehouse[] = [
+  { id: 'c1', name: 'Central Store', name_ar: 'المخزن المركزي', warehouseKind: 'central', status: 'active', isMain: true, code: 'C-01', organizationId: 'org' },
+  { id: 'i1', name: 'Babil General', name_ar: 'مذخر بابل العام', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-01', organizationId: 'org' },
+  { id: 'i2', name: 'Hilla Teaching', name_ar: 'مذخر الحلة التعليمي', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-02', organizationId: 'org' },
+];
+const TWIN_ROUTES: SupplyRoute[] = [
+  { id: 'r1', sourceWarehouseId: 'c1', targetWarehouseId: 'i1', priority: 1, isActive: true, notes: null },
+  { id: 'r2', sourceWarehouseId: 'c1', targetWarehouseId: 'i2', priority: 1, isActive: true, notes: null },
+];
+const TWIN_OUTLETS: DistributionPoint[] = [
+  { id: 'o1', name: 'Pharmacy A', name_ar: 'صيدلية أ', status: 'active', warehouseId: 'i1', organizationId: 'org', pointType: 'pharmacy' },
+  { id: 'o2', name: 'Rescue Cart', name_ar: 'عربة إنعاش', status: 'active', warehouseId: 'i2', organizationId: 'org', pointType: 'rescue_cart' },
+];
+const TWIN_ALERTS = new Map<string, NodeAlert>([
+  ['i1', { severity: 'high', count: 3, topSignal: 'missing' }],
+  ['o2', { severity: 'medium', count: 1, topSignal: 'near_expiry' }],
+]);
 
 function StatesScene({ lang }: { lang: Lang }) {
   const ar = lang === 'ar';
@@ -87,15 +120,34 @@ export function QaHarness() {
           QA ONLY · {active.id} · {lang.toUpperCase()} · {theme}
         </div>
 
-        {scene === 'states' ? (
+        {scene === 'welcome' ? (
+          <Suspense fallback={<PhoenixLoadingState />}>
+            <PhoenixWelcomeExperience onComplete={() => { /* QA: inert */ }} />
+          </Suspense>
+        ) : scene === 'states' ? (
           <div style={{ minHeight: '100dvh', background: 'var(--bg)', padding: 'var(--sp-8) var(--sp-4)' }}>
             <StatesScene lang={lang} />
           </div>
         ) : (
-          <PhoenixAppShell currentScreen={scene === 'institutions' ? 11 : 12} onNavigate={() => { /* QA: inert */ }} onLogout={() => { /* QA: inert */ }}>
+          <PhoenixAppShell currentScreen={scene === 'institutions' ? 11 : scene === 'twin' ? 5 : 1} onNavigate={() => { /* QA: inert */ }} onLogout={() => { /* QA: inert */ }}>
             {scene === 'institutions' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <InstitutionScreen />
+              </Suspense>
+            ) : scene === 'dashboard' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <DashboardScreen onNavigate={() => { /* QA: inert */ }} />
+              </Suspense>
+            ) : scene === 'twin' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <NetworkTopologyStage
+                  lang={lang}
+                  warehouses={TWIN_WAREHOUSES}
+                  routes={TWIN_ROUTES}
+                  outlets={TWIN_OUTLETS}
+                  organizationName={lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health · Pharmacy Department'}
+                  alerts={TWIN_ALERTS}
+                />
               </Suspense>
             ) : (
               <div style={{ padding: 'var(--sp-4)' }}>
