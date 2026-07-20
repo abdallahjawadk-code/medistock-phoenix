@@ -57,16 +57,23 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
   // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
-  const ns = (n: number) => ({
-    background: currentScreen === n ? 'var(--p2)' : 'transparent',
-    color:      currentScreen === n ? 'var(--pd)' : 'var(--t2)',
-    fontWeight: currentScreen === n ? '700' : '500',
-  });
+  /* Same state map as PhoenixSidebar, so the drawer and the desktop rail agree
+     on what "active" looks like: --chip fill, --cyanDim text, weight 700 and a
+     3px ember rail on the inline start. */
+  const ns = (n: number) => {
+    const active = currentScreen === n;
+    return {
+      background: active ? 'var(--chip)' : 'transparent',
+      color:      active ? 'var(--cyanDim)' : 'var(--muted)',
+      fontWeight: active ? 700 : 500,
+      borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`,
+    };
+  };
 
   return (
     <div
       dir={dir}
-      style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-drawer)', display: 'flex' }}
       role="dialog"
       aria-modal="true"
     >
@@ -74,7 +81,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
       <aside className="premium-sidebar premium-dialog-panel premium-mobile-drawer" style={{
         position: 'relative',
         width: 'min(var(--sw), 88vw)',
-        background: 'var(--s)',
+        background: 'var(--surface)',
         height: '100%',
         overflowY: 'auto',
         display: 'flex',
@@ -100,7 +107,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
               style={{
                 minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)',
                 flexShrink: 0, borderRadius: 'var(--r2)',
-                border: '1px solid var(--brd)', background: 'var(--s2)', color: 'var(--t2)',
+                border: '1px solid var(--line)', background: 'var(--field)', color: 'var(--text)',
                 fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', transition: 'all 120ms',
               }}
@@ -123,23 +130,26 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
                 data-active={currentScreen === item.screen}
                 key={item.screen}
                 onClick={() => { onNavigate(item.screen); onClose(); }}
+                aria-current={currentScreen === item.screen ? 'page' : undefined}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '12px 10px', borderRadius: 'var(--r2)',
-                  border: 'none', width: '100%', textAlign: 'start',
-                  fontSize: '14px', transition: 'all 100ms', minHeight: '44px',
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '0 12px', borderRadius: 'var(--r2)',
+                  borderBlock: 'none', borderInlineEnd: 'none', width: '100%', textAlign: 'start',
+                  fontSize: '14px',
+                  transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
+                  minHeight: 'var(--touch-target)',
                   opacity: item.frozen ? 0.7 : 1,
                   cursor: 'pointer',
                   ...s,
                 }}
               >
-                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
+                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
               </button>
             );
           })}
 
-          <div style={{ height: '1px', background: 'var(--brd)', margin: '6px 4px' }} />
+          <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
 
           {SECONDARY_NAV.map(item => {
             const s = ns(item.screen);
@@ -149,16 +159,19 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
                 data-active={currentScreen === item.screen}
                 key={item.screen}
                 onClick={() => { onNavigate(item.screen); onClose(); }}
+                aria-current={currentScreen === item.screen ? 'page' : undefined}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '12px 10px', borderRadius: 'var(--r2)',
-                  border: 'none', width: '100%', textAlign: 'start',
-                  fontSize: '14px', transition: 'all 100ms', minHeight: '44px',
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '0 12px', borderRadius: 'var(--r2)',
+                  borderBlock: 'none', borderInlineEnd: 'none', width: '100%', textAlign: 'start',
+                  fontSize: '14px',
+                  transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
+                  minHeight: 'var(--touch-target)',
                   cursor: 'pointer',
                   ...s,
                 }}
               >
-                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
+                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
               </button>
             );
@@ -172,8 +185,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             width: '100%', minHeight: '44px', marginTop: '8px', padding: '12px 10px',
-            borderRadius: 'var(--r2)', border: '1px solid color-mix(in srgb, var(--err) 30%, var(--brd))',
-            background: 'var(--err2)', color: 'var(--err)', fontSize: '14px', fontWeight: 700,
+            borderRadius: 'var(--r2)', border: '1px solid color-mix(in srgb, var(--danger) 45%, var(--line))',
+            background: 'var(--chipD)', color: 'var(--danger)', fontSize: '14px', fontWeight: 700,
             cursor: 'pointer', flexShrink: 0,
           }}
         >
