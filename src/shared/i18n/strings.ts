@@ -100,7 +100,11 @@ export const T: Dict = {
   m_bridge:       { ar: 'صحة الجسور',                         en: 'Bridge Health' },
   m_safe:         { ar: 'وحدات الوضع الآمن',                  en: 'Safe Mode Modules' },
   m_upd:          { ar: 'آخر تحديث',                          en: 'Last Update' },
-  d_stock_health: { ar: 'صحة المخزون',                        en: 'Stock Health' },
+  d_reported_availability:      { ar: 'التوفر المُبلّغ',      en: 'Reported availability' },
+  d_reported_availability_note: {
+    ar: 'مبني على حالات التوفر المُبلّغة يدويًا، ولا يمثل الرصيد المخزني.',
+    en: 'Based on manually reported availability statuses; it does not represent inventory balance.',
+  },
   inst_status:    { ar: 'حالة المؤسسات',                      en: 'Institution Status' },
   alerts:         { ar: 'التنبيهات الأخيرة',                  en: 'Recent Alerts' },
   quick:          { ar: 'الإجراءات السريعة',                  en: 'Quick Actions' },

@@ -33,7 +33,7 @@ describe('premium visual system', () => {
     const dashboard = read('features/dashboard/DashboardScreen.tsx');
     const institutions = read('features/institutions/InstitutionScreen.tsx');
     // Phase D replaced the flat premium-command-hero text header with the
-    // design-source Dashboard hero band (real stock-health ring + live readouts).
+    // design-source Dashboard hero band (reported-availability ring + live readouts).
     expect(dashboard).toContain('nexus-dash-hero');
     expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
     expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');

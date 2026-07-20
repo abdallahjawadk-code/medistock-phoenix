@@ -1,5 +1,12 @@
 /**
- * DASHBOARD-STOCK-HEALTH-METRIC — the Dashboard hero ring's "stock health" %.
+ * DASHBOARD-REPORTED-AVAILABILITY-METRIC — the Dashboard hero ring's
+ * "reported availability" %.
+ *
+ * NAMING CONTRACT: this metric is deliberately NOT called stock/inventory
+ * health. It is derived purely from manually reported `item_availability`
+ * condition statuses and does not represent an inventory balance. See the
+ * focused tests in __tests__/reported-availability-metric.test.ts, which lock
+ * both the user-facing labels and the absence of the retired naming here.
  *
  * SOURCE OF TRUTH: the authoritative dashboard condition-count RPC
  * `phoenix_get_dashboard_condition_counts` (migration 054), surfaced by
@@ -22,7 +29,7 @@
  * primary availability states (Available / Low / Missing), as an integer 0–100.
  * Returns 0 when there are no classified items (empty denominator).
  */
-export interface StockHealthCounts {
+export interface ReportedAvailabilityCounts {
   /** count(*) of item_availability rows with condition = 'available' */
   available: number;
   /** count(*) of item_availability rows with condition = 'low_stock' */
@@ -31,7 +38,7 @@ export interface StockHealthCounts {
   missing: number;
 }
 
-export function stockHealthPercent({ available, low, missing }: StockHealthCounts): number {
+export function reportedAvailabilityPercent({ available, low, missing }: ReportedAvailabilityCounts): number {
   // Coerce to non-negative integers — these are row counts by definition; a
   // fractional or negative input would be a contract violation, not a quantity.
   const a = Math.max(0, Math.trunc(available) || 0);

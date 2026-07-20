@@ -63,7 +63,7 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // ── Read RPC fixtures (shapes match the real read-only RPCs) ──────────────
 
   // phoenix_get_dashboard_condition_counts → a single object of per-condition
-  // COUNTS. Drives the hero stock-health ring and the condition tiles.
+  // COUNTS. Drives the hero reported-availability ring and the condition tiles.
   // ring = 128 / (128 + 22 + 9) = 80.5% → 81%.
   'rpc:phoenix_get_dashboard_condition_counts': {
     available: 128, low_stock: 22, missing: 9, near_expiry: 14, surplus: 6,

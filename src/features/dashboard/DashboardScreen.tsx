@@ -19,7 +19,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { resolveEmojiIcon } from '@/shared/ui/emojiIcon';
 import { InventoryIntelligenceSummary } from '@/features/inventory/InventoryIntelligenceSummary';
-import { stockHealthPercent } from './stockHealth';
+import { reportedAvailabilityPercent } from './reportedAvailability';
 
 interface Props { onNavigate: (screen: number) => void; }
 
@@ -91,19 +91,21 @@ export function DashboardScreen({ onNavigate }: Props) {
   const m = metrics.data;
   const sr = srCounts.data;
 
-  // Hero-ring "stock health": the share of Available items among the three
-  // primary availability COUNTS (available / low_stock / missing) returned by
-  // phoenix_get_dashboard_condition_counts (mig 054) via getDashboardMetrics.
-  // All three are like-unit item-condition row counts — see stockHealth.ts for
-  // the audited derivation. No stock quantity is read here, and item_availability
-  // is neither read directly nor written from this screen.
-  const healthPct = stockHealthPercent({
+  // Hero-ring "reported availability": the share of Available items among the
+  // three primary availability COUNTS (available / low_stock / missing) returned
+  // by phoenix_get_dashboard_condition_counts (mig 054) via getDashboardMetrics.
+  // All three are like-unit item-condition row counts — see reportedAvailability.ts
+  // for the audited derivation. No stock quantity is read here, and
+  // item_availability is neither read directly nor written from this screen.
+  // This is NOT a stock/inventory health figure: it reflects manually reported
+  // availability statuses only, never an inventory balance.
+  const reportedAvailabilityPct = reportedAvailabilityPercent({
     available: m?.availableItems ?? 0,
     low: m?.lowStockCount ?? 0,
     missing: m?.missingCount ?? 0,
   });
   const RING_CIRCUM = 264; // 2π·42, matches the r=42 ring below
-  const ringOffset = RING_CIRCUM * (1 - healthPct / 100);
+  const ringOffset = RING_CIRCUM * (1 - reportedAvailabilityPct / 100);
 
   const materialAlertResult = useMemo(
     () => allReports.data ? computeMaterialAlerts(allReports.data) : null,
@@ -115,30 +117,37 @@ export function DashboardScreen({ onNavigate }: Props) {
 
   return (
     <div className="premium-page premium-dashboard" style={{ maxWidth: '1320px', animation: 'fs .3s ease' }}>
-      {/* Hero band — design-source Dashboard header: a real stock-health ring
-          and headline readouts derived from the live metrics, over the Phoenix
-          hero gradient. */}
+      {/* Hero band — design-source Dashboard header: a reported-availability
+          ring and headline readouts derived from the live metrics, over the
+          Phoenix hero gradient. The ring reports manually reported availability
+          statuses, not an inventory balance; the clarifying note below is
+          always rendered (never hover-only) and is bound to the ring via
+          aria-describedby. */}
       <div className="nexus-dash-hero">
         <svg className="nexus-dash-hero__ring" width="92" height="92" viewBox="0 0 100 100" role="img"
-          aria-label={`${t('d_stock_health', lang)}: ${healthPct}%`}>
+          aria-label={`${t('d_reported_availability', lang)}: ${reportedAvailabilityPct}%`}
+          aria-describedby="reported-availability-note">
           <circle cx="50" cy="50" r="42" fill="none" stroke="var(--brd)" strokeWidth="8" />
-          <circle cx="50" cy="50" r="42" fill="none" stroke="url(#nxHealthGrad)" strokeWidth="8"
+          <circle cx="50" cy="50" r="42" fill="none" stroke="url(#nxReportedAvailGrad)" strokeWidth="8"
             strokeLinecap="round" strokeDasharray={RING_CIRCUM} strokeDashoffset={ringOffset}
             transform="rotate(-90 50 50)" />
           <defs>
-            <linearGradient id="nxHealthGrad" x1="0" y1="0" x2="1" y2="1">
+            <linearGradient id="nxReportedAvailGrad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor="var(--info)" />
               <stop offset="1" stopColor="var(--p)" />
             </linearGradient>
           </defs>
-          <text x="50" y="47" textAnchor="middle" fill="var(--t)" fontSize="20" fontWeight="700">{m ? `${healthPct}%` : '—'}</text>
-          <text x="50" y="63" textAnchor="middle" fill="var(--t2)" fontSize="9">{t('d_stock_health', lang)}</text>
+          <text x="50" y="47" textAnchor="middle" fill="var(--t)" fontSize="20" fontWeight="700">{m ? `${reportedAvailabilityPct}%` : '—'}</text>
+          <text x="50" y="63" textAnchor="middle" fill="var(--t2)" fontSize="9">{t('d_reported_availability', lang)}</text>
         </svg>
 
         <div className="nexus-dash-hero__copy">
           <div className="nexus-dash-hero__kicker">دائرة صحة بابل · قسم الصيدلة</div>
           <h2>{t('d_central', lang)}</h2>
           <p>{m ? `${t('m_upd', lang)}: ${m.lastUpdated}` : t('dash_sub', lang)}</p>
+          <p id="reported-availability-note" className="nexus-dash-hero__note">
+            {t('d_reported_availability_note', lang)}
+          </p>
         </div>
 
         <div className="nexus-dash-hero__stats">
