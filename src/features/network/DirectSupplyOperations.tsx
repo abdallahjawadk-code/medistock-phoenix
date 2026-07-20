@@ -28,6 +28,8 @@ import {
 import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
 import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
+import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
+import { buildSupplyRequestReceipt } from '@/features/movement/receipt-source';
 import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
 
 /**
@@ -225,7 +227,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
   if (open) {
     return (
-      <ForwardDetail lang={lang} request={open} whById={whById}
+      <ForwardDetail lang={lang} request={open} whById={whById} orgNameById={orgNameById}
         onBack={() => { setOpenId(null); reload(); }}
         onStatus={setStatus} status={status} />
     );
@@ -373,8 +375,9 @@ function ForwardCreateForm({ lang, warehouses, onCancel, onDone }: {
   );
 }
 
-function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
+function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, status }: {
   lang: Lang; request: TransferRequest; whById: Map<string, NetworkWarehouse>;
+  orgNameById: Map<string, string>;
   onBack: () => void; onStatus: (s: Status) => void; status: Status;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
@@ -390,6 +393,24 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
     if (res.ok) reload();
   };
 
+  // The request document, built ONLY from server-reloaded canonical rows (never
+  // an unsaved draft). Watermarked honestly — a request is not a movement receipt.
+  const requestDocument = useMemo(
+    () => buildSupplyRequestReceipt({
+      request,
+      lines: lines.data ?? [],
+      source: {
+        organizationName: orgNameById.get(request.sourceOrganizationId) ?? null,
+        warehouseName: nameOf(whById.get(request.sourceWarehouseId), lang),
+      },
+      destination: {
+        organizationName: orgNameById.get(request.destinationOrganizationId) ?? null,
+        warehouseName: nameOf(whById.get(request.destinationWarehouseId), lang),
+      },
+    }),
+    [request, lines.data, orgNameById, whById, lang],
+  );
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -400,6 +421,13 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
           {nameOf(whById.get(request.sourceWarehouseId), lang)} → {nameOf(whById.get(request.destinationWarehouseId), lang)}
         </span>
       </div>
+
+      {/* Receipt · genuine XLSX · QR — from the canonical request document above. */}
+      {!lines.loading && (
+        <div style={{ marginBottom: '10px' }}>
+          <MovementDocumentActions document={requestDocument} lang={lang} />
+        </div>
+      )}
 
       <StatusLine status={status} />
 
