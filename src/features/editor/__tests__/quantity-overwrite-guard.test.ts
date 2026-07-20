@@ -17,13 +17,18 @@
  * COALESCE(dosage_form,'').
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { join } from 'path';
+import {
+  readSourceFile,
+  functionBodyAt,
+  enclosingJsxTag,
+  jsxElementContaining,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC = join(__dirname, '../../../');
 
 function readSrc(rel: string) {
-  return readFileSync(join(SRC, rel), 'utf8');
+  return readSourceFile(join(SRC, rel));
 }
 
 const editor = readSrc('features/editor/EditorScreen.tsx');
@@ -56,13 +61,13 @@ describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: existing-row detection', () 
 
 describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: quantity field behavior', () => {
   it('the quantity input is disabled/read-only when isEditMode is true', () => {
-    const qtyBlock = editor.slice(editor.indexOf('id="ed-qty"') - 50, editor.indexOf('id="ed-qty"') + 700);
+    const qtyBlock = enclosingJsxTag(editor, 'id="ed-qty"');
     expect(qtyBlock).toContain('disabled={isEditMode}');
     expect(qtyBlock).toContain('readOnly={isEditMode}');
   });
 
   it('the quantity input displays the existing row quantity (not stale local state) in edit mode', () => {
-    const qtyBlock = editor.slice(editor.indexOf('id="ed-qty"') - 50, editor.indexOf('id="ed-qty"') + 700);
+    const qtyBlock = enclosingJsxTag(editor, 'id="ed-qty"');
     expect(qtyBlock).toMatch(/value=\{isEditMode \? existingRow!\.quantity : qty\}/);
   });
 
@@ -74,9 +79,11 @@ describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: quantity field behavior', ()
   });
 
   it('shows the bilingual warning/helper text only in edit mode', () => {
-    const qtyBlock = editor.slice(editor.indexOf('id="ed-qty"') - 50, editor.indexOf('id="ed-qty"') + 1200);
-    expect(qtyBlock).toContain('isEditMode && (');
-    expect(qtyBlock).toContain('avail_qty_locked_note');
+    // The helper text is a sibling of the input inside the same field group,
+    // so the region is the enclosing <div>, not the <input> tag itself.
+    const qtyGroup = jsxElementContaining(editor, 'id="ed-qty"');
+    expect(qtyGroup).toContain('isEditMode && (');
+    expect(qtyGroup).toContain('avail_qty_locked_note');
   });
 
   it('the quantity field is not removed from the DOM in edit mode (still visible)', () => {
@@ -87,12 +94,12 @@ describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: quantity field behavior', ()
 
 describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: save never sends a changed quantity for existing rows', () => {
   it('doApply sends existingRow quantity (not local qty state) when isEditMode is true', () => {
-    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 2000);
+    const applyFn = functionBodyAt(editor, 'async function doApply');
     expect(applyFn).toMatch(/quantity:\s*isEditMode \? existingRow!\.quantity : qty/);
   });
 
   it('save still sends the locally-typed qty for brand-new rows', () => {
-    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 2000);
+    const applyFn = functionBodyAt(editor, 'async function doApply');
     expect(applyFn).toContain(': qty,');
   });
 });

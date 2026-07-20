@@ -18,12 +18,12 @@
  * this repo's established test conventions (028/042/051/052/053).
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { readSourceFile } from '../../../__tests__/helpers/source-extract';
 
 const ROOT = join(__dirname, '../../../../../');
-const readSrc = (rel: string) => readFileSync(join(ROOT, 'src', rel), 'utf8');
+const readSrc = (rel: string) => readSourceFile(join(ROOT, 'src', rel));
 
 const dashboardService    = readSrc('shared/supabase/services/dashboard.service.ts');
 const availabilityService = readSrc('shared/supabase/services/availability.service.ts');
@@ -35,7 +35,7 @@ const movementReportSection = readSrc('features/status/MovementReportSection.tsx
 const qrService           = readSrc('shared/supabase/services/qr.service.ts');
 const publicQrScreen      = readSrc('features/qr/PublicQrScreen.tsx');
 const interOrgAlertLifecycleService = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
-const types = readFileSync(join(ROOT, 'src/shared/lib/types.ts'), 'utf8');
+const types = readSourceFile(join(ROOT, 'src/shared/lib/types.ts'));
 
 describe('A) Dashboard: live stock counts ignore removed_at rows', () => {
   // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: getDashboardMetrics/

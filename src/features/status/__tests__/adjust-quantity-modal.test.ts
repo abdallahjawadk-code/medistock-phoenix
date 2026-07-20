@@ -15,13 +15,13 @@
  * Static source-code tests — no DB connection required.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readSourceFile } from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
-const readSrc     = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
-const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
+const readSrc     = (rel: string) => readSourceFile(join(SRC, rel));
+const readPhoenix = (rel: string) => readSourceFile(join(PHOENIX, rel));
 
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const modal        = readSrc('features/status/AdjustQuantityModal.tsx');

@@ -15,13 +15,20 @@
  * this repo's established test conventions.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import {
+  readSourceFile,
+  balancedBlockAt,
+  functionBodyAt,
+  declarationValueAt,
+  blockBetween,
+  anchorIndex,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
-const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
+const readSrc = (rel: string) => readSourceFile(join(SRC, rel));
 
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const reactivateModal = readSrc('features/status/ReactivateMaterialModal.tsx');
@@ -35,16 +42,16 @@ const institutionScreen = readSrc('features/institutions/InstitutionScreen.tsx')
 
 describe('A) getAvailabilityByOrg now selects removal_reason (already selected removed_at/actor_name_snapshot)', () => {
   it('selects removal_reason alongside the pre-existing removed_at/actor_name_snapshot columns', () => {
-    const start = availabilityService.indexOf('export async function getAvailabilityByOrg');
-    const body = availabilityService.slice(start, start + 1400);
+    const body = functionBodyAt(availabilityService, 'export async function getAvailabilityByOrg');
     expect(body).toContain('actor_name_snapshot, removed_at, removal_reason');
   });
 
   it('never selects removed_by (the raw auth uuid column) in the actual .select(...) clause', () => {
-    const start = availabilityService.indexOf('export async function getAvailabilityByOrg');
-    const selectStart = availabilityService.indexOf('.select(`', start);
-    const selectEnd = availabilityService.indexOf('`)', selectStart);
-    const selectClause = availabilityService.slice(selectStart, selectEnd);
+    const fnBody = functionBodyAt(availabilityService, 'export async function getAvailabilityByOrg');
+    // Bounded by the template literal's own delimiters — the clause contains
+    // nested `table(col, col)` embeds, so bracket balancing is not the right
+    // boundary here.
+    const selectClause = blockBetween(fnBody, '.select(`', '`)');
     expect(selectClause).not.toMatch(/\bremoved_by\b/);
   });
 });
@@ -58,7 +65,7 @@ describe('B) Status Center: removed-row badge and safe details', () => {
 
   it('maps removal_reason to friendly bilingual labels via a dedicated helper, never rendering the raw DB string', () => {
     expect(statusCenter).toContain('function removalReasonLabel(');
-    const fn = statusCenter.slice(statusCenter.indexOf('function removalReasonLabel('), statusCenter.indexOf('function removalReasonLabel(') + 500);
+    const fn = functionBodyAt(statusCenter, 'function removalReasonLabel(');
     expect(fn).toContain("'removed_from_outlet'");
     expect(fn).toContain("'clear_port_availability'");
     expect(fn).toContain("t('sc_removal_reason_unknown', lang)"); // safe fallback for unknown/other
@@ -66,20 +73,19 @@ describe('B) Status Center: removed-row badge and safe details', () => {
   });
 
   it('shows removed_at formatted via the existing stable date formatter, not a raw ISO string', () => {
-    const badgeBlock = statusCenter.slice(statusCenter.indexOf('isRemoved ? ('), statusCenter.indexOf('isRemoved ? (') + 900);
+    const badgeBlock = balancedBlockAt(statusCenter, 'isRemoved ? (');
     expect(badgeBlock).toContain('formatStableDate(r.removed_at, lang)');
   });
 
   it('shows "last action by" using actor_name_snapshot only — never removed_by or any raw uuid', () => {
-    const badgeBlock = statusCenter.slice(statusCenter.indexOf('isRemoved ? ('), statusCenter.indexOf('isRemoved ? (') + 900);
+    const badgeBlock = balancedBlockAt(statusCenter, 'isRemoved ? (');
     expect(badgeBlock).toContain('r.actor_name_snapshot');
     expect(badgeBlock).not.toMatch(/\bremoved_by\b/);
     expect(badgeBlock).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
   });
 
   it('LiveAvailRow carries removal_reason/national_code/price needed for the badge and reactivation, and no removed_by field', () => {
-    const rowStart = statusCenter.indexOf('interface LiveAvailRow');
-    const rowBody = statusCenter.slice(rowStart, statusCenter.indexOf('\n}', rowStart));
+    const rowBody = balancedBlockAt(statusCenter, 'interface LiveAvailRow');
     expect(rowBody).toContain('removal_reason?: string | null;');
     expect(rowBody).toContain('national_code?: string | null;');
     expect(rowBody).toContain('price?: number | null;');
@@ -89,9 +95,17 @@ describe('B) Status Center: removed-row badge and safe details', () => {
 
 describe('C) Status Center: Reactivate button appears only for removed rows, replacing Adjust Quantity', () => {
   it('the actions cell renders Reactivate for isRemoved rows and Adjust Quantity otherwise (never both for the same row)', () => {
-    const cellStart = statusCenter.indexOf('{isRemoved ? (\n                            canReactivate');
-    expect(cellStart).toBeGreaterThan(-1);
-    const cellBody = statusCenter.slice(cellStart, cellStart + 900);
+    // The actions cell is located by its own render condition rather than by an
+    // indentation-exact `{isRemoved ? (\n<spaces>canReactivate` string, so
+    // reformatting the JSX cannot make this guard silently stop looking at it.
+    const cellBody = balancedBlockAt(
+      statusCenter,
+      '{(canAdjustQuantity || canReactivate || canViewMovementHistory) && (',
+    );
+    // Reactivate and Adjust Quantity are the two arms of one ternary on
+    // isRemoved — never both for the same row.
+    expect(cellBody).toContain('{isRemoved ? (');
+    expect(cellBody).toContain('canReactivate && (');
     expect(cellBody).toContain('setReactivateRow(r');
     expect(cellBody).toContain("t('sc_reactivate_action', lang)");
     expect(cellBody).toContain('canAdjustQuantity && (');
@@ -110,15 +124,14 @@ describe('C) Status Center: Reactivate button appears only for removed rows, rep
     expect(statusCenter).toContain('<ReactivateMaterialModal');
     expect(statusCenter).toContain('open={reactivateRow !== null}');
     expect(statusCenter).toContain('onSuccess={handleReactivateSuccess}');
-    const fnStart = statusCenter.indexOf('function handleReactivateSuccess');
-    const fnBody = statusCenter.slice(fnStart, fnStart + 300);
+    const fnBody = functionBodyAt(statusCenter, 'function handleReactivateSuccess');
     expect(fnBody).toContain('live.reload()');
   });
 });
 
 describe('D) ReactivateMaterialModal: quantity/condition validation', () => {
   it('excludes condition=missing from the selectable active conditions (migration 053 would not clear removed_at for it)', () => {
-    const block = reactivateModal.slice(reactivateModal.indexOf('const ACTIVE_CONDITIONS'), reactivateModal.indexOf('const ACTIVE_CONDITIONS') + 200);
+    const block = declarationValueAt(reactivateModal, 'const ACTIVE_CONDITIONS');
     expect(block).toContain("'available'");
     expect(block).toContain("'low_stock'");
     expect(block).toContain("'surplus'");
@@ -138,22 +151,20 @@ describe('D) ReactivateMaterialModal: quantity/condition validation', () => {
 });
 
 describe('E) ReactivateMaterialModal: two-step RPC call order (no new RPC)', () => {
-  const submitFn = reactivateModal.slice(reactivateModal.indexOf('async function handleSubmit'), reactivateModal.indexOf('const fieldStyle ='));
+  const submitFn = functionBodyAt(reactivateModal, 'async function handleSubmit');
 
   it('calls applyAvailabilityMovement first with set_exact/desired quantity/reactivated_from_removed reason', () => {
-    const movementIdx = submitFn.indexOf('await applyAvailabilityMovement(');
-    expect(movementIdx).toBeGreaterThan(-1);
-    const call = submitFn.slice(movementIdx, submitFn.indexOf(');', movementIdx));
+    const call = balancedBlockAt(submitFn, 'await applyAvailabilityMovement(');
     expect(call).toContain("movementType: 'set_exact'");
     expect(call).toContain('amount: qtyNum');
     expect(call).toContain("reason: 'reactivated_from_removed'");
   });
 
   it('calls upsertAvailability second, after the movement call, with the same identity fields and the chosen active condition', () => {
-    const movementIdx = submitFn.indexOf('await applyAvailabilityMovement(');
-    const upsertIdx = submitFn.indexOf('await upsertAvailability(');
+    const movementIdx = anchorIndex(submitFn, 'await applyAvailabilityMovement(');
+    const upsertIdx = anchorIndex(submitFn, 'await upsertAvailability(');
     expect(upsertIdx).toBeGreaterThan(movementIdx);
-    const call = submitFn.slice(upsertIdx, submitFn.indexOf('});', upsertIdx));
+    const call = balancedBlockAt(submitFn, 'await upsertAvailability(');
     expect(call).toContain('quantity: qtyNum');
     expect(call).toContain('condition,');
     expect(call).toContain('scientificName: row!.scientific_name');
@@ -180,8 +191,7 @@ describe('E) ReactivateMaterialModal: two-step RPC call order (no new RPC)', () 
 
 describe('F) Reactivation reload/refetch behavior', () => {
   it('handleReactivateSuccess shows a success toast and reloads the live availability data', () => {
-    const fnStart = statusCenter.indexOf('function handleReactivateSuccess');
-    const fnBody = statusCenter.slice(fnStart, fnStart + 300);
+    const fnBody = functionBodyAt(statusCenter, 'function handleReactivateSuccess');
     expect(fnBody).toContain("t('sc_reactivate_success', lang)");
     expect(fnBody).toContain('live.reload()');
   });
@@ -214,8 +224,7 @@ describe('H) Movement history production files remain untouched', () => {
 
 describe('I) Status Center live XLSX export still excludes removed_at rows', () => {
   it('exportXlsx still filters r.removed_at == null before building export rows (unchanged by this phase)', () => {
-    const fnStart = statusCenter.indexOf('async function exportXlsx');
-    const fnBody = statusCenter.slice(fnStart, fnStart + 900);
+    const fnBody = functionBodyAt(statusCenter, 'async function exportXlsx');
     expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
   });
 
@@ -251,12 +260,8 @@ describe('I) Status Center live XLSX export still excludes removed_at rows', () 
       expect(diff).not.toMatch(/\.removed_by\b|removed_by\s*[:,]/);
       expect(diff).not.toMatch(/service_role|auth\.admin/);
     }
-    const exportModuleSrc = readFileSync(join(SRC, 'shared/lib/professional-export.ts'), 'utf8');
-    const start = exportModuleSrc.indexOf('export async function buildAvailabilityExportWorkbook');
-    const end = exportModuleSrc.indexOf('export async function exportAvailabilityXlsx');
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = exportModuleSrc.slice(start, end);
+    const exportModuleSrc = readSrc('shared/lib/professional-export.ts');
+    const body = functionBodyAt(exportModuleSrc, 'export async function buildAvailabilityExportWorkbook');
     expect(body).toContain("wb.addWorksheet(safeSheetName(AVAIL_SHEET_NAMES.summary)");
     expect(body).toContain('dataWs.columns = AVAIL_EXPORT_COLUMNS.map(c => ({ key: c.key, width: c.width }));');
   });
@@ -282,8 +287,7 @@ describe('J) Live/current views still hide removed rows; genuine missing rows pr
   // empty diff — it instead confirms the removed_at outlet-list filter this
   // phase actually cares about is still present and unchanged.
   it('InstitutionScreen.tsx outlet list filter (removed_at) was not touched by this phase', () => {
-    const fnStart = institutionScreen.indexOf('function PortAvailabilitySection');
-    const fnBody = institutionScreen.slice(fnStart, institutionScreen.indexOf('function QuickAvailForm'));
+    const fnBody = functionBodyAt(institutionScreen, 'function PortAvailabilitySection');
     expect(fnBody).toContain('.filter(r => r.removed_at == null)');
   });
 

@@ -15,14 +15,21 @@
  * way, without executing the hook).
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import { findUnexpectedMigrationGitStatusEntries } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migration-git-status';
+import {
+  readSourceFile,
+  balancedBlockAt,
+  declarationValueAt,
+  blockBetween,
+  enclosingJsxTag,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const ROOT = join(__dirname, '../../../../');
 const SRC = join(__dirname, '../../../');
-const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
+const readSrc = (rel: string) => readSourceFile(join(SRC, rel));
 
 const modal = readSrc('features/status/OutletAvailabilityReportModal.tsx');
 const exportModule = readSrc('shared/lib/professional-export.ts');
@@ -43,17 +50,13 @@ const REQUIRED_16_KEYS = [
 
 describe('1) Field selector defines exactly the required 16 selectable fields, all checked by default', () => {
   it('FIELD_DEFINITIONS has exactly 16 entries', () => {
-    const start = modal.indexOf('const FIELD_DEFINITIONS: FieldDefinition[] = [');
-    const end = modal.indexOf('];', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const FIELD_DEFINITIONS');
     const matches = block.match(/\{ key: '/g) ?? [];
     expect(matches.length).toBe(16);
   });
 
   it('FIELD_DEFINITIONS contains exactly the required 16 keys, no more, no less', () => {
-    const start = modal.indexOf('const FIELD_DEFINITIONS: FieldDefinition[] = [');
-    const end = modal.indexOf('];', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const FIELD_DEFINITIONS');
     for (const key of REQUIRED_16_KEYS) {
       expect(block).toContain(`key: '${key}'`);
     }
@@ -78,20 +81,17 @@ describe('1) Field selector defines exactly the required 16 selectable fields, a
 
 describe('2) Select all / Clear all / Restore default controls', () => {
   it('selectAllFields sets every DEFAULT_SELECTED_FIELD_KEYS (all 16)', () => {
-    const start = modal.indexOf('function selectAllFields()');
-    const body = modal.slice(start, start + 120);
+    const body = balancedBlockAt(modal, 'function selectAllFields()');
     expect(body).toContain('new Set(DEFAULT_SELECTED_FIELD_KEYS)');
   });
 
   it('clearAllFields sets an empty Set', () => {
-    const start = modal.indexOf('function clearAllFields()');
-    const body = modal.slice(start, start + 80);
+    const body = balancedBlockAt(modal, 'function clearAllFields()');
     expect(body).toContain('new Set()');
   });
 
   it('restoreDefaultFields resets to DEFAULT_SELECTED_FIELD_KEYS', () => {
-    const start = modal.indexOf('function restoreDefaultFields()');
-    const body = modal.slice(start, start + 120);
+    const body = balancedBlockAt(modal, 'function restoreDefaultFields()');
     expect(body).toContain('new Set(DEFAULT_SELECTED_FIELD_KEYS)');
   });
 
@@ -102,8 +102,7 @@ describe('2) Select all / Clear all / Restore default controls', () => {
   });
 
   it('toggling a single field only adds/removes that one key (does not reset the whole set)', () => {
-    const start = modal.indexOf('function toggleField(key: string)');
-    const body = modal.slice(start, start + 200);
+    const body = balancedBlockAt(modal, 'function toggleField(key: string)');
     expect(body).toContain('const next = new Set(selectedFields);');
     expect(body).toContain('if (next.has(key)) next.delete(key); else next.add(key);');
   });
@@ -115,37 +114,31 @@ describe('3) localStorage persistence under the exact required key, with a safe 
   });
 
   it('loadSelectedFields reads/writes are try/catch wrapped and never throw', () => {
-    const start = modal.indexOf('function loadSelectedFields()');
-    const end = modal.indexOf('function saveSelectedFields');
-    const body = modal.slice(start, end);
+    const body = balancedBlockAt(modal, 'function loadSelectedFields()');
     expect(body).toContain('try {');
     expect(body).toContain('} catch {');
     expect(body).toContain('return new Set(DEFAULT_SELECTED_FIELD_KEYS);');
   });
 
   it('saveSelectedFields is try/catch wrapped (non-fatal on failure)', () => {
-    const start = modal.indexOf('function saveSelectedFields(keys: Set<string>): void {');
-    const body = modal.slice(start, start + 250);
+    const body = balancedBlockAt(modal, 'function saveSelectedFields(keys: Set<string>): void {');
     expect(body).toContain('try {');
     expect(body).toContain('} catch {');
   });
 
   it('every mutation path (toggle/select-all/clear-all/restore-default) calls updateSelectedFields, which persists via saveSelectedFields', () => {
-    const start = modal.indexOf('function updateSelectedFields(next: Set<string>)');
-    const body = modal.slice(start, start + 150);
+    const body = balancedBlockAt(modal, 'function updateSelectedFields(next: Set<string>)');
     expect(body).toContain('setSelectedFields(next);');
     expect(body).toContain('saveSelectedFields(next);');
   });
 
   it('missing/empty localStorage value falls back to the default set', () => {
-    const start = modal.indexOf('function loadSelectedFields()');
-    const body = modal.slice(start, modal.indexOf('function saveSelectedFields'));
+    const body = balancedBlockAt(modal, 'function loadSelectedFields()');
     expect(body).toContain('if (!raw) return new Set(DEFAULT_SELECTED_FIELD_KEYS);');
   });
 
   it('corrupt/non-array/invalid-key localStorage value falls back safely to the default set (never crashes)', () => {
-    const start = modal.indexOf('function loadSelectedFields()');
-    const body = modal.slice(start, modal.indexOf('function saveSelectedFields'));
+    const body = balancedBlockAt(modal, 'function loadSelectedFields()');
     expect(body).toContain('const parsed: unknown = JSON.parse(raw);');
     expect(body).toContain('if (!Array.isArray(parsed)) return new Set(DEFAULT_SELECTED_FIELD_KEYS);');
     expect(body).toContain('typeof k === \'string\' && validKeys.has(k)');
@@ -159,22 +152,18 @@ describe('4) Zero-fields-selected guard: Excel export, Print/PDF, and inline val
   });
 
   it('Export Excel button is disabled when noFieldsSelected', () => {
-    const idx = modal.indexOf("onClick={exportXlsx}");
-    const btnTag = modal.slice(Math.max(0, idx - 300), idx);
+    const btnTag = enclosingJsxTag(modal, 'onClick={exportXlsx}');
     expect(btnTag).toContain('disabled={xlsxBusy || noFieldsSelected}');
   });
 
   it('Print/PDF button is disabled when noFieldsSelected', () => {
-    const idx = modal.indexOf("onClick={printReport}");
-    const btnTag = modal.slice(Math.max(0, idx - 300), idx);
+    const btnTag = enclosingJsxTag(modal, 'onClick={printReport}');
     expect(btnTag).toContain('disabled={filteredRows.length === 0 || noFieldsSelected}');
   });
 
   it('exportXlsx() and printReport() both bail out early (no-op, no crash) when noFieldsSelected is true', () => {
-    const exportStart = modal.indexOf('async function exportXlsx()');
-    expect(modal.slice(exportStart, exportStart + 100)).toContain('if (xlsxBusy || noFieldsSelected) return;');
-    const printStart = modal.indexOf('function printReport()');
-    expect(modal.slice(printStart, printStart + 80)).toContain('if (noFieldsSelected) return;');
+    expect(balancedBlockAt(modal, 'async function exportXlsx()')).toContain('if (xlsxBusy || noFieldsSelected) return;');
+    expect(balancedBlockAt(modal, 'function printReport()')).toContain('if (noFieldsSelected) return;');
   });
 
   it('a bilingual inline validation message renders when noFieldsSelected', () => {
@@ -187,32 +176,25 @@ describe('4) Zero-fields-selected guard: Excel export, Print/PDF, and inline val
 
 describe('5) Field selection is applied identically to Excel and Print/PDF', () => {
   it('exportXlsx() translates selectedFields to Excel column keys via FIELD_TO_EXCEL_COLUMN_KEY and passes selectedColumnKeys', () => {
-    const start = modal.indexOf('async function exportXlsx()');
-    const end = modal.indexOf('async function exportXlsx()') + modal.slice(modal.indexOf('async function exportXlsx()')).indexOf('\n  }\n') + 5;
-    const body = modal.slice(start, end);
+    const body = balancedBlockAt(modal, 'async function exportXlsx()');
     expect(body).toContain('Array.from(selectedFields).map(k => FIELD_TO_EXCEL_COLUMN_KEY[k])');
     expect(body).toContain('selectedColumnKeys,');
   });
 
   it('printReport() filters printColumns by the SAME selectedFields set (one shared state)', () => {
-    const start = modal.indexOf('function printReport()');
-    const body = modal.slice(start, start + 400);
+    const body = balancedBlockAt(modal, 'function printReport()');
     expect(body).toContain('printColumns.filter(c => selectedFields.has(c.key))');
   });
 
   it('printColumns keys match the canonical FIELD_DEFINITIONS keys exactly (same 16-key vocabulary as Excel)', () => {
-    const start = modal.indexOf('const printColumns: ProfessionalReportColumn<LiveAvailRow>[] = [');
-    const end = modal.indexOf('];', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const printColumns');
     for (const key of REQUIRED_16_KEYS) {
       expect(block).toContain(`key: '${key}'`);
     }
   });
 
   it('FIELD_TO_EXCEL_COLUMN_KEY maps all 16 canonical keys to a valid Excel column key', () => {
-    const start = modal.indexOf('const FIELD_TO_EXCEL_COLUMN_KEY: Record<string, string> = {');
-    const end = modal.indexOf('};', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const FIELD_TO_EXCEL_COLUMN_KEY');
     for (const key of REQUIRED_16_KEYS) {
       expect(block).toMatch(new RegExp(`${key}: '[a-zA-Z]+'`));
     }
@@ -221,8 +203,7 @@ describe('5) Field selection is applied identically to Excel and Print/PDF', () 
 
 describe('6) Unchecking a field removes it from both Excel export and Print/PDF for this modal', () => {
   it('a deselected field key is absent from selectedColumnKeys (Excel) because only selectedFields members are mapped', () => {
-    const start = modal.indexOf('const selectedColumnKeys = new Set(');
-    const body = modal.slice(start, start + 150);
+    const body = balancedBlockAt(modal, 'const selectedColumnKeys = new Set(');
     expect(body).toContain('Array.from(selectedFields).map(k => FIELD_TO_EXCEL_COLUMN_KEY[k]).filter(Boolean)');
   });
 
@@ -234,23 +215,20 @@ describe('6) Unchecking a field removes it from both Excel export and Print/PDF 
 
 describe('7) Default (untouched) selection preserves existing export/print behavior', () => {
   it('with the default Set (all 16 keys), buildExportRows still returns every OutletReportRow field unconditionally (row shape is never filtered, only the Excel column list is)', () => {
-    const start = modal.indexOf('function buildExportRows(): OutletReportRow[] {');
-    const body = modal.slice(start, modal.indexOf('async function exportXlsx()'));
+    const body = balancedBlockAt(modal, 'function buildExportRows(): OutletReportRow[] {');
     for (const field of ['institution:', 'outlet:', 'scientificName:', 'tradeName:', 'dosageForm:', 'concentration:', 'batchNumber:', 'quantity:', 'enteredPrice:', 'conditionKey:', 'conditionLabel:', 'expiryDate:', 'daysToExpiry:', 'expiryRiskLabel:', 'lastUpdatedBy:', 'lastUpdatedAt:', 'notes:', 'removedLabel:', 'supplyType:']) {
       expect(body).toContain(field);
     }
   });
 
   it('buildOutletReportWorkbook keeps every column when selectedColumnKeys is omitted (default-preserving contract)', () => {
-    const start = exportModule.indexOf('const dataColumns = config.selectedColumnKeys');
-    const body = exportModule.slice(start, start + 300);
+    const body = blockBetween(exportModule, 'const dataColumns = config.selectedColumnKeys', ': OUTLET_REPORT_COLUMNS;');
     expect(body).toContain('? OUTLET_REPORT_COLUMNS.filter(c => NON_FILTERABLE_OUTLET_COLUMNS.has(c.key) || config.selectedColumnKeys!.has(c.key))');
     expect(body).toContain(': OUTLET_REPORT_COLUMNS;');
   });
 
   it('selectedColumnKeys is an optional property on OutletReportConfig (every pre-existing caller compiles unchanged)', () => {
-    const start = exportModule.indexOf('export interface OutletReportConfig {');
-    const body = exportModule.slice(start, exportModule.indexOf('}', start));
+    const body = balancedBlockAt(exportModule, 'export interface OutletReportConfig {');
     expect(body).toContain('selectedColumnKeys?: Set<string>;');
   });
 
@@ -261,16 +239,12 @@ describe('7) Default (untouched) selection preserves existing export/print behav
 
 describe('8) Field selector controls columns only — row filters are completely untouched', () => {
   it('field-selection state (selectedFields/fieldsOpen) is never referenced inside the row-filtering useMemo', () => {
-    const start = modal.indexOf('const filteredRows = useMemo(() => {');
-    const end = modal.indexOf('}, [outletRows,');
-    const body = modal.slice(start, end);
+    const body = balancedBlockAt(modal, 'const filteredRows = useMemo(() => {');
     expect(body).not.toMatch(/selectedFields|fieldsOpen/);
   });
 
   it('selectedFiltersText never includes field-selection state', () => {
-    const start = modal.indexOf('const selectedFiltersText = useMemo(');
-    const end = modal.indexOf('}, [search, conditionFilter');
-    const body = modal.slice(start, end);
+    const body = balancedBlockAt(modal, 'const selectedFiltersText = useMemo(');
     expect(body).not.toMatch(/selectedFields|FIELD_DEFINITIONS/);
   });
 
@@ -287,23 +261,17 @@ describe('8) Field selector controls columns only — row filters are completely
 
 describe('9) Sensitive/internal fields are never selectable or exportable', () => {
   it('none of the 16 FIELD_DEFINITIONS keys are ID/UUID/removed_by/actor/entity/token/payload-shaped', () => {
-    const start = modal.indexOf('const FIELD_DEFINITIONS: FieldDefinition[] = [');
-    const end = modal.indexOf('];', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const FIELD_DEFINITIONS');
     expect(block).not.toMatch(/\bid\b|uuid|removed_by|actor_id|entity_id|token|payload/i);
   });
 
   it('FIELD_TO_EXCEL_COLUMN_KEY never maps to a sensitive/internal Excel column name', () => {
-    const start = modal.indexOf('const FIELD_TO_EXCEL_COLUMN_KEY: Record<string, string> = {');
-    const end = modal.indexOf('};', start);
-    const block = modal.slice(start, end);
+    const block = declarationValueAt(modal, 'const FIELD_TO_EXCEL_COLUMN_KEY');
     expect(block).not.toMatch(/removed_by|actor_id|entity_id|token|payload/i);
   });
 
   it('OUTLET_REPORT_COLUMNS (the full underlying Excel column universe) has no ID/UUID/removed_by/actor/entity/token/payload column', () => {
-    const start = exportModule.indexOf('const OUTLET_REPORT_COLUMNS: ');
-    const end = exportModule.indexOf('];', start);
-    const block = exportModule.slice(start, end);
+    const block = declarationValueAt(exportModule, 'const OUTLET_REPORT_COLUMNS');
     expect(block).not.toMatch(/key: 'id'|uuid|removedBy|actorId|entityId|token|payload/i);
   });
 });
