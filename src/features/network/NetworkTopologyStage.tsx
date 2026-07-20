@@ -170,6 +170,10 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
   const [webglReady, setWebglReady] = useState<boolean | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [motionEnabled, setMotionEnabled] = useState(true);
+  // Adjacent 3D (WebGL) / 2D (SVG map) views. When WebGL is unavailable the 2D
+  // map becomes the safe fallback and the 3D tab is disabled.
+  const [view, setView] = useState<'3d' | '2d'>('3d');
+  const [zoom, setZoom] = useState(1);
 
   const topology = useMemo(() => {
     const warehousePositions = new Map<string, Position>();
@@ -237,7 +241,34 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
     return { nodes, edges };
   }, [warehouses, routes, outlets, lang, alerts]);
 
+  // 2D projection of the same real topology onto an SVG plane (x,y of the 3D
+  // layout; z is dropped). Shares node ids/selection with the 3D view.
+  const view2d = useMemo(() => {
+    const SW = 1000;
+    const SH = 660;
+    const project = (p: Position): [number, number] => [500 + p[0] * 430, 330 - p[1] * 300];
+    const pos = new Map(topology.nodes.map(node => [node.id, project(node.position)]));
+    const nodes = topology.nodes.map(node => {
+      const [sx, sy] = pos.get(node.id)!;
+      return { ...node, sx, sy };
+    });
+    const edges = topology.edges.flatMap(edge => {
+      const s = pos.get(edge.source);
+      const target = pos.get(edge.target);
+      if (!s || !target) return [];
+      return [{ ...edge, x1: s[0], y1: s[1], x2: target[0], y2: target[1] }];
+    });
+    return { nodes, edges, SW, SH };
+  }, [topology]);
+
+  // WebGL unknown (null) or ok (true) keeps 3D selectable; a hard false forces
+  // the 2D safe view. The user's explicit tab choice wins while 3D is viable.
+  const canUse3D = webglReady !== false;
+  const effectiveView: '3d' | '2d' = canUse3D ? view : '2d';
+  const show3D = effectiveView === '3d';
+
   useEffect(() => {
+    if (!show3D) return undefined;
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
@@ -404,7 +435,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
       gl.deleteBuffer(alertBuffer);
       gl.deleteProgram(program);
     };
-  }, [topology, selectedId, motionEnabled]);
+  }, [topology, selectedId, motionEnabled, show3D]);
 
   const selected = topology.nodes.find(node => node.id === selectedId) ?? null;
   const activeRoutes = topology.edges.filter(edge => edge.active).length;
@@ -414,6 +445,17 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
   const criticalCount = alertedNodes.filter(node => node.alert!.severity === 'high').length;
   const alertText = (a: NodeAlert) =>
     `${SEVERITY_LABEL[a.severity][lang]} · ${SIGNAL_LABEL[a.topSignal][lang]}${a.count > 1 ? ` ×${a.count}` : ''}`;
+
+  // 2D node fill mirrors the identity tiers used by the WebGL pass and the legend.
+  const svg2dFill = (node: TopologyNode, isSel: boolean): string => {
+    if (!node.active) return 'var(--muted, var(--t2))';
+    if (isSel) return 'var(--gold)';
+    if (node.kind === 'central') return 'var(--ember)';
+    if (node.kind === 'institution') return 'var(--p)';
+    return 'var(--teal)';
+  };
+  const reducedMotion = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   return (
     <section className="nexus-topology" aria-label={lang === 'ar' ? 'التوأم الرقمي لشبكة المخزون' : 'Inventory network digital twin'}>
@@ -428,23 +470,105 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
             {organizationName || (lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health · Pharmacy Department')}
           </p>
         </div>
-        <button
-          type="button"
-          className="nexus-control nexus-topology__motion"
-          onClick={() => setMotionEnabled(value => !value)}
-          aria-pressed={motionEnabled}
-        >
-          <PhoenixIcon name="network" size={17} />
-          <span>{motionEnabled ? (lang === 'ar' ? 'الحركة مفعّلة' : 'Motion on') : (lang === 'ar' ? 'الحركة متوقفة' : 'Motion off')}</span>
-        </button>
+        <div className="nexus-topology__actions">
+          <div className="nexus-topology__viewtabs" role="tablist" aria-label={lang === 'ar' ? 'نمط العرض' : 'View mode'}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveView === '3d'}
+              disabled={!canUse3D}
+              onClick={() => setView('3d')}
+            >
+              {lang === 'ar' ? 'ثلاثي الأبعاد' : '3D'}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveView === '2d'}
+              onClick={() => setView('2d')}
+            >
+              {lang === 'ar' ? 'خريطة ثنائية' : '2D map'}
+            </button>
+          </div>
+          {show3D ? (
+            <button
+              type="button"
+              className="nexus-control nexus-topology__motion"
+              onClick={() => setMotionEnabled(value => !value)}
+              aria-pressed={motionEnabled}
+            >
+              <PhoenixIcon name="network" size={17} />
+              <span>{motionEnabled ? (lang === 'ar' ? 'الحركة مفعّلة' : 'Motion on') : (lang === 'ar' ? 'الحركة متوقفة' : 'Motion off')}</span>
+            </button>
+          ) : (
+            <div className="nexus-topology__zoom" role="group" aria-label={lang === 'ar' ? 'تكبير الخريطة' : 'Map zoom'}>
+              <button type="button" aria-label={lang === 'ar' ? 'تصغير' : 'Zoom out'} onClick={() => setZoom(z => Math.max(0.6, +(z - 0.2).toFixed(2)))}>−</button>
+              <button type="button" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+              <button type="button" aria-label={lang === 'ar' ? 'تكبير' : 'Zoom in'} onClick={() => setZoom(z => Math.min(2, +(z + 0.2).toFixed(2)))}>+</button>
+            </div>
+          )}
+        </div>
       </header>
 
-      <div className="nexus-topology__viewport">
-        <canvas ref={canvasRef} className="nexus-topology__canvas" aria-hidden="true" />
+      <div className="nexus-topology__viewport" data-view={effectiveView}>
+        {show3D && <canvas ref={canvasRef} className="nexus-topology__canvas" aria-hidden="true" />}
+
+        {!show3D && topology.nodes.length > 0 && (
+          <svg
+            className="nexus-topology__map"
+            viewBox={`0 0 ${view2d.SW} ${view2d.SH}`}
+            role="application"
+            aria-label={lang === 'ar' ? 'خريطة شبكة الإمداد ثنائية الأبعاد' : 'Supply network 2D map'}
+          >
+            <g transform={`translate(${view2d.SW / 2} ${view2d.SH / 2}) scale(${zoom}) translate(${-view2d.SW / 2} ${-view2d.SH / 2})`}>
+              {view2d.edges.map(edge => (
+                <line
+                  key={edge.id}
+                  x1={edge.x1} y1={edge.y1} x2={edge.x2} y2={edge.y2}
+                  stroke={edge.active ? 'var(--teal)' : 'var(--brd)'}
+                  strokeWidth={edge.active ? 2 : 1.2}
+                  strokeDasharray={edge.active ? undefined : '5 5'}
+                  opacity={edge.active ? 0.7 : 0.4}
+                />
+              ))}
+              {view2d.nodes.map(node => {
+                const isSel = node.id === selectedId;
+                const r = node.kind === 'outlet' ? 9 : node.kind === 'central' ? 15 : 12;
+                return (
+                  <g
+                    key={node.id}
+                    transform={`translate(${node.sx} ${node.sy})`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setSelectedId(current => current === node.id ? null : node.id)}
+                  >
+                    {node.alert && (
+                      <circle
+                        r={r + 6}
+                        fill="none"
+                        stroke={node.alert.severity === 'high' ? 'var(--danger, var(--err))' : node.alert.severity === 'medium' ? 'var(--warn)' : 'var(--gold)'}
+                        strokeWidth={2}
+                        className={reducedMotion ? undefined : 'nexus-topology__map-pulse'}
+                      />
+                    )}
+                    <circle
+                      r={isSel ? r + 3 : r}
+                      fill={svg2dFill(node, isSel)}
+                      stroke="var(--s)"
+                      strokeWidth={2}
+                      opacity={node.active ? 1 : 0.55}
+                    />
+                    <text y={-r - 8} textAnchor="middle" fill="var(--t)" fontSize="12.5" fontWeight="600">{node.label}</text>
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+        )}
+
         {webglReady === false && (
-          <div className="nexus-topology__fallback">
-            <PhoenixIcon name="network" size={28} />
-            <span>{lang === 'ar' ? 'العرض الآمن متاح؛ WebGL غير مدعوم في هذا الجهاز.' : 'Safe view active; WebGL is unavailable on this device.'}</span>
+          <div className="nexus-topology__fallback nexus-topology__fallback--corner">
+            <PhoenixIcon name="network" size={16} />
+            <span>{lang === 'ar' ? 'العرض الآمن (خريطة ثنائية)؛ WebGL غير مدعوم.' : 'Safe view (2D map); WebGL unavailable.'}</span>
           </div>
         )}
         {topology.nodes.length === 0 && (
