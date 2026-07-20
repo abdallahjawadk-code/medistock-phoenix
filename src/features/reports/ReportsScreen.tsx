@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/services/dashboard.service';
 import { getLowStockItems } from '@/shared/supabase/services/availability.service';
@@ -96,7 +97,7 @@ export function ReportsScreen() {
         ))}
       </div>
 
-      {needsOrg && <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {needsOrg && <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {/* Summary */}
       {tab === 'summary' && (
@@ -126,7 +127,7 @@ export function ReportsScreen() {
         <>
           {lowStock.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!lowStock.loading && lowStock.error && <PhoenixErrorState title={t('load_error', lang)} message={lowStock.error} onRetry={lowStock.reload} />}
-          {!lowStock.loading && !lowStock.error && lowOnly.length === 0 && <PhoenixEmptyState icon="✅" title={t('empty_avail', lang)} />}
+          {!lowStock.loading && !lowStock.error && lowOnly.length === 0 && <PhoenixEmptyState icon="check" title={t('empty_avail', lang)} />}
           {!lowStock.loading && !lowStock.error && lowOnly.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fs .25s ease' }}>
               {lowOnly.map(r => (
@@ -136,7 +137,7 @@ export function ReportsScreen() {
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--rpill)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '10.5px', fontWeight: 700 }}>{r.quantity} {t('units', lang)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--t2)' }}>
-                    <span>🏥 {pointName(r)}</span>
+                    <span><PhoenixIcon name="hospital" size={13} inline /> {pointName(r)}</span>
                     {r.expiry_date && <span dir="ltr">⏱ {r.expiry_date}</span>}
                   </div>
                 </div>
@@ -151,7 +152,7 @@ export function ReportsScreen() {
         <>
           {lowStock.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!lowStock.loading && lowStock.error && <PhoenixErrorState title={t('load_error', lang)} message={lowStock.error} onRetry={lowStock.reload} />}
-          {!lowStock.loading && !lowStock.error && missing.length === 0 && <PhoenixEmptyState icon="✅" title={t('empty_avail', lang)} />}
+          {!lowStock.loading && !lowStock.error && missing.length === 0 && <PhoenixEmptyState icon="check" title={t('empty_avail', lang)} />}
           {!lowStock.loading && !lowStock.error && missing.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fs .25s ease' }}>
               {missing.map(r => (
@@ -160,7 +161,7 @@ export function ReportsScreen() {
                     <span style={{ fontSize: '13px', fontWeight: 600 }}>{itemName(r)}</span>
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--rpill)', background: 'var(--err2)', color: 'var(--err)', fontSize: '10.5px', fontWeight: 700 }}>{t('miss', lang)}</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--t2)' }}>🏥 {pointName(r)}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--t2)' }}><PhoenixIcon name="hospital" size={13} inline /> {pointName(r)}</div>
                 </div>
               ))}
             </div>
@@ -173,7 +174,7 @@ export function ReportsScreen() {
         <>
           {overview.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!overview.loading && overview.error && <PhoenixErrorState title={t('load_error', lang)} message={overview.error} onRetry={overview.reload} />}
-          {!overview.loading && !overview.error && (overview.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="🏥" title={t('empty_orgs', lang)} />}
+          {!overview.loading && !overview.error && (overview.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} />}
           {!overview.loading && !overview.error && (overview.data?.length ?? 0) > 0 && (
             <PhoenixCard padding="18px" style={{ animation: 'fs .25s ease' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
