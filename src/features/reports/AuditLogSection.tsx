@@ -1,6 +1,5 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
-import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getAuditLog } from '@/shared/supabase/services/audit.service';
 import { useShadowObservation } from '@/shared/authz/useAuthorization';
