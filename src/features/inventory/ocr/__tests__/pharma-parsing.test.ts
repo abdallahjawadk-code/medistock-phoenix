@@ -375,6 +375,41 @@ describe('Format validators', () => {
     expect(isPlausibleBatch('X')).toBe(false);      // too short
   });
 
+  it('rejects a garbled LABEL word offered as a batch value', () => {
+    // Measured regression from tools/ocr-eval: "Batch Number PC2291" on a
+    // rotated scan yielded "NUM8ER" as the batch. It is alphanumeric and
+    // contains a digit, so the shape check alone accepted it.
+    expect(isPlausibleBatch('NUM8ER')).toBe(false);
+    expect(isPlausibleBatch('C0DE')).toBe(false);
+    expect(isPlausibleBatch('1NVOICE')).toBe(false);
+    // The rejection is narrow by design: only exact folds onto a known label
+    // word are refused, so short real codes are unaffected.
+    expect(isPlausibleBatch('B4471X')).toBe(true);
+    expect(isPlausibleBatch('MT7741')).toBe(true);
+    expect(isPlausibleBatch('QT1')).toBe(true);
+  });
+
+  it('normalizes batch case so an OCR lowercase suffix is not a wrong value', () => {
+    boxCounter = 0;
+    const result = extractPharmaFields(document([line('LOT: b4471x')]));
+    expect(result.candidates.find(c => c.field === 'batchNumber')?.value).toBe('B4471X');
+  });
+
+  it('offers an unlabelled headline drug name as a low-confidence candidate', () => {
+    boxCounter = 0;
+    const result = extractPharmaFields(document([line('Amoxicillin 500 mg Capsules')]));
+    const name = result.candidates.find(c => c.field === 'scientificName');
+    expect(name?.value).toBe('Amoxicillin');
+    // No label vouched for it, so it can never reach "high" confidence.
+    expect(name?.matchedLabel).toBeNull();
+  });
+
+  it('does not smuggle document chrome into the headline name', () => {
+    boxCounter = 0;
+    const result = extractPharmaFields(document([line('Warehouse Intake Consolidated Report 500 mg')]));
+    expect(result.candidates.find(c => c.field === 'scientificName')).toBeUndefined();
+  });
+
   it('requires national codes to be digit-dominant', () => {
     expect(isPlausibleNationalCode('1234567')).toBe(true);
     expect(isPlausibleNationalCode('12-345-67')).toBe(true);

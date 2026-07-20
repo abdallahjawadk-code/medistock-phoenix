@@ -15,7 +15,9 @@
     "assets:phoenix": "node scripts/phoenix-assets.mjs",
     "capture:phoenix": "node scripts/phoenix-capture.mjs",
     "ocr:assets": "node scripts/ocr-assets.mjs",
-    "prebuild": "node scripts/ocr-assets.mjs"
+    "prebuild": "node scripts/ocr-assets.mjs",
+    "ocr:fixtures": "node tools/ocr-eval/generate-fixtures.mjs",
+    "ocr:eval": "vitest run --config vitest.eval.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.8",
