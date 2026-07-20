@@ -1923,6 +1923,15 @@ export const T: Dict = {
   mv_return_mode:         { ar: 'نوع الإرجاع',                                    en: 'Return type' },
   mv_return_mode_request: { ar: 'طلب إرجاع من المؤسسة',                           en: 'Institution return request' },
   mv_return_mode_recall:  { ar: 'استرجاع مركزي',                                  en: 'Central recall' },
+
+  // XLSX export sheets.
+  mv_sheet_summary:       { ar: 'الملخّص',                                        en: 'Summary' },
+  mv_sheet_lines:         { ar: 'أسطر المواد',                                    en: 'Material Lines' },
+  mv_sheet_exceptions:    { ar: 'الاستثناءات',                                     en: 'Exceptions' },
+  mv_exception_kind:      { ar: 'نوع الاستثناء',                                  en: 'Exception type' },
+  mv_exception_detail:    { ar: 'التفصيل',                                        en: 'Detail' },
+  mv_no_exceptions:       { ar: 'لا توجد استثناءات',                              en: 'No exceptions' },
+  mv_export_xlsx:         { ar: 'تصدير Excel',                                    en: 'Export Excel' },
 };
 
 export function t(key: string, lang: Lang): string {
