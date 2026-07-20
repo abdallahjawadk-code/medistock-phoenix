@@ -12,6 +12,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
+import { OutletDispatchOperations } from '@/features/outlet/OutletDispatchOperations';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
@@ -40,7 +41,7 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch';
 
 export function InventoryCenterScreen() {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -53,6 +54,9 @@ export function InventoryCenterScreen() {
   // actor (no warehouse_transfer.send, hence no Network → Supply tab) can still
   // reach it. The RPC re-checks scope/permission server-side regardless.
   const canReceive = role === 'super_admin' || myPermissions.has('warehouse_transfer.receive');
+  // §2 — institution-warehouse → outlet dispatch (070). Authoring is gated on
+  // create; the send RPC re-checks warehouse_dispatch.send server-side.
+  const canDispatch = role === 'super_admin' || myPermissions.has('warehouse_dispatch.create');
   const orgs = useAsync(() => getOrganizations(), []);
 
   const manageableWarehouses = scopes.data?.manageableWarehouses ?? [];
@@ -87,6 +91,14 @@ export function InventoryCenterScreen() {
     return o ? (lang === 'ar' ? o.name_ar : o.name) : '';
   }, [orgs.data, activeOrgId, lang]);
   const activeWarehouseName = warehouseOptions.find(o => o.value === activeWarehouseId)?.label ?? '';
+  // Outlets belonging to the selected institution warehouse (parent link), and
+  // within the officer's manageable scope — the only valid dispatch destinations.
+  const outletsForWarehouse = useMemo(
+    () => (scopes.data?.manageableOutlets ?? [])
+      .filter(o => o.warehouseId === activeWarehouseId)
+      .map(o => ({ id: o.id, name: lang === 'ar' ? (o.nameAr || o.name) : (o.name || o.nameAr) })),
+    [scopes.data, activeWarehouseId, lang],
+  );
 
   const header = (
     <div style={{ marginBottom: '16px' }}>
@@ -162,6 +174,8 @@ export function InventoryCenterScreen() {
           // Shown only to holders of the receive permission — the authoritative
           // institution incoming-supplies receipt entry.
           ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
+          // §2 — institution-warehouse → outlet dispatch, for dispatch authorizers.
+          ...(canDispatch ? [{ id: 'dispatch' as const, labelKey: 'inv_tab_dispatch' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -210,6 +224,14 @@ export function InventoryCenterScreen() {
           institutionName={institutionName}
           warehouseName={activeWarehouseName}
           canReceive={canReceive}
+        />
+      ) : tab === 'dispatch' && canDispatch ? (
+        <OutletDispatchOperations
+          warehouseId={activeWarehouseId}
+          warehouseName={activeWarehouseName}
+          outlets={outletsForWarehouse}
+          canDispatch={canDispatch}
+          lang={lang}
         />
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />

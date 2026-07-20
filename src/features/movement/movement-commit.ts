@@ -65,7 +65,13 @@ export interface CommitDeps {
 
 function readId(outcome: RpcOutcome): string | null {
   const data = outcome.data ?? {};
-  for (const key of ['id', 'request_id', 'transfer_request_id', 'return_request_id']) {
+  // Every header/line RPC returns its new id under one of these keys. Broadened
+  // additively for the 070 outlet-dispatch corridor (dispatch_id / dispatch_line_id)
+  // — existing payloads never carry these, so the order below is unaffected.
+  for (const key of [
+    'id', 'request_id', 'transfer_request_id', 'return_request_id',
+    'dispatch_id', 'dispatch_line_id',
+  ]) {
     const value = data[key];
     if (typeof value === 'string' && value) return value;
   }

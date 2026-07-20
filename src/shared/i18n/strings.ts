@@ -1615,6 +1615,11 @@ export const T: Dict = {
   inv_tab_stock:          { ar: 'رصيد المخزن',                                  en: 'Warehouse stock' },
   inv_tab_ledger:         { ar: 'سجل الحركات',                                  en: 'Movement ledger' },
   inv_tab_incoming: { ar: 'واردات تجهيز الدائرة', en: 'Incoming dept. supplies' },
+  inv_tab_dispatch: { ar: 'تجهيز المنافذ', en: 'Dispatch to outlets' },
+  mv_doc_outlet_dispatch: { ar: 'وصل تجهيز منفذ', en: 'Outlet dispatch' },
+  mv_create_outlet_dispatch: { ar: 'إنشاء تجهيز المنفذ', en: 'Create outlet dispatch' },
+  mv_outlet: { ar: 'المنفذ', en: 'Outlet' },
+  mv_dispatch_none: { ar: 'لا يوجد تجهيز', en: 'No dispatches' },
 
   inv_warehouse:          { ar: 'المخزن',                                       en: 'Warehouse' },
   inv_select_warehouse:   { ar: 'اختر المخزن',                                  en: 'Select a warehouse' },
