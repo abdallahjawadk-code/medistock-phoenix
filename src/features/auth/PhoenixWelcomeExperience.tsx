@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
-import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
 import { PhoenixWelcomeStage, resolveEffects, prefersReducedMotion } from '@/shared/webgl';
 
@@ -119,32 +118,21 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         )}
 
         <div className="nexus-welcome__copy">
-          <div className="nexus-welcome__kicker">
-            <span className="nexus-welcome__pulse" />
-            {lang === 'ar' ? 'منظومة الإمداد الدوائي الذكية' : 'INTELLIGENT MEDICINE SUPPLY NETWORK'}
-          </div>
-          <h1>MediStock Phoenix</h1>
+          <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
+          <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل — قسم الصيدلة</h1>
           <p className="nexus-welcome__department">
-            {lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health Directorate · Pharmacy Department'}
+            {lang === 'ar' ? 'منظومة الإمداد الدوائي الذكية' : 'Intelligent medicine supply network'}
           </p>
 
-          <div className="nexus-welcome__credits">
-            <div>
-              <PhoenixIcon name="check" size={15} />
-              <span>
-                {lang === 'ar'
-                  ? 'تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم'
-                  : 'System issued by Pharmacist Abdallah Jawad Kadhim'}
-              </span>
-            </div>
-            <div>
-              <PhoenixIcon name="role" size={15} />
-              <span>
-                {lang === 'ar'
-                  ? 'بإشراف الصيدلاني باسم كاظم رمح'
-                  : 'Supervised by Pharmacist Basim Kadhim Rumaih'}
-              </span>
-            </div>
+          {/* Issuance & supervision credits — the exact approved Arabic text,
+              verbatim from the approved design source. Always rendered in
+              Arabic (dir=rtl) so the official credit is never re-translated,
+              regardless of the UI language. */}
+          <div className="nexus-welcome__credits" dir="rtl">
+            <div className="nexus-welcome__credits-label">إصدار وإشراف</div>
+            <div className="nexus-welcome__credits-name">الصيدلاني عبدالله جواد كاظم</div>
+            <div className="nexus-welcome__credits-rule" aria-hidden="true" />
+            <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
           </div>
         </div>
 

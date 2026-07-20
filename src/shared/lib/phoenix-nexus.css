@@ -1138,29 +1138,24 @@ html body {
 .nexus-welcome__kicker {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 9px;
-  color: #62e9ff;
-  font-size: 9px;
+  color: #ddba63;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: .17em;
+  letter-spacing: .34em;
 }
 
-.nexus-welcome__pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #31d8ba;
-  box-shadow: 0 0 0 6px rgba(49,216,186,.10), 0 0 24px #31d8ba;
-}
-
-.nexus-welcome__copy h1 {
-  margin-top: 13px;
-  color: #f5fbff;
-  font-size: clamp(34px, 6vw, 68px);
-  font-weight: 760;
-  letter-spacing: -.055em;
-  line-height: 1;
-  text-shadow: 0 12px 38px rgba(0,0,0,.5);
+.nexus-welcome__copy h1,
+.nexus-welcome__title {
+  margin-top: 14px;
+  color: #f4e6c0;
+  font-size: clamp(21px, 3.4vw, 40px);
+  font-weight: 720;
+  letter-spacing: -.01em;
+  line-height: 1.35;
+  text-wrap: balance;
+  text-shadow: 0 3px 26px rgba(0, 0, 0, .8);
 }
 
 .nexus-welcome__department {
@@ -1169,23 +1164,46 @@ html body {
   font-size: clamp(11px, 1.5vw, 15px);
 }
 
+/* Approved issuance & supervision credits card (verbatim Arabic). */
 .nexus-welcome__credits {
-  display: grid;
-  gap: 7px;
-  width: min(100%, 600px);
-  margin: 23px auto 0;
+  box-sizing: border-box;
+  width: min(100%, 640px);
+  margin: clamp(22px, 4vh, 40px) auto 0;
+  padding: clamp(18px, 3vh, 28px) clamp(22px, 4vw, 40px);
+  border: 1px solid rgba(221, 186, 99, .4);
+  border-radius: 18px;
+  background: rgba(4, 8, 14, .62);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  text-align: center;
 }
 
-.nexus-welcome__credits > div {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: rgba(228,241,248,.78);
-  font-size: 11px;
+.nexus-welcome__credits-label {
+  color: #ddba63;
+  font-size: clamp(10px, 1.1vw, 12px);
+  font-weight: 700;
+  letter-spacing: .22em;
 }
 
-.nexus-welcome__credits svg { color: #d9b45c; }
+.nexus-welcome__credits-name {
+  margin-top: 14px;
+  color: #f6ecd4;
+  font-size: clamp(16px, 1.9vw, 22px);
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.nexus-welcome__credits-rule {
+  width: 64px;
+  height: 1px;
+  margin: 14px auto;
+  background: rgba(221, 186, 99, .45);
+}
+
+.nexus-welcome__credits-sup {
+  color: #cbbb8e;
+  font-size: clamp(13px, 1.5vw, 17px);
+  line-height: 1.7;
+}
 
 .nexus-welcome__progress {
   width: min(74vw, 420px);
@@ -1276,7 +1294,7 @@ html body {
   .nexus-login__card { padding: 23px 19px; border-radius: 22px; }
 
   .nexus-welcome__content { padding-inline: 18px; }
-  .nexus-welcome__credits > div { align-items: flex-start; font-size: 10px; line-height: 1.65; }
+  .nexus-welcome__credits { padding: 18px 20px; }
   .nexus-welcome__skip { top: 14px; inset-inline-end: 14px; }
 
   /* Perf: a heavy backdrop blur is the single most expensive compositing cost on
