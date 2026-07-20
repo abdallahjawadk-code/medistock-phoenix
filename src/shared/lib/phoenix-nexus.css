@@ -2216,3 +2216,79 @@ html body {
 @media (prefers-reduced-motion: reduce) {
   .nexus-dash-hero__ring circle:last-of-type { animation: none; }
 }
+
+/* ── Digital twin: Three.js cinematic 3D stage ─────────────────────────────
+   Ported from the NEXUS redesign. The terrain is a plain static <picture>
+   (normal URL, no service worker involvement); the WebGL canvas layers above
+   it and fades in only once its first frame has rendered. The 2D SVG map
+   remains the fallback whenever WebGL is unavailable or the context is lost. */
+.nexus-twin {
+  position: relative;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(55rem 38rem at 50% 50%, rgba(33,114,145,.14), transparent 68%),
+    #020913;
+}
+
+.nexus-twin__terrain,
+.nexus-twin__terrain img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.nexus-twin__terrain img {
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(.88) contrast(1.04) brightness(.78);
+  user-select: none;
+}
+
+.nexus-twin__terrain-light {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 54%, rgba(255,156,46,.09), transparent 19%),
+    radial-gradient(circle at 53% 49%, transparent 34%, rgba(2,10,19,.18) 75%),
+    linear-gradient(180deg, rgba(2,10,18,.12), rgba(2,10,18,.03) 58%, rgba(0,5,10,.3));
+  mix-blend-mode: screen;
+}
+
+.nexus-twin__webgl {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 620ms ease;
+  pointer-events: auto;
+}
+.nexus-twin[data-ready="true"] .nexus-twin__webgl { opacity: 1; }
+.nexus-twin__webgl canvas { touch-action: pan-y; }
+
+.nexus-twin__scene-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.nexus-twin__scene-loading span {
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(96,232,245,.12);
+  border-top-color: rgba(96,232,245,.8);
+  border-radius: 50%;
+  animation: nexus-twin-spin 1.4s linear infinite;
+}
+@keyframes nexus-twin-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-twin__webgl { transition: none; }
+  .nexus-twin__scene-loading span { animation: none; }
+}
