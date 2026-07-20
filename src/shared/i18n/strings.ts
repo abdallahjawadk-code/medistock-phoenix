@@ -1679,8 +1679,15 @@ export const T: Dict = {
   /* ── Pharmaceutical Smart OCR (PHARMA-OCR-A) ──
      OCR is an assistive READING aid. It never creates stock, never picks a
      status and never submits — every string here is about review and consent. */
-  ocr_title:              { ar: 'قراءة ذكية للمستند',                           en: 'Smart document reading' },
-  ocr_open:               { ar: 'قراءة مستند بالكاميرا',                        en: 'Scan a document' },
+  /* CANONICAL-INTEGRATION: OCR ships as a functional BETA. The banner below is
+     mandatory and must stay visible on every OCR stage. Nothing in this block
+     may describe OCR as accurate, automatic, professional or production-ready —
+     measured accuracy is in tools/ocr-eval/RESULTS.md and does not support such
+     a claim. */
+  ocr_beta_banner:        { ar: 'مساعد OCR تجريبي — يتطلب مراجعة بشرية',        en: 'OCR Assistant Beta — Human review required' },
+  ocr_beta_badge:         { ar: 'تجريبي',                                       en: 'Beta' },
+  ocr_title:              { ar: 'مساعد OCR تجريبي',                             en: 'OCR Assistant Beta' },
+  ocr_open:               { ar: 'قراءة مستند بالكاميرا (تجريبي)',               en: 'Scan a document (Beta)' },
   ocr_use_manual_entry:   { ar: 'الإدخال اليدوي',                               en: 'Manual entry' },
   ocr_language:           { ar: 'لغة المستند',                                  en: 'Document language' },
   ocr_lang_ara:           { ar: 'العربية',                                      en: 'Arabic' },
@@ -1715,6 +1722,7 @@ export const T: Dict = {
   ocr_band_needs_review:  { ar: 'يحتاج مراجعة',                                 en: 'Needs review' },
   ocr_band_uncertain:     { ar: 'غير مؤكد',                                     en: 'Uncertain' },
   ocr_original_reading:   { ar: 'القراءة الأصلية',                              en: 'Original reading' },
+  ocr_confirm_warehouse:  { ar: 'أؤكد أن هذا هو المخزن الصحيح للاستلام',      en: 'I confirm this is the correct receiving warehouse' },
   ocr_confirm_field:      { ar: 'أؤكد صحة هذه القيمة',                          en: 'I confirm this value' },
   ocr_outstanding_confirmations: { ar: 'حقول تنتظر التأكيد',                    en: 'Fields awaiting confirmation' },
 

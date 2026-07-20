@@ -92,6 +92,8 @@ export function OcrIntakeFlow({
   const [confirmed, setConfirmed] = useState<Partial<Record<PharmaFieldName, boolean>>>({});
   const [match, setMatch] = useState<MatchOutcome | null>(null);
   const [requestId, setRequestId] = useState(newRequestId);
+  /** Never pre-ticked, and reset whenever the operator returns to review. */
+  const [warehouseConfirmed, setWarehouseConfirmed] = useState(false);
 
   const providerRef = useRef<OcrProvider | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -328,7 +330,13 @@ export function OcrIntakeFlow({
   const quantityValid = Number.isInteger(quantityValue) && quantityValue > 0;
 
   const canReachPreview = !hasBlockingWarning && outstandingConfirmations.length === 0 && quantityValid;
-  const canSubmit = stage === 'preview' && canReachPreview && canSubmitIntake;
+
+  // CANONICAL-INTEGRATION: the warehouse is a critical field, but unlike the
+  // others it is NOT read from the document — it arrives already scope-checked
+  // from the Inventory Center. It therefore gets its own explicit confirmation
+  // at the final preview, so the operator states the destination rather than
+  // inheriting whatever was selected several steps earlier.
+  const canSubmit = stage === 'preview' && canReachPreview && canSubmitIntake && warehouseConfirmed;
 
   // ── Final submit — the ONLY RPC call in this flow ─────────────────────────
 
@@ -386,8 +394,32 @@ export function OcrIntakeFlow({
   return (
     <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: 700 }}>{t('ocr_title', lang)}</h3>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 700 }}>
+          {t('ocr_title', lang)}
+          <span style={{
+            fontSize: '10.5px', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase',
+            padding: '3px 9px', borderRadius: 'var(--rpill)',
+            background: 'var(--warn2)', color: 'var(--warn)', border: '1px solid var(--warn)',
+          }}>
+            {t('ocr_beta_badge', lang)}
+          </span>
+        </h3>
         <PhoenixButton variant="ghost" onClick={leaveFlow}>{t('ocr_use_manual_entry', lang)}</PhoenixButton>
+      </div>
+
+      {/* CANONICAL-INTEGRATION: mandatory BETA notice. Rendered once here, OUTSIDE
+          the stage switch, so it is present on capture, quality, recognition,
+          review, preview and submission alike — an operator can never reach a
+          stage where the human-review requirement is off screen. */}
+      <div
+        role="note"
+        data-testid="ocr-beta-banner"
+        style={{
+          background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)',
+          padding: '10px 14px', fontSize: '12.5px', fontWeight: 600, color: 'var(--warn)',
+        }}
+      >
+        ⚠ {t('ocr_beta_banner', lang)}
       </div>
 
       {errorKey && (
@@ -512,13 +544,29 @@ export function OcrIntakeFlow({
               </div>
             ))}
           </dl>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px',
+            fontSize: '12.5px', fontWeight: 600, marginTop: '12px',
+          }}>
+            <input
+              type="checkbox"
+              checked={warehouseConfirmed}
+              onChange={event => setWarehouseConfirmed(event.target.checked)}
+            />
+            {t('ocr_confirm_warehouse', lang)}
+          </label>
+
           <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
             {/* canSubmit already requires stage === 'preview', so it is false
                 during 'submitting' — no separate in-flight check is needed. */}
             <PhoenixButton onClick={confirmAndSubmit} disabled={!canSubmit}>
               {t('ocr_confirm_and_submit', lang)}
             </PhoenixButton>
-            <PhoenixButton variant="ghost" onClick={() => setStage('review')} disabled={stage === 'submitting'}>
+            <PhoenixButton
+              variant="ghost"
+              onClick={() => { setWarehouseConfirmed(false); setStage('review'); }}
+              disabled={stage === 'submitting'}
+            >
               {t('ocr_back_to_review', lang)}
             </PhoenixButton>
           </div>

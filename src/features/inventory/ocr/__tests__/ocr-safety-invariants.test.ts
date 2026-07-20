@@ -60,7 +60,9 @@ describe('OCR never writes stock on its own', () => {
   });
 
   it('canSubmit requires the preview stage, no blocking warning, and every confirmation', () => {
-    expect(flow).toContain("const canSubmit = stage === 'preview' && canReachPreview && canSubmitIntake;");
+    // Warehouse is confirmed separately at the preview — see the
+    // critical-field suite below — so it is part of the submit gate too.
+    expect(flow).toContain("const canSubmit = stage === 'preview' && canReachPreview && canSubmitIntake && warehouseConfirmed;");
     expect(flow).toContain('const canReachPreview = !hasBlockingWarning && outstandingConfirmations.length === 0 && quantityValid;');
   });
 
@@ -109,6 +111,75 @@ describe('OCR never writes stock on its own', () => {
     expect(codeOnly(flow)).not.toContain('p_entry_method');
     expect(codeOnly(flow)).not.toMatch(/\bentry_method\s*:/);
     expect(codeOnly(flow)).not.toMatch(/\bentryMethod\s*:/);
+  });
+});
+
+// ─── Beta labelling and critical-field confirmation ──────────────────────────
+
+describe('OCR is labelled a Beta requiring human review', () => {
+  const strings = read(join(SRC, 'shared', 'i18n', 'strings.ts'));
+
+  it('carries the exact mandated Arabic and English banner text', () => {
+    expect(strings).toContain('مساعد OCR تجريبي — يتطلب مراجعة بشرية');
+    expect(strings).toContain('OCR Assistant Beta — Human review required');
+  });
+
+  it('renders the banner OUTSIDE the stage switch, so no stage can hide it', () => {
+    expect(flow).toContain("data-testid=\"ocr-beta-banner\"");
+    expect(flow).toContain("t('ocr_beta_banner', lang)");
+    // The banner sits before the first stage-conditional block.
+    expect(flow.indexOf('ocr-beta-banner')).toBeLessThan(flow.indexOf("{stage === 'capture' &&"));
+  });
+
+  it('the entry point and heading both say Beta', () => {
+    expect(strings).toContain("ocr_open:               { ar: 'قراءة مستند بالكاميرا (تجريبي)'");
+    expect(strings).toMatch(/ocr_title:.*OCR Assistant Beta/);
+  });
+
+  it('never advertises OCR as accurate, automatic, professional or production-ready', () => {
+    const ocrStrings = strings.slice(strings.indexOf('ocr_beta_banner'), strings.indexOf('ocr_reject_empty_file'));
+    for (const banned of ['production-ready', 'production ready', 'fully automatic', 'highly accurate', 'professional-grade']) {
+      expect(ocrStrings.toLowerCase(), `banned marketing claim: ${banned}`).not.toContain(banned);
+    }
+  });
+});
+
+describe('Every critical field starts unconfirmed', () => {
+  it('the required-confirmation set covers the mandated critical fields', () => {
+    const confidence = readOcr('confidence.ts');
+    for (const field of ['scientificName', 'nationalCode', 'batchNumber', 'expiryDate', 'quantity', 'unitPrice']) {
+      expect(confidence, `missing required confirmation: ${field}`).toContain(`'${field}'`);
+    }
+  });
+
+  it('warehouse gets its own explicit confirmation at the final preview', () => {
+    expect(flow).toContain('const [warehouseConfirmed, setWarehouseConfirmed] = useState(false);');
+    expect(flow).toContain('&& warehouseConfirmed;');
+    expect(flow).toContain("t('ocr_confirm_warehouse', lang)");
+  });
+
+  it('returning to review clears the warehouse confirmation', () => {
+    expect(flow).toContain('onClick={() => { setWarehouseConfirmed(false); setStage(\'review\'); }}');
+  });
+
+  it('no confirmation is ever pre-ticked, including after a unique catalog match', () => {
+    expect(flow).toContain('setConfirmed({});');
+    expect(flow).toContain('confirmed: false,');
+    expect(flow).not.toMatch(/confirmed:\s*true/);
+    expect(flow).not.toMatch(/useState\(true\)[^\n]*[Cc]onfirm/);
+  });
+
+  it('an ambiguous or no-match material is a BLOCKING warning, never pre-accepted', () => {
+    expect(flow).toContain("severity: 'blocking', message: t('ocr_warn_no_match', lang)");
+    expect(flow).toContain("severity: 'blocking', message: t('ocr_warn_ambiguous_match', lang)");
+    expect(flow).toContain('const hasBlockingWarning = warnings.some');
+  });
+
+  it('a duplicate or conflicting batch identity blocks automatic acceptance', () => {
+    expect(flow).toContain("severity: 'blocking',");
+    expect(flow).toContain('assessBatchIdentity(');
+    const duplicate = readOcr('match/duplicate-identity.ts');
+    expect(duplicate).toContain('blocksAutomaticAccept: findings.length > 0');
   });
 });
 
