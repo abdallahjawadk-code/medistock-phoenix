@@ -73,7 +73,7 @@ describe('Phoenix Nexus production design boundaries', () => {
     expect(topology).toContain('setWebglReady(false)');
     expect(topology).toContain('SAFE MODE');
     expect(topology).toContain('prefers-reduced-motion: reduce');
-    expect(topology).toContain('Math.min(window.devicePixelRatio || 1, 1.6)');
+    expect(topology).toContain('Math.min(window.devicePixelRatio || 1, 1.5)');
   });
 
   it('binds the twin to RLS-protected network reads without introducing writes', () => {

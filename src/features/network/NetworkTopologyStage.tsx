@@ -3,6 +3,7 @@ import type { DistributionPoint } from '@/shared/supabase/services/warehouses.se
 import type { NetworkWarehouse, SupplyRoute } from './network.service';
 import type { InventorySeverity, InventorySignalType } from '@/features/inventory/inventory-intelligence.service';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { computeTwin2dLayout } from './twinLayout';
 
 type Lang = 'ar' | 'en';
 type NodeKind = 'central' | 'institution' | 'outlet';
@@ -241,22 +242,23 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
     return { nodes, edges };
   }, [warehouses, routes, outlets, lang, alerts]);
 
-  // 2D projection of the same real topology onto an SVG plane (x,y of the 3D
-  // layout; z is dropped). Shares node ids/selection with the 3D view.
+  // 2D layout of the same real topology onto an SVG plane. Uses a deterministic
+  // tiered layout (central → institution → outlet, evenly spread per tier) so
+  // nodes and labels never overlap regardless of density — see twinLayout.ts.
   const view2d = useMemo(() => {
-    const SW = 1000;
-    const SH = 660;
-    const project = (p: Position): [number, number] => [500 + p[0] * 430, 330 - p[1] * 300];
-    const pos = new Map(topology.nodes.map(node => [node.id, project(node.position)]));
-    const nodes = topology.nodes.map(node => {
-      const [sx, sy] = pos.get(node.id)!;
-      return { ...node, sx, sy };
+    const { positions, width: SW, height: SH } = computeTwin2dLayout(
+      topology.nodes.map(node => ({ id: node.id, kind: node.kind })),
+    );
+    const nodes = topology.nodes.flatMap(node => {
+      const p = positions.get(node.id);
+      if (!p) return [];
+      return [{ ...node, sx: p.x, sy: p.y, labelAbove: p.labelAbove }];
     });
     const edges = topology.edges.flatMap(edge => {
-      const s = pos.get(edge.source);
-      const target = pos.get(edge.target);
+      const s = positions.get(edge.source);
+      const target = positions.get(edge.target);
       if (!s || !target) return [];
-      return [{ ...edge, x1: s[0], y1: s[1], x2: target[0], y2: target[1] }];
+      return [{ ...edge, x1: s.x, y1: s.y, x2: target.x, y2: target.y }];
     });
     return { nodes, edges, SW, SH };
   }, [topology]);
@@ -366,7 +368,7 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       width = Math.max(1, Math.round(rect.width * dpr));
       height = Math.max(1, Math.round(rect.height * dpr));
       if (canvas.width !== width || canvas.height !== height) {
@@ -557,7 +559,15 @@ export function NetworkTopologyStage({ lang, warehouses, routes, outlets, organi
                       strokeWidth={2}
                       opacity={node.active ? 1 : 0.55}
                     />
-                    <text y={-r - 8} textAnchor="middle" fill="var(--t)" fontSize="12.5" fontWeight="600">{node.label}</text>
+                    <text
+                      y={node.labelAbove ? -r - 8 : r + 16}
+                      textAnchor="middle"
+                      fill="var(--t)"
+                      fontSize="12"
+                      fontWeight="600"
+                    >
+                      {node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}
+                    </text>
                   </g>
                 );
               })}

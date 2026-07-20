@@ -64,23 +64,37 @@ const PhoenixWelcomeExperience = lazy(() =>
 
 // Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
 // match the real warehouse/route/outlet/alert types so the twin renders exactly
-// as it does against live RLS-scoped data.
+// as it does against live RLS-scoped data. Deliberately DENSE (1 central,
+// 4 institution stores, 8 outlets) so the captured 2D map proves the
+// deterministic layout keeps dense nodes/labels from overlapping.
 const TWIN_WAREHOUSES: NetworkWarehouse[] = [
   { id: 'c1', name: 'Central Store', name_ar: 'المخزن المركزي', warehouseKind: 'central', status: 'active', isMain: true, code: 'C-01', organizationId: 'org' },
   { id: 'i1', name: 'Babil General', name_ar: 'مذخر بابل العام', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-01', organizationId: 'org' },
   { id: 'i2', name: 'Hilla Teaching', name_ar: 'مذخر الحلة التعليمي', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-02', organizationId: 'org' },
+  { id: 'i3', name: 'Mahawil Store', name_ar: 'مذخر المحاويل', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-03', organizationId: 'org' },
+  { id: 'i4', name: 'Musayyib Store', name_ar: 'مذخر المسيّب', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-04', organizationId: 'org' },
 ];
 const TWIN_ROUTES: SupplyRoute[] = [
   { id: 'r1', sourceWarehouseId: 'c1', targetWarehouseId: 'i1', priority: 1, isActive: true, notes: null },
   { id: 'r2', sourceWarehouseId: 'c1', targetWarehouseId: 'i2', priority: 1, isActive: true, notes: null },
+  { id: 'r3', sourceWarehouseId: 'c1', targetWarehouseId: 'i3', priority: 1, isActive: true, notes: null },
+  { id: 'r4', sourceWarehouseId: 'c1', targetWarehouseId: 'i4', priority: 1, isActive: false, notes: null },
 ];
 const TWIN_OUTLETS: DistributionPoint[] = [
   { id: 'o1', name: 'Pharmacy A', name_ar: 'صيدلية أ', status: 'active', warehouseId: 'i1', organizationId: 'org', pointType: 'pharmacy' },
   { id: 'o2', name: 'Rescue Cart', name_ar: 'عربة إنعاش', status: 'active', warehouseId: 'i2', organizationId: 'org', pointType: 'rescue_cart' },
+  { id: 'o3', name: 'Pharmacy B', name_ar: 'صيدلية ب', status: 'active', warehouseId: 'i1', organizationId: 'org', pointType: 'pharmacy' },
+  { id: 'o4', name: 'Crash Cabinet 1', name_ar: 'خزانة إنعاش ١', status: 'active', warehouseId: 'i2', organizationId: 'org', pointType: 'crash_cabinet' },
+  { id: 'o5', name: 'Pharmacy C', name_ar: 'صيدلية ج', status: 'active', warehouseId: 'i3', organizationId: 'org', pointType: 'pharmacy' },
+  { id: 'o6', name: 'Rescue Cart 2', name_ar: 'عربة إنعاش ٢', status: 'active', warehouseId: 'i3', organizationId: 'org', pointType: 'rescue_cart' },
+  { id: 'o7', name: 'Pharmacy D', name_ar: 'صيدلية د', status: 'active', warehouseId: 'i4', organizationId: 'org', pointType: 'pharmacy' },
+  { id: 'o8', name: 'Crash Cabinet 2', name_ar: 'خزانة إنعاش ٢', status: 'active', warehouseId: 'i4', organizationId: 'org', pointType: 'crash_cabinet' },
 ];
 const TWIN_ALERTS = new Map<string, NodeAlert>([
   ['i1', { severity: 'high', count: 3, topSignal: 'missing' }],
   ['o2', { severity: 'medium', count: 1, topSignal: 'near_expiry' }],
+  ['i3', { severity: 'low', count: 2, topSignal: 'surplus' }],
+  ['o6', { severity: 'high', count: 5, topSignal: 'low_stock' }],
 ]);
 
 function StatesScene({ lang }: { lang: Lang }) {
