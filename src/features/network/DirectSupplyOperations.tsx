@@ -24,6 +24,20 @@ import {
   type NetworkWarehouse, type RpcResult, type TransferRequest, type TransferRequestLine,
   type Transfer, type ReturnRequest, type ReturnRequestLine, type ReturnShipment,
 } from './network.service';
+import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
+import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
+
+/**
+ * W077-COMPOSER — rollback switch for the forward create-authoring UX. When
+ * `draftFirst` is true the draft-first DirectSupplyComposer owns the "new
+ * request" action (canonical stock/batch picker, nothing persisted before
+ * review, honest partial-failure recovery). Flip to false to restore the legacy
+ * create-header-then-add-lines form while parity is being proven. Both paths
+ * commit through the SAME lifecycle RPCs (createDirectTransferRequest +
+ * addTransferRequestLine) — there is never a second writer. The legacy form is
+ * removed in a follow-up cleanup commit once parity tests and screenshots pass.
+ */
+const FORWARD_CREATE = { draftFirst: true };
 
 /**
  * W077 — the FULL operational surface for route-free direct supply. Not just a
@@ -126,17 +140,66 @@ function ForwardPanel({ lang, warehouses, whById }: {
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getTransferRequests(true), [reloadKey]);
   const incoming = useAsync(() => getTransfers(undefined, true), [reloadKey]);
+  const orgs = useAsync(() => getOrganizations(), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState<Status>(null);
 
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
 
+  // Party data for the draft-first composer. Same RLS-scoped warehouse list the
+  // legacy form used, filtered to the eligible endpoints; the RPC re-checks
+  // source/destination scope server-side on every call regardless of this UI.
+  const orgNameById = useMemo(
+    () => new Map((orgs.data ?? []).map(o => [o.id, lang === 'ar' ? o.name_ar : o.name] as const)),
+    [orgs.data, lang],
+  );
+  const sourceWarehouses = useMemo(
+    () => warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active'),
+    [warehouses],
+  );
+  const destinationParties = useMemo<PartyOption[]>(
+    () => warehouses
+      .filter(w => w.warehouseKind === 'institution' && w.status === 'active')
+      .map(w => ({
+        id: w.id,
+        organizationId: w.organizationId,
+        organizationName: orgNameById.get(w.organizationId) ?? '—',
+        warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
+      })),
+    [warehouses, orgNameById, lang],
+  );
+  const organizationOptions = useMemo(
+    () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
+    [orgs.data, lang],
+  );
+
   if (open) {
     return (
       <ForwardDetail lang={lang} request={open} whById={whById}
         onBack={() => { setOpenId(null); reload(); }}
         onStatus={setStatus} status={status} />
+    );
+  }
+
+  // Draft-first authoring takes over the panel exactly like the detail view does:
+  // one reachable create entry, and nothing is persisted until the review step.
+  if (creating && FORWARD_CREATE.draftFirst) {
+    return (
+      <DirectSupplyComposer
+        sourceWarehouses={sourceWarehouses}
+        destinationWarehouses={destinationParties}
+        organizations={organizationOptions}
+        onCancel={() => setCreating(false)}
+        onCreated={(requestId) => {
+          setCreating(false);
+          setStatus({ msg: t('net_ds_created', lang), error: false });
+          reload();
+          // Hand off to the existing lifecycle container so the operator can
+          // submit → review → send → receive without a second create path.
+          setOpenId(requestId);
+        }}
+      />
     );
   }
 
@@ -149,7 +212,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <StatusLine status={status} />
 
-      {creating && (
+      {creating && !FORWARD_CREATE.draftFirst && (
         <ForwardCreateForm lang={lang} warehouses={warehouses}
           onCancel={() => setCreating(false)}
           onDone={(res) => {
