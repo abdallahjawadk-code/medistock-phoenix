@@ -206,9 +206,22 @@ describe('nav_intake is hidden from all visible navigation', () => {
 // ============================================================================
 
 describe('App.tsx retains both routes (nothing removed)', () => {
-  it('imports and renders EditorScreen on case 3', () => {
-    expect(authenticatedApp).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
-    expect(authenticatedApp).toMatch(/case 3:\s*return <EditorScreen \/>/);
+  // INVENTORY-CENTER-INTAKE-A: screen 3 is no longer the Availability Editor.
+  // The editor wrote item_availability directly with a hand-picked condition,
+  // competing with the warehouse ledger for stock truth; the Inventory Center
+  // replaces it and writes only through the migration-065 ledger RPCs. What
+  // this section still guards is that screen 3 remains a REACHABLE route and
+  // that screen 8 stays the frozen-intake page — see
+  // features/inventory/__tests__/inventory-center-invariants.test.ts for the
+  // replacement's own invariants.
+  it('imports and renders InventoryCenterScreen on case 3', () => {
+    expect(authenticatedApp).toContain("import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen'");
+    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen \/>/);
+  });
+
+  it('the retired Availability Editor is no longer routed anywhere', () => {
+    expect(authenticatedApp).not.toContain('<EditorScreen />');
+    expect(authenticatedApp).not.toContain("from '@/features/editor/EditorScreen'");
   });
 
   it('imports and renders IntakeFrozenScreen on case 8', () => {

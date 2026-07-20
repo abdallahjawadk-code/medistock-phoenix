@@ -43,8 +43,13 @@ const css = readSrc('shared/lib/global.css');
 
 describe('1. Route paths (screen-number switch) were not changed', () => {
   it('App.tsx still maps the same screen numbers to the same components', () => {
+    // INVENTORY-CENTER-INTAKE-A: screen 3 now renders InventoryCenterScreen.
+    // The Availability Editor was retired as a stock writer — see
+    // features/inventory/__tests__/inventory-center-invariants.test.ts. Every
+    // other screen number → component mapping is unchanged, which is what this
+    // guard exists to protect.
     const expected: [number, string][] = [
-      [3, 'EditorScreen'], [4, 'RegistryScreen'], [5, 'MeshScreen'], [6, 'QrScreen'],
+      [3, 'InventoryCenterScreen'], [4, 'RegistryScreen'], [5, 'MeshScreen'], [6, 'QrScreen'],
       [7, 'HealthScreen'], [8, 'IntakeFrozenScreen'], [9, 'ReportsScreen'],
       [10, 'MobileCommandScreen'], [11, 'InstitutionScreen'], [12, 'StatusCenterScreen'],
       [13, 'InterInstitutionAlertsScreen'], [14, 'UserManagementScreen'],
