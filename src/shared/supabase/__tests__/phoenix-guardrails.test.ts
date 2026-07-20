@@ -2401,7 +2401,9 @@ describe('QR-AUDIT-CENTER [QrScreen.tsx: UX behavior]', () => {
   });
 
   it('risk cards have visual border indicator', () => {
-    expect(src).toContain('#dc2626');
+    // Phase E: the risk-card border indicator is now the theme-aware danger
+    // token instead of a raw #dc2626 literal — the visual indicator is retained.
+    expect(src).toContain("isRisk ? '1px solid var(--err)'");
   });
 
   it('uses dir="ltr" for public URL (RTL-safe)', () => {
