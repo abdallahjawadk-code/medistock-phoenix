@@ -182,7 +182,7 @@ export function UserManagementScreen() {
     return (
       <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
         <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '12px' }}>{t('um_title', lang)}</h2>
-        <PhoenixEmptyState icon="🔒" title={t('um_no_users_perm', lang)} description={t('um_server_only', lang)} />
+        <PhoenixEmptyState icon="lock" title={t('um_no_users_perm', lang)} description={t('um_server_only', lang)} />
       </div>
     );
   }
@@ -239,7 +239,7 @@ export function UserManagementScreen() {
             <PhoenixErrorState title={t('load_error', lang)} message={users.error} onRetry={users.reload} />
           )}
           {!users.loading && !users.error && rows.length === 0 && (
-            <PhoenixEmptyState icon="👥" title={t('um_empty', lang)} description={t('um_multi_officer', lang)} />
+            <PhoenixEmptyState icon="users" title={t('um_empty', lang)} description={t('um_multi_officer', lang)} />
           )}
           {rows.map(u => {
             const selected = u.id === selectedId;
@@ -296,7 +296,7 @@ export function UserManagementScreen() {
         {/* Selected-user panel: summary by default, permission matrix only when explicitly opened */}
         <div>
           {!selectedUser && (
-            <PhoenixEmptyState icon="🧩" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
+            <PhoenixEmptyState icon="scope" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
           )}
           {selectedUser && (
             <UserPermissionsPanel
