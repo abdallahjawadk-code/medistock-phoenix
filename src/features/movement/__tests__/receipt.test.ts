@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RECEIPT_FIELDS, LOCKED_FIELD_KEYS, MANDATORY_HEADER_FIELDS,
+  LOCKED_FIELD_KEYS, MANDATORY_HEADER_FIELDS,
   availableFields, fieldsForPreset, normalizeSelection, clearOptionalFields,
   orientationFor, receiptCellValue,
   type ReceiptDocument, type ReceiptLine, type ReceiptFieldKey,
