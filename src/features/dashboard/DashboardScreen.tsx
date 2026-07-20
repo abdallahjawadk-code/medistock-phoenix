@@ -19,6 +19,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { resolveEmojiIcon } from '@/shared/ui/emojiIcon';
 import { InventoryIntelligenceSummary } from '@/features/inventory/InventoryIntelligenceSummary';
+import { stockHealthPercent } from './stockHealth';
 
 interface Props { onNavigate: (screen: number) => void; }
 
@@ -90,11 +91,17 @@ export function DashboardScreen({ onNavigate }: Props) {
   const m = metrics.data;
   const sr = srCounts.data;
 
-  // Real stock-health ratio for the hero ring: available over the total of all
-  // classified items. Purely derived from the live metrics — no fabricated
-  // figure. Falls back to a drawn-empty ring until the metrics land.
-  const healthTotal = m ? m.availableItems + m.lowStockCount + m.missingCount : 0;
-  const healthPct = healthTotal > 0 ? Math.round((m!.availableItems / healthTotal) * 100) : 0;
+  // Hero-ring "stock health": the share of Available items among the three
+  // primary availability COUNTS (available / low_stock / missing) returned by
+  // phoenix_get_dashboard_condition_counts (mig 054) via getDashboardMetrics.
+  // All three are like-unit item-condition row counts — see stockHealth.ts for
+  // the audited derivation. No stock quantity is read here, and item_availability
+  // is neither read directly nor written from this screen.
+  const healthPct = stockHealthPercent({
+    available: m?.availableItems ?? 0,
+    low: m?.lowStockCount ?? 0,
+    missing: m?.missingCount ?? 0,
+  });
   const RING_CIRCUM = 264; // 2π·42, matches the r=42 ring below
   const ringOffset = RING_CIRCUM * (1 - healthPct / 100);
 
