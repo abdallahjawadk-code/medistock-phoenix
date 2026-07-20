@@ -46,8 +46,10 @@ describe('Web App Manifest', () => {
   });
 
   it('uses the current premium background/theme colors (not placeholders)', () => {
-    expect(manifest.background_color).toBe('#F3F7FB');
-    expect(manifest.theme_color).toBe('#0D9488');
+    // Dark-first Phoenix art direction: the PWA chrome matches --bg so the
+    // splash and title bar do not flash the retired light teal.
+    expect(manifest.background_color).toBe('#07111F');
+    expect(manifest.theme_color).toBe('#07111F');
   });
 
   it('has the required categories', () => {
@@ -78,8 +80,8 @@ describe('index.html PWA wiring', () => {
     expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest" />');
   });
 
-  it('sets theme-color to the premium teal', () => {
-    expect(html).toContain('<meta name="theme-color" content="#0D9488" />');
+  it('sets theme-color to the Phoenix ground colour', () => {
+    expect(html).toContain('<meta name="theme-color" content="#07111F" />');
   });
 
   it('sets apple-mobile-web-app-capable, title, and status-bar-style', () => {
@@ -369,6 +371,11 @@ describe('No forbidden content or scope creep', () => {
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       // W1: self-hosted variable fonts replacing the external Google Fonts CDN
       // (CSP font-src 'self'). Weight-axis only; bundled by Vite.
+      // The Phoenix design source's families. Inter has a variable build;
+      // IBM Plex Sans Arabic does not, so its four design weights are static.
+      '@fontsource-variable/inter', '@fontsource/ibm-plex-sans-arabic',
+      // Superseded by the two above; removed in the Phase G cleanup once no
+      // import remains. Listed here so this guard stays exact, not loosened.
       '@fontsource-variable/dm-sans', '@fontsource-variable/noto-sans-arabic',
       // Cinematic redesign: the real WebGL Phoenix stack. React-18-compatible
       // and lazy/code-split — enforced by tests/webgl-deps-contract.test.ts and

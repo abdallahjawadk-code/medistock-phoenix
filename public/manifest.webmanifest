@@ -7,8 +7,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F3F7FB",
-  "theme_color": "#0D9488",
+  "background_color": "#07111F",
+  "theme_color": "#07111F",
   "orientation": "any",
   "categories": [
     "medical",
