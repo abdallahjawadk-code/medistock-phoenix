@@ -55,8 +55,28 @@ export interface QualityAssessment {
 export const QUALITY_THRESHOLDS = {
   /** Laplacian variance below this reads as soft/out-of-focus. */
   sharpness: 120,
-  /** More than 6% blown pixels usually means flash glare on a glossy box. */
-  blownHighlights: 0.06,
+  /**
+   * MEASURED CORRECTION. The original 0.06 was wrong by an order of magnitude:
+   * it assumed a photographic scene, but a DOCUMENT is mostly white paper, so
+   * the near-white fraction is naturally huge. Measured across the evaluation
+   * corpus (tools/ocr-eval/fixtures):
+   *
+   *   clean scan   0.808 – 0.904
+   *   mobile photo 0.937 – 0.970
+   *   flash glare  0.969 – 0.986
+   *
+   * At 0.06 the warning fired on 100% of documents, including flawless scans —
+   * a warning that always fires trains operators to ignore all warnings, which
+   * is worse than having none. 0.95 separates glare from a clean scan on this
+   * corpus.
+   *
+   * KNOWN WEAKNESS: a global near-white fraction is a weak glare proxy, because
+   * real glare is a LOCAL blowout over text rather than a uniform brightening.
+   * The margin between a mobile photo and genuine glare is thin, so this finding
+   * is advisory only and never blocks recognition. A proper detector needs local
+   * saturation analysis and is not attempted here.
+   */
+  blownHighlights: 0.95,
   /** Mean luminance (0–255) below this loses thin strokes entirely. */
   meanLuminance: 60,
   /** Text height gets unreliable below roughly this width for a document. */

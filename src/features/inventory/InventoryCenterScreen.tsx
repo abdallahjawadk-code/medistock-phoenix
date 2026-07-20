@@ -9,6 +9,7 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
 import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
@@ -71,9 +72,40 @@ export function InventoryCenterScreen() {
     [manageableWarehouses, lang],
   );
 
-  if (scopes.loading) return <PhoenixLoadingState />;
+  const header = (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('inv_center_title', lang)}</h2>
+          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('inv_center_sub', lang)}</p>
+        </div>
+        {/* A super_admin's profile has organization_id = null, so without this
+            selector activeOrgId stays null, the warehouse catalog comes back
+            empty, and the screen dead-ends on "no warehouse permissions".
+            Every other org-scoped screen already uses this control. */}
+        <PhoenixOrgScope />
+      </div>
+    </div>
+  );
+
+  if (!activeOrgId) {
+    return (
+      <div dir={dir}>
+        {header}
+        <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+      </div>
+    );
+  }
+
+  if (scopes.loading) return <div dir={dir}>{header}<PhoenixLoadingState /></div>;
+
   if (manageableWarehouses.length === 0) {
-    return <PhoenixEmptyState icon="🔒" title={t('inv_center_denied', lang)} />;
+    return (
+      <div dir={dir}>
+        {header}
+        <PhoenixEmptyState icon="🔒" title={t('inv_center_denied', lang)} />
+      </div>
+    );
   }
 
   // PhoenixToast is a passive announcer with no dismiss affordance — every
@@ -90,10 +122,7 @@ export function InventoryCenterScreen() {
 
   return (
     <div dir={dir}>
-      <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('inv_center_title', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('inv_center_sub', lang)}</p>
-      </div>
+      {header}
 
       <PhoenixCard>
         <PhoenixSelect

@@ -257,6 +257,20 @@ describe('Lazy loading keeps OCR out of the critical bundle', () => {
     expect(provider).toContain('workerPath');
     expect(provider).toContain('worker.terminate()');
   });
+
+  it('requests blocks explicitly — without it the engine returns no boxes at all', () => {
+    // REGRESSION (found live in the browser, not by the eval harness):
+    // tesseract.js returns data.blocks === null unless asked, which yields zero
+    // lines, zero bounding boxes and zero extracted fields. OCR appears to run
+    // and simply finds nothing.
+    expect(provider).toContain('{ text: true, blocks: true }');
+  });
+
+  it('sets PSM.AUTO — the tesseract.js default mangles tabular documents', () => {
+    expect(provider).toContain('tessedit_pageseg_mode: PSM.AUTO');
+    // AUTO_OSD needs osd.traineddata, which is not self-hosted.
+    expect(codeOnly(provider)).not.toContain('AUTO_OSD');
+  });
 });
 
 describe('Worker and memory lifecycle', () => {
@@ -463,6 +477,21 @@ describe('Quality metrics measure real pixel statistics', () => {
   it('detects blown highlights', () => {
     const blown = makeImage(100, 100, (x, y) => (y < 60 ? 255 : 20));
     expect(blownHighlightRatio(toGrayscaleSample(blown.data, 100, 100))).toBeGreaterThan(0.5);
+  });
+
+  it('does NOT flag glare on an ordinary white-paper document', () => {
+    // Regression: the original 0.06 threshold treated normal white paper as
+    // glare and fired on every single document. A document that is 88% white
+    // page with dark text must produce no glare finding.
+    const page = makeImage(1000, 1000, (x, y) => ((y % 40) < 5 && x > 60 && x < 900 ? 10 : 255));
+    const assessment = assessQuality(page.data, 1000, 1000);
+    expect(assessment.findings.some(f => f.issue === 'glare')).toBe(false);
+  });
+
+  it('still flags a genuinely blown-out capture', () => {
+    const washed = makeImage(1000, 1000, (x, y) => ((y % 200) < 2 ? 240 : 255));
+    const assessment = assessQuality(washed.data, 1000, 1000);
+    expect(assessment.findings.some(f => f.issue === 'glare')).toBe(true);
   });
 
   it('flags a dark image as poor and a clean one as good', () => {

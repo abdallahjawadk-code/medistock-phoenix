@@ -28,7 +28,12 @@ interface TesseractLogMessage {
 }
 
 type TesseractWorker = {
-  recognize(image: Blob): Promise<{ data: TesseractPage }>;
+  recognize(
+    image: Blob,
+    options?: Record<string, unknown>,
+    output?: { text?: boolean; blocks?: boolean },
+  ): Promise<{ data: TesseractPage }>;
+  setParameters(params: Record<string, unknown>): Promise<unknown>;
   terminate(): Promise<unknown>;
 };
 
@@ -76,10 +81,11 @@ export class TesseractOcrProvider implements OcrProvider {
     if (this.worker && this.language === language) return;
 
     let createWorker: typeof import('tesseract.js').createWorker;
+    let PSM: typeof import('tesseract.js').PSM;
     try {
       // Dynamic import — this is the code-splitting boundary that keeps the
       // engine out of every critical chunk.
-      ({ createWorker } = await import('tesseract.js'));
+      ({ createWorker, PSM } = await import('tesseract.js'));
     } catch (cause) {
       throw new OcrUnavailableError(`engine_import_failed:${String(cause)}`);
     }
@@ -102,6 +108,14 @@ export class TesseractOcrProvider implements OcrProvider {
           });
         },
       })) as unknown as TesseractWorker;
+
+      // tesseract.js defaults to SINGLE_BLOCK, which mangles the tabular
+      // delivery notes this feature exists to read — measured: it produced
+      // "a | Ce | Senne nie" where AUTO produced "LOT B4471X | EXP 06/2027".
+      // AUTO_OSD is deliberately NOT used: it requires osd.traineddata, which
+      // is not among the self-hosted assets, and would fail at runtime.
+      await this.worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+
       this.language = language;
     } catch (cause) {
       // A half-built worker must never survive a failed initialize().
@@ -130,7 +144,15 @@ export class TesseractOcrProvider implements OcrProvider {
     });
 
     try {
-      const { data } = await Promise.race([this.worker.recognize(image), cancellation]);
+      // `blocks` MUST be requested explicitly: tesseract.js returns
+      // data.blocks === null by default, which silently produces zero lines,
+      // zero words, zero bounding boxes and therefore zero extracted fields —
+      // OCR appears to run and simply finds nothing. Verified live in the
+      // browser, not just in the evaluation harness.
+      const { data } = await Promise.race([
+        this.worker.recognize(image, {}, { text: true, blocks: true }),
+        cancellation,
+      ]);
       if (signal.aborted) throw new OcrCancelledError();
 
       const dimensions = await readImageDimensions(image);
