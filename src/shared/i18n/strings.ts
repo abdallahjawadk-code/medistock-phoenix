@@ -1915,6 +1915,14 @@ export const T: Dict = {
   mv_rx_quantity_adjusted: { ar: 'كمية معدّلة — استلام فردي',                    en: 'Quantity adjusted — receive individually' },
   mv_rx_has_difference_reason: { ar: 'يحمل ملاحظة فرق',                          en: 'Carries a difference note' },
   mv_rx_non_positive_quantity: { ar: 'كمية غير صالحة',                           en: 'Invalid quantity' },
+
+  // Direct return — provenance picker.
+  mv_return_search_received: { ar: 'ابحث في المواد المستلمة فعليًا',              en: 'Search actually received materials' },
+  mv_return_no_provenance: { ar: 'لا توجد مواد مستلمة قابلة للإرجاع من هذا المذخر', en: 'No received materials are returnable from this depot' },
+  mv_reason_text:         { ar: 'تفصيل السبب',                                    en: 'Reason detail' },
+  mv_return_mode:         { ar: 'نوع الإرجاع',                                    en: 'Return type' },
+  mv_return_mode_request: { ar: 'طلب إرجاع من المؤسسة',                           en: 'Institution return request' },
+  mv_return_mode_recall:  { ar: 'استرجاع مركزي',                                  en: 'Central recall' },
 };
 
 export function t(key: string, lang: Lang): string {
