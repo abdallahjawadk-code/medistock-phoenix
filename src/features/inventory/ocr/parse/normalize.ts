@@ -64,6 +64,8 @@ export function normalizePunctuation(input: string): string {
 export function foldArabic(input: string): string {
   return input
     .replace(/[ً-ْٰ]/g, '')
+    // Tatweel is pure justification padding and carries no meaning.
+    .replace(/ـ/g, '')
     .replace(/[آأإٱ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/[ى]/g, 'ي')
@@ -92,9 +94,12 @@ export function normalizeForMatching(input: string): string {
  * than an unparsed one the operator must type.
  */
 export function parseNumber(raw: string): number | null {
-  const cleaned = normalizeNumericSeparators(normalizeDigits(raw))
-    .replace(/[\s,]/g, '')
-    .trim();
+  const normalized = normalizeNumericSeparators(normalizeDigits(raw)).trim();
+  // Internal whitespace is NOT treated as a thousands separator. "123 456 7"
+  // is far more likely two OCR fragments than the number 1234567, and joining
+  // them would fabricate a quantity an order of magnitude wrong.
+  if (/\s/.test(normalized)) return null;
+  const cleaned = normalized.replace(/,/g, '');
   if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
   const value = Number(cleaned);
   return Number.isFinite(value) ? value : null;
