@@ -1,9 +1,14 @@
-/* ─── PHOENIX visual evidence capture ─────────────────────────────────────────
+/* ─── PHOENIX login visual evidence capture ───────────────────────────────────
    Drives a headless Chromium (Playwright) against the running dev server and
-   captures the Login surface across AR/EN × light/dark × desktop/mobile, so
-   visual QA does NOT depend on the in-app preview pane (which throttles rAF).
-   Output → docs/phoenix/visual-evidence/login/.
+   captures the Login surface across AR/EN × light/dark × desktop/mobile.
 
+   DETERMINISTIC per cell: the app's lang/theme are in-memory state that resets
+   to AR+dark on every load (see AppContext) — they are NOT persisted. So each
+   cell opens a FRESH page, reads the live <html> lang / data-theme, and clicks
+   the language/theme toggles only as needed to reach that exact cell. This
+   avoids the old sequential-toggle bug that produced duplicate light/dark shots.
+
+   Output → docs/phoenix/visual-evidence/login/.
    Usage: node scripts/phoenix-capture.mjs [baseURL]   (default http://localhost:5180)
    ─────────────────────────────────────────────────────────────────────────── */
 import { chromium } from 'playwright-core';
@@ -20,11 +25,11 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 390, height: 844 },
 ];
+const LANGS = ['ar', 'en'];
+const THEMES = ['dark', 'light'];
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Prefer the system Chrome (hardware GL — far faster compositing than the
-// software SwiftShader path, which starves screenshots on heavy backdrop-filter).
 async function launch() {
   try {
     return await chromium.launch({ headless: true, channel: 'chrome', args: ['--ignore-gpu-blocklist'] });
@@ -37,59 +42,60 @@ async function launch() {
 }
 const browser = await launch();
 
-// Neutralise the expensive blur/animation compositing for the capture only — it
-// otherwise blocks the screenshot raster. The WebGL phoenix + layout stay intact.
 const CAPTURE_CSS =
   '*{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
   'animation:none!important;transition:none!important;}';
 
+const readState = (page) => page.evaluate(() => ({
+  lang: document.documentElement.getAttribute('lang'),
+  theme: document.documentElement.getAttribute('data-theme'),
+}));
+
+let shots = 0;
+const failures = [];
+
 for (const vp of VIEWPORTS) {
-  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1 });
-  // Reduced-motion makes the WebGL scene render a single static frame (frameloop
-  // 'demand'), so the page is stable enough for a screenshot — the perpetual
-  // rAF of the live scene otherwise blocks capture. The phoenix art + a static
-  // ember frame are still fully rendered.
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  // Wait for the login form and let the WebGL texture load + a few frames render.
-  await page.waitForSelector('form.nexus-login__card', { timeout: 15000 }).catch(() => {});
-  await page.addStyleTag({ content: CAPTURE_CSS }).catch(() => {});
-  await settle(1600);
+  for (const lang of LANGS) {
+    for (const theme of THEMES) {
+      const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto(BASE, { waitUntil: 'networkidle' });
+      await page.waitForSelector('form.nexus-login__card', { timeout: 15000 }).catch(() => {});
 
-  const shot = async (label) => {
-    const p = join(OUT, `login-${label}-${vp.name}.png`);
-    await page.screenshot({ path: p, animations: 'disabled', timeout: 15000 });
-    console.log('shot', p.replace(ROOT, '.'));
-  };
+      // Drive to the target cell from the live state (fresh page = AR+dark).
+      let state = await readState(page);
+      if (state.lang !== lang) {
+        await page.click('button.nexus-control--language').catch(() => {});
+        await settle(500);
+      }
+      state = await readState(page);
+      if (state.theme !== theme) {
+        await page.click('button.nexus-control[aria-label*="theme"]').catch(() => {});
+        await settle(500);
+      }
 
-  // Default state is AR + light.
-  await shot('ar-light');
+      // Verify we actually reached the target — never silently emit a wrong cell.
+      state = await readState(page);
+      if (state.lang !== lang || state.theme !== theme) {
+        failures.push(`${lang}-${theme}-${vp.name}: got lang=${state.lang} theme=${state.theme}`);
+      }
 
-  // → AR dark
-  await page.click('button.nexus-control[aria-label*="dark theme"]').catch(() => {});
-  await settle(700);
-  await shot('ar-dark');
+      await page.addStyleTag({ content: CAPTURE_CSS }).catch(() => {});
+      await settle(1400);
 
-  // → EN dark
-  await page.click('button.nexus-control--language').catch(() => {});
-  await settle(700);
-  await shot('en-dark');
-
-  // → EN light
-  await page.click('button.nexus-control[aria-label*="light theme"]').catch(() => {});
-  await settle(700);
-  await shot('en-light');
-
-  // Report whether a real WebGL context actually rendered.
-  const gl = await page.evaluate(() => {
-    const c = document.querySelector('.nexus-login__webgl canvas');
-    if (!c) return { canvas: false };
-    const ctx = c.getContext('webgl2') || c.getContext('webgl');
-    return { canvas: true, hasContext: !!ctx, w: c.width, h: c.height };
-  });
-  console.log(`[${vp.name}] webgl:`, JSON.stringify(gl));
-  await page.close();
+      const p = join(OUT, `login-${lang}-${theme}-${vp.name}.png`);
+      await page.screenshot({ path: p, animations: 'disabled', timeout: 15000 });
+      console.log('shot', p.replace(ROOT, '.'), `(lang=${state.lang} theme=${state.theme})`);
+      shots += 1;
+      await page.close();
+    }
+  }
 }
 
 await browser.close();
-console.log('DONE');
+
+if (failures.length) {
+  console.error('\nERROR: some cells did not reach their target state:\n  ' + failures.join('\n  '));
+  process.exit(1);
+}
+console.log(`\nDONE — ${shots} login screenshots (deterministic AR/EN × dark/light × desktop/mobile).`);
