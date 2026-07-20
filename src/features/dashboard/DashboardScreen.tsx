@@ -90,6 +90,14 @@ export function DashboardScreen({ onNavigate }: Props) {
   const m = metrics.data;
   const sr = srCounts.data;
 
+  // Real stock-health ratio for the hero ring: available over the total of all
+  // classified items. Purely derived from the live metrics — no fabricated
+  // figure. Falls back to a drawn-empty ring until the metrics land.
+  const healthTotal = m ? m.availableItems + m.lowStockCount + m.missingCount : 0;
+  const healthPct = healthTotal > 0 ? Math.round((m!.availableItems / healthTotal) * 100) : 0;
+  const RING_CIRCUM = 264; // 2π·42, matches the r=42 ring below
+  const ringOffset = RING_CIRCUM * (1 - healthPct / 100);
+
   const materialAlertResult = useMemo(
     () => allReports.data ? computeMaterialAlerts(allReports.data) : null,
     [allReports.data],
@@ -100,20 +108,46 @@ export function DashboardScreen({ onNavigate }: Props) {
 
   return (
     <div className="premium-page premium-dashboard" style={{ maxWidth: '1320px', animation: 'fs .3s ease' }}>
-      {/* Header */}
-      <div className="premium-command-hero" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
-        <div>
-          <div className="premium-command-kicker">MediStock-Babil</div>
-          <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
-            {t('d_central', lang)}
-          </h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
-            {m ? `${t('m_upd', lang)}: ${m.lastUpdated}` : t('dash_sub', lang)}
-          </p>
+      {/* Hero band — design-source Dashboard header: a real stock-health ring
+          and headline readouts derived from the live metrics, over the Phoenix
+          hero gradient. */}
+      <div className="nexus-dash-hero">
+        <svg className="nexus-dash-hero__ring" width="92" height="92" viewBox="0 0 100 100" role="img"
+          aria-label={`${t('d_stock_health', lang)}: ${healthPct}%`}>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="var(--brd)" strokeWidth="8" />
+          <circle cx="50" cy="50" r="42" fill="none" stroke="url(#nxHealthGrad)" strokeWidth="8"
+            strokeLinecap="round" strokeDasharray={RING_CIRCUM} strokeDashoffset={ringOffset}
+            transform="rotate(-90 50 50)" />
+          <defs>
+            <linearGradient id="nxHealthGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="var(--info)" />
+              <stop offset="1" stopColor="var(--p)" />
+            </linearGradient>
+          </defs>
+          <text x="50" y="47" textAnchor="middle" fill="var(--t)" fontSize="20" fontWeight="700">{m ? `${healthPct}%` : '—'}</text>
+          <text x="50" y="63" textAnchor="middle" fill="var(--t2)" fontSize="9">{t('d_stock_health', lang)}</text>
+        </svg>
+
+        <div className="nexus-dash-hero__copy">
+          <div className="nexus-dash-hero__kicker">دائرة صحة بابل · قسم الصيدلة</div>
+          <h2>{t('d_central', lang)}</h2>
+          <p>{m ? `${t('m_upd', lang)}: ${m.lastUpdated}` : t('dash_sub', lang)}</p>
         </div>
+
+        <div className="nexus-dash-hero__stats">
+          <div className="nexus-dash-hero__stat">
+            <div className="nexus-dash-hero__stat-value" style={{ color: 'var(--p)' }}>{m ? m.availableItems : '—'}</div>
+            <div className="nexus-dash-hero__stat-label">{t('m_avail', lang)}</div>
+          </div>
+          <div className="nexus-dash-hero__stat">
+            <div className="nexus-dash-hero__stat-value" style={{ color: 'var(--warn)' }}>{m ? m.nearExpiryCount : '—'}</div>
+            <div className="nexus-dash-hero__stat-label">{t('m_exp', lang)}</div>
+          </div>
+        </div>
+
         <button
           onClick={() => onNavigate(3)}
-          className="premium-hero-cta premium-focus-ring" style={{ padding: '11px 18px', borderRadius: 'var(--r3)', border: 'none', background: 'linear-gradient(145deg, var(--p), var(--pd))', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 120ms', whiteSpace: 'nowrap' }}
+          className="nexus-dash-hero__cta premium-focus-ring"
         >
           <PhoenixIcon name="editor" size={15} inline /> {t('nav_editor', lang)}
         </button>

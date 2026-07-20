@@ -2010,3 +2010,109 @@ html body {
     transition: none;
   }
 }
+
+/* ─── Dashboard hero band (design-source Dashboard header) ────────────────── */
+.nexus-dash-hero {
+  position: relative;
+  display: flex;
+  gap: clamp(16px, 3vw, 26px);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid var(--line2, var(--brd));
+  border-radius: 18px;
+  background: var(--heroGrad, linear-gradient(140deg, var(--s2), var(--s)));
+  box-shadow: var(--shadow, var(--sh-md));
+  overflow: hidden;
+}
+
+.nexus-dash-hero__ring {
+  flex-shrink: 0;
+}
+
+.nexus-dash-hero__ring circle:last-of-type {
+  animation: nexus-ring-draw 1.1s cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes nexus-ring-draw {
+  from { stroke-dashoffset: 264; }
+}
+
+.nexus-dash-hero__copy {
+  flex: 1;
+  min-width: 200px;
+}
+
+.nexus-dash-hero__kicker {
+  color: var(--gold, var(--nx-gold));
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.nexus-dash-hero__copy h2 {
+  font-size: clamp(20px, 2.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--t);
+}
+
+.nexus-dash-hero__copy p {
+  margin-top: 6px;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+.nexus-dash-hero__stats {
+  display: flex;
+  gap: clamp(16px, 2.5vw, 24px);
+  flex-wrap: wrap;
+}
+
+.nexus-dash-hero__stat {
+  text-align: center;
+}
+
+.nexus-dash-hero__stat-value {
+  font-family: var(--font-num, 'Inter', sans-serif);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.nexus-dash-hero__stat-label {
+  margin-top: 2px;
+  color: var(--t2);
+  font-size: 11.5px;
+}
+
+.nexus-dash-hero__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 18px;
+  border: none;
+  border-radius: var(--r3, 12px);
+  background: linear-gradient(92deg, var(--ember, var(--sec)), var(--ember2, var(--sec2)));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ember, var(--sec)) 26%, transparent);
+  transition: transform 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nexus-dash-hero__cta:hover { transform: translateY(-1px); }
+}
+
+@media (max-width: 640px) {
+  .nexus-dash-hero { gap: 14px; }
+  .nexus-dash-hero__cta { width: 100%; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-dash-hero__ring circle:last-of-type { animation: none; }
+}

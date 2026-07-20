@@ -32,7 +32,9 @@ describe('premium visual system', () => {
   it('adds dense command-center and organization card hierarchy without new data sources', () => {
     const dashboard = read('features/dashboard/DashboardScreen.tsx');
     const institutions = read('features/institutions/InstitutionScreen.tsx');
-    expect(dashboard).toContain('premium-command-hero');
+    // Phase D replaced the flat premium-command-hero text header with the
+    // design-source Dashboard hero band (real stock-health ring + live readouts).
+    expect(dashboard).toContain('nexus-dash-hero');
     expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
     expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');
     expect(institutions).toContain('premium-page-header');
