@@ -384,7 +384,20 @@ describe('No forbidden content or scope creep', () => {
       // lives in devDependencies, not here.
       '@react-three/fiber', 'three',
       '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
+      // PHARMA-OCR-A: browser-local OCR engine. Loaded ONLY through a dynamic
+      // import after the operator chooses to scan a document — verified absent
+      // from the entry chunks by ocr-safety-invariants.test.ts. Its worker,
+      // WASM and trained data are self-hosted under /assets/ocr (no CDN), and
+      // no image or extracted text ever leaves the device.
+      'tesseract.js',
     ].sort());
+  });
+
+  it('the OCR engine is never a static import, so it cannot enter a critical chunk', () => {
+    // The dependency above is only acceptable because it is dynamically loaded.
+    // This pins that condition at the point the dependency is approved.
+    const staticImports = touchedFiles.filter(f => /^import[^\n]*'tesseract\.js'/m.test(f));
+    expect(staticImports).toHaveLength(0);
   });
 });
 
