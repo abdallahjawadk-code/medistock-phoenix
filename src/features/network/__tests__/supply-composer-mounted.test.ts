@@ -21,6 +21,7 @@ const read = (base: string, rel: string) => readFileSync(join(base, rel), 'utf8'
 const operations = read(NET, 'DirectSupplyOperations.tsx');
 const composer = read(MOVE, 'DirectSupplyComposer.tsx');
 const returnComposer = read(MOVE, 'DirectReturnComposer.tsx');
+const incoming = read(MOVE, 'InstitutionIncomingSupplies.tsx');
 
 describe('composer is mounted as the forward create entry', () => {
   it('imports and renders DirectSupplyComposer in the operational surface', () => {
@@ -97,5 +98,40 @@ describe('return composer is mounted as the return create entry (one writer)', (
     expect(returnComposer).toMatch(/originalTransferLineId: line\.originalTransferLineId as string/);
     expect(returnComposer).toMatch(/computeProvenanceCaps\(/);
     expect(returnComposer).not.toMatch(/service_role/);
+  });
+});
+
+describe('receive section upgraded in place to InstitutionIncomingSupplies', () => {
+  it('imports and renders InstitutionIncomingSupplies behind its rollback switch', () => {
+    expect(operations).toMatch(/import \{ InstitutionIncomingSupplies \} from '@\/features\/movement\/InstitutionIncomingSupplies'/);
+    expect(operations).toMatch(/<InstitutionIncomingSupplies/);
+    expect(operations).toMatch(/const RECEIVE_UPGRADE = \{ enabled: true \}/);
+    expect(operations).toMatch(/RECEIVE_UPGRADE\.enabled \?/);
+  });
+
+  it('legacy per-transfer IncomingTransferRow renders ONLY when the switch is OFF', () => {
+    // Exactly one render site, inside the !enabled branch below the ternary.
+    expect(operations.match(/<IncomingTransferRow/g)?.length).toBe(1);
+  });
+
+  it('gates receive on the real receive permission (+ super_admin)', () => {
+    expect(operations).toMatch(/role === 'super_admin' \|\| myPermissions\.has\('warehouse_transfer\.receive'\)/);
+    expect(operations).toMatch(/canReceive=\{canReceive\}/);
+  });
+
+  it('the incoming surface imports/renders NO material picker, OCR or create RPC', () => {
+    // Assert the absence of real wiring (imports / JSX / RPC calls), not the
+    // prose — the file's own docstring names these to say it deliberately omits them.
+    expect(incoming).not.toMatch(/import[^\n]*StockMaterialPicker/);
+    expect(incoming).not.toMatch(/<StockMaterialPicker/);
+    expect(incoming).not.toMatch(/from '@\/features\/inventory\/ocr/);
+    expect(incoming).not.toMatch(/addTransferRequestLine\(|createDirectTransferRequest\(/);
+  });
+
+  it('receives only via receiveTransferLine with a fresh idempotency token', () => {
+    expect(incoming).toMatch(/receiveTransferLine\(/);
+    expect(incoming).toMatch(/requestId: newRequestId\(\)/);
+    // Stock is shown only after a canonical server reload — never optimistically.
+    expect(incoming).toMatch(/await reload\(\)/);
   });
 });

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -26,6 +27,7 @@ import {
 } from './network.service';
 import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
 import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
+import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
 import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
 
 /**
@@ -48,6 +50,18 @@ const FORWARD_CREATE = { draftFirst: true };
  * the legacy header-first ReturnCreateForm. Same lifecycle RPCs, one writer.
  */
 const RETURN_CREATE = { draftFirst: true };
+
+/**
+ * W077-COMPOSER — rollback switch for the forward RECEIVE section. When enabled,
+ * the institution incoming-supplies surface (full immutable dispatch record,
+ * bulk "accept all safe" + individual receipt with discrepancy reason, canonical
+ * reload after every attempt) replaces the compact per-transfer IncomingTransferRow.
+ * Both drive the SAME receiveTransferLine RPC with a fresh idempotency token per
+ * attempt — one writer. The receive button is gated on the real receive
+ * permission (warehouse_transfer.receive) + super_admin, which the RPC re-checks
+ * server-side regardless. Flip to false to restore the legacy rows.
+ */
+const RECEIVE_UPGRADE = { enabled: true };
 
 /**
  * W077 — the FULL operational surface for route-free direct supply. Not just a
@@ -146,6 +160,7 @@ export function DirectSupplyOperations({ lang }: { lang: Lang }) {
 function ForwardPanel({ lang, warehouses, whById }: {
   lang: Lang; warehouses: NetworkWarehouse[]; whById: Map<string, NetworkWarehouse>;
 }) {
+  const { role, myPermissions } = useApp();
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getTransferRequests(true), [reloadKey]);
@@ -153,9 +168,14 @@ function ForwardPanel({ lang, warehouses, whById }: {
   const orgs = useAsync(() => getOrganizations(), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [receiveDestId, setReceiveDestId] = useState('');
   const [status, setStatus] = useState<Status>(null);
 
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
+
+  // Receiving is the institution officer's action — gate on the real receive
+  // permission (+ super_admin). The RPC re-checks server-side regardless.
+  const canReceive = role === 'super_admin' || myPermissions.has('warehouse_transfer.receive');
 
   // Party data for the draft-first composer. Same RLS-scoped warehouse list the
   // legacy form used, filtered to the eligible endpoints; the RPC re-checks
@@ -183,6 +203,25 @@ function ForwardPanel({ lang, warehouses, whById }: {
     () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
     [orgs.data, lang],
   );
+
+  // Distinct institution warehouses that actually have incoming transfers. The
+  // incoming-supplies surface is per-warehouse, so the operator selects which
+  // depot to receive into; each shows its own canonical, server-reloaded lines.
+  const receiveDestinations = useMemo(() => {
+    const seen = new Map<string, { id: string; institutionName: string; warehouseName: string }>();
+    for (const tr of incoming.data ?? []) {
+      if (seen.has(tr.destinationWarehouseId)) continue;
+      seen.set(tr.destinationWarehouseId, {
+        id: tr.destinationWarehouseId,
+        institutionName: orgNameById.get(tr.destinationOrganizationId) ?? '—',
+        warehouseName: nameOf(whById.get(tr.destinationWarehouseId), lang),
+      });
+    }
+    return [...seen.values()];
+  }, [incoming.data, whById, orgNameById, lang]);
+  const effectiveReceiveDest = receiveDestinations.some(d => d.id === receiveDestId)
+    ? receiveDestId : (receiveDestinations[0]?.id ?? '');
+  const activeReceiveDest = receiveDestinations.find(d => d.id === effectiveReceiveDest) ?? null;
 
   if (open) {
     return (
@@ -244,16 +283,44 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '18px 0 8px', color: 'var(--t2)' }}>{t('net_op_incoming', lang)}</h4>
       {incoming.loading && <PhoenixLoadingState />}
-      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {(incoming.data ?? []).map(tr => (
-          <IncomingTransferRow key={tr.id} lang={lang} transfer={tr} whById={whById}
-            onDone={(res) => {
-              setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opErrorMessage(res.error, lang), error: true });
-              if (res.ok) reload();
-            }} />
-        ))}
-      </div>
+
+      {RECEIVE_UPGRADE.enabled ? (
+        <>
+          {!incoming.loading && receiveDestinations.length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
+          {receiveDestinations.length > 1 && (
+            <div style={{ maxWidth: '360px', marginBottom: '10px' }}>
+              <PhoenixSelect
+                label={t('net_op_receive', lang)}
+                value={effectiveReceiveDest}
+                onChange={e => setReceiveDestId(e.target.value)}
+                options={receiveDestinations.map(d => ({ value: d.id, label: `${d.institutionName} — ${d.warehouseName}` }))}
+              />
+            </div>
+          )}
+          {activeReceiveDest && (
+            <InstitutionIncomingSupplies
+              key={activeReceiveDest.id}
+              destinationWarehouseId={activeReceiveDest.id}
+              institutionName={activeReceiveDest.institutionName}
+              warehouseName={activeReceiveDest.warehouseName}
+              canReceive={canReceive}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {(incoming.data ?? []).map(tr => (
+              <IncomingTransferRow key={tr.id} lang={lang} transfer={tr} whById={whById}
+                onDone={(res) => {
+                  setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opErrorMessage(res.error, lang), error: true });
+                  if (res.ok) reload();
+                }} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
