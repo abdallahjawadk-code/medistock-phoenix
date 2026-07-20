@@ -124,35 +124,22 @@ html body {
   animation: nexus-page-enter .42s var(--nx-ease) both;
 }
 
+/* The design source's rail is a flat --surface panel behind a --line hairline.
+   The previous tinted gradients (and a baked rgba(36,197,170) teal wash in
+   dark) are gone; the component's own inline background now stands. */
 .nexus-shell .premium-sidebar {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--nx-surface-solid) 94%, var(--p2)), var(--nx-surface-solid) 44%, color-mix(in srgb, var(--nx-surface-solid) 96%, var(--sec2)));
-  border-inline-end-color: var(--nx-line-strong) !important;
-  box-shadow: 14px 0 52px rgba(9, 32, 57, .08);
-  backdrop-filter: blur(22px) saturate(138%);
+  background: var(--surface);
+  border-inline-end-color: var(--line) !important;
+  box-shadow: none;
 }
 
-[data-theme="dark"] .nexus-shell .premium-sidebar {
-  background:
-    radial-gradient(28rem 22rem at 18% 4%, rgba(36, 197, 170, .09), transparent 68%),
-    linear-gradient(180deg, rgba(7, 20, 36, .97), rgba(8, 23, 41, .97));
-  box-shadow: 18px 0 60px rgba(0, 0, 0, .28);
-}
-
+/* Brand lockup — the design source pairs a 42px rounded mark behind a gold
+   (--line2) hairline with the department line set in --gold, and closes the
+   block with a gold rule rather than the previous cyan/blue gradient seam. */
 .nexus-shell .premium-sidebar-brand {
   position: relative;
-  padding: 22px 18px 18px !important;
-  border-color: var(--nx-line) !important;
-}
-
-.nexus-shell .premium-sidebar-brand::after {
-  content: '';
-  position: absolute;
-  inset-inline: 18px;
-  bottom: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--p), var(--sec), transparent);
-  opacity: .5;
+  padding: 18px 16px !important;
+  border-bottom: 1px solid var(--line2) !important;
 }
 
 .nexus-brand-lockup {
@@ -166,125 +153,85 @@ html body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  border: 1px solid color-mix(in srgb, var(--nx-gold) 38%, var(--brd));
-  border-radius: 15px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid var(--line2);
+  border-radius: 11px;
   background:
-    radial-gradient(circle at 50% 28%, rgba(255, 225, 151, .20), transparent 52%),
-    linear-gradient(145deg, rgba(16, 42, 74, .98), rgba(5, 15, 29, .98));
+    radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--gold) 22%, transparent), transparent 52%),
+    linear-gradient(145deg, var(--surface2), var(--bg));
   box-shadow:
-    0 12px 28px rgba(7, 28, 52, .22),
-    0 0 24px rgba(244, 118, 33, .10),
-    inset 0 1px 0 rgba(255, 255, 255, .14);
-}
-
-.nexus-brand-mark::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border: 1px solid color-mix(in srgb, var(--nx-ember) 22%, transparent);
-  border-radius: 20px;
-  opacity: .72;
-  pointer-events: none;
+    var(--sh-md),
+    0 0 24px color-mix(in srgb, var(--ember) 10%, transparent),
+    inset 0 1px 0 var(--highlight);
 }
 
 .nexus-brand-title {
-  color: var(--t);
-  font-size: 13.5px;
-  font-weight: 760;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 700;
   letter-spacing: -.015em;
 }
 
 .nexus-brand-subtitle {
   margin-top: 2px;
-  color: var(--t2);
-  font-size: 9.5px;
-  line-height: 1.45;
+  color: var(--gold);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 
+/* Nav items are driven by PhoenixSidebar's inline state map (fill, text colour,
+   weight and the 3px ember rail on border-inline-start), exactly as the design
+   source does it. This layer no longer re-declares any of that with !important
+   — it used to paint its own cyan/blue gradient and a pseudo-element rail,
+   which fought the component and pinned the retired palette. */
 .nexus-shell .premium-nav-item {
   position: relative;
-  min-height: 46px;
-  padding: 11px 12px !important;
-  border: 1px solid transparent !important;
   overflow: hidden;
   isolation: isolate;
 }
 
-.nexus-shell .premium-nav-item::before {
-  content: '';
-  position: absolute;
-  inset-block: 8px;
-  inset-inline-start: 0;
-  width: 3px;
-  border-radius: 99px;
-  background: linear-gradient(180deg, var(--nx-cyan), var(--p), var(--nx-gold));
-  opacity: 0;
-  transform: scaleY(.25);
-  transition: opacity .18s ease, transform .26s var(--nx-ease);
-}
-
-.nexus-shell .premium-nav-item[data-active="true"] {
-  color: var(--pd) !important;
-  border-color: color-mix(in srgb, var(--p) 23%, var(--brd)) !important;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--p) 15%, transparent), color-mix(in srgb, var(--sec) 7%, transparent)) !important;
-  box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px color-mix(in srgb, var(--cyan) 8%, transparent);
-}
-
-.nexus-shell .premium-nav-item[data-active="true"]::before {
-  opacity: 1;
-  transform: scaleY(1);
-}
-
+/* Sizes to its glyph rather than a fixed box, so the sidebar (19px) and the
+   bottom nav (21px) can each set their own icon size. */
 .nexus-nav-icon {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  border-radius: 10px;
+  flex-shrink: 0;
   color: currentColor;
-  background: color-mix(in srgb, currentColor 7%, transparent);
-  transition: transform .24s var(--nx-ease), background .18s ease, color .18s ease;
-}
-
-.nexus-shell .premium-nav-item[data-active="true"] .nexus-nav-icon {
-  color: var(--p);
-  background: color-mix(in srgb, var(--p) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 13%, transparent);
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .nexus-shell .premium-sidebar-user {
-  margin: 10px;
-  padding: 11px 12px !important;
-  border: 1px solid var(--nx-line);
-  border-radius: 17px;
-  background: color-mix(in srgb, var(--nx-surface) 92%, var(--p2));
-  box-shadow: var(--nx-bevel), 0 10px 28px rgba(9, 32, 57, .07);
+  margin: 0;
+  padding: 14px 16px !important;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
+/* The design source's identity orb is a teal-to-cyan gradient disc. */
 .nexus-role-orb {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  color: var(--nx-gold);
-  border: 1px solid color-mix(in srgb, var(--nx-gold) 30%, var(--brd));
-  border-radius: 12px;
-  background: linear-gradient(145deg, rgba(16, 42, 74, .97), rgba(7, 18, 34, .97));
-  box-shadow: 0 8px 20px rgba(7, 28, 52, .18);
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  color: #fff;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--teal), var(--cyanDim));
+  box-shadow: var(--sh-sm);
 }
 
 .nexus-shell .premium-topbar {
   min-height: var(--tbh);
   border-color: var(--nx-line) !important;
-  background: color-mix(in srgb, var(--nx-surface) 94%, transparent) !important;
-  box-shadow: 0 8px 30px rgba(9, 32, 57, .055);
-  backdrop-filter: blur(24px) saturate(145%);
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--line) !important;
+  box-shadow: none;
 }
 
 .nexus-topbar-title {
@@ -294,21 +241,21 @@ html body {
   flex: 1;
 }
 
-.nexus-topbar-eyebrow {
-  color: var(--p);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .13em;
-  line-height: 1;
-  text-transform: uppercase;
+.nexus-topbar-heading {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.nexus-topbar-heading {
-  margin-top: 4px;
-  color: var(--t);
-  font-size: 15px;
-  font-weight: 720;
-  letter-spacing: -.015em;
+.nexus-topbar-scope {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -321,11 +268,11 @@ html body {
      and desktop; the compact glyph stays centered inside it. */
   min-inline-size: var(--touch-target);
   min-block-size: var(--touch-target);
-  border: 1px solid var(--nx-line-strong);
-  border-radius: 12px;
-  color: var(--t);
-  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent);
-  box-shadow: var(--nx-bevel);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  color: var(--text);
+  background: var(--field);
+  box-shadow: none;
 }
 
 .nexus-control:focus-visible {
@@ -336,8 +283,8 @@ html body {
 
 .nexus-control--language {
   padding-inline: 14px;
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 11.5px;
+  font-weight: 700;
 }
 
 .nexus-shell .premium-drawer-backdrop {
@@ -352,9 +299,11 @@ html body {
 
 .nexus-shell .premium-bottom-nav-item {
   position: relative;
-  color: var(--t2);
+  color: var(--muted);
 }
 
+/* Matches the sidebar's ember rail so "where am I" reads the same on both
+   navigation surfaces, and by shape as well as by colour. */
 .nexus-shell .premium-bottom-nav-item::before {
   content: '';
   position: absolute;
@@ -362,7 +311,7 @@ html body {
   width: 28px;
   height: 2px;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--nx-cyan), var(--p));
+  background: var(--ember);
   opacity: 0;
   transform: scaleX(.35);
   transition: .2s var(--nx-ease);
@@ -374,7 +323,7 @@ html body {
 }
 
 .nexus-shell .premium-bottom-nav-item[data-active="true"] .nexus-nav-icon {
-  color: var(--p);
+  color: var(--cyanDim);
   transform: translateY(-2px);
 }
 
@@ -456,12 +405,14 @@ html body {
     padding-inline: 12px !important;
   }
 
-  .nexus-topbar-eyebrow {
+  /* PhoenixTopbar already drops the scope line on phones; this is the
+     media-query backstop for viewports that cross the breakpoint without a
+     re-render. */
+  .nexus-topbar-scope {
     display: none;
   }
 
   .nexus-topbar-heading {
-    margin-top: 0;
     font-size: 14px;
   }
 

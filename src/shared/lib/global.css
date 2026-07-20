@@ -268,36 +268,25 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   background: linear-gradient(var(--p), var(--sec));
   box-shadow: 0 0 16px var(--ambient-a);
 }
+/* Flat --surface panel, per the design source. The previous glass gradient
+   carried !important, so it painted over the component's own background even
+   where the nexus layer had already been aligned. */
 .premium-sidebar {
-  background: linear-gradient(180deg, var(--glass-strong), color-mix(in srgb, var(--s) 88%, var(--s2))) !important;
-  box-shadow: 12px 0 40px rgba(15,43,79,.06);
-  backdrop-filter: blur(18px) saturate(130%);
+  background: var(--surface) !important;
+  box-shadow: none;
 }
-.premium-sidebar-brand { position: relative; background: linear-gradient(135deg, var(--ambient-a), transparent 72%); }
+.premium-sidebar-brand { position: relative; }
 .premium-sidebar-logo { box-shadow: 0 10px 24px color-mix(in srgb, var(--cyan) 28%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
-.premium-sidebar-user { margin: 10px; padding: 11px !important; border: 1px solid var(--brd); border-radius: var(--r3); background: color-mix(in srgb, var(--s2) 82%, transparent); box-shadow: inset 0 1px 0 var(--highlight); }
-[dir="rtl"] .premium-sidebar { box-shadow: -12px 0 40px rgba(15,43,79,.06); }
+.premium-sidebar-user { margin: 0; padding: 14px 16px !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
 .premium-topbar {
-  background: var(--glass) !important;
-  backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: 0 8px 30px rgba(15,43,79,.055);
+  background: var(--surface) !important;
+  box-shadow: none;
 }
-.premium-nav-item { position: relative; min-height: 42px; }
-.premium-nav-item[data-active="true"] {
-  background: linear-gradient(100deg, var(--p2), color-mix(in srgb, var(--p2) 45%, transparent)) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 30%, transparent), 0 9px 22px color-mix(in srgb, var(--cyan) 15%, transparent);
-}
-.premium-nav-item[data-active="true"]::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 3px;
-  border-radius: 99px;
-  background: var(--p);
-  box-shadow: 0 0 12px var(--p);
-}
+/* The active nav treatment (chip fill + ember rail) is set inline by
+   PhoenixSidebar from the design source's own state map. This layer only
+   reserves the hit area; it no longer paints a competing gradient or a second
+   rail via ::before. */
+.premium-nav-item { position: relative; min-height: var(--touch-target); }
 .premium-status-badge {
   min-height: 24px;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
@@ -318,27 +307,20 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
     color: var(--err) !important;
   }
   .premium-drawer-trigger:hover {
-    border-color: color-mix(in srgb, var(--p) 40%, var(--brd)) !important;
-    background: var(--p2) !important;
-    color: var(--pd) !important;
+    border-color: color-mix(in srgb, var(--cyan) 40%, var(--line)) !important;
+    background: var(--chip) !important;
+    color: var(--cyanDim) !important;
   }
   .premium-bottom-nav-item:hover {
-    background: color-mix(in srgb, var(--p2) 55%, transparent);
+    background: var(--hover);
     border-radius: var(--r2);
   }
 }
+/* The active bottom-nav marker is drawn once, by the nexus layer's ::before
+   rail. This file used to draw a second one via ::after, so the active tab
+   carried two stacked bars. */
 .premium-bottom-nav-item[data-active="true"] {
   position: relative;
-}
-.premium-bottom-nav-item[data-active="true"]::after {
-  content: '';
-  position: absolute;
-  top: 4px;
-  width: 22px;
-  height: 3px;
-  border-radius: 99px;
-  background: var(--p);
-  box-shadow: 0 0 10px var(--p);
 }
 .premium-pwa-install {
   position: fixed;
