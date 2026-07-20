@@ -1177,13 +1177,6 @@ html body {
   text-align: center;
 }
 
-.nexus-welcome__credits-label {
-  color: #ddba63;
-  font-size: clamp(10px, 1.1vw, 12px);
-  font-weight: 700;
-  letter-spacing: .22em;
-}
-
 .nexus-welcome__credits-name {
   margin-top: 14px;
   color: #f6ecd4;

@@ -124,13 +124,13 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
             {lang === 'ar' ? 'منظومة الإمداد الدوائي الذكية' : 'Intelligent medicine supply network'}
           </p>
 
-          {/* Issuance & supervision credits — the exact approved Arabic text,
-              verbatim from the approved design source. Always rendered in
-              Arabic (dir=rtl) so the official credit is never re-translated,
+          {/* Issuance & supervision credits — the EXACT approved Arabic text,
+              verbatim per the authoritative handoff. Do not paraphrase either
+              line or replace the first with a shortened label. Always rendered
+              in Arabic (dir=rtl) so the official credit is never re-translated,
               regardless of the UI language. */}
           <div className="nexus-welcome__credits" dir="rtl">
-            <div className="nexus-welcome__credits-label">إصدار وإشراف</div>
-            <div className="nexus-welcome__credits-name">الصيدلاني عبدالله جواد كاظم</div>
+            <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
             <div className="nexus-welcome__credits-rule" aria-hidden="true" />
             <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
           </div>
