@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
@@ -338,7 +339,7 @@ export function InterInstitutionAlertsScreen() {
             {t('lia_title', lang)}
           </h2>
           <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--p)', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--rpill)', padding: '2px 10px' }}>
-            ✨ {t('lia_smart_view_badge', lang)}
+            <PhoenixIcon name="sparkle" size={12} inline /> {t('lia_smart_view_badge', lang)}
           </span>
         </div>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px', maxWidth: '640px' }} dir="auto">
@@ -348,7 +349,7 @@ export function InterInstitutionAlertsScreen() {
 
       {/* No auto-transfer disclaimer */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ℹ️ {t('iia_no_transfer', lang)}
+        <PhoenixIcon name="info" size={15} inline /> {t('iia_no_transfer', lang)}
       </div>
 
       {/* Summary cards */}
@@ -389,7 +390,7 @@ export function InterInstitutionAlertsScreen() {
       {ok && criticalAlerts.length > 0 && (
         <div style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--err)' }}>🔥 {t('lia_critical_lane_title', lang)}</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--err)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><PhoenixIcon name="fire" size={13} inline /> {t('lia_critical_lane_title', lang)}</span>
             <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{t('lia_critical_lane_sub', lang)}</span>
           </div>
           <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
@@ -475,7 +476,7 @@ export function InterInstitutionAlertsScreen() {
           </select>
 
           <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
-            <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+            <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--t2)', display: 'inline-flex' }} aria-hidden="true"><PhoenixIcon name="search" size={14} /></span>
             <input
               id="lia-search"
               type="search"
@@ -499,7 +500,7 @@ export function InterInstitutionAlertsScreen() {
       )}
 
       {!result.loading && !result.error && !ok && forbidden && (
-        <PhoenixEmptyState icon="🔒" title={t('lia_forbidden', lang)} />
+        <PhoenixEmptyState icon="lock" title={t('lia_forbidden', lang)} />
       )}
 
       {!result.loading && !result.error && !ok && !forbidden && (
@@ -507,7 +508,7 @@ export function InterInstitutionAlertsScreen() {
       )}
 
       {!result.loading && !result.error && ok && filtered.length === 0 && (
-        <PhoenixEmptyState icon="🔔" title={t('lia_empty', lang)} />
+        <PhoenixEmptyState icon="alerts" title={t('lia_empty', lang)} />
       )}
 
       {/* Alert cards — flat list, or grouped for display only when groupMode !== 'none' */}
@@ -585,7 +586,7 @@ function CriticalAlertCard({ a, lang }: { a: LiveInterInstitutionAlertWithState;
         <PhoenixStatusBadge variant="err" label={t(a.targetStatus === 'missing' ? 'cond_missing' : 'cond_low_stock', lang)} />
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
-        🏥 {tgtOrg} · {tgtPoint}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="hospital" size={13} inline /> {tgtOrg} · {tgtPoint}</span>
       </div>
     </div>
   );
@@ -686,7 +687,7 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
       {/* Footer: required action + computed_at */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', borderTop: '1px solid var(--brd)', paddingTop: '10px' }}>
         <span style={{ fontSize: '11px', color: 'var(--warn)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-          ⚠ {t('lia_required_action', lang)}
+          <PhoenixIcon name="warning" size={12} inline /> {t('lia_required_action', lang)}
         </span>
         <span style={{ fontSize: '10.5px', color: 'var(--t3)' }} dir="ltr">
           {t('lia_computed_at', lang)}: {new Date(a.computedAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
@@ -828,7 +829,7 @@ function AlertHistoryDialog({ alert, lang, onClose }: { alert: LiveInterInstitut
       {history.loading && <PhoenixLoadingState label={t('alertLifecycle_history_loading', lang)} />}
       {!history.loading && history.error && <PhoenixErrorState title={t('alertLifecycle_history_error', lang)} message={t('alertLifecycle_error_generic', lang)} onRetry={history.reload} />}
       {!history.loading && !history.error && history.data && !history.data.ok && <PhoenixErrorState title={t('alertLifecycle_history_error', lang)} message={t(lifecycleErrorKey(history.data.error), lang)} onRetry={history.reload} />}
-      {!history.loading && !history.error && history.data?.ok && history.data.events.length === 0 && <PhoenixEmptyState icon="🕘" title={t('alertLifecycle_history_empty', lang)} />}
+      {!history.loading && !history.error && history.data?.ok && history.data.events.length === 0 && <PhoenixEmptyState icon="clock" title={t('alertLifecycle_history_empty', lang)} />}
       {!history.loading && !history.error && history.data?.ok && <div className="history-timeline">{history.data.events.map((event, index) => (
         <div className="history-event" key={`${event.createdAt}:${index}`} style={{ fontSize: '12px' }}>
           <strong>{event.eventType}</strong>
@@ -869,7 +870,7 @@ function PartyBlock({ roleLabel, pointRoleLabel, statusLabelKey: statusKey, stat
       </div>
       <div style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{orgLabel}</div>
       <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '8px', fontWeight: 700 }}>{pointRoleLabel}</div>
-      <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">🏥 {pointLabel}</div>
+      <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }} dir="auto"><PhoenixIcon name="hospital" size={12} inline /> {pointLabel}</div>
       <div style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--t2)' }}>
         {t('qty', lang)}: <strong style={{ color: 'var(--t)' }}>{quantity}</strong>
       </div>

@@ -6,6 +6,7 @@ import { formatStableDateTime } from '@/shared/lib/date';
 import { getOrganization } from '@/shared/supabase/services/organizations.service';
 import { useExactThresholdPermission, useInventoryScopes } from './useInventoryScopes';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -122,7 +123,7 @@ export function InventoryIntelligencePanel() {
 
   if (!canView) {
     return (
-      <PhoenixEmptyState icon="🔒" title={t('inv_title', lang)} description={t('inv_denied', lang)} />
+      <PhoenixEmptyState icon="lock" title={t('inv_title', lang)} description={t('inv_denied', lang)} />
     );
   }
 
@@ -147,12 +148,12 @@ export function InventoryIntelligencePanel() {
           )}
           {canSuggest && (
             <PhoenixButton variant="secondary" size="sm" loading={busy} onClick={runSuggest}>
-              ✨ {t('inv_action_regenerate', lang)}
+              <PhoenixIcon name="sparkle" size={13} inline /> {t('inv_action_regenerate', lang)}
             </PhoenixButton>
           )}
           {canThresholds && (
             <PhoenixButton variant="ghost" size="sm" onClick={() => { setEditingThreshold(null); setThresholdOpen(true); }}>
-              ⚙ {t('inv_threshold_add', lang)}
+              <PhoenixIcon name="settings" size={13} inline /> {t('inv_threshold_add', lang)}
             </PhoenixButton>
           )}
         </div>
@@ -166,7 +167,7 @@ export function InventoryIntelligencePanel() {
       )}
       {!alerts.loading && !alerts.error && sortedAlerts.length === 0 && (
         <div style={{ padding: '14px 16px', borderRadius: 'var(--r3)', background: 'var(--s)', border: '1px solid var(--brd)', color: 'var(--t2)', fontSize: '12.5px', textAlign: 'center', marginBottom: '20px' }}>
-          ✓ {t('inv_empty_alerts', lang)}
+          <PhoenixIcon name="check" size={13} inline /> {t('inv_empty_alerts', lang)}
         </div>
       )}
       {!alerts.loading && !alerts.error && sortedAlerts.length > 0 && (
@@ -211,7 +212,7 @@ export function InventoryIntelligencePanel() {
       {/* ── Transfer recommendations (RECOMMENDATION-ONLY: no Accept) ──────────── */}
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('inv_suggestions_title', lang)}</h4>
       <div role="note" style={{ fontSize: '11.5px', color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 10px', marginBottom: '10px' }} dir="auto">
-        ⚠ {t('inv_recommendation_note', lang)}
+        <PhoenixIcon name="warning" size={12} inline /> {t('inv_recommendation_note', lang)}
       </div>
       {suggestions.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!suggestions.loading && suggestions.error && (
@@ -245,7 +246,7 @@ export function InventoryIntelligencePanel() {
                     </div>
                     {stale && (
                       <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
-                        ⚠ {t('inv_stale_note', lang)}
+                        <PhoenixIcon name="warning" size={12} inline /> {t('inv_stale_note', lang)}
                       </div>
                     )}
                   </div>

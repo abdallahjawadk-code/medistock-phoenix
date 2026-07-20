@@ -86,5 +86,8 @@ export function resolveEmojiIcon(
   fallback: PhoenixIconName = 'status',
 ): PhoenixIconName {
   if (!icon) return fallback;
+  // A canonical lowercase-ascii PhoenixIconName is passed straight through, so
+  // callers can (and should) use clean icon names; legacy emoji keys still map.
+  if (/^[a-z]+$/.test(icon)) return icon as PhoenixIconName;
   return MAP[normalizeEmoji(icon)] ?? fallback;
 }

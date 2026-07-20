@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -86,10 +87,10 @@ export function InventoryIntelligenceSummary({ onViewAll }: Props) {
       {!alerts.loading && !alerts.error && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '10px' : '14px', marginBottom: popups.length > 0 ? '12px' : 0 }}>
-            <PhoenixMetricCard icon="🔔" value={total}  label={t('inv_summary_total', lang)} iconBg="var(--info2)" />
-            <PhoenixMetricCard icon="🔴" value={high}   label={t('inv_summary_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
+            <PhoenixMetricCard icon="alerts" value={total}  label={t('inv_summary_total', lang)} iconBg="var(--info2)" />
+            <PhoenixMetricCard icon="warning" value={high}   label={t('inv_summary_high', lang)} iconBg="var(--err2)" valueColor="var(--err)" />
             <PhoenixMetricCard icon="⏱️" value={expiry} label={t('inv_summary_expiry', lang)} iconBg="var(--warn2)" valueColor="var(--warn)" />
-            <PhoenixMetricCard icon="🔁" value={openSuggestions} label={t('inv_summary_suggestions', lang)} iconBg="var(--p2)" valueColor="var(--pd)" />
+            <PhoenixMetricCard icon="refresh" value={openSuggestions} label={t('inv_summary_suggestions', lang)} iconBg="var(--p2)" valueColor="var(--pd)" />
           </div>
 
           {/* Dismissible / acknowledgeable high-severity pop-ups (relevant scopes only). */}
@@ -119,7 +120,7 @@ export function InventoryIntelligenceSummary({ onViewAll }: Props) {
                         aria-label={t('inv_dismiss_popup', lang)}
                         onClick={() => setDismissed(prev => new Set(prev).add(a.id))}
                       >
-                        ✕
+                        <PhoenixIcon name="close" size={13} inline />
                       </PhoenixButton>
                     </div>
                   </div>
