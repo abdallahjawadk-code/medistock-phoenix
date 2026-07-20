@@ -576,7 +576,10 @@ export async function getIncomingTransferLines(transferIds: string[]): Promise<I
     .in('transfer_id', transferIds)
     .order('scientific_name', { ascending: true });
   if (error) throw error;
-  return (data as IncomingLineRow[] | null ?? []).map(mapIncomingLine);
+  // The column list is a concatenated const, so supabase-js cannot parse it into
+  // a row type and infers GenericStringError[]. The shape is asserted by
+  // IncomingLineRow above and by the columns actually existing in 068/069.
+  return (data as unknown as IncomingLineRow[] | null ?? []).map(mapIncomingLine);
 }
 
 /** Institution receives one in-transit forward line (068, already route-free). */
