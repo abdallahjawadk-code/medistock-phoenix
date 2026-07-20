@@ -111,15 +111,16 @@ export function LoginScreen() {
 
       <section className="nexus-login__visual" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي' : 'Medicine supply network'}>
         <div className="nexus-login__visual-copy">
-          <div className="nexus-login__kicker">
-            <span />
-            {lang === 'ar' ? 'البنية التشغيلية الحية' : 'LIVE OPERATIONAL FABRIC'}
-          </div>
-          <h1>{lang === 'ar' ? 'شبكة دوائية موحّدة.' : 'One medicine network.'}</h1>
+          <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
+          <h1>
+            {lang === 'ar'
+              ? 'منظومة الإمداد الدوائي — من المخزن المركزي إلى منفذ الصرف.'
+              : 'The medicine supply fabric — from central store to dispensing outlet.'}
+          </h1>
           <p>
             {lang === 'ar'
-              ? 'من مخازن قسم الصيدلة إلى مذاخر المؤسسات ومنافذ الصرف، برؤية فورية وصلاحيات دقيقة.'
-              : 'From Pharmacy Department warehouses to institution stores and dispensing outlets, with live visibility and exact scope control.'}
+              ? 'رؤية فورية للمخزون والحركة والصلاحية عبر مذاخر المؤسسات ومنافذ الصرف، بصلاحيات دقيقة لكل نطاق.'
+              : 'Live visibility over stock, movement and expiry across institution stores and dispensing outlets, with exact per-scope permissions.'}
           </p>
         </div>
 
