@@ -5,7 +5,7 @@ import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperien
 import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
-import { EditorScreen } from '@/features/editor/EditorScreen';
+import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
 import { MeshScreen } from '@/features/mesh/MeshScreen';
 import { QrScreen } from '@/features/qr/QrScreen';
@@ -77,7 +77,11 @@ export function AuthenticatedApp() {
 
   const screenContent = () => {
     switch (screen) {
-      case 3:  return <EditorScreen />;
+      // INVENTORY-CENTER-INTAKE-A: screen 3 was the Availability Editor, which
+      // wrote item_availability directly with a hand-picked condition. It is
+      // replaced by the Inventory Center, whose only write path is the
+      // warehouse ledger (migration 065) — see InventoryCenterScreen.
+      case 3:  return <InventoryCenterScreen />;
       case 4:  return <RegistryScreen />;
       case 5:  return <MeshScreen onNavigate={setScreen} />;
       case 6:  return <QrScreen />;
