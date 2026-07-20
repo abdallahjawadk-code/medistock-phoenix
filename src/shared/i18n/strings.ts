@@ -1898,6 +1898,23 @@ export const T: Dict = {
   mv_ev_disposition:      { ar: 'التصرّف النهائي',                                en: 'Final disposition' },
   mv_ev_cancelled:        { ar: 'أُلغي',                                          en: 'Cancelled' },
   mv_returned_against:    { ar: 'أُرجع من هذا السطر',                             en: 'Returned against this line' },
+
+  // Institution incoming supplies (receive side).
+  mv_incoming_title:      { ar: 'الوارد من التجهيز المباشر',                     en: 'Incoming direct supplies' },
+  mv_incoming_none:       { ar: 'لا يوجد وارد بانتظار الاستلام',                 en: 'Nothing awaiting receipt' },
+  mv_accept_all_safe:     { ar: 'استلام كل الأسطر الآمنة',                       en: 'Accept all safe lines' },
+  mv_receive_line:        { ar: 'استلام',                                        en: 'Receive' },
+  mv_difference_reason:   { ar: 'سبب الفرق',                                     en: 'Difference reason' },
+  mv_rc_quantity_not_positive: { ar: 'الكمية يجب أن تكون أكبر من صفر',           en: 'Quantity must be greater than zero' },
+  mv_rc_quantity_not_integer: { ar: 'الكمية يجب أن تكون عددًا صحيحًا',           en: 'Quantity must be a whole number' },
+  mv_rc_quantity_exceeds_sent: { ar: 'الكمية تتجاوز المُرسل',                    en: 'Quantity exceeds what was dispatched' },
+  mv_rc_difference_reason_required: { ar: 'اختلاف الكمية يتطلب ذكر السبب',       en: 'A quantity difference requires a reason' },
+  mv_rx_already_received: { ar: 'مستلم مسبقًا',                                  en: 'Already received' },
+  mv_rx_not_in_transit:   { ar: 'ليس قيد النقل',                                 en: 'Not in transit' },
+  mv_rx_expired:          { ar: 'منتهية الصلاحية — استلام فردي',                 en: 'Expired — receive individually' },
+  mv_rx_quantity_adjusted: { ar: 'كمية معدّلة — استلام فردي',                    en: 'Quantity adjusted — receive individually' },
+  mv_rx_has_difference_reason: { ar: 'يحمل ملاحظة فرق',                          en: 'Carries a difference note' },
+  mv_rx_non_positive_quantity: { ar: 'كمية غير صالحة',                           en: 'Invalid quantity' },
 };
 
 export function t(key: string, lang: Lang): string {

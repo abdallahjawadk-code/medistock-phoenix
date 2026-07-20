@@ -477,6 +477,108 @@ export async function getTransferLinesForTransfers(transferIds: string[]): Promi
   return (data as TransferLineRow[] | null ?? []).map(mapTransferLine);
 }
 
+/**
+ * MOVEMENT-COMPOSER-A — the FULL immutable line record for the institution's
+ * incoming-supplies screen and for return provenance.
+ *
+ * `TransferLine` above is deliberately narrow (it drives a compact list). The
+ * incoming screen must show what was actually dispatched — every product,
+ * batch, price and provenance column — because the receiving officer checks
+ * physical goods against an immutable record, not a summary.
+ *
+ * Every column below already exists (068, plus 069's additive return columns).
+ * Nothing is reconstructed, inferred or defaulted client-side.
+ */
+export interface IncomingTransferLine {
+  id: string;
+  transferId: string;
+  sourceOrganizationId: string;
+  sourceWarehouseStockId: string;
+  transferRequestLineId: string | null;
+  centralItemId: string | null;
+  scientificName: string;
+  tradeName: string | null;
+  concentration: string | null;
+  dosageForm: string | null;
+  unit: string | null;
+  nationalCode: string | null;
+  hasNoNationalCode: boolean;
+  batchNumber: string | null;
+  hasNoBatchNumber: boolean;
+  internalBatchReference: string | null;
+  expiryDate: string | null;
+  unitPrice: number | null;
+  priceBasis: string | null;
+  currency: string | null;
+  supplyTypeText: string | null;
+  sentQuantity: number;
+  receivedQuantity: number | null;
+  /** 069 additive columns — the return provenance ledger. */
+  returnedQuantity: number;
+  returnReceivedQuantity: number;
+  status: string;
+  differenceReason: string | null;
+  receivedAt: string | null;
+  resultingWarehouseStockId: string | null;
+}
+
+const INCOMING_LINE_COLUMNS =
+  'id, transfer_id, source_organization_id, source_warehouse_stock_id, transfer_request_line_id, ' +
+  'central_item_id, scientific_name, trade_name, concentration, dosage_form, unit, ' +
+  'national_code, has_no_national_code, batch_number, has_no_batch_number, internal_batch_reference, ' +
+  'expiry_date, unit_price, price_basis, currency, supply_type_text, ' +
+  'sent_quantity, received_quantity, returned_quantity, return_received_quantity, ' +
+  'status, difference_reason, received_at, resulting_warehouse_stock_id';
+
+interface IncomingLineRow {
+  id: string; transfer_id: string; source_organization_id: string;
+  source_warehouse_stock_id: string; transfer_request_line_id: string | null;
+  central_item_id: string | null; scientific_name: string; trade_name: string | null;
+  concentration: string | null; dosage_form: string | null; unit: string | null;
+  national_code: string | null; has_no_national_code: boolean;
+  batch_number: string | null; has_no_batch_number: boolean;
+  internal_batch_reference: string | null; expiry_date: string | null;
+  unit_price: number | null; price_basis: string | null; currency: string | null;
+  supply_type_text: string | null; sent_quantity: number; received_quantity: number | null;
+  returned_quantity: number; return_received_quantity: number;
+  status: string; difference_reason: string | null; received_at: string | null;
+  resulting_warehouse_stock_id: string | null;
+}
+
+function mapIncomingLine(r: IncomingLineRow): IncomingTransferLine {
+  return {
+    id: r.id, transferId: r.transfer_id, sourceOrganizationId: r.source_organization_id,
+    sourceWarehouseStockId: r.source_warehouse_stock_id,
+    transferRequestLineId: r.transfer_request_line_id, centralItemId: r.central_item_id,
+    scientificName: r.scientific_name, tradeName: r.trade_name,
+    concentration: r.concentration, dosageForm: r.dosage_form, unit: r.unit,
+    nationalCode: r.national_code, hasNoNationalCode: r.has_no_national_code,
+    batchNumber: r.batch_number, hasNoBatchNumber: r.has_no_batch_number,
+    internalBatchReference: r.internal_batch_reference, expiryDate: r.expiry_date,
+    unitPrice: r.unit_price, priceBasis: r.price_basis, currency: r.currency,
+    supplyTypeText: r.supply_type_text,
+    sentQuantity: r.sent_quantity, receivedQuantity: r.received_quantity,
+    returnedQuantity: r.returned_quantity, returnReceivedQuantity: r.return_received_quantity,
+    status: r.status, differenceReason: r.difference_reason, receivedAt: r.received_at,
+    resultingWarehouseStockId: r.resulting_warehouse_stock_id,
+  };
+}
+
+/**
+ * Full lines for MANY transfers in ONE query. Batched deliberately: a
+ * per-transfer loop would be an N+1 scan across the whole receive queue.
+ */
+export async function getIncomingTransferLines(transferIds: string[]): Promise<IncomingTransferLine[]> {
+  if (!supabaseConfigured || transferIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('warehouse_transfer_lines')
+    .select(INCOMING_LINE_COLUMNS)
+    .in('transfer_id', transferIds)
+    .order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as IncomingLineRow[] | null ?? []).map(mapIncomingLine);
+}
+
 /** Institution receives one in-transit forward line (068, already route-free). */
 export function receiveTransferLine(input: {
   requestId: string; transferLineId: string; receivedQuantity: number;
