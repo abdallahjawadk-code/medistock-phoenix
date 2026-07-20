@@ -1764,6 +1764,140 @@ export const T: Dict = {
   ocr_reject_too_small:   { ar: 'دقة الصورة منخفضة جدًا',                        en: 'The image resolution is too low' },
   ocr_reject_too_large_dimensions: { ar: 'أبعاد الصورة كبيرة جدًا',              en: 'The image dimensions are too large' },
   ocr_reject_too_many_pixels: { ar: 'الصورة كبيرة جدًا للمعالجة',                en: 'The image is too large to process' },
+
+  // ── MOVEMENT-COMPOSER-A: direct supply + direct return ────────────────────
+  // The four documents are deliberately distinct. A request is editable and is
+  // NOT a stock-movement receipt; only a dispatch/shipment is.
+  mv_doc_supply_request:  { ar: 'طلب تجهيز مباشر',                              en: 'Direct Supply Request' },
+  mv_doc_supply_dispatch: { ar: 'وصل تجهيز',                                     en: 'Supply Dispatch Receipt' },
+  mv_doc_return_request:  { ar: 'طلب إرجاع مباشر',                              en: 'Direct Return Request' },
+  mv_doc_return_shipment: { ar: 'وصل إرجاع',                                     en: 'Return Shipment Receipt' },
+
+  // Mandatory, locked traceability header fields.
+  mv_h_document_type:     { ar: 'نوع المستند',                                   en: 'Document type' },
+  mv_h_trace_key:         { ar: 'المعرّف الدائم',                                en: 'Permanent trace key' },
+  mv_h_status:            { ar: 'الحالة',                                        en: 'Status' },
+  mv_h_event_at:          { ar: 'تاريخ ووقت الحدث',                              en: 'Event date and time' },
+  mv_h_source:            { ar: 'الجهة المصدر',                                  en: 'Source' },
+  mv_h_destination:       { ar: 'الجهة الوجهة',                                  en: 'Destination' },
+  mv_h_request_reference: { ar: 'مرجع الطلب',                                    en: 'Request reference' },
+  mv_h_original_supply_reference: { ar: 'مرجع التجهيز الأصلي',                   en: 'Original supply reference' },
+  mv_h_dispatched_by:     { ar: 'جهّزه',                                         en: 'Dispatched by' },
+  mv_h_returned_by:       { ar: 'أرجعه',                                         en: 'Returned by' },
+  mv_h_receiver:          { ar: 'المستلم',                                       en: 'Receiver' },
+  mv_h_received_disposition: { ar: 'الاستلام والتصرّف',                          en: 'Receipt and disposition' },
+  mv_h_reprinted_at:      { ar: 'وقت إعادة الطباعة',                             en: 'Reprinted at' },
+
+  // An operator-typed number is NOT a controlled serial — no atomic allocator
+  // exists in the database, so it is labelled honestly wherever it appears.
+  mv_external_reference:  { ar: 'مرجع خارجي (إدخال المستخدم)',                   en: 'External / operator reference' },
+  mv_external_reference_hint: { ar: 'ليس تسلسلًا رسميًا — المعرّف الدائم أعلاه هو المرجع المعتمد', en: 'Not an official serial — the permanent trace key above is the authoritative reference' },
+  mv_not_available:       { ar: 'غير متاح',                                      en: 'Not available' },
+  mv_no_lines:            { ar: 'لا توجد مواد',                                  en: 'No materials' },
+  mv_page:                { ar: 'صفحة',                                          en: 'Page' },
+  mv_sign_issuer:         { ar: 'توقيع الجهة المُصدِرة',                          en: 'Issuing party signature' },
+  mv_sign_receiver:       { ar: 'توقيع الجهة المستلمة',                          en: 'Receiving party signature' },
+
+  // Watermarks — a document must never look more final than it is.
+  mv_wm_draft:            { ar: 'مسودة',                                         en: 'DRAFT' },
+  mv_wm_partial:          { ar: 'تجهيز جزئي',                                    en: 'PARTIAL' },
+  mv_wm_cancelled:        { ar: 'ملغى',                                          en: 'CANCELLED' },
+  mv_wm_reprint:          { ar: 'نسخة معاد طباعتها',                             en: 'REPRINT' },
+
+  // Selectable material print fields.
+  mv_f_line_number:       { ar: 'ت',                                             en: '#' },
+  mv_f_scientific_name:   { ar: 'الاسم العلمي',                                  en: 'Scientific name' },
+  mv_f_trade_name:        { ar: 'الاسم التجاري',                                 en: 'Trade name' },
+  mv_f_concentration:     { ar: 'التركيز',                                       en: 'Concentration' },
+  mv_f_dosage_form:       { ar: 'الشكل الصيدلاني',                               en: 'Dosage form' },
+  mv_f_unit:              { ar: 'الوحدة',                                        en: 'Unit' },
+  mv_f_national_code:     { ar: 'الرمز الوطني',                                  en: 'National code' },
+  mv_f_batch_number:      { ar: 'رقم التشغيلة',                                  en: 'Batch number' },
+  mv_f_internal_batch_reference: { ar: 'المرجع الداخلي للتشغيلة',                en: 'Internal batch reference' },
+  mv_f_expiry_date:       { ar: 'تاريخ النفاد',                                  en: 'Expiry date' },
+  mv_f_requested_quantity: { ar: 'الكمية المطلوبة',                              en: 'Requested quantity' },
+  mv_f_approved_quantity: { ar: 'الكمية المعتمدة',                               en: 'Approved quantity' },
+  mv_f_moved_quantity:    { ar: 'الكمية المُرسلة',                               en: 'Dispatched / returned quantity' },
+  mv_f_received_quantity: { ar: 'الكمية المستلمة',                               en: 'Received quantity' },
+  mv_f_on_hand_snapshot:  { ar: 'الرصيد وقت الحدث',                              en: 'On-hand at event' },
+  mv_f_return_reason:     { ar: 'سبب الإرجاع',                                   en: 'Return reason' },
+  mv_f_disposition:       { ar: 'التصرّف',                                       en: 'Disposition' },
+  mv_f_custody_state:     { ar: 'حالة العهدة',                                   en: 'Custody state' },
+  mv_f_unit_price:        { ar: 'سعر الوحدة',                                    en: 'Unit price' },
+  mv_f_currency:          { ar: 'العملة',                                        en: 'Currency' },
+  mv_f_price_basis:       { ar: 'أساس التسعير',                                  en: 'Price basis' },
+  mv_f_supply_type:       { ar: 'نوع التجهيز',                                   en: 'Supply type' },
+  mv_f_notes:             { ar: 'ملاحظات',                                       en: 'Notes' },
+  mv_f_original_supply_reference: { ar: 'مرجع التجهيز الأصلي',                   en: 'Original supply reference' },
+
+  // Print field selector.
+  mv_print_fields_title:  { ar: 'اختيار حقول الطباعة',                           en: 'Choose print fields' },
+  mv_preset_full:         { ar: 'وصل كامل',                                      en: 'Full receipt' },
+  mv_preset_compact:      { ar: 'وصل مختصر',                                     en: 'Compact receipt' },
+  mv_preset_custom:       { ar: 'حقول مخصّصة',                                   en: 'Custom fields' },
+  mv_select_all:          { ar: 'تحديد الكل',                                    en: 'Select all' },
+  mv_clear_optional:      { ar: 'إلغاء الحقول الاختيارية',                       en: 'Clear optional fields' },
+  mv_restore_defaults:    { ar: 'استعادة الافتراضي',                             en: 'Restore defaults' },
+  mv_locked_field_hint:   { ar: 'حقل إلزامي للتتبّع — لا يمكن إلغاؤه',           en: 'Mandatory traceability field — cannot be removed' },
+  mv_live_preview:        { ar: 'معاينة مباشرة',                                 en: 'Live preview' },
+  mv_print:               { ar: 'طباعة',                                         en: 'Print' },
+
+  // Composer.
+  mv_step_parties:        { ar: 'الأطراف وبيانات الطلب',                         en: 'Parties and request information' },
+  mv_step_materials:      { ar: 'اختيار المواد',                                 en: 'Material selection' },
+  mv_step_review:         { ar: 'المراجعة',                                      en: 'Review' },
+  mv_create_supply_request: { ar: 'إنشاء طلب تجهيز مباشر',                       en: 'Create Direct Supply Request' },
+  mv_create_return_request: { ar: 'إنشاء طلب إرجاع مباشر',                       en: 'Create Direct Return Request' },
+  mv_cancel:              { ar: 'إلغاء',                                          en: 'Cancel' },
+  mv_nothing_created_yet: { ar: 'لم يُنشأ أي شيء بعد — الإلغاء الآن لا يترك أثرًا', en: 'Nothing has been created yet — cancelling now leaves no trace' },
+  mv_search_materials:    { ar: 'ابحث في مواد المخزن',                           en: 'Search warehouse stock' },
+  mv_fefo_hint:           { ar: 'الأقرب نفادًا (اقتراح — التأكيد عليك)',          en: 'Earliest expiry (suggestion — you confirm)' },
+  mv_add_line:            { ar: 'إضافة',                                          en: 'Add' },
+  mv_remove_line:         { ar: 'حذف',                                            en: 'Remove' },
+  mv_available:           { ar: 'المتاح',                                         en: 'Available' },
+  mv_safe_returnable:     { ar: 'القابل للإرجاع بأمان',                           en: 'Safely returnable' },
+  mv_batch_dispatch:      { ar: 'تجهيز دفعة واحدة',                              en: 'Batch dispatch' },
+  mv_batch_return:        { ar: 'إرجاع دفعة واحدة',                              en: 'Batch return' },
+
+  // Validation.
+  mv_e_quantity_not_positive: { ar: 'الكمية يجب أن تكون أكبر من صفر',            en: 'Quantity must be greater than zero' },
+  mv_e_quantity_not_integer: { ar: 'الكمية يجب أن تكون عددًا صحيحًا',            en: 'Quantity must be a whole number' },
+  mv_e_quantity_exceeds_available: { ar: 'الكمية تتجاوز المتاح',                 en: 'Quantity exceeds what is available' },
+  mv_e_duplicate_material_batch: { ar: 'هذه المادة/التشغيلة مضافة مسبقًا',       en: 'This material/batch is already added' },
+  mv_e_expired_not_dispatchable: { ar: 'مادة منتهية الصلاحية — لا يمكن تجهيزها', en: 'Expired material cannot be dispatched' },
+  mv_e_missing_reason_code: { ar: 'سبب الإرجاع مطلوب',                           en: 'A return reason is required' },
+  mv_e_missing_provenance: { ar: 'يجب اختيار سطر التجهيز الأصلي',                en: 'The original supply line must be selected' },
+  mv_e_missing_identity:  { ar: 'يجب اختيار المادة من رصيد المخزن',              en: 'The material must be selected from warehouse stock' },
+
+  // Risk flags on returnable material.
+  mv_risk_expired:        { ar: 'منتهية الصلاحية',                               en: 'Expired' },
+  mv_risk_near_expiry:    { ar: 'قريبة النفاد',                                  en: 'Near expiry' },
+  mv_risk_physical_unknown: { ar: 'الرصيد الفعلي غير مقروء',                     en: 'Physical stock not readable' },
+  mv_risk_exceeds_physical: { ar: 'المتبقي دفتريًا أكبر من الرصيد الفعلي',       en: 'Provenance remainder exceeds physical stock' },
+
+  // Partial failure.
+  mv_partial_title:       { ar: 'تنفيذ جزئي',                                    en: 'Partially completed' },
+  mv_partial_hint:        { ar: 'نجح بعض الأسطر وفشل بعضها. أُعيد تحميل الحالة من الخادم.', en: 'Some lines succeeded and some failed. State was reloaded from the server.' },
+  mv_retry_unsent:        { ar: 'إعادة إرسال غير المُرسل فقط',                   en: 'Retry unsent lines only' },
+  mv_line_succeeded:      { ar: 'تم',                                            en: 'Succeeded' },
+  mv_line_failed:         { ar: 'فشل',                                           en: 'Failed' },
+
+  // Tracking.
+  mv_tracking_title:      { ar: 'تتبّع الحركات',                                 en: 'Movement tracking' },
+  mv_tracking_search:     { ar: 'ابحث برقم المرجع أو المعرّف الدائم أو المادة',   en: 'Search by reference, permanent key or material' },
+  mv_tracking_scan:       { ar: 'مسح رمز الوصل',                                 en: 'Scan receipt QR' },
+  mv_tracking_no_results: { ar: 'لا توجد نتائج ضمن صلاحياتك',                    en: 'No results within your permissions' },
+  mv_ev_created:          { ar: 'أُنشئ',                                         en: 'Created' },
+  mv_ev_submitted:        { ar: 'قُدّم',                                          en: 'Submitted' },
+  mv_ev_reviewed:         { ar: 'روجع',                                          en: 'Reviewed' },
+  mv_ev_dispatched:       { ar: 'جُهّز',                                          en: 'Dispatched' },
+  mv_ev_received:         { ar: 'استُلم',                                        en: 'Received' },
+  mv_ev_partially_received: { ar: 'استُلم جزئيًا',                               en: 'Partially received' },
+  mv_ev_returned:         { ar: 'أُرجع',                                          en: 'Returned' },
+  mv_ev_return_received:  { ar: 'استُلم الإرجاع',                                en: 'Return received' },
+  mv_ev_disposition:      { ar: 'التصرّف النهائي',                                en: 'Final disposition' },
+  mv_ev_cancelled:        { ar: 'أُلغي',                                          en: 'Cancelled' },
+  mv_returned_against:    { ar: 'أُرجع من هذا السطر',                             en: 'Returned against this line' },
 };
 
 export function t(key: string, lang: Lang): string {
