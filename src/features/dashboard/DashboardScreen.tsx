@@ -138,7 +138,12 @@ export function DashboardScreen({ onNavigate }: Props) {
             </linearGradient>
           </defs>
           <text x="50" y="47" textAnchor="middle" fill="var(--t)" fontSize="20" fontWeight="700">{m ? `${reportedAvailabilityPct}%` : '—'}</text>
-          <text x="50" y="63" textAnchor="middle" fill="var(--t2)" fontSize="9">{t('d_reported_availability', lang)}</text>
+          {/* Sub-label sized to fit inside the ring's inner clear zone: the
+              longest localized label ("Reported availability") is wider than the
+              old "Stock Health", so it is set at fontSize 7 to stay off the ring
+              stroke. The full label is also on the ring's aria-label and in the
+              always-visible note beneath the heading. */}
+          <text x="50" y="62.5" textAnchor="middle" fill="var(--t2)" fontSize="7">{t('d_reported_availability', lang)}</text>
         </svg>
 
         <div className="nexus-dash-hero__copy">
