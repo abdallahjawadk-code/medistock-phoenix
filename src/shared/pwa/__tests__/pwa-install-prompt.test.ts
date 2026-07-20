@@ -364,14 +364,27 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B) and the self-hosted W1 fonts, checked structurally, not just diff', () => {
+  it('no package.json dependency changes beyond the explicitly approved additions, checked structurally, not just diff', () => {
     const pkg = JSON.parse(readRoot('package.json'));
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       // W1: self-hosted variable fonts replacing the external Google Fonts CDN
       // (CSP font-src 'self'). Weight-axis only; bundled by Vite.
       '@fontsource-variable/dm-sans', '@fontsource-variable/noto-sans-arabic',
       '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
+      // PHARMA-OCR-A: browser-local OCR engine. Loaded ONLY through a dynamic
+      // import after the operator chooses to scan a document — verified absent
+      // from the entry chunks by ocr-safety-invariants.test.ts. Its worker,
+      // WASM and trained data are self-hosted under /assets/ocr (no CDN), and
+      // no image or extracted text ever leaves the device.
+      'tesseract.js',
     ].sort());
+  });
+
+  it('the OCR engine is never a static import, so it cannot enter a critical chunk', () => {
+    // The dependency above is only acceptable because it is dynamically loaded.
+    // This pins that condition at the point the dependency is approved.
+    const staticImports = touchedFiles.filter(f => /^import[^\n]*'tesseract\.js'/m.test(f));
+    expect(staticImports).toHaveLength(0);
   });
 });
 
