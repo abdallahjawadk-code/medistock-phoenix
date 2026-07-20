@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -10,6 +10,8 @@ import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
+import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
+import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import {
@@ -137,10 +139,11 @@ export function InventoryCenterScreen() {
       {!activeWarehouseId ? (
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
-        <IntakeForm
+        <IntakeTab
           warehouseId={activeWarehouseId}
           canSubmit={canAdjust}
           lang={lang}
+          stock={stock.data ?? []}
           onSuccess={afterWrite}
           onError={showToast}
         />
@@ -159,6 +162,84 @@ export function InventoryCenterScreen() {
 
       {toast && <PhoenixToast message={toast} />}
     </div>
+  );
+}
+
+// ─── Intake tab: manual entry, with OCR as an optional assist ────────────────
+
+interface IntakeTabProps {
+  warehouseId: string;
+  canSubmit: boolean;
+  lang: 'ar' | 'en';
+  stock: WarehouseStockBatch[];
+  onSuccess: (messageKey: string) => void;
+  onError: (messageKey: string) => void;
+}
+
+/**
+ * PHARMA-OCR-A: manual entry is the default and is ALWAYS available — the OCR
+ * flow is opened deliberately and can be abandoned back to this form at any
+ * point. OcrIntakeFlow is lazily imported so neither the OCR code nor the
+ * Tesseract engine is present in this screen's chunk until an operator asks
+ * for it.
+ */
+const OcrIntakeFlow = lazy(() =>
+  import('./ocr/OcrIntakeFlow').then(module => ({ default: module.OcrIntakeFlow })),
+);
+
+function IntakeTab({ warehouseId, canSubmit, lang, stock, onSuccess, onError }: IntakeTabProps) {
+  const [mode, setMode] = useState<'manual' | 'ocr'>('manual');
+
+  // The authorized catalog is fetched only when OCR is opened — matching data
+  // is useless to the manual form and would be a wasted round trip.
+  const catalog = useAsync(
+    () => (mode === 'ocr' ? getAllCentralItems().then(toCatalogMaterials) : Promise.resolve([])),
+    [mode],
+  );
+
+  const existingBatches = useMemo(
+    () => stock.map(batch => ({
+      warehouseStockId: batch.id,
+      warehouseId: batch.warehouseId,
+      scientificName: batch.scientificName,
+      nationalCode: batch.nationalCode,
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate,
+      onHandQuantity: batch.onHandQuantity,
+    })),
+    [stock],
+  );
+
+  if (mode === 'ocr') {
+    return (
+      <Suspense fallback={<PhoenixLoadingState />}>
+        <OcrIntakeFlow
+          warehouseId={warehouseId}
+          catalog={catalog.data ?? []}
+          existingBatches={existingBatches}
+          canSubmitIntake={canSubmit}
+          onCancel={() => setMode('manual')}
+          onSubmitted={onSuccess}
+        />
+      </Suspense>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ marginBottom: '10px' }}>
+        <PhoenixButton variant="ghost" onClick={() => setMode('ocr')} disabled={!canSubmit}>
+          {t('ocr_open', lang)}
+        </PhoenixButton>
+      </div>
+      <IntakeForm
+        warehouseId={warehouseId}
+        canSubmit={canSubmit}
+        lang={lang}
+        onSuccess={onSuccess}
+        onError={onError}
+      />
+    </>
   );
 }
 
