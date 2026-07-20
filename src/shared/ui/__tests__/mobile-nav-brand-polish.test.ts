@@ -57,7 +57,10 @@ describe('Mobile bottom nav: "More / المزيد" item removed', () => {
   });
 
   it('touch targets remain at least 44px', () => {
-    expect(bottomNav).toContain("minWidth: '44px', minHeight: '44px'");
+    // Expressed through --touch-target (44px, tokens.css) rather than a
+    // literal; the row itself is taller still at 52px per the design source.
+    expect(bottomNav).toContain("minWidth: 'var(--touch-target)'");
+    expect(bottomNav).toContain("minHeight: '52px'");
   });
 
   it('keeps safe-area padding for notch/gesture-bar devices', () => {
@@ -144,8 +147,13 @@ describe('Mobile drawer active-route styling still exists', () => {
   });
 
   it('active nav item still gets a distinct background/color/fontWeight via the ns() helper', () => {
-    expect(drawer).toMatch(/const ns = \(n: number\) => \(\{/);
-    expect(drawer).toContain("background: currentScreen === n ? 'var(--p2)' : 'transparent'");
+    // ns() is now block-bodied and also returns the ember rail, so the active
+    // item reads by shape as well as by fill, colour and weight.
+    expect(drawer).toMatch(/const ns = \(n: number\) => \{/);
+    expect(drawer).toContain("background: active ? 'var(--chip)' : 'transparent'");
+    expect(drawer).toContain("color:      active ? 'var(--cyanDim)' : 'var(--muted)'");
+    expect(drawer).toContain('active ? 700 : 500');
+    expect(drawer).toContain("borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`");
   });
 });
 

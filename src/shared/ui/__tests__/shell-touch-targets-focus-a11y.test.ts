@@ -45,8 +45,11 @@ describe('W1 shell — touch targets ≥44px', () => {
   it('keeps bottom-nav and command-trigger targets at ≥44px', () => {
     const bottomNav = read('shared/ui/PhoenixMobileBottomNav.tsx');
     const palette = read('shared/ui/CommandPalette.tsx');
-    expect(bottomNav).toMatch(/minWidth:\s*'44px'/);
-    expect(bottomNav).toMatch(/minHeight:\s*'44px'/);
+    // The bottom nav now expresses the minimum through --touch-target (44px,
+    // defined in tokens.css) instead of a repeated literal, and sizes its rows
+    // taller than the minimum at 52px, as the design source does.
+    expect(bottomNav).toMatch(/minWidth:\s*'var\(--touch-target\)'/);
+    expect(bottomNav).toMatch(/minHeight:\s*'52px'/);
     expect(palette).toMatch(/minWidth:\s*'44px'/);
     expect(palette).toMatch(/minHeight:\s*'44px'/);
   });
