@@ -45,7 +45,7 @@ export function MeshScreen({ onNavigate }: Props) {
 
       {loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!loading && error && <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />}
-      {!loading && !error && nodes.length === 0 && <PhoenixEmptyState icon="🌐" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />}
+      {!loading && !error && nodes.length === 0 && <PhoenixEmptyState icon="globe" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />}
 
       {!loading && !error && nodes.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (selected ? '1fr 280px' : '1fr'), gap: '16px', alignItems: 'start' }}>

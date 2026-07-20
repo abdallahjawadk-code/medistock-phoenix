@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPublicQrPayload } from '@/shared/supabase/services/qr.service';
@@ -198,7 +199,7 @@ export function PublicQrScreen({ publicId }: Props) {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: 'var(--r3)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>⚕</div>
+            <div style={{ width: '40px', height: '40px', borderRadius: 'var(--r3)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}><PhoenixIcon name="medical" size={20} /></div>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700 }}>{t('public_title', lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('public_sub', lang)}</div>
@@ -221,7 +222,7 @@ export function PublicQrScreen({ publicId }: Props) {
 
         {!loading && !error && !ok && (
           <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🚫</div>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}><PhoenixIcon name="ban" size={40} /></div>
             <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>{t('qr_invalid', lang)}</div>
             <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>{t('qr_scan_again', lang)}</p>
           </div>
@@ -265,7 +266,7 @@ export function PublicQrScreen({ publicId }: Props) {
             {/* Search */}
             {visibleItems.length > 3 && (
               <div style={{ position: 'relative', marginBottom: '12px' }}>
-                <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+                <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}><PhoenixIcon name="search" size={14} /></span>
                 <input
                   type="search"
                   placeholder={t('public_search', lang)}
@@ -342,7 +343,7 @@ export function PublicQrScreen({ publicId }: Props) {
             </div>
 
             <div className="premium-qr-trust-note" style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
-              🔒 {t('qr_no_expose', lang)}
+              <PhoenixIcon name="lock" size={12} inline /> {t('qr_no_expose', lang)}
             </div>
           </>
         )}

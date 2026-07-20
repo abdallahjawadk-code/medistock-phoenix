@@ -1,10 +1,11 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 /** UX-COMMAND-CENTER-SMART-A — a single quick-action tile. */
 export interface QuickAction {
   screen: number;
-  icon: string;
+  icon: PhoenixIconName;
   labelKey: string;
 }
 
@@ -45,7 +46,9 @@ export function QuickActionGrid({ actions, onNavigate }: Props) {
             cursor: 'pointer', transition: 'all 120ms', width: '100%',
           }}
         >
-          <span style={{ fontSize: '18px', flexShrink: 0 }} aria-hidden="true">{action.icon}</span>
+          <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--p)' }} aria-hidden="true">
+            <PhoenixIcon name={action.icon} size={18} />
+          </span>
           <span style={{ fontSize: '12.5px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {t(action.labelKey, lang)}
           </span>

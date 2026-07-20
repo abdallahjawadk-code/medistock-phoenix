@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
@@ -159,7 +160,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '14px 0 8px', color: 'var(--t2)' }}>{t('net_op_requests', lang)}</h4>
       {requests.loading && <PhoenixLoadingState />}
-      {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="📦" title={t('net_op_none', lang)} />}
+      {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="package" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(requests.data ?? []).map(r => (
           <RequestRow key={r.id} label={r.requestNumber} status={r.status}
@@ -170,7 +171,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '18px 0 8px', color: 'var(--t2)' }}>{t('net_op_incoming', lang)}</h4>
       {incoming.loading && <PhoenixLoadingState />}
-      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="🚚" title={t('net_op_none', lang)} />}
+      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(incoming.data ?? []).map(tr => (
           <IncomingTransferRow key={tr.id} lang={lang} transfer={tr} whById={whById}
@@ -215,7 +216,7 @@ function ForwardCreateForm({ lang, warehouses, onCancel, onDone }: {
         <PhoenixInput label={t('net_ds_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
       </div>
       {orgId !== '' && institutions.length === 0 && (
-        <div style={{ marginTop: '10px' }}><PhoenixEmptyState icon="🏬" title={t('net_ds_no_warehouses', lang)} /></div>
+        <div style={{ marginTop: '10px' }}><PhoenixEmptyState icon="warehouse" title={t('net_ds_no_warehouses', lang)} /></div>
       )}
       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
         <PhoenixButton loading={busy} disabled={!canSubmit} onClick={async () => {
@@ -267,7 +268,7 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
       )}
 
       {lines.loading && <PhoenixLoadingState />}
-      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="🧾" title={t('net_op_none', lang)} />}
+      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="file" title={t('net_op_none', lang)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
         {(lines.data ?? []).map(l => (
@@ -389,7 +390,7 @@ function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }:
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       {candidates.length === 0 ? (
-        <PhoenixEmptyState icon="📭" title={t('net_op_none', lang)} />
+        <PhoenixEmptyState icon="package" title={t('net_op_none', lang)} />
       ) : (
         <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', alignItems: 'end' }}>
           <PhoenixSelect label={t('net_op_pick_batch', lang)} value={effStock} onChange={e => setStockId(e.target.value)}
@@ -499,7 +500,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '18px 0 8px', color: 'var(--t2)' }}>{t('net_op_incoming', lang)}</h4>
       {incoming.loading && <PhoenixLoadingState />}
-      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="🚚" title={t('net_op_none', lang)} />}
+      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(incoming.data ?? []).map(sh => (
           <IncomingReturnRow key={sh.id} lang={lang} shipment={sh} whById={whById}
@@ -591,7 +592,7 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
       )}
 
       {lines.loading && <PhoenixLoadingState />}
-      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="🧾" title={t('net_op_none', lang)} />}
+      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="file" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
         {(lines.data ?? []).map(l => (
           <ReturnLineRow key={l.id} lang={lang} line={l} isDraft={isDraft} canSend={canSend} onDone={set} />
@@ -639,7 +640,7 @@ function AddReturnLineForm({ lang, requestId, transfers, sourceWarehouseId, onDo
   return (
     <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
       {linesByTransfer.loading ? <PhoenixLoadingState /> : candidates.length === 0 ? (
-        <PhoenixEmptyState icon="📭" title={t('net_op_no_provenance', lang)} />
+        <PhoenixEmptyState icon="package" title={t('net_op_no_provenance', lang)} />
       ) : (
         <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', alignItems: 'end' }}>
           <PhoenixSelect label={t('net_op_original_line', lang)} value={effOriginal} onChange={e => setOriginalId(e.target.value)}
@@ -820,7 +821,7 @@ function ReceiveLineForm({ lang, label, sent, done, onReceive }: {
   const n = parseInt(qty, 10);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
-  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{label} · ✓</div>;
+  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;
   return (
     <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', alignItems: 'end' }}>
       <span style={{ fontSize: '12.5px', gridColumn: '1 / -1' }}>{label} ({sent})</span>
@@ -844,7 +845,7 @@ function ReceiveReturnLineForm({ lang, label, sent, done, onReceive }: {
   const n = parseInt(qty, 10);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
-  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{label} · ✓</div>;
+  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;
   return (
     <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', alignItems: 'end' }}>
       <span style={{ fontSize: '12.5px', gridColumn: '1 / -1' }}>{label} ({sent})</span>

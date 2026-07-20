@@ -5,7 +5,7 @@
  * Static source-code tests verifying the UX changes without a DB connection.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import {
@@ -13,16 +13,23 @@ import {
   reviewedMigrationFilesAbove,
 } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
 import { actualMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/migration-dir';
+import {
+  readSourceFile,
+  statementAt,
+  statementContaining,
+  signatureAt,
+  enclosingJsxTag,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
 
 function readSrc(rel: string) {
-  return readFileSync(join(SRC, rel), 'utf8');
+  return readSourceFile(join(SRC, rel));
 }
 
 function readPhoenix(rel: string) {
-  return readFileSync(join(PHOENIX, rel), 'utf8');
+  return readSourceFile(join(PHOENIX, rel));
 }
 
 function allTsxFiles(dir: string): string[] {
@@ -39,7 +46,7 @@ function allTsxFiles(dir: string): string[] {
 }
 
 function readFile(path: string) {
-  return readFileSync(path, 'utf8');
+  return readSourceFile(path);
 }
 
 const editor  = readSrc('features/editor/EditorScreen.tsx');
@@ -162,7 +169,7 @@ describe('National code is a real, independent field (not reused batch_number st
   });
 
   it('national code input is LTR/monospace like a code field', () => {
-    const fieldBlock = editor.slice(editor.indexOf('id="ed-national-code"') - 200, editor.indexOf('id="ed-national-code"') + 400);
+    const fieldBlock = enclosingJsxTag(editor, 'id="ed-national-code"');
     expect(fieldBlock).toContain('dir="ltr"');
     expect(fieldBlock).toContain("fontFamily: 'monospace'");
   });
@@ -301,7 +308,7 @@ describe('Similar-material comparison panel: UI', () => {
 
 describe('Similar-material guard: save blocking behavior', () => {
   it('canSubmit factors in similarMatchBlocked (folds the old nationalCodeConflict-only check)', () => {
-    const canSubmitLine = editor.slice(editor.indexOf('const canSubmit ='), editor.indexOf('const canSubmit =') + 300);
+    const canSubmitLine = statementAt(editor, 'const canSubmit =');
     expect(canSubmitLine).toContain('!similarMatchBlocked');
   });
 
@@ -326,7 +333,7 @@ describe('Similar-material guard: no silent clearing of batch_number/expiry_date
   });
 
   it('auto-populate is keyed on the matched row id only (does not clobber in-progress typing on unrelated re-renders)', () => {
-    const effectBlock = editor.slice(editor.indexOf('setNationalCode(existingRow.national_code'), editor.indexOf('setNationalCode(existingRow.national_code') + 400);
+    const effectBlock = statementContaining(editor, 'useEffect(', 'setNationalCode(existingRow.national_code');
     expect(effectBlock).toContain('[existingRow?.id]');
   });
 });
@@ -1379,7 +1386,7 @@ describe('Port management uses permission-based gating, not role-based', () => {
   });
 
   it('PortCard does not receive actorRole prop', () => {
-    const cardSig = instScreen.slice(instScreen.indexOf('function PortCard'), instScreen.indexOf('function PortCard') + 300);
+    const cardSig = signatureAt(instScreen, 'function PortCard');
     expect(cardSig).not.toContain('actorRole');
   });
 
@@ -2266,7 +2273,7 @@ describe('STATUS-EDITOR-CLEANUP-A: near_expiry legacy/display/RPC compatibility'
   const expiryRisk = readSrc('shared/lib/expiry-risk.ts');
 
   it('AvailabilityCondition type still includes near_expiry (saved-data compatibility)', () => {
-    const typeBlock = types.slice(types.indexOf('AvailabilityCondition ='), types.indexOf('AvailabilityCondition =') + 200);
+    const typeBlock = statementAt(types, 'AvailabilityCondition =');
     expect(typeBlock).toContain("'near_expiry'");
   });
 

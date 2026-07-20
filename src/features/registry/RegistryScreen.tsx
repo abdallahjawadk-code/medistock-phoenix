@@ -9,6 +9,7 @@ import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 interface CentralRef { name: string; name_ar: string; unit: string; barcode?: string; category?: string; }
 interface LocalRow {
@@ -56,12 +57,12 @@ export function RegistryScreen() {
 
       {/* Scope notice */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '12px 14px', marginBottom: '16px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ℹ️ {t('scope_note', lang)}
+        <PhoenixIcon name="info" size={15} inline /> {t('scope_note', lang)}
       </div>
 
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: '18px' }}>
-        <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>🔍</span>
+        <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--t2)', display: 'inline-flex' }} aria-hidden="true"><PhoenixIcon name="search" size={15} /></span>
         <input
           type="search"
           placeholder={t('search', lang)}
@@ -73,14 +74,14 @@ export function RegistryScreen() {
       </div>
 
       {!activeOrgId && (
-        <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       )}
       {activeOrgId && loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {activeOrgId && !loading && error && (
         <PhoenixErrorState title={t('load_error', lang)} message={error} onRetry={reload} />
       )}
       {activeOrgId && !loading && !error && filtered.length === 0 && (
-        <PhoenixEmptyState icon="📋" title={t('empty_items', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="clipboard" title={t('empty_items', lang)} description={t('empty_hint', lang)} />
       )}
 
       {activeOrgId && !loading && !error && filtered.length > 0 && (

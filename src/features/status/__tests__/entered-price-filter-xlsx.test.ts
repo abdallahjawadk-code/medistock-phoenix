@@ -12,41 +12,43 @@
  * this repo's established test conventions.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import {
+  readSourceFile,
+  balancedBlockAt,
+  functionBodyAt,
+  declarationValueAt,
+  blockBetween,
+  anchorIndex,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const ROOT = join(__dirname, '../../../../');
 const SRC = join(__dirname, '../../../');
-const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
+const readSrc = (rel: string) => readSourceFile(join(SRC, rel));
 
 const screen = readSrc('features/status/StatusCenterScreen.tsx');
 const exportModule = readSrc('shared/lib/professional-export.ts');
 const strings = readSrc('shared/i18n/strings.ts');
 
-function extractFunction(src: string, marker: string, endMarker: string): string {
-  const start = src.indexOf(marker);
-  expect(start).toBeGreaterThan(-1);
-  const end = src.indexOf(endMarker, start);
-  expect(end).toBeGreaterThan(start);
-  return src.slice(start, end);
-}
-
-const rowsFn = extractFunction(screen, 'const rows = useMemo(', 'const counts = useMemo(');
-const exportFn = extractFunction(screen, 'async function exportXlsx', 'function handleMovementSuccess');
+// Both regions are bounded by their own bracket structure rather than by the
+// declaration that happens to follow them, so inserting a new hook or helper
+// between them cannot silently change what these tests inspect.
+const rowsFn = balancedBlockAt(screen, 'const rows = useMemo(');
+const exportFn = functionBodyAt(screen, 'async function exportXlsx');
 
 describe('A) getAvailabilityByOrg price availability preserved', () => {
   it('the availability service already selects price (no change needed/made here)', () => {
     const service = readSrc('shared/supabase/services/availability.service.ts');
-    const fnStart = service.indexOf('export async function getAvailabilityByOrg');
-    const body = service.slice(fnStart, fnStart + 1400);
+    const body = functionBodyAt(service, 'export async function getAvailabilityByOrg');
     expect(body).toMatch(/\bprice\b/);
   });
 });
 
 describe('B) Status Center displays Entered Price / السعر المدخل', () => {
   it('the shared column list (print/HTML export) includes an Entered Price column right after Quantity', () => {
-    const colsBlock = screen.slice(screen.indexOf("const columns: { key: string"), screen.indexOf('];', screen.indexOf("const columns: { key: string")));
+    const colsBlock = declarationValueAt(screen, 'const columns:');
     const qtyIdx = colsBlock.indexOf("key: 'qty'");
     const priceIdx = colsBlock.indexOf("key: 'price'");
     const supplyIdx = colsBlock.indexOf("key: 'supply'");
@@ -62,13 +64,13 @@ describe('B) Status Center displays Entered Price / السعر المدخل', ()
   });
 
   it('priceDisplay uses row.price only — never calculates/infers/overwrites it', () => {
-    const fn = extractFunction(screen, 'function priceDisplay', '}\n');
+    const fn = functionBodyAt(screen, 'function priceDisplay');
     expect(fn).toContain('price');
     expect(fn).not.toMatch(/quantity\s*\*|price\s*=\s*r\.quantity/);
   });
 
   it('priceDisplay shows "—" for null/undefined/0, and a 2-decimal value otherwise (documented display choice)', () => {
-    const fn = extractFunction(screen, 'function priceDisplay', '}\n');
+    const fn = functionBodyAt(screen, 'function priceDisplay');
     expect(fn).toMatch(/price\s*<=\s*0/);
     expect(fn).toContain('toFixed(2)');
   });
@@ -80,14 +82,14 @@ describe('B) Status Center displays Entered Price / السعر المدخل', ()
 
 describe('C) Price filter UI: all six required modes exist', () => {
   it('PriceFilterMode type declares all six required literal modes', () => {
-    const typeBlock = screen.slice(screen.indexOf('type PriceFilterMode ='), screen.indexOf(';', screen.indexOf('type PriceFilterMode =')));
+    const typeBlock = blockBetween(screen, 'type PriceFilterMode =', ';');
     for (const mode of ['all', 'no_entered_price', 'has_entered_price', 'entered_price_less_than', 'entered_price_greater_than', 'entered_price_between']) {
       expect(typeBlock).toContain(`'${mode}'`);
     }
   });
 
   it('the filter <select> renders an <option> for every required mode', () => {
-    const selectBlock = screen.slice(screen.indexOf('value={priceFilterMode}'), screen.indexOf('</select>', screen.indexOf('value={priceFilterMode}')));
+    const selectBlock = blockBetween(screen, 'value={priceFilterMode}', '</select>');
     for (const mode of ['all', 'no_entered_price', 'has_entered_price', 'entered_price_less_than', 'entered_price_greater_than', 'entered_price_between']) {
       expect(selectBlock).toContain(`value="${mode}"`);
     }
@@ -107,62 +109,52 @@ describe('C) Price filter UI: all six required modes exist', () => {
 describe('D) Price filter logic: no_entered_price / has_entered_price', () => {
   it('no_entered_price includes price null/0 and excludes price > 0 (negation of "has a positive price")', () => {
     expect(rowsFn).toMatch(/priceFilterMode === 'no_entered_price'/);
-    const idx = rowsFn.indexOf("priceFilterMode === 'no_entered_price'");
-    const block = rowsFn.slice(idx, idx + 200);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'no_entered_price') {");
     expect(block).toMatch(/!\(typeof r\.price === 'number' && r\.price > 0\)/);
   });
 
   it('has_entered_price includes only price > 0, excluding null/undefined/0', () => {
     expect(rowsFn).toMatch(/priceFilterMode === 'has_entered_price'/);
-    const idx = rowsFn.indexOf("priceFilterMode === 'has_entered_price'");
-    const block = rowsFn.slice(idx, idx + 200);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'has_entered_price') {");
     expect(block).toMatch(/typeof r\.price === 'number' && r\.price > 0/);
   });
 });
 
 describe('E) Price filter logic: less_than / greater_than / between', () => {
   it('entered_price_less_than filters price < threshold, parsed via parsePriceInput', () => {
-    const idx = rowsFn.indexOf("priceFilterMode === 'entered_price_less_than'");
-    expect(idx).toBeGreaterThan(-1);
-    const block = rowsFn.slice(idx, idx + 500);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'entered_price_less_than') {");
     expect(block).toContain('parsePriceInput(priceValue)');
     expect(block).toMatch(/r\.price < threshold/);
   });
 
   it('entered_price_greater_than filters price > threshold, parsed via parsePriceInput', () => {
-    const idx = rowsFn.indexOf("priceFilterMode === 'entered_price_greater_than'");
-    expect(idx).toBeGreaterThan(-1);
-    const block = rowsFn.slice(idx, idx + 300);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'entered_price_greater_than') {");
     expect(block).toContain('parsePriceInput(priceValue)');
     expect(block).toMatch(/r\.price > threshold/);
   });
 
   it('entered_price_between filters min <= price <= max', () => {
-    const idx = rowsFn.indexOf("priceFilterMode === 'entered_price_between'");
-    expect(idx).toBeGreaterThan(-1);
-    const block = rowsFn.slice(idx, idx + 900);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'entered_price_between') {");
     expect(block).toMatch(/r\.price >= min && r\.price <= max/);
   });
 });
 
 describe('F) Price filter validation: invalid/negative values and min > max are handled safely (never crash)', () => {
   it('parsePriceInput rejects non-numeric and negative values, returning null (never throws)', () => {
-    const fn = extractFunction(screen, 'function parsePriceInput', '}\n');
+    const fn = functionBodyAt(screen, 'function parsePriceInput');
     expect(fn).toContain('Number.isFinite(n)');
     expect(fn).toMatch(/n\s*<\s*0/);
     expect(fn).not.toContain('throw');
   });
 
   it('entered_price_between requires both min and max, and safely returns NO ROWS (not a crash) when either is missing/invalid or min > max', () => {
-    const idx = rowsFn.indexOf("priceFilterMode === 'entered_price_between'");
-    const block = rowsFn.slice(idx, idx + 900);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'entered_price_between') {");
     expect(block).toMatch(/min === null \|\| max === null \|\| min > max/);
     expect(block).toContain('list = [];');
   });
 
   it('a single-value threshold (less_than/greater_than) with an invalid/empty input leaves the filter inactive rather than crashing', () => {
-    const idx = rowsFn.indexOf("priceFilterMode === 'entered_price_less_than'");
-    const block = rowsFn.slice(idx, idx + 500);
+    const block = balancedBlockAt(rowsFn, "priceFilterMode === 'entered_price_less_than') {");
     expect(block).toMatch(/if \(threshold !== null\)/);
   });
 
@@ -189,17 +181,14 @@ describe('G) Price filter combines with existing filters using AND logic', () =>
   });
 
   it('the rows useMemo dependency array includes the new price filter state alongside every pre-existing filter', () => {
-    const depsIdx = rowsFn.indexOf('}, [allRows,');
-    expect(depsIdx).toBeGreaterThan(-1);
-    const deps = rowsFn.slice(depsIdx, rowsFn.indexOf(');', depsIdx));
+    const deps = blockBetween(rowsFn, '}, [allRows,', '])');
     for (const dep of ['filterStatus', 'filterSupply', 'search', 'quantityFilter', 'recentOnly', 'priceFilterMode', 'priceValue', 'priceMin', 'priceMax']) {
       expect(deps).toContain(dep);
     }
   });
 
   it('every price-filter branch narrows `list` (re-filters the already-filtered list), never resets it to allRows', () => {
-    const priceSectionIdx = rowsFn.indexOf("priceFilterMode === 'no_entered_price'");
-    const priceSection = rowsFn.slice(priceSectionIdx);
+    const priceSection = rowsFn.slice(anchorIndex(rowsFn, "priceFilterMode === 'no_entered_price'"));
     expect(priceSection).not.toContain('list = allRows');
   });
 });
@@ -210,7 +199,7 @@ describe('H) XLSX export includes Entered Price / السعر المدخل', () =
   });
 
   it('the Entered Price column is placed right after Quantity and before Condition', () => {
-    const colsBlock = exportModule.slice(exportModule.indexOf('const AVAIL_EXPORT_COLUMNS'), exportModule.indexOf('function availExportCellValue'));
+    const colsBlock = declarationValueAt(exportModule, 'const AVAIL_EXPORT_COLUMNS');
     const qtyIdx = colsBlock.indexOf("key: 'quantity'");
     const priceIdx = colsBlock.indexOf("key: 'enteredPrice'");
     const condIdx = colsBlock.indexOf("key: 'condition'");
@@ -234,7 +223,7 @@ describe('H) XLSX export includes Entered Price / السعر المدخل', () =
 
 describe('I) XLSX Data Dictionary includes Entered Price / السعر المدخل', () => {
   it('AVAIL_EXPORT_DICTIONARY has an entry for AVAIL_EXPORT_HEADERS.enteredPrice', () => {
-    const dictBlock = exportModule.slice(exportModule.indexOf('const AVAIL_EXPORT_DICTIONARY'), exportModule.indexOf('const AVAIL_CONDITION_STYLE'));
+    const dictBlock = declarationValueAt(exportModule, 'const AVAIL_EXPORT_DICTIONARY');
     expect(dictBlock).toContain('AVAIL_EXPORT_HEADERS.enteredPrice');
     expect(dictBlock).toMatch(/user-entered price/i);
   });
@@ -269,7 +258,7 @@ describe('L) No sensitive fields exported', () => {
   });
 
   it('AvailabilityExportRow/AVAIL_EXPORT_COLUMNS still carry no id/uuid/removed_by/org-id-like keys after the enteredPrice addition', () => {
-    const rowType = exportModule.slice(exportModule.indexOf('export interface AvailabilityExportRow'), exportModule.indexOf('export interface AvailabilityExportConfig'));
+    const rowType = balancedBlockAt(exportModule, 'export interface AvailabilityExportRow');
     expect(rowType).not.toMatch(/\bid:\s*string/);
     expect(rowType).not.toMatch(/removed_by/);
     expect(rowType).not.toMatch(/organization_id|distribution_point_id/);

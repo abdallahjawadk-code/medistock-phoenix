@@ -506,9 +506,9 @@ export function OutletAvailabilityReportModal({ open, onClose, outletId, outletN
         <button
           onClick={onClose}
           aria-label={t('close', lang)}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--t2)', padding: '4px 8px' }}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--t2)', padding: '4px 8px', display: 'inline-flex', alignItems: 'center' }}
         >
-          ✕
+          <PhoenixIcon name="close" size={16} />
         </button>
       </div>
 

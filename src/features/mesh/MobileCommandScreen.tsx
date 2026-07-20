@@ -1,6 +1,7 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { getDashboardMetrics, getInstitutionOverviews } from '@/shared/supabase/services/dashboard.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -64,7 +65,9 @@ export function MobileCommandScreen({ onNavigate }: Props) {
                 <div key={o.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lang === 'ar' ? o.name_ar : o.name}</span>
                   <span style={{ padding: '2px 7px', borderRadius: 'var(--rpill)', background: warn ? 'var(--warn2)' : 'var(--ok2)', color: warn ? 'var(--warn)' : 'var(--ok)', fontWeight: 600, fontSize: '10.5px' }}>
-                    {warn ? `⚠ ${o.low + o.missing}` : `● ${t('healthy', lang)}`}
+                    {warn
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><PhoenixIcon name="warning" size={11} inline /> {o.low + o.missing}</span>
+                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} /> {t('healthy', lang)}</span>}
                   </span>
                 </div>
               );

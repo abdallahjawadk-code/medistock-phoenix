@@ -132,7 +132,9 @@ describe('C) AvailabilityItemDetailsModal is read-only', () => {
 
   it('has an explicit close (X) button in addition to the footer Close button', () => {
     expect(detailsModal).toContain('onClick={onClose}');
-    expect(detailsModal).toContain('✕');
+    // Phase E: the close affordance is the canonical Phoenix "close" SVG icon,
+    // not a raw ✕ glyph, but it remains an explicit icon-only close control.
+    expect(detailsModal).toContain('name="close"');
   });
 });
 

@@ -7,6 +7,7 @@ import { upsertAvailability, classifyAvailabilitySaveError, getAvailabilityByPoi
 import { getOrganizations, getOrganization } from '@/shared/supabase/services/organizations.service';
 import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
@@ -360,10 +361,10 @@ export function EditorScreen() {
         <PhoenixOrgScope />
       </div>
 
-      {!activeOrgId && <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {!activeOrgId && <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {activeOrgId && !canViewAvailability && (
-        <PhoenixEmptyState icon="🔒" title={t('avail_no_edit_permission', lang)} description={t('avail_no_edit_permission', lang)} />
+        <PhoenixEmptyState icon="lock" title={t('avail_no_edit_permission', lang)} description={t('avail_no_edit_permission', lang)} />
       )}
 
       {activeOrgId && canViewAvailability && (
@@ -461,7 +462,7 @@ export function EditorScreen() {
                     cursor: isEditMode ? 'default' : 'text',
                   }}
                 />
-                {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>⚠ {t('qty_err', lang)}</p>}
+                {qtyInvalid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="warning" size={12} inline /> {t('qty_err', lang)}</p>}
                 {isEditMode && (
                   <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
                     {t('avail_qty_locked_note', lang)}
@@ -619,8 +620,8 @@ export function EditorScreen() {
                 )}
               </div>
               {similarMatchBlocked && (
-                <p style={{ fontSize: '11.5px', color: 'var(--err)', marginTop: '10px' }} dir="auto">
-                  ⚠ {t('avail_similar_match_conflict', lang)}
+                <p style={{ fontSize: '11.5px', color: 'var(--err)', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '4px' }} dir="auto">
+                  <PhoenixIcon name="warning" size={12} inline /> {t('avail_similar_match_conflict', lang)}
                 </p>
               )}
               <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '10px' }} dir="auto">

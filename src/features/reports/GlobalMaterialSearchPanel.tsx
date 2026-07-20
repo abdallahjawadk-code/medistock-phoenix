@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
@@ -379,12 +380,12 @@ export function GlobalMaterialSearchPanel() {
         </div>
 
         <div role="note" style={{ marginTop: '10px', fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">
-          🛡️ {c.policy}
+          <PhoenixIcon name="scope" size={13} inline /> {c.policy}
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
           <PhoenixButton loading={searching} disabled={organizations.loading} onClick={() => void runSearch()}>
-            🔎 {c.search}
+            <PhoenixIcon name="search" size={13} inline /> {c.search}
           </PhoenixButton>
           <PhoenixButton
             variant="secondary"
@@ -392,7 +393,7 @@ export function GlobalMaterialSearchPanel() {
             disabled={!result || result.rows.length === 0}
             onClick={() => void runExport()}
           >
-            📊 {c.export}
+            <PhoenixIcon name="reports" size={13} inline /> {c.export}
           </PhoenixButton>
         </div>
 
@@ -411,7 +412,7 @@ export function GlobalMaterialSearchPanel() {
       {searching && <PhoenixLoadingState label={c.search} />}
 
       {!searching && result && result.rows.length === 0 && (
-        <PhoenixEmptyState icon="🔎" title={c.noResults} />
+        <PhoenixEmptyState icon="search" title={c.noResults} />
       )}
 
       {!searching && result && result.rows.length > 0 && (
@@ -433,7 +434,7 @@ export function GlobalMaterialSearchPanel() {
 
           {result.truncated && (
             <div role="status" style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: 'var(--r2)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '11px' }}>
-              ⚠ {c.truncated}
+              <PhoenixIcon name="warning" size={13} inline /> {c.truncated}
             </div>
           )}
 

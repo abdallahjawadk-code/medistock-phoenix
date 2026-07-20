@@ -3,7 +3,7 @@
  * Run: npm test -- --run
  *
  * Static source-code tests (same pattern as the other editor test files in
- * this directory: readFileSync + string/regex assertions on EditorScreen.tsx
+ * this directory: source read + string/regex assertions on EditorScreen.tsx
  * and strings.ts — there is no React test renderer wired up in this repo).
  *
  * IMPORTANT — this phase prepares frontend sync for migration 051 (7-column
@@ -17,13 +17,22 @@
  * exercised only when that gate is explicitly turned on.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { join } from 'path';
+import {
+  readSourceFile,
+  balancedBlockAt,
+  statementContaining,
+  functionBodyAt,
+  statementAt,
+  blockBetween,
+  enclosingJsxTag,
+  precedingComment,
+} from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC = join(__dirname, '../../../');
 
 function readSrc(rel: string) {
-  return readFileSync(join(SRC, rel), 'utf8');
+  return readSourceFile(join(SRC, rel));
 }
 
 const editor = readSrc('features/editor/EditorScreen.tsx');
@@ -31,22 +40,21 @@ const strings = readSrc('shared/i18n/strings.ts');
 
 describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: strictExactExistingRow (7-column Option A key) exists behind the gate', () => {
   it('strictExactExistingRow checks scientific_name, concentration, and dosage_form (product key)', () => {
-    const block = editor.slice(editor.indexOf('const strictExactExistingRow = useMemo'), editor.indexOf('const strictExactExistingRow = useMemo') + 700);
+    const block = balancedBlockAt(editor, 'const strictExactExistingRow = useMemo');
     expect(block).toMatch(/r\.scientific_name/);
     expect(block).toMatch(/r\.concentration/);
     expect(block).toMatch(/r\.dosage_form/);
   });
 
   it('strictExactExistingRow additionally checks national_code, batch_number, and expiry_date (the 3 fields migration 051 adds to identity)', () => {
-    const block = editor.slice(editor.indexOf('const strictExactExistingRow = useMemo'), editor.indexOf('const strictExactExistingRow = useMemo') + 700);
+    const block = balancedBlockAt(editor, 'const strictExactExistingRow = useMemo');
     expect(block).toMatch(/r\.national_code/);
     expect(block).toMatch(/r\.batch_number/);
     expect(block).toMatch(/r\.expiry_date/);
   });
 
   it('a comment near the new matching logic flags the migration-051 deployment dependency', () => {
-    const idx = editor.indexOf('const strictExactExistingRow = useMemo');
-    const before = editor.slice(Math.max(0, idx - 700), idx);
+    const before = precedingComment(editor, 'const strictExactExistingRow = useMemo');
     expect(before).toContain('Must only be deployed/enabled with/after migration 051');
     expect(before).toContain('manual apply');
   });
@@ -63,7 +71,7 @@ describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: strictExactExisting
 
 describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: similar-product detection', () => {
   it('similarProductRows matches on product key only and excludes the exact match by id', () => {
-    const block = editor.slice(editor.indexOf('const similarProductRows = useMemo'), editor.indexOf('const similarProductRows = useMemo') + 700);
+    const block = balancedBlockAt(editor, 'const similarProductRows = useMemo');
     expect(block).toMatch(/r\.scientific_name/);
     expect(block).toMatch(/r\.concentration/);
     expect(block).toMatch(/r\.dosage_form/);
@@ -85,30 +93,38 @@ describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: similar-product det
 describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: independent-row confirmation', () => {
   it('an explicit confirmation state exists and resets when the candidate row changes', () => {
     expect(editor).toContain('const [independentRowConfirmed, setIndependentRowConfirmed] = useState(false);');
-    const block = editor.slice(editor.indexOf('const [independentRowConfirmed'), editor.indexOf('const [independentRowConfirmed') + 300);
-    expect(block).toContain('[primarySimilarRow?.id]');
+    // The reset lives in the effect declared immediately after the state, so it
+    // is located by searching forward from the declaration rather than by a
+    // character window that happened to span both.
+    const resetEffect = statementContaining(
+      editor,
+      'useEffect(',
+      'setIndependentRowConfirmed(false);',
+    );
+    expect(resetEffect).toContain('setIndependentRowConfirmed(false);');
+    expect(resetEffect).toContain('[primarySimilarRow?.id]');
   });
 
   it('canSubmit requires confirmation when an independent-row candidate exists', () => {
-    const block = editor.slice(editor.indexOf('const canSubmit ='), editor.indexOf('const canSubmit =') + 400);
+    const block = statementAt(editor, 'const canSubmit =');
     expect(block).toContain('(!hasIndependentRowCandidate || independentRowConfirmed)');
   });
 
   it('doApply re-checks the confirmation guard before calling upsertAvailability', () => {
-    const doApplyBlock = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('await upsertAvailability'));
+    const doApplyBlock = blockBetween(editor, 'async function doApply', 'await upsertAvailability');
     expect(doApplyBlock).toContain('if (hasIndependentRowCandidate && !independentRowConfirmed)');
     expect(doApplyBlock).toContain("t('avail_independent_row_confirm_required', lang)");
   });
 
   it('the panel renders a checkbox bound to independentRowConfirmed', () => {
-    const block = editor.slice(editor.indexOf('{hasIndependentRowCandidate && ('), editor.indexOf('{hasIndependentRowCandidate && (') + 1200);
+    const block = balancedBlockAt(editor, '{hasIndependentRowCandidate && (');
     expect(block).toContain('type="checkbox"');
     expect(block).toContain('checked={independentRowConfirmed}');
     expect(block).toContain('onChange={e => setIndependentRowConfirmed(e.target.checked)}');
   });
 
   it('independentRowConfirmed resets after a successful save', () => {
-    const applyBlock = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('} catch (e)'));
+    const applyBlock = blockBetween(editor, 'async function doApply', '} catch (e)');
     expect(applyBlock).toContain('setIndependentRowConfirmed(false)');
   });
 });
@@ -138,7 +154,7 @@ describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: panel UI and i18n',
 
 describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: quantity lock applies only to the exact match', () => {
   it('the quantity input is still keyed on isEditMode (exactExistingRow), not on similarProductRows/primarySimilarRow', () => {
-    const qtyBlock = editor.slice(editor.indexOf('id="ed-qty"') - 50, editor.indexOf('id="ed-qty"') + 700);
+    const qtyBlock = enclosingJsxTag(editor, 'id="ed-qty"');
     expect(qtyBlock).toContain('disabled={isEditMode}');
     expect(qtyBlock).toContain('readOnly={isEditMode}');
     expect(qtyBlock).not.toContain('similarProductRows');
@@ -147,7 +163,7 @@ describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: quantity lock appli
   });
 
   it('doApply still resends existingRow (exact match) quantity, never a similar row\'s quantity', () => {
-    const applyFn = editor.slice(editor.indexOf('async function doApply'), editor.indexOf('async function doApply') + 2000);
+    const applyFn = functionBodyAt(editor, 'async function doApply');
     expect(applyFn).toMatch(/quantity:\s*isEditMode \? existingRow!\.quantity : qty/);
     expect(applyFn).not.toContain('primarySimilarRow!.quantity');
   });
@@ -155,9 +171,9 @@ describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: quantity lock appli
 
 describe('AVAILABILITY-EDITOR-DUPLICATE-RESOLUTION-B-PREP-A: supply_type/price stay outside independent-row identity', () => {
   it('legacyProductExistingRow / strictExactExistingRow / similarProductRows keys never reference supply_type or price', () => {
-    const legacyBlock = editor.slice(editor.indexOf('const legacyProductExistingRow = useMemo'), editor.indexOf('const legacyProductExistingRow = useMemo') + 500);
-    const strictBlock = editor.slice(editor.indexOf('const strictExactExistingRow = useMemo'), editor.indexOf('const strictExactExistingRow = useMemo') + 700);
-    const similarBlock = editor.slice(editor.indexOf('const similarProductRows = useMemo'), editor.indexOf('const similarProductRows = useMemo') + 700);
+    const legacyBlock = balancedBlockAt(editor, 'const legacyProductExistingRow = useMemo');
+    const strictBlock = balancedBlockAt(editor, 'const strictExactExistingRow = useMemo');
+    const similarBlock = balancedBlockAt(editor, 'const similarProductRows = useMemo');
     expect(legacyBlock).not.toMatch(/r\.supply_type/);
     expect(legacyBlock).not.toMatch(/r\.price/);
     expect(strictBlock).not.toMatch(/r\.supply_type/);
