@@ -7,6 +7,50 @@ languages `ara+eng`, self-hosted from `/assets/ocr`.
 **These numbers are the raw output of the harness, not a target.** Reproduce
 them with the two commands above; the corpus regenerates deterministically.
 
+## Re-measurement at PR #41 HEAD (`7379962`) — 2026-07-20
+
+The harness was re-run in full from the final PR #41 HEAD, after the provider
+fixes in `7379962` (`blocks: true` on `recognize`, `PSM.AUTO` on the worker).
+
+**Previous results and new post-fix results are byte-identical.** Every field
+tally, every condition percentage and every individual miss is unchanged. The
+table below is therefore simultaneously the "previous" and the "post-fix"
+measurement — there is no second set of numbers to report.
+
+This is not a coincidence, and the reason matters more than the numbers:
+
+> **The evaluation harness does not exercise the production provider.**
+> `tools/ocr-eval/ocr-accuracy.eval.ts` builds its own `createWorker(...)` inline
+> (lines 79–91) and never imports `tesseract-provider.ts`. It already passed
+> `{ text: true, blocks: true }` and already set `PSM.AUTO` — those settings are
+> where the production bugs were *discovered*, then ported into the provider.
+> The provider fixes could not have moved these numbers, because the numbers
+> never came from the provider.
+
+So the published figures were never stale in the sense of predating the fixes.
+They carry a different and more serious caveat, recorded under limitations
+below: **they measure a parallel recognition path, not the shipped one.**
+
+Two concrete divergences between the harness path and the app path:
+
+- The harness hardcodes `imageWidth/Height` as `1240 × 1754`; the provider reads
+  true intrinsic dimensions via `readImageDimensions`. Field extraction is
+  text-driven so this does not shift the tallies, but the harness's bounding
+  boxes are not the app's bounding boxes.
+- `src/features/inventory/ocr/image/preprocess.ts` (grayscale, contrast
+  normalisation, sharpen, adaptive threshold, **rotate/deskew**) is referenced
+  only by its own unit test. Neither `OcrIntakeFlow` nor the harness calls it.
+  It is dead code on both paths.
+
+**Fixture type:** synthetic. 30 rendered documents, programmatically degraded.
+No photograph of real packaging is measured anywhere in this table.
+
+**Arabic coverage:** 12 of 30 fixtures carry Arabic (6 `ar-clean-amoxicillin`,
+6 `bilingual-ceftriaxone`). The Arabic-only document declares no
+`scientificName` ground truth, so **Arabic name extraction contributes zero
+scored cases**. Arabic `batchNumber` and `expiryDate` were MISSED on all 6
+conditions. Arabic remains effectively unmeasured, not merely under-measured.
+
 ## Corpus
 
 30 fixtures: 5 fabricated documents × 6 capture conditions.
@@ -25,7 +69,15 @@ added.
 | `en-dense-invoice` | English | Dense, more fields, mfg + expiry |
 
 Conditions: `scan` (clean), `photo` (handheld softness), `rotated` (3.5°),
-`blurred` (out of focus), `glare` (blown highlights), `dim` (poor light).
+`blurred`, `glare` (blown highlights), `dim` (poor light).
+
+**On `blurred`:** inspected directly during the 2026-07-20 capture run, this
+variant is *mild* softening, not "out of focus" as an earlier draft of this file
+called it. Every field in `en-clean-amoxicillin--blurred.png` is legible to a
+human at a glance. OCR still scores 4.0% on it. The gap between what a person
+can read and what the engine can read is therefore much wider than the label
+"blurred" suggests, and this strengthens rather than softens the expectation
+that real photographs will perform worse.
 
 ## Field-level results
 
@@ -58,8 +110,8 @@ not at all. Batch number is the weak field, with 3 wrong readings.
 
 Blur collapses recognition almost completely, which is precisely why the quality
 gate treats blur as a hard blocker and asks for a retake before OCR runs. The
-rotated result is measured WITHOUT deskew applied; the pipeline can deskew when
-the angle is measurable, and that path is not represented in these numbers.
+rotated result is measured without deskew, and no deskew exists on the shipped
+path either (see limitations) — 28.0% is the real figure, not a floor.
 
 ## Two defects this harness found
 
@@ -85,7 +137,15 @@ Both are pinned by unit tests.
 - **Arabic is under-measured.** One Arabic and one bilingual document is not
   enough to characterise Arabic accuracy. The Arabic fixture also omits a
   scientific-name ground truth, so Arabic name extraction is untested.
-- **No deskew in the measurement path.** The rotated numbers are a floor.
+- **The harness measures a parallel path, not the shipped provider.** See the
+  re-measurement section above. Until the harness drives
+  `createTesseractProvider`, these numbers are evidence about the *parser*, not
+  about the feature an operator actually uses.
+- **No deskew anywhere.** An earlier draft of this file said the rotated numbers
+  were a floor because "the pipeline can deskew when the angle is measurable".
+  That is not true of the shipped code: `preprocess.ts` — which contains the
+  only `rotate` implementation — is called by nothing but its own test. The
+  rotated numbers (28.0%) are what the app would actually produce.
 - **Tier-1 catalog matching is inert.** `central_items` has no national-code
   column, so code-based matching cannot fire against the real catalog
   regardless of how well OCR reads the code.

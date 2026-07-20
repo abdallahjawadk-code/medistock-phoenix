@@ -203,6 +203,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               border: '1px solid var(--brd)', background: 'transparent',
               color: 'var(--t2)', fontSize: '10.5px', flexShrink: 0,
               cursor: 'pointer', transition: 'all 120ms',
+              // Sign-out is a real touch target on tablet, where the sidebar is
+              // rendered but the pointer is a finger. It measured 86×26.
+              minHeight: '44px', minWidth: '44px',
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>

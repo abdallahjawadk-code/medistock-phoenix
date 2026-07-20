@@ -92,6 +92,17 @@ interface BuildArgs {
   theme: Theme;
   setLang: (l: Lang) => void;
   setTheme: (t: Theme) => void;
+  /**
+   * Organization the harness should render as active, overriding the persona's
+   * own `organization_id`. A super_admin profile carries `organization_id: null`
+   * exactly as in production, so org-scoped screens (Inventory Center) would
+   * otherwise dead-end on "no organization scope" — in the real app the operator
+   * picks an org with <PhoenixOrgScope />, which the harness cannot drive
+   * because its setActiveOrgId is inert. This override is the harness's stand-in
+   * for that click. It grants NOTHING: authz context, role and every RPC
+   * permission check are unchanged.
+   */
+  orgId?: string | null;
 }
 
 /**
@@ -100,7 +111,8 @@ interface BuildArgs {
  * about authorization behaviour is faked — the harness simply never signs in.
  * All async mutators are inert no-ops: the harness performs no auth actions.
  */
-export function buildQaAppState({ persona, lang, theme, setLang, setTheme }: BuildArgs): AppState {
+export function buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId }: BuildArgs): AppState {
+  const activeOrgId = orgId !== undefined ? orgId : persona.profile.organization_id;
   const mode = currentScopedRbacMode();
   const observability = createRbacObservability(mode);
   const authz = createAuthorizationService({ mode, reporter: observability.reporter });
@@ -130,8 +142,8 @@ export function buildQaAppState({ persona, lang, theme, setLang, setTheme }: Bui
     session: { user: { id: persona.profile.id } } as unknown as AppState['session'],
     profile: persona.profile,
     role: persona.profile.role,
-    activeOrgId: persona.profile.organization_id,
-    setActiveOrgId: () => { /* QA: org scope is fixed per persona */ },
+    activeOrgId,
+    setActiveOrgId: () => { /* QA: org scope is fixed per persona / ?org= */ },
     signIn: noopResult,
     signOut: noop,
     reloadProfile: noop,

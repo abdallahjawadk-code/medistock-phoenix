@@ -28,7 +28,9 @@ export function PhoenixOrgScope() {
       value={activeOrgId ?? ''}
       onChange={e => setActiveOrgId(e.target.value || null)}
       aria-label={t('select_org', lang)}
-      style={{ padding: '8px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px', cursor: 'pointer', maxWidth: '220px' }}
+      // minHeight keeps this a 44px touch target on mobile, where it is the
+      // control that decides which organization every screen below is scoped to.
+      style={{ padding: '8px 12px', minHeight: '44px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px', cursor: 'pointer', maxWidth: '220px' }}
     >
       <option value="">{t('all_orgs', lang)}</option>
       {(orgs ?? []).map(o => (

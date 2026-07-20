@@ -132,12 +132,31 @@ export function OcrReviewWorkspace({
                   borderRadius: '3px',
                   cursor: 'pointer',
                   padding: 0,
-                  // The box itself can be tiny; the hit area must not be.
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  boxSizing: 'content-box',
+                  // The DRAWN rectangle must stay true to the recognized region.
+                  // A previous version put minWidth/minHeight: 44px directly on
+                  // this button with content-box sizing, which inflated every
+                  // small region into a 44px block: the highlight no longer sat
+                  // on the text it came from, defeating the entire point of
+                  // carrying bounding boxes through the pipeline. The hit area
+                  // is enlarged by the child below instead, which paints nothing.
+                  boxSizing: 'border-box',
                 }}
-              />
+              >
+                <span
+                  data-hit-area
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '100%',
+                    height: '100%',
+                    minWidth: '44px',
+                    minHeight: '44px',
+                  }}
+                />
+              </button>
             );
           })}
         </div>

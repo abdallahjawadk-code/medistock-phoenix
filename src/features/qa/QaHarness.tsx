@@ -33,9 +33,9 @@ import { createQaFixtureClient } from './qaFixtureClient';
 // is a no-op in a production build (see client.ts).
 __installQaSupabaseClient(createQaFixtureClient());
 
-type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -44,7 +44,10 @@ function readParams() {
   const theme = (q.get('theme') === 'dark' ? 'dark' : 'light') as Theme;
   const raw = q.get('scene') as SceneId | null;
   const scene: SceneId = raw && SCENE_IDS.includes(raw) ? raw : 'shell';
-  return { persona, lang, theme, scene };
+  // Stand-in for the <PhoenixOrgScope /> click the harness cannot perform;
+  // see buildQaAppState's `orgId`. Null (the default) keeps the persona's own.
+  const org = q.get('org');
+  return { persona, lang, theme, scene, org };
 }
 
 /** A real operational screen (screen 11) rendered against fixture data — proves
@@ -60,6 +63,14 @@ const NetworkTopologyStage = lazy(() =>
 );
 const PhoenixWelcomeExperience = lazy(() =>
   import('@/features/auth/PhoenixWelcomeExperience').then(m => ({ default: m.PhoenixWelcomeExperience })),
+);
+/** Screen 3 — the canonical Inventory Center, including the Beta OCR intake
+ *  assist. Rendered against fixtures so the capture runner can drive the whole
+ *  staged OCR flow (capture → quality → recognize → review → preview) through
+ *  the real visible controls. Every write still resolves to the fixture
+ *  client's read-only error: the harness cannot post stock. */
+const InventoryCenterScreen = lazy(() =>
+  import('@/features/inventory/InventoryCenterScreen').then(m => ({ default: m.InventoryCenterScreen })),
 );
 
 // Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
@@ -117,7 +128,7 @@ function StatesScene({ lang }: { lang: Lang }) {
 
 export function QaHarness() {
   const initial = useMemo(readParams, []);
-  const { persona, lang, theme } = initial;
+  const { persona, lang, theme, org } = initial;
   const active = qaPersona(persona);
 
   // DEV-only: make the harness's OWN navigation functional so a screenshot
@@ -130,13 +141,14 @@ export function QaHarness() {
   // from ?scene=, preserving the existing per-cell URL contract.
   const [scene, setScene] = useState<SceneId>(initial.scene);
   const handleNavigate = (n: number) =>
-    setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 2 ? 'dashboard' : 'shell');
+    setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory' : n === 2 ? 'dashboard' : 'shell');
   // Reflect the active scene as the production screen number its nav item uses,
   // so the correct sidebar/drawer item reads as current (twin = 17 / network).
-  const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11 : scene === 'dashboard' ? 2 : 1;
+  const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11
+    : scene === 'inventory' ? 3 : scene === 'dashboard' ? 2 : 1;
 
   return (
-    <QaAppProvider persona={active} lang={lang} theme={theme}>
+    <QaAppProvider persona={active} lang={lang} theme={theme} orgId={org ?? undefined}>
       <div data-qa-marker={QA_HARNESS_MARKER}>
         <div
           role="note"
@@ -163,6 +175,10 @@ export function QaHarness() {
             {scene === 'institutions' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <InstitutionScreen />
+              </Suspense>
+            ) : scene === 'inventory' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <InventoryCenterScreen />
               </Suspense>
             ) : scene === 'dashboard' ? (
               <Suspense fallback={<PhoenixLoadingState />}>

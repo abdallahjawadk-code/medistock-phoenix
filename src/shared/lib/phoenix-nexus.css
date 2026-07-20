@@ -53,6 +53,11 @@ html body {
   top: 8px;
   inset-inline-start: 8px;
   z-index: calc(var(--z-toast) + 1);
+  /* 44px minimum: the skip link is keyboard-first but is also the first thing a
+     switch/touch user lands on. It measured 40px tall. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 10px 16px;
   color: #fff;
   border-radius: var(--r2);

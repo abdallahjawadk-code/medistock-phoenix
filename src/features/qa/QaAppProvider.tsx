@@ -12,10 +12,12 @@ interface Props {
   persona: QaPersona;
   lang: Lang;
   theme: Theme;
+  /** Overrides the persona's own organization; see buildQaAppState. */
+  orgId?: string | null;
   children: ReactNode;
 }
 
-export function QaAppProvider({ persona, lang: initialLang, theme: initialTheme, children }: Props) {
+export function QaAppProvider({ persona, lang: initialLang, theme: initialTheme, orgId, children }: Props) {
   const [lang, setLang] = useState<Lang>(initialLang);
   const [theme, setTheme] = useState<Theme>(initialTheme);
 
@@ -31,8 +33,8 @@ export function QaAppProvider({ persona, lang: initialLang, theme: initialTheme,
   }, [lang, theme]);
 
   const value = useMemo(
-    () => buildQaAppState({ persona, lang, theme, setLang, setTheme }),
-    [persona, lang, theme],
+    () => buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId }),
+    [persona, lang, theme, orgId],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
