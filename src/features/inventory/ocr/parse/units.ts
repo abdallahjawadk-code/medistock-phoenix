@@ -25,9 +25,16 @@ const UNIT_ALIASES: ReadonlyArray<readonly [RegExp, StrengthUnit]> = [
 ];
 
 export function canonicalUnit(raw: string): StrengthUnit | null {
-  const token = normalizeWhitespace(raw).replace(/\.$/, '');
+  const token = normalizeWhitespace(raw);
   for (const [pattern, unit] of UNIT_ALIASES) {
     if (pattern.test(token)) return unit;
+  }
+  // Retry with internal periods stripped so "I.U." and "mg." reach the same
+  // aliases as "IU" and "mg" without needing a dotted variant for each entry.
+  const undotted = token.replace(/\./g, '');
+  if (undotted === token) return null;
+  for (const [pattern, unit] of UNIT_ALIASES) {
+    if (pattern.test(undotted)) return unit;
   }
   return null;
 }
@@ -129,27 +136,36 @@ export function parseConcentration(input: string): Concentration | null {
   return null;
 }
 
+/**
+ * Script-neutral word boundary. JavaScript's `\b` is defined on ASCII word
+ * characters even under /u, so `\bأقراص\b` never matches — both sides of the
+ * Arabic run look like non-word characters and no boundary is produced. These
+ * lookarounds work identically for Latin and Arabic.
+ */
+const boundedAlternatives = (alternatives: string): RegExp =>
+  new RegExp(String.raw`(?<![\p{L}\p{N}])(?:${alternatives})(?![\p{L}\p{N}])`, 'iu');
+
 /** Dosage forms, bilingual. Order matters: longer/more specific first. */
 const DOSAGE_FORMS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/\b(film[- ]?coated tablets?|أقراص ملبسة)\b/iu, 'Film-coated tablet'],
-  [/\b(effervescent tablets?|أقراص فوارة)\b/iu, 'Effervescent tablet'],
-  [/\b(tablets?|tabs?|أقراص|قرص|حبوب)\b/iu, 'Tablet'],
-  [/\b(capsules?|caps?|كبسولات|كبسولة)\b/iu, 'Capsule'],
-  [/\b(oral suspension|معلق فموي|شراب معلق)\b/iu, 'Oral suspension'],
-  [/\b(syrups?|شراب)\b/iu, 'Syrup'],
-  [/\b(injections?|ampoules?|amp|حقن|أمبولة|إبر)\b/iu, 'Injection'],
-  [/\b(vials?|فايل|قنينة)\b/iu, 'Vial'],
-  [/\b(infusions?|محلول وريدي)\b/iu, 'Infusion'],
-  [/\b(creams?|كريم)\b/iu, 'Cream'],
-  [/\b(ointments?|مرهم)\b/iu, 'Ointment'],
-  [/\b(gels?|جل|هلام)\b/iu, 'Gel'],
-  [/\b(eye drops?|قطرة عين|قطرات عين)\b/iu, 'Eye drops'],
-  [/\b(ear drops?|قطرة أذن)\b/iu, 'Ear drops'],
-  [/\b(drops?|قطرة|نقط)\b/iu, 'Drops'],
-  [/\b(suppositor(y|ies)|تحاميل|لبوس)\b/iu, 'Suppository'],
-  [/\b(inhalers?|بخاخ|مستنشق)\b/iu, 'Inhaler'],
-  [/\b(sachets?|أكياس|كيس)\b/iu, 'Sachet'],
-  [/\b(powders?|مسحوق|بودرة)\b/iu, 'Powder'],
+  [boundedAlternatives('film[- ]?coated tablets?|أقراص ملبسة'), 'Film-coated tablet'],
+  [boundedAlternatives('effervescent tablets?|أقراص فوارة'), 'Effervescent tablet'],
+  [boundedAlternatives('tablets?|tabs?|أقراص|قرص|حبوب'), 'Tablet'],
+  [boundedAlternatives('capsules?|caps?|كبسولات|كبسولة'), 'Capsule'],
+  [boundedAlternatives('oral suspension|معلق فموي|شراب معلق'), 'Oral suspension'],
+  [boundedAlternatives('syrups?|شراب'), 'Syrup'],
+  [boundedAlternatives('injections?|ampoules?|amp|حقن|أمبولة|إبر'), 'Injection'],
+  [boundedAlternatives('vials?|فايل|قنينة'), 'Vial'],
+  [boundedAlternatives('infusions?|محلول وريدي'), 'Infusion'],
+  [boundedAlternatives('creams?|كريم'), 'Cream'],
+  [boundedAlternatives('ointments?|مرهم'), 'Ointment'],
+  [boundedAlternatives('gels?|جل|هلام'), 'Gel'],
+  [boundedAlternatives('eye drops?|قطرة عين|قطرات عين'), 'Eye drops'],
+  [boundedAlternatives('ear drops?|قطرة أذن'), 'Ear drops'],
+  [boundedAlternatives('drops?|قطرة|نقط'), 'Drops'],
+  [boundedAlternatives('suppositor(?:y|ies)|تحاميل|لبوس'), 'Suppository'],
+  [boundedAlternatives('inhalers?|بخاخ|مستنشق'), 'Inhaler'],
+  [boundedAlternatives('sachets?|أكياس|كيس'), 'Sachet'],
+  [boundedAlternatives('powders?|مسحوق|بودرة'), 'Powder'],
 ];
 
 export function parseDosageForm(input: string): string | null {
