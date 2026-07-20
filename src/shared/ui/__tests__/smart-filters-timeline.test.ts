@@ -271,13 +271,13 @@ describe('21. RTL/LTR handling remains present', () => {
 });
 
 describe('22. Mobile wrapping classes/styles exist', () => {
-  it('SmartFilterChips wraps with flexWrap and meets the 38px minimum touch height', () => {
+  it('SmartFilterChips wraps with flexWrap and meets the 44px minimum touch height', () => {
     expect(smartFilterChips).toContain("flexWrap: 'wrap'");
-    expect(smartFilterChips).toContain("minHeight: '38px'");
+    expect(smartFilterChips).toContain("minHeight: '44px'");
   });
 
-  it('MovementHistoryModal view-toggle buttons meet the 38px minimum touch height', () => {
-    expect(movementHistoryModal).toContain("minHeight: '38px'");
+  it('MovementHistoryModal view-toggle buttons meet the 44px minimum touch height', () => {
+    expect(movementHistoryModal).toContain("minHeight: '44px'");
   });
 });
 

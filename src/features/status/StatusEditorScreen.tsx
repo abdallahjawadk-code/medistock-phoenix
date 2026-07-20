@@ -14,6 +14,8 @@ import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
@@ -181,7 +183,7 @@ export function StatusEditorScreen() {
         <PhoenixOrgScope />
       </div>
 
-      {!activeOrgId && <PhoenixEmptyState icon="📊" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
+      {!activeOrgId && <PhoenixEmptyState icon="reports" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />}
 
       {activeOrgId && (
         <>
@@ -204,13 +206,13 @@ export function StatusEditorScreen() {
                   above the (potentially horizontally scrollable) table below. */}
               <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
                 <button onClick={exportXlsx} disabled={filtered.length === 0 || xlsxBusy} aria-label={t('se_export_excel', lang)} style={actionBtnStyle}>
-                  📊 {t('se_export_excel', lang)}
+                  <PhoenixIcon name="reports" size={14} inline /> {t('se_export_excel', lang)}
                 </button>
                 <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_export_pdf', lang)} style={actionBtnStyle}>
-                  📑 {t('se_export_pdf', lang)}
+                  <PhoenixIcon name="file" size={14} inline /> {t('se_export_pdf', lang)}
                 </button>
                 <button onClick={printReport} disabled={filtered.length === 0} aria-label={t('se_print', lang)} style={actionBtnStyle}>
-                  🖨 {t('se_print', lang)}
+                  <PhoenixIcon name="print" size={14} inline /> {t('se_print', lang)}
                 </button>
               </div>
             </div>
@@ -218,9 +220,11 @@ export function StatusEditorScreen() {
 
           {/* Data table */}
           {records.loading ? (
-            <p style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>{t('loading', lang)}</p>
+            <PhoenixLoadingState label={t('loading', lang)} />
+          ) : records.error ? (
+            <PhoenixEmptyState icon="warning" title={t('load_error', lang)} description={records.error} />
           ) : filtered.length === 0 ? (
-            <PhoenixEmptyState icon="📊" title={t('se_no_records', lang)} description={t('empty_hint', lang)} />
+            <PhoenixEmptyState icon="reports" title={t('se_no_records', lang)} description={t('empty_hint', lang)} />
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>

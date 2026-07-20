@@ -160,14 +160,14 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
           <button
             onClick={() => setViewMode('table')}
             aria-pressed={viewMode === 'table'}
-            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '5px 12px', minHeight: '44px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
 <PhoenixIcon name="status" size={14} inline /> {t('mt_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('timeline')}
             aria-pressed={viewMode === 'timeline'}
-            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '5px 12px', minHeight: '44px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
 <PhoenixIcon name="clock" size={14} inline /> {t('mt_view_timeline', lang)}
           </button>

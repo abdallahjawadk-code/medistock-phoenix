@@ -14,6 +14,7 @@ import { getOrganizations } from '@/shared/supabase/services/organizations.servi
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -446,12 +447,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   const quickActions: QuickAction[] = useMemo(() => {
     const actions: QuickAction[] = [
-      { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-      { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-      { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-      { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+      { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+      { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+      { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
+      { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
     ];
-    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: '👥', labelKey: 'nav_users' });
+    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: 'users', labelKey: 'nav_users' });
     return actions;
   }, [canSeeUsers]);
 
@@ -500,47 +501,47 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // only toggles the client-side state above; no new reads, no backend calls.
   const smartFilterChips: SmartFilterChipItem[] = [
     {
-      key: 'all', labelKey: 'sc_all', icon: '🔎',
+      key: 'all', labelKey: 'sc_all', icon: 'search',
       active: filterStatus === '' && quantityFilter === 'all' && !recentOnly,
       onClick: () => { setFilterStatus(''); setQuantityFilter('all'); setRecentOnly(false); },
     },
     {
-      key: 'available', labelKey: 'cond_available', icon: '✅',
+      key: 'available', labelKey: 'cond_available', icon: 'check',
       active: filterStatus === 'available',
       onClick: () => setFilterStatus(prev => (prev === 'available' ? '' : 'available')),
     },
     {
-      key: 'low_stock', labelKey: 'cond_low_stock', icon: '⚠️',
+      key: 'low_stock', labelKey: 'cond_low_stock', icon: 'warning',
       active: filterStatus === 'low_stock',
       onClick: () => setFilterStatus(prev => (prev === 'low_stock' ? '' : 'low_stock')),
     },
     {
-      key: 'missing', labelKey: 'cond_missing', icon: '❌',
+      key: 'missing', labelKey: 'cond_missing', icon: 'close',
       active: filterStatus === 'missing',
       onClick: () => setFilterStatus(prev => (prev === 'missing' ? '' : 'missing')),
     },
     {
-      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: '⏱️',
+      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: 'clock',
       active: filterStatus === 'near_expiry',
       onClick: () => setFilterStatus(prev => (prev === 'near_expiry' ? '' : 'near_expiry')),
     },
     {
-      key: 'expired', labelKey: 'cond_expired', icon: '🚫',
+      key: 'expired', labelKey: 'cond_expired', icon: 'ban',
       active: filterStatus === 'expired',
       onClick: () => setFilterStatus(prev => (prev === 'expired' ? '' : 'expired')),
     },
     {
-      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: '📦',
+      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: 'package',
       active: quantityFilter === 'has_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'has_quantity' ? 'all' : 'has_quantity')),
     },
     {
-      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: '🕳️',
+      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: 'info',
       active: quantityFilter === 'zero_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'zero_quantity' ? 'all' : 'zero_quantity')),
     },
     {
-      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: '🕒',
+      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: 'refresh',
       active: recentOnly,
       onClick: () => setRecentOnly(prev => !prev),
     },
@@ -743,13 +744,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           onClick={() => setMainTab('live')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'live' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'live' ? 'var(--pd)' : 'var(--t)' }}
         >
-          📋 {t('nav_status_center', lang)}
+          <PhoenixIcon name="clipboard" size={14} inline /> {t('nav_status_center', lang)}
         </button>
         <button
           onClick={() => setMainTab('audit')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'audit' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'audit' ? 'var(--pd)' : 'var(--t)' }}
         >
-          📜 {t('tab_audit', lang)}
+          <PhoenixIcon name="file" size={14} inline /> {t('tab_audit', lang)}
         </button>
       </div>
 
@@ -766,18 +767,18 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
       {/* Notice: reporting only — no auto-transfer (safety disclaimer) */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ℹ️ {t('sc_no_exchange', lang)}
+        <PhoenixIcon name="info" size={15} inline /> {t('sc_no_exchange', lang)}
       </div>
 
       {/* Report header card (printable info) */}
       <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '16px', fontWeight: 800 }}>📋 {t('sc_report_title', lang)}</span>
+          <span style={{ fontSize: '16px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="clipboard" size={16} inline /> {t('sc_report_title', lang)}</span>
           <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ok)', background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--rpill)', padding: '1px 8px' }}>LIVE</span>
         </div>
         <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          {orgName && <span>🏥 {orgName}</span>}
-          <span>🕒 {t('sc_generated_at', lang)}: {generatedAt()}</span>
+          {orgName && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="hospital" size={13} inline /> {orgName}</span>}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="clock" size={13} inline /> {t('sc_generated_at', lang)}: {generatedAt()}</span>
           <span>Σ {t('sc_total_rows', lang)}: {rows.length}</span>
         </div>
         {/* Counts by status */}
@@ -817,9 +818,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
+            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="reports" size={14} inline /> {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}</button>
           </div>
         </div>
 
@@ -838,13 +839,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             onClick={() => setViewMode('table')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📋 {t('sc_view_table', lang)}
+            <PhoenixIcon name="clipboard" size={14} inline /> {t('sc_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('outlet')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📦 {t('sc_view_outlet', lang)}
+            <PhoenixIcon name="outlet" size={14} inline /> {t('sc_view_outlet', lang)}
           </button>
         </div>
 
@@ -1009,7 +1010,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           display name. */}
                       {isRemoved ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <PhoenixStatusBadge variant="err" label={`🚫 ${t('sc_removed_badge', lang)}`} />
+                          <PhoenixStatusBadge variant="err" icon="ban" label={t('sc_removed_badge', lang)} />
                           <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
                             {removalReasonLabel(r.removal_reason, lang)}
                           </span>
@@ -1058,7 +1059,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                                 aria-label={t('sc_adjust_qty', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                               >
-                                ✏️ {t('sc_adjust_qty', lang)}
+                                <PhoenixIcon name="editor" size={12} inline /> {t('sc_adjust_qty', lang)}
                               </button>
                             )
                           )}
@@ -1068,7 +1069,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                               aria-label={t('mvmt_history_action', lang)}
                               style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                             >
-                              🕘 {t('mvmt_history_action', lang)}
+                              <PhoenixIcon name="clock" size={12} inline /> {t('mvmt_history_action', lang)}
                             </button>
                           )}
                         </div>
@@ -1141,7 +1142,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       {/* Material Exchange Command Center CTA */}
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>🔄 {t('material_exchange_center', lang)}</div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="refresh" size={15} inline /> {t('material_exchange_center', lang)}</div>
           <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '3px', opacity: 0.85 }}>{t('duplicate_exchange_moved_notice', lang)}</div>
         </div>
         <button

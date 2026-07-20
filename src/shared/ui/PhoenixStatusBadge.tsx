@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react';
+import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 type BadgeVariant = 'ok' | 'warn' | 'err' | 'info' | 'neutral' | 'primary' | 'frozen';
 
@@ -6,6 +7,8 @@ interface Props {
   variant: BadgeVariant;
   label: string;
   dot?: boolean;
+  /** Optional leading Phoenix SVG icon (replaces the old emoji-in-label idiom). */
+  icon?: PhoenixIconName;
   style?: CSSProperties;
 }
 
@@ -23,7 +26,7 @@ const badgeMap: Record<BadgeVariant, CSSProperties> = {
   frozen:  { background: 'var(--surface2)', color: 'var(--muted)',  borderColor: 'var(--line)', opacity: 0.8 },
 };
 
-export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props) {
+export function PhoenixStatusBadge({ variant, label, dot = false, icon, style }: Props) {
   return (
     <span className="premium-status-badge" style={{
       padding: '2px 8px',
@@ -34,7 +37,7 @@ export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props
       fontWeight: 700,
       display: 'inline-flex',
       alignItems: 'center',
-      gap: dot ? '4px' : undefined,
+      gap: (dot || icon) ? '4px' : undefined,
       flexShrink: 0,
       whiteSpace: 'nowrap',
       ...badgeMap[variant],
@@ -46,6 +49,7 @@ export function PhoenixStatusBadge({ variant, label, dot = false, style }: Props
           background: 'currentColor', display: 'inline-block',
         }} />
       )}
+      {icon && <PhoenixIcon name={icon} size={11} inline aria-hidden />}
       {label}
     </span>
   );
