@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "assets:phoenix": "node scripts/phoenix-assets.mjs",
-    "capture:phoenix": "node scripts/phoenix-capture.mjs"
+    "capture:phoenix": "node scripts/phoenix-capture.mjs",
+    "ocr:assets": "node scripts/ocr-assets.mjs",
+    "prebuild": "node scripts/ocr-assets.mjs"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.8",
@@ -27,6 +29,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
+    "tesseract.js": "^7.0.0",
     "three": "^0.169.0"
   },
   "devDependencies": {
