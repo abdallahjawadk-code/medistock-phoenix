@@ -4,9 +4,38 @@ Nothing in this PR may be merged or deployed while any item below is open.
 
 ---
 
+## Live environment — read-only findings (verified before authoring 078)
+
+Recorded because they change the risk profile of blockers 2 and 3.
+
+* PostgreSQL 17.6. `supabase_migrations.schema_migrations` = **77 rows, max
+  077** — exactly matching the repository. **No drift.**
+* Highest migration across the registry and **every** remote branch is 077, so
+  078 is the first genuinely unused number. (Note: `066` is already taken by
+  `066_phoenix_inventory_network_expand.sql`; "migration-066+" in blocker 3 means
+  "066 or later", not that 066 is free.)
+* **Every inventory table is EMPTY**: `warehouse_stock`,
+  `warehouse_stock_movements`, `item_availability`, `outlet_stock` — all 0 rows.
+  Duplicate lot-identity groups: 0. No null/negative/blank invalid state.
+* Configuration data IS populated: 5 organizations, 4 profiles, 3 warehouses,
+  5 distribution points, 112 permission keys, 882 role defaults, 9 QR tokens.
+
+**Consequence for blocker 3:** there is currently no `item_availability` data to
+migrate or reconcile. That makes the replacement far cheaper than assumed — but
+the migration must still carry a precondition that ABORTS if rows exist at apply
+time, because the owner applies manually at a later date and data may appear
+first. Do not write a migration that assumes emptiness.
+
+---
+
 ## 1. Migration 065 — expected-generation protection
 
-**Status: open. Fail-closed gate is landed; the server fix is not.**
+**Status: open. Server contract AUTHORED (078) and client wired, NOT APPLIED.**
+
+Migration `078_phoenix_warehouse_receipt_expected_generation.sql` + commit
+`0a77830`. The gate `MIGRATION_065_CONCURRENCY_RESOLVED` stays **false** until
+078 is applied and parity observed. See
+`docs/blocker-migration-065-accumulating-receipt-concurrency.md`.
 
 An accumulating-receipt flow can double-post across two devices: both read the
 same generation, both post, and the second write lands on stale state. The

@@ -1,6 +1,27 @@
 # BLOCKER — migration-065 accumulating-receipt cross-device concurrency
 
-Status: **OPEN — HARD PRE-DEPLOYMENT BLOCKER.**
+Status: **OPEN — HARD PRE-DEPLOYMENT BLOCKER. Server contract AUTHORED, NOT APPLIED.**
+
+> **Where this stands.** Migration
+> `078_phoenix_warehouse_receipt_expected_generation.sql` implements the §2
+> contract and the client is wired to it (commit `0a77830`). The blocker stays
+> OPEN because **078 has not been applied to any database** — this repository
+> never applies migrations automatically; the owner applies them manually after
+> review.
+>
+> `MIGRATION_065_CONCURRENCY_RESOLVED` therefore remains `false`, asserted by a
+> test. Flip it only after BOTH: 078 is applied, and the guarded path is
+> observed working in a real environment.
+>
+> The delivered design differs from §2 in two deliberate ways, each argued in
+> the migration header:
+> * the generation advances via a **trigger**, not by editing each RPC body, so
+>   it advances for every writer — including the legacy RPCs that stay callable
+>   during the parity window — and cannot be forgotten by a later RPC author;
+> * the precondition lives in **new, distinctly-named guarded RPCs** that
+>   delegate to the 065 originals, because adding a parameter to an existing
+>   PostgreSQL function creates a second overload instead of replacing it.
+
 Owner path: `src/features/inventory/warehouse-intake.service.ts`
 (`receiveWarehouseStock`, additive `applyWarehouseStockMovement`).
 Gate: `src/features/inventory/warehouse-intake-safety.ts`.
