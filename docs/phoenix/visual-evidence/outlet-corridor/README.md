@@ -89,18 +89,78 @@ Center"** above an Outlet Operations page, in both AR and EN. Fixed by mapping
 `18: 'nav_outlet_ops'`, and now asserted by `assertTopbarTitle` so it cannot
 regress silently.
 
-## Known gaps
+## Return-receipt corridor
 
-- **Returns receipt actions are not yet captured.** The QA fixture catalog has
-  no outlet return-request rows, so the Returns tab renders its empty state and
-  the canonical receipt actions (print preview, optional-field selector, QR
-  lookup, XLSX export) are not reachable from the harness. The runner reports
-  this rather than silently skipping. Workbook structure, locked trace fields,
-  AR/EN headers and formula-injection neutralisation are covered directly by
-  `src/features/movement/__tests__/receipt-xlsx.test.ts`.
+`scripts/phoenix-capture-return-receipts.mjs` closes the gap the first pass
+reported. The canonical receipt surface only exists AFTER a receive, so it was
+unreachable from SELECT fixtures alone.
+
+```bash
+node scripts/phoenix-capture-return-receipts.mjs http://127.0.0.1:5191
+```
+
+It reaches the queue through real controls only — sidebar → Inventory Center →
+warehouse picker → "Receive outlet returns" — then receives, and captures the
+optional/locked print-field selector, the live print preview, the QR canonical
+UUID, and the receive outcome, in EN/dark and AR/light. Screen 18 → Movement
+status resolves the return REQUEST from its canonical UUID.
+
+Migration-071 fixtures cover submitted / partially-fulfilled / completed /
+rejected requests and in-transit / partially-received / received shipments, with
+a short-shipped line carrying a stated difference. Ids are canonical UUIDs
+because the QR payload and the status lookup both reject anything else.
+
+### Simulated mutation outcomes — read this
+
+`QA_MUTATION_OUTCOMES` registers a small, explicit allowlist of migration-071
+write RPCs that resolve to a deterministic LOCAL outcome. Nothing is written, no
+database is contacted, and no permission is decided or bypassed — the real RPC
+is untouched and re-checks authorization server-side. Every RPC outside the
+allowlist still fails closed with `QA_READONLY`, which
+`src/features/qa/__tests__/qa-fixture-client.test.ts` asserts explicitly.
+
+**These captures prove the screen renders correctly after a write. They prove
+nothing about whether the real write would be permitted.**
+
+### XLSX validation
+
+`docs/phoenix/visual-evidence/outlet-corridor/xlsx/` holds the workbooks
+downloaded from the real browser export. Validation is not a ZIP-signature
+sniff: the bytes are re-loaded with `ExcelJS.xlsx.load` and asserted for three
+sheets, the locked trace key and shipment number, canonical fixture values
+(`Amoxicillin`, `B4471X`), AR vs EN sheet names, `rightToLeft` on the AR
+workbook only, no live formula cells, and no unneutralised `= + - @` lead.
+
+## Defects found and fixed by this evidence
+
+1. `SCREEN_TITLE_KEYS` had no entry for screen 18, so the topbar fell back to
+   `nav_status_center`: the corridor rendered **"Status Center"** above an
+   Outlet Operations page, AR and EN. Fixed, and asserted by `assertTopbarTitle`.
+2. `MANDATORY_HEADER_FIELDS` carries `'qr'`, but `mv_h_qr` had no string, and
+   `t()` falls back to its own key — so the print dialog listed a literal
+   **`mv_h_qr`** among the mandatory traceability fields, in both languages.
+   Fixed, and asserted by `assertNoRawI18nKeys`.
+3. `CurrentMovementStatus` sampled `navigator.onLine` during render without
+   subscribing, so its offline banner was latched at mount. Replaced with the
+   subscribed `useOnlineStatus` hook; `readOnlineStatus` also now guards the
+   PROPERTY, because modern Node defines a global `navigator` with no `onLine`.
+
+## Known gaps and observations
+
+- **The Screen-18 Returns tab receipt is still not captured.** Its actions
+  appear only after the composer CREATES a request, and the create path is not
+  in the mutation allowlist. The return REQUEST document is instead evidenced
+  through Movement status, which resolves it from canonical server rows.
+- `useReturnReceivePermission` calls the module-level `supabaseRbacTransport`
+  directly rather than the injected `authz` transport, so the harness cannot
+  influence it and only `super_admin` (which short-circuits) reaches the Returns
+  tab. Not a security defect — the RPC re-checks server-side — but it makes the
+  preflight untestable through the service seam.
 - `Accept all safe lines (0)` is correctly `disabled` when there is nothing to
   accept, but keeps primary-button styling, so it reads as actionable. Cosmetic,
   not a permission defect.
+- Shipment `status` renders as the raw enum (`in_transit`) inside the receipt in
+  both languages. Not an i18n key leak; a polish item.
 
 ## Inventory
 

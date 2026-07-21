@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { createQaFixtureClient } from '../qaFixtureClient';
+import { QA_MUTATION_OUTCOMES } from '../qaData';
 
 /**
- * VISUAL-QA-HARNESS-A — the fixture client is SELECT-only. These lock the hard
- * constraint: reads return deterministic fixtures; every write path and every
- * unmapped/mutating RPC resolves to a clear QA error and touches nothing.
+ * VISUAL-QA-HARNESS-A — the fixture client performs no writes. These lock the
+ * hard constraint: reads return deterministic fixtures; every table write path
+ * and every RPC outside the small migration-071 allowlist resolves to a clear
+ * QA error and touches nothing. The allowlisted RPCs return a canned LOCAL
+ * outcome so post-write screens can be captured — they contact no database and
+ * decide no permission.
  */
 describe('QA fixture client (read-only)', () => {
   const client = createQaFixtureClient();
@@ -40,5 +44,59 @@ describe('QA fixture client (read-only)', () => {
     const { data, error } = await client.rpc('assign_profile_role', {});
     expect(data).toBeNull();
     expect((error as { code?: string } | null)?.code).toBe('QA_READONLY');
+  });
+});
+
+/**
+ * The allowlist exists so post-write surfaces (the canonical receipt) can be
+ * captured. It must stay a SMALL, EXPLICIT list that fails closed by default —
+ * these tests are what stops it quietly becoming "the harness can write".
+ */
+describe('simulated mutation outcomes are narrow and fail closed', () => {
+  const client = createQaFixtureClient();
+
+  it('resolves an allowlisted 071 write RPC to its deterministic outcome', async () => {
+    const { data, error } = await client.rpc('phoenix_receive_outlet_return_shipment_line', {});
+    expect(error).toBeNull();
+    expect((data as { ok?: boolean } | null)?.ok).toBe(true);
+  });
+
+  it('returns the canonical request id the commit runner reads back', async () => {
+    const { data } = await client.rpc('phoenix_request_outlet_return', {});
+    // movement-commit's readId looks for exactly this key.
+    expect((data as Record<string, unknown>)['return_request_id'])
+      .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it.each([
+    'phoenix_cancel_outlet_return_request',
+    'phoenix_review_outlet_return_request',
+    'phoenix_send_outlet_return_shipment_line',
+    'phoenix_delete_outlet_return_request_line',
+    'phoenix_recall_outlet_stock',
+    'phoenix_create_warehouse_dispatch',
+    'phoenix_upsert_availability',
+  ])('still fails closed for the non-allowlisted write RPC %s', async (fn) => {
+    const { data, error } = await client.rpc(fn, {});
+    expect(data).toBeNull();
+    expect((error as { code?: string } | null)?.code).toBe('QA_READONLY');
+  });
+
+  it('keeps the allowlist small enough to review at a glance', () => {
+    expect(Object.keys(QA_MUTATION_OUTCOMES).length).toBeLessThanOrEqual(6);
+  });
+
+  it('allowlists only migration-071 outlet-return writes', () => {
+    for (const name of Object.keys(QA_MUTATION_OUTCOMES)) {
+      expect(name).toMatch(/^phoenix_(request|add|submit|receive)_outlet_return/);
+    }
+  });
+
+  it('no table write is reachable, allowlist or not', async () => {
+    const builder = client.from('outlet_return_shipment_lines') as unknown as
+      Record<string, () => PromiseLike<{ data: unknown; error: { code: string } | null }>>;
+    const { data, error } = await builder.update();
+    expect(data).toBeNull();
+    expect(error?.code).toBe('QA_READONLY');
   });
 });

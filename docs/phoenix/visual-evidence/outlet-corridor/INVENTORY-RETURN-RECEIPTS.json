@@ -1,0 +1,24 @@
+{
+  "base": "http://127.0.0.1:5191",
+  "capturedAt": "2026-07-21T10:50:10.190Z",
+  "artifacts": [
+    "returns-bulk-outcome-ar-light",
+    "returns-bulk-outcome-en-dark",
+    "returns-individual-lines-ar-light",
+    "returns-individual-lines-en-dark",
+    "returns-print-field-selector-ar-light",
+    "returns-print-field-selector-en-dark",
+    "returns-print-preview-ar-light",
+    "returns-print-preview-en-dark",
+    "returns-qr-canonical-uuid-ar-light",
+    "returns-qr-canonical-uuid-en-dark",
+    "returns-queue-ar-light",
+    "returns-queue-en-dark",
+    "returns-receipt-actions-ar-light",
+    "returns-receipt-actions-en-dark",
+    "returns-request-status-ar",
+    "returns-request-status-en",
+    "xlsx/return-shipment-receipt-ar.xlsx",
+    "xlsx/return-shipment-receipt-en.xlsx"
+  ]
+}

@@ -11,6 +11,7 @@
  */
 import { useCallback, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { useOnlineStatus } from '@/shared/lib/useOnlineStatus';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
@@ -52,7 +53,13 @@ interface Props {
 
 export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props) {
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
-  const online = isOnline ?? (() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  // Subscribed, not sampled. Reading navigator.onLine during render left the
+  // banner latched at whatever connectivity happened to be true at mount, so an
+  // operator who lost the network while looking at this screen was told nothing.
+  // The hook is called unconditionally (hook rules); the injectable prop still
+  // wins so tests can drive connectivity directly.
+  const liveOnline = useOnlineStatus();
+  const online = isOnline ?? (() => liveOnline);
 
   const [raw, setRaw] = useState('');
   const [kindHint, setKindHint] = useState<MovementDocumentKind>('return_request');

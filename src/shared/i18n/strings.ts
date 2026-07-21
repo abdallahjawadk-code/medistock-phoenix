@@ -1784,6 +1784,10 @@ export const T: Dict = {
   // Mandatory, locked traceability header fields.
   mv_h_document_type:     { ar: 'نوع المستند',                                   en: 'Document type' },
   mv_h_trace_key:         { ar: 'المعرّف الدائم',                                en: 'Permanent trace key' },
+  // MANDATORY_HEADER_FIELDS carries 'qr'. Without this entry t() falls back to
+  // the key itself, so the print dialog listed a literal "mv_h_qr" among the
+  // mandatory traceability fields, in both languages.
+  mv_h_qr:                { ar: 'رمز الاستجابة السريعة',                         en: 'QR code' },
   mv_h_status:            { ar: 'الحالة',                                        en: 'Status' },
   mv_h_event_at:          { ar: 'تاريخ ووقت الحدث',                              en: 'Event date and time' },
   mv_h_source:            { ar: 'الجهة المصدر',                                  en: 'Source' },

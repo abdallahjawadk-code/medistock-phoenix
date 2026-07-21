@@ -42,6 +42,22 @@ const FORBIDDEN = [
   'qa-wh-inst-a',
   'warehouse_officer_assigned',
   'outlet_officer_assigned',
+  // Migration-071 return-corridor fixtures and the simulated-outcome allowlist.
+  // The allowlist decides which write RPCs the harness can answer locally, so
+  // its absence from dist/ is as important as the fixture rows themselves.
+  'QA_MUTATION_OUTCOMES',
+  'QA-RET-0001',
+  'QA-SHP-0001',
+  'QA-INT-77',
+  'qa-os-1',
+  'qa-om-1',
+  // The canonical fixture UUID prefixes. A leak of any one of these would mean
+  // synthetic return documents shipped in a production bundle.
+  '0aa11111-0000-4000-8000',
+  '0bb22222-0000-4000-8000',
+  '0cc33333-0000-4000-8000',
+  '0dd44444-0000-4000-8000',
+  '0ee55555-0000-4000-8000',
 ];
 
 function bundleFiles(): string[] {

@@ -7,10 +7,28 @@
  * HARD CONSTRAINTS (enforced by shape, not convention):
  *   - SELECT-only. Every `.from(t)` read resolves from local fixtures.
  *   - Any insert / update / delete / upsert resolves to a clear QA error and
- *     mutates nothing. Any mutating RPC resolves to the same QA error.
+ *     mutates nothing.
+ *   - An RPC resolves to a fixture ONLY if it is explicitly registered. Every
+ *     unregistered RPC — mutating or not — still resolves to the QA read-only
+ *     error, so the surface fails closed by default.
  *   - No network, no elevated/admin key, no admin auth API, no RLS — this
  *     client cannot reach Supabase at all. It therefore proves NOTHING about
  *     authorization, RLS or functional correctness; it exists solely for visual QA.
+ *
+ * SIMULATED MUTATION OUTCOMES — read this before adding one.
+ *
+ * Some evidence cells only exist AFTER a write: the canonical return receipt
+ * (print / XLSX / QR) renders only once a shipment line has been received, and
+ * no amount of SELECT fixtures can reach that state. `QA_MUTATION_OUTCOMES`
+ * therefore registers a SMALL, EXPLICIT allowlist of migration-071 write RPCs
+ * that resolve to a deterministic local outcome.
+ *
+ * What this does NOT relax: nothing is written anywhere, no database is
+ * contacted, no RLS or permission check is bypassed or consulted, and the real
+ * RPC is untouched. The harness still cannot reach Supabase. An RPC outside the
+ * allowlist fails closed exactly as before, and the whole module is tree-shaken
+ * from production builds. This buys a screenshot of a post-write screen — it
+ * proves NOTHING about whether the real write would be permitted.
  *
  * This module lives under src/features/qa and is imported ONLY by the dev-only
  * harness, so production builds tree-shake it out entirely (proven by
@@ -18,7 +36,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { QA_HARNESS_MARKER } from './qaConfig';
-import { QA_FIXTURES, type QaRow } from './qaData';
+import { QA_FIXTURES, QA_MUTATION_OUTCOMES, type QaRow } from './qaData';
 
 export interface QaResult {
   data: unknown;
@@ -108,11 +126,19 @@ export function createQaFixtureClient(): SupabaseClient {
       return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : []);
     },
     rpc(name: string) {
-      // SELECT-only: read RPCs registered in fixtures return their data (an
-      // array OR an object, matching the real RPC's schema); anything else
-      // (mutations, unknown) resolves to the explicit QA read-only error.
+      // Read RPCs registered in fixtures return their data (an array OR an
+      // object, matching the real RPC's schema).
       const fixture = QA_FIXTURES[`rpc:${name}`];
       if (fixture !== undefined) return Promise.resolve(ok(fixture));
+
+      // Explicitly allowlisted migration-071 write RPCs resolve to a
+      // deterministic LOCAL outcome so post-write surfaces (the canonical
+      // receipt) are reachable. Nothing is written and no database is touched.
+      if (Object.prototype.hasOwnProperty.call(QA_MUTATION_OUTCOMES, name)) {
+        return Promise.resolve(ok(QA_MUTATION_OUTCOMES[name]));
+      }
+
+      // Everything else — mutating or unknown — still fails closed.
       return Promise.resolve({ data: null, error: READONLY_ERROR, count: null });
     },
     // Auth surface the app touches at render time — inert, no network.
