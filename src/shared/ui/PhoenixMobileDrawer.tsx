@@ -33,6 +33,9 @@ const ALL_NAV: {
   { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
   { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
   { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
+  // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by the
+  // profile's 062 outlet assignments; every action is re-checked server-side.
+  { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the

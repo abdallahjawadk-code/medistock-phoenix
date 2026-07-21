@@ -1796,6 +1796,17 @@ export const T: Dict = {
   mv_return_receipts_title: { ar: 'استلام المرتجعات الواردة',                     en: 'Incoming return receipts' },
   mv_return_receipts_none: { ar: 'لا توجد مرتجعات بانتظار الاستلام',              en: 'No returns awaiting receipt' },
   mv_receive_to_quarantine: { ar: 'استلام الآمن إلى الحجْر',                      en: 'Receive safe to quarantine' },
+  nav_outlet_ops:         { ar: 'عمليات المنفذ',                                 en: 'Outlet Operations' },
+  or_screen_title:        { ar: 'عمليات المنفذ',                                 en: 'Outlet Operations' },
+  or_screen_sub:          { ar: 'الاستلام والمخزون والمرتجعات والحركة لمنفذك',    en: 'Receipts, stock, returns and movements for your outlet' },
+  or_tab_incoming:        { ar: 'التوريدات الواردة',                             en: 'Incoming Supplies' },
+  or_tab_stock:           { ar: 'المخزون والدفعات',                              en: 'Stock & Batches' },
+  or_tab_returns:         { ar: 'المرتجعات',                                     en: 'Returns' },
+  or_tab_history:         { ar: 'سجل الحركة',                                    en: 'Movement History' },
+  or_no_outlet_scope:     { ar: 'لا توجد منافذ ضمن نطاقك',                        en: 'No outlets in your scope' },
+  or_select_outlet:       { ar: 'اختر المنفذ',                                   en: 'Select outlet' },
+  or_stock_none:          { ar: 'لا يوجد مخزون في هذا المنفذ',                    en: 'No stock at this outlet' },
+  or_history_none:        { ar: 'لا توجد حركات بعد',                             en: 'No movements yet' },
   mv_h_reprinted_at:      { ar: 'وقت إعادة الطباعة',                             en: 'Reprinted at' },
 
   // An operator-typed number is NOT a controlled serial — no atomic allocator

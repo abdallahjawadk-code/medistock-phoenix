@@ -20,6 +20,7 @@ import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
 import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
+import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -96,6 +97,9 @@ export function AuthenticatedApp() {
       case 15: return <MyAccountScreen />;
       case 16: return <StatusEditorScreen />;
       case 17: return <NetworkManagementScreen />;
+      // OUTLET-CORRIDOR: the outlet operator's surface — receive, stock, returns,
+      // history — scoped to assigned outlets (062), server re-checked per action.
+      case 18: return <OutletOperationsScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;
