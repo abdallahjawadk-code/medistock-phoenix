@@ -77,7 +77,10 @@ export async function getWarehouseDispatches(warehouseId?: string): Promise<Ware
   if (warehouseId) q = q.eq('warehouse_id', warehouseId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data as WarehouseDispatchRow[] | null ?? []).map(mapDispatch);
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by WarehouseDispatchRow and the 061 columns. Same pattern as
+  // network.service.getIncomingTransferLines.
+  return (data as unknown as WarehouseDispatchRow[] | null ?? []).map(mapDispatch);
 }
 
 /** Dispatches TO an outlet (the outlet's incoming/receive queue). RLS-scoped. */
@@ -87,7 +90,10 @@ export async function getOutletDispatches(distributionPointId?: string): Promise
   if (distributionPointId) q = q.eq('destination_distribution_point_id', distributionPointId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data as WarehouseDispatchRow[] | null ?? []).map(mapDispatch);
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by WarehouseDispatchRow and the 061 columns. Same pattern as
+  // network.service.getIncomingTransferLines.
+  return (data as unknown as WarehouseDispatchRow[] | null ?? []).map(mapDispatch);
 }
 
 // ─── Dispatch line (immutable snapshots) ─────────────────────────────────────
@@ -146,7 +152,10 @@ export async function getWarehouseDispatchLines(dispatchId: string): Promise<War
     .from('warehouse_dispatch_lines').select(DISPATCH_LINE_COLUMNS)
     .eq('dispatch_id', dispatchId).order('scientific_name', { ascending: true });
   if (error) throw error;
-  return (data as WarehouseDispatchLineRow[] | null ?? []).map(mapDispatchLine);
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by WarehouseDispatchLineRow and DISPATCH_LINE_COLUMNS. Same pattern
+  // as network.service.getIncomingTransferLines.
+  return (data as unknown as WarehouseDispatchLineRow[] | null ?? []).map(mapDispatchLine);
 }
 
 /** Lines for MANY dispatches in ONE query — the outlet receive queue (no N+1). */
@@ -156,7 +165,10 @@ export async function getDispatchLinesForDispatches(dispatchIds: string[]): Prom
     .from('warehouse_dispatch_lines').select(DISPATCH_LINE_COLUMNS)
     .in('dispatch_id', dispatchIds).order('scientific_name', { ascending: true });
   if (error) throw error;
-  return (data as WarehouseDispatchLineRow[] | null ?? []).map(mapDispatchLine);
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by WarehouseDispatchLineRow and DISPATCH_LINE_COLUMNS. Same pattern
+  // as network.service.getIncomingTransferLines.
+  return (data as unknown as WarehouseDispatchLineRow[] | null ?? []).map(mapDispatchLine);
 }
 
 // ─── Mutations (070 RPCs — SECURITY DEFINER, scope re-checked server-side) ────

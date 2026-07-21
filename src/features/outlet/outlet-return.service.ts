@@ -71,7 +71,10 @@ export async function getOutletReturnRequests(distributionPointId?: string): Pro
   if (distributionPointId) q = q.eq('distribution_point_id', distributionPointId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data as OutletReturnRequestRow[] | null ?? []).map(mapReturnRequest);
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by OutletReturnRequestRow and RETURN_REQUEST_COLUMNS. Same pattern
+  // as network.service.getIncomingTransferLines.
+  return (data as unknown as OutletReturnRequestRow[] | null ?? []).map(mapReturnRequest);
 }
 
 export interface OutletReturnRequestLine {
@@ -114,7 +117,10 @@ export async function getOutletReturnRequestLines(returnRequestId: string): Prom
     .from('outlet_return_request_lines').select(RETURN_LINE_COLUMNS)
     .eq('return_request_id', returnRequestId).order('scientific_name', { ascending: true });
   if (error) throw error;
-  return (data as OutletReturnRequestLineRow[] | null ?? []).map(r => ({
+  // Concatenated const select → supabase-js infers GenericStringError[]; the shape
+  // is asserted by OutletReturnRequestLineRow and RETURN_LINE_COLUMNS. Same pattern
+  // as network.service.getIncomingTransferLines.
+  return (data as unknown as OutletReturnRequestLineRow[] | null ?? []).map(r => ({
     id: r.id, returnRequestId: r.return_request_id, originalDispatchLineId: r.original_dispatch_line_id,
     sourceOutletStockId: r.source_outlet_stock_id, scientificName: r.scientific_name,
     concentration: r.concentration, dosageForm: r.dosage_form, unit: r.unit, nationalCode: r.national_code,
