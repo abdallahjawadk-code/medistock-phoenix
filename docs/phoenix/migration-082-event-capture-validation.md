@@ -90,6 +90,46 @@ long-stable features — `to_jsonb`, partial unique index, `AFTER` row triggers,
 `ON CONFLICT ... WHERE ... DO NOTHING` — with no 18-only syntax. A 17.x re-run is
 advised at cutover but no behavioral difference is expected.
 
+## All-corridor coverage (added — `082-all-corridors.dynamic.test.ts`)
+
+The initial proof covered the central transfer corridor. This adds real-RPC
+integration for the other header triggers, 5/5 passing:
+
+| Header trigger | Real RPCs driven | Proven |
+|---|---|---|
+| `warehouse_transfer_requests` | create/submit/review/cancel (+ full chain → `fulfilled`) | immutable, actor, scope, retry, rollback |
+| `warehouse_return_requests` | request/cancel (+ full chain → `fulfilled`) | immutable, reference_type, scope |
+| `warehouse_return_shipments` | full chain: receive→transfer→receive→return→**send** | shipment event captured, `event_ledger` in timeline, foreign scope empty |
+| `outlet_return_requests` | request/cancel | immutable, actor, org=source, retry, scope |
+| `warehouse_dispatches` | create/cancel | immutable, org=dispatch org, `event_ledger` |
+| `outlet_return_shipments` | — see blocker below | trigger config identical to `warehouse_return_shipments` |
+
+The full warehouse chain also proves the two `fulfilled` transitions that 081
+could never surface (no dedicated column; the tables were not even queried),
+now present in the ledger — the concrete gap 082 closes. Rollback atomicity is
+proven by aborting a transaction after a real header RPC and confirming the
+captured event does not persist; this is structurally identical for all six
+headers since they share one trigger function.
+
+### Blocker found while exercising the outlet chain (pre-existing, not 082)
+
+`phoenix_project_outlet_availability` (migration 067), called by
+`phoenix_receive_outlet_dispatch_line` (070:281), upserts into
+`item_availability` with a **7-column** `ON CONFLICT`
+`(distribution_point_id, scientific_name, COALESCE(concentration,''),
+COALESCE(dosage_form,''), COALESCE(national_code,''), COALESCE(batch_number,''),
+COALESCE(expiry_date,'0001-01-01'))`. The live identity index
+(`item_availability_dp_sci_conc_form_nat_batch_exp_ibr_uniq`) is **8-column** —
+it also carries `COALESCE(internal_batch_reference,'')`. A 7-column `ON CONFLICT`
+cannot infer an 8-column index, so **outlet dispatch receipt raises
+`no unique or exclusion constraint matching the ON CONFLICT specification`** on a
+clean replay. It is latent in production only because the outlet corridor is not
+yet mounted (no outlet-facing route). This is squarely a Blocker 3 concern — the
+outlet→availability projection is exactly what Blocker 3 rebuilds — and is
+repaired there (the unified projection replaces this function). Once repaired,
+the `outlet_return_shipments` full-chain test can be enabled; its trigger config
+is byte-identical to the proven `warehouse_return_shipments`.
+
 ## Naming note
 
 The task brief referenced `phoenix_get_movement_timeline`; the actual RPC (from
