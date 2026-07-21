@@ -30,12 +30,22 @@ first. Do not write a migration that assumes emptiness.
 
 ## 1. Migration 065 — expected-generation protection
 
-**Status: open. Server contract AUTHORED (078) and client wired, NOT APPLIED.**
+**Status: open ONLY because nothing is applied. The fix is complete and
+dynamically validated.**
 
-Migration `078_phoenix_warehouse_receipt_expected_generation.sql` + commit
-`0a77830`. The gate `MIGRATION_065_CONCURRENCY_RESOLVED` stays **false** until
-078 is applied and parity observed. See
-`docs/blocker-migration-065-accumulating-receipt-concurrency.md`.
+Migrations **078** (guard), **079** (fail closed), **080** (cutover revoke), plus
+the guarded client. Commits `0a77830` and `e955926`.
+
+Executed on a disposable PostgreSQL 18.4 cluster with 001→080 applied in order:
+**27/27 concurrency assertions passed**, including the two-device double-post
+rejection, idempotent lost-response replay, and the privilege boundary verified
+as the `authenticated` role. Record:
+`migration-078-079-dynamic-validation.md`. Release steps:
+`cutover-package-warehouse-generation.md`.
+
+`MIGRATION_065_CONCURRENCY_RESOLVED` stays **false** until 078+079 are applied
+AND the guarded client is deployed AND parity is observed — the exact conditions
+are in §6 of the cutover package.
 
 An accumulating-receipt flow can double-post across two devices: both read the
 same generation, both post, and the second write lands on stale state. The
