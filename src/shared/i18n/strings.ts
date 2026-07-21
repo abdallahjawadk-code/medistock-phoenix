@@ -1681,6 +1681,7 @@ export const T: Dict = {
   inv_err_not_found:      { ar: 'العنصر غير موجود',                             en: 'Item not found' },
   inv_err_invalid:        { ar: 'مدخل غير صالح',                                en: 'Invalid input' },
   inv_err_generic:        { ar: 'تعذّر إتمام العملية',                          en: 'The operation could not be completed' },
+  inv_err_blocked_concurrency: { ar: 'استلام المخزون معطّل مؤقتًا لأسباب تتعلق بالسلامة لمنع الترحيل المزدوج عبر الأجهزة، وسيُفعَّل بعد تحديث الخادم.', en: 'Stock intake is temporarily disabled for safety to prevent cross-device double-posting; it will be enabled after a server update.' },
 
   /* ── Pharmaceutical Smart OCR (PHARMA-OCR-A) ──
      OCR is an assistive READING aid. It never creates stock, never picks a

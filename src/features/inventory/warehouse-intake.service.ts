@@ -1,4 +1,8 @@
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
+import {
+  defaultWarehouseIntakeAllowed,
+  WAREHOUSE_INTAKE_BLOCKED_CODE,
+} from './warehouse-intake-safety';
 
 /**
  * INVENTORY-CENTER-INTAKE-A — thin client over the migration 065 warehouse
@@ -49,6 +53,18 @@ async function callRpc<T = Record<string, unknown>>(
   if (error) return { ok: false, error: intakeErrorCode(error.message) };
   const payload = (data ?? {}) as { ok?: boolean } & T;
   return { ok: payload.ok !== false, data: payload as T };
+}
+
+/**
+ * Seams for the accumulating-receipt write paths. Both default to production
+ * behaviour; tests inject a spy transport and a forced gate to prove the path
+ * fails closed WITHOUT calling any writer while the migration-065 concurrency
+ * blocker is unresolved (see warehouse-intake-safety.ts).
+ */
+export interface WarehouseIntakeDeps {
+  callRpc?: typeof callRpc;
+  /** Gate decision; defaults to the live build gate. */
+  allowed?: () => boolean;
 }
 
 /**
@@ -107,8 +123,15 @@ export interface ReceiveWarehouseStockResult {
  */
 export function receiveWarehouseStock(
   input: ReceiveWarehouseStockInput,
+  deps: WarehouseIntakeDeps = {},
 ): Promise<IntakeResult<ReceiveWarehouseStockResult>> {
-  return callRpc<ReceiveWarehouseStockResult>('phoenix_receive_warehouse_stock', {
+  // Fail closed while the migration-065 accumulating-receipt concurrency blocker
+  // is unresolved in a production build: refuse before any writer is called.
+  if (!(deps.allowed ?? defaultWarehouseIntakeAllowed)()) {
+    return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
+  }
+  const call = deps.callRpc ?? callRpc;
+  return call<ReceiveWarehouseStockResult>('phoenix_receive_warehouse_stock', {
     p_request_id:             input.requestId,
     p_warehouse_id:           input.warehouseId,
     p_scientific_name:        input.scientificName.trim(),
@@ -175,8 +198,15 @@ export interface ApplyWarehouseStockMovementResult {
  */
 export function applyWarehouseStockMovement(
   input: ApplyWarehouseStockMovementInput,
+  deps: WarehouseIntakeDeps = {},
 ): Promise<IntakeResult<ApplyWarehouseStockMovementResult>> {
-  return callRpc<ApplyWarehouseStockMovementResult>('phoenix_apply_warehouse_stock_movement', {
+  // The additive movement modes (add/correction) share the same accumulating
+  // concurrency gap as the receipt, so they are gated by the same blocker.
+  if (!(deps.allowed ?? defaultWarehouseIntakeAllowed)()) {
+    return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
+  }
+  const call = deps.callRpc ?? callRpc;
+  return call<ApplyWarehouseStockMovementResult>('phoenix_apply_warehouse_stock_movement', {
     p_request_id:             input.requestId,
     p_warehouse_stock_id:     input.warehouseStockId,
     p_movement_type:          input.movementType,
@@ -253,6 +283,10 @@ export async function getWarehouseStockMovements(
  */
 export function classifyIntakeError(code: string | undefined): string {
   const c = code ?? '';
+
+  // Pre-deployment safety gate: the accumulating-receipt path is disabled in a
+  // production build until the migration-065 concurrency blocker is resolved.
+  if (c === WAREHOUSE_INTAKE_BLOCKED_CODE) return 'inv_err_blocked_concurrency';
 
   // Permission / identity boundary (42501) — the RPC is the real gate.
   if (c === 'forbidden_warehouse_stock_adjust') return 'inv_err_no_receive_permission';
