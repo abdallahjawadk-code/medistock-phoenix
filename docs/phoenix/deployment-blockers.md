@@ -45,9 +45,13 @@ audited directly, and is pinned by
 
 | Writer | Reachable | Evidence | Disposition |
 | --- | --- | --- | --- |
-| `EditorScreen.tsx` | **No** | Screen 3 routes to `InventoryCenterScreen`; imported by no production module; absent from `dist/` | Delete — see blast radius below |
-| `QuickAvailForm` (in `InstitutionScreen.tsx`) | **No** | Its `showAdd` flag has no `setShowAdd(true)` anywhere; the add-item control was removed | Delete — see blast radius below |
+| `EditorScreen.tsx` | — | Was unreachable: screen 3 routed to `InventoryCenterScreen`, no production import, absent from `dist/` | **DELETED** (E6, `6dba1ef`) |
+| `QuickAvailForm` (in `InstitutionScreen.tsx`) | — | Was unreachable: its `showAdd` flag had no `setShowAdd(true)` anywhere | **DELETED** (E6, `6dba1ef`) |
 | `ReactivateMaterialModal.tsx` | **Yes** | `StatusCenterScreen` renders it and sets `reactivateRow` from a live control | **This blocker** |
+
+`upsertAvailability` now has exactly **one** production call site, asserted by
+exact array equality in `quantity-overwrite-guard.test.ts` and
+`legacy-availability-writer-audit.test.ts`. A second entry fails the build.
 
 ### Why ReactivateMaterialModal is not simply removed
 
@@ -69,16 +73,21 @@ expresses reactivation in the ledger model, after which this modal is removed.
 
 ---
 
-## Deletion blast radius (tracked, not yet done)
+## Deletion — DONE (E6, `6dba1ef`)
 
-Both unreachable writers are safe to delete on reachability grounds, but each is
-read by "this phase did not touch that file" isolation guards that would fail on
-`readFileSync` the moment the file disappears:
+Both unreachable writers are deleted. The isolation guards that read them were
+migrated, not dropped:
 
-- `EditorScreen.tsx` — **23** test files
-- `QuickAvailForm` — **8** test files
+- **isolation-only** ("EditorScreen is untouched by this phase") → absence
+  guards via `tests/helpers/retired-surfaces.ts`. Strictly stronger: a deleted
+  screen cannot gate on the wrong permission or grow movement wiring.
+- **still-valid invariants** → moved to where they now live (the surviving
+  writer, migration 051's own test, `quantity-overwrite-guard`).
+- **obsolete writer assertions** → inverted, with the reason recorded in place.
 
-Those guards must be converted to absence guards ("the retired screen/writer
-stays gone") in the same change, never merely deleted: deleting the protection
-alongside the code is how a retired writer comes back. Until that lands, the
-audit test above is what keeps both unreachable.
+The RPC-only table-write scan was **widened** from five hand-listed files to
+every production source file, so it cannot go stale as screens are added.
+
+Permanent guards now in force: the file stays deleted; no production module
+imports or renders it; screen 3 stays `InventoryCenterScreen`; `QuickAvailForm`
+and its trigger stay absent; `upsertAvailability` keeps exactly one call site.
