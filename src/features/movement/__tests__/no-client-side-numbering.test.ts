@@ -80,11 +80,12 @@ describe('no client-side document-number sequence exists', () => {
 
   it('no migration file was added for document numbering', () => {
     const migrations = readdirSync(join(ROOT, 'supabase', 'migrations')).filter(f => f.endsWith('.sql'));
-    // 082 (movement-event capture) is the highest reviewed migration. Neither it
-    // nor 081 (the movement timeline) adds document numbering; the point of this
-    // guard is that no sequence/numbering migration appears, which the name check
-    // below pins. The ceiling moves with each reviewed non-numbering migration.
-    const beyond = migrations.filter(f => /^0*(083|09\d|[1-9]\d{2,})/.test(f));
+    // 085 (the prepared availability-writer revoke) is the highest reviewed
+    // migration. None of 083 (inventory-derived availability), 084 (catalogue
+    // visibility) or 085 add document numbering; the point of this guard is that
+    // no sequence/numbering migration appears, which the name check below pins.
+    // The ceiling moves with each reviewed non-numbering migration.
+    const beyond = migrations.filter(f => /^0*(08[6-9]|09\d|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
