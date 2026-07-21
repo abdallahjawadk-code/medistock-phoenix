@@ -130,6 +130,10 @@ export interface AvailabilityProjectionRpc {
 }
 
 const defaultRpc: AvailabilityProjectionRpc = async (fn, args) => {
+  // The not-configured short-circuit lives HERE, on the default transport, so it
+  // never defeats an injected transport in tests. With no Supabase client
+  // configured, there is nothing to read — map to the empty projection.
+  if (!supabaseConfigured) return { data: null, error: null };
   const { data, error } = await supabase.rpc(fn, args);
   return { data: (data as RawAvailableStockPayload | null) ?? null, error };
 };
@@ -144,7 +148,10 @@ export async function getAvailableStock(
   distributionPointId: string | null | undefined,
   rpc: AvailabilityProjectionRpc = defaultRpc,
 ): Promise<AvailableStockResult> {
-  if (!supabaseConfigured || !distributionPointId) return EMPTY_RESULT;
+  // Only the always-true precondition (a point id) short-circuits here; the
+  // not-configured guard belongs to defaultRpc, so an injected transport is
+  // always exercised.
+  if (!distributionPointId) return EMPTY_RESULT;
   const { data, error } = await rpc('phoenix_available_stock', {
     p_distribution_point_id: distributionPointId,
   });
