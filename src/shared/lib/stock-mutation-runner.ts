@@ -73,16 +73,31 @@ export interface RunOptions<P> {
   deriveToken?: TokenDeriver;
 }
 
-/** Run one mutation under its derived, stable token. */
+/**
+ * Run one mutation under its derived, stable token.
+ *
+ * If the token cannot be derived we report a failure and DO NOT call the
+ * writer. That is the fail-closed rule from operation-token.ts carried through
+ * to the call site: a mutation sent without a stable token cannot be safely
+ * retried, so not sending it is the better outcome. Reporting this instead of
+ * throwing also keeps a bulk loop alive — one underivable row must not abandon
+ * the rows after it — and keeps callers' `busy` flags from stranding on an
+ * exception thrown past their `setBusy(false)`.
+ */
 export async function runStockMutation<P>(
   write: TokenedWriter<P>,
   kind: string,
   item: MutationItem<P>,
   deriveToken: TokenDeriver = operationToken,
 ): Promise<SingleMutationOutcome> {
-  const requestId = await deriveToken({
-    kind, entityId: item.entityId, generation: item.generation,
-  });
+  let requestId: string;
+  try {
+    requestId = await deriveToken({
+      kind, entityId: item.entityId, generation: item.generation,
+    });
+  } catch {
+    return { ok: false, error: 'operation_token_unavailable', requestId: '' };
+  }
   const result = await write(requestId, item.payload);
   return { ...result, requestId };
 }

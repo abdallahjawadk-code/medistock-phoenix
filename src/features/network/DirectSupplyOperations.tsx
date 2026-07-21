@@ -24,6 +24,7 @@ import {
   type NetworkWarehouse, type RpcResult, type TransferRequest, type TransferRequestLine,
   type Transfer, type ReturnRequest, type ReturnRequestLine, type ReturnShipment,
 } from './network.service';
+import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
 import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
 import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
@@ -42,6 +43,35 @@ import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
  * removed in a follow-up cleanup commit once parity tests and screenshots pass.
  */
 const FORWARD_CREATE = { draftFirst: true };
+
+/**
+ * Every stock-moving RPC below goes through the shared runner, which DERIVES
+ * its request id from server-observed facts instead of minting one per attempt.
+ * A minted id makes each retry a new logical operation and double-posts
+ * whenever a success response is lost — and a remembered id cannot survive the
+ * page reload that most often prompts the retry. See shared/lib/operation-token.
+ *
+ * The `generation` for a SEND is the server's cumulative `fulfilledQuantity`,
+ * so retrying one shipment reuses its token while a later legitimate split
+ * shipment gets a distinct one. For a RECEIVE it is `receivedQuantity`.
+ */
+const writeTransferSend: TokenedWriter<{
+  transferRequestId: string; warehouseStockId: string; quantity: number;
+  transferNumber: string; transferRequestLineId: string;
+}> = (requestId, p) => sendDirectTransferLine({ requestId, ...p });
+
+const writeTransferReceive: TokenedWriter<{
+  transferLineId: string; receivedQuantity: number; differenceReason: string | null;
+}> = (requestId, p) => receiveTransferLine({ requestId, ...p });
+
+const writeReturnSend: TokenedWriter<{
+  returnRequestLineId: string; quantity: number; shipmentNumber: string;
+}> = (requestId, p) => sendDirectReturnLine({ requestId, ...p });
+
+const writeReturnReceive: TokenedWriter<{
+  shipmentLineId: string; receivedQuantity: number;
+  differenceReason: string | null; dispositionDecision: string | null;
+}> = (requestId, p) => receiveReturnShipmentLine({ requestId, ...p });
 
 /**
  * W077-COMPOSER — the return counterpart of FORWARD_CREATE. When `draftFirst` is
@@ -78,11 +108,7 @@ const RECEIVE_UPGRADE = { enabled: true };
 type Lang = 'ar' | 'en';
 type Status = { msg: string; error: boolean } | null;
 
-const uuid = (): string =>
-  (globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
-
-const nameOf = (w: { name_ar: string; name: string } | undefined, lang: Lang): string =>
+const nameOf =(w: { name_ar: string; name: string } | undefined, lang: Lang): string =>
   !w ? '—' : (lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar));
 
 function opErrorMessage(code: string | undefined, lang: Lang): string {
@@ -572,9 +598,13 @@ function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }:
           <div style={{ display: 'flex', gap: '6px' }}>
             <PhoenixButton size="sm" loading={busy} disabled={!canSend} onClick={async () => {
               setBusy(true);
-              const res = await sendDirectTransferLine({
-                requestId: uuid(), transferRequestId: line.transferRequestId, warehouseStockId: effStock,
-                quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
+              const res = await runStockMutation(writeTransferSend, 'transfer_line_send', {
+                entityId: line.id,
+                generation: line.fulfilledQuantity,
+                payload: {
+                  transferRequestId: line.transferRequestId, warehouseStockId: effStock,
+                  quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
+                },
               });
               setBusy(false); onDone(res);
             }}>{t('net_op_send', lang)}</PhoenixButton>
@@ -607,8 +637,10 @@ function IncomingTransferRow({ lang, transfer, whById, onDone }: {
           {(lines.data ?? []).map(l => (
             <ReceiveLineForm key={l.id} lang={lang} label={`${l.scientificName} · ${l.batchNumber ?? '—'}`}
               sent={l.sentQuantity} done={l.status !== 'in_transit'}
-              onReceive={(rq, reason) => receiveTransferLine({
-                requestId: uuid(), transferLineId: l.id, receivedQuantity: rq, differenceReason: reason,
+              onReceive={(rq, reason) => runStockMutation(writeTransferReceive, 'transfer_line_receive', {
+                entityId: l.id,
+                generation: l.receivedQuantity ?? 0,
+                payload: { transferLineId: l.id, receivedQuantity: rq, differenceReason: reason },
               }).then(onDone)} />
           ))}
         </div>
@@ -915,7 +947,11 @@ function ReturnLineRow({ lang, line, isDraft, canSend, onDone }: {
           <div style={{ display: 'flex', gap: '6px' }}>
             <PhoenixButton size="sm" loading={busy} disabled={!canDoSend} onClick={async () => {
               setBusy(true);
-              const res = await sendDirectReturnLine({ requestId: uuid(), returnRequestLineId: line.id, quantity: n, shipmentNumber: number.trim() });
+              const res = await runStockMutation(writeReturnSend, 'return_line_send', {
+                entityId: line.id,
+                generation: line.fulfilledQuantity,
+                payload: { returnRequestLineId: line.id, quantity: n, shipmentNumber: number.trim() },
+              });
               setBusy(false); setSending(false); onDone(res);
             }}>{t('net_op_send', lang)}</PhoenixButton>
             <PhoenixButton size="sm" variant="ghost" onClick={() => setSending(false)}>{t('net_cancel', lang)}</PhoenixButton>
@@ -947,9 +983,13 @@ function IncomingReturnRow({ lang, shipment, whById, onDone }: {
           {(lines.data ?? []).map(l => (
             <ReceiveReturnLineForm key={l.id} lang={lang} label={`${l.scientificName} · ${l.batchNumber ?? '—'}`}
               sent={l.sentQuantity} done={l.status !== 'in_transit'}
-              onReceive={(rq, reason, disposition) => receiveReturnShipmentLine({
-                requestId: uuid(), shipmentLineId: l.id, receivedQuantity: rq,
-                differenceReason: reason, dispositionDecision: disposition,
+              onReceive={(rq, reason, disposition) => runStockMutation(writeReturnReceive, 'return_shipment_receive', {
+                entityId: l.id,
+                generation: l.receivedQuantity ?? 0,
+                payload: {
+                  shipmentLineId: l.id, receivedQuantity: rq,
+                  differenceReason: reason, dispositionDecision: disposition,
+                },
               }).then(onDone)} />
           ))}
         </div>

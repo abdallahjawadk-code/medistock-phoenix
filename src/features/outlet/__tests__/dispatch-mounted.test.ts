@@ -39,8 +39,13 @@ describe('composer sources canonical stock and commits via 070 RPCs only', () =>
 });
 
 describe('send is a deliberate, separate, idempotent step', () => {
-  it('sends the whole dispatch with a fresh idempotency token', () => {
-    expect(ops).toMatch(/sendWarehouseDispatch\(\{ requestId: uuid\(\), dispatchId/);
+  it('sends under a DERIVED idempotency token, never a freshly minted one', () => {
+    // A minted token makes each retry a new operation and double-ships whenever
+    // a success response is lost; a derived one is stable across a page reload
+    // too. Behaviour is proven in shared/lib/__tests__/stock-mutation-runner.
+    expect(ops).toMatch(/runStockMutation\(writeSend, SEND_KIND/);
+    expect(ops).not.toMatch(/requestId: uuid\(\)/);
+    expect(ops).toMatch(/generation: dispatch\.sentAt \? 1 : 0/);
   });
   it('outlet balances change only after the OUTLET confirms receipt (not here)', () => {
     expect(ops).not.toMatch(/receiveOutletDispatchLine/);

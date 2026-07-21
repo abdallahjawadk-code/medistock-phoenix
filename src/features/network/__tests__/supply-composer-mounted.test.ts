@@ -130,9 +130,15 @@ describe('receive section upgraded in place to InstitutionIncomingSupplies', () 
     expect(incoming).not.toMatch(/addTransferRequestLine\(|createDirectTransferRequest\(/);
   });
 
-  it('receives only via receiveTransferLine with a fresh idempotency token', () => {
+  it('receives only via receiveTransferLine, under a DERIVED idempotency token', () => {
     expect(incoming).toMatch(/receiveTransferLine\(/);
-    expect(incoming).toMatch(/requestId: newRequestId\(\)/);
+    // A minted token makes each retry a new operation and double-posts stock
+    // whenever a success response is lost; a derived one also survives the page
+    // reload that most often prompts the retry. Behaviour is proven in
+    // shared/lib/__tests__/stock-mutation-runner.test.ts.
+    expect(incoming).not.toMatch(/requestId: newRequestId\(\)/);
+    expect(incoming).toMatch(/runStockMutation\(writeReceive, RECEIVE_KIND/);
+    expect(incoming).toMatch(/generation: line\.receivedQuantity \?\? 0/);
     // Stock is shown only after a canonical server reload — never optimistically.
     expect(incoming).toMatch(/await reload\(\)/);
   });

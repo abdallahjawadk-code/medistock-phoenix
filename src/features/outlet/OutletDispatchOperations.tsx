@@ -17,6 +17,7 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
 import { OutletDispatchComposer } from './OutletDispatchComposer';
 import {
   getWarehouseDispatches, getWarehouseDispatchLines, sendWarehouseDispatch, cancelWarehouseDispatch,
@@ -26,8 +27,16 @@ import {
 type Lang = 'ar' | 'en';
 type Status = { msg: string; error: boolean } | null;
 
-const uuid = (): string =>
-  (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+/**
+ * Sending a dispatch MOVES stock, so its request id is derived rather than
+ * minted — a fresh id on retry would make each attempt a new operation and
+ * double-post whenever a success response was lost. See
+ * shared/lib/operation-token.
+ */
+const SEND_KIND = 'warehouse_dispatch_send';
+
+const writeSend: TokenedWriter<{ dispatchId: string }> = (requestId, payload) =>
+  sendWarehouseDispatch({ requestId, dispatchId: payload.dispatchId });
 
 function opError(code: string | undefined, lang: Lang): string {
   const c = (code ?? '').toUpperCase();
@@ -132,8 +141,16 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone }: {
   const isDraft = dispatch.status === 'draft';
 
   const send = async () => {
+    // A dispatch leaves draft exactly once. While it is still draft the server
+    // has not moved, so a retry after a lost response derives the same token
+    // and the replay is deduplicated rather than shipping the goods twice.
+    if (!isDraft) return;
     setBusy(true);
-    onDone(await sendWarehouseDispatch({ requestId: uuid(), dispatchId: dispatch.id }));
+    onDone(await runStockMutation(writeSend, SEND_KIND, {
+      entityId: dispatch.id,
+      generation: dispatch.sentAt ? 1 : 0,
+      payload: { dispatchId: dispatch.id },
+    }));
     setBusy(false);
   };
 

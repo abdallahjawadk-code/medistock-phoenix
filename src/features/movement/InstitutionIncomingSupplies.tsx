@@ -27,16 +27,30 @@ import {
   type Transfer, type IncomingTransferLine,
 } from '@/features/network/network.service';
 import { assessReceive, bulkEligibleLines, validateReceive, type ReceivableLine } from './receive-model';
+import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
 import { parseMovementQrPayload } from './movement-trace';
 import { pairedPartyLabel } from './ui/MovementPartySelector';
 
 const dash = (v: string | number | null | undefined) =>
   (v === null || v === undefined || v === '' ? '—' : String(v));
 
-const newRequestId = () =>
-  (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+/**
+ * Receiving MOVES stock, so the request id is DERIVED from server-observed
+ * facts rather than minted per attempt. A fresh id on retry would make every
+ * attempt a new logical operation and double-post whenever a success response
+ * was lost — including after a page reload, which a remembered token cannot
+ * survive. See shared/lib/operation-token.
+ */
+const RECEIVE_KIND = 'transfer_line_receive';
+
+interface ReceivePayload {
+  transferLineId: string;
+  receivedQuantity: number;
+  differenceReason: string | null;
+}
+
+const writeReceive: TokenedWriter<ReceivePayload> = (requestId, payload) =>
+  receiveTransferLine({ requestId, ...payload });
 
 const toReceivable = (line: IncomingTransferLine): ReceivableLine => ({
   id: line.id,
@@ -127,16 +141,14 @@ export function InstitutionIncomingSupplies({
 
   // ── receiving ─────────────────────────────────────────────────────────────
 
-  const receiveOne = async (line: IncomingTransferLine, quantity: number, reason: string | null) => {
-    const result = await receiveTransferLine({
-      // A fresh idempotency token per ATTEMPT of this line.
-      requestId: newRequestId(),
-      transferLineId: line.id,
-      receivedQuantity: quantity,
-      differenceReason: reason,
+  const receiveOne = (line: IncomingTransferLine, quantity: number, reason: string | null) =>
+    runStockMutation(writeReceive, RECEIVE_KIND, {
+      entityId: line.id,
+      // Canonical server field: unchanged while an attempt is unresolved (so a
+      // retry re-derives the same token), advanced once receipt is confirmed.
+      generation: line.receivedQuantity ?? 0,
+      payload: { transferLineId: line.id, receivedQuantity: quantity, differenceReason: reason },
     });
-    return result;
-  };
 
   const receiveIndividually = async (line: IncomingTransferLine) => {
     if (busy || !canReceive) return;
