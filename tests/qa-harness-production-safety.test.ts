@@ -30,6 +30,18 @@ const FORBIDDEN = [
   'QA_PERSONAS',
   'qa-org-a1',
   'qa-wh-central',
+  // Migration-062 scope-assignment fixtures and their transport. These decide
+  // what a scoped persona may reach, so their absence from dist/ is part of the
+  // same contract as the fixtures themselves.
+  'QA_SCOPE_ASSIGNMENTS',
+  'createQaRbacTransport',
+  'qaLoadScopes',
+  'qa-psa-wh-a',
+  'qa-psa-pt-1',
+  'qa-outlet-1',
+  'qa-wh-inst-a',
+  'warehouse_officer_assigned',
+  'outlet_officer_assigned',
 ];
 
 function bundleFiles(): string[] {

@@ -9,8 +9,9 @@
 export type QaRow = Record<string, unknown>;
 
 const QA = 'QA';
-const ORG_A = 'qa-org-a1';
-const ORG_B = 'qa-org-b2';
+/** Exported so the scope-assignment fixtures bind to the SAME organization ids. */
+export const ORG_A = 'qa-org-a1';
+export const ORG_B = 'qa-org-b2';
 
 /**
  * Fixtures for the fixture client. Table keys hold row arrays (read by
@@ -33,10 +34,15 @@ export const QA_FIXTURES: Record<string, unknown> = {
     { id: 'qa-wh-inst-a-empty', name: 'QA · Al-Hilla Annex Store (empty)', name_ar: 'QA · مذخر الحلة الفرعي (فارغ)', warehouseKind: 'institution', status: 'active', organization_id: ORG_A },
     { id: 'qa-wh-inst-b', name: 'QA · Al-Sadiq Institution Store', name_ar: 'QA · مذخر الصادق', warehouseKind: 'institution', status: 'inactive', organization_id: ORG_B },
   ],
+  // Rows are read through getPointsByOrg, which selects the REAL column names
+  // and maps warehouse_id → warehouseId / point_type → pointType. These keys
+  // must therefore be snake_case: a camelCase `warehouseId` here resolves to
+  // undefined, which silently breaks the migration-062 warehouse → outlet
+  // derivation in useInventoryScopes.manageableOutlets.
   distribution_points: [
-    { id: 'qa-outlet-1', name: 'QA · Emergency Outlet', name_ar: 'QA · منفذ الطوارئ', status: 'active', warehouseId: 'qa-wh-inst-a', organization_id: ORG_A },
-    { id: 'qa-outlet-2', name: 'QA · Pediatrics Outlet', name_ar: 'QA · منفذ الأطفال', status: 'active', warehouseId: 'qa-wh-inst-a', organization_id: ORG_A },
-    { id: 'qa-outlet-3', name: 'QA · Long Name Outlet ' + '—'.repeat(6) + ' overflow probe', name_ar: 'QA · منفذ باسم طويل جدًا لاختبار التفاف النص والفيض في الجداول والبطاقات', status: 'active', warehouseId: 'qa-wh-inst-b', organization_id: ORG_B },
+    { id: 'qa-outlet-1', name: 'QA · Emergency Outlet', name_ar: 'QA · منفذ الطوارئ', status: 'active', warehouse_id: 'qa-wh-inst-a', organization_id: ORG_A, point_type: 'pharmacy' },
+    { id: 'qa-outlet-2', name: 'QA · Pediatrics Outlet', name_ar: 'QA · منفذ الأطفال', status: 'active', warehouse_id: 'qa-wh-inst-a', organization_id: ORG_A, point_type: 'crash_cabinet' },
+    { id: 'qa-outlet-3', name: 'QA · Long Name Outlet ' + '—'.repeat(6) + ' overflow probe', name_ar: 'QA · منفذ باسم طويل جدًا لاختبار التفاف النص والفيض في الجداول والبطاقات', status: 'active', warehouse_id: 'qa-wh-inst-b', organization_id: ORG_B, point_type: 'pharmacy' },
   ],
   profiles: [
     { id: 'qa-user-1', full_name: `${QA} · مسؤول النظام`, role: 'super_admin', status: 'active', organization_id: null },

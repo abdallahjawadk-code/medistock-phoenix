@@ -6,7 +6,7 @@
  * `roleDefaults` is the SAME hardcoded fallback table the app uses when the
  * permission-matrix RPC is briefly unavailable — no invented capabilities.
  */
-import type { Lang, Theme } from '@/shared/lib/types';
+import type { Lang, Role, Theme } from '@/shared/lib/types';
 import type { AppState } from '@/app/AppContext';
 import type { Profile } from '@/shared/supabase/services/auth.service';
 import { roleDefaults } from '@/shared/lib/permissions';
@@ -19,12 +19,16 @@ import {
   currentScopedRbacMode,
 } from '@/shared/authz/mode';
 import { QA_HARNESS_MARKER } from './qaConfig';
+import { ORG_A } from './qaData';
+import { createQaRbacTransport, qaLoadScopes } from './qaScopes';
 
 export type QaPersonaId =
   | 'super_admin'
   | 'central_warehouse_manager'
   | 'warehouse_officer'
-  | 'outlet_officer';
+  | 'warehouse_officer_assigned'
+  | 'outlet_officer'
+  | 'outlet_officer_assigned';
 
 export interface QaPersona {
   id: QaPersonaId;
@@ -33,10 +37,23 @@ export interface QaPersona {
   profile: Profile;
 }
 
-const QA_ORG = '00000000-0000-4000-8000-0000000000qa'.replace(/qa$/, 'a1');
+/**
+ * The organization the org-scoped personas belong to. This is ORG_A from the
+ * fixture catalog, NOT a synthetic UUID: a persona whose `organization_id`
+ * matches no fixture organization can never resolve a warehouse or outlet, so
+ * every org-scoped screen would dead-end on an empty catalog.
+ */
+const QA_ORG = ORG_A;
 
 function qaProfile(
   id: QaPersonaId,
+  /**
+   * The REAL role this persona carries. Kept separate from the persona id so a
+   * scoped and an unassigned persona can share one role and differ only by
+   * their migration-062 assignment rows — which is exactly what makes the
+   * scoped-permission evidence a scope proof rather than a role proof.
+   */
+  role: Role,
   fullName: string,
   organizationId: string | null,
 ): Profile {
@@ -45,7 +62,7 @@ function qaProfile(
     id: `qa-${id}`,
     organization_id: organizationId,
     full_name: `${fullName} · ${QA_HARNESS_MARKER}`,
-    role: id,
+    role,
     status: 'active',
     username: `qa.${id}`,
     login_mode: 'local',
@@ -60,25 +77,41 @@ export const QA_PERSONAS: QaPersona[] = [
     id: 'super_admin',
     labelAr: 'مسؤول النظام',
     labelEn: 'Super admin',
-    profile: qaProfile('super_admin', 'مسؤول النظام', null),
+    profile: qaProfile('super_admin', 'super_admin', 'مسؤول النظام', null),
   },
   {
     id: 'central_warehouse_manager',
     labelAr: 'مدير مخزن مركزي',
     labelEn: 'Central warehouse manager',
-    profile: qaProfile('central_warehouse_manager', 'مدير المخزن المركزي', QA_ORG),
+    profile: qaProfile('central_warehouse_manager', 'central_warehouse_manager', 'مدير المخزن المركزي', QA_ORG),
   },
   {
     id: 'warehouse_officer',
-    labelAr: 'أمين مذخر مؤسسة',
-    labelEn: 'Institution warehouse officer',
-    profile: qaProfile('warehouse_officer', 'أمين مذخر المؤسسة', QA_ORG),
+    labelAr: 'أمين مذخر مؤسسة (بلا تخصيص)',
+    labelEn: 'Institution warehouse officer (unassigned)',
+    profile: qaProfile('warehouse_officer', 'warehouse_officer', 'أمين مذخر المؤسسة', QA_ORG),
+  },
+  {
+    // Same role as above; differs ONLY by carrying a migration-062 warehouse
+    // assignment. Reaches the outlets under `qa-wh-inst-a` and no others.
+    id: 'warehouse_officer_assigned',
+    labelAr: 'أمين مذخر مؤسسة (مخصَّص)',
+    labelEn: 'Institution warehouse officer (assigned)',
+    profile: qaProfile('warehouse_officer_assigned', 'warehouse_officer', 'أمين مذخر المؤسسة المخصَّص', QA_ORG),
   },
   {
     id: 'outlet_officer',
-    labelAr: 'أمين منفذ',
-    labelEn: 'Outlet officer',
-    profile: qaProfile('outlet_officer', 'أمين المنفذ', QA_ORG),
+    labelAr: 'أمين منفذ (بلا تخصيص)',
+    labelEn: 'Outlet officer (unassigned)',
+    profile: qaProfile('outlet_officer', 'outlet_officer', 'أمين المنفذ', QA_ORG),
+  },
+  {
+    // Same role as above; differs ONLY by carrying a migration-062
+    // distribution-point assignment. Reaches `qa-outlet-1` ALONE.
+    id: 'outlet_officer_assigned',
+    labelAr: 'أمين منفذ (مخصَّص)',
+    labelEn: 'Outlet officer (assigned)',
+    profile: qaProfile('outlet_officer_assigned', 'outlet_officer', 'أمين المنفذ المخصَّص', QA_ORG),
   },
 ];
 
@@ -115,7 +148,16 @@ export function buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId
   const activeOrgId = orgId !== undefined ? orgId : persona.profile.organization_id;
   const mode = currentScopedRbacMode();
   const observability = createRbacObservability(mode);
-  const authz = createAuthorizationService({ mode, reporter: observability.reporter });
+  // Inject the migration-062 assignment fixtures through the authorization
+  // service's OWN seams. The real scope-resolution logic runs untouched; only
+  // the rows it reads are fixture rows, so an unassigned persona is denied by
+  // the production code path rather than by anything the harness decides.
+  const authz = createAuthorizationService({
+    mode,
+    reporter: observability.reporter,
+    transport: createQaRbacTransport(),
+    loadScopes: qaLoadScopes,
+  });
   const permissions = new Set(roleDefaults(persona.profile.role));
   authz.setContext({
     authenticated: true,
