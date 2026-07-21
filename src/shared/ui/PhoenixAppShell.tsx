@@ -21,6 +21,10 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   15: 'nav_my_account',
   16: 'nav_status_editor',
   17: 'nav_network',
+  // Screen 18 (Outlet Operations). Without this entry the topbar falls back to
+  // nav_status_center, so the corridor rendered "Status Center" above an Outlet
+  // Operations page — caught by the outlet-corridor visual evidence capture.
+  18: 'nav_outlet_ops',
 };
 
 interface Props {
