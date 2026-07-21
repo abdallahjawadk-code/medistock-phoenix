@@ -28,11 +28,12 @@ import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
+import { CurrentMovementStatus } from './CurrentMovementStatus';
 import { getOutletStock, getOutletStockMovements } from './outlet-stock.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 
-type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
+type OutletTab = 'incoming' | 'stock' | 'returns' | 'history' | 'status';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
 
 export function OutletOperationsScreen() {
@@ -76,6 +77,7 @@ export function OutletOperationsScreen() {
     { id: 'stock', labelKey: 'or_tab_stock' },
     { id: 'returns', labelKey: 'or_tab_returns' },
     { id: 'history', labelKey: 'or_tab_history' },
+    { id: 'status', labelKey: 'or_tab_status' },
   ];
 
   return (
@@ -127,6 +129,8 @@ export function OutletOperationsScreen() {
       {tab === 'returns' && <OutletReturnsTab distributionPointId={activeOutlet.id} outletName={outletName} lang={lang} />}
 
       {tab === 'history' && <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />}
+
+      {tab === 'status' && <CurrentMovementStatus lang={lang} />}
     </div>
   );
 }
