@@ -116,6 +116,13 @@ export interface WarehouseDispatchLine {
   supplyTypeText: string | null;
   sentQuantity: number;
   receivedQuantity: number | null;
+  /**
+   * Server-maintained: how much of this accepted line has already been returned.
+   * Migration 071 keeps it as the single authoritative return counter, and its
+   * ADD-LINE RPC caps a new return at `received_quantity - returned_quantity`.
+   * Read it, show it, never recompute it.
+   */
+  returnedQuantity: number;
   status: string;
   differenceReason: string | null;
 }
@@ -126,13 +133,14 @@ interface WarehouseDispatchLineRow {
   dosage_form: string | null; unit: string | null; national_code: string | null;
   batch_number: string | null; internal_batch_reference: string | null; expiry_date: string | null;
   unit_price: number | null; currency: string | null; supply_type_text: string | null;
-  sent_quantity: number; received_quantity: number | null; status: string; difference_reason: string | null;
+  sent_quantity: number; received_quantity: number | null; returned_quantity: number;
+  status: string; difference_reason: string | null;
 }
 
 const DISPATCH_LINE_COLUMNS =
   'id, dispatch_id, warehouse_stock_id, scientific_name, trade_name, concentration, dosage_form, ' +
   'unit, national_code, batch_number, internal_batch_reference, expiry_date, unit_price, currency, ' +
-  'supply_type_text, sent_quantity, received_quantity, status, difference_reason';
+  'supply_type_text, sent_quantity, received_quantity, returned_quantity, status, difference_reason';
 
 function mapDispatchLine(r: WarehouseDispatchLineRow): WarehouseDispatchLine {
   return {
@@ -142,7 +150,8 @@ function mapDispatchLine(r: WarehouseDispatchLineRow): WarehouseDispatchLine {
     batchNumber: r.batch_number, internalBatchReference: r.internal_batch_reference,
     expiryDate: r.expiry_date, unitPrice: r.unit_price, currency: r.currency,
     supplyTypeText: r.supply_type_text, sentQuantity: r.sent_quantity,
-    receivedQuantity: r.received_quantity, status: r.status, differenceReason: r.difference_reason,
+    receivedQuantity: r.received_quantity, returnedQuantity: r.returned_quantity,
+    status: r.status, differenceReason: r.difference_reason,
   };
 }
 
