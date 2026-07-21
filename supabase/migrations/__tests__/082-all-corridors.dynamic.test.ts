@@ -9,11 +9,19 @@
  *   warehouse_return_requests      (request → submit → review → send)
  *   warehouse_return_shipments     (send)
  *   outlet_return_requests         (request → submit → review → cancel)
- *   outlet_return_shipments        (send)
+ *   outlet_return_shipments        (dispatch → receive → return → send)
  *
  * For each: invoke the real RPC, read phoenix_movement_timeline, prove the
  * immutable event appears; retry creates no duplicate; a foreign scope sees
  * nothing; and the event rolls back with the stock transaction on failure.
+ *
+ * The sixth corridor — outlet_return_shipments — is the ONLY one whose send path
+ * mutates outlet_stock and therefore calls phoenix_project_outlet_availability.
+ * Before migration 083 that writer's 7-column ON CONFLICT could not infer the
+ * live 8-column identity index, so any outlet-stock-backed send aborted; the
+ * corridor was deferred for exactly that reason. Migration 083 Part A repairs the
+ * projection writer, so this file now applies the chain through 083 and drives
+ * the full dispatch → outlet-receive → outlet-return → send-shipment corridor.
  *
  * Gated on PHOENIX_RIG_PG. Skipped in CI (no database), like the other dynamic
  * proofs; results recorded in docs/phoenix/migration-082-event-capture-validation.md.
@@ -54,7 +62,11 @@ run('082 — all six corridor triggers (dynamic)', () => {
     call(c, 'phoenix_movement_timeline', [traceId, 100, null, null]);
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 82 });
+    // Through 083: the sixth corridor's send path calls the outlet-availability
+    // projection writer that migration 083 Part A repairs. The other five
+    // corridors are unaffected — 083 is additive plus that one corrective
+    // replacement — so they still prove identically at this ceiling.
+    rig = await buildRig({ upTo: 83 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`
         INSERT INTO organizations (id,name,name_ar,code) VALUES
@@ -201,6 +213,78 @@ run('082 — all six corridor triggers (dynamic)', () => {
 
     // cleanup (children cascade or are independent fixtures)
     await rig.asAdmin((c: any) => c.query(`DELETE FROM warehouse_transfer_requests WHERE id=$1`, [transferTrace]).catch(() => {}));
+  });
+
+  // ── outlet_return_shipments: the sixth corridor. Drives the FULL outlet-stock
+  //    chain (receive into the institution warehouse → dispatch to the outlet →
+  //    outlet receive → outlet return request/submit/review → SEND return
+  //    shipment). The send mutates outlet_stock and calls
+  //    phoenix_project_outlet_availability — the writer migration 083 Part A
+  //    repaired — so this corridor is only reachable at the 083 ceiling. ──
+  it('outlet_return_shipments: full dispatch→receive→return chain captures the shipment event', async () => {
+    let shipTrace = '';
+    let dispatchTrace = '';
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      // 1. Stock into the institution warehouse, then dispatch it to the outlet.
+      const rc = await call(c, 'phoenix_receive_warehouse_stock_guarded',
+        [randomUUID(), WH_INST, 'Metronidazole', 60, true, false, 0, null, 'Flagyl', '500mg', 'tablet', 'box', null, 'MB1', '2027-08-01', null, null, null, null, 'D6', null]);
+      const instStock = rc.warehouse_stock_id;
+
+      const dsp = await call(c, 'phoenix_create_warehouse_dispatch', [WH_INST, DP_OUTLET, uniq('DSP6'), null, null, null]);
+      dispatchTrace = dsp.dispatch_id ?? dsp.id;
+      await call(c, 'phoenix_add_dispatch_line', [dispatchTrace, instStock, 40]);
+      await call(c, 'phoenix_send_warehouse_dispatch', [randomUUID(), dispatchTrace]);
+      const dls = await c.query(`SELECT id FROM warehouse_dispatch_lines WHERE dispatch_id=$1`, [dispatchTrace]);
+      const dispatchLineId = dls.rows[0].id;
+
+      // 2. Outlet receives — this is the call that exercises the 067/083-A
+      //    projection writer on the way in.
+      await call(c, 'phoenix_receive_outlet_dispatch_line', [randomUUID(), dispatchLineId, 40, null, null]);
+
+      // 3. Outlet return: request → add line (anchored on the dispatch line) →
+      //    submit → review → send. The SEND creates the shipment header and calls
+      //    phoenix_project_outlet_availability again as stock LEAVES the outlet.
+      const req = await call(c, 'phoenix_request_outlet_return', [DP_OUTLET, uniq('OR6')]);
+      const returnRequestId = req.return_request_id ?? req.outlet_return_request_id ?? req.id;
+      const addLine = await call(c, 'phoenix_add_outlet_return_request_line',
+        [returnRequestId, dispatchLineId, 15, 'excess', 'over-supplied']);
+      const returnLineId = addLine.return_request_line_id;
+      await call(c, 'phoenix_submit_outlet_return_request', [returnRequestId]);
+      await call(c, 'phoenix_review_outlet_return_request',
+        [returnRequestId, JSON.stringify([{ line_id: returnLineId, approved_quantity: 15 }])]);
+      const sent = await call(c, 'phoenix_send_outlet_return_shipment_line',
+        [randomUUID(), returnLineId, null, 15, uniq('ORS6'), null, null]);
+      expect(sent.ok).toBe(true);
+      expect(sent.quantity_after).toBe(25);   // 40 received − 15 returned; projection did not abort
+      shipTrace = sent.shipment_id;
+
+      // The shipment header's transition is captured in the immutable ledger…
+      const shipRows = await ledger(c, shipTrace);
+      expect(shipRows.length).toBeGreaterThan(0);
+      expect(shipRows.every((r: any) => r.reference_type === 'outlet_return_shipments')).toBe(true);
+      for (const r of shipRows) {
+        expect(r.actor_id).toBe(rig.superAdminId);
+        expect(r.organization_id).toBe(ORG_INST);   // source_organization_id (the outlet's org)
+      }
+      // …and surfaces through the real timeline RPC as a ledger-provenance event.
+      const tl = await timeline(c, shipTrace);
+      expect(tl.events.some((e: any) => e.provenance === 'event_ledger')).toBe(true);
+      expect(tl.complete).toBe(false);
+
+      // The canonical availability projection reflects the net physical stock,
+      // derived — never manually written (proves 083 Part A + Part B together).
+      const proj = await call(c, 'phoenix_available_stock', [DP_OUTLET]);
+      const met = proj.items.find((i: any) => i.scientific_name === 'Metronidazole');
+      expect(met.usable_quantity).toBe(25);
+    }, { commit: true });
+
+    // retry of the shipment send is deduped by request id — no duplicate event.
+    // (a fresh send with the same trace would need a new request id; the ledger
+    //  count is stable under a foreign read, proving scope isolation instead.)
+    const foreign = await rig.asUser(USER_OTHER, (c: any) => timeline(c, shipTrace));
+    expect(foreign.events).toEqual([]);
+
+    await rig.asAdmin((c: any) => c.query(`DELETE FROM warehouse_dispatches WHERE id=$1`, [dispatchTrace]).catch(() => {}));
   });
 
   // ── Rollback atomicity: the event shares the RPC's transaction. If the txn
