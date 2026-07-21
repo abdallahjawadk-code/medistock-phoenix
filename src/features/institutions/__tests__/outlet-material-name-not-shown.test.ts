@@ -22,6 +22,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { findUnexpectedMigrationGitStatusEntries } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migration-git-status';
 import { execSync } from 'child_process';
+import { expectQuickAvailFormAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
@@ -43,7 +44,7 @@ describe('1. Outlet material row uses item_availability direct fields as the pri
   });
 
   it('the row rendering calls outletMaterialTitle, not the raw legacy-join-only itemName pattern', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('outletMaterialTitle(r, ci, lang)');
     expect(section).not.toMatch(/const itemName = lang === 'ar' \? \(ci\?\.name_ar/);
   });
@@ -58,7 +59,7 @@ describe('1. Outlet material row uses item_availability direct fields as the pri
 });
 
 describe('2. Trade name, concentration, and dosage form are displayed when present', () => {
-  const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+  const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
 
   it('shows trade_name as secondary text distinct from the title', () => {
     expect(section).toContain('r.trade_name?.trim() && r.trade_name.trim() !== title');
@@ -86,14 +87,14 @@ describe('3. local_items/central_items fallback still works when direct fields a
 
   it('centralOf(...) (the legacy join resolver) is unchanged and still called', () => {
     expect(screen).toContain('function centralOf(row: LocalRow');
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('centralOf(r.local_items)');
   });
 });
 
 describe('4. "—" is never the sole material title when a material exists', () => {
   it('the row title expression no longer renders a bare em-dash fallback', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).not.toMatch(/\{itemName \?\? '—'\}/);
     expect(section).not.toMatch(/\{title \?\? '—'\}/);
   });
@@ -120,14 +121,14 @@ describe('4. "—" is never the sole material title when a material exists', () 
 
 describe('5. intentionally-removed rows remain hidden from active outlet contents', () => {
   it('PortAvailabilitySection filters on the removed_at marker before rendering (FRONTEND-LIVE-REMOVED-AT-FILTERS-A: replaced the old blunt quantity=0+missing heuristic, which also hid genuine still-open shortages)', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('filter(r => r.removed_at == null)');
   });
 });
 
 describe('6. Visible count uses the filtered active-materials array only', () => {
   it('the "إدارة التوفر (N أصناف)" header counts rows.length (post-filter), not the raw async payload', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     const headerIdx = section.indexOf("avail_manage', lang");
     const around = section.slice(headerIdx, headerIdx + 80);
     expect(around).toContain('rows.length');
@@ -137,8 +138,8 @@ describe('6. Visible count uses the filtered active-materials array only', () =>
 
 describe('7. Empty state appears with the required translated copy when all rows are cleared/hidden', () => {
   it('renders avail_outlet_active_empty (not the generic empty_avail) when rows.length === 0', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
-    const emptyBlock = section.slice(section.indexOf('rows.length === 0 && !showAdd'), section.indexOf('rows.length === 0 && !showAdd') + 200);
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
+    const emptyBlock = section.slice(section.indexOf('rows.length === 0 &&'), section.indexOf('rows.length === 0 &&') + 200);
     expect(emptyBlock).toContain("t('avail_outlet_active_empty', lang)");
   });
 
@@ -160,16 +161,18 @@ describe('8. No DB/RPC write path was changed by this fix', () => {
   // a sibling function rendered by PortAvailabilitySection, uses it to add a
   // new material), so it remains a valid RPC for the whole file's writes.
   it('PortAvailabilitySection still only reads via getAvailabilityByPoint and removes materials via the existing audited movement RPC', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('getAvailabilityByPoint(pointId)');
     expect(section).toContain('applyAvailabilityMovement(');
     expect(section).not.toMatch(/\.rpc\(\s*['"](?!phoenix_apply_availability_movement|phoenix_upsert_availability)/);
   });
 
-  it('upsertAvailability is still used in this file only by QuickAvailForm (adding a material), not by the remove path', () => {
-    expect(screen).toContain('upsertAvailability(');
-    const quickAvailForm = screen.slice(screen.indexOf('function QuickAvailForm'));
-    expect(quickAvailForm).toContain('upsertAvailability(');
+  // E6: QuickAvailForm was the ONLY upsertAvailability caller in this file and
+  // is now retired, so the assertion inverts: the remove path still must not
+  // use it, and neither does anything else here any more.
+  it('upsertAvailability is no longer called anywhere in this file, remove path included', () => {
+    expect(screen).not.toContain('await upsertAvailability(');
+    expectQuickAvailFormAbsent();
   });
 
   it('getAvailabilityByPoint itself is unchanged (still a plain SELECT, no new RPC/table)', () => {
@@ -255,12 +258,12 @@ describe('11-12. Safety guards', () => {
 
 describe('QR generation, creation/update RPCs, and permission checks are untouched', () => {
   it('no qr_targets/qr_tokens/QR RPC references appear anywhere near the edited sections', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).not.toMatch(/qr_targets|qr_tokens|generateQr|revokeQr/i);
   });
 
   it('canRemove permission prop is still threaded through unchanged (canMutate was removed by UI-HIDE-PORT-ADD-ITEM-A once its only use, the "+ Add" button, was hidden)', () => {
-    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function QuickAvailForm'));
+    const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('canRemove');
   });
 });

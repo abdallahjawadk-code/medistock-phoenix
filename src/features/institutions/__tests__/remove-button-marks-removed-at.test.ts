@@ -32,6 +32,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { expectQuickAvailFormAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
@@ -122,8 +123,15 @@ describe('E) The redundant upsertAvailability follow-up call was removed, not ju
     expect(onConfirmRemoveBody()).not.toContain('upsertAvailability');
   });
 
-  it('upsertAvailability import is still present in the file (still used by QuickAvailForm to add materials — unrelated to remove)', () => {
-    expect(screen).toContain('upsertAvailability,');
+  // E6: this asserted the import SURVIVED, because QuickAvailForm still needed
+  // it — the point being that the remove path's cleanup had not over-reached.
+  // QuickAvailForm is now retired, so the import is legitimately gone. The
+  // original intent is preserved and strengthened: remove still works, through
+  // the recorded-movement RPC it always used.
+  it('the upsertAvailability import is gone with its last caller, and remove is unaffected', () => {
+    expect(screen).not.toContain('upsertAvailability,');
+    expectQuickAvailFormAbsent();
+    expect(onConfirmRemoveBody()).toContain('applyAvailabilityMovement');
   });
 });
 
@@ -138,7 +146,7 @@ describe('F) No hard delete of item_availability anywhere in the remove path', (
 describe('G) Genuine missing/shortage rows (removed_at null) are not globally hidden by this fix', () => {
   it('the outlet-list display filter still keys only on removed_at, unrelated to this onConfirmRemove change', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toContain('filter(r => r.removed_at == null)');
     expect(fnBody).not.toMatch(/condition === 'missing'/);
   });

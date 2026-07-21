@@ -41,15 +41,15 @@ import {
   classifyClearPortItemsError,
   archiveOrganization,
 } from '@/shared/supabase/services/lifecycle.service';
+// upsertAvailability / classifyAvailabilitySaveError are deliberately NOT
+// imported here any more: their only caller in this file was the retired
+// QuickAvailForm manual-availability writer. Quantity changes on this screen go
+// through applyAvailabilityMovement, which records a movement row.
 import {
   getAvailabilityByPoint,
-  upsertAvailability,
   applyAvailabilityMovement,
   classifyAvailabilityMovementError,
-  classifyAvailabilitySaveError,
 } from '@/shared/supabase/services/availability.service';
-import { getLocalItems } from '@/shared/supabase/services/registry.service';
-import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -776,7 +776,6 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
   available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
 };
 
-const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
 function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
   lang: 'ar' | 'en';
@@ -1301,7 +1300,6 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
       {/* Availability section */}
       <PortAvailabilitySection
         pointId={point.id}
-        orgId={point.organizationId}
         lang={lang}
         canRemove={canRemoveOutletMaterial}
         onToast={onToast}
@@ -1628,9 +1626,10 @@ function outletMaterialTitle(r: AvailRow, ci: { name: string; name_ar: string } 
   );
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, pointStatus, refreshKey, pointName, orgName }: {
+// `orgId` was removed with the retired QuickAvailForm: this section is now
+// read-plus-remove only, and the remove path is scoped by pointId.
+function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatus, refreshKey, pointName, orgName }: {
   pointId: string;
-  orgId: string;
   lang: 'ar' | 'en';
   // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A (permission-matrix fix): separate
   // from ports.edit because "Remove from outlet" writes through TWO
@@ -1655,7 +1654,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
   orgName?: string;
 }) {
   const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId, refreshKey]);
-  const [showAdd, setShowAdd] = useState(false);
   // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: the row whose read-only details
   // modal is open, or null when closed. Purely local UI state — no data write.
   const [detailsRow, setDetailsRow] = useState<AvailRow | null>(null);
@@ -1743,19 +1741,9 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
         </span>
       </div>
 
-      {showAdd && (
-        <QuickAvailForm
-          pointId={pointId}
-          orgId={orgId}
-          lang={lang}
-          onSaved={() => { setShowAdd(false); avail.reload(); onToast(t('avail_saved', lang)); }}
-          onCancel={() => setShowAdd(false)}
-        />
-      )}
-
       {avail.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
 
-      {!avail.loading && rows.length === 0 && !showAdd && (
+      {!avail.loading && rows.length === 0 && (
         <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '8px' }} dir="auto">
           {t('avail_outlet_active_empty', lang)}
         </div>
@@ -1842,86 +1830,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
         pointName={pointName}
         orgName={orgName}
       />
-    </div>
-  );
-}
-
-/* ── Quick Availability Add Form ── */
-
-function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
-  pointId: string;
-  orgId: string;
-  lang: 'ar' | 'en';
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const items = useAsync(() => getLocalItems(orgId), [orgId]);
-  const itemRows = (items.data ?? []) as unknown as LocalRow[];
-  const [itemId, setItemId] = useState('');
-  const [qty, setQty] = useState(0);
-  const [condition, setCondition] = useState<AvailabilityCondition>('available');
-  const [batch, setBatch] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const canSubmit = itemId && qty >= 0;
-
-  async function onSubmit() {
-    if (!canSubmit) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const selectedItem = itemRows.find(r => r.id === itemId);
-      const ci = selectedItem ? centralOf(selectedItem) : null;
-      const sciName = ci ? (ci.name ?? ci.name_ar ?? itemId) : itemId;
-      await upsertAvailability({
-        distributionPointId: pointId,
-        organizationId: orgId,
-        scientificName: sciName,
-        quantity: qty,
-        condition,
-        batchNumber: batch || undefined,
-        expiryDate: expiry || undefined,
-      });
-      onSaved();
-    } catch (e) {
-      // Developer-safe console log; user sees a classified, translated
-      // message only (mirrors EditorScreen.tsx's doApply, instead of the
-      // previous raw/untranslated e.message fallback).
-      console.error('[phoenix] availability quick-add failed:', e);
-      setError(t(classifyAvailabilitySaveError(e), lang));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <select value={itemId} onChange={e => setItemId(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }}>
-        <option value="">{items.loading ? t('loading', lang) : t('avail_select_item', lang)}</option>
-        {itemRows.map(row => {
-          const ci = centralOf(row);
-          return <option key={row.id} value={row.id}>{lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar)} ({row.local_code ?? ''})</option>;
-        })}
-      </select>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <input type="number" min={0} value={qty} onChange={e => setQty(Number(e.target.value))} placeholder={t('qty', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
-        <select value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', appearance: 'none' }}>
-          {CONDITIONS.map(c => <option key={c} value={c}>{t(CONDITION_LABEL_KEY[c], lang)}</option>)}
-        </select>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <input type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('batch_no', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', fontFamily: 'monospace' }} />
-        <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
-      </div>
-      {error && <p style={{ fontSize: '11px', color: 'var(--err)' }}>{error}</p>}
-      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-        <button onClick={onCancel} style={{ fontSize: '11px', color: 'var(--t2)', border: 'none', background: 'none', cursor: 'pointer' }}>{t('cancel', lang)}</button>
-        <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
-          {t('inst_save', lang)}
-        </PhoenixButton>
-      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -26,7 +27,6 @@ const modalPath    = join(SRC, 'features/status/MovementHistoryModal.tsx');
 const modal        = readFileSync(modalPath, 'utf8');
 const service      = readSrc('shared/supabase/services/availability.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
-const editorScreen = readSrc('features/editor/EditorScreen.tsx');
 const adjustModal  = readSrc('features/status/AdjustQuantityModal.tsx');
 
 // ============================================================================
@@ -263,9 +263,8 @@ describe('Existing features remain intact', () => {
   });
 
   it('EditorScreen.tsx is untouched by this phase', () => {
-    expect(editorScreen).not.toContain('MovementHistoryModal');
-    expect(editorScreen).not.toContain('getAvailabilityMovementsByItem');
-    expect(editorScreen).not.toContain('AVAILABILITY-MOVEMENT-HISTORY-VIEW-A');
+    // E6: EditorScreen is retired — absence is stronger than 'does not contain'.
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
   it('no QR file references movement history', () => {

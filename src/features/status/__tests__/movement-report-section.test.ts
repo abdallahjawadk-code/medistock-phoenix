@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -25,7 +26,6 @@ const section      = readFileSync(sectionPath, 'utf8');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const service      = readSrc('shared/supabase/services/availability.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
-const editorScreen  = readSrc('features/editor/EditorScreen.tsx');
 const adjustModal   = readSrc('features/status/AdjustQuantityModal.tsx');
 const historyModal  = readSrc('features/status/MovementHistoryModal.tsx');
 
@@ -324,9 +324,8 @@ describe('Guards: no unrelated changes, existing features intact', () => {
   });
 
   it('EditorScreen.tsx is untouched by this phase', () => {
-    expect(editorScreen).not.toContain('MovementReportSection');
-    expect(editorScreen).not.toContain('getAvailabilityMovementsReport');
-    expect(editorScreen).not.toContain('AVAILABILITY-MOVEMENT-REPORTS-PRINT-A');
+    // E6: EditorScreen is retired — absence is stronger than 'does not contain'.
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
   it('AdjustQuantityModal.tsx is untouched by this phase', () => {

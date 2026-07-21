@@ -19,6 +19,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import {
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -297,13 +301,14 @@ describe('Migration 033 does not create any RPC and does not touch phoenix_upser
 // ============================================================================
 
 describe('EditorScreen, StatusCenter, and QR/public-QR are untouched by this phase', () => {
-  it('EditorScreen.tsx still gates save on availability.create/update, not quantity-movement keys', () => {
-    const editorScreen = readSrc('features/editor/EditorScreen.tsx');
-    expect(editorScreen).toContain("myPermissions.has('availability.create')");
-    expect(editorScreen).toContain("myPermissions.has('availability.update')");
-    expect(editorScreen).not.toContain('availability.quantity.');
-    expect(editorScreen).not.toContain('availability.movements.');
-    expect(editorScreen).not.toContain('phoenix_apply_availability_movement');
+  // E6: this used to assert EditorScreen still gated save on
+  // availability.create/update and never reached the quantity-movement keys.
+  // The screen is now RETIRED, so the isolation guard becomes an ABSENCE guard:
+  // a screen that does not exist cannot gate on the wrong permission, and this
+  // additionally stops it being reintroduced.
+  it('EditorScreen is retired, so no quantity-movement permission can leak back through it', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
+    expectScreenThreeIsInventoryCenter();
   });
 
   it('StatusCenterScreen.tsx quantity-movement UI wiring (added by AVAILABILITY-QUANTITY-MOVEMENT-UI-A) does not touch item_availability_movements directly', () => {

@@ -1,138 +1,106 @@
 /**
- * EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A
- * Run: npm test -- --run
+ * EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A — retired-surface revision (E6).
  *
- * Static source-code tests: EditorScreen must not allow a silent quantity
- * overwrite for an already-existing item_availability row. Quantity changes
- * for existing rows must go through Status Center -> Adjust Quantity
- * (applyAvailabilityMovement / phoenix_apply_availability_movement, migration 034).
+ * ORIGINAL INVARIANT (still in force): a quantity change to an EXISTING
+ * item_availability row must never be a silent overwrite. It has to go through
+ * a recorded movement — applyAvailabilityMovement /
+ * phoenix_apply_availability_movement (migration 034) — enforced at the
+ * database by migration 035's quantity_update_requires_movement guard.
  *
- * Frontend-only guard: EditorScreen has no built-in concept of "editing an
- * existing row" (no id state, no create/update toggle, no prior fetch of a
- * single row). This phase adds client-side detection by fetching the
- * point's existing rows (getAvailabilityByPoint, already used elsewhere) and
- * matching on the exact same key as the DB partial unique index (migration
- * 029) and the phoenix_upsert_availability RPC's UPDATE lookup (migration 030):
- * distribution_point_id + scientific_name + COALESCE(concentration,'') +
- * COALESCE(dosage_form,'').
+ * WHAT CHANGED: the original file proved that invariant by asserting how
+ * EditorScreen's form behaved — its quantity input going read-only in edit
+ * mode, doApply sending the existing quantity rather than local state, and so
+ * on. EditorScreen is now RETIRED, so those assertions have no subject.
+ *
+ * They are NOT simply deleted — that would drop the protection at the moment it
+ * matters most. Each is re-expressed against whatever now enforces the same
+ * invariant: the retired screen stays absent, screen 3 stays the Inventory
+ * Center, no surviving surface performs a bare manual quantity overwrite, and
+ * the replacement screen derives condition from the ledger instead of taking a
+ * typed-in number.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  readSourceFile,
-  functionBodyAt,
-  enclosingJsxTag,
-  jsxElementContaining,
-} from '../../../shared/__tests__/helpers/source-extract';
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+  expectQuickAvailFormAbsent,
+  productionSourceFiles,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
+const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
-function readSrc(rel: string) {
-  return readSourceFile(join(SRC, rel));
-}
-
-const editor = readSrc('features/editor/EditorScreen.tsx');
-const strings = readSrc('shared/i18n/strings.ts');
-
-describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: existing-row detection', () => {
-  it('imports getAvailabilityByPoint to detect existing rows for the selected point', () => {
-    expect(editor).toContain('getAvailabilityByPoint');
+describe('the silent-overwrite surface is retired, not merely unused', () => {
+  it('EditorScreen is deleted, unimported and unrendered', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('computes an existingRow / isEditMode match using scientific_name + concentration + dosage_form', () => {
-    expect(editor).toContain('existingRow');
-    expect(editor).toContain('isEditMode');
-    expect(editor).toMatch(/r\.scientific_name/);
-    expect(editor).toMatch(/r\.concentration/);
-    expect(editor).toMatch(/r\.dosage_form/);
+  it('screen 3 routes to the Inventory Center that replaced it', () => {
+    expectScreenThreeIsInventoryCenter();
   });
 
-  it('does not introduce a new RPC, migration, or movement call (frontend-only guard)', () => {
-    expect(editor).not.toContain('applyAvailabilityMovement');
-    expect(editor).not.toContain('phoenix_apply_availability_movement');
-    expect(editor).not.toContain('AvailabilityMovementType');
-    expect(editor).not.toContain('AdjustQuantityModal');
-  });
-
-  it('does not use service_role', () => {
-    expect(editor).not.toContain('service_role');
+  it('the QuickAvailForm manual writer is gone from InstitutionScreen too', () => {
+    expectQuickAvailFormAbsent();
   });
 });
 
-describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: quantity field behavior', () => {
-  it('the quantity input is disabled/read-only when isEditMode is true', () => {
-    const qtyBlock = enclosingJsxTag(editor, 'id="ed-qty"');
-    expect(qtyBlock).toContain('disabled={isEditMode}');
-    expect(qtyBlock).toContain('readOnly={isEditMode}');
+describe('no surviving surface can overwrite a quantity silently', () => {
+  it('exactly one production module still calls upsertAvailability', () => {
+    // `await upsertAvailability(` is the CALL form — it excludes the service's
+    // own `export async function upsertAvailability(` definition.
+    const callers = productionSourceFiles()
+      .filter(f => readFileSync(f, 'utf8').includes('await upsertAvailability('))
+      .map(f => f.replace(/\\/g, '/').split('/src/')[1])
+      .sort();
+
+    // ReactivateMaterialModal is the last legacy writer, tracked as deployment
+    // blocker 3. If a NEW caller appears this fails, and the audit has to be
+    // redone before it can ship.
+    expect(callers).toEqual(['features/status/ReactivateMaterialModal.tsx']);
   });
 
-  it('the quantity input displays the existing row quantity (not stale local state) in edit mode', () => {
-    const qtyBlock = enclosingJsxTag(editor, 'id="ed-qty"');
-    expect(qtyBlock).toMatch(/value=\{isEditMode \? existingRow!\.quantity : qty\}/);
+  it('that remaining caller moves quantity through a RECORDED movement first', () => {
+    const modal = readSrc('features/status/ReactivateMaterialModal.tsx');
+    // Migration 035's guard: the upsert may only restate a quantity a movement
+    // has already set, so the movement call must be present.
+    expect(modal).toContain('applyAvailabilityMovement');
+    expect(modal).toContain('reactivated_from_removed');
   });
 
-  it('the quantity field remains editable (not disabled) for a brand-new row', () => {
-    // disabled is a boolean expression keyed off isEditMode; when isEditMode is
-    // false (create/new), disabled/readOnly evaluate to false — input stays editable.
-    expect(editor).toContain('disabled={isEditMode}');
-    expect(editor).not.toContain('disabled={true}');
-  });
-
-  it('shows the bilingual warning/helper text only in edit mode', () => {
-    // The helper text is a sibling of the input inside the same field group,
-    // so the region is the enclosing <div>, not the <input> tag itself.
-    const qtyGroup = jsxElementContaining(editor, 'id="ed-qty"');
-    expect(qtyGroup).toContain('isEditMode && (');
-    expect(qtyGroup).toContain('avail_qty_locked_note');
-  });
-
-  it('the quantity field is not removed from the DOM in edit mode (still visible)', () => {
-    expect(editor).toContain('<input\n');
-    expect(editor).toContain('id="ed-qty"');
+  it('the recorded-movement RPC remains the only permitted quantity write', () => {
+    const service = readSrc('shared/supabase/services/availability.service.ts');
+    expect(service).toContain('phoenix_apply_availability_movement');
   });
 });
 
-describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: save never sends a changed quantity for existing rows', () => {
-  it('doApply sends existingRow quantity (not local qty state) when isEditMode is true', () => {
-    const applyFn = functionBodyAt(editor, 'async function doApply');
-    expect(applyFn).toMatch(/quantity:\s*isEditMode \? existingRow!\.quantity : qty/);
+describe('the replacement screen derives condition from the ledger', () => {
+  const inventory = readSrc('features/inventory/InventoryCenterScreen.tsx');
+
+  it('never calls the legacy manual availability writer', () => {
+    expect(inventory).not.toContain('upsertAvailability');
   });
 
-  it('save still sends the locally-typed qty for brand-new rows', () => {
-    const applyFn = functionBodyAt(editor, 'async function doApply');
-    expect(applyFn).toContain(': qty,');
-  });
-});
-
-describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: i18n helper text', () => {
-  it('avail_qty_locked_note exists with Arabic and English text', () => {
-    expect(strings).toMatch(/avail_qty_locked_note:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
-  });
-
-  it('English text matches the required message', () => {
-    const line = strings.split('\n').find(l => l.includes('avail_qty_locked_note'));
-    expect(line).toContain('Use Status Center');
-    expect(line).toContain('Adjust Quantity');
-  });
-
-  it('Arabic text matches the required message', () => {
-    const line = strings.split('\n').find(l => l.includes('avail_qty_locked_note'));
-    expect(line).toContain('مركز المواقف');
-    expect(line).toContain('تعديل الكمية');
+  it('states plainly that condition is derived, never hand-entered', () => {
+    expect(inventory).toContain('inv_derived_notice');
   });
 });
 
-describe('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A: no out-of-scope changes', () => {
-  it('does not modify StatusCenterScreen or AdjustQuantityModal', () => {
-    const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
-    expect(statusCenter).not.toContain('EDITOR-QUANTITY-SILENT-OVERWRITE-GUARD-A');
+describe('adjacent surfaces stay untouched by this retirement', () => {
+  it('Status Center still owns Adjust Quantity via the movement modal', () => {
+    const status = readSrc('features/status/StatusCenterScreen.tsx');
+    expect(status).toContain('AdjustQuantityModal');
   });
 
-  it('does not reference any Excel import feature', () => {
-    expect(editor).not.toMatch(/xlsx|excel.?import/i);
+  it('AdjustQuantityModal still calls the movement service, not a raw RPC', () => {
+    const modal = readSrc('features/status/AdjustQuantityModal.tsx');
+    expect(modal).toContain('applyAvailabilityMovement');
+    expect(modal).not.toContain("supabase.rpc('phoenix_apply_availability_movement'");
   });
 
-  it('does not add or reference a QR-related import', () => {
-    expect(editor).not.toMatch(/qr[_-]?token|QrToken|public.?qr/i);
+  it('the locked-quantity helper string is preserved for the movement UX', () => {
+    const strings = readSrc('shared/i18n/strings.ts');
+    expect(strings).toContain('avail_qty_locked_note');
   });
 });

@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../tests/helpers/retired-surfaces';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
 const MIGRATION_035_PATH = join(MIGRATIONS_DIR, '035_phoenix_upsert_quantity_hard_guard.sql');
@@ -262,10 +263,20 @@ describe('i18n: bilingual string for the new guard error', () => {
   });
 });
 
-describe('EditorScreen remains unchanged for this backend-only phase', () => {
-  const editor = readFileSync(join(__dirname, '../../../src/features/editor/EditorScreen.tsx'), 'utf8');
+describe('the retired EditorScreen cannot reference this backend guard', () => {
+  // E6: was "EditorScreen remains unchanged for this backend-only phase", read
+  // straight off the file. The screen is retired, so the isolation guard
+  // becomes an absence guard: error classification stays centralized in
+  // availability.service, and no retired screen can reintroduce a local copy.
+  it('EditorScreen is deleted, unimported and unrendered', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
+  });
 
-  it('does not reference the new backend guard error key directly (classification is centralized in the service)', () => {
-    expect(editor).not.toContain('quantity_update_requires_movement');
+  it('the guard error key stays centralized in the availability service', () => {
+    const service = readFileSync(
+      join(__dirname, '../../../src/shared/supabase/services/availability.service.ts'),
+      'utf8',
+    );
+    expect(service).toContain('quantity_update_requires_movement');
   });
 });

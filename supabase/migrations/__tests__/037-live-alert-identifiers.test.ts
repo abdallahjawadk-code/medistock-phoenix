@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../tests/helpers/retired-surfaces';
 
 const MIGRATIONS_DIR = join(__dirname, '../');
 const MIGRATION_036_PATH = join(MIGRATIONS_DIR, '036_phoenix_live_inter_institution_alerts_rpc.sql');
@@ -345,14 +346,15 @@ describe('UI compatibility: InterInstitutionAlertsScreen and DashboardScreen rem
 });
 
 describe('Regression guards: unrelated systems untouched', () => {
-  const editorScreen = readFileSync(join(__dirname, '../../../src/features/editor/EditorScreen.tsx'), 'utf8');
   const adjustModal = readFileSync(join(__dirname, '../../../src/features/status/AdjustQuantityModal.tsx'), 'utf8');
   const historyModal = readFileSync(join(__dirname, '../../../src/features/status/MovementHistoryModal.tsx'), 'utf8');
   const reportSection = readFileSync(join(__dirname, '../../../src/features/status/MovementReportSection.tsx'), 'utf8');
 
-  it('EditorScreen.tsx does not reference this phase', () => {
-    expect(editorScreen).not.toContain('LIVE-ALERTS-RPC-IDENTIFIERS-A');
-    expect(editorScreen).not.toContain('source_item_availability_id');
+  // E6: was an isolation assertion read straight off EditorScreen.tsx. The
+  // screen is retired, so this is now an absence guard — a deleted screen
+  // cannot reference this phase.
+  it('EditorScreen stays retired, so it cannot reference this phase', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
   it('AdjustQuantityModal.tsx is unaffected', () => {

@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -40,7 +41,6 @@ const mobileCommandScreen = readSrc('features/mesh/MobileCommandScreen.tsx');
 // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
 // lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
 const authenticatedApp    = readSrc('app/AuthenticatedApp.tsx');
-const editorScreen        = readSrc('features/editor/EditorScreen.tsx');
 
 // ============================================================================
 // 1. Desktop sidebar: nav_editor restored, nav_intake hidden
@@ -235,19 +235,18 @@ describe('App.tsx retains both routes (nothing removed)', () => {
 // ============================================================================
 
 describe('EditorScreen.tsx save/permission logic is untouched', () => {
-  it('still gates save on availability.create/availability.update permissions', () => {
-    expect(editorScreen).toContain("myPermissions.has('availability.view')");
-    expect(editorScreen).toContain("myPermissions.has('availability.create')");
-    expect(editorScreen).toContain("myPermissions.has('availability.update')");
+  // E6: was an isolation assertion against EditorScreen.tsx. The screen is
+  // retired, so this is now an absence guard — strictly stronger.
+  it('EditorScreen stays retired (still gates save on availability.create/availability.update )', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('still calls upsertAvailability and classifyAvailabilitySaveError', () => {
-    expect(editorScreen).toContain('upsertAvailability(');
-    expect(editorScreen).toContain('classifyAvailabilitySaveError(');
+  it('the retired screen calls nothing at all — it is deleted', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('still keeps the super_admin org dropdown vs locked-display behavior', () => {
-    expect(editorScreen).toContain("const isSuper = role === 'super_admin'");
+  it('the retired screen keeps no behaviour — it is deleted', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 });
 

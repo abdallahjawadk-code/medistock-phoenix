@@ -27,7 +27,7 @@ const strings = readSrc('shared/i18n/strings.ts');
 
 function portAvailabilitySectionBody(): string {
   const start = institutionScreen.indexOf('function PortAvailabilitySection');
-  const end = institutionScreen.indexOf('function QuickAvailForm');
+  const end = institutionScreen.indexOf('function PortCleanupWizard');
   return institutionScreen.slice(start, end);
 }
 

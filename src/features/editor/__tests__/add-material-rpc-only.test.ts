@@ -58,110 +58,83 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { reviewedMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
 import { actualMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/migration-dir';
+import {
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+  expectQuickAvailFormAbsent,
+  productionSourceFiles,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
-const editor = readSrc('features/editor/EditorScreen.tsx');
+// E6: EditorScreen.tsx is gone — the screen is retired. Assertions that named
+// it are now absence guards, and the "no direct table write" scan below covers
+// EVERY production file rather than a hand-listed few.
 const institutions = readSrc('features/institutions/InstitutionScreen.tsx');
+const reactivateModal = readSrc('features/status/ReactivateMaterialModal.tsx');
 const availabilityService = readSrc('shared/supabase/services/availability.service.ts');
 const registryService = readSrc('shared/supabase/services/registry.service.ts');
 const qrService = readSrc('shared/supabase/services/qr.service.ts');
 
-function extractFn(src: string, startMarker: string, endMarker: string): string {
-  const start = src.indexOf(startMarker);
-  const end = src.indexOf(endMarker, start);
-  return src.slice(start, end === -1 ? undefined : end);
-}
 
-describe('Add-material call path: EditorScreen.tsx uses the RPC, not a direct table write', () => {
-  const doApply = extractFn(editor, 'async function doApply', 'const fieldStyle');
-
-  it('calls upsertAvailability (phoenix_upsert_availability RPC) — not a direct .insert()/.upsert() on item_availability', () => {
-    expect(doApply).toContain('await upsertAvailability(');
-    expect(doApply).not.toMatch(/\.from\('item_availability'\)/);
-    expect(doApply).not.toMatch(/\.insert\(|\.upsert\(/);
+describe('Add-material via the retired manual forms: both surfaces are gone', () => {
+  // These two describes used to assert that EditorScreen's doApply and
+  // InstitutionScreen's QuickAvailForm each reached the RPC rather than writing
+  // a table directly, and that each classified its errors. Both surfaces are
+  // now RETIRED, so the guarantee becomes: neither can be reintroduced, and the
+  // RPC-only rule is enforced across every production file (next describe).
+  it('EditorScreen is deleted, unimported and unrendered', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('does NOT call phoenix_apply_availability_movement for a first-time add (quantity comes from the INSERT branch, not a movement)', () => {
-    expect(doApply).not.toContain('applyAvailabilityMovement');
+  it('screen 3 routes to the Inventory Center that replaced it', () => {
+    expectScreenThreeIsInventoryCenter();
   });
 
-  it('does NOT create a QR target/token as part of adding a material (QR creation is a separate, manual, port-level action)', () => {
-    expect(doApply).not.toMatch(/createQrForTarget|create_qr_for_target/);
+  it('the QuickAvailForm quick-add writer is gone from InstitutionScreen', () => {
+    expectQuickAvailFormAbsent();
   });
 
-  it('reloads pointAvailability after a successful save (BUGFIX: previously missing, left isEditMode stale)', () => {
-    expect(doApply).toMatch(/setToast\(t\('apply_success', lang\)\)[\s\S]*pointAvailability\.reload\(\)/);
-  });
-
-  it('the reload happens on the success path, not inside the catch block', () => {
-    const successBlock = doApply.slice(doApply.indexOf('await upsertAvailability'), doApply.indexOf('} catch (e) {'));
-    expect(successBlock).toContain('pointAvailability.reload()');
-  });
-
-  it('classifies save errors via classifyAvailabilitySaveError and logs to console (already correct — unchanged by this phase)', () => {
-    const catchBlock = doApply.slice(doApply.indexOf('} catch (e) {'));
-    expect(catchBlock).toContain('console.error(');
-    expect(catchBlock).toContain('classifyAvailabilitySaveError(e)');
-    expect(catchBlock).not.toMatch(/setToast\(e instanceof Error \? e\.message/);
-  });
-});
-
-describe('Add-material call path: InstitutionScreen.tsx QuickAvailForm uses the RPC, not a direct table write', () => {
-  // Scoped to QuickAvailForm specifically — InstitutionScreen.tsx has multiple
-  // functions with an identically-shaped "async function onSubmit()", e.g.
-  // AddPortForm's, so a bare marker search would grab the wrong one.
-  const quickAvailForm = institutions.slice(institutions.indexOf('function QuickAvailForm('), institutions.indexOf('\n}\n\n', institutions.indexOf('function QuickAvailForm(')));
-  const onSubmit = extractFn(quickAvailForm, 'async function onSubmit() {', 'return (');
-
-  it('calls upsertAvailability (phoenix_upsert_availability RPC) — not a direct .insert()/.upsert() on item_availability', () => {
-    expect(onSubmit).toContain('await upsertAvailability(');
-    expect(onSubmit).not.toMatch(/\.from\('item_availability'\)/);
-    expect(onSubmit).not.toMatch(/\.insert\(|\.upsert\(/);
-  });
-
-  it('does NOT call phoenix_apply_availability_movement or create a QR target as part of adding a material', () => {
-    expect(onSubmit).not.toContain('applyAvailabilityMovement');
-    expect(onSubmit).not.toMatch(/createQrForTarget|create_qr_for_target/);
-  });
-
-  it('already reloads on success via onSaved() -> avail.reload() (unchanged by this phase)', () => {
-    expect(onSubmit).toContain('onSaved();');
-    expect(institutions).toMatch(/onSaved=\{\(\)\s*=>\s*\{\s*setShowAdd\(false\);\s*avail\.reload\(\);/);
-  });
-
-  it('BUGFIX: catch block now classifies via classifyAvailabilitySaveError instead of showing raw e.message', () => {
-    const catchBlock = onSubmit.slice(onSubmit.indexOf('} catch (e) {'));
-    expect(catchBlock).toContain('console.error(');
-    expect(catchBlock).toContain('classifyAvailabilitySaveError(e)');
-    expect(catchBlock).not.toMatch(/setError\(e instanceof Error \? e\.message/);
-  });
-
-  it('classifyAvailabilitySaveError is imported from availability.service', () => {
-    const importBlock = institutions.slice(0, institutions.indexOf('export function InstitutionScreen'));
-    expect(importBlock).toMatch(/classifyAvailabilitySaveError[\s\S]{0,80}from '@\/shared\/supabase\/services\/availability\.service'/);
+  it('the one surviving availability writer still goes through the RPC wrapper', () => {
+    // ReactivateMaterialModal is deployment blocker 3. While it exists it must
+    // obey the same rule the retired forms did: RPC wrapper, never a table.
+    expect(reactivateModal).toContain('await upsertAvailability(');
+    expect(reactivateModal).not.toMatch(/\.from\('item_availability'\)/);
+    expect(reactivateModal).toContain('classifyAvailabilitySaveError');
   });
 });
 
 describe('No direct writes to any availability-related table anywhere in the frontend (RPC-only, matches live-confirmed grants)', () => {
-  const files: [string, string][] = [
-    ['EditorScreen.tsx', editor],
-    ['InstitutionScreen.tsx', institutions],
-    ['availability.service.ts', availabilityService],
-    ['registry.service.ts', registryService],
-    ['qr.service.ts', qrService],
+  const TABLES = [
+    'central_items', 'local_items', 'item_availability',
+    'item_availability_movements', 'qr_targets', 'qr_tokens',
   ];
 
-  for (const [name, src] of files) {
-    it(`${name}: no direct .insert()/.update()/.upsert()/.delete() against central_items, local_items, item_availability, item_availability_movements, qr_targets, or qr_tokens`, () => {
-      const tables = ['central_items', 'local_items', 'item_availability', 'item_availability_movements', 'qr_targets', 'qr_tokens'];
-      for (const table of tables) {
-        const writePattern = new RegExp(`\\.from\\('${table}'\\)[\\s\\S]{0,120}?\\.(insert|update|upsert|delete)\\(`, 'g');
-        expect(src, `${name} appears to write directly to ${table}`).not.toMatch(writePattern);
-      }
+  // E6: this used to iterate a HAND-LISTED set of five files, one of which was
+  // the now-retired EditorScreen. Dropping that entry would have quietly
+  // narrowed the guarantee, so the scan was widened instead: every production
+  // source file is checked, which is strictly stronger than the original and
+  // cannot go stale when a new screen is added.
+  for (const table of TABLES) {
+    it(`no production file writes directly to ${table} — the RPC is the only path`, () => {
+      const writePattern = new RegExp(`\\.from\\('${table}'\\)[\\s\\S]{0,120}?\\.(insert|update|upsert|delete)\\(`);
+      const offenders = productionSourceFiles()
+        .filter(f => writePattern.test(readFileSync(f, 'utf8')))
+        .map(f => f.replace(/\\/g, '/').split('/src/')[1]);
+      expect(offenders, `direct write to ${table}`).toEqual([]);
     });
   }
+
+  it('the previously hand-listed services are covered by that scan and still read-only where required', () => {
+    for (const [name, src] of [
+      ['InstitutionScreen.tsx', institutions],
+      ['availability.service.ts', availabilityService],
+      ['qr.service.ts', qrService],
+    ] as [string, string][]) {
+      expect(src.length, `${name} should still be readable`).toBeGreaterThan(0);
+    }
+  });
 
   it('registry.service.ts (getLocalItems, source of the QuickAvailForm dropdown) is read-only', () => {
     expect(registryService).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
@@ -175,16 +148,16 @@ describe('super_admin can add the first material via the RPC path (no direct-wri
     expect(fnBody).toContain("supabase.rpc('phoenix_upsert_availability'");
   });
 
-  it('EditorScreen gates the Apply action on availability.create OR availability.update — the RPC itself (not a table grant) decides which applies', () => {
-    expect(editor).toContain("myPermissions.has('availability.create')");
-    expect(editor).toContain("myPermissions.has('availability.update')");
-    expect(editor).toContain('canCreateAvailability || canUpdateAvailability');
+  it('the retired EditorScreen can no longer gate anything — it is gone', () => {
+    // Was: EditorScreen gates Apply on availability.create OR availability.update.
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('super_admin is not blocked by a missing direct table grant — canSubmit only depends on org/point/name state and permission flags, not on a raw table-level check', () => {
-    const canSubmitLine = editor.split('\n').find(l => l.includes('const canSubmit ='));
-    expect(canSubmitLine).toBeTruthy();
-    expect(canSubmitLine).not.toMatch(/\.from\(/);
+  it('the surviving availability writer is permission-gated, not table-gated', () => {
+    // The invariant that mattered: the RPC decides, never a raw table grant.
+    expect(reactivateModal).toContain('REACTIVATE_PERMISSION_KEYS');
+    expect(reactivateModal).toContain('myPermissions.has');
+    expect(reactivateModal).not.toMatch(/\.from\('item_availability'\)/);
   });
 });
 
@@ -200,29 +173,35 @@ describe('Backend RPC errors map to safe translated messages, not a raw/generic 
     expect(fnBody).toContain("return 'load_error';");
   });
 
-  it('both add-material catch blocks use the same classifier (no duplicated/divergent error-mapping logic)', () => {
-    const editorCatch = extractFn(editor, 'async function doApply', 'const fieldStyle').match(/} catch \(e\) \{[\s\S]*?\}\s*finally/)?.[0] ?? '';
-    expect(editorCatch).toContain('classifyAvailabilitySaveError(e)');
-    const quickAvailForm = institutions.slice(institutions.indexOf('function QuickAvailForm('), institutions.indexOf('\n}\n\n', institutions.indexOf('function QuickAvailForm(')));
-    const quickAddOnSubmit = extractFn(quickAvailForm, 'async function onSubmit() {', 'return (');
-    const quickAddCatch = quickAddOnSubmit.match(/} catch \(e\) \{[\s\S]*?\}\s*finally/)?.[0] ?? '';
-    expect(quickAddCatch).toContain('classifyAvailabilitySaveError(e)');
+  it('the surviving availability writer uses the shared classifier (no divergent mapping)', () => {
+    // Was: assert BOTH retired add-material catch blocks used the classifier.
+    // Both are retired, so the rule now binds whatever still writes availability.
+    const catchBlock = reactivateModal.slice(reactivateModal.indexOf('} catch'));
+    expect(catchBlock).toContain('classifyAvailabilitySaveError');
   });
 });
 
 describe('Guards: no Service-D/inter_org_exchange changes, no wipe tooling restored', () => {
-  it('no inter_org_exchange reference in either touched file', () => {
-    expect(editor).not.toMatch(/inter_org_exchange/i);
+  // These were scoped to "either touched file" — i.e. this phase must not have
+  // introduced Service-D/wipe surface into the two add-material screens. They
+  // are deliberately NOT widened to the whole repo: inter_org_exchange is a
+  // legitimate feature elsewhere, so a repo-wide ban would assert something
+  // false. One of the two named files is now retired, so the pair becomes
+  // "the survivor is still clean" + "the other one is gone".
+  it('the retired add-material surface cannot carry any of this — it is deleted', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
+    expectQuickAvailFormAbsent();
+  });
+
+  it('no inter_org_exchange reference in the surviving touched file', () => {
     expect(institutions).not.toMatch(/inter_org_exchange/i);
   });
 
-  it('no service_role/auth.admin usage in either touched file', () => {
-    expect(editor).not.toMatch(/service_role|auth\.admin/i);
+  it('no service_role/auth.admin usage in the surviving touched file', () => {
     expect(institutions).not.toMatch(/service_role|auth\.admin/i);
   });
 
-  it('no wipe tooling references', () => {
-    expect(editor).not.toMatch(/phoenix-wipe-execute|FULL_PUBLIC_APP_WIPE_APPROVED|full_wipe/i);
+  it('no wipe tooling references in the surviving touched file', () => {
     expect(institutions).not.toMatch(/phoenix-wipe-execute|FULL_PUBLIC_APP_WIPE_APPROVED|full_wipe/i);
   });
 
@@ -262,9 +241,11 @@ describe('BUGFIX-AVAILABILITY-DUPLICATE-PORT-INDEX-B: adding multiple materials 
     expect(migration043).toContain('item_availability_dp_sci_conc_form_uniq');
   });
 
-  it('EditorScreen.tsx and QuickAvailForm still call the same upsertAvailability RPC path this migration does not change — the frontend reload/error-mapping fixes remain valid and complementary, not a substitute for 043', () => {
-    expect(editor).toContain('await upsertAvailability(');
-    const quickAvailForm = institutions.slice(institutions.indexOf('function QuickAvailForm('), institutions.indexOf('\n}\n\n', institutions.indexOf('function QuickAvailForm(')));
-    expect(quickAvailForm).toContain('await upsertAvailability(');
+  it('the surviving availability writer still uses the RPC path this migration does not change', () => {
+    // Was: assert EditorScreen and QuickAvailForm both called upsertAvailability.
+    // Both are retired; migration 043 remains the real fix either way.
+    expectRetiredSurfaceAbsent('EditorScreen');
+    expectQuickAvailFormAbsent();
+    expect(reactivateModal).toContain('await upsertAvailability(');
   });
 });

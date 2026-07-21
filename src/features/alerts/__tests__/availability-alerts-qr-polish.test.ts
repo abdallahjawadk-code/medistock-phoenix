@@ -24,6 +24,7 @@ import { join } from 'path';
 import { reviewedMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/reviewed-migrations';
 import { actualMigrationFilesAbove } from '../../../../supabase/migrations/__tests__/helpers/migration-dir';
 import { execSync } from 'child_process';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
@@ -31,7 +32,6 @@ const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const alertsScreen = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
 const publicQr = readSrc('features/qr/PublicQrScreen.tsx');
-const editorScreen = readSrc('features/editor/EditorScreen.tsx');
 const dashboardScreen = readSrc('features/dashboard/DashboardScreen.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 
@@ -141,9 +141,10 @@ describe('AVAILABILITY-ALERTS-QR-POLISH-D: public QR status-summary chips', () =
 });
 
 describe('Material editor: responsive layout polish', () => {
-  it('uses an auto-fit responsive grid instead of a fixed 2-column grid (mobile-friendly)', () => {
-    expect(editorScreen).toContain("gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))'");
-    expect(editorScreen).not.toContain("gridTemplateColumns: '1fr 1fr'");
+  // E6: was an isolation assertion against EditorScreen.tsx. The screen is
+  // retired, so this is now an absence guard — strictly stronger.
+  it('EditorScreen stays retired (uses an auto-fit responsive grid instead of a fixed 2-column)', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 });
 
@@ -188,7 +189,7 @@ describe('No WhatsApp/Google Drive/chat code was added', () => {
   // (see src/features/alerts/__tests__/whatsapp-alert-contact-wiring.test.ts
   // for its full safety coverage) — excluded from the "no WhatsApp" files
   // below on purpose; every other screen here must still have none.
-  const files = [publicQr, editorScreen, dashboardScreen, statusCenter];
+  const files = [publicQr, dashboardScreen, statusCenter];
 
   it('no WhatsApp integration outside the approved InterInstitutionAlertsScreen wiring', () => {
     files.forEach(f => expect(f.toLowerCase()).not.toMatch(/wa\.me|whatsapp/));

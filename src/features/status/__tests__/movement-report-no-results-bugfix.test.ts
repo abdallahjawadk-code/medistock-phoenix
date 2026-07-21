@@ -20,6 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 import {
   escapePostgrestIlikeValue,
   startOfLocalDayIso,
@@ -34,7 +35,6 @@ const section      = readSrc('features/status/MovementReportSection.tsx');
 const historyModal = readSrc('features/status/MovementHistoryModal.tsx');
 const adjustModal  = readSrc('features/status/AdjustQuantityModal.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
-const editorScreen = readSrc('features/editor/EditorScreen.tsx');
 
 // ============================================================================
 // 1. Report with no filters
@@ -253,8 +253,8 @@ describe('Regression: existing quantity-movement features remain intact', () => 
   });
 
   it('EditorScreen.tsx is untouched by this bugfix', () => {
-    expect(editorScreen).not.toContain('BUGFIX-MOVEMENT-REPORT-NO-RESULTS-A');
-    expect(editorScreen).not.toContain('escapePostgrestIlikeValue');
+    // E6: EditorScreen is retired — absence is stronger than 'does not contain'.
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
   it('StatusCenterScreen still renders Adjust Quantity, Movement History, and the Report section', () => {

@@ -21,6 +21,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+  expectQuickAvailFormAbsent,
+  productionSourceFiles,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -31,12 +37,20 @@ const statusCenter = read('features/status/StatusCenterScreen.tsx');
 const reactivateModal = read('features/status/ReactivateMaterialModal.tsx');
 
 describe('1. EditorScreen — the retired create-then-reopen availability form', () => {
+  // E6 UPDATE: previously "present but unreachable". The file is now DELETED,
+  // so this asserts the full absence contract: gone from disk, unimported and
+  // unrendered by every production module.
+  it('is deleted, and reachable from no production module', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
+  });
+
   it('is not imported by the authenticated app', () => {
     expect(authenticatedApp).not.toContain("from '@/features/editor/EditorScreen'");
     expect(authenticatedApp).not.toContain('<EditorScreen />');
   });
 
   it('screen 3 routes to the Inventory Center, which replaced it', () => {
+    expectScreenThreeIsInventoryCenter();
     expect(authenticatedApp).toContain('case 3:  return <InventoryCenterScreen />;');
   });
 
@@ -65,31 +79,25 @@ describe('1. EditorScreen — the retired create-then-reopen availability form',
 });
 
 describe('2. QuickAvailForm — the manual availability quick-add', () => {
-  it('still calls the legacy upsertAvailability writer (so it must stay unreachable)', () => {
-    expect(institutionScreen).toContain('await upsertAvailability(');
+  // E6 UPDATE: previously "unreachable but still present". It is now DELETED,
+  // so the guard is absence rather than unreachability.
+  it('is deleted from InstitutionScreen, along with its writer call', () => {
+    expectQuickAvailFormAbsent();
   });
 
-  it('renders only behind a showAdd flag that nothing can ever set', () => {
-    // Two independent `showAdd` states exist in this file. The FIRST belongs to
-    // the create-distribution-point section and has a real trigger. The SECOND
-    // belongs to PortAvailabilitySection and gates QuickAvailForm — its
-    // add-item button was removed (see ui-hide-port-add-item.test.ts), leaving
-    // no way to set it true. Assert exactly that shape by position.
-    const firstShowAdd = institutionScreen.indexOf('const [showAdd, setShowAdd]');
-    const secondShowAdd = institutionScreen.indexOf('const [showAdd, setShowAdd]', firstShowAdd + 1);
-    const quickForm = institutionScreen.indexOf('<QuickAvailForm');
+  it('the availability section keeps no add-form state that could resurrect it', () => {
+    // The surviving `setShowAdd(true)` belongs to the create-distribution-point
+    // form higher up the file, which is a live workflow — so this is scoped to
+    // PortAvailabilitySection rather than to the whole file.
+    const sectionStart = institutionScreen.indexOf('function PortAvailabilitySection');
+    expect(sectionStart).toBeGreaterThan(-1);
+    expect(institutionScreen.slice(sectionStart)).not.toContain('setShowAdd');
+  });
 
-    expect(firstShowAdd).toBeGreaterThan(-1);
-    expect(secondShowAdd).toBeGreaterThan(firstShowAdd);
-    expect(quickForm).toBeGreaterThan(secondShowAdd);
-
-    // Exactly one `setShowAdd(true)` exists in the whole file...
-    const trueSetters = [...institutionScreen.matchAll(/setShowAdd\(true\)/g)];
-    expect(trueSetters).toHaveLength(1);
-
-    // ...and it belongs to the FIRST state, i.e. before the second declaration.
-    // If a future edit adds a trigger for the availability form, this fails.
-    expect(trueSetters[0].index!).toBeLessThan(secondShowAdd);
+  it('the live create-distribution-point form is preserved and still has its trigger', () => {
+    // Proving the cleanup removed the retired form ONLY, not the neighbouring
+    // workflow that shares the `showAdd` name.
+    expect([...institutionScreen.matchAll(/setShowAdd\(true\)/g)]).toHaveLength(1);
   });
 });
 
@@ -114,15 +122,15 @@ describe('3. ReactivateMaterialModal — reachable, and a deployment blocker', (
 });
 
 describe('no NEW legacy availability writer appears', () => {
-  it('upsertAvailability has exactly the three known production call sites', () => {
-    const files = [
-      'features/editor/EditorScreen.tsx',
-      'features/institutions/InstitutionScreen.tsx',
-      'features/status/ReactivateMaterialModal.tsx',
-    ];
-    for (const f of files) {
-      expect(read(f), `${f} should still call upsertAvailability`).toContain('upsertAvailability(');
-    }
+  it('upsertAvailability now has exactly ONE production call site', () => {
+    // Was three (EditorScreen, QuickAvailForm, ReactivateMaterialModal). Two are
+    // retired; the survivor is deployment blocker 3. A new entry here means a
+    // manual writer came back and the audit must be redone before it ships.
+    const callers = productionSourceFiles()
+      .filter(f => readFileSync(f, 'utf8').includes('await upsertAvailability('))
+      .map(f => f.replace(/\\/g, '/').split('/src/')[1])
+      .sort();
+    expect(callers).toEqual(['features/status/ReactivateMaterialModal.tsx']);
   });
 
   it('the Inventory Center never writes availability by hand', () => {

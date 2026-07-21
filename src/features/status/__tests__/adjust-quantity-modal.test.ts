@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'path';
 import { readSourceFile } from '../../../shared/__tests__/helpers/source-extract';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -25,7 +26,6 @@ const readPhoenix = (rel: string) => readSourceFile(join(PHOENIX, rel));
 
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const modal        = readSrc('features/status/AdjustQuantityModal.tsx');
-const editorScreen  = readSrc('features/editor/EditorScreen.tsx');
 const strings      = readSrc('shared/i18n/strings.ts');
 
 // ============================================================================
@@ -276,10 +276,10 @@ describe('Guards for this UI-only phase', () => {
     expect(modal).not.toMatch(/xlsx|exceljs|read-excel-file|import.*excel/i);
   });
 
-  it('EditorScreen.tsx is unchanged in this phase (no movement wiring introduced)', () => {
-    expect(editorScreen).not.toContain('applyAvailabilityMovement');
-    expect(editorScreen).not.toContain('AdjustQuantityModal');
-    expect(editorScreen).not.toContain('phoenix_apply_availability_movement');
+  // E6: was an isolation assertion that EditorScreen gained no movement wiring.
+  // The screen is retired, so this is now an absence guard.
+  it('EditorScreen stays retired, so no movement wiring can appear in it', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
   it('migrations 001-034 are not referenced/modified by this phase (no new migration file)', () => {
