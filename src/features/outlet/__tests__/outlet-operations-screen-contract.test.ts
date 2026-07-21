@@ -76,6 +76,16 @@ describe('the four tabs exist and host no unsafe path', () => {
     expect(screen).toContain('getOutletStockMovements(');
   });
 
+  it('offers a canonical receipt built ONLY from freshly reloaded server rows', () => {
+    const code = stripComments(screen);
+    expect(code).toContain('<MovementDocumentActions');
+    expect(code).toContain('buildOutletReturnRequestReceipt(');
+    // The receipt is keyed to the created request id and reloads server rows —
+    // it is never built from the local draft.
+    expect(code).toContain('getOutletReturnRequests(');
+    expect(code).toContain('getOutletReturnRequestLines(created)');
+  });
+
   it('creates no stock, uses no OCR, and edits no balance directly', () => {
     const code = stripComments(screen);
     for (const forbidden of [

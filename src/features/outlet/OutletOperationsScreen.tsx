@@ -25,9 +25,12 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
+import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
 import { getOutletStock, getOutletStockMovements } from './outlet-stock.service';
+import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
+import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 
 type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -164,11 +167,34 @@ function OutletStockTab({ distributionPointId, lang }: { distributionPointId: st
 function OutletReturnsTab({ distributionPointId, outletName, lang }: { distributionPointId: string; outletName: string; lang: 'ar' | 'en' }) {
   const [instanceKey, setInstanceKey] = useState(0);
   const [created, setCreated] = useState<string | null>(null);
+
+  // The receipt is built ONLY from freshly reloaded server rows for the created
+  // request — never from the local draft. Missing/denied rows yield no document.
+  const receipt = useAsync(async () => {
+    if (!created) return null;
+    const [requests, lines] = await Promise.all([
+      getOutletReturnRequests(distributionPointId),
+      getOutletReturnRequestLines(created),
+    ]);
+    const request = requests.find(r => r.id === created);
+    if (!request) return null;
+    return buildOutletReturnRequestReceipt({
+      request, lines,
+      source: { organizationName: null, warehouseName: outletName },
+      destination: { organizationName: null, warehouseName: null },
+    });
+  }, [created, distributionPointId]);
+
   return (
     <div>
       {created && (
         <div data-testid="outlet-return-created" style={{ background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--ok)', marginBottom: '12px' }}>
           {t('mv_line_succeeded', lang)} · <code>{created}</code>
+        </div>
+      )}
+      {created && receipt.data && (
+        <div style={{ marginBottom: '14px' }} data-testid="outlet-return-receipt-actions">
+          <MovementDocumentActions document={receipt.data} lang={lang} />
         </div>
       )}
       <OutletReturnComposer
