@@ -55,11 +55,11 @@ export interface CommitResult {
   partial: boolean;
 }
 
-export interface CommitDeps {
+export interface CommitDeps<L extends { idempotencyKey: string } = DraftLine> {
   /** Creates the request header. Called at most ONCE per commit attempt. */
   createHeader: () => Promise<RpcOutcome>;
   /** Adds one line to an existing header. NOT idempotent. */
-  addLine: (requestId: string, line: DraftLine) => Promise<RpcOutcome>;
+  addLine: (requestId: string, line: L) => Promise<RpcOutcome>;
   onProgress?: (progress: CommitProgress) => void;
 }
 
@@ -70,7 +70,7 @@ function readId(outcome: RpcOutcome): string | null {
   // — existing payloads never carry these, so the order below is unaffected.
   for (const key of [
     'id', 'request_id', 'transfer_request_id', 'return_request_id',
-    'dispatch_id', 'dispatch_line_id',
+    'dispatch_id', 'dispatch_line_id', 'return_request_line_id',
   ]) {
     const value = data[key];
     if (typeof value === 'string' && value) return value;
@@ -85,7 +85,10 @@ function readId(outcome: RpcOutcome): string | null {
  * always surfaced so the caller can offer reload-and-retry or the existing
  * cancellation RPC.
  */
-export async function commitDraft(lines: readonly DraftLine[], deps: CommitDeps): Promise<CommitResult> {
+export async function commitDraft<L extends { idempotencyKey: string } = DraftLine>(
+  lines: readonly L[],
+  deps: CommitDeps<L>,
+): Promise<CommitResult> {
   const header = await deps.createHeader();
   if (!header.ok) {
     return {
@@ -121,7 +124,11 @@ export async function commitDraft(lines: readonly DraftLine[], deps: CommitDeps)
   };
 }
 
-async function addLines(requestId: string, lines: readonly DraftLine[], deps: CommitDeps): Promise<LineCommitResult[]> {
+async function addLines<L extends { idempotencyKey: string }>(
+  requestId: string,
+  lines: readonly L[],
+  deps: CommitDeps<L>,
+): Promise<LineCommitResult[]> {
   const results: LineCommitResult[] = [];
   let completed = 0;
 
