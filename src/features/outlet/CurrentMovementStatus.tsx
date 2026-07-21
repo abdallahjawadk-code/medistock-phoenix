@@ -3,11 +3,11 @@
  * document's CURRENT server state, through RLS-scoped reads only.
  *
  * NOT a historical timeline (that needs a backend timeline RPC — see
- * docs/proposals/movement-timeline-rpc.md). This surface states so plainly.
+ * docs/phoenix/proposals/movement-timeline-rpc.md). This surface states so plainly.
  *
  * SECURITY: unknown and unauthorized both resolve to the same generic result,
- * so scanning can never confirm a record exists. No privileged key, no
- * fabricated history — every value is a live RLS-scoped read.
+ * so scanning can never confirm a record exists. No privileged service key, no
+ * admin auth API, no fabricated history — every value is a live RLS-scoped read.
  */
 import { useCallback, useState } from 'react';
 import { t } from '@/shared/i18n/strings';

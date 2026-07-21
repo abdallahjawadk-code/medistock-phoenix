@@ -4,11 +4,11 @@
  *
  * This is deliberately NOT a historical timeline. The unified, ordered,
  * cross-lifecycle timeline requires a server-authoritative timeline RPC that
- * does not yet exist (see docs/proposals/movement-timeline-rpc.md); until it
+ * does not yet exist (see docs/phoenix/proposals/movement-timeline-rpc.md); until it
  * lands, this view shows the live status of ONE document, read through the same
  * RLS-scoped queries the rest of the app uses.
  *
- * SECURITY: no privileged key, no auth.admin, no service_role, no fabricated
+ * SECURITY: no privileged service key, no admin auth API, no fabricated
  * history. A record the caller may not see is filtered out by RLS, so it simply
  * does not appear in the read — and this resolver returns the SAME generic
  * `not_available` result whether the id is unknown or merely unauthorized. The
