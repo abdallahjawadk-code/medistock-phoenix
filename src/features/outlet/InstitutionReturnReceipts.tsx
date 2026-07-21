@@ -32,9 +32,12 @@ import {
   type TokenedWriter,
 } from '@/shared/lib/stock-mutation-runner';
 import {
-  getOutletReturnShipments, getReturnShipmentLinesForShipments, receiveOutletReturnShipmentLine,
+  getOutletReturnShipments, getReturnShipmentLinesForShipments,
+  getOutletReturnShipmentLines, receiveOutletReturnShipmentLine,
   type OutletReturnShipment, type OutletReturnShipmentLine,
 } from './outlet-return.service';
+import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
+import { buildOutletReturnShipmentReceipt } from './outlet-receipt-source';
 
 type Lang = 'ar' | 'en';
 
@@ -126,6 +129,22 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [dispositions, setDispositions] = useState<Record<string, ReturnDisposition>>({});
   const [deselected, setDeselected] = useState<Record<string, boolean>>({});
+  // The shipment whose receipt to offer — set after a receive (individual or bulk).
+  const [receiptShipmentId, setReceiptShipmentId] = useState<string | null>(null);
+
+  // The receipt is built ONLY from freshly reloaded canonical rows for the
+  // received shipment, never from local receive state. Denied/absent → no doc.
+  const receipt = useAsync(async () => {
+    if (!receiptShipmentId) return null;
+    const shipmentLines = await getOutletReturnShipmentLines(receiptShipmentId);
+    const shipment = (shipments.data ?? []).find(s => s.id === receiptShipmentId);
+    if (!shipment) return null;
+    return buildOutletReturnShipmentReceipt({
+      shipment, lines: shipmentLines,
+      source: { organizationName: null, warehouseName: null },
+      destination: { organizationName: null, warehouseName },
+    });
+  }, [receiptShipmentId, reloadKey]);
 
   const allLines = useMemo(() => lines.data ?? [], [lines.data]);
   const pending = useMemo(
@@ -178,6 +197,8 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
         ? { state: 'succeeded', error: null }
         : { state: 'failed', error: receiveError(result.error, lang) },
     }));
+    // Offer this shipment's canonical receipt once a line of it is received.
+    if (result.ok) setReceiptShipmentId(line.shipmentId);
     // Canonical reload: custody moves only once the SERVER confirms.
     reload();
     setBusy(false);
@@ -218,6 +239,9 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
     for (const f of outcome.failed) states[f.entityId] = { state: 'failed', error: receiveError(f.error, lang) };
 
     setLineStates(s => ({ ...s, ...states }));
+    // Offer a receipt for the shipment of the first line the server accepted.
+    const firstReceived = allLines.find(l => outcome.succeeded.includes(l.id));
+    if (firstReceived) setReceiptShipmentId(firstReceived.shipmentId);
     setProgress(null);
     reload();
     setBusy(false);
@@ -255,6 +279,13 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
             {t('mv_line_succeeded', lang)}: {successes.length} · {t('mv_line_failed', lang)}: {failures.length}
           </div>
           {failures.length > 0 && <div style={{ marginTop: '4px' }}>{t('mv_partial_hint', lang)}</div>}
+        </div>
+      )}
+
+      {/* Canonical shipment receipt — print / XLSX / QR, built from server rows. */}
+      {receiptShipmentId && receipt.data && (
+        <div data-testid="return-shipment-receipt-actions">
+          <MovementDocumentActions document={receipt.data} lang={lang} />
         </div>
       )}
 

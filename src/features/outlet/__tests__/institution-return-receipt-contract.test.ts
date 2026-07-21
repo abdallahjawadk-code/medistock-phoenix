@@ -47,6 +47,27 @@ describe('disposition and quarantine handling', () => {
   });
 });
 
+describe('a canonical shipment receipt is reachable after receipt', () => {
+  it('renders MovementDocumentActions from a server-built shipment document', () => {
+    expect(code).toContain('<MovementDocumentActions');
+    expect(code).toContain('buildOutletReturnShipmentReceipt(');
+    expect(code).toContain('getOutletReturnShipmentLines(receiptShipmentId)');
+  });
+
+  it('offers the receipt after both individual and bulk receive', () => {
+    const individual = code.slice(code.indexOf('const receiveIndividually'), code.indexOf('const receiveAllSafeToQuarantine'));
+    const bulk = code.slice(code.indexOf('const receiveAllSafeToQuarantine'), code.indexOf('// ── render'));
+    expect(individual).toContain('setReceiptShipmentId(line.shipmentId)');
+    expect(bulk).toContain('setReceiptShipmentId(firstReceived.shipmentId)');
+  });
+
+  it('builds the receipt only from freshly reloaded rows, keyed to reloadKey', () => {
+    const loader = code.slice(code.indexOf('const receipt = useAsync'), code.indexOf('const receipt = useAsync') + 600);
+    expect(loader).toContain('getOutletReturnShipmentLines(receiptShipmentId)');
+    expect(loader).toContain('[receiptShipmentId, reloadKey]');
+  });
+});
+
 describe('canonical reload after every mutation', () => {
   it('both the individual and bulk receive call reload()', () => {
     const individual = code.slice(code.indexOf('const receiveIndividually'), code.indexOf('const receiveAllSafeToQuarantine'));
