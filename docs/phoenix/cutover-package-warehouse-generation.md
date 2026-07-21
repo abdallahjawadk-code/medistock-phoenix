@@ -16,6 +16,7 @@ Defect analysis: `../blocker-migration-065-accumulating-receipt-concurrency.md`.
 | 1 | Preflight SQL (§4) | read-only |
 | 2 | Apply **078** — `movement_seq`, trigger, guarded RPCs | **yes** — purely additive |
 | 3 | Apply **079** — guarded RPCs reject a NULL generation | **yes** — legacy path untouched |
+| 3b | Apply **081** — movement timeline ledger + RPC | **yes** — purely additive, nothing existing altered |
 | 4 | Deploy the **guarded client** (already in this PR) | yes |
 | 5 | Observe parity (§7) | — |
 | 6 | Flip `MIGRATION_065_CONCURRENCY_RESOLVED` to `true` (§6) | yes |
@@ -217,9 +218,23 @@ discards only the counter; no quantity, movement or audit row depends on it.
 
 ---
 
-## 9. Not included
+## 9. Scope
 
-Blockers 2 (unified movement timeline) and 3 (inventory-derived availability
-replacement) are **not** part of this package and remain open. They need their
-own migrations, which must claim numbers **081+** — 078, 079 and 080 are now
-taken, and the reviewed-migration registry is the authority.
+**Included:** blocker 1 (078/079/080) and blocker 2 (**081**, movement
+timeline — additive, may be applied any time after 077; see
+`migration-081-timeline-validation.md`).
+
+**Still open:** blocker 3 (inventory-derived availability replacement). It needs
+its own migration, which must claim **082+** — 078–081 are taken and the
+reviewed-migration registry is the authority.
+
+**Also open, unrelated:** the migration-023 replay gap
+(`proposals/dr-repair-migration-023-replay.md`). Production is unaffected; a
+fresh 001→latest rebuild is not.
+
+### Upgrading Current Movement Status
+
+The timeline RPC is proven but **not applied**, so it exists in no live
+database. Upgrading the screen to consume it must happen in the same change that
+turns it on, after 081 is applied — exactly like the 078/079 gate. Upgrading it
+before then would break the screen in production.
