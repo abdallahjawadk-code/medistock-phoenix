@@ -52,14 +52,32 @@ export function migrationFiles(upTo = Infinity) {
 }
 
 // The 023 in-memory shim, applied ONLY to that one file's text at load time.
-function shimSql(file, text) {
+// Exported so the DR acceptance test can compare shimmed vs raw behaviour.
+export function shimSql(file, text) {
   if (file.startsWith('023_')) {
     return text.replace(/SELECT\s+qual\s+INTO/gi, 'SELECT coalesce(qual, with_check) INTO');
   }
   return text;
 }
 
-const SEED_SUPER_ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
+export { MIGRATIONS_DIR };
+
+// Drop + recreate the throwaway db and apply only the Supabase bootstrap.
+// Returns a connected pg.Client the caller drives directly (used by buildRig
+// and by the DR acceptance test, which needs migration-by-migration control).
+export async function freshRigDb() {
+  const admin = new pg.Client({ connectionString: maintenanceUrl() });
+  await admin.connect();
+  await admin.query(`DROP DATABASE IF EXISTS ${RIG_DB} WITH (FORCE)`);
+  await admin.query(`CREATE DATABASE ${RIG_DB}`);
+  await admin.end();
+  const c = new pg.Client({ connectionString: rigUrl() });
+  await c.connect();
+  await c.query(readFileSync(join(HERE, 'bootstrap.sql'), 'utf8'));
+  return c;
+}
+
+export const SEED_SUPER_ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
 
 // A super_admin must exist before migration 062 (it aborts otherwise). Seed it
 // right after 001 creates profiles. Uses fixed UUIDs so tests can reference it.
@@ -73,17 +91,8 @@ const SEED_AFTER_001 = `
 `;
 
 export async function buildRig({ upTo = Infinity, log = () => {} } = {}) {
-  // 1. Drop + recreate the throwaway database from the maintenance connection.
-  const admin = new pg.Client({ connectionString: maintenanceUrl() });
-  await admin.connect();
-  await admin.query(`DROP DATABASE IF EXISTS ${RIG_DB} WITH (FORCE)`);
-  await admin.query(`CREATE DATABASE ${RIG_DB}`);
-  await admin.end();
-
-  // 2. Apply bootstrap + migrations to the fresh rig db.
-  const c = new pg.Client({ connectionString: rigUrl() });
-  await c.connect();
-  await c.query(readFileSync(join(HERE, 'bootstrap.sql'), 'utf8'));
+  // 1-2. Fresh db + Supabase bootstrap, then migrations.
+  const c = await freshRigDb();
 
   const files = migrationFiles(upTo);
   for (const f of files) {
@@ -94,7 +103,7 @@ export async function buildRig({ upTo = Infinity, log = () => {} } = {}) {
       await c.end();
       throw new Error(`migration ${f} failed: ${e.message}`);
     }
-    if (f.startsWith('001_')) await c.query(SEED_SUPER_ADMIN_ID ? SEED_AFTER_001 : '');
+    if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
     log(`applied ${f}`);
   }
 

@@ -156,8 +156,37 @@ Whichever option is chosen, the fix is not done until all of these hold:
 
 ---
 
-## 5. Out of scope
+## 5. Runnable acceptance evidence (added)
+
+The claims in §1–§2 are now proven, not just asserted, by a gated dynamic test
+`supabase/migrations/__tests__/dr-023-replay.dynamic.test.ts`, run against the
+disposable rig (`tools/pg-rig`, PostgreSQL 18.4). It replays 001→022 to a fresh
+bootstrapped database and then, **without modifying migration 023**, proves:
+
+1. `dp_insert_perm` is an `INSERT` policy whose predicate is in
+   `pg_policies.with_check` (`qual` IS NULL) — acceptance criterion 3.
+2. The unmodified 023 **aborts** on that fresh replay — the DR gap is real
+   (acceptance criterion 1, negative direction).
+3. The `coalesce(qual, with_check)` correction from §2 **replays cleanly**.
+4. That same correction **still fails** when `dp_insert_perm` is dropped — the
+   guard has not been defanged (acceptance criterion 5).
+
+Skipped in CI (no database), like the 081/082 dynamic proofs; run locally with
+`PHOENIX_RIG_PG` set.
+
+**Still requires an owner decision.** This evidence does not itself choose Option
+A (waive immutability for one line in 023) vs Option B (versioned baseline).
+Acceptance criteria 2, 4 and 6 (full normalized schema diff, data equivalence,
+production-clone no-op) require whichever artefact the owner authorises —
+above all, generating and maintaining a squashed baseline (Option B) is a real
+deliverable that must be created and reviewed on its own merits, and it also
+resolves the 062 super_admin seed precondition. **Exact decision needed:** may 023
+be corrected in place (Option A), or must a versioned baseline be authored and
+adopted as the supported DR path (Option B)? Until that is answered, no historical
+file is touched and no baseline is generated.
+
+## 6. Out of scope
 
 This proposal does not change 023, does not add a migration, and is unrelated to
-migrations 078–081. It is filed so the DR gap is visible and decided
+migrations 078–082. It is filed so the DR gap is visible and decided
 deliberately rather than rediscovered during an actual recovery.
