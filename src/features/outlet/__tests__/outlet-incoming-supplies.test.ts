@@ -115,27 +115,28 @@ describe('§2A exactly one writer, and it is the 070 receive RPC', () => {
     expect(src).not.toMatch(/supabase\.rpc\(/);
   });
 
-  it('delegates idempotency to the token store, never minting per attempt', () => {
-    // CORRECTED at the reviewer's direction: an earlier version minted a token
-    // per ATTEMPT, which makes each retry a NEW operation and double-posts
-    // whenever a success response is lost. Behaviour is proven in
-    // outlet-receive-idempotency.test.ts; this only pins the wiring.
-    expect(src).toContain('new ReceiptTokenStore(newRequestId)');
+  it('never mints an idempotency token, and never generates one at all', () => {
+    // Tokens are DERIVED by the shared runner from server-observed facts, so
+    // they survive a remount or page reload. Behaviour is proven in
+    // shared/lib/__tests__/stock-mutation-runner.test.ts; this pins the wiring.
     expect(src).not.toMatch(/requestId:\s*newRequestId\(\)/);
-    // The store must survive re-render, or tokens silently re-mint.
-    expect(src).toMatch(/useRef\(new ReceiptTokenStore/);
+    expect(src).not.toMatch(/randomUUID|Math\.random/);
+    expect(src).toMatch(/from '@\/shared\/lib\/stock-mutation-runner'/);
   });
 
-  it('retires a token only on canonical server proof of receipt', () => {
-    expect(src).toMatch(/releaseConfirmed\(serverLineStates\)/);
-    // Never on a failure — a rejection is indistinguishable from a committed
-    // write whose response was lost.
-    expect(src).not.toMatch(/releaseConfirmed[\s\S]{0,80}(failed|error)/);
+  it('derives the generation from a CANONICAL server field, not local state', () => {
+    // Local optimism here would break token stability across a reload.
+    expect(src).toMatch(/generation:\s*line\.receivedQuantity \?\? 0/);
   });
 
   it('never re-attempts a line the server already confirmed', () => {
     expect(src).toMatch(/confirmed\.has\(line\.id\)/);
     expect(src).toMatch(/confirmedIds:\s*confirmed/);
+    expect(src).toMatch(/confirmedEntityIds\(allLines/);
+  });
+
+  it('does not re-implement retry logic locally', () => {
+    expect(src).not.toMatch(/function\s+(runStockMutation|runBulkReceive|runSingleReceive)\b/);
   });
 });
 

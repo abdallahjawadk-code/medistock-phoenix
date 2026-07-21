@@ -18,7 +18,7 @@
  * receive-model the institution corridor uses, so "safe to bulk-accept" means
  * exactly one thing across the whole app.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -30,9 +30,9 @@ import {
   assessReceive, bulkEligibleLines, validateReceive, type ReceivableLine,
 } from '@/features/movement/receive-model';
 import {
-  ReceiptTokenStore, runSingleReceive, runBulkReceive, confirmedLineIds,
-  type ReceiveWriter,
-} from './outlet-receive-runner';
+  runStockMutation, runStockMutations, confirmedEntityIds,
+  type TokenedWriter,
+} from '@/shared/lib/stock-mutation-runner';
 import {
   getOutletDispatches, getDispatchLinesForDispatches, receiveOutletDispatchLine,
   type WarehouseDispatch, type WarehouseDispatchLine,
@@ -42,17 +42,24 @@ type Lang = 'ar' | 'en';
 
 const dash = (v: string | null | undefined) => (v == null || v === '' ? '—' : v);
 
-/**
- * Mints ONE token per logical receipt line. The token is then reused for every
- * retry of that line and released only when a canonical reload proves receipt —
- * see outlet-receive-runner. Minting per ATTEMPT would make each retry a new
- * operation and double-post stock whenever a success response was lost.
- */
-const newRequestId = (): string =>
-  (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+/** Namespaces the derived idempotency token for this corridor. */
+const RECEIVE_KIND = 'outlet_dispatch_receive';
 
-/** The single injected writer: the 070 receive RPC. */
-const writeReceive: ReceiveWriter = (input) => receiveOutletDispatchLine(input);
+interface ReceivePayload {
+  dispatchLineId: string;
+  receivedQuantity: number;
+  differenceReason: string | null;
+}
+
+/**
+ * The single injected writer: the 070 receive RPC.
+ *
+ * The request id is DERIVED by the shared runner from server-observed facts,
+ * never minted here — so it is identical after a remount or page reload, and a
+ * retry of a lost response cannot post stock a second time.
+ */
+const writeReceive: TokenedWriter<ReceivePayload> = (requestId, payload) =>
+  receiveOutletDispatchLine({ requestId, ...payload });
 
 /** The dispatched snapshot, in the shape the shared receive-model judges. */
 const toReceivable = (l: WarehouseDispatchLine): ReceivableLine => ({
@@ -119,13 +126,6 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [deselected, setDeselected] = useState<Record<string, boolean>>({});
 
-  /**
-   * Stable idempotency tokens, one per logical receipt line, surviving every
-   * re-render and every retry. A ref, not state: replacing this store would
-   * silently re-mint tokens and reintroduce the double-post it prevents.
-   */
-  const tokens = useRef(new ReceiptTokenStore(newRequestId));
-
   const allLines = useMemo(() => lines.data ?? [], [lines.data]);
   const pending = useMemo(
     () => allLines.filter(l => assessReceive(toReceivable(l)).individuallyReceivable),
@@ -133,21 +133,15 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
   );
   const bulkSet = useMemo(() => bulkEligibleLines(pending.map(toReceivable)), [pending]);
 
-  /** Server truth about what has actually been received. */
-  const serverLineStates = useMemo(
-    () => allLines.map(l => ({ id: l.id, receivedQuantity: l.receivedQuantity })),
+  /**
+   * Server truth about what has actually been received. This is also what
+   * drives token derivation, so it must come from a canonical read — never
+   * from local optimism, or the token stops being stable across a reload.
+   */
+  const confirmed = useMemo(
+    () => confirmedEntityIds(allLines, l => l.receivedQuantity !== null),
     [allLines],
   );
-  const confirmed = useMemo(() => confirmedLineIds(serverLineStates), [serverLineStates]);
-
-  /**
-   * A canonical reload is the ONLY proof a receipt landed, so it is the only
-   * thing that retires a token. Failures never do — a client cannot tell a
-   * rejection from a committed write whose response was lost.
-   */
-  useEffect(() => {
-    tokens.current.releaseConfirmed(serverLineStates);
-  }, [serverLineStates]);
 
   /** Bulk acts on eligible lines the operator has not explicitly unticked. */
   const eligibleForBulk = useMemo(() => new Set(bulkSet.map(l => l.id)), [bulkSet]);
@@ -174,8 +168,11 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
     }
 
     setBusy(true);
-    const result = await runSingleReceive(writeReceive, tokens.current, {
-      lineId: line.id, receivedQuantity: quantity, differenceReason: reason,
+    const result = await runStockMutation(writeReceive, RECEIVE_KIND, {
+      entityId: line.id,
+      // Server-derived, so a reload re-derives the same token.
+      generation: line.receivedQuantity ?? 0,
+      payload: { dispatchLineId: line.id, receivedQuantity: quantity, differenceReason: reason },
     });
     setLineStates(s => ({
       ...s,
@@ -201,14 +198,21 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
     setBusy(true);
     setProgress({ done: 0, total: selectedBulkIds.length });
 
-    const outcome = await runBulkReceive(writeReceive, tokens.current, {
+    const outcome = await runStockMutations(writeReceive, {
+      kind: RECEIVE_KIND,
       // Only lines the operator actually chose, intersected with what the
       // shared model judged safe, minus anything the server already confirmed.
-      selected: selectedBulkIds.map(id => {
+      items: selectedBulkIds.map(id => {
         const line = allLines.find(l => l.id === id)!;
-        return { lineId: id, receivedQuantity: line.sentQuantity, differenceReason: null };
+        return {
+          entityId: id,
+          generation: line.receivedQuantity ?? 0,
+          payload: {
+            dispatchLineId: id, receivedQuantity: line.sentQuantity, differenceReason: null,
+          },
+        };
       }),
-      eligibleIds: new Set(bulkSet.map(l => l.id)),
+      eligibleIds: eligibleForBulk,
       confirmedIds: confirmed,
       // Truthful progress: attempts RESOLVED, successes and failures alike.
       onProgress: (done, total) => setProgress({ done, total }),
@@ -216,7 +220,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
 
     const states: Record<string, LineState> = {};
     for (const id of outcome.succeeded) states[id] = { state: 'succeeded', error: null };
-    for (const f of outcome.failed) states[f.lineId] = { state: 'failed', error: receiveError(f.error, lang) };
+    for (const f of outcome.failed) states[f.entityId] = { state: 'failed', error: receiveError(f.error, lang) };
 
     setLineStates(s => ({ ...s, ...states }));
     setProgress(null);
