@@ -10,13 +10,17 @@
  *   1. EditorScreen            — UNREACHABLE. No production route or import.
  *   2. QuickAvailForm          — UNREACHABLE. Its trigger control was removed,
  *                                so the render condition can never be true.
- *   3. ReactivateMaterialModal — REACHABLE, permission-gated, and recorded as a
- *                                hard deployment blocker: no replacement exists.
+ *   3. ReactivateMaterialModal — REACHABLE, permission-gated, and NO LONGER a
+ *                                manual quantity writer: migration 084 gave it a
+ *                                visibility-only path (phoenix_set_availability_
+ *                                visibility), so it no longer calls
+ *                                upsertAvailability or applyAvailabilityMovement.
  *
  * These are reachability guards, not a licence to keep the code. 1 and 2 are
  * deletion candidates whose test blast radius (23 and 8 files respectively)
  * is tracked separately; until they are deleted, THIS is what stops them being
- * wired back up.
+ * wired back up. As of the 083/084 cutover, NO production surface reaches the
+ * manual availability quantity writer phoenix_upsert_availability at all.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -101,36 +105,37 @@ describe('2. QuickAvailForm — the manual availability quick-add', () => {
   });
 });
 
-describe('3. ReactivateMaterialModal — reachable, and a deployment blocker', () => {
+describe('3. ReactivateMaterialModal — reachable, permission-gated, visibility-only', () => {
   it('is reachable from Status Center, so it cannot be assumed dead', () => {
     expect(statusCenter).toContain('<ReactivateMaterialModal');
     expect(statusCenter).toContain('setReactivateRow(');
   });
 
-  it('stays behind an explicit permission gate', () => {
-    expect(reactivateModal).toContain("REACTIVATE_PERMISSION_KEYS = ['availability.quantity.set', 'availability.update']");
+  it('stays behind an explicit permission gate (the single key its RPC re-enforces)', () => {
+    expect(reactivateModal).toContain("REACTIVATE_PERMISSION_KEYS = ['availability.update']");
     expect(reactivateModal).toContain('REACTIVATE_PERMISSION_KEYS.every(key => myPermissions.has(key))');
   });
 
-  it('writes quantity ONLY through the recorded movement path, never a raw balance set', () => {
-    // Migration 035's guard: quantity changes must go through
-    // phoenix_apply_availability_movement, which writes a movement row. The
-    // upsert that follows only clears the removed marker at the same quantity.
-    expect(reactivateModal).toContain('applyAvailabilityMovement');
-    expect(reactivateModal).toContain('await upsertAvailability(');
+  it('reactivates by CATALOGUE VISIBILITY only — no quantity write of any kind', () => {
+    // Migration 084: clearing the 053 removed marker no longer touches quantity
+    // or condition. The old manual writers are gone from this surface.
+    expect(reactivateModal).toContain('setAvailabilityVisibility(row!.id, false)');
+    expect(reactivateModal).not.toContain('applyAvailabilityMovement');
+    expect(reactivateModal).not.toContain('upsertAvailability');
   });
 });
 
-describe('no NEW legacy availability writer appears', () => {
-  it('upsertAvailability now has exactly ONE production call site', () => {
-    // Was three (EditorScreen, QuickAvailForm, ReactivateMaterialModal). Two are
-    // retired; the survivor is deployment blocker 3. A new entry here means a
-    // manual writer came back and the audit must be redone before it ships.
+describe('no legacy availability quantity writer is reachable', () => {
+  it('upsertAvailability now has ZERO production call sites', () => {
+    // Was three (EditorScreen, QuickAvailForm, ReactivateMaterialModal). All are
+    // retired: 1 and 2 deleted; 3 converted to visibility-only (migration 084).
+    // A new entry here means a manual quantity writer came back and the audit
+    // must be redone before it ships.
     const callers = productionSourceFiles()
       .filter(f => readFileSync(f, 'utf8').includes('await upsertAvailability('))
       .map(f => f.replace(/\\/g, '/').split('/src/')[1])
       .sort();
-    expect(callers).toEqual(['features/status/ReactivateMaterialModal.tsx']);
+    expect(callers).toEqual([]);
   });
 
   it('the Inventory Center never writes availability by hand', () => {

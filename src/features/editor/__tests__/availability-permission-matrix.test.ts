@@ -59,7 +59,7 @@ describe('the permission-matrix save UX is retired with its screen', () => {
   });
 
   it('the surviving writer classifies save errors rather than showing a generic toast', () => {
-    expect(reactivateModal).toContain('classifyAvailabilitySaveError');
+    expect(reactivateModal).toContain('classifyAvailabilityVisibilityError');
     expect(reactivateModal).toContain("from '@/shared/supabase/services/availability.service'");
   });
 

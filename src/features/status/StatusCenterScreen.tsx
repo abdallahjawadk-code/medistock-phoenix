@@ -1095,7 +1095,6 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         open={reactivateRow !== null}
         row={reactivateRow}
         lang={lang}
-        organizationId={effectiveOrgId ?? ''}
         myPermissions={myPermissions}
         onClose={() => setReactivateRow(null)}
         onSuccess={handleReactivateSuccess}

@@ -96,12 +96,13 @@ describe('Add-material via the retired manual forms: both surfaces are gone', ()
     expectQuickAvailFormAbsent();
   });
 
-  it('the one surviving availability writer still goes through the RPC wrapper', () => {
-    // ReactivateMaterialModal is deployment blocker 3. While it exists it must
-    // obey the same rule the retired forms did: RPC wrapper, never a table.
-    expect(reactivateModal).toContain('await upsertAvailability(');
+  it('the reactivation surface goes through an RPC wrapper, never a raw table', () => {
+    // ReactivateMaterialModal is now visibility-only (migration 084): it writes
+    // through the setAvailabilityVisibility RPC wrapper, never a table, and no
+    // longer touches a manual quantity writer at all.
+    expect(reactivateModal).toContain('setAvailabilityVisibility(');
     expect(reactivateModal).not.toMatch(/\.from\('item_availability'\)/);
-    expect(reactivateModal).toContain('classifyAvailabilitySaveError');
+    expect(reactivateModal).toContain('classifyAvailabilityVisibilityError');
   });
 });
 
@@ -177,7 +178,7 @@ describe('Backend RPC errors map to safe translated messages, not a raw/generic 
     // Was: assert BOTH retired add-material catch blocks used the classifier.
     // Both are retired, so the rule now binds whatever still writes availability.
     const catchBlock = reactivateModal.slice(reactivateModal.indexOf('} catch'));
-    expect(catchBlock).toContain('classifyAvailabilitySaveError');
+    expect(catchBlock).toContain('classifyAvailabilityVisibilityError');
   });
 });
 
@@ -246,6 +247,6 @@ describe('BUGFIX-AVAILABILITY-DUPLICATE-PORT-INDEX-B: adding multiple materials 
     // Both are retired; migration 043 remains the real fix either way.
     expectRetiredSurfaceAbsent('EditorScreen');
     expectQuickAvailFormAbsent();
-    expect(reactivateModal).toContain('await upsertAvailability(');
+    expect(reactivateModal).toContain('setAvailabilityVisibility(');
   });
 });

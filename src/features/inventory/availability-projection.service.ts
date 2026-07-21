@@ -129,7 +129,10 @@ export interface AvailabilityProjectionRpc {
   }>;
 }
 
-const defaultRpc: AvailabilityProjectionRpc = (fn, args) => supabase.rpc(fn, args);
+const defaultRpc: AvailabilityProjectionRpc = async (fn, args) => {
+  const { data, error } = await supabase.rpc(fn, args);
+  return { data: (data as RawAvailableStockPayload | null) ?? null, error };
+};
 
 /**
  * Read the canonical, derived availability for one outlet. Empty (never an

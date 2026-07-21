@@ -47,7 +47,7 @@ describe('the silent-overwrite surface is retired, not merely unused', () => {
 });
 
 describe('no surviving surface can overwrite a quantity silently', () => {
-  it('exactly one production module still calls upsertAvailability', () => {
+  it('NO production module calls upsertAvailability — the manual balance writer is fully retired', () => {
     // `await upsertAvailability(` is the CALL form — it excludes the service's
     // own `export async function upsertAvailability(` definition.
     const callers = productionSourceFiles()
@@ -55,18 +55,20 @@ describe('no surviving surface can overwrite a quantity silently', () => {
       .map(f => f.replace(/\\/g, '/').split('/src/')[1])
       .sort();
 
-    // ReactivateMaterialModal is the last legacy writer, tracked as deployment
-    // blocker 3. If a NEW caller appears this fails, and the audit has to be
-    // redone before it can ship.
-    expect(callers).toEqual(['features/status/ReactivateMaterialModal.tsx']);
+    // Was three, then one (ReactivateMaterialModal). Migration 084 converted the
+    // last caller to visibility-only, so the manual balance writer is now
+    // reachable from NO surface. A new caller here fails and forces a re-audit.
+    expect(callers).toEqual([]);
   });
 
-  it('that remaining caller moves quantity through a RECORDED movement first', () => {
+  it('the reactivation surface writes NO quantity — it only toggles catalogue visibility (084)', () => {
     const modal = readSrc('features/status/ReactivateMaterialModal.tsx');
-    // Migration 035's guard: the upsert may only restate a quantity a movement
-    // has already set, so the movement call must be present.
-    expect(modal).toContain('applyAvailabilityMovement');
-    expect(modal).toContain('reactivated_from_removed');
+    // The strongest possible form of "no silent overwrite": the surface makes no
+    // quantity write at all. It clears the 053 removed marker via the
+    // visibility RPC; quantity/condition stay derived from the canonical ledger.
+    expect(modal).toContain('setAvailabilityVisibility');
+    expect(modal).not.toContain('applyAvailabilityMovement');
+    expect(modal).not.toContain('upsertAvailability');
   });
 
   it('the recorded-movement RPC remains the only permitted quantity write', () => {

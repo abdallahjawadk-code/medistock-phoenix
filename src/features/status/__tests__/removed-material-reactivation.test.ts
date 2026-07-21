@@ -4,8 +4,8 @@
  * Static source-code tests for:
  *  - Status Center's removed-row badge/details (removed_at/removal_reason/
  *    actor_name_snapshot — never removed_by's raw uuid).
- *  - The new ReactivateMaterialModal component and its two-step, existing-RPC
- *    reactivation flow (applyAvailabilityMovement then upsertAvailability).
+ *  - The ReactivateMaterialModal component and its VISIBILITY-ONLY reactivation
+ *    (migration 084's phoenix_set_availability_visibility) — no quantity write.
  *  - Safety guards: no SQL/migration/package changes, Status Center's live
  *    XLSX export still excludes removed_at rows, live/current screens still
  *    hide removed rows, genuine missing rows remain visible, movement
@@ -21,9 +21,7 @@ import {
   readSourceFile,
   balancedBlockAt,
   functionBodyAt,
-  declarationValueAt,
   blockBetween,
-  anchorIndex,
 } from '../../../shared/__tests__/helpers/source-extract';
 
 const SRC = join(__dirname, '../../../');
@@ -129,63 +127,42 @@ describe('C) Status Center: Reactivate button appears only for removed rows, rep
   });
 });
 
-describe('D) ReactivateMaterialModal: quantity/condition validation', () => {
-  it('excludes condition=missing from the selectable active conditions (migration 053 would not clear removed_at for it)', () => {
-    const block = declarationValueAt(reactivateModal, 'const ACTIVE_CONDITIONS');
-    expect(block).toContain("'available'");
-    expect(block).toContain("'low_stock'");
-    expect(block).toContain("'surplus'");
-    expect(block).toContain("'near_expiry'");
-    expect(block).not.toContain("'missing'");
+describe('D) ReactivateMaterialModal: catalogue-visibility only (no quantity/condition inputs)', () => {
+  it('asks for NO quantity — the removed quantity input and its validation are gone', () => {
+    // Availability is derived (083); reactivation must not re-type a quantity.
+    expect(reactivateModal).not.toContain("t('sc_reactivate_qty_err', lang)");
+    expect(reactivateModal).not.toMatch(/Number\.isInteger\(qtyNum\)/);
+    expect(reactivateModal).not.toContain('const ACTIVE_CONDITIONS');
   });
 
-  it('requires a positive integer quantity before submit is enabled', () => {
-    expect(reactivateModal).toMatch(/Number\.isInteger\(qtyNum\) && qtyNum > 0/);
-    expect(reactivateModal).toContain('const canSubmit = canReactivate && qtyNum !== null && Number.isInteger(qtyNum) && qtyNum > 0 && !busy;');
+  it('submit is gated ONLY on permission + not-busy, with no quantity precondition', () => {
+    expect(reactivateModal).toContain('const canSubmit = canReactivate && !busy;');
   });
 
-  it('shows a validation error for a non-positive or non-integer quantity', () => {
-    expect(reactivateModal).toContain("t('sc_reactivate_qty_err', lang)");
-    expect(reactivateModal).toMatch(/qtyInvalid = quantity !== '' && \(qtyNum === null \|\| !Number\.isInteger\(qtyNum\) \|\| qtyNum <= 0\)/);
+  it('keeps the permission gate on the single availability.update key its RPC enforces', () => {
+    expect(reactivateModal).toContain("REACTIVATE_PERMISSION_KEYS = ['availability.update']");
   });
 });
 
-describe('E) ReactivateMaterialModal: two-step RPC call order (no new RPC)', () => {
+describe('E) ReactivateMaterialModal: single visibility RPC, no manual quantity writer', () => {
   const submitFn = functionBodyAt(reactivateModal, 'async function handleSubmit');
 
-  it('calls applyAvailabilityMovement first with set_exact/desired quantity/reactivated_from_removed reason', () => {
-    const call = balancedBlockAt(submitFn, 'await applyAvailabilityMovement(');
-    expect(call).toContain("movementType: 'set_exact'");
-    expect(call).toContain('amount: qtyNum');
-    expect(call).toContain("reason: 'reactivated_from_removed'");
+  it('clears the removed marker with ONE call: setAvailabilityVisibility(row.id, false)', () => {
+    expect(submitFn).toContain('await setAvailabilityVisibility(row!.id, false)');
   });
 
-  it('calls upsertAvailability second, after the movement call, with the same identity fields and the chosen active condition', () => {
-    const movementIdx = anchorIndex(submitFn, 'await applyAvailabilityMovement(');
-    const upsertIdx = anchorIndex(submitFn, 'await upsertAvailability(');
-    expect(upsertIdx).toBeGreaterThan(movementIdx);
-    const call = balancedBlockAt(submitFn, 'await upsertAvailability(');
-    expect(call).toContain('quantity: qtyNum');
-    expect(call).toContain('condition,');
-    expect(call).toContain('scientificName: row!.scientific_name');
-    expect(call).toContain('distributionPointId: row!.distribution_points?.id');
-    expect(call).toContain('batchNumber: row!.batch_number');
-    expect(call).toContain('nationalCode: row!.national_code');
+  it('no longer calls the manual quantity writers (applyAvailabilityMovement / upsertAvailability)', () => {
+    expect(reactivateModal).not.toContain('applyAvailabilityMovement');
+    expect(reactivateModal).not.toContain('upsertAvailability');
   });
 
-  it('never introduces a new RPC name — only the two existing service functions are imported/called', () => {
-    expect(reactivateModal).toContain("import {\n  applyAvailabilityMovement,\n  classifyAvailabilityMovementError,\n  upsertAvailability,\n  classifyAvailabilitySaveError,\n} from '@/shared/supabase/services/availability.service';");
+  it('imports only the visibility service function + its classifier, and calls no raw supabase.rpc', () => {
+    expect(reactivateModal).toContain("import {\n  setAvailabilityVisibility,\n  classifyAvailabilityVisibilityError,\n} from '@/shared/supabase/services/availability.service';");
     expect(reactivateModal).not.toMatch(/supabase\.rpc\(/);
   });
 
-  it('does not allow submit before the movement step even begins if the row is falsy (defensive guard)', () => {
-    expect(reactivateModal).toContain('if (!canSubmit || qtyNum === null) return;');
-  });
-
-  it('classifies the error against whichever step actually failed (movementDone flag), not always the movement classifier', () => {
-    expect(reactivateModal).toContain('let movementDone = false;');
-    expect(reactivateModal).toContain('movementDone = true;');
-    expect(reactivateModal).toContain('setError(t(movementDone ? classifyAvailabilitySaveError(e) : classifyAvailabilityMovementError(e), lang));');
+  it('classifies the visibility RPC error for the toast', () => {
+    expect(reactivateModal).toContain('setError(t(classifyAvailabilityVisibilityError(e), lang));');
   });
 });
 

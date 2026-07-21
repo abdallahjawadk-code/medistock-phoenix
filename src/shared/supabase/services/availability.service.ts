@@ -158,6 +158,45 @@ export async function upsertAvailability(input: UpsertAvailabilityInput): Promis
 }
 
 /**
+ * AVAILABILITY-CATALOGUE-VISIBILITY-084: hide or reactivate an item_availability
+ * catalogue row via the phoenix_set_availability_visibility RPC (migration 084).
+ * This edits ONLY the 053 removed marker — it NEVER writes quantity or
+ * condition, which are derived from the canonical ledgers (083). Reactivation
+ * (`hidden=false`) is the successor to the old two-step
+ * movement-then-upsert reactivation, minus the manual quantity write.
+ */
+export async function setAvailabilityVisibility(
+  itemAvailabilityId: string,
+  hidden: boolean,
+  reason?: string,
+): Promise<void> {
+  if (!supabaseConfigured) return;
+  const { error } = await supabase.rpc('phoenix_set_availability_visibility', {
+    p_item_availability_id: itemAvailabilityId,
+    p_hidden:               hidden,
+    p_reason:               reason?.trim() ? reason.trim() : null,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Classify a phoenix_set_availability_visibility RPC failure into an i18n string
+ * key. The vocabulary is the 084 RPC's own (availability_not_found,
+ * forbidden_cross_org, forbidden_availability_update); falls back to a generic
+ * save-failure key.
+ */
+export function classifyAvailabilityVisibilityError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+  if (message.includes('availability_not_found')) return 'avail_movement_not_found';
+  if (code === '42501' || /forbidden/.test(message)) {
+    if (message.includes('forbidden_cross_org')) return 'avail_cross_org_denied';
+    return 'avail_no_edit_permission';
+  }
+  return 'load_error';
+}
+
+/**
  * Classify a phoenix_upsert_availability RPC failure (42501 permission errors,
  * from migration 032's availability.create/availability.update matrix checks;
  * 23514 quantity_update_requires_movement from migration 035's hard guard)
