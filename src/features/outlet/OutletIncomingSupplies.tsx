@@ -18,7 +18,7 @@
  * receive-model the institution corridor uses, so "safe to bulk-accept" means
  * exactly one thing across the whole app.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -30,6 +30,10 @@ import {
   assessReceive, bulkEligibleLines, validateReceive, type ReceivableLine,
 } from '@/features/movement/receive-model';
 import {
+  ReceiptTokenStore, runSingleReceive, runBulkReceive, confirmedLineIds,
+  type ReceiveWriter,
+} from './outlet-receive-runner';
+import {
   getOutletDispatches, getDispatchLinesForDispatches, receiveOutletDispatchLine,
   type WarehouseDispatch, type WarehouseDispatchLine,
 } from './dispatch.service';
@@ -38,9 +42,17 @@ type Lang = 'ar' | 'en';
 
 const dash = (v: string | null | undefined) => (v == null || v === '' ? '—' : v);
 
-/** A fresh idempotency token per ATTEMPT — replaying one never double-posts. */
+/**
+ * Mints ONE token per logical receipt line. The token is then reused for every
+ * retry of that line and released only when a canonical reload proves receipt —
+ * see outlet-receive-runner. Minting per ATTEMPT would make each retry a new
+ * operation and double-post stock whenever a success response was lost.
+ */
 const newRequestId = (): string =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+/** The single injected writer: the 070 receive RPC. */
+const writeReceive: ReceiveWriter = (input) => receiveOutletDispatchLine(input);
 
 /** The dispatched snapshot, in the shape the shared receive-model judges. */
 const toReceivable = (l: WarehouseDispatchLine): ReceivableLine => ({
@@ -105,6 +117,14 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
   const [lineStates, setLineStates] = useState<Record<string, LineState>>({});
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [deselected, setDeselected] = useState<Record<string, boolean>>({});
+
+  /**
+   * Stable idempotency tokens, one per logical receipt line, surviving every
+   * re-render and every retry. A ref, not state: replacing this store would
+   * silently re-mint tokens and reintroduce the double-post it prevents.
+   */
+  const tokens = useRef(new ReceiptTokenStore(newRequestId));
 
   const allLines = useMemo(() => lines.data ?? [], [lines.data]);
   const pending = useMemo(
@@ -113,18 +133,36 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
   );
   const bulkSet = useMemo(() => bulkEligibleLines(pending.map(toReceivable)), [pending]);
 
-  // ── receiving — the ONLY mutation on this surface ─────────────────────────
+  /** Server truth about what has actually been received. */
+  const serverLineStates = useMemo(
+    () => allLines.map(l => ({ id: l.id, receivedQuantity: l.receivedQuantity })),
+    [allLines],
+  );
+  const confirmed = useMemo(() => confirmedLineIds(serverLineStates), [serverLineStates]);
 
-  const receiveOne = (line: WarehouseDispatchLine, quantity: number, reason: string | null) =>
-    receiveOutletDispatchLine({
-      requestId: newRequestId(),
-      dispatchLineId: line.id,
-      receivedQuantity: quantity,
-      differenceReason: reason,
-    });
+  /**
+   * A canonical reload is the ONLY proof a receipt landed, so it is the only
+   * thing that retires a token. Failures never do — a client cannot tell a
+   * rejection from a committed write whose response was lost.
+   */
+  useEffect(() => {
+    tokens.current.releaseConfirmed(serverLineStates);
+  }, [serverLineStates]);
+
+  /** Bulk acts on eligible lines the operator has not explicitly unticked. */
+  const eligibleForBulk = useMemo(() => new Set(bulkSet.map(l => l.id)), [bulkSet]);
+  const selectedBulkIds = useMemo(
+    () => bulkSet.map(l => l.id).filter(id => !deselected[id]),
+    [bulkSet, deselected],
+  );
+
+  // ── receiving — the ONLY mutation on this surface ─────────────────────────
 
   const receiveIndividually = async (line: WarehouseDispatchLine) => {
     if (busy || !canReceive) return;
+    // Already proven received — retrying would be a second operation.
+    if (confirmed.has(line.id)) return;
+
     const typed = quantities[line.id] ?? String(line.sentQuantity);
     const quantity = Number(typed);
     const reason = (reasons[line.id] ?? '').trim() || null;
@@ -136,7 +174,9 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
     }
 
     setBusy(true);
-    const result = await receiveOne(line, quantity, reason);
+    const result = await runSingleReceive(writeReceive, tokens.current, {
+      lineId: line.id, receivedQuantity: quantity, differenceReason: reason,
+    });
     setLineStates(s => ({
       ...s,
       [line.id]: result.ok
@@ -157,24 +197,26 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
    * must never become a way to wave through the lines that need a human.
    */
   const acceptAllSafe = async () => {
-    if (busy || !canReceive || bulkSet.length === 0) return;
+    if (busy || !canReceive || selectedBulkIds.length === 0) return;
     setBusy(true);
-    setProgress({ done: 0, total: bulkSet.length });
+    setProgress({ done: 0, total: selectedBulkIds.length });
+
+    const outcome = await runBulkReceive(writeReceive, tokens.current, {
+      // Only lines the operator actually chose, intersected with what the
+      // shared model judged safe, minus anything the server already confirmed.
+      selected: selectedBulkIds.map(id => {
+        const line = allLines.find(l => l.id === id)!;
+        return { lineId: id, receivedQuantity: line.sentQuantity, differenceReason: null };
+      }),
+      eligibleIds: new Set(bulkSet.map(l => l.id)),
+      confirmedIds: confirmed,
+      // Truthful progress: attempts RESOLVED, successes and failures alike.
+      onProgress: (done, total) => setProgress({ done, total }),
+    });
 
     const states: Record<string, LineState> = {};
-    let done = 0;
-    for (const safe of bulkSet) {
-      const line = allLines.find(l => l.id === safe.id);
-      if (!line) continue;
-      const result = await receiveOne(line, line.sentQuantity, null);
-      states[line.id] = result.ok
-        ? { state: 'succeeded', error: null }
-        : { state: 'failed', error: receiveError(result.error, lang) };
-      done += 1;
-      // Truthful progress: this counts ATTEMPTS resolved, successes and
-      // failures alike — it is never a claim that everything worked.
-      setProgress({ done, total: bulkSet.length });
-    }
+    for (const id of outcome.succeeded) states[id] = { state: 'succeeded', error: null };
+    for (const f of outcome.failed) states[f.lineId] = { state: 'failed', error: receiveError(f.error, lang) };
 
     setLineStates(s => ({ ...s, ...states }));
     setProgress(null);
@@ -219,11 +261,11 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <PhoenixButton
-          disabled={!canReceive || busy || bulkSet.length === 0}
+          disabled={!canReceive || busy || selectedBulkIds.length === 0}
           onClick={() => void acceptAllSafe()}
           data-testid="outlet-accept-all-safe"
         >
-          {t('mv_accept_all_safe', lang)} ({bulkSet.length})
+          {t('mv_accept_all_safe', lang)} ({selectedBulkIds.length})
         </PhoenixButton>
         {progress && (
           <span data-testid="outlet-receive-progress" style={{ fontSize: '12px', color: 'var(--t2)' }}>
@@ -250,7 +292,20 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
               <PhoenixCard key={line.id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700 }}>{line.scientificName}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {/* Bulk acts only on eligible lines still ticked here. */}
+                      {eligibleForBulk.has(line.id) && (
+                        <input
+                          type="checkbox"
+                          data-testid={`outlet-select-${line.id}`}
+                          aria-label={t('mv_accept_all_safe', lang)}
+                          checked={!deselected[line.id]}
+                          disabled={busy || !canReceive}
+                          onChange={e => setDeselected(d => ({ ...d, [line.id]: !e.target.checked }))}
+                        />
+                      )}
+                      <div style={{ fontSize: '13px', fontWeight: 700 }}>{line.scientificName}</div>
+                    </div>
 
                     {/* The complete immutable dispatched snapshot — nothing reconstructed. */}
                     <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>

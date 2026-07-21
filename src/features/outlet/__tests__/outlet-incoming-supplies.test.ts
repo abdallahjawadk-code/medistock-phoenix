@@ -115,10 +115,27 @@ describe('§2A exactly one writer, and it is the 070 receive RPC', () => {
     expect(src).not.toMatch(/supabase\.rpc\(/);
   });
 
-  it('mints a FRESH idempotency token per attempt, so a retry cannot double-post', () => {
-    expect(src).toMatch(/requestId:\s*newRequestId\(\)/);
-    // The token must be minted per call, never hoisted into a constant/state.
-    expect(src).not.toMatch(/const\s+requestId\s*=\s*newRequestId\(\)/);
+  it('delegates idempotency to the token store, never minting per attempt', () => {
+    // CORRECTED at the reviewer's direction: an earlier version minted a token
+    // per ATTEMPT, which makes each retry a NEW operation and double-posts
+    // whenever a success response is lost. Behaviour is proven in
+    // outlet-receive-idempotency.test.ts; this only pins the wiring.
+    expect(src).toContain('new ReceiptTokenStore(newRequestId)');
+    expect(src).not.toMatch(/requestId:\s*newRequestId\(\)/);
+    // The store must survive re-render, or tokens silently re-mint.
+    expect(src).toMatch(/useRef\(new ReceiptTokenStore/);
+  });
+
+  it('retires a token only on canonical server proof of receipt', () => {
+    expect(src).toMatch(/releaseConfirmed\(serverLineStates\)/);
+    // Never on a failure — a rejection is indistinguishable from a committed
+    // write whose response was lost.
+    expect(src).not.toMatch(/releaseConfirmed[\s\S]{0,80}(failed|error)/);
+  });
+
+  it('never re-attempts a line the server already confirmed', () => {
+    expect(src).toMatch(/confirmed\.has\(line\.id\)/);
+    expect(src).toMatch(/confirmedIds:\s*confirmed/);
   });
 });
 
