@@ -17,7 +17,10 @@ import {
   type TokenedWriter, type MutationResult,
 } from '../stock-mutation-runner';
 
-interface Payload { quantity: number }
+// A type alias, not an interface, so it satisfies runStockMutation's
+// `P extends IntentValue` constraint (an interface is not assignable to
+// IntentValue's index-signature arm).
+type Payload = { quantity: number };
 
 interface FakeServer {
   write: TokenedWriter<Payload>;
@@ -161,7 +164,7 @@ describe('(4) only selected eligible lines may mutate', () => {
 
   it('mutates nothing when the selection is empty', async () => {
     const server = fakeServer();
-    const outcome = await runStockMutations(server.write, { kind: KIND, items: [] });
+    const outcome = await runStockMutations<Payload>(server.write, { kind: KIND, items: [] });
     expect(outcome.attempted).toEqual([]);
     expect(server.mutations).toBe(0);
   });

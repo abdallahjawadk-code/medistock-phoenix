@@ -21,6 +21,59 @@
 import {
   operationToken, type OperationIdentity,
 } from './operation-token';
+import { canonicalIntent, type IntentValue } from './canonical-intent';
+
+/**
+ * Remembers attempts whose outcome is not yet canonically known, so the payload
+ * cannot be edited underneath an unresolved operation.
+ *
+ * After an ambiguous failure the client does not know whether the server
+ * committed. Retrying the SAME intent is safe — it derives the same token and
+ * is deduplicated. Retrying a DIFFERENT intent is not: it derives a different
+ * token, so if the first attempt did commit, the second posts on top of it.
+ * The ledger refuses that until a canonical reload has reconciled the row.
+ *
+ * Scope note, stated plainly: this is in-memory, so it constrains the session
+ * that made the attempt. It does not need to survive a reload — a reloaded page
+ * has no unresolved attempt of its own, and the canonical read it performs on
+ * mount IS the reconciliation. Durability across reload is provided by token
+ * derivation, not by this ledger.
+ */
+export class PendingIntentLedger {
+  private readonly pending = new Map<string, string>();
+
+  /** True when this entity has an attempt whose outcome is still unknown. */
+  isPending(entityId: string): boolean {
+    return this.pending.has(entityId);
+  }
+
+  pendingIntent(entityId: string): string | undefined {
+    return this.pending.get(entityId);
+  }
+
+  /** May this intent be submitted for this entity right now? */
+  allows(entityId: string, intent: string): boolean {
+    const held = this.pending.get(entityId);
+    return held === undefined || held === intent;
+  }
+
+  record(entityId: string, intent: string): void {
+    this.pending.set(entityId, intent);
+  }
+
+  /**
+   * A canonical reload has been observed, so nothing is ambiguous any more:
+   * whatever the server now reports is the truth, and the operator may compose
+   * a fresh intent from it.
+   */
+  reconcile(): void {
+    this.pending.clear();
+  }
+
+  get size(): number {
+    return this.pending.size;
+  }
+}
 
 export interface MutationResult {
   ok: boolean;
@@ -71,6 +124,8 @@ export interface RunOptions<P> {
   onProgress?: (done: number, total: number) => void;
   /** Overridable for tests; defaults to the real derivation. */
   deriveToken?: TokenDeriver;
+  /** Guards against editing a payload under an unresolved attempt. */
+  ledger?: PendingIntentLedger;
 }
 
 /**
@@ -84,20 +139,33 @@ export interface RunOptions<P> {
  * the rows after it — and keeps callers' `busy` flags from stranding on an
  * exception thrown past their `setBusy(false)`.
  */
-export async function runStockMutation<P>(
+export async function runStockMutation<P extends IntentValue>(
   write: TokenedWriter<P>,
   kind: string,
   item: MutationItem<P>,
   deriveToken: TokenDeriver = operationToken,
+  ledger?: PendingIntentLedger,
 ): Promise<SingleMutationOutcome> {
+  let intent: string;
   let requestId: string;
   try {
+    // The payload IS the mutation-relevant input set, so intent is derived from
+    // it rather than restated at each call site — one less thing to forget.
+    intent = canonicalIntent(item.payload);
     requestId = await deriveToken({
-      kind, entityId: item.entityId, generation: item.generation,
+      kind, entityId: item.entityId, generation: item.generation, intent,
     });
   } catch {
     return { ok: false, error: 'operation_token_unavailable', requestId: '' };
   }
+
+  // Refuse to change the payload underneath an operation whose outcome is
+  // still unknown — see PendingIntentLedger.
+  if (ledger && !ledger.allows(item.entityId, intent)) {
+    return { ok: false, error: 'intent_changed_before_reconciliation', requestId };
+  }
+  ledger?.record(item.entityId, intent);
+
   const result = await write(requestId, item.payload);
   return { ...result, requestId };
 }
@@ -110,11 +178,14 @@ export async function runStockMutation<P>(
  * likely to get them wrong. What actually mutates is the intersection:
  * explicitly selected AND eligible AND not already confirmed.
  */
-export async function runStockMutations<P>(
+export async function runStockMutations<P extends IntentValue>(
   write: TokenedWriter<P>,
   options: RunOptions<P>,
 ): Promise<BulkMutationOutcome> {
-  const { kind, items, eligibleIds, confirmedIds, onProgress, deriveToken = operationToken } = options;
+  const {
+    kind, items, eligibleIds, confirmedIds, onProgress,
+    deriveToken = operationToken, ledger,
+  } = options;
 
   const outcome: BulkMutationOutcome = { attempted: [], succeeded: [], failed: [], skipped: [] };
 
@@ -132,7 +203,7 @@ export async function runStockMutations<P>(
 
   let done = 0;
   for (const item of actionable) {
-    const result = await runStockMutation(write, kind, item, deriveToken);
+    const result = await runStockMutation(write, kind, item, deriveToken, ledger);
     outcome.attempted.push(item.entityId);
     if (result.ok) outcome.succeeded.push(item.entityId);
     else outcome.failed.push({ entityId: item.entityId, error: result.error });

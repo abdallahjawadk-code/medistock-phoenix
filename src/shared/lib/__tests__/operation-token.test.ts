@@ -12,8 +12,11 @@ import {
   OperationTokenUnavailableError, type OperationIdentity,
 } from '../operation-token';
 
+// Intent is held constant here so these cases isolate the kind / entityId /
+// generation axes; the token's dependence on the intent itself is proven in
+// concurrent-intent.test.ts.
 const id = (over: Partial<OperationIdentity> = {}): OperationIdentity => ({
-  kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0, ...over,
+  kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0, intent: '', ...over,
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -42,10 +45,10 @@ describe('same logical operation → same token, with nothing stored', () => {
     // object, no module state, nothing persisted. This is exactly what a
     // reloaded page does.
     const before = await operationToken({
-      kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0,
+      kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0, intent: '',
     });
     const afterReload = await operationToken({
-      kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0,
+      kind: 'outlet_dispatch_receive', entityId: 'line-1', generation: 0, intent: '',
     });
     expect(afterReload).toBe(before);
   });
@@ -85,9 +88,9 @@ describe('a genuinely new operation → a different token', () => {
 });
 
 describe('the fingerprint is namespaced and fully specified', () => {
-  it('includes namespace, kind, entity and generation, each length-prefixed', () => {
-    expect(operationFingerprint(id({ generation: 7 })))
-      .toBe('35:medistock.phoenix.stock-mutation.v1|23:outlet_dispatch_receive|6:line-1|1:7');
+  it('includes namespace, kind, entity, generation and intent, each length-prefixed', () => {
+    expect(operationFingerprint(id({ generation: 7, intent: 'i5' })))
+      .toBe('35:medistock.phoenix.stock-mutation.v1|23:outlet_dispatch_receive|6:line-1|1:7|2:i5');
   });
 
   it('cannot be confused by a delimiter in the inputs', async () => {

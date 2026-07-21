@@ -59,6 +59,18 @@ export interface OperationIdentity {
    * across a reload.
    */
   generation: number;
+  /**
+   * Canonical serialization of every mutation-relevant input (see
+   * canonical-intent.ts).
+   *
+   * Generation alone is not sufficient. Two tabs acting before canonical state
+   * advances sit at the SAME generation, so without the intent they derive the
+   * same token and the server deduplicates the second as a replay of the first
+   * — telling an operator their 50 succeeded when the 30 is what posted. Two
+   * different commands are two operations, and the token has to say so; the
+   * server's caps then reject the one that must not proceed, visibly.
+   */
+  intent: string;
 }
 
 export class OperationTokenUnavailableError extends Error {
@@ -80,9 +92,13 @@ export class OperationTokenUnavailableError extends Error {
  */
 export function operationFingerprint(identity: OperationIdentity): string {
   const part = (s: string) => `${s.length}:${s}`;
-  return [TOKEN_NAMESPACE, identity.kind, identity.entityId, String(identity.generation)]
-    .map(part)
-    .join('|');
+  return [
+    TOKEN_NAMESPACE,
+    identity.kind,
+    identity.entityId,
+    String(identity.generation),
+    identity.intent,
+  ].map(part).join('|');
 }
 
 function uuidFromBytes(bytes: Uint8Array): string {
