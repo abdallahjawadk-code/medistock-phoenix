@@ -33,9 +33,9 @@ import { createQaFixtureClient } from './qaFixtureClient';
 // is a no-op in a production build (see client.ts).
 __installQaSupabaseClient(createQaFixtureClient());
 
-type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -71,6 +71,13 @@ const PhoenixWelcomeExperience = lazy(() =>
  *  client's read-only error: the harness cannot post stock. */
 const InventoryCenterScreen = lazy(() =>
   import('@/features/inventory/InventoryCenterScreen').then(m => ({ default: m.InventoryCenterScreen })),
+);
+/** Screen 18 — Outlet Operations (incoming / stock / returns / history /
+ *  current status). Rendered against fixtures so the capture runner can drive
+ *  the outlet corridor's real controls; every write resolves to the fixture
+ *  client's read-only error, so the harness cannot move stock. */
+const OutletOperationsScreen = lazy(() =>
+  import('@/features/outlet/OutletOperationsScreen').then(m => ({ default: m.OutletOperationsScreen })),
 );
 
 // Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
@@ -141,11 +148,12 @@ export function QaHarness() {
   // from ?scene=, preserving the existing per-cell URL contract.
   const [scene, setScene] = useState<SceneId>(initial.scene);
   const handleNavigate = (n: number) =>
-    setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory' : n === 2 ? 'dashboard' : 'shell');
+    setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory'
+      : n === 18 ? 'outlet' : n === 2 ? 'dashboard' : 'shell');
   // Reflect the active scene as the production screen number its nav item uses,
   // so the correct sidebar/drawer item reads as current (twin = 17 / network).
   const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11
-    : scene === 'inventory' ? 3 : scene === 'dashboard' ? 2 : 1;
+    : scene === 'inventory' ? 3 : scene === 'outlet' ? 18 : scene === 'dashboard' ? 2 : 1;
 
   return (
     <QaAppProvider persona={active} lang={lang} theme={theme} orgId={org ?? undefined}>
@@ -179,6 +187,10 @@ export function QaHarness() {
             ) : scene === 'inventory' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <InventoryCenterScreen />
+              </Suspense>
+            ) : scene === 'outlet' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <OutletOperationsScreen />
               </Suspense>
             ) : scene === 'dashboard' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
