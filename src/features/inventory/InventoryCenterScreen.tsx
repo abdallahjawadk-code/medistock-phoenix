@@ -13,11 +13,13 @@ import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
 import { OutletDispatchOperations } from '@/features/outlet/OutletDispatchOperations';
+import { InstitutionReturnReceipts } from '@/features/outlet/InstitutionReturnReceipts';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
+import { useReturnReceivePermission } from './useReturnReceivePermission';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   newRequestId, classifyIntakeError,
@@ -41,7 +43,7 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns';
 
 export function InventoryCenterScreen() {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -67,6 +69,12 @@ export function InventoryCenterScreen() {
   const perms = useWarehouseStockPermissions(activeOrgId, activeWarehouseId || null);
   const canAdjust = perms.data?.canAdjust ?? false;
   const canCorrect = perms.data?.canCorrect ?? false;
+
+  // §071 — receiving OUTLET RETURNS into THIS warehouse. Gated on the exact
+  // scoped key the receive RPC checks (outlet_stock.return_receive on the
+  // destination warehouse), never a role name. The RPC re-checks server-side.
+  const returnReceive = useReturnReceivePermission(activeOrgId, activeWarehouseId || null);
+  const canReceiveReturns = returnReceive.data ?? false;
 
   const [tab, setTab] = useState<Tab>('intake');
   const [toast, setToast] = useState<string | null>(null);
@@ -176,6 +184,9 @@ export function InventoryCenterScreen() {
           ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
           // §2 — institution-warehouse → outlet dispatch, for dispatch authorizers.
           ...(canDispatch ? [{ id: 'dispatch' as const, labelKey: 'inv_tab_dispatch' }] : []),
+          // §071 — receiving outlet returns into this warehouse, for holders of
+          // the scoped outlet_stock.return_receive permission on it.
+          ...(canReceiveReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -231,6 +242,13 @@ export function InventoryCenterScreen() {
           warehouseName={activeWarehouseName}
           outlets={outletsForWarehouse}
           canDispatch={canDispatch}
+          lang={lang}
+        />
+      ) : tab === 'returns' && canReceiveReturns ? (
+        <InstitutionReturnReceipts
+          destinationWarehouseId={activeWarehouseId}
+          warehouseName={activeWarehouseName}
+          canReceive={canReceiveReturns}
           lang={lang}
         />
       ) : (

@@ -1616,6 +1616,7 @@ export const T: Dict = {
   inv_tab_ledger:         { ar: 'سجل الحركات',                                  en: 'Movement ledger' },
   inv_tab_incoming: { ar: 'واردات تجهيز الدائرة', en: 'Incoming dept. supplies' },
   inv_tab_dispatch: { ar: 'تجهيز المنافذ', en: 'Dispatch to outlets' },
+  inv_tab_return_receipts: { ar: 'استلام مرتجعات المنافذ', en: 'Receive outlet returns' },
   mv_doc_outlet_dispatch: { ar: 'وصل تجهيز منفذ', en: 'Outlet dispatch' },
   mv_create_outlet_dispatch: { ar: 'إنشاء تجهيز المنفذ', en: 'Create outlet dispatch' },
   mv_outlet: { ar: 'المنفذ', en: 'Outlet' },
