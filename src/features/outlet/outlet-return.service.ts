@@ -200,6 +200,23 @@ export async function getOutletReturnShipmentLines(shipmentId: string): Promise<
   }));
 }
 
+/** Lines for MANY shipments in ONE query — the institution receive queue (no N+1). */
+export async function getReturnShipmentLinesForShipments(shipmentIds: string[]): Promise<OutletReturnShipmentLine[]> {
+  if (!supabaseConfigured || shipmentIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('outlet_return_shipment_lines')
+    .select('id, shipment_id, return_request_line_id, original_dispatch_line_id, scientific_name, batch_number, expiry_date, sent_quantity, received_quantity, status, difference_reason, disposition, custody_state')
+    .in('shipment_id', shipmentIds).order('scientific_name', { ascending: true });
+  if (error) throw error;
+  return (data as OutletReturnShipmentLineRow[] | null ?? []).map(r => ({
+    id: r.id, shipmentId: r.shipment_id, returnRequestLineId: r.return_request_line_id,
+    originalDispatchLineId: r.original_dispatch_line_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date, sentQuantity: r.sent_quantity,
+    receivedQuantity: r.received_quantity, status: r.status, differenceReason: r.difference_reason,
+    disposition: r.disposition, custodyState: r.custody_state,
+  }));
+}
+
 // ─── Mutations (071 RPCs) ────────────────────────────────────────────────────
 
 export function requestOutletReturn(input: {

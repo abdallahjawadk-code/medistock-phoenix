@@ -1793,6 +1793,9 @@ export const T: Dict = {
   mv_h_returned_by:       { ar: 'أرجعه',                                         en: 'Returned by' },
   mv_h_receiver:          { ar: 'المستلم',                                       en: 'Receiver' },
   mv_h_received_disposition: { ar: 'الاستلام والتصرّف',                          en: 'Receipt and disposition' },
+  mv_return_receipts_title: { ar: 'استلام المرتجعات الواردة',                     en: 'Incoming return receipts' },
+  mv_return_receipts_none: { ar: 'لا توجد مرتجعات بانتظار الاستلام',              en: 'No returns awaiting receipt' },
+  mv_receive_to_quarantine: { ar: 'استلام الآمن إلى الحجْر',                      en: 'Receive safe to quarantine' },
   mv_h_reprinted_at:      { ar: 'وقت إعادة الطباعة',                             en: 'Reprinted at' },
 
   // An operator-typed number is NOT a controlled serial — no atomic allocator
