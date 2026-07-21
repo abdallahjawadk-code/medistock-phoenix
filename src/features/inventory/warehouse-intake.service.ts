@@ -104,6 +104,65 @@ export interface ReceiveWarehouseStockInput {
   supplyType?: string | null;
   sourceDocumentNumber?: string | null;
   notes?: string | null;
+  /**
+   * The canonical `warehouse_stock.movement_seq` this receipt was composed
+   * against, read from the server (migration 078). Omit to post unguarded,
+   * exactly as before 078.
+   *
+   * A brand-new lot has generation 0, so a FIRST receipt legitimately sends 0.
+   * `undefined` and `0` therefore mean different things — see
+   * {@link toExpectedGeneration}.
+   */
+  expectedGeneration?: number | null;
+}
+
+/**
+ * Normalize the optional expected generation for an RPC argument.
+ *
+ * `0` is a REAL generation — a lot that exists but has never moved, and the
+ * value a first receipt sends — so `??`/falsy coercion here would silently turn
+ * the strictest guard into no guard at all. Only `undefined` means "unguarded".
+ */
+export function toExpectedGeneration(v: number | null | undefined): number | null {
+  return v === undefined ? null : v;
+}
+
+/** PostgreSQL: column does not exist. Emitted until migration 078 is applied. */
+const UNDEFINED_COLUMN = '42703';
+
+/**
+ * Read the canonical, server-owned generation of one warehouse stock lot.
+ *
+ * TOLERANT BY DESIGN. `movement_seq` only exists once migration 078 is applied,
+ * and this repository never applies migrations automatically — so between merge
+ * and apply the column is genuinely absent. Selecting it unconditionally from
+ * the shared ledger read would break every stock list in that window.
+ *
+ * Returns `null` when the column does not exist yet, when the row is not
+ * visible under RLS, or when the read fails. `null` propagates as "unguarded",
+ * which is exactly the pre-078 behaviour — it never invents a generation, and
+ * an invented one would be far worse than none.
+ */
+export async function getWarehouseStockGeneration(
+  warehouseStockId: string,
+  deps: { read?: (id: string) => Promise<{ movement_seq: number } | null> } = {},
+): Promise<number | null> {
+  if (deps.read) return (await deps.read(warehouseStockId))?.movement_seq ?? null;
+  if (!supabaseConfigured || !warehouseStockId) return null;
+
+  const { data, error } = await supabase
+    .from('warehouse_stock')
+    .select('movement_seq')
+    .eq('id', warehouseStockId)
+    .maybeSingle();
+
+  if (error) {
+    // Pre-apply window, or an unreadable row. Both mean "no guard available".
+    if (error.code === UNDEFINED_COLUMN) return null;
+    return null;
+  }
+  const seq = (data as { movement_seq?: number } | null)?.movement_seq;
+  return typeof seq === 'number' ? seq : null;
 }
 
 export interface ReceiveWarehouseStockResult {
@@ -131,13 +190,18 @@ export function receiveWarehouseStock(
     return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
   }
   const call = deps.callRpc ?? callRpc;
-  return call<ReceiveWarehouseStockResult>('phoenix_receive_warehouse_stock', {
+  // Migration 078: the GUARDED entry point. It enforces the expected-generation
+  // precondition and then delegates to the 065 RPC, so RBAC, fingerprint
+  // idempotency and the audit trail stay single-sourced. The legacy name is
+  // deliberately not called any more — it is the unguarded accumulating path.
+  return call<ReceiveWarehouseStockResult>('phoenix_receive_warehouse_stock_guarded', {
     p_request_id:             input.requestId,
     p_warehouse_id:           input.warehouseId,
     p_scientific_name:        input.scientificName.trim(),
     p_quantity:               input.quantity,
     p_has_no_national_code:   input.hasNoNationalCode,
     p_has_no_batch_number:    input.hasNoBatchNumber,
+    p_expected_generation:    toExpectedGeneration(input.expectedGeneration),
     p_central_item_id:        input.centralItemId ?? null,
     p_trade_name:             input.tradeName ?? null,
     p_concentration:          input.concentration ?? null,
@@ -179,6 +243,11 @@ export interface ApplyWarehouseStockMovementInput {
   reason?: string | null;
   sourceDocumentNumber?: string | null;
   notes?: string | null;
+  /**
+   * Canonical `warehouse_stock.movement_seq` this adjustment was composed
+   * against (migration 078). Omit to post unguarded.
+   */
+  expectedGeneration?: number | null;
 }
 
 export interface ApplyWarehouseStockMovementResult {
@@ -206,11 +275,13 @@ export function applyWarehouseStockMovement(
     return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
   }
   const call = deps.callRpc ?? callRpc;
-  return call<ApplyWarehouseStockMovementResult>('phoenix_apply_warehouse_stock_movement', {
+  // Migration 078: the GUARDED entry point, for the same reason as the receipt.
+  return call<ApplyWarehouseStockMovementResult>('phoenix_apply_warehouse_stock_movement_guarded', {
     p_request_id:             input.requestId,
     p_warehouse_stock_id:     input.warehouseStockId,
     p_movement_type:          input.movementType,
     p_amount:                 input.amount,
+    p_expected_generation:    toExpectedGeneration(input.expectedGeneration),
     p_reason:                 input.reason ?? null,
     p_source_document_number: input.sourceDocumentNumber ?? null,
     p_notes:                  input.notes ?? null,
@@ -303,6 +374,13 @@ export function classifyIntakeError(code: string | undefined): string {
 
   // Idempotency: the same request id replayed with DIFFERENT arguments.
   if (c === 'request_id_conflict') return 'inv_err_request_conflict';
+
+  // Migration 078 optimistic concurrency: the canonical lot moved between the
+  // read this receipt was composed against and the post. Distinct from
+  // request_id_conflict — nothing is wrong with the request, the WORLD changed,
+  // so the operator must reload the canonical row and re-confirm rather than
+  // retry blindly. A blind retry is exactly the double-post being prevented.
+  if (c === 'warehouse_receipt_generation_conflict') return 'inv_err_generation_conflict';
 
   // Quantity invariants — the ledger never goes negative or below reservations.
   if (c === 'warehouse_quantity_cannot_go_negative') return 'inv_err_negative';

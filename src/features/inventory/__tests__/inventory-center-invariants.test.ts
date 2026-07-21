@@ -44,8 +44,12 @@ const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 describe('Stock truth: the warehouse ledger is the only write path', () => {
   it('the intake service writes exclusively through migration-065 RPCs', () => {
     expect(service).toContain("supabase.rpc(fn, args)");
-    expect(service).toContain("'phoenix_receive_warehouse_stock'");
-    expect(service).toContain("'phoenix_apply_warehouse_stock_movement'");
+    // Migration 078 moved the client onto the GUARDED entry points. They are not a
+    // new write path: each enforces the expected-generation precondition and then
+    // delegates to the very 065 RPC this invariant is about, so the ledger still
+    // has exactly one implementation of the write.
+    expect(service).toContain("'phoenix_receive_warehouse_stock_guarded'");
+    expect(service).toContain("'phoenix_apply_warehouse_stock_movement_guarded'");
   });
 
   it('the intake service never writes any table directly', () => {

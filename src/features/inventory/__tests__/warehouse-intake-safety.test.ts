@@ -99,7 +99,9 @@ describe('an open gate reaches the writer with the right RPC and request id', ()
     await receiveWarehouseStock(receiveInput, { allowed: open, callRpc: transport as never });
     expect(transport).toHaveBeenCalledTimes(1);
     const [fn, args] = transport.mock.calls[0];
-    expect(fn).toBe('phoenix_receive_warehouse_stock');
+    // Migration 078: the client now calls the GUARDED entry point, which enforces
+    // the expected-generation precondition and delegates to the 065 RPC.
+    expect(fn).toBe('phoenix_receive_warehouse_stock_guarded');
     expect((args as { p_request_id: string }).p_request_id).toBe('req-1');
   });
 
@@ -107,7 +109,7 @@ describe('an open gate reaches the writer with the right RPC and request id', ()
     const transport = okTransport();
     await applyWarehouseStockMovement(movementInput, { allowed: open, callRpc: transport as never });
     expect(transport).toHaveBeenCalledTimes(1);
-    expect(transport.mock.calls[0][0]).toBe('phoenix_apply_warehouse_stock_movement');
+    expect(transport.mock.calls[0][0]).toBe('phoenix_apply_warehouse_stock_movement_guarded');
   });
 });
 

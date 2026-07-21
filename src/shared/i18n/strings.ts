@@ -1671,6 +1671,9 @@ export const T: Dict = {
   inv_err_batch_mismatch: { ar: 'تعارض: أكّدت عدم وجود تشغيلة مع إدخال رقم',    en: 'Conflict: a batch number was entered but marked absent' },
   inv_err_identity:       { ar: 'تعذّر تحديد هوية المادة',                      en: 'The material identity could not be resolved' },
   inv_err_request_conflict: { ar: 'محاولة مكررة ببيانات مختلفة — ابدأ إدخالًا جديدًا', en: 'Retried with different data — start a new entry' },
+  // Migration 078. Deliberately says RELOAD AND REVIEW, never "try again":
+  // a blind retry is exactly the duplicate post this guard exists to stop.
+  inv_err_generation_conflict: { ar: 'تغيّر رصيد هذه الدفعة أثناء الإدخال — أعد التحميل وراجع الكمية قبل التأكيد', en: 'This batch changed while you were entering it — reload and review the quantity before confirming' },
   inv_err_negative:       { ar: 'لا يمكن أن يصبح الرصيد سالبًا',                en: 'The balance cannot go negative' },
   inv_err_below_reserved: { ar: 'لا يمكن أن يقل الرصيد عن الكمية المحجوزة',     en: 'The balance cannot drop below the reserved quantity' },
   inv_err_qty_positive:   { ar: 'الكمية يجب أن تكون أكبر من صفر',               en: 'The quantity must be greater than zero' },

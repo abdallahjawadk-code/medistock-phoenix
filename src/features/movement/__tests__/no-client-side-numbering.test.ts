@@ -80,8 +80,10 @@ describe('no client-side document-number sequence exists', () => {
 
   it('no migration file was added for document numbering', () => {
     const migrations = readdirSync(join(ROOT, 'supabase', 'migrations')).filter(f => f.endsWith('.sql'));
-    // 077 is the highest reviewed migration; this phase adds none.
-    const beyond = migrations.filter(f => /^0*(0[7-9][8-9]|[1-9]\d{2,})/.test(f));
+    // 078 (expected-generation concurrency guard) is the highest reviewed
+    // migration. It adds no document numbering; the point of this guard is that
+    // no sequence/numbering migration appears, which the name check below pins.
+    const beyond = migrations.filter(f => /^0*(079|0[8-9]\d|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
