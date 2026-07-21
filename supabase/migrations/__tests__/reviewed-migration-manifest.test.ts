@@ -47,8 +47,8 @@ const actualSqlFiles = (): string[] =>
 // reviewed and registered, so the "next unreviewed number" synthetic moved
 // 077 → 078. This is the intended maintenance step the registry was designed
 // for, and it happened HERE ONLY — no historical guard file needed an edit.
-const SYNTH_NEXT = '082_unreviewed_test_migration.sql';
-const SYNTH_NEXT_ALT = '082_phoenix_some_other_name.sql';
+const SYNTH_NEXT = '083_unreviewed_test_migration.sql';
+const SYNTH_NEXT_ALT = '083_phoenix_some_other_name.sql';
 const SYNTH_060_ALT = '060_phoenix_some_other_name.sql';
 const SYNTH_059_ALT = '059_unreviewed_alternate_name.sql';
 const SYNTH_HIGH = '999_phoenix_very_high_number.sql';
@@ -76,6 +76,7 @@ const REAL_078 = '078_phoenix_warehouse_receipt_expected_generation.sql';
 const REAL_079 = '079_phoenix_warehouse_generation_fail_closed.sql';
 const REAL_080 = '080_phoenix_revoke_unguarded_warehouse_writers.sql';
 const REAL_081 = '081_phoenix_movement_timeline.sql';
+const REAL_082 = '082_phoenix_movement_event_capture.sql';
 
 // ============================================================================
 // 1. Registry shape — exact filenames, no duplicates, deterministic order
@@ -138,12 +139,12 @@ describe('2. registry and disk agree exactly, in both directions', () => {
 // ============================================================================
 
 describe('3. reviewed maximum derives from the registry', () => {
-  it('the current reviewed maximum is 81', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(81);
+  it('the current reviewed maximum is 82', () => {
+    expect(getMaximumReviewedMigrationNumber()).toBe(82);
   });
 
-  it('the next unreviewed number is 82', () => {
-    expect(getNextUnreviewedMigrationNumber()).toBe(82);
+  it('the next unreviewed number is 83', () => {
+    expect(getNextUnreviewedMigrationNumber()).toBe(83);
   });
 
   it('the maximum equals the highest number in the registry itself', () => {
@@ -157,7 +158,7 @@ describe('3. reviewed maximum derives from the registry', () => {
     // The helper never reads the directory: the ceiling is a property of the
     // registry alone. Pretending 999 is on disk changes nothing.
     const pretendDisk = [...actualSqlFiles(), SYNTH_HIGH];
-    expect(getMaximumReviewedMigrationNumber()).toBe(81);
+    expect(getMaximumReviewedMigrationNumber()).toBe(82);
     expect(findUnreviewedMigrationFiles(pretendDisk)).toEqual([SYNTH_HIGH]);
   });
 });
@@ -320,7 +321,7 @@ describe('4. migrations 059–073 registered by exact name; 074 absent', () => {
     expect(isReviewedMigrationFile('073_phoenix_some_other_name.sql')).toBe(false);
   });
 
-  it('registers exactly one each of migrations 074-081 (no alternate names)', () => {
+  it('registers exactly one each of migrations 074-082 (no alternate names)', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 74)).toEqual([REAL_074]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 75)).toEqual([REAL_075]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 76)).toEqual([REAL_076]);
@@ -329,11 +330,12 @@ describe('4. migrations 059–073 registered by exact name; 074 absent', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 79)).toEqual([REAL_079]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 80)).toEqual([REAL_080]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 81)).toEqual([REAL_081]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 82)).toEqual([REAL_082]);
   });
 
-  it('does not register migration 082 in any form', () => {
-    const eightyTwos = REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 82);
-    expect(eightyTwos).toEqual([]);
+  it('does not register migration 083 in any form', () => {
+    const eightyThrees = REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === 83);
+    expect(eightyThrees).toEqual([]);
   });
 });
 
@@ -342,7 +344,7 @@ describe('4. migrations 059–073 registered by exact name; 074 absent', () => {
 // ============================================================================
 
 describe('5. approval requires exact filename membership, nothing less', () => {
-  it('rejects a synthetic unreviewed migration 082 (the next unreviewed number)', () => {
+  it('rejects a synthetic unreviewed migration 083 (the next unreviewed number)', () => {
     expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
     expect(findUnreviewedMigrationFiles([...actualSqlFiles(), SYNTH_NEXT])).toEqual([SYNTH_NEXT]);
   });
@@ -447,31 +449,32 @@ describe('6. derived slices remain exact-filename lists', () => {
       '079_phoenix_warehouse_generation_fail_closed.sql',
       '080_phoenix_revoke_unguarded_warehouse_writers.sql',
       '081_phoenix_movement_timeline.sql',
+      '082_phoenix_movement_event_capture.sql',
     ]);
   });
 
-  it('reviewedMigrationFilesAbove(64) contains exactly migrations 065-077', () => {
-    expect(reviewedMigrationFilesAbove(64)).toEqual([REAL_065, REAL_066, REAL_067, REAL_068, REAL_069, REAL_070, REAL_071, REAL_072, REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081]);
+  it('reviewedMigrationFilesAbove(64) contains exactly migrations 065-082', () => {
+    expect(reviewedMigrationFilesAbove(64)).toEqual([REAL_065, REAL_066, REAL_067, REAL_068, REAL_069, REAL_070, REAL_071, REAL_072, REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081, REAL_082]);
   });
 
-  it('reviewedMigrationFilesAbove(71) contains exactly migrations 072-077', () => {
-    expect(reviewedMigrationFilesAbove(71)).toEqual([REAL_072, REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081]);
+  it('reviewedMigrationFilesAbove(71) contains exactly migrations 072-082', () => {
+    expect(reviewedMigrationFilesAbove(71)).toEqual([REAL_072, REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081, REAL_082]);
   });
 
-  it('reviewedMigrationFilesAbove(72) contains exactly migrations 073-077', () => {
-    expect(reviewedMigrationFilesAbove(72)).toEqual([REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081]);
+  it('reviewedMigrationFilesAbove(72) contains exactly migrations 073-082', () => {
+    expect(reviewedMigrationFilesAbove(72)).toEqual([REAL_073, REAL_074, REAL_075, REAL_076, REAL_077, REAL_078, REAL_079, REAL_080, REAL_081, REAL_082]);
   });
 
-  it('reviewedMigrationFilesAbove(76) contains exactly migrations 077-081', () => {
-    expect(reviewedMigrationFilesAbove(76)).toEqual([REAL_077, REAL_078, REAL_079, REAL_080, REAL_081]);
+  it('reviewedMigrationFilesAbove(76) contains exactly migrations 077-082', () => {
+    expect(reviewedMigrationFilesAbove(76)).toEqual([REAL_077, REAL_078, REAL_079, REAL_080, REAL_081, REAL_082]);
   });
 
-  it('reviewedMigrationFilesAbove(77) contains exactly migrations 078-081', () => {
-    expect(reviewedMigrationFilesAbove(77)).toEqual([REAL_078, REAL_079, REAL_080, REAL_081]);
+  it('reviewedMigrationFilesAbove(77) contains exactly migrations 078-082', () => {
+    expect(reviewedMigrationFilesAbove(77)).toEqual([REAL_078, REAL_079, REAL_080, REAL_081, REAL_082]);
   });
 
-  it('reviewedMigrationFilesAbove(81) is empty (nothing beyond the ceiling)', () => {
-    expect(reviewedMigrationFilesAbove(81)).toEqual([]);
+  it('reviewedMigrationFilesAbove(82) is empty (nothing beyond the ceiling)', () => {
+    expect(reviewedMigrationFilesAbove(82)).toEqual([]);
   });
 
   it('every derived slice entry is itself an exactly-reviewed filename', () => {
