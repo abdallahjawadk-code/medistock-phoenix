@@ -1674,6 +1674,11 @@ export const T: Dict = {
   // Migration 078. Deliberately says RELOAD AND REVIEW, never "try again":
   // a blind retry is exactly the duplicate post this guard exists to stop.
   inv_err_generation_conflict: { ar: 'تغيّر رصيد هذه الدفعة أثناء الإدخال — أعد التحميل وراجع الكمية قبل التأكيد', en: 'This batch changed while you were entering it — reload and review the quantity before confirming' },
+  // Migration 079 fail-closed: the guard could not be proven, so NOTHING was
+  // posted. The copy says so explicitly, otherwise an operator who assumes a
+  // partial write re-enters the receipt and creates the very duplicate the
+  // guard exists to prevent.
+  inv_err_generation_unavailable: { ar: 'تعذّر التحقق من حالة الدفعة — لم يُسجَّل أي استلام. أعد التحميل ثم أعد المحاولة', en: 'Could not verify the batch state — nothing was recorded. Reload, then try again' },
   inv_err_negative:       { ar: 'لا يمكن أن يصبح الرصيد سالبًا',                en: 'The balance cannot go negative' },
   inv_err_below_reserved: { ar: 'لا يمكن أن يقل الرصيد عن الكمية المحجوزة',     en: 'The balance cannot drop below the reserved quantity' },
   inv_err_qty_positive:   { ar: 'الكمية يجب أن تكون أكبر من صفر',               en: 'The quantity must be greater than zero' },

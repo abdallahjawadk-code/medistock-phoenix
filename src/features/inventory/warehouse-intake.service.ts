@@ -131,24 +131,44 @@ export function toExpectedGeneration(v: number | null | undefined): number | nul
 const UNDEFINED_COLUMN = '42703';
 
 /**
+ * The outcome of reading a lot's canonical generation.
+ *
+ * DISCRIMINATED ON PURPOSE. An earlier revision returned `number | null`, where
+ * `null` meant every one of "column not deployed yet", "row not visible",
+ * "network failed" and "no such lot" — and every one of those collapsed into
+ * "post unguarded". A read failure silently disabling the concurrency guard is
+ * precisely the class of bug this whole migration exists to prevent, so the
+ * failure now has to be handled explicitly by the caller and cannot be reached
+ * by accident.
+ *
+ * `absent` is NOT an error: a lot that does not exist yet legitimately has
+ * generation 0, and that is what a first receipt must send.
+ */
+export type GenerationRead =
+  | { ok: true; generation: number }
+  /** No such lot yet — a first receipt. Canonically generation 0. */
+  | { ok: true; generation: 0; absent: true }
+  /** The guard is unavailable. The caller MUST NOT post. */
+  | { ok: false; reason: 'not_deployed' | 'unreadable' | 'not_configured' };
+
+/**
  * Read the canonical, server-owned generation of one warehouse stock lot.
  *
- * TOLERANT BY DESIGN. `movement_seq` only exists once migration 078 is applied,
- * and this repository never applies migrations automatically — so between merge
- * and apply the column is genuinely absent. Selecting it unconditionally from
- * the shared ledger read would break every stock list in that window.
- *
- * Returns `null` when the column does not exist yet, when the row is not
- * visible under RLS, or when the read fails. `null` propagates as "unguarded",
- * which is exactly the pre-078 behaviour — it never invents a generation, and
- * an invented one would be far worse than none.
+ * `movement_seq` exists only once migration 078 is applied, and this repository
+ * never applies migrations automatically, so between merge and apply the column
+ * is genuinely absent — reported as `not_deployed`, never as a usable value.
  */
 export async function getWarehouseStockGeneration(
   warehouseStockId: string,
   deps: { read?: (id: string) => Promise<{ movement_seq: number } | null> } = {},
-): Promise<number | null> {
-  if (deps.read) return (await deps.read(warehouseStockId))?.movement_seq ?? null;
-  if (!supabaseConfigured || !warehouseStockId) return null;
+): Promise<GenerationRead> {
+  if (deps.read) {
+    const row = await deps.read(warehouseStockId);
+    if (!row) return { ok: true, generation: 0, absent: true };
+    return { ok: true, generation: row.movement_seq };
+  }
+  if (!supabaseConfigured) return { ok: false, reason: 'not_configured' };
+  if (!warehouseStockId) return { ok: true, generation: 0, absent: true };
 
   const { data, error } = await supabase
     .from('warehouse_stock')
@@ -157,13 +177,18 @@ export async function getWarehouseStockGeneration(
     .maybeSingle();
 
   if (error) {
-    // Pre-apply window, or an unreadable row. Both mean "no guard available".
-    if (error.code === UNDEFINED_COLUMN) return null;
-    return null;
+    return { ok: false, reason: error.code === UNDEFINED_COLUMN ? 'not_deployed' : 'unreadable' };
   }
-  const seq = (data as { movement_seq?: number } | null)?.movement_seq;
-  return typeof seq === 'number' ? seq : null;
+  if (data === null) return { ok: true, generation: 0, absent: true };
+
+  const seq = (data as { movement_seq?: number }).movement_seq;
+  // A row that exists but reports no generation means the column is not what we
+  // think it is. Fail closed rather than guess.
+  return typeof seq === 'number' ? { ok: true, generation: seq } : { ok: false, reason: 'unreadable' };
 }
+
+/** Refusal token when a mutation was attempted without a proven generation. */
+export const GENERATION_UNAVAILABLE_CODE = 'expected_generation_unavailable';
 
 export interface ReceiveWarehouseStockResult {
   ok: boolean;
@@ -189,11 +214,19 @@ export function receiveWarehouseStock(
   if (!(deps.allowed ?? defaultWarehouseIntakeAllowed)()) {
     return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
   }
+  // Migration 079: the guarded RPC REFUSES a NULL generation. Refusing here too
+  // means a failed generation read can never reach the wire at all, so the
+  // client and the server fail closed for the same reason instead of relying on
+  // the round trip to catch it.
+  if (input.expectedGeneration == null) {
+    return Promise.resolve({ ok: false, error: GENERATION_UNAVAILABLE_CODE });
+  }
   const call = deps.callRpc ?? callRpc;
   // Migration 078: the GUARDED entry point. It enforces the expected-generation
   // precondition and then delegates to the 065 RPC, so RBAC, fingerprint
   // idempotency and the audit trail stay single-sourced. The legacy name is
-  // deliberately not called any more — it is the unguarded accumulating path.
+  // deliberately not called any more — it is the unguarded accumulating path,
+  // and migration 080 revokes it from `authenticated` entirely.
   return call<ReceiveWarehouseStockResult>('phoenix_receive_warehouse_stock_guarded', {
     p_request_id:             input.requestId,
     p_warehouse_id:           input.warehouseId,
@@ -273,6 +306,10 @@ export function applyWarehouseStockMovement(
   // concurrency gap as the receipt, so they are gated by the same blocker.
   if (!(deps.allowed ?? defaultWarehouseIntakeAllowed)()) {
     return Promise.resolve({ ok: false, error: WAREHOUSE_INTAKE_BLOCKED_CODE });
+  }
+  // Same fail-closed rule as the receipt: no proven generation, no post.
+  if (input.expectedGeneration == null) {
+    return Promise.resolve({ ok: false, error: GENERATION_UNAVAILABLE_CODE });
   }
   const call = deps.callRpc ?? callRpc;
   // Migration 078: the GUARDED entry point, for the same reason as the receipt.
@@ -381,6 +418,12 @@ export function classifyIntakeError(code: string | undefined): string {
   // so the operator must reload the canonical row and re-confirm rather than
   // retry blindly. A blind retry is exactly the double-post being prevented.
   if (c === 'warehouse_receipt_generation_conflict') return 'inv_err_generation_conflict';
+
+  // Migration 079 fail-closed, raised by the server; and the client-side refusal
+  // that stops the same situation before the wire. Both mean the guard could not
+  // be proven, so the receipt must not proceed.
+  if (c === 'expected_generation_required'
+    || c === GENERATION_UNAVAILABLE_CODE) return 'inv_err_generation_unavailable';
 
   // Quantity invariants — the ledger never goes negative or below reservations.
   if (c === 'warehouse_quantity_cannot_go_negative') return 'inv_err_negative';

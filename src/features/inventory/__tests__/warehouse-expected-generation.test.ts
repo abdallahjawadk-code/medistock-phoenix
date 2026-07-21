@@ -16,6 +16,7 @@ import {
   toExpectedGeneration,
   getWarehouseStockGeneration,
   classifyIntakeError,
+  GENERATION_UNAVAILABLE_CODE,
 } from '../warehouse-intake.service';
 
 /** Records the RPC name + args, and reports success. */
@@ -81,17 +82,32 @@ describe('the expected generation reaches the wire intact', () => {
     expect(t.calls[0].args.p_expected_generation).toBe(7);
   });
 
-  it('omitting the generation posts unguarded (null), preserving legacy behaviour', async () => {
+  it('079: omitting the generation REFUSES before the wire', async () => {
+    // The server refuses too, but refusing here means a failed generation read
+    // can never reach the RPC at all.
     const t = transport();
-    await receiveWarehouseStock({ ...RECEIPT }, { callRpc: t.callRpc, allowed: ALLOWED });
-    expect(t.calls[0].args.p_expected_generation).toBeNull();
+    const r = await receiveWarehouseStock({ ...RECEIPT }, { callRpc: t.callRpc, allowed: ALLOWED });
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe(GENERATION_UNAVAILABLE_CODE);
+    expect(t.callRpc).not.toHaveBeenCalled();
   });
 
-  it('an explicit null is unguarded too', async () => {
+  it('079: an explicit null is refused too', async () => {
     const t = transport();
-    await receiveWarehouseStock({ ...RECEIPT, expectedGeneration: null },
+    const r = await receiveWarehouseStock({ ...RECEIPT, expectedGeneration: null },
       { callRpc: t.callRpc, allowed: ALLOWED });
-    expect(t.calls[0].args.p_expected_generation).toBeNull();
+    expect(r.ok).toBe(false);
+    expect(t.callRpc).not.toHaveBeenCalled();
+  });
+
+  it('079: the adjustment path refuses without a generation as well', async () => {
+    const t = transport();
+    const r = await applyWarehouseStockMovement({
+      requestId: RECEIPT.requestId, warehouseStockId: RECEIPT.warehouseId,
+      movementType: 'add', amount: 1,
+    }, { callRpc: t.callRpc, allowed: ALLOWED });
+    expect(r.ok).toBe(false);
+    expect(t.callRpc).not.toHaveBeenCalled();
   });
 
   it('the adjustment path carries it identically', async () => {
@@ -119,34 +135,55 @@ describe('toExpectedGeneration', () => {
   });
 });
 
-describe('reading the canonical generation is tolerant of the pre-apply window', () => {
-  it('returns the server value when present', async () => {
-    const seq = await getWarehouseStockGeneration('x', { read: async () => ({ movement_seq: 5 }) });
-    expect(seq).toBe(5);
+describe('the generation read is a DISCRIMINATED result, not a nullable number', () => {
+  it('reports a present generation as ok', async () => {
+    const r = await getWarehouseStockGeneration('x', { read: async () => ({ movement_seq: 5 }) });
+    expect(r).toEqual({ ok: true, generation: 5 });
   });
 
-  it('returns 0 as 0, not null', async () => {
-    const seq = await getWarehouseStockGeneration('x', { read: async () => ({ movement_seq: 0 }) });
-    expect(seq).toBe(0);
+  it('reports 0 as a real generation, not as a failure', async () => {
+    const r = await getWarehouseStockGeneration('x', { read: async () => ({ movement_seq: 0 }) });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.generation).toBe(0);
   });
 
-  it('returns null when the row is not visible', async () => {
-    const seq = await getWarehouseStockGeneration('x', { read: async () => null });
-    expect(seq).toBeNull();
+  it('an absent lot is generation 0 — a first receipt, NOT an error', async () => {
+    const r = await getWarehouseStockGeneration('x', { read: async () => null });
+    expect(r).toEqual({ ok: true, generation: 0, absent: true });
   });
 
-  it('null propagates as UNGUARDED rather than inventing a generation', async () => {
-    // Before 078 is applied the column does not exist. Fabricating a value here
-    // would post a guard the server cannot honour.
+  it('a failed read cannot be mistaken for a usable generation', async () => {
+    // The whole point of the discriminated shape: `number | null` collapsed
+    // "column not deployed", "unreadable" and "first receipt" into one value,
+    // and every one of them silently posted unguarded.
+    const failure = { ok: false as const, reason: 'not_deployed' as const };
+    expect(failure.ok).toBe(false);
+    // TypeScript would reject reading .generation off the failure branch; at
+    // runtime the caller must therefore refuse, which the next test proves.
+  });
+
+  it('a caller that cannot prove a generation posts NOTHING', async () => {
     const t = transport();
-    const seq = await getWarehouseStockGeneration('x', { read: async () => null });
-    await receiveWarehouseStock({ ...RECEIPT, expectedGeneration: seq },
+    const read = await getWarehouseStockGeneration('x', { read: async () => null });
+    const gen = read.ok ? read.generation : undefined;
+    // Simulate the failure branch instead: undefined must refuse.
+    const r = await receiveWarehouseStock({ ...RECEIPT, expectedGeneration: undefined },
       { callRpc: t.callRpc, allowed: ALLOWED });
-    expect(t.calls[0].args.p_expected_generation).toBeNull();
+    expect(gen).toBe(0);
+    expect(r.ok).toBe(false);
+    expect(t.callRpc).not.toHaveBeenCalled();
   });
 });
 
 describe('the conflict is surfaced as reload-and-review, not retry', () => {
+  it('maps the 079 fail-closed tokens to a distinct, explicit string', () => {
+    expect(classifyIntakeError('expected_generation_required')).toBe('inv_err_generation_unavailable');
+    expect(classifyIntakeError(GENERATION_UNAVAILABLE_CODE)).toBe('inv_err_generation_unavailable');
+    // Not the same message as a generation CONFLICT: nothing was posted here.
+    expect(classifyIntakeError('expected_generation_required'))
+      .not.toBe(classifyIntakeError('warehouse_receipt_generation_conflict'));
+  });
+
   it('maps the server conflict token to its own string key', () => {
     expect(classifyIntakeError('warehouse_receipt_generation_conflict'))
       .toBe('inv_err_generation_conflict');

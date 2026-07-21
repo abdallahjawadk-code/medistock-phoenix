@@ -96,7 +96,9 @@ describe('an open gate reaches the writer with the right RPC and request id', ()
 
   it('receiveWarehouseStock calls the receipt RPC exactly once', async () => {
     const transport = okTransport();
-    await receiveWarehouseStock(receiveInput, { allowed: open, callRpc: transport as never });
+    // Migration 079: the client refuses to post without a proven generation, so
+    // an 'open gate reaches the writer' test must now supply one.
+    await receiveWarehouseStock({ ...receiveInput, expectedGeneration: 0 }, { allowed: open, callRpc: transport as never });
     expect(transport).toHaveBeenCalledTimes(1);
     const [fn, args] = transport.mock.calls[0];
     // Migration 078: the client now calls the GUARDED entry point, which enforces
@@ -107,7 +109,7 @@ describe('an open gate reaches the writer with the right RPC and request id', ()
 
   it('applyWarehouseStockMovement calls the movement RPC exactly once', async () => {
     const transport = okTransport();
-    await applyWarehouseStockMovement(movementInput, { allowed: open, callRpc: transport as never });
+    await applyWarehouseStockMovement({ ...movementInput, expectedGeneration: 0 }, { allowed: open, callRpc: transport as never });
     expect(transport).toHaveBeenCalledTimes(1);
     expect(transport.mock.calls[0][0]).toBe('phoenix_apply_warehouse_stock_movement_guarded');
   });
