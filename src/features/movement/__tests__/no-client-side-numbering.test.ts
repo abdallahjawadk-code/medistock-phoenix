@@ -91,9 +91,12 @@ describe('no client-side document-number sequence exists', () => {
     // each reviewed migration that adds no MOVEMENT numbering.
     // 088 (canonical supply provenance) is reviewed and adds NO document
     // numbering — provenance columns + identity only.
-    const beyond = migrations.filter(f => /^0*(089|09\d|[1-9]\d{2,})/.test(f));
+    const beyond = migrations.filter(f => /^0*(09\d|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
+    // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
+    // DEFINER RPC) — exactly the safe direction; no client numbering exists.
+    expect(migrations).toContain('089_phoenix_subpurchase_direct_entry.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

@@ -26,12 +26,13 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useProcurementPermissions } from './useProcurementPermissions';
 import { SupplierPanel } from './SupplierPanel';
+import { DirectEntryPanel } from './DirectEntryPanel';
 import { OrderComposerPanel } from './OrderComposerPanel';
 import { ApprovalQueuePanel } from './ApprovalQueuePanel';
 import { ReceivingPanel } from './ReceivingPanel';
 import { PurchaseHistoryPanel } from './PurchaseHistoryPanel';
 
-type Tab = 'orders' | 'approvals' | 'receiving' | 'history' | 'suppliers';
+type Tab = 'entry' | 'orders' | 'approvals' | 'receiving' | 'history' | 'suppliers';
 
 export function LocalProcurementScreen() {
   const { lang, dir, activeOrgId } = useApp();
@@ -39,7 +40,7 @@ export function LocalProcurementScreen() {
   const warehouses = scopes.data?.manageableWarehouses ?? [];
 
   const [warehouseId, setWarehouseId] = useState('');
-  const [tab, setTab] = useState<Tab>('orders');
+  const [tab, setTab] = useState<Tab>('entry');
 
   const activeWarehouse = useMemo(
     () => warehouses.find(w => w.id === warehouseId) ?? warehouses[0] ?? null,
@@ -75,6 +76,10 @@ export function LocalProcurementScreen() {
   const warehouseName = lang === 'ar' ? (activeWarehouse.nameAr || activeWarehouse.name) : activeWarehouse.name;
 
   const tabs: Array<{ id: Tab; labelKey: string; show: boolean }> = [
+    // SUBPURCHASE-DIRECT-ENTRY (089): the PRIMARY surface — one simple act,
+    // no visible order/supplier/approval cycle. The cycle tabs remain for
+    // operators who use the full workflow.
+    { id: 'entry', labelKey: 'sp_tab_entry', show: p.canManage && p.canReceive },
     { id: 'orders', labelKey: 'lp_tab_orders', show: true },
     { id: 'approvals', labelKey: 'lp_tab_approvals', show: p.canApprove },
     { id: 'receiving', labelKey: 'lp_tab_receiving', show: p.canReceive },
@@ -82,7 +87,7 @@ export function LocalProcurementScreen() {
     { id: 'suppliers', labelKey: 'lp_tab_suppliers', show: true },
   ];
   const visibleTabs = tabs.filter(x => x.show);
-  const activeTab = visibleTabs.some(x => x.id === tab) ? tab : 'orders';
+  const activeTab = visibleTabs.some(x => x.id === tab) ? tab : (visibleTabs[0]?.id ?? 'orders');
 
   return (
     <div dir={dir}>
@@ -117,6 +122,10 @@ export function LocalProcurementScreen() {
           </button>
         ))}
       </div>
+
+      {activeTab === 'entry' && (
+        <DirectEntryPanel key={activeWarehouse.id} lang={lang} warehouseId={activeWarehouse.id} onDone={() => { /* result card is the feedback */ }} />
+      )}
 
       {activeTab === 'orders' && (
         <OrderComposerPanel
