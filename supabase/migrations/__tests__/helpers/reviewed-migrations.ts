@@ -138,6 +138,16 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '075_phoenix_supply_route_rpcs.sql',
   '076_phoenix_profile_scope_assignment_rpcs.sql',
   '077_phoenix_direct_central_to_institution_supply.sql',
+  '078_phoenix_warehouse_receipt_expected_generation.sql',
+  '079_phoenix_warehouse_generation_fail_closed.sql',
+  '080_phoenix_revoke_unguarded_warehouse_writers.sql',
+  '081_phoenix_movement_timeline.sql',
+  '082_phoenix_movement_event_capture.sql',
+  '083_phoenix_inventory_derived_availability.sql',
+  '084_phoenix_availability_visibility.sql',
+  '085_phoenix_revoke_manual_availability_writers.sql',
+  '086_phoenix_outlet_stock_correction_expected_generation.sql',
+  '087_phoenix_institution_local_procurement.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

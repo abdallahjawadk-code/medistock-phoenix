@@ -16,13 +16,19 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { classifyAvailabilitySaveError } from '@/shared/supabase/services/availability.service';
+import {
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
 const readSrc     = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 
-const editor  = readSrc('features/editor/EditorScreen.tsx');
+// E6: EditorScreen.tsx is retired. The permission-matrix rule it demonstrated
+// is now asserted against the one surviving availability writer.
+const reactivateModal = readSrc('features/status/ReactivateMaterialModal.tsx');
 const strings = readSrc('shared/i18n/strings.ts');
 const migration032 = readPhoenix('supabase/migrations/032_phoenix_availability_permission_matrix_integration.sql');
 
@@ -30,47 +36,36 @@ const migration032 = readPhoenix('supabase/migrations/032_phoenix_availability_p
 // EditorScreen: permission-matrix gating
 // ============================================================================
 
-describe('EditorScreen uses the permission matrix for save UX', () => {
-  it('reads myPermissions from useApp()', () => {
-    expect(editor).toContain('myPermissions');
-    expect(editor).toMatch(/useApp\(\)/);
+describe('the permission-matrix save UX is retired with its screen', () => {
+  // These assertions proved EditorScreen derived its save UX from myPermissions
+  // (availability.view/create/update) rather than from `role === 'super_admin'`,
+  // and that it classified save errors instead of showing a generic toast.
+  //
+  // EditorScreen is RETIRED. The principle those tests defended — authorization
+  // by PERMISSION, never by role name — is re-asserted below against the one
+  // availability writer that still exists, so the rule keeps a live subject.
+  it('EditorScreen is deleted, unimported and unrendered', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('derives canViewAvailability / canCreateAvailability / canUpdateAvailability from myPermissions', () => {
-    expect(editor).toContain("myPermissions.has('availability.view')");
-    expect(editor).toContain("myPermissions.has('availability.create')");
-    expect(editor).toContain("myPermissions.has('availability.update')");
+  it('screen 3 routes to the Inventory Center', () => {
+    expectScreenThreeIsInventoryCenter();
   });
 
-  it('does not gate save purely on role === super_admin', () => {
-    // isSuper is still used for the institution dropdown vs locked-display UX,
-    // but canSubmit/canAttemptSave must not be defined as `role === 'super_admin'`.
-    expect(editor).not.toMatch(/canSubmit\s*=\s*role\s*===\s*'super_admin'/);
-    expect(editor).not.toMatch(/canAttemptSave\s*=\s*role\s*===\s*'super_admin'/);
+  it('the surviving availability writer gates on permissions, not on a role name', () => {
+    expect(reactivateModal).toContain('myPermissions.has');
+    expect(reactivateModal).toContain('REACTIVATE_PERMISSION_KEYS');
+    expect(reactivateModal).not.toMatch(/canReactivate\s*=\s*role\s*===\s*'super_admin'/);
   });
 
-  it('canSubmit requires create-or-update capability', () => {
-    expect(editor).toContain('canAttemptSave');
-    expect(editor).toMatch(/canSubmit\s*=\s*canAttemptSave/);
+  it('the surviving writer classifies save errors rather than showing a generic toast', () => {
+    expect(reactivateModal).toContain('classifyAvailabilityVisibilityError');
+    expect(reactivateModal).toContain("from '@/shared/supabase/services/availability.service'");
   });
 
-  it('still keeps the super_admin org dropdown vs locked-display behavior', () => {
-    expect(editor).toContain("const isSuper = role === 'super_admin'");
-    expect(editor).toContain('isSuper ?');
-  });
-
-  it('shows a permission denial message when the actor can neither create nor update', () => {
-    expect(editor).toContain('avail_no_edit_permission');
-  });
-
-  it('classifies save errors instead of always showing the generic load_error toast', () => {
-    expect(editor).toContain('classifyAvailabilitySaveError');
-    expect(editor).not.toMatch(/setToast\(t\('load_error', lang\)\);\s*\n\s*setTimeout\(\(\) => setToast\(null\), 3000\);\s*\n\s*\}\s*finally/);
-  });
-
-  it('imports classifyAvailabilitySaveError from availability.service', () => {
-    expect(editor).toContain('classifyAvailabilitySaveError');
-    expect(editor).toContain("from '@/shared/supabase/services/availability.service'");
+  it('the replacement screen also authorizes by exact scoped permission', () => {
+    const inventory = readSrc('features/inventory/InventoryCenterScreen.tsx');
+    expect(inventory).not.toMatch(/role\s*===\s*'super_admin'\s*\?\s*true/);
   });
 });
 

@@ -17,6 +17,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { scopedEngineEnforcesRole } from './mode';
 import { useAuthzDecision, useShadowObservation } from './useAuthorization';
 import { AUTHZ_REASON_STRING_KEY, isRecoverableReason } from './PhoenixPermissionGate';
@@ -138,8 +139,8 @@ function AuthzUnavailable({
         background: 'var(--bg2)', textAlign: 'center',
       }}
     >
-      <div style={{ fontSize: '28px', marginBottom: '10px' }} aria-hidden="true">
-        {recoverable ? '⚠️' : '🔒'}
+      <div style={{ marginBottom: '10px', color: recoverable ? 'var(--warn)' : 'var(--t2)' }} aria-hidden="true">
+        <PhoenixIcon name={recoverable ? 'warning' : 'lock'} size={28} />
       </div>
       <div style={{ fontWeight: 700, marginBottom: '8px', color: 'var(--t1)' }}>
         {t('authz_pilot_unavailable_title', lang)}

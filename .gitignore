@@ -42,3 +42,14 @@ Thumbs.db
 coverage/
 
 .vercel
+
+# OCR runtime assets — reproducible via scripts/ocr-assets.mjs (pinned SHA-256)
+public/assets/ocr/
+
+# OCR evaluation fixtures — regenerate with `npm run ocr:fixtures`
+tools/ocr-eval/fixtures/
+
+# tesseract.js writes langPath cache copies beside the cwd when run in Node
+/ara.traineddata
+/eng.traineddata
+/*.traineddata

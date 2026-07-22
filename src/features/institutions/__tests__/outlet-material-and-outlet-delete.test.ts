@@ -34,7 +34,7 @@ const UUID_LITERAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 describe('Material remove action: visible in the outlet material list', () => {
   it('PortAvailabilitySection renders a remove-from-outlet button per row when canRemove (effective permission)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toContain("t('avail_remove_from_outlet', lang)");
     // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: already-removed (quantity 0 +
     // condition 'missing') rows are now filtered out of `rows` entirely
@@ -45,7 +45,7 @@ describe('Material remove action: visible in the outlet material list', () => {
 
   it('the remove button has a minimum touch target size (mobile-reachable)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     const btnStart = fnBody.indexOf('setRemoveTarget(r)');
     const around = fnBody.slice(btnStart, btnStart + 500);
     expect(around).toContain("minHeight: '28px'");
@@ -53,25 +53,29 @@ describe('Material remove action: visible in the outlet material list', () => {
 
   it('the button is inside the same card/row markup as the table view (no separate desktop-only container)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).not.toMatch(/isMobile/);
     expect(fnBody).toContain('rows.map(r =>');
   });
 });
 
 describe('Material remove action: calls the correct existing service/RPC path', () => {
-  it('imports applyAvailabilityMovement and classifyAvailabilityMovementError from the existing availability service', () => {
-    expect(screen).toContain('applyAvailabilityMovement');
-    expect(screen).toContain('classifyAvailabilityMovementError');
+  // CANONICAL-STOCK-CUTOVER: remove-from-outlet is now a catalogue VISIBILITY
+  // action (migration 084's phoenix_set_availability_visibility) — it sets only
+  // the 053 removed marker and never writes quantity. item_availability is a
+  // read-only projection; physical stock is corrected through a separate path.
+  it('imports setAvailabilityVisibility and classifyAvailabilityVisibilityError from the existing availability service', () => {
+    expect(screen).toContain('setAvailabilityVisibility');
+    expect(screen).toContain('classifyAvailabilityVisibilityError');
     expect(screen).toContain("from '@/shared/supabase/services/availability.service'");
   });
 
-  it('onConfirmRemove zeroes quantity AND marks the removed_from_outlet reason via the single audited movement RPC, not a direct write', () => {
+  it('onConfirmRemove hides the catalogue row via the audited visibility RPC (removed marker only), never a quantity write or a direct table write', () => {
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
-    expect(fnBody).toContain("movementType: 'set_exact'");
-    expect(fnBody).toContain('amount: 0');
-    expect(fnBody).toContain("reason: 'removed_from_outlet'");
+    expect(fnBody).toMatch(/setAvailabilityVisibility\(\s*removeTarget\.id\s*,\s*true\s*,\s*'removed_from_outlet'\s*\)/);
+    expect(fnBody).not.toContain("movementType: 'set_exact'");
+    expect(fnBody).not.toContain('applyAvailabilityMovement');
     expect(fnBody).not.toMatch(/\.update\(|\.delete\(|DELETE FROM/);
   });
 
@@ -108,13 +112,13 @@ describe('Material remove: success refreshes the list; errors are shown honestly
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
     expect(fnBody).toMatch(/catch \(e\)/);
-    expect(fnBody).toContain('classifyAvailabilityMovementError(e)');
+    expect(fnBody).toContain('classifyAvailabilityVisibilityError(e)');
     expect(fnBody).toContain('setRemoveError(');
   });
 
   it('the confirmation dialog surfaces removeError to the user', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toMatch(/removeError && <p/);
   });
 });
@@ -150,7 +154,7 @@ describe('Material remove: proves this is a safe deactivate, not a blind hard de
 
   it('BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A / FRONTEND-LIVE-REMOVED-AT-FILTERS-A: already-removed rows are filtered out of the outlet contents list entirely (via removed_at), not just their remove button hidden', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
   });
 });
@@ -384,7 +388,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
 
   it('the remove button in PortAvailabilitySection is gated by the canRemove prop (fed by the effective permission)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
     // UI-HIDE-PORT-ADD-ITEM-A: the separate "+ Add" action (previously gated
     // by a canMutate prop) was intentionally hidden from this card — canMutate
@@ -396,7 +400,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
     expect(fnBody).toMatch(/catch \(e\)/);
-    expect(fnBody).toContain('classifyAvailabilityMovementError(e)');
+    expect(fnBody).toContain('classifyAvailabilityVisibilityError(e)');
     expect(fnBody).toContain('setRemoveError(');
   });
 
@@ -480,7 +484,7 @@ describe('Safety: no service_role/auth.admin, no raw ids exposed, no exchange wo
 
   it('the remove-from-outlet button and dialog do not render raw ids/UUIDs as visible text', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).not.toMatch(UUID_LITERAL_RE);
     expect(fnBody).not.toMatch(/>\{r\.id\}</);
   });

@@ -41,6 +41,14 @@ const NAV_ITEMS: NavItem[] = [
   { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
   { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
   { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
+  // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by the
+  // profile's 062 outlet assignments (manageableOutlets), and every action is
+  // re-checked server-side. Never gated on a raw role name.
+  { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
+  // INSTITUTION-LOCAL-PROCUREMENT-087: ungated like nav_editor — the screen
+  // self-gates by 062 warehouse assignments plus the scoped local_procurement.*
+  // keys, and every action is re-checked server-side.
+  { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [
@@ -69,25 +77,35 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
-  const ns = (n: number) => ({
-    background: currentScreen === n ? 'var(--p2)' : 'transparent',
-    color:      currentScreen === n ? 'var(--pd)' : 'var(--t2)',
-    fontWeight: currentScreen === n ? '700' : '500',
-  });
+  /* Nav item states, transcribed from the design source's mkNav():
+     active   → --chip fill, --cyanDim text, weight 700, 3px ember rail
+     inactive → no fill,     --muted text,   weight 500, transparent rail
+     The rail is what makes the active item read by SHAPE as well as by colour
+     and weight, so selection never depends on hue alone (WCAG 1.4.1). It pairs
+     with aria-current="page" below for the non-visual equivalent. */
+  const ns = (n: number) => {
+    const active = currentScreen === n;
+    return {
+      background: active ? 'var(--chip)' : 'transparent',
+      color:      active ? 'var(--cyanDim)' : 'var(--muted)',
+      fontWeight: active ? 700 : 500,
+      borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`,
+    };
+  };
 
   return (
     <aside className="premium-sidebar" style={{
       width: 'var(--sw)',
       flexShrink: 0,
-      background: 'var(--s)',
-      borderInlineEnd: '1px solid var(--brd)',
+      background: 'var(--surface)',
+      borderInlineEnd: '1px solid var(--line)',
       display: 'flex',
       flexDirection: 'column',
       position: 'sticky',
       top: 0,
       height: '100dvh',
       overflowY: 'auto',
-      zIndex: 50,
+      zIndex: 'var(--z-sidebar)',
     }}>
       {/* Brand */}
       <div className="premium-sidebar-brand">
@@ -103,7 +121,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label="Navigation">
+      <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
         {NAV_ITEMS
           .filter(item => !item.superAdminOnly || role === 'super_admin')
           .filter(item => !item.requiresUsersView || canSeeUsers)
@@ -116,15 +134,18 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               data-active={currentScreen === item.screen}
               key={item.screen}
               onClick={() => onNavigate(item.screen)}
+              aria-current={currentScreen === item.screen ? 'page' : undefined}
               style={{
-                display: 'flex', alignItems: 'center', gap: '9px',
-                padding: '9px 10px', borderRadius: 'var(--r2)',
-                border: 'none', width: '100%', textAlign: 'start',
-                transition: 'all 100ms', fontSize: '13px',
+                display: 'flex', alignItems: 'center', gap: '12px',
+                minHeight: 'var(--touch-target)', padding: '0 12px',
+                borderRadius: 'var(--r2)', borderBlock: 'none', borderInlineEnd: 'none',
+                width: '100%', textAlign: 'start',
+                transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
+                fontSize: '13.5px',
                 ...s,
               }}
             >
-              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
+              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t(item.labelKey, lang)}
               </span>
@@ -132,7 +153,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           );
         })}
 
-        <div style={{ height: '1px', background: 'var(--brd)', margin: '6px 4px' }} />
+        <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
 
         {SECONDARY_ITEMS.map(item => {
           const s = ns(item.screen);
@@ -142,23 +163,27 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               data-active={currentScreen === item.screen}
               key={item.screen}
               onClick={() => onNavigate(item.screen)}
+              aria-current={currentScreen === item.screen ? 'page' : undefined}
               style={{
-                display: 'flex', alignItems: 'center', gap: '9px',
-                padding: '9px 10px', borderRadius: 'var(--r2)',
-                border: 'none', width: '100%', textAlign: 'start',
-                transition: 'all 100ms', fontSize: '13px',
+                display: 'flex', alignItems: 'center', gap: '12px',
+                minHeight: 'var(--touch-target)', padding: '0 12px',
+                borderRadius: 'var(--r2)', borderBlock: 'none', borderInlineEnd: 'none',
+                width: '100%', textAlign: 'start',
+                transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
+                fontSize: '13.5px',
                 opacity: item.frozen ? 0.7 : 1,
                 ...s,
               }}
             >
-              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={18} /></span>
+              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                 {t(item.labelKey, lang)}
               </span>
               {item.frozen && (
                 <span style={{
                   padding: '2px 6px', borderRadius: 'var(--rpill)',
-                  background: 'var(--warn2)', color: 'var(--warn)',
+                  background: 'var(--chipW)', color: 'var(--warn)',
+                  border: '1px solid color-mix(in srgb, var(--warn) 40%, transparent)',
                   fontSize: '9px', fontWeight: 700, flexShrink: 0,
                 }}>
                   {t('frozen', lang)}
@@ -186,6 +211,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               border: '1px solid var(--brd)', background: 'transparent',
               color: 'var(--t2)', fontSize: '10.5px', flexShrink: 0,
               cursor: 'pointer', transition: 'all 120ms',
+              // Sign-out is a real touch target on tablet, where the sidebar is
+              // rendered but the pointer is a finger. It measured 86×26.
+              minHeight: '44px', minWidth: '44px',
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>

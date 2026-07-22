@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
@@ -23,6 +24,75 @@ import {
   type NetworkWarehouse, type RpcResult, type TransferRequest, type TransferRequestLine,
   type Transfer, type ReturnRequest, type ReturnRequestLine, type ReturnShipment,
 } from './network.service';
+import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
+import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
+import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
+import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
+import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
+import { buildSupplyRequestReceipt } from '@/features/movement/receipt-source';
+import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
+
+/**
+ * W077-COMPOSER — rollback switch for the forward create-authoring UX. When
+ * `draftFirst` is true the draft-first DirectSupplyComposer owns the "new
+ * request" action (canonical stock/batch picker, nothing persisted before
+ * review, honest partial-failure recovery). Flip to false to restore the legacy
+ * create-header-then-add-lines form while parity is being proven. Both paths
+ * commit through the SAME lifecycle RPCs (createDirectTransferRequest +
+ * addTransferRequestLine) — there is never a second writer. The legacy form is
+ * removed in a follow-up cleanup commit once parity tests and screenshots pass.
+ */
+const FORWARD_CREATE = { draftFirst: true };
+
+/**
+ * Every stock-moving RPC below goes through the shared runner, which DERIVES
+ * its request id from server-observed facts instead of minting one per attempt.
+ * A minted id makes each retry a new logical operation and double-posts
+ * whenever a success response is lost — and a remembered id cannot survive the
+ * page reload that most often prompts the retry. See shared/lib/operation-token.
+ *
+ * The `generation` for a SEND is the server's cumulative `fulfilledQuantity`,
+ * so retrying one shipment reuses its token while a later legitimate split
+ * shipment gets a distinct one. For a RECEIVE it is `receivedQuantity`.
+ */
+const writeTransferSend: TokenedWriter<{
+  transferRequestId: string; warehouseStockId: string; quantity: number;
+  transferNumber: string; transferRequestLineId: string;
+}> = (requestId, p) => sendDirectTransferLine({ requestId, ...p });
+
+const writeTransferReceive: TokenedWriter<{
+  transferLineId: string; receivedQuantity: number; differenceReason: string | null;
+}> = (requestId, p) => receiveTransferLine({ requestId, ...p });
+
+const writeReturnSend: TokenedWriter<{
+  returnRequestLineId: string; quantity: number; shipmentNumber: string;
+}> = (requestId, p) => sendDirectReturnLine({ requestId, ...p });
+
+const writeReturnReceive: TokenedWriter<{
+  shipmentLineId: string; receivedQuantity: number;
+  differenceReason: string | null; dispositionDecision: string | null;
+}> = (requestId, p) => receiveReturnShipmentLine({ requestId, ...p });
+
+/**
+ * W077-COMPOSER — the return counterpart of FORWARD_CREATE. When `draftFirst` is
+ * true the provenance-anchored DirectReturnComposer owns the "new return" action
+ * (both institution-initiated request AND central recall modes preserved,
+ * safeReturnable caps, nothing persisted before review). Flip to false to restore
+ * the legacy header-first ReturnCreateForm. Same lifecycle RPCs, one writer.
+ */
+const RETURN_CREATE = { draftFirst: true };
+
+/**
+ * W077-COMPOSER — rollback switch for the forward RECEIVE section. When enabled,
+ * the institution incoming-supplies surface (full immutable dispatch record,
+ * bulk "accept all safe" + individual receipt with discrepancy reason, canonical
+ * reload after every attempt) replaces the compact per-transfer IncomingTransferRow.
+ * Both drive the SAME receiveTransferLine RPC with a fresh idempotency token per
+ * attempt — one writer. The receive button is gated on the real receive
+ * permission (warehouse_transfer.receive) + super_admin, which the RPC re-checks
+ * server-side regardless. Flip to false to restore the legacy rows.
+ */
+const RECEIVE_UPGRADE = { enabled: true };
 
 /**
  * W077 — the FULL operational surface for route-free direct supply. Not just a
@@ -38,11 +108,7 @@ import {
 type Lang = 'ar' | 'en';
 type Status = { msg: string; error: boolean } | null;
 
-const uuid = (): string =>
-  (globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
-
-const nameOf = (w: { name_ar: string; name: string } | undefined, lang: Lang): string =>
+const nameOf =(w: { name_ar: string; name: string } | undefined, lang: Lang): string =>
   !w ? '—' : (lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar));
 
 function opErrorMessage(code: string | undefined, lang: Lang): string {
@@ -125,17 +191,93 @@ function ForwardPanel({ lang, warehouses, whById }: {
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getTransferRequests(true), [reloadKey]);
   const incoming = useAsync(() => getTransfers(undefined, true), [reloadKey]);
+  const orgs = useAsync(() => getOrganizations(), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [receiveDestId, setReceiveDestId] = useState('');
   const [status, setStatus] = useState<Status>(null);
 
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
 
+  // §1 — this tab is the central SENDER's surface (gated on warehouse_transfer.send).
+  // Receiving belongs to the institution officer, so here the incoming section is
+  // a READ-ONLY in-transit monitor. The single authoritative receive-mutation
+  // entry lives in the Institution Inventory Center → Incoming tab, gated on
+  // warehouse_transfer.receive. A send-only actor therefore cannot receive.
+  const canReceive = false;
+
+  // Party data for the draft-first composer. Same RLS-scoped warehouse list the
+  // legacy form used, filtered to the eligible endpoints; the RPC re-checks
+  // source/destination scope server-side on every call regardless of this UI.
+  const orgNameById = useMemo(
+    () => new Map((orgs.data ?? []).map(o => [o.id, lang === 'ar' ? o.name_ar : o.name] as const)),
+    [orgs.data, lang],
+  );
+  const sourceWarehouses = useMemo(
+    () => warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active'),
+    [warehouses],
+  );
+  const destinationParties = useMemo<PartyOption[]>(
+    () => warehouses
+      .filter(w => w.warehouseKind === 'institution' && w.status === 'active')
+      .map(w => ({
+        id: w.id,
+        organizationId: w.organizationId,
+        organizationName: orgNameById.get(w.organizationId) ?? '—',
+        warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
+      })),
+    [warehouses, orgNameById, lang],
+  );
+  const organizationOptions = useMemo(
+    () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
+    [orgs.data, lang],
+  );
+
+  // Distinct institution warehouses that actually have incoming transfers. The
+  // incoming-supplies surface is per-warehouse, so the operator selects which
+  // depot to receive into; each shows its own canonical, server-reloaded lines.
+  const receiveDestinations = useMemo(() => {
+    const seen = new Map<string, { id: string; institutionName: string; warehouseName: string }>();
+    for (const tr of incoming.data ?? []) {
+      if (seen.has(tr.destinationWarehouseId)) continue;
+      seen.set(tr.destinationWarehouseId, {
+        id: tr.destinationWarehouseId,
+        institutionName: orgNameById.get(tr.destinationOrganizationId) ?? '—',
+        warehouseName: nameOf(whById.get(tr.destinationWarehouseId), lang),
+      });
+    }
+    return [...seen.values()];
+  }, [incoming.data, whById, orgNameById, lang]);
+  const effectiveReceiveDest = receiveDestinations.some(d => d.id === receiveDestId)
+    ? receiveDestId : (receiveDestinations[0]?.id ?? '');
+  const activeReceiveDest = receiveDestinations.find(d => d.id === effectiveReceiveDest) ?? null;
+
   if (open) {
     return (
-      <ForwardDetail lang={lang} request={open} whById={whById}
+      <ForwardDetail lang={lang} request={open} whById={whById} orgNameById={orgNameById}
         onBack={() => { setOpenId(null); reload(); }}
         onStatus={setStatus} status={status} />
+    );
+  }
+
+  // Draft-first authoring takes over the panel exactly like the detail view does:
+  // one reachable create entry, and nothing is persisted until the review step.
+  if (creating && FORWARD_CREATE.draftFirst) {
+    return (
+      <DirectSupplyComposer
+        sourceWarehouses={sourceWarehouses}
+        destinationWarehouses={destinationParties}
+        organizations={organizationOptions}
+        onCancel={() => setCreating(false)}
+        onCreated={(requestId) => {
+          setCreating(false);
+          setStatus({ msg: t('net_ds_created', lang), error: false });
+          reload();
+          // Hand off to the existing lifecycle container so the operator can
+          // submit → review → send → receive without a second create path.
+          setOpenId(requestId);
+        }}
+      />
     );
   }
 
@@ -148,7 +290,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <StatusLine status={status} />
 
-      {creating && (
+      {creating && !FORWARD_CREATE.draftFirst && (
         <ForwardCreateForm lang={lang} warehouses={warehouses}
           onCancel={() => setCreating(false)}
           onDone={(res) => {
@@ -159,7 +301,7 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '14px 0 8px', color: 'var(--t2)' }}>{t('net_op_requests', lang)}</h4>
       {requests.loading && <PhoenixLoadingState />}
-      {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="📦" title={t('net_op_none', lang)} />}
+      {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="package" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(requests.data ?? []).map(r => (
           <RequestRow key={r.id} label={r.requestNumber} status={r.status}
@@ -170,16 +312,44 @@ function ForwardPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '18px 0 8px', color: 'var(--t2)' }}>{t('net_op_incoming', lang)}</h4>
       {incoming.loading && <PhoenixLoadingState />}
-      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="🚚" title={t('net_op_none', lang)} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {(incoming.data ?? []).map(tr => (
-          <IncomingTransferRow key={tr.id} lang={lang} transfer={tr} whById={whById}
-            onDone={(res) => {
-              setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opErrorMessage(res.error, lang), error: true });
-              if (res.ok) reload();
-            }} />
-        ))}
-      </div>
+
+      {RECEIVE_UPGRADE.enabled ? (
+        <>
+          {!incoming.loading && receiveDestinations.length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
+          {receiveDestinations.length > 1 && (
+            <div style={{ maxWidth: '360px', marginBottom: '10px' }}>
+              <PhoenixSelect
+                label={t('net_op_receive', lang)}
+                value={effectiveReceiveDest}
+                onChange={e => setReceiveDestId(e.target.value)}
+                options={receiveDestinations.map(d => ({ value: d.id, label: `${d.institutionName} — ${d.warehouseName}` }))}
+              />
+            </div>
+          )}
+          {activeReceiveDest && (
+            <InstitutionIncomingSupplies
+              key={activeReceiveDest.id}
+              destinationWarehouseId={activeReceiveDest.id}
+              institutionName={activeReceiveDest.institutionName}
+              warehouseName={activeReceiveDest.warehouseName}
+              canReceive={canReceive}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {(incoming.data ?? []).map(tr => (
+              <IncomingTransferRow key={tr.id} lang={lang} transfer={tr} whById={whById}
+                onDone={(res) => {
+                  setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opErrorMessage(res.error, lang), error: true });
+                  if (res.ok) reload();
+                }} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -215,7 +385,7 @@ function ForwardCreateForm({ lang, warehouses, onCancel, onDone }: {
         <PhoenixInput label={t('net_ds_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
       </div>
       {orgId !== '' && institutions.length === 0 && (
-        <div style={{ marginTop: '10px' }}><PhoenixEmptyState icon="🏬" title={t('net_ds_no_warehouses', lang)} /></div>
+        <div style={{ marginTop: '10px' }}><PhoenixEmptyState icon="warehouse" title={t('net_ds_no_warehouses', lang)} /></div>
       )}
       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
         <PhoenixButton loading={busy} disabled={!canSubmit} onClick={async () => {
@@ -232,8 +402,9 @@ function ForwardCreateForm({ lang, warehouses, onCancel, onDone }: {
   );
 }
 
-function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
+function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, status }: {
   lang: Lang; request: TransferRequest; whById: Map<string, NetworkWarehouse>;
+  orgNameById: Map<string, string>;
   onBack: () => void; onStatus: (s: Status) => void; status: Status;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
@@ -249,6 +420,24 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
     if (res.ok) reload();
   };
 
+  // The request document, built ONLY from server-reloaded canonical rows (never
+  // an unsaved draft). Watermarked honestly — a request is not a movement receipt.
+  const requestDocument = useMemo(
+    () => buildSupplyRequestReceipt({
+      request,
+      lines: lines.data ?? [],
+      source: {
+        organizationName: orgNameById.get(request.sourceOrganizationId) ?? null,
+        warehouseName: nameOf(whById.get(request.sourceWarehouseId), lang),
+      },
+      destination: {
+        organizationName: orgNameById.get(request.destinationOrganizationId) ?? null,
+        warehouseName: nameOf(whById.get(request.destinationWarehouseId), lang),
+      },
+    }),
+    [request, lines.data, orgNameById, whById, lang],
+  );
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -260,6 +449,13 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
         </span>
       </div>
 
+      {/* Receipt · genuine XLSX · QR — from the canonical request document above. */}
+      {!lines.loading && (
+        <div style={{ marginBottom: '10px' }}>
+          <MovementDocumentActions document={requestDocument} lang={lang} />
+        </div>
+      )}
+
       <StatusLine status={status} />
 
       {isDraft && (
@@ -267,7 +463,7 @@ function ForwardDetail({ lang, request, whById, onBack, onStatus, status }: {
       )}
 
       {lines.loading && <PhoenixLoadingState />}
-      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="🧾" title={t('net_op_none', lang)} />}
+      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="file" title={t('net_op_none', lang)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
         {(lines.data ?? []).map(l => (
@@ -389,7 +585,7 @@ function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }:
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       {candidates.length === 0 ? (
-        <PhoenixEmptyState icon="📭" title={t('net_op_none', lang)} />
+        <PhoenixEmptyState icon="package" title={t('net_op_none', lang)} />
       ) : (
         <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', alignItems: 'end' }}>
           <PhoenixSelect label={t('net_op_pick_batch', lang)} value={effStock} onChange={e => setStockId(e.target.value)}
@@ -402,9 +598,13 @@ function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }:
           <div style={{ display: 'flex', gap: '6px' }}>
             <PhoenixButton size="sm" loading={busy} disabled={!canSend} onClick={async () => {
               setBusy(true);
-              const res = await sendDirectTransferLine({
-                requestId: uuid(), transferRequestId: line.transferRequestId, warehouseStockId: effStock,
-                quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
+              const res = await runStockMutation(writeTransferSend, 'transfer_line_send', {
+                entityId: line.id,
+                generation: line.fulfilledQuantity,
+                payload: {
+                  transferRequestId: line.transferRequestId, warehouseStockId: effStock,
+                  quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
+                },
               });
               setBusy(false); onDone(res);
             }}>{t('net_op_send', lang)}</PhoenixButton>
@@ -437,8 +637,10 @@ function IncomingTransferRow({ lang, transfer, whById, onDone }: {
           {(lines.data ?? []).map(l => (
             <ReceiveLineForm key={l.id} lang={lang} label={`${l.scientificName} · ${l.batchNumber ?? '—'}`}
               sent={l.sentQuantity} done={l.status !== 'in_transit'}
-              onReceive={(rq, reason) => receiveTransferLine({
-                requestId: uuid(), transferLineId: l.id, receivedQuantity: rq, differenceReason: reason,
+              onReceive={(rq, reason) => runStockMutation(writeTransferReceive, 'transfer_line_receive', {
+                entityId: l.id,
+                generation: l.receivedQuantity ?? 0,
+                payload: { transferLineId: l.id, receivedQuantity: rq, differenceReason: reason },
               }).then(onDone)} />
           ))}
         </div>
@@ -456,15 +658,61 @@ function ReturnPanel({ lang, warehouses, whById }: {
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getReturnRequests(true), [reloadKey]);
   const incoming = useAsync(() => getReturnShipments(undefined, true), [reloadKey]);
+  const orgs = useAsync(() => getOrganizations(), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const open = (requests.data ?? []).find(r => r.id === openId) ?? null;
 
+  // Party data for the provenance-anchored composer — same RLS-scoped list. The
+  // return source is an institution warehouse; the destination is a central one.
+  const orgNameById = useMemo(
+    () => new Map((orgs.data ?? []).map(o => [o.id, lang === 'ar' ? o.name_ar : o.name] as const)),
+    [orgs.data, lang],
+  );
+  const institutionParties = useMemo<PartyOption[]>(
+    () => warehouses
+      .filter(w => w.warehouseKind === 'institution' && w.status === 'active')
+      .map(w => ({
+        id: w.id,
+        organizationId: w.organizationId,
+        organizationName: orgNameById.get(w.organizationId) ?? '—',
+        warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
+      })),
+    [warehouses, orgNameById, lang],
+  );
+  const centralWarehouses = useMemo(
+    () => warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active'),
+    [warehouses],
+  );
+  const organizationOptions = useMemo(
+    () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
+    [orgs.data, lang],
+  );
+
   if (open) {
     return (
       <ReturnDetail lang={lang} request={open} whById={whById}
         onBack={() => { setOpenId(null); reload(); }} onStatus={setStatus} status={status} />
+    );
+  }
+
+  // Draft-first return authoring takes over the panel; nothing is persisted until
+  // the review step. Both request and recall modes live inside the composer.
+  if (creating && RETURN_CREATE.draftFirst) {
+    return (
+      <DirectReturnComposer
+        institutionWarehouses={institutionParties}
+        organizations={organizationOptions}
+        centralWarehouses={centralWarehouses}
+        onCancel={() => setCreating(false)}
+        onCreated={(returnRequestId) => {
+          setCreating(false);
+          setStatus({ msg: t('net_op_done', lang), error: false });
+          reload();
+          setOpenId(returnRequestId);
+        }}
+      />
     );
   }
 
@@ -477,7 +725,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
 
       <StatusLine status={status} />
 
-      {creating && (
+      {creating && !RETURN_CREATE.draftFirst && (
         <ReturnCreateForm lang={lang} warehouses={warehouses}
           onCancel={() => setCreating(false)}
           onDone={(res) => {
@@ -499,7 +747,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '18px 0 8px', color: 'var(--t2)' }}>{t('net_op_incoming', lang)}</h4>
       {incoming.loading && <PhoenixLoadingState />}
-      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="🚚" title={t('net_op_none', lang)} />}
+      {!incoming.loading && (incoming.data ?? []).length === 0 && <PhoenixEmptyState icon="route" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(incoming.data ?? []).map(sh => (
           <IncomingReturnRow key={sh.id} lang={lang} shipment={sh} whById={whById}
@@ -591,7 +839,7 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
       )}
 
       {lines.loading && <PhoenixLoadingState />}
-      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="🧾" title={t('net_op_none', lang)} />}
+      {!lines.loading && (lines.data ?? []).length === 0 && <PhoenixEmptyState icon="file" title={t('net_op_none', lang)} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
         {(lines.data ?? []).map(l => (
           <ReturnLineRow key={l.id} lang={lang} line={l} isDraft={isDraft} canSend={canSend} onDone={set} />
@@ -639,7 +887,7 @@ function AddReturnLineForm({ lang, requestId, transfers, sourceWarehouseId, onDo
   return (
     <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
       {linesByTransfer.loading ? <PhoenixLoadingState /> : candidates.length === 0 ? (
-        <PhoenixEmptyState icon="📭" title={t('net_op_no_provenance', lang)} />
+        <PhoenixEmptyState icon="package" title={t('net_op_no_provenance', lang)} />
       ) : (
         <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', alignItems: 'end' }}>
           <PhoenixSelect label={t('net_op_original_line', lang)} value={effOriginal} onChange={e => setOriginalId(e.target.value)}
@@ -699,7 +947,11 @@ function ReturnLineRow({ lang, line, isDraft, canSend, onDone }: {
           <div style={{ display: 'flex', gap: '6px' }}>
             <PhoenixButton size="sm" loading={busy} disabled={!canDoSend} onClick={async () => {
               setBusy(true);
-              const res = await sendDirectReturnLine({ requestId: uuid(), returnRequestLineId: line.id, quantity: n, shipmentNumber: number.trim() });
+              const res = await runStockMutation(writeReturnSend, 'return_line_send', {
+                entityId: line.id,
+                generation: line.fulfilledQuantity,
+                payload: { returnRequestLineId: line.id, quantity: n, shipmentNumber: number.trim() },
+              });
               setBusy(false); setSending(false); onDone(res);
             }}>{t('net_op_send', lang)}</PhoenixButton>
             <PhoenixButton size="sm" variant="ghost" onClick={() => setSending(false)}>{t('net_cancel', lang)}</PhoenixButton>
@@ -731,9 +983,13 @@ function IncomingReturnRow({ lang, shipment, whById, onDone }: {
           {(lines.data ?? []).map(l => (
             <ReceiveReturnLineForm key={l.id} lang={lang} label={`${l.scientificName} · ${l.batchNumber ?? '—'}`}
               sent={l.sentQuantity} done={l.status !== 'in_transit'}
-              onReceive={(rq, reason, disposition) => receiveReturnShipmentLine({
-                requestId: uuid(), shipmentLineId: l.id, receivedQuantity: rq,
-                differenceReason: reason, dispositionDecision: disposition,
+              onReceive={(rq, reason, disposition) => runStockMutation(writeReturnReceive, 'return_shipment_receive', {
+                entityId: l.id,
+                generation: l.receivedQuantity ?? 0,
+                payload: {
+                  shipmentLineId: l.id, receivedQuantity: rq,
+                  differenceReason: reason, dispositionDecision: disposition,
+                },
               }).then(onDone)} />
           ))}
         </div>
@@ -820,7 +1076,7 @@ function ReceiveLineForm({ lang, label, sent, done, onReceive }: {
   const n = parseInt(qty, 10);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
-  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{label} · ✓</div>;
+  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;
   return (
     <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', alignItems: 'end' }}>
       <span style={{ fontSize: '12.5px', gridColumn: '1 / -1' }}>{label} ({sent})</span>
@@ -844,7 +1100,7 @@ function ReceiveReturnLineForm({ lang, label, sent, done, onReceive }: {
   const n = parseInt(qty, 10);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
-  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{label} · ✓</div>;
+  if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;
   return (
     <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', alignItems: 'end' }}>
       <span style={{ fontSize: '12.5px', gridColumn: '1 / -1' }}>{label} ({sent})</span>

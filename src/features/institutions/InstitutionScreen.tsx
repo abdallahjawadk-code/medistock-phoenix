@@ -41,16 +41,19 @@ import {
   classifyClearPortItemsError,
   archiveOrganization,
 } from '@/shared/supabase/services/lifecycle.service';
+// This screen no longer writes item_availability quantity at all. item_availability
+// is a read-only projection (migration 083); "Remove from outlet" is a CATALOGUE
+// VISIBILITY change, done through migration 084's phoenix_set_availability_visibility
+// (setAvailabilityVisibility) — it clears/sets only the 053 removed marker, never
+// a quantity or a manual movement. Physical outlet stock is corrected on the
+// canonical outlet_stock ledger (migration 086 guarded correction), not here.
 import {
   getAvailabilityByPoint,
-  upsertAvailability,
-  applyAvailabilityMovement,
-  classifyAvailabilityMovementError,
-  classifyAvailabilitySaveError,
+  setAvailabilityVisibility,
+  classifyAvailabilityVisibilityError,
 } from '@/shared/supabase/services/availability.service';
-import { getLocalItems } from '@/shared/supabase/services/registry.service';
-import type { AvailabilityCondition } from '@/shared/lib/types';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
@@ -206,7 +209,7 @@ export function InstitutionScreen() {
       )}
 
       {!isSuper && view === 'list' && !effectiveOrgId && (
-        <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       )}
 
       {toast && <PhoenixToast message={toast} />}
@@ -239,7 +242,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
     <>
       <div className="premium-org-toolbar" style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-          <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}>🔍</span>
+          <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}><PhoenixIcon name="search" size={16} /></span>
           <input
             type="search"
             placeholder={t('search', lang)}
@@ -258,7 +261,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
       {orgs.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!orgs.loading && orgs.error && <PhoenixErrorState title={t('load_error', lang)} message={orgs.error} onRetry={orgs.reload} />}
       {!orgs.loading && !orgs.error && filtered.length === 0 && (
-        <PhoenixEmptyState icon="🏥" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} description={t('empty_hint', lang)} />
       )}
 
       {!orgs.loading && !orgs.error && filtered.length > 0 && (
@@ -266,7 +269,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
           {filtered.map(org => (
             <PhoenixCard className="premium-org-card" key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
               <div className="premium-org-card__head">
-                <div className="premium-org-card__icon" aria-hidden="true">🏥</div>
+                <div className="premium-org-card__icon" aria-hidden="true"><PhoenixIcon name="hospital" size={16} /></div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
                     <span style={{ fontSize: '14px', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -464,11 +467,11 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           {/* Summary counts */}
           <div style={{ display: 'flex', gap: '16px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--brd)', fontSize: '12.5px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '16px' }}>📍</span>
+              <span style={{ fontSize: '16px' }}><PhoenixIcon name="pin" size={16} /></span>
               <span><strong>{ptCount}</strong> {t('inst_points', lang)}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '16px' }}>👥</span>
+              <span style={{ fontSize: '16px' }}><PhoenixIcon name="users" size={16} /></span>
               <span><strong>{users.data?.length ?? 0}</strong> {t('inst_users', lang)}</span>
             </div>
           </div>
@@ -495,13 +498,13 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
 
         {/* Notice: user creation requires server-side */}
         <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          ℹ️ {t('user_create_notice', lang)}
+          <PhoenixIcon name="info" size={13} inline /> {t('user_create_notice', lang)}
         </div>
 
         {users.loading && <PhoenixLoadingState label={t('loading', lang)} />}
         {!users.loading && users.error && <PhoenixErrorState title={t('load_error', lang)} message={users.error} onRetry={users.reload} />}
         {!users.loading && !users.error && (users.data ?? []).length === 0 && (
-          <PhoenixEmptyState icon="👥" title={t('inst_no_users', lang)} description={t('empty_hint', lang)} />
+          <PhoenixEmptyState icon="users" title={t('inst_no_users', lang)} description={t('empty_hint', lang)} />
         )}
 
         {!users.loading && !users.error && (users.data ?? []).length > 0 && (
@@ -775,7 +778,6 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
   available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
 };
 
-const CONDITIONS: AvailabilityCondition[] = ['available', 'low_stock', 'surplus', 'near_expiry', 'missing', 'expired'];
 
 function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
   lang: 'ar' | 'en';
@@ -813,9 +815,9 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
       {/* Safety notice */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <span>🔒 {t('port_revoke_safe', lang)}</span>
-        <span>📋 {t('port_archive_warn', lang)}</span>
-        <span>⚠ {t('port_archive_deps', lang)}</span>
+        <span><PhoenixIcon name="lock" size={13} inline /> {t('port_revoke_safe', lang)}</span>
+        <span><PhoenixIcon name="clipboard" size={13} inline /> {t('port_archive_warn', lang)}</span>
+        <span><PhoenixIcon name="warning" size={13} inline /> {t('port_archive_deps', lang)}</span>
       </div>
 
       {showAdd && (
@@ -835,7 +837,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
       {pointsLoading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!pointsLoading && pointsError && <PhoenixErrorState title={t('load_error', lang)} message={pointsError} onRetry={onReload} />}
       {!pointsLoading && !pointsError && points.length === 0 && !showAdd && (
-        <PhoenixEmptyState icon="📍" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
+        <PhoenixEmptyState icon="pin" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
       )}
 
       {!pointsLoading && !pointsError && points.length > 0 && (
@@ -1215,7 +1217,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           </div>
           {!operationallyValid && (
             <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '4px' }}>
-              ⚠ {t('port_operational_fix_required', lang)}
+              <PhoenixIcon name="warning" size={13} inline /> {t('port_operational_fix_required', lang)}
             </div>
           )}
         </div>
@@ -1227,7 +1229,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>{t('loading', lang)}</div>
       )}
       {qr === null && (
-        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}>📱 {t('qr_no_token', lang)}</div>
+        <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '8px' }}><PhoenixIcon name="mobile" size={13} inline /> {t('qr_no_token', lang)}</div>
       )}
       {qr && publicUrl && (
         <div style={{ marginBottom: '10px' }}>
@@ -1245,7 +1247,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
                   <img src={qrSrc} width={80} height={80} alt="QR Code" style={{ display: 'block' }} />
                 ) : (
                   <div style={{ width: 80, height: 80, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '28px' }}>📱</span>
+                    <span style={{ fontSize: '28px' }}><PhoenixIcon name="mobile" size={16} /></span>
                   </div>
                 )}
                 <span style={{ fontSize: '9px', color: 'var(--p)', fontWeight: 700, padding: '2px 0 4px', letterSpacing: '.3px' }}>{t('qr_preview', lang)}</span>
@@ -1271,27 +1273,27 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
           {canEditPorts && (
             <PhoenixButton variant="ghost" size="sm" onClick={openEdit} style={{ minHeight: '32px' }}>
-              ✏️ {t('port_edit', lang)}
+              <PhoenixIcon name="editor" size={13} inline /> {t('port_edit', lang)}
             </PhoenixButton>
           )}
           {canGenerateQr && !qr && qr !== undefined && (
             <PhoenixButton variant="primary" size="sm" loading={busy === 'generate'} onClick={onGenerateQr}>
-              📱 {t('qr_generate', lang)}
+              <PhoenixIcon name="mobile" size={13} inline /> {t('qr_generate', lang)}
             </PhoenixButton>
           )}
           {canGenerateQr && canRevokeQr && qr && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'regenerate'} onClick={() => setConfirmAction('regenerate')}>
-              🔄 {t('qr_regenerate', lang)}
+              <PhoenixIcon name="refresh" size={13} inline /> {t('qr_regenerate', lang)}
             </PhoenixButton>
           )}
           {canRevokeQr && qr && (
             <PhoenixButton variant="warn" size="sm" loading={busy === 'revoke'} onClick={() => setConfirmAction('revoke')}>
-              🚫 {t('qr_revoke', lang)}
+              <PhoenixIcon name="ban" size={13} inline /> {t('qr_revoke', lang)}
             </PhoenixButton>
           )}
           {canArchivePortsEffective && (
             <PhoenixButton variant="ghost" size="sm" loading={busy === 'archive'} onClick={() => setConfirmAction('archive')}>
-              📦 {t('port_disable_action', lang)}
+              <PhoenixIcon name="package" size={13} inline /> {t('port_disable_action', lang)}
             </PhoenixButton>
           )}
         </div>
@@ -1300,7 +1302,6 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
       {/* Availability section */}
       <PortAvailabilitySection
         pointId={point.id}
-        orgId={point.organizationId}
         lang={lang}
         canRemove={canRemoveOutletMaterial}
         onToast={onToast}
@@ -1347,11 +1348,11 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           {t('qr_confirm_revoke', lang)}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--ok)', fontWeight: 600, marginBottom: '16px' }}>
-          🔒 {t('port_revoke_safe', lang)}
+          <PhoenixIcon name="lock" size={13} inline /> {t('port_revoke_safe', lang)}
         </p>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onRevokeQr}>🚫 {t('qr_revoke', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} onClick={onRevokeQr}><PhoenixIcon name="ban" size={13} inline /> {t('qr_revoke', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1400,7 +1401,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         {editError && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '12px' }}>{editError}</p>}
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} disabled={editBusy} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}>💾 {t('port_save_action', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}><PhoenixIcon name="save" size={13} inline /> {t('port_save_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1413,7 +1414,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
           {t('port_confirm_archive', lang)}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--warn)', fontWeight: 600, marginBottom: '12px' }}>
-          ⚠ {t('port_archive_warn', lang)}
+          <PhoenixIcon name="warning" size={13} inline /> {t('port_archive_warn', lang)}
         </p>
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('port_archive_reason', lang)}</label>
@@ -1421,7 +1422,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={busy === 'archive'} onClick={onArchivePort}>📦 {t('port_disable_action', lang)}</PhoenixButton>
+          <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={busy === 'archive'} onClick={onArchivePort}><PhoenixIcon name="package" size={13} inline /> {t('port_disable_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 
@@ -1522,7 +1523,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
               <img src={src} width={200} height={200} alt="QR Code" style={{ display: 'block', borderRadius: '4px' }} />
             ) : (
               <div style={{ width: 200, height: 200, background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
-                <span style={{ fontSize: '36px' }}>📱</span>
+                <span style={{ fontSize: '36px' }}><PhoenixIcon name="mobile" size={16} /></span>
               </div>
             )}
           </div>
@@ -1539,11 +1540,11 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
           {canRegenerate && (
             <PhoenixButton variant="ghost" size="sm" loading={busy} onClick={onRegenerate}>
-              🔄 {t('qr_regenerate', lang)}
+              <PhoenixIcon name="refresh" size={13} inline /> {t('qr_regenerate', lang)}
             </PhoenixButton>
           )}
           <PhoenixButton variant="ghost" size="md" disabled={!src} onClick={handlePrint}>
-            🖨 {t('qr_print', lang)}
+            <PhoenixIcon name="print" size={13} inline /> {t('qr_print', lang)}
           </PhoenixButton>
           <PhoenixButton variant="primary" size="md" onClick={onClose}>
             {t('qr_close', lang)}
@@ -1627,9 +1628,10 @@ function outletMaterialTitle(r: AvailRow, ci: { name: string; name_ar: string } 
   );
 }
 
-function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, pointStatus, refreshKey, pointName, orgName }: {
+// `orgId` was removed with the retired QuickAvailForm: this section is now
+// read-plus-remove only, and the remove path is scoped by pointId.
+function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatus, refreshKey, pointName, orgName }: {
   pointId: string;
-  orgId: string;
   lang: 'ar' | 'en';
   // BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A (permission-matrix fix): separate
   // from ports.edit because "Remove from outlet" writes through TWO
@@ -1654,7 +1656,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
   orgName?: string;
 }) {
   const avail = useAsync(() => getAvailabilityByPoint(pointId), [pointId, refreshKey]);
-  const [showAdd, setShowAdd] = useState(false);
   // PHASE2-AVAILABILITY-ITEM-DETAILS-MODAL-A: the row whose read-only details
   // modal is open, or null when closed. Purely local UI state — no data write.
   const [detailsRow, setDetailsRow] = useState<AvailRow | null>(null);
@@ -1672,30 +1673,17 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
   const rows = ((avail.data ?? []) as unknown as AvailRow[])
     .filter(r => r.removed_at == null);
 
-  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A / REMOVE-BUTTON-MARKS-REMOVED-AT-A:
-  // "Remove from outlet" — no hard DELETE exists (or is allowed) for
-  // item_availability rows tied to movement history/audit, so this calls the
-  // single audited phoenix_apply_availability_movement RPC (the only
-  // permitted quantity-write path — migration 035's hard guard blocks direct
-  // quantity writes) with reason='removed_from_outlet'. Migration 053's own
-  // branch on that exact reason forces quantity=0, condition='missing',
-  // removed_at=now(), removed_by=auth.uid(), removal_reason=
-  // 'removed_from_outlet' on the row in one atomic write — history/reports/
-  // QR audit trail are untouched.
-  //
-  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: this RPC call used to be guarded by
-  // `if (removeTarget.quantity !== 0)`, skipping it entirely whenever the row
-  // was already at quantity 0 — the exact case a user pressing "Remove from
-  // outlet" on an already-out-of-stock material hits. Since only this RPC
-  // call (never the plain upsertAvailability call that used to follow it)
-  // sets removed_at/removed_by/removal_reason, skipping it meant the row was
-  // left at quantity=0/condition='missing'/removed_at=NULL — indistinguishable
-  // from a genuine ongoing shortage, and invisible to nothing (it stayed in
-  // every live view). set_exact with amount=0 is valid and idempotent even
-  // when the current quantity is already 0, so the guard and the subsequent
-  // upsertAvailability call (which was redundant — the RPC branch above
-  // already sets condition='missing' itself) are both removed: this is now
-  // the single, unconditional call for every remove action.
+  // CANONICAL-STOCK-CUTOVER: "Remove from outlet" is a CATALOGUE VISIBILITY
+  // action, not a stock write. item_availability is a read-only projection
+  // (migration 083); the physical quantity lives in outlet_stock and is never
+  // touched by hiding a catalogue entry. This calls migration 084's
+  // phoenix_set_availability_visibility (setAvailabilityVisibility(id, true, …)),
+  // which sets ONLY removed_at/removed_by/removal_reason='removed_from_outlet' —
+  // no quantity, no condition, no manual movement. It is unconditional and
+  // idempotent (hiding an already-hidden row is a no-op re-stamp), so an
+  // already-out-of-stock material can still be removed. History/reports/QR audit
+  // trail are untouched. To actually zero physical stock, use the outlet_stock
+  // correction (migration 086), a separate, deliberate action.
   const [removeTarget, setRemoveTarget] = useState<AvailRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -1705,17 +1693,15 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     setRemoveBusy(true);
     setRemoveError(null);
     try {
-      await applyAvailabilityMovement({
-        itemAvailabilityId: removeTarget.id,
-        movementType: 'set_exact',
-        amount: 0,
-        reason: 'removed_from_outlet',
-      });
+      // Visibility-only: hide the catalogue row (053 removed marker). No
+      // quantity/condition write — availability is derived (083), and physical
+      // stock is untouched by hiding a catalogue entry.
+      await setAvailabilityVisibility(removeTarget.id, true, 'removed_from_outlet');
       setRemoveTarget(null);
       onToast(t('avail_removed_from_outlet', lang));
       avail.reload();
     } catch (e) {
-      setRemoveError(t(classifyAvailabilityMovementError(e), lang));
+      setRemoveError(t(classifyAvailabilityVisibilityError(e), lang));
     } finally {
       setRemoveBusy(false);
     }
@@ -1728,7 +1714,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     return (
       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
         <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '10px' }} dir="auto">
-          🚫 {t('avail_outlet_disabled_empty', lang)}
+          <PhoenixIcon name="ban" size={13} inline /> {t('avail_outlet_disabled_empty', lang)}
         </div>
       </div>
     );
@@ -1738,23 +1724,13 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
         <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)' }}>
-          💊 {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
+          <PhoenixIcon name="medical" size={13} inline /> {t('avail_manage', lang)} ({rows.length} {t('avail_count', lang)})
         </span>
       </div>
 
-      {showAdd && (
-        <QuickAvailForm
-          pointId={pointId}
-          orgId={orgId}
-          lang={lang}
-          onSaved={() => { setShowAdd(false); avail.reload(); onToast(t('avail_saved', lang)); }}
-          onCancel={() => setShowAdd(false)}
-        />
-      )}
-
       {avail.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
 
-      {!avail.loading && rows.length === 0 && !showAdd && (
+      {!avail.loading && rows.length === 0 && (
         <div style={{ fontSize: '11px', color: 'var(--t3)', textAlign: 'center', padding: '8px' }} dir="auto">
           {t('avail_outlet_active_empty', lang)}
         </div>
@@ -1804,7 +1780,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
                       aria-label={t('avail_remove_from_outlet', lang)}
                       style={{ fontSize: '10.5px', color: 'var(--err)', border: '1px solid var(--err)', background: 'transparent', borderRadius: 'var(--r1)', padding: '3px 8px', cursor: 'pointer', minHeight: '28px' }}
                     >
-                      🗑 {t('avail_remove_from_outlet', lang)}
+                      <PhoenixIcon name="trash" size={13} inline /> {t('avail_remove_from_outlet', lang)}
                     </button>
                   )}
                 </div>
@@ -1828,7 +1804,7 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
             {t('cancel', lang)}
           </PhoenixButton>
           <PhoenixButton variant="warn" size="md" style={{ flex: 2 }} loading={removeBusy} onClick={onConfirmRemove}>
-            🗑 {t('avail_remove_from_outlet', lang)}
+            <PhoenixIcon name="trash" size={13} inline /> {t('avail_remove_from_outlet', lang)}
           </PhoenixButton>
         </div>
       </PhoenixDialog>
@@ -1841,86 +1817,6 @@ function PortAvailabilitySection({ pointId, orgId, lang, canRemove, onToast, poi
         pointName={pointName}
         orgName={orgName}
       />
-    </div>
-  );
-}
-
-/* ── Quick Availability Add Form ── */
-
-function QuickAvailForm({ pointId, orgId, lang, onSaved, onCancel }: {
-  pointId: string;
-  orgId: string;
-  lang: 'ar' | 'en';
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const items = useAsync(() => getLocalItems(orgId), [orgId]);
-  const itemRows = (items.data ?? []) as unknown as LocalRow[];
-  const [itemId, setItemId] = useState('');
-  const [qty, setQty] = useState(0);
-  const [condition, setCondition] = useState<AvailabilityCondition>('available');
-  const [batch, setBatch] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const canSubmit = itemId && qty >= 0;
-
-  async function onSubmit() {
-    if (!canSubmit) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const selectedItem = itemRows.find(r => r.id === itemId);
-      const ci = selectedItem ? centralOf(selectedItem) : null;
-      const sciName = ci ? (ci.name ?? ci.name_ar ?? itemId) : itemId;
-      await upsertAvailability({
-        distributionPointId: pointId,
-        organizationId: orgId,
-        scientificName: sciName,
-        quantity: qty,
-        condition,
-        batchNumber: batch || undefined,
-        expiryDate: expiry || undefined,
-      });
-      onSaved();
-    } catch (e) {
-      // Developer-safe console log; user sees a classified, translated
-      // message only (mirrors EditorScreen.tsx's doApply, instead of the
-      // previous raw/untranslated e.message fallback).
-      console.error('[phoenix] availability quick-add failed:', e);
-      setError(t(classifyAvailabilitySaveError(e), lang));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div style={{ background: 'var(--s2)', borderRadius: 'var(--r2)', padding: '10px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <select value={itemId} onChange={e => setItemId(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }}>
-        <option value="">{items.loading ? t('loading', lang) : t('avail_select_item', lang)}</option>
-        {itemRows.map(row => {
-          const ci = centralOf(row);
-          return <option key={row.id} value={row.id}>{lang === 'ar' ? (ci?.name_ar ?? ci?.name) : (ci?.name ?? ci?.name_ar)} ({row.local_code ?? ''})</option>;
-        })}
-      </select>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <input type="number" min={0} value={qty} onChange={e => setQty(Number(e.target.value))} placeholder={t('qty', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
-        <select value={condition} onChange={e => setCondition(e.target.value as AvailabilityCondition)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', appearance: 'none' }}>
-          {CONDITIONS.map(c => <option key={c} value={c}>{t(CONDITION_LABEL_KEY[c], lang)}</option>)}
-        </select>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <input type="text" dir="ltr" value={batch} onChange={e => setBatch(e.target.value)} placeholder={t('batch_no', lang)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px', fontFamily: 'monospace' }} />
-        <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...fieldStyle, fontSize: '11.5px', padding: '7px 10px' }} />
-      </div>
-      {error && <p style={{ fontSize: '11px', color: 'var(--err)' }}>{error}</p>}
-      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-        <button onClick={onCancel} style={{ fontSize: '11px', color: 'var(--t2)', border: 'none', background: 'none', cursor: 'pointer' }}>{t('cancel', lang)}</button>
-        <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
-          {t('inst_save', lang)}
-        </PhoenixButton>
-      </div>
     </div>
   );
 }
@@ -1963,7 +1859,7 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
       <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)', marginBottom: '8px' }}>
-        🗑️ {t('dw_title', lang)}
+        <PhoenixIcon name="trash" size={13} inline /> {t('dw_title', lang)}
       </div>
 
       {impact.loading && <div style={{ fontSize: '11px', color: 'var(--t3)' }}>{t('loading', lang)}</div>}
@@ -1973,19 +1869,19 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
           {/* Impact counts */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11px' }}>
             <span style={{ color: itemCount > 0 ? 'var(--err)' : 'var(--ok)' }}>
-              📋 {itemCount} {t('dw_items_count', lang)}
+              <PhoenixIcon name="clipboard" size={13} inline /> {itemCount} {t('dw_items_count', lang)}
             </span>
             <span style={{ color: qrCount > 0 ? 'var(--warn)' : 'var(--ok)' }}>
-              📱 {qrCount} {t('dw_qr_count', lang)}
+              <PhoenixIcon name="mobile" size={13} inline /> {qrCount} {t('dw_qr_count', lang)}
             </span>
           </div>
 
           {/* Safety warnings */}
           <div style={{ fontSize: '10.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {hasItems && <span>⚠ {t('dw_clear_items_warn', lang)}</span>}
-            {qrCount > 0 && <span>📱 {t('dw_revoke_qr_warn', lang)}</span>}
-            <span>🔒 {t('dw_revoke_qr_safe', lang)}</span>
-            <span>📦 {t('dw_archive_safe', lang)}</span>
+            {hasItems && <span><PhoenixIcon name="warning" size={13} inline /> {t('dw_clear_items_warn', lang)}</span>}
+            {qrCount > 0 && <span><PhoenixIcon name="mobile" size={13} inline /> {t('dw_revoke_qr_warn', lang)}</span>}
+            <span><PhoenixIcon name="lock" size={13} inline /> {t('dw_revoke_qr_safe', lang)}</span>
+            <span><PhoenixIcon name="package" size={13} inline /> {t('dw_archive_safe', lang)}</span>
           </div>
 
           {/* Clear items action */}
@@ -2009,7 +1905,7 @@ function PortCleanupWizard({ pointId, lang, onDone, onToast }: {
 
           {!hasItems && (
             <div style={{ fontSize: '10.5px', color: 'var(--ok)', fontWeight: 600 }}>
-              ✅ {t('dw_ready', lang)}
+              <PhoenixIcon name="check" size={13} inline /> {t('dw_ready', lang)}
             </div>
           )}
         </div>
@@ -2053,7 +1949,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
 
   return (
     <div style={{ marginTop: '16px' }}>
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}>🗑️ {t('dw_title', lang)}</h3>
+      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}><PhoenixIcon name="trash" size={13} inline /> {t('dw_title', lang)}</h3>
 
       {impact.loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
@@ -2095,19 +1991,19 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
 
           {/* Warnings */}
           <div style={{ fontSize: '11px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '12px', padding: '10px', background: 'var(--info2)', borderRadius: 'var(--r2)' }}>
-            {!d.canArchive && <span>🚫 {t('dw_org_blocked', lang)}</span>}
-            {d.profiles > 0 && <span>👥 {t('dw_users_safe', lang)}</span>}
-            <span>📦 {t('dw_archive_safe', lang)}</span>
+            {!d.canArchive && <span><PhoenixIcon name="ban" size={13} inline /> {t('dw_org_blocked', lang)}</span>}
+            {d.profiles > 0 && <span><PhoenixIcon name="users" size={13} inline /> {t('dw_users_safe', lang)}</span>}
+            <span><PhoenixIcon name="package" size={13} inline /> {t('dw_archive_safe', lang)}</span>
           </div>
 
           {/* Status */}
           {d.canArchive ? (
             <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--ok)', fontWeight: 600 }}>
-              ✅ {t('dw_ready', lang)}
+              <PhoenixIcon name="check" size={13} inline /> {t('dw_ready', lang)}
             </div>
           ) : (
             <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--err)', fontWeight: 600 }}>
-              🚫 {t('dw_blocked', lang)}
+              <PhoenixIcon name="ban" size={13} inline /> {t('dw_blocked', lang)}
             </div>
           )}
 
@@ -2124,7 +2020,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
                   style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontFamily: 'monospace' }}
                 />
                 <PhoenixButton variant="warn" size="md" loading={busy} disabled={confirm !== phrase} onClick={onArchiveOrg}>
-                  📦 {t('dw_org_archived', lang)}
+                  <PhoenixIcon name="package" size={13} inline /> {t('dw_org_archived', lang)}
                 </PhoenixButton>
               </div>
             </div>

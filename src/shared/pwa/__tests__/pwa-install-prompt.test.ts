@@ -46,8 +46,10 @@ describe('Web App Manifest', () => {
   });
 
   it('uses the current premium background/theme colors (not placeholders)', () => {
-    expect(manifest.background_color).toBe('#F3F7FB');
-    expect(manifest.theme_color).toBe('#0D9488');
+    // Dark-first Phoenix art direction: the PWA chrome matches --bg so the
+    // splash and title bar do not flash the retired light teal.
+    expect(manifest.background_color).toBe('#07111F');
+    expect(manifest.theme_color).toBe('#07111F');
   });
 
   it('has the required categories', () => {
@@ -78,8 +80,8 @@ describe('index.html PWA wiring', () => {
     expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest" />');
   });
 
-  it('sets theme-color to the premium teal', () => {
-    expect(html).toContain('<meta name="theme-color" content="#0D9488" />');
+  it('sets theme-color to the Phoenix ground colour', () => {
+    expect(html).toContain('<meta name="theme-color" content="#07111F" />');
   });
 
   it('sets apple-mobile-web-app-capable, title, and status-bar-style', () => {
@@ -364,14 +366,38 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json dependency changes beyond the explicitly approved exceljs addition (EXPORT-PROFESSIONAL-XLSX-PDF-B) and the self-hosted W1 fonts, checked structurally, not just diff', () => {
+  it('no package.json runtime dependency changes beyond the explicitly approved additions (exceljs, self-hosted W1 fonts, and the cinematic WebGL stack), checked structurally, not just diff', () => {
     const pkg = JSON.parse(readRoot('package.json'));
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       // W1: self-hosted variable fonts replacing the external Google Fonts CDN
       // (CSP font-src 'self'). Weight-axis only; bundled by Vite.
+      // The Phoenix design source's families. Inter has a variable build;
+      // IBM Plex Sans Arabic does not, so its four design weights are static.
+      '@fontsource-variable/inter', '@fontsource/ibm-plex-sans-arabic',
+      // Superseded by the two above; removed in the Phase G cleanup once no
+      // import remains. Listed here so this guard stays exact, not loosened.
       '@fontsource-variable/dm-sans', '@fontsource-variable/noto-sans-arabic',
+      // Cinematic redesign: the real WebGL Phoenix stack. React-18-compatible
+      // and lazy/code-split — enforced by tests/webgl-deps-contract.test.ts and
+      // src/shared/ui/__tests__/premium-visual-system.test.ts (isolated to
+      // src/shared/webgl/**). Asset/capture tooling (sharp, playwright-core)
+      // lives in devDependencies, not here.
+      '@react-three/fiber', 'three',
       '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
+      // PHARMA-OCR-A: browser-local OCR engine. Loaded ONLY through a dynamic
+      // import after the operator chooses to scan a document — verified absent
+      // from the entry chunks by ocr-safety-invariants.test.ts. Its worker,
+      // WASM and trained data are self-hosted under /assets/ocr (no CDN), and
+      // no image or extracted text ever leaves the device.
+      'tesseract.js',
     ].sort());
+  });
+
+  it('the OCR engine is never a static import, so it cannot enter a critical chunk', () => {
+    // The dependency above is only acceptable because it is dynamically loaded.
+    // This pins that condition at the point the dependency is approved.
+    const staticImports = touchedFiles.filter(f => /^import[^\n]*'tesseract\.js'/m.test(f));
+    expect(staticImports).toHaveLength(0);
   });
 });
 

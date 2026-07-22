@@ -1023,6 +1023,23 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     expect(content).not.toContain('actor_identity_version');
   });
 
+  it('features/inventory/warehouse-intake.service.ts only READS actor_name_snapshot, never passes any snapshot field to a write', () => {
+    const content = readSrc('features/inventory/warehouse-intake.service.ts');
+    // The only permitted occurrence is the read-only ledger SELECT projection.
+    expect(content).toContain('actor_name_snapshot');
+    expect(content).not.toMatch(/p_actor_[a-z_]*snapshot\s*:/);
+    expect(content).not.toMatch(/\.insert\([^)]*actor_name_snapshot/s);
+    expect(content).not.toContain('actor_email_snapshot');
+    expect(content).not.toContain('actor_role_snapshot');
+    expect(content).not.toContain('actor_org_snapshot');
+    expect(content).not.toContain('actor_identity_version');
+    // Neither write RPC carries a snapshot argument — the actor comes from auth.uid().
+    const receiveArgs = content.slice(content.indexOf("'phoenix_receive_warehouse_stock'"), content.indexOf('});', content.indexOf("'phoenix_receive_warehouse_stock'")));
+    const movementArgs = content.slice(content.indexOf("'phoenix_apply_warehouse_stock_movement'"), content.indexOf('});', content.indexOf("'phoenix_apply_warehouse_stock_movement'")));
+    expect(receiveArgs).not.toContain('snapshot');
+    expect(movementArgs).not.toContain('snapshot');
+  });
+
   it('no frontend .ts file outside __tests__ passes snapshot fields to supabase, except the documented read-only movement history / alert event history queries', () => {
     const files = allTsxFiles('')
       .filter(path => !path.endsWith(join('services', 'availability.service.ts')))
@@ -1034,7 +1051,16 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
       // read), purely to display "Last Updated By" in the export/print — it
       // never queries Supabase itself and never passes the field back to any
       // write call.
-      .filter(path => !path.endsWith(join('status', 'OutletAvailabilityReportModal.tsx')));
+      .filter(path => !path.endsWith(join('status', 'OutletAvailabilityReportModal.tsx')))
+      // INVENTORY-CENTER-INTAKE-A: getWarehouseStockMovements SELECTs
+      // actor_name_snapshot for the read-only warehouse ledger view — the same
+      // documented category as availability.service.ts's movement history.
+      // warehouse_stock_movements grants SELECT only (migration 065), and the
+      // two write paths in this file (phoenix_receive_warehouse_stock /
+      // phoenix_apply_warehouse_stock_movement) pass no snapshot parameter —
+      // the RPC derives the actor from auth.uid() server-side. Pinned by the
+      // dedicated assertion below.
+      .filter(path => !path.endsWith(join('inventory', 'warehouse-intake.service.ts')));
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {
@@ -2401,7 +2427,9 @@ describe('QR-AUDIT-CENTER [QrScreen.tsx: UX behavior]', () => {
   });
 
   it('risk cards have visual border indicator', () => {
-    expect(src).toContain('#dc2626');
+    // Phase E: the risk-card border indicator is now the theme-aware danger
+    // token instead of a raw #dc2626 literal — the visual indicator is retained.
+    expect(src).toContain("isRisk ? '1px solid var(--err)'");
   });
 
   it('uses dir="ltr" for public URL (RTL-safe)', () => {

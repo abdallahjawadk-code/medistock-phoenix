@@ -1,88 +1,174 @@
 /* ─── MEDISTOCK PHOENIX — Design Tokens ─────────────────────────────────────
-   Extracted verbatim from MediStock-Babil.dc.html design source.
+   Extracted verbatim from design-source/MediStock-Phoenix.dc.html.
    These are the ONLY approved visual values. Do not override outside this file.
+
+   The design is DARK-FIRST: :root carries the dark palette so an unthemed
+   document still renders the intended art direction, and [data-theme="light"]
+   is the explicit opt-out. [data-theme="dark"] restates dark so an explicit
+   dark selection wins over any later light rule.
+
+   Two naming layers live here:
+     1. CANONICAL — the design source's own names (--surface, --cyan, --ember,
+        --line, --text, --muted …). New and migrated code uses only these.
+     2. LEGACY BRIDGE — the previous short names (--p, --s, --t2, --brd …)
+        re-pointed at the canonical palette so no screen breaks mid-migration.
+        Removed in the Phase G cleanup once every consumer is converted.
+   See design/NEXUS-SCREEN-MAP.md §2.2 for the full mapping.
    ─────────────────────────────────────────────────────────────────────────── */
 
+:root,
+[data-theme="dark"] {
+  /* ── CANONICAL (design source, dark) ── */
+  --bg:       #07111F;
+  --surface:  #0A1729;
+  --surface2: #0E2036;
+  --field:    #081426;
+  --line:     rgba(98,233,255,.14);
+  --line2:    rgba(221,186,99,.3);
+  --text:     #F5F8FC;
+  --muted:    #8FA6BF;
+  --cyan:     #62E9FF;
+  --cyanDim:  #4FC3DF;
+  --ember:    #FF7A1A;
+  --ember2:   #FF9A4D;
+  --gold:     #DDBA63;
+  --teal:     #37B5AD;
+  --ok:       #2FBF8F;
+  --warn:     #FFB84D;
+  --danger:   #FF6B6B;
+  --chip:     rgba(98,233,255,.08);
+  --chipW:    rgba(255,184,77,.12);
+  --chipD:    rgba(255,107,107,.12);
+  --hover:    rgba(98,233,255,.06);
+  --shadow:   0 14px 34px rgba(0,0,0,.4);
+  --heroGrad: linear-gradient(140deg,#0C1C33 0%,#081426 55%,#0A1020 100%);
+}
+
+[data-theme="light"] {
+  /* ── CANONICAL (design source, light) ── */
+  --bg:       #F0F4F9;
+  --surface:  #FFFFFF;
+  --surface2: #F5F8FC;
+  --field:    #F7FAFD;
+  --line:     #D8E2EC;
+  --line2:    #E0D3B4;
+  --text:     #122335;
+  --muted:    #546B82;
+  --cyan:     #0E7EA6;
+  --cyanDim:  #0E7EA6;
+  --ember:    #C75B10;
+  --ember2:   #B25B0E;
+  --gold:     #8F7228;
+  --teal:     #0E8078;
+  --ok:       #0E8F5B;
+  --warn:     #A66E0A;
+  --danger:   #C43D3D;
+  --chip:     rgba(14,128,120,.08);
+  --chipW:    rgba(166,110,10,.1);
+  --chipD:    rgba(196,61,61,.1);
+  --hover:    rgba(14,128,120,.06);
+  --shadow:   0 10px 26px rgba(18,35,53,.1);
+  --heroGrad: linear-gradient(140deg,#FFFFFF 0%,#F2F7FB 60%,#E9F1F8 100%);
+}
+
+/* ─── LEGACY BRIDGE ─────────────────────────────────────────────────────────
+   Theme-independent because every right-hand side is itself a themed canonical
+   token. Declared once, after both theme blocks, so it resolves per theme.
+   Phase G deletes this block together with its last consumer.
+   ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Surfaces */
-  --bg: #F3F7FB;
-  --s:  #FFFFFF;
-  --s2: #F2F6FB;
-  --sh: #EBF2FA;
-  --glass: rgba(255,255,255,.82);
-  --glass-strong: rgba(255,255,255,.92);
-  --ambient-a: rgba(13,148,136,.20);
-  --ambient-b: rgba(59,130,246,.16);
-  --ambient-c: rgba(2,132,199,.10);
+  --s:  var(--surface);
+  --s2: var(--surface2);
+  --sh: var(--field);
+
+  --t:  var(--text);
+  --t2: var(--muted);
+  --t3: color-mix(in srgb, var(--muted) 62%, transparent);
+
+  --p:   var(--cyan);
+  --pd:  var(--cyanDim);
+  --p2:  var(--chip);
+
+  --sec:  var(--ember);
+  --sec2: var(--chipW);
+
+  --ok2:   var(--chip);
+  --warn2: var(--chipW);
+  --err:   var(--danger);
+  --err2:  var(--chipD);
+  --info:  var(--teal);
+  --info2: var(--chip);
+
+  --brd:  var(--line);
+  --skel: var(--surface2);
+}
+
+/* ─── AMBIENT / GLASS ───────────────────────────────────────────────────────
+   The new art direction layers cyan + ember atmospherics over the hero
+   gradient instead of the old teal/blue wash.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --glass:        rgba(10,23,41,.78);
+  --glass-strong: rgba(10,23,41,.94);
+  --ambient-a: rgba(98,233,255,.13);
+  --ambient-b: rgba(255,122,26,.10);
+  --ambient-c: rgba(221,186,99,.07);
+  --highlight: rgba(255,255,255,.06);
+
+  --sh-xs: 0 1px 2px rgba(0,0,0,.35);
+  --sh-sm: 0 2px 6px rgba(0,0,0,.36);
+  --sh-md: 0 6px 18px rgba(0,0,0,.44);
+  --sh-lg: 0 14px 34px rgba(0,0,0,.40);
+  --sh-xl: 0 24px 62px rgba(0,0,0,.58);
+  --sh-depth: 0 22px 52px rgba(0,0,0,.46), 0 8px 20px rgba(0,0,0,.30), inset 0 1px 0 var(--highlight);
+  --sh-float: 0 34px 80px rgba(0,0,0,.62), 0 14px 30px rgba(0,0,0,.38);
+}
+
+[data-theme="light"] {
+  --glass:        rgba(255,255,255,.82);
+  --glass-strong: rgba(255,255,255,.94);
+  --ambient-a: rgba(14,126,166,.14);
+  --ambient-b: rgba(199,91,16,.09);
+  --ambient-c: rgba(143,114,40,.07);
   --highlight: rgba(255,255,255,.82);
 
-  /* Text */
-  --t:  #0F2B4F;
-  --t2: #4A6580;
-  --t3: #8FA5BC;
+  --sh-xs: 0 1px 2px rgba(18,35,53,.05);
+  --sh-sm: 0 1px 4px rgba(18,35,53,.07), 0 1px 2px rgba(18,35,53,.03);
+  --sh-md: 0 4px 14px rgba(18,35,53,.09), 0 2px 6px rgba(18,35,53,.04);
+  --sh-lg: 0 10px 26px rgba(18,35,53,.10), 0 4px 12px rgba(18,35,53,.05);
+  --sh-xl: 0 20px 56px rgba(18,35,53,.14), 0 8px 22px rgba(18,35,53,.07);
+  --sh-depth: 0 16px 38px rgba(18,35,53,.13), 0 6px 16px rgba(18,35,53,.08), inset 0 1px 0 var(--highlight);
+  --sh-float: 0 28px 68px rgba(18,35,53,.20), 0 12px 26px rgba(18,35,53,.10);
+}
 
-  /* Primary (teal) */
-  --p:   #0D9488;
-  --p2:  #CCFBF1;
-  --pd:  #0A7468;
-
-  /* Secondary (blue) */
-  --sec:  #3B82F6;
-  --sec2: #DBEAFE;
-
-  /* Semantic */
-  --ok:   #059669;  --ok2:   #D1FAE5;
-  --warn: #D97706;  --warn2: #FEF3C7;
-  --err:  #DC2626;  --err2:  #FEE2E2;
-  --info: #0284C7;  --info2: #E0F2FE;
-
-  /* Structure */
-  --brd:  #D6E0EC;
-  --skel: #E6EEF7;
-
-  /* Shadows */
-  --sh-xs: 0 1px 2px rgba(15,43,79,.04);
-  --sh-sm: 0 1px 4px rgba(15,43,79,.07), 0 1px 2px rgba(15,43,79,.03);
-  --sh-md: 0 4px 16px rgba(15,43,79,.08), 0 2px 6px rgba(15,43,79,.04);
-  --sh-lg: 0 8px 32px rgba(15,43,79,.10), 0 4px 12px rgba(15,43,79,.05);
-  --sh-xl: 0 20px 60px rgba(15,43,79,.14), 0 8px 24px rgba(15,43,79,.07);
-  --sh-depth: 0 18px 40px rgba(15,43,79,.14), 0 6px 16px rgba(15,43,79,.09), inset 0 1px 0 var(--highlight);
-  --sh-float: 0 30px 72px rgba(15,43,79,.22), 0 12px 28px rgba(15,43,79,.11);
-
-  /* Radius scale */
-  --r1:    6px;
-  --r2:    10px;
-  --r3:    14px;
+/* ─── SCALES (art-direction-neutral — unchanged across the migration) ─────── */
+:root {
+  /* Radius scale — the design source's own clusters (6-7 / 9-11 / 14-16 / 18). */
+  --r1:    7px;
+  --r2:    11px;
+  --r3:    15px;
   --r4:    18px;
   --r5:    24px;
   --rpill: 9999px;
 
-  /* Layout */
-  --sw:  248px;   /* sidebar width */
-  --tbh: 58px;    /* topbar height */
-  --bnh: 68px;    /* bottom nav height */
+  /* Layout — measured from the 1440x900 design source. */
+  --sw:  258px;   /* sidebar width */
+  --tbh: 60px;    /* topbar height */
+  --bnh: 72px;    /* bottom nav height */
 
   /* Accessibility — minimum interactive hit area (WCAG 2.5.5 / 2.5.8). */
   --touch-target: 44px;
-
-  /* Focus indicator (keyboard). Two-tone ring: an accent outline plus a
-     contrasting halo so the indicator reads by SHAPE + a light↔dark contrast
-     flip, never by hue alone (WCAG 1.4.11 / 2.4.7 / 1.4.1). The contrast tone
-     inverts per theme so the ring stays visible on any surface. */
-  --focus-ring: var(--p);
-  --focus-ring-contrast: #0F2B4F;
-
-  /* ─── CENTRAL SCALES (W1 canonical source — do not redefine per-component) ───
-     tokens.css is the single source of truth for scale primitives. Cinematic
-     accent colors live in phoenix-nexus.css as the --nx-* extension layer. */
 
   /* Spacing (4pt base) */
   --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;  --sp-5: 20px;
   --sp-6: 24px;  --sp-8: 32px;  --sp-10: 40px; --sp-12: 48px; --sp-16: 64px;
 
-  /* Typography */
-  --font-sans: 'DM Sans Variable', 'Noto Sans Arabic Variable', system-ui, sans-serif;
-  --font-ar:   'Noto Sans Arabic Variable', 'DM Sans Variable', system-ui, sans-serif;
+  /* Typography — self-hosted @fontsource families (imported in main.tsx), NOT
+     the design source's Google Fonts CDN link: the production CSP allows
+     font-src 'self' data: only. Same families, same weights (400/500/600/700). */
+  --font-sans: 'Inter Variable', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-ar:   'IBM Plex Sans Arabic', 'Inter Variable', system-ui, sans-serif;
   --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-base: 14px;
   --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 26px; --fs-3xl: 34px;
   --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
@@ -100,30 +186,10 @@
   --z-modal: 1000;  --z-toast: 1100;   --z-tooltip: 1200;
 }
 
-[data-theme="dark"] {
-  --bg: #040C17;
-  --s:  #0A192A;
-  --s2: #10253A;
-  --sh: #162C44;
-  --glass: rgba(13,29,48,.78);
-  --glass-strong: rgba(13,29,48,.94);
-  --ambient-a: rgba(20,184,166,.19);
-  --ambient-b: rgba(59,130,246,.17);
-  --ambient-c: rgba(2,132,199,.12);
-  --highlight: rgba(255,255,255,.055);
-  --t:  #DCE9F5;
-  --t2: #6E90AE;
-  --t3: #3E5F7A;
-  --brd:  #1D3854;
-  --skel: #112438;
-  --sh-xs: 0 1px 2px rgba(0,0,0,.35);
-  --sh-sm: 0 1px 4px rgba(0,0,0,.35);
-  --sh-md: 0 4px 16px rgba(0,0,0,.45);
-  --sh-lg: 0 8px 32px rgba(0,0,0,.50);
-  --sh-xl: 0 20px 60px rgba(0,0,0,.60);
-  --sh-depth: 0 24px 56px rgba(0,0,0,.46), 0 8px 20px rgba(0,0,0,.32), inset 0 1px 0 var(--highlight);
-  --sh-float: 0 34px 80px rgba(0,0,0,.64), 0 14px 30px rgba(0,0,0,.4);
-
-  /* Contrast tone flips to light on dark surfaces so the focus halo stays visible. */
-  --focus-ring-contrast: #EAF2FB;
-}
+/* Focus indicator (keyboard). Two-tone ring: an accent outline plus a
+   contrasting halo so the indicator reads by SHAPE + a light↔dark contrast
+   flip, never by hue alone (WCAG 1.4.11 / 2.4.7 / 1.4.1). The contrast tone
+   inverts per theme so the ring stays visible on any surface. */
+:root,
+[data-theme="dark"] { --focus-ring: var(--cyan); --focus-ring-contrast: #EAF6FB; }
+[data-theme="light"] { --focus-ring: var(--cyan); --focus-ring-contrast: #122335; }

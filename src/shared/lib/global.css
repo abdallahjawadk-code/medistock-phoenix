@@ -111,11 +111,11 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 }
 .premium-command-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--p); box-shadow: 0 0 0 5px var(--p2), 0 0 18px var(--p); }
 .premium-hero-cta {
-  box-shadow: 0 8px 22px rgba(13,148,136,.3), inset 0 1px 0 rgba(255,255,255,.26);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--cyan) 30%, transparent), inset 0 1px 0 rgba(255,255,255,.26);
 }
 @media (hover: hover) and (pointer: fine) {
   .premium-hero-cta:not(:disabled):hover {
-    box-shadow: 0 12px 28px rgba(13,148,136,.38), inset 0 1px 0 rgba(255,255,255,.3);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--cyan) 38%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
     transform: translateY(-1px);
   }
 }
@@ -150,8 +150,8 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 .premium-login__logo {
   position: relative;
   box-shadow:
-    0 14px 34px rgba(13,148,136,.36),
-    0 4px 10px rgba(13,148,136,.24),
+    0 14px 34px color-mix(in srgb, var(--cyan) 36%, transparent),
+    0 4px 10px color-mix(in srgb, var(--cyan) 24%, transparent),
     inset 0 1px 0 rgba(255,255,255,.38),
     0 0 0 8px color-mix(in srgb, var(--p) 9%, transparent);
 }
@@ -167,11 +167,11 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   backdrop-filter: blur(16px) saturate(128%);
 }
 .premium-login__submit {
-  box-shadow: 0 10px 26px rgba(13,148,136,.32), inset 0 1px 0 rgba(255,255,255,.28);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--cyan) 32%, transparent), inset 0 1px 0 rgba(255,255,255,.28);
 }
 @media (hover: hover) and (pointer: fine) {
   .premium-login__submit:not(:disabled):hover {
-    box-shadow: 0 14px 32px rgba(13,148,136,.4), inset 0 1px 0 rgba(255,255,255,.3);
+    box-shadow: 0 14px 32px color-mix(in srgb, var(--cyan) 40%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
     transform: translateY(-1px);
   }
 }
@@ -268,36 +268,25 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   background: linear-gradient(var(--p), var(--sec));
   box-shadow: 0 0 16px var(--ambient-a);
 }
+/* Flat --surface panel, per the design source. The previous glass gradient
+   carried !important, so it painted over the component's own background even
+   where the nexus layer had already been aligned. */
 .premium-sidebar {
-  background: linear-gradient(180deg, var(--glass-strong), color-mix(in srgb, var(--s) 88%, var(--s2))) !important;
-  box-shadow: 12px 0 40px rgba(15,43,79,.06);
-  backdrop-filter: blur(18px) saturate(130%);
+  background: var(--surface) !important;
+  box-shadow: none;
 }
-.premium-sidebar-brand { position: relative; background: linear-gradient(135deg, var(--ambient-a), transparent 72%); }
-.premium-sidebar-logo { box-shadow: 0 10px 24px rgba(13,148,136,.28), inset 0 1px 0 rgba(255,255,255,.35); }
-.premium-sidebar-user { margin: 10px; padding: 11px !important; border: 1px solid var(--brd); border-radius: var(--r3); background: color-mix(in srgb, var(--s2) 82%, transparent); box-shadow: inset 0 1px 0 var(--highlight); }
-[dir="rtl"] .premium-sidebar { box-shadow: -12px 0 40px rgba(15,43,79,.06); }
+.premium-sidebar-brand { position: relative; }
+.premium-sidebar-logo { box-shadow: 0 10px 24px color-mix(in srgb, var(--cyan) 28%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
+.premium-sidebar-user { margin: 0; padding: 14px 16px !important; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
 .premium-topbar {
-  background: var(--glass) !important;
-  backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: 0 8px 30px rgba(15,43,79,.055);
+  background: var(--surface) !important;
+  box-shadow: none;
 }
-.premium-nav-item { position: relative; min-height: 42px; }
-.premium-nav-item[data-active="true"] {
-  background: linear-gradient(100deg, var(--p2), color-mix(in srgb, var(--p2) 45%, transparent)) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 30%, transparent), 0 9px 22px rgba(13,148,136,.15);
-}
-.premium-nav-item[data-active="true"]::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 3px;
-  border-radius: 99px;
-  background: var(--p);
-  box-shadow: 0 0 12px var(--p);
-}
+/* The active nav treatment (chip fill + ember rail) is set inline by
+   PhoenixSidebar from the design source's own state map. This layer only
+   reserves the hit area; it no longer paints a competing gradient or a second
+   rail via ::before. */
+.premium-nav-item { position: relative; min-height: var(--touch-target); }
 .premium-status-badge {
   min-height: 24px;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
@@ -310,35 +299,37 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 }
 .premium-mobile-drawer { scroll-behavior: smooth; }
 .premium-drawer-nav { scroll-behavior: smooth; }
-.premium-drawer-brand { background: linear-gradient(135deg, var(--ambient-a), transparent 76%); }
-.premium-drawer-logo { box-shadow: 0 10px 22px rgba(13,148,136,.3), inset 0 1px 0 rgba(255,255,255,.35); }
+/* The drawer header reserves an inline-end gutter for the absolutely-placed
+   close button, so the brand text keeps a usable measure instead of being
+   squeezed into a ~100px column between the mark and the button. */
+/* The close button sits on its own row above the lockup (see
+   PhoenixMobileDrawer), so the brand text gets the same measure it has in the
+   desktop sidebar rather than a ~100px column beside a 44px button. */
+.nexus-shell .premium-drawer-brand,
+.premium-drawer-brand {
+  background: transparent;
+}
+.premium-drawer-logo { box-shadow: 0 10px 22px color-mix(in srgb, var(--cyan) 30%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
 @media (hover: hover) and (pointer: fine) {
   .premium-drawer-close:hover {
     border-color: color-mix(in srgb, var(--err) 40%, var(--brd)) !important;
     color: var(--err) !important;
   }
   .premium-drawer-trigger:hover {
-    border-color: color-mix(in srgb, var(--p) 40%, var(--brd)) !important;
-    background: var(--p2) !important;
-    color: var(--pd) !important;
+    border-color: color-mix(in srgb, var(--cyan) 40%, var(--line)) !important;
+    background: var(--chip) !important;
+    color: var(--cyanDim) !important;
   }
   .premium-bottom-nav-item:hover {
-    background: color-mix(in srgb, var(--p2) 55%, transparent);
+    background: var(--hover);
     border-radius: var(--r2);
   }
 }
+/* The active bottom-nav marker is drawn once, by the nexus layer's ::before
+   rail. This file used to draw a second one via ::after, so the active tab
+   carried two stacked bars. */
 .premium-bottom-nav-item[data-active="true"] {
   position: relative;
-}
-.premium-bottom-nav-item[data-active="true"]::after {
-  content: '';
-  position: absolute;
-  top: 4px;
-  width: 22px;
-  height: 3px;
-  border-radius: 99px;
-  background: var(--p);
-  box-shadow: 0 0 10px var(--p);
 }
 .premium-pwa-install {
   position: fixed;
@@ -460,7 +451,7 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   place-items: center;
   border-radius: var(--r3);
   background: linear-gradient(145deg, var(--p2), color-mix(in srgb, var(--sec2) 65%, var(--p2)));
-  box-shadow: 0 9px 22px rgba(13,148,136,.16), inset 0 1px 0 rgba(255,255,255,.45);
+  box-shadow: 0 9px 22px color-mix(in srgb, var(--cyan) 16%, transparent), inset 0 1px 0 rgba(255,255,255,.45);
   font-size: 20px;
 }
 .premium-org-card__meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--brd); }
@@ -469,7 +460,7 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
 .premium-org-card__meta-value { display: block; margin-top: 2px; color: var(--t); font-size: 11.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* DESIGN-PREMIUM-GLASS-UI-POLISH-A */
 .premium-empty-icon {
-  box-shadow: 0 10px 26px rgba(13,148,136,.18), inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 6px color-mix(in srgb, var(--p) 7%, transparent);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--cyan) 18%, transparent), inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 6px color-mix(in srgb, var(--p) 7%, transparent);
 }
 .premium-material-row {
   border: 1px solid transparent;

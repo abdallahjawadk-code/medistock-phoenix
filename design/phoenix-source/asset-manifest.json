@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "package": "MediStock Phoenix Source Images",
+  "generated_at": "2026-07-19",
+  "canonical_path": "design/phoenix-source",
+  "identity": {
+    "ember": "#FF7A1A",
+    "ion_cyan": "#62E9FF",
+    "heritage_gold": "#DDBA63",
+    "teal": "#138F88",
+    "environment": "obsidian / deep navy"
+  },
+  "assets": [
+    {
+      "file": "phoenix-login-master.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2172305,
+      "sha256": "6c03d9fb88bccd1857d7bdd6c5d4ad4e087453d918fcc666d31396224262f8ff",
+      "role": "runtime_candidate_login_hero",
+      "notes": "Text-free cinematic plate with quiet RTL form space."
+    },
+    {
+      "file": "phoenix-welcome-keyframe-master.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2092881,
+      "sha256": "cc4b0dcaca327b9cfccec839210331ca972a1af5095b35700e7bc9a609d71977",
+      "role": "approved_visual_reference_only",
+      "notes": "Contains baked Arabic text and skip control; do not use as the runtime texture."
+    },
+    {
+      "file": "phoenix-welcome-clean-plate-master.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2293781,
+      "sha256": "ffc4e6be5b7e70beb030e59031bdd7a27907dcb21482b43537181f1a05102f6d",
+      "role": "runtime_candidate_welcome_texture",
+      "notes": "Text-free clean plate for WebGL, motion layers and 2D fallback."
+    },
+    {
+      "file": "phoenix-dashboard-reference-master.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2215289,
+      "sha256": "b527d22ceb3f5d5ea40e2eafda11cb37320e9d793af85d4ff41fbce565c763a6",
+      "role": "dashboard_digital_twin_visual_reference",
+      "notes": "Reference art only; all operational nodes, balances and routes must come from live RLS data."
+    },
+    {
+      "file": "phoenix-babil-map-master.png",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2169308,
+      "sha256": "a9db45bca59f80bb261463887081311a291a9f26314a10dfd194f32b18ef6359",
+      "role": "decorative_non_gis_reference_only",
+      "notes": "Symbolic plate; never treat its silhouette, nodes or paths as authoritative geography."
+    },
+    {
+      "file": "phoenix-app-icon-master.png",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 4136391,
+      "sha256": "1887a1eeb6b491d2a13da8889783a2adb6b205638c9e0a60cd653b3135fba01c",
+      "role": "desktop_mobile_pwa_icon_source",
+      "notes": "Derived 2048px master with generous adaptive-mask safe zone; generate platform sizes from this file."
+    },
+    {
+      "file": "masar-copyright-master.png",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1905063,
+      "sha256": "05eae26fa2b3665e016b3a1440cd88ff98aeb85eafd85fc4abeb173330cca860",
+      "role": "masar_copyright_seal_master",
+      "notes": "Approved MASAR copyright seal (gold M + caduceus on navy). Square 1:1; never repaint, trace, stretch, crop or remove the navy background. Runtime seals derived to masar-seal-{128,256,512}.{avif,webp,png}; UI must pair the emblem with live copyright text for legibility."
+    }
+  ]
+}

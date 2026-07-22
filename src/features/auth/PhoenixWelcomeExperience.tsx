@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
-import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
-import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { prefersReducedMotion } from '@/shared/webgl';
+import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 interface Props {
   onComplete: () => void;
 }
 
+const SEQUENCE_MS = 6000;
+const REDUCED_MS = 900;
+
+/**
+ * Phoenix rebirth welcome. The approved clean-plate master IS the dominant
+ * full-screen artwork (obsidian, no white overexposure) — it is never replaced
+ * by a WebGL reconstruction. Motion is a controlled cinematic reveal: a gentle
+ * fade-in, a slow camera push, and drifting embers over the plate. The title and
+ * the exact issuance/supervision credits are always live React text — never baked
+ * into the texture. Skip is available from the first frame; the sequence shows
+ * once per session (gated by the caller). On reduced-motion it holds the still
+ * keyframe with only a short fade.
+ */
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
   const [phase, setPhase] = useState<'ember' | 'rise'>('ember');
@@ -19,9 +32,11 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
   }, [onComplete]);
 
   useEffect(() => {
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const riseTimer = window.setTimeout(() => setPhase('rise'), reducedMotion ? 80 : 780);
-    const finishTimer = window.setTimeout(finish, reducedMotion ? 950 : 5200);
+    const reduced = prefersReducedMotion();
+    // ash → rise reveal pacing for the plate + copy.
+    const riseTimer = window.setTimeout(() => setPhase('rise'), reduced ? 60 : 700);
+    // Always finish, even if the tab is backgrounded and rAF stalls.
+    const finishTimer = window.setTimeout(finish, reduced ? REDUCED_MS : SEQUENCE_MS);
     return () => {
       window.clearTimeout(riseTimer);
       window.clearTimeout(finishTimer);
@@ -36,65 +51,50 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
-      <div className="nexus-welcome__atmosphere" aria-hidden="true">
-        <div className="nexus-welcome__aurora nexus-welcome__aurora--one" />
-        <div className="nexus-welcome__aurora nexus-welcome__aurora--two" />
-        <div className="nexus-welcome__grid" />
-        <div className="nexus-welcome__horizon" />
-        {Array.from({ length: 24 }, (_, index) => (
-          <span
-            key={index}
-            className="nexus-welcome__particle"
-            style={{ '--particle-index': index } as CSSProperties}
+      {/* Dominant full-screen approved Phoenix (clean-plate master, AVIF→WebP). */}
+      <div className="nexus-welcome__stage" aria-hidden="true">
+        <picture>
+          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.avif" type="image/avif" />
+          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.webp" type="image/webp" />
+          <img
+            className="nexus-welcome__plate"
+            src="/assets/phoenix/runtime/phoenix-welcome-clean.webp"
+            alt=""
+            width={1680}
+            height={941}
+            decoding="async"
+            loading="eager"
           />
-        ))}
+        </picture>
+        <div className="nexus-welcome__scrim" />
+        <div className="nexus-welcome__embers">
+          {Array.from({ length: 18 }, (_, i) => (
+            <span
+              key={i}
+              className="nexus-welcome__particle"
+              style={{ '--particle-index': i } as CSSProperties}
+            />
+          ))}
+        </div>
       </div>
 
       <button type="button" className="nexus-welcome__skip nexus-control" onClick={finish}>
-        {lang === 'ar' ? 'تخطي المشهد' : 'Skip sequence'}
+        {lang === 'ar' ? 'تخطي' : 'Skip'}
       </button>
 
-      <div className="nexus-welcome__content">
-        <div className="nexus-welcome__sigil" aria-hidden="true">
-          <div className="nexus-welcome__orbit nexus-welcome__orbit--outer" />
-          <div className="nexus-welcome__orbit nexus-welcome__orbit--inner" />
-          <div className="nexus-welcome__flare" />
-          <PhoenixMark className="nexus-welcome__phoenix" size="100%" title="" />
-        </div>
+      <header className="nexus-welcome__masthead">
+        <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
+        <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
+      </header>
 
-        <div className="nexus-welcome__copy">
-          <div className="nexus-welcome__kicker">
-            <span className="nexus-welcome__pulse" />
-            {lang === 'ar' ? 'منظومة الإمداد الدوائي الذكية' : 'INTELLIGENT MEDICINE SUPPLY NETWORK'}
-          </div>
-          <h1>MediStock Phoenix</h1>
-          <p className="nexus-welcome__department">
-            {lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health Directorate · Pharmacy Department'}
-          </p>
-
-          <div className="nexus-welcome__credits">
-            <div>
-              <PhoenixIcon name="check" size={15} />
-              <span>
-                {lang === 'ar'
-                  ? 'تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم'
-                  : 'System issued by Pharmacist Abdallah Jawad Kadhim'}
-              </span>
-            </div>
-            <div>
-              <PhoenixIcon name="role" size={15} />
-              <span>
-                {lang === 'ar'
-                  ? 'بإشراف الصيدلاني باسم كاظم رمح'
-                  : 'Supervised by Pharmacist Basim Kadhim Rumaih'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="nexus-welcome__progress" aria-hidden="true">
-          <span />
-        </div>
+      {/* Approved issuance & supervision credits — the EXACT approved Arabic text,
+          verbatim per the authoritative handoff. Do not paraphrase either line.
+          Always rendered in Arabic (dir=rtl) regardless of the UI language. */}
+      <div className="nexus-welcome__credits" dir="rtl">
+        <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
+        <div className="nexus-welcome__credits-rule" aria-hidden="true" />
+        <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
+        <MasarCopyrightSeal variant="credit" className="nexus-welcome__seal" />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { formatStableDateTime } from '@/shared/lib/date';
 import {
   getAvailabilityMovementsByItem,
@@ -11,7 +12,6 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { MaterialTimeline, type MaterialTimelineEntry } from '@/shared/ui/MaterialTimeline';
-import type { AdjustQuantityRow } from './AdjustQuantityModal';
 
 /**
  * AVAILABILITY-MOVEMENT-HISTORY-VIEW-A
@@ -24,6 +24,19 @@ import type { AdjustQuantityRow } from './AdjustQuantityModal';
  * availability.movements.view. Visibility of the row action that opens this
  * modal is UX-only — RLS is the real read boundary.
  */
+
+/** The read-only item_availability display row this history viewer needs.
+ *  Defined locally so this viewer no longer depends on the retired
+ *  AdjustQuantityModal (canonical-stock cutover). */
+export interface MovementHistoryRow {
+  id: string;
+  scientific_name: string | null;
+  trade_name: string | null;
+  concentration: string | null;
+  dosage_form: string | null;
+  quantity: number;
+  distribution_points: { id: string; name: string; name_ar: string } | null;
+}
 
 const MOVEMENT_TYPE_LABEL_KEY: Record<AvailabilityMovementType, string> = {
   set_exact: 'mvmt_set_exact',
@@ -41,7 +54,7 @@ function formatDelta(type: AvailabilityMovementType, delta: number): string {
 
 interface Props {
   open: boolean;
-  row: AdjustQuantityRow | null;
+  row: MovementHistoryRow | null;
   lang: 'ar' | 'en';
   onClose: () => void;
 }
@@ -122,7 +135,7 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
         <div style={{ color: 'var(--t2)', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           {row.concentration && <span dir="auto">{row.concentration}</span>}
           {row.dosage_form && <span dir="auto">{row.dosage_form}</span>}
-          {dpName && <span dir="auto">🏥 {dpName}</span>}
+          {dpName && <span dir="auto"><PhoenixIcon name="hospital" size={13} inline /> {dpName}</span>}
         </div>
         <div style={{ marginTop: '6px', fontSize: '13px' }}>
           {t('mvmt_current_qty', lang)}: <strong>{row.quantity}</strong>
@@ -135,7 +148,7 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
           disabled={loading}
           style={{ padding: '6px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: loading ? 'default' : 'pointer' }}
         >
-          🔄 {t('mvmt_history_refresh', lang)}
+<PhoenixIcon name="refresh" size={14} inline /> {t('mvmt_history_refresh', lang)}
         </button>
       </div>
 
@@ -159,16 +172,16 @@ export function MovementHistoryModal({ open, row, lang, onClose }: Props) {
           <button
             onClick={() => setViewMode('table')}
             aria-pressed={viewMode === 'table'}
-            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '5px 12px', minHeight: '44px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
-            📋 {t('mt_view_table', lang)}
+<PhoenixIcon name="status" size={14} inline /> {t('mt_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('timeline')}
             aria-pressed={viewMode === 'timeline'}
-            style={{ padding: '5px 12px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '5px 12px', minHeight: '44px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: viewMode === 'timeline' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'timeline' ? 'var(--pd)' : 'var(--t)', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer' }}
           >
-            🕒 {t('mt_view_timeline', lang)}
+<PhoenixIcon name="clock" size={14} inline /> {t('mt_view_timeline', lang)}
           </button>
         </div>
       )}

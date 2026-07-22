@@ -13,6 +13,7 @@ const login = read('../../../features/auth/LoginScreen.tsx');
 const welcome = read('../../../features/auth/PhoenixWelcomeExperience.tsx');
 const authenticatedApp = read('../../../app/AuthenticatedApp.tsx');
 const topology = read('../../../features/network/NetworkTopologyStage.tsx');
+const webglSupport = read('../../webgl/webglSupport.ts');
 const networkScreen = read('../../../features/network/NetworkManagementScreen.tsx');
 const manifest = read('../../../../public/manifest.webmanifest');
 
@@ -56,18 +57,44 @@ describe('Phoenix Nexus production design boundaries', () => {
 
   it('shows a skippable welcome once per authenticated session and clears it on logout', () => {
     expect(welcome).toContain('onClick={finish}');
-    expect(welcome).toContain('prefers-reduced-motion: reduce');
+    // Reduced-motion is now honoured via the shared prefersReducedMotion() helper
+    // (which checks '(prefers-reduced-motion: reduce)' and gates the WebGL rebirth
+    // to a short static path). The helper's query is covered by
+    // src/shared/webgl/__tests__/webgl-support-and-fallback.test.tsx.
+    expect(welcome).toContain('prefersReducedMotion');
+    expect(webglSupport).toContain('(prefers-reduced-motion: reduce)');
     expect(authenticatedApp).toContain('medistock-phoenix-welcome:');
     expect(authenticatedApp).toContain("sessionStorage.setItem(welcomeKey, 'complete')");
     expect(authenticatedApp).toContain('sessionStorage.removeItem(welcomeKey)');
   });
 
   it('renders a live WebGL twin with an explicit safe fallback', () => {
-    expect(topology).toContain("canvas.getContext('webgl'");
+    // The twin is a real Three.js scene (NetworkTwin3DScene), code-split behind
+    // Suspense. The raw getContext probe now lives in the shared webglSupport
+    // helper rather than inline here, so assert it at its real home — the
+    // invariant (a genuine GL capability check, not a mock) is unchanged.
+    expect(topology).toContain('NetworkTwin3DScene');
+    expect(topology).toContain('shouldRenderWebGL');
+    expect(webglSupport).toContain("getContext('webgl2')");
     expect(topology).toContain('setWebglReady(false)');
     expect(topology).toContain('SAFE MODE');
     expect(topology).toContain('prefers-reduced-motion: reduce');
-    expect(topology).toContain('Math.min(window.devicePixelRatio || 1, 1.6)');
+    // DPR ceiling is enforced centrally by deviceProfile() (1.5 / 1.25 / 1 by
+    // tier) and passed through to the Canvas; effects-policy.test.ts asserts the
+    // ceiling itself. Here we assert the twin actually consumes it.
+    expect(topology).toContain('dprCap={effects.profile.dprCap}');
+    expect(webglSupport).toContain('dprCap: 1.5');
+  });
+
+  it('keeps the 2D deterministic map as the twin fallback and never lets 3D become mandatory', () => {
+    // A lost context or an unavailable GL stack must drop to the deterministic
+    // SVG map, which is laid out by twinLayout (collision-free at any density).
+    expect(topology).toContain('computeTwin2dLayout');
+    expect(topology).toContain('onContextLost');
+    expect(topology).toContain("const effectiveView: '3d' | '2d' = canUse3D ? view : '2d'");
+    // Offscreen / hidden-tab / blurred-window pause for the render loop.
+    expect(topology).toContain('useRenderActive');
+    expect(topology).toContain('continuous={effects.continuous && renderActive}');
   });
 
   it('binds the twin to RLS-protected network reads without introducing writes', () => {
@@ -87,8 +114,10 @@ describe('Phoenix Nexus production design boundaries', () => {
       icons: Array<{ src: string; purpose: string }>;
     };
     expect(parsed.name).toBe('MediStock-Babil Phoenix');
-    expect(parsed.background_color).toBe('#F3F7FB');
-    expect(parsed.theme_color).toBe('#0D9488');
+    // Dark-first Phoenix palette — both track --bg, so the install splash and
+    // title bar match the app instead of the retired light teal.
+    expect(parsed.background_color).toBe('#07111F');
+    expect(parsed.theme_color).toBe('#07111F');
     expect(parsed.icons.some(icon => icon.src === '/pwa-icon-maskable-512.png' && icon.purpose === 'maskable')).toBe(true);
   });
 });

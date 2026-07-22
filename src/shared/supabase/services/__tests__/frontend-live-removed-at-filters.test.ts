@@ -18,24 +18,24 @@
  * this repo's established test conventions (028/042/051/052/053).
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { readSourceFile } from '../../../__tests__/helpers/source-extract';
+import { expectRetiredSurfaceAbsent } from '../../../../../tests/helpers/retired-surfaces';
 
 const ROOT = join(__dirname, '../../../../../');
-const readSrc = (rel: string) => readFileSync(join(ROOT, 'src', rel), 'utf8');
+const readSrc = (rel: string) => readSourceFile(join(ROOT, 'src', rel));
 
 const dashboardService    = readSrc('shared/supabase/services/dashboard.service.ts');
 const availabilityService = readSrc('shared/supabase/services/availability.service.ts');
 const institutionScreen   = readSrc('features/institutions/InstitutionScreen.tsx');
-const editorScreen        = readSrc('features/editor/EditorScreen.tsx');
 const lifecycleService    = readSrc('shared/supabase/services/lifecycle.service.ts');
 const movementHistoryModal = readSrc('features/status/MovementHistoryModal.tsx');
 const movementReportSection = readSrc('features/status/MovementReportSection.tsx');
 const qrService           = readSrc('shared/supabase/services/qr.service.ts');
 const publicQrScreen      = readSrc('features/qr/PublicQrScreen.tsx');
 const interOrgAlertLifecycleService = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
-const types = readFileSync(join(ROOT, 'src/shared/lib/types.ts'), 'utf8');
+const types = readSourceFile(join(ROOT, 'src/shared/lib/types.ts'));
 
 describe('A) Dashboard: live stock counts ignore removed_at rows', () => {
   // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: getDashboardMetrics/
@@ -88,7 +88,7 @@ describe('B) Low-stock/shortage report: removed rows excluded, genuine missing/l
 
 describe('C) Institution current outlet list: hides removed rows, keeps genuine missing rows', () => {
   const fnStart = institutionScreen.indexOf('function PortAvailabilitySection');
-  const fnBody = institutionScreen.slice(fnStart, institutionScreen.indexOf('function QuickAvailForm'));
+  const fnBody = institutionScreen.slice(fnStart, institutionScreen.indexOf('function PortCleanupWizard'));
 
   it('filters on removed_at, not the old blunt quantity=0/condition=missing heuristic', () => {
     expect(fnBody).toContain('filter(r => r.removed_at == null)');
@@ -122,13 +122,17 @@ describe('C) Institution current outlet list: hides removed rows, keeps genuine 
 });
 
 describe('D) EditorScreen reactivation path is not broken', () => {
-  it('EditorScreen still consumes the same unfiltered getAvailabilityByPoint data for identity/duplicate matching', () => {
-    expect(editorScreen).toContain('getAvailabilityByPoint(pointId)');
-    expect(editorScreen).toContain('pointAvailability.data');
+  // E6: was an isolation assertion against EditorScreen.tsx. The screen is
+  // retired, so this is now an absence guard — strictly stronger.
+  it('EditorScreen stays retired (EditorScreen still consumes the same unfiltered getAvailabil)', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('EditorScreen does not add its own removed_at filter that would hide removed rows from reactivation matching', () => {
-    expect(editorScreen).not.toMatch(/removed_at/);
+  // E6: was an isolation assertion about EditorScreen's reactivation matching.
+  // The screen is retired; reactivation now lives solely in
+  // ReactivateMaterialModal, whose behaviour is asserted elsewhere in this file.
+  it('EditorScreen stays retired, so it adds no removed_at filter', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 });
 

@@ -1,6 +1,7 @@
 import { t } from '@/shared/i18n/strings';
 import { normalizeWhatsappPhone, buildWhatsappUrl } from '@/shared/lib/whatsapp';
 import type { Lang } from '@/shared/lib/types';
+import { PhoenixIcon } from './PhoenixIcon';
 
 interface Props {
   /** Real, already-loaded contact phone — never invented, never a constant. */
@@ -39,7 +40,7 @@ export function WhatsAppContactButton({ phone, message, lang, label }: Props) {
           fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap',
         }}
       >
-        <span aria-hidden="true">📵</span>
+        <PhoenixIcon name="ban" size={14} inline />
         <span>{t(reasonKey, lang)}</span>
       </span>
     );
@@ -63,7 +64,7 @@ export function WhatsAppContactButton({ phone, message, lang, label }: Props) {
         textDecoration: 'none', cursor: 'pointer',
       }}
     >
-      <span aria-hidden="true">🟢</span>
+      <PhoenixIcon name="phone" size={14} inline />
       <span>{visibleLabel}</span>
     </a>
   );

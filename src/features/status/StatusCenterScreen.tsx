@@ -14,17 +14,34 @@ import { getOrganizations } from '@/shared/supabase/services/organizations.servi
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
-import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
+// CANONICAL-STOCK-CUTOVER: AdjustQuantityModal (the item_availability quantity
+// writer, migration 034) is retired. item_availability is a read-only projection
+// (083); a Status Center aggregate row can never be edited directly. Corrections
+// go through AvailabilityStockCorrectionModal, which forces explicit canonical
+// outlet_stock LOT selection and the guarded migration-086 RPC.
+import { AvailabilityStockCorrectionModal, type AvailabilityCorrectionRow } from './AvailabilityStockCorrectionModal';
 import { ReactivateMaterialModal, REACTIVATE_PERMISSION_KEYS, type ReactivateRow } from './ReactivateMaterialModal';
-import { MovementHistoryModal } from './MovementHistoryModal';
+import { MovementHistoryModal, type MovementHistoryRow } from './MovementHistoryModal';
 import { MovementReportSection } from './MovementReportSection';
-import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
+
+// The prior "who may correct quantity" cohort (migration 032 flat permission
+// keys) still decides whether the Correct-stock affordance is OFFERED. The real
+// authorization is the scoped outlet_stock.count permission, resolved per-outlet
+// inside AvailabilityStockCorrectionModal and re-enforced server-side by the
+// guarded RPC — the flat keys are a UX visibility proxy only, never the boundary.
+const STOCK_CORRECTION_VISIBILITY_KEYS = [
+  'availability.quantity.set',
+  'availability.quantity.add',
+  'availability.quantity.subtract',
+  'availability.quantity.correct',
+];
 import { computeInternalAlerts } from './internalAlerts';
 import { InternalAlertsSection } from './InternalAlertsSection';
 import { OutletMaterialGroups } from './OutletMaterialGroups';
@@ -148,9 +165,8 @@ export interface LiveAvailRow {
   // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: removal_reason (migration
   // 053's free-text removal label) is now shown to the user via a friendly
   // bilingual mapping. national_code/price are already selected by
-  // getAvailabilityByOrg — needed here so ReactivateMaterialModal can pass
-  // every identity/data field back to upsertAvailability unchanged, exactly
-  // as they were before removal (only quantity/condition are user-chosen).
+  // getAvailabilityByOrg and displayed here. (Reactivation is now catalogue-
+  // visibility only — migration 084 — and writes no quantity/condition.)
   removal_reason?: string | null;
   national_code?: string | null;
   price?: number | null;
@@ -277,8 +293,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
   // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
   // independently re-enforces the same permission matrix server-side.
-  const canAdjustQuantity = QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key));
-  const [adjustRow, setAdjustRow] = useState<AdjustQuantityRow | null>(null);
+  const canCorrectStock = STOCK_CORRECTION_VISIBILITY_KEYS.some(key => myPermissions.has(key));
+  const [correctRow, setCorrectRow] = useState<AvailabilityCorrectionRow | null>(null);
   const [movementToast, setMovementToast] = useState<string | null>(null);
 
   // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: row-level "Reactivate" action,
@@ -293,7 +309,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // independently re-enforces availability.movements.view + org scope on the
   // actual read; hiding the button here never substitutes for that.
   const canViewMovementHistory = myPermissions.has('availability.movements.view');
-  const [historyRow, setHistoryRow] = useState<AdjustQuantityRow | null>(null);
+  const [historyRow, setHistoryRow] = useState<MovementHistoryRow | null>(null);
 
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling window.open/window.print directly.
@@ -446,12 +462,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   const quickActions: QuickAction[] = useMemo(() => {
     const actions: QuickAction[] = [
-      { screen: 11, icon: '🏛️', labelKey: 'nav_institutions' },
-      { screen: 13, icon: '🔔', labelKey: 'nav_inter_alerts' },
-      { screen: 6,  icon: '📱', labelKey: 'nav_qr' },
-      { screen: 15, icon: '👤', labelKey: 'nav_my_account' },
+      { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+      { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+      { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
+      { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
     ];
-    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: '👥', labelKey: 'nav_users' });
+    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: 'users', labelKey: 'nav_users' });
     return actions;
   }, [canSeeUsers]);
 
@@ -500,47 +516,47 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // only toggles the client-side state above; no new reads, no backend calls.
   const smartFilterChips: SmartFilterChipItem[] = [
     {
-      key: 'all', labelKey: 'sc_all', icon: '🔎',
+      key: 'all', labelKey: 'sc_all', icon: 'search',
       active: filterStatus === '' && quantityFilter === 'all' && !recentOnly,
       onClick: () => { setFilterStatus(''); setQuantityFilter('all'); setRecentOnly(false); },
     },
     {
-      key: 'available', labelKey: 'cond_available', icon: '✅',
+      key: 'available', labelKey: 'cond_available', icon: 'check',
       active: filterStatus === 'available',
       onClick: () => setFilterStatus(prev => (prev === 'available' ? '' : 'available')),
     },
     {
-      key: 'low_stock', labelKey: 'cond_low_stock', icon: '⚠️',
+      key: 'low_stock', labelKey: 'cond_low_stock', icon: 'warning',
       active: filterStatus === 'low_stock',
       onClick: () => setFilterStatus(prev => (prev === 'low_stock' ? '' : 'low_stock')),
     },
     {
-      key: 'missing', labelKey: 'cond_missing', icon: '❌',
+      key: 'missing', labelKey: 'cond_missing', icon: 'close',
       active: filterStatus === 'missing',
       onClick: () => setFilterStatus(prev => (prev === 'missing' ? '' : 'missing')),
     },
     {
-      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: '⏱️',
+      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: 'clock',
       active: filterStatus === 'near_expiry',
       onClick: () => setFilterStatus(prev => (prev === 'near_expiry' ? '' : 'near_expiry')),
     },
     {
-      key: 'expired', labelKey: 'cond_expired', icon: '🚫',
+      key: 'expired', labelKey: 'cond_expired', icon: 'ban',
       active: filterStatus === 'expired',
       onClick: () => setFilterStatus(prev => (prev === 'expired' ? '' : 'expired')),
     },
     {
-      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: '📦',
+      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: 'package',
       active: quantityFilter === 'has_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'has_quantity' ? 'all' : 'has_quantity')),
     },
     {
-      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: '🕳️',
+      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: 'info',
       active: quantityFilter === 'zero_quantity',
       onClick: () => setQuantityFilter(prev => (prev === 'zero_quantity' ? 'all' : 'zero_quantity')),
     },
     {
-      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: '🕒',
+      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: 'refresh',
       active: recentOnly,
       onClick: () => setRecentOnly(prev => !prev),
     },
@@ -692,10 +708,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     }
   }
 
-  function handleMovementSuccess(result: ApplyAvailabilityMovementResult) {
-    setMovementToast(
-      `${t('mvmt_success', lang)}: ${result.quantityBefore} → ${result.quantityAfter}`,
-    );
+  // CANONICAL-STOCK-CUTOVER: a correction now lands on a canonical outlet_stock
+  // lot via the guarded RPC (migration 086); this only reloads the read
+  // projection so the aggregate reflects the corrected lot. (Name kept as the
+  // post-correction success handler / structural anchor.)
+  function handleMovementSuccess() {
+    setMovementToast(t('mvmt_success', lang));
     setTimeout(() => setMovementToast(null), 3000);
     live.reload();
   }
@@ -743,13 +761,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           onClick={() => setMainTab('live')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'live' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'live' ? 'var(--pd)' : 'var(--t)' }}
         >
-          📋 {t('nav_status_center', lang)}
+          <PhoenixIcon name="clipboard" size={14} inline /> {t('nav_status_center', lang)}
         </button>
         <button
           onClick={() => setMainTab('audit')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'audit' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'audit' ? 'var(--pd)' : 'var(--t)' }}
         >
-          📜 {t('tab_audit', lang)}
+          <PhoenixIcon name="file" size={14} inline /> {t('tab_audit', lang)}
         </button>
       </div>
 
@@ -766,18 +784,18 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
 
       {/* Notice: reporting only — no auto-transfer (safety disclaimer) */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        ℹ️ {t('sc_no_exchange', lang)}
+        <PhoenixIcon name="info" size={15} inline /> {t('sc_no_exchange', lang)}
       </div>
 
       {/* Report header card (printable info) */}
       <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '16px', fontWeight: 800 }}>📋 {t('sc_report_title', lang)}</span>
+          <span style={{ fontSize: '16px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="clipboard" size={16} inline /> {t('sc_report_title', lang)}</span>
           <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ok)', background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--rpill)', padding: '1px 8px' }}>LIVE</span>
         </div>
         <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-          {orgName && <span>🏥 {orgName}</span>}
-          <span>🕒 {t('sc_generated_at', lang)}: {generatedAt()}</span>
+          {orgName && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="hospital" size={13} inline /> {orgName}</span>}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="clock" size={13} inline /> {t('sc_generated_at', lang)}: {generatedAt()}</span>
           <span>Σ {t('sc_total_rows', lang)}: {rows.length}</span>
         </div>
         {/* Counts by status */}
@@ -817,9 +835,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...fieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}>📊 {t('sc_export_excel', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}>📄 {t('sc_print_pdf', lang)}</button>
+            <button onClick={exportXlsx} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="reports" size={14} inline /> {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}</button>
           </div>
         </div>
 
@@ -838,13 +856,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
             onClick={() => setViewMode('table')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📋 {t('sc_view_table', lang)}
+            <PhoenixIcon name="clipboard" size={14} inline /> {t('sc_view_table', lang)}
           </button>
           <button
             onClick={() => setViewMode('outlet')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
           >
-            📦 {t('sc_view_outlet', lang)}
+            <PhoenixIcon name="outlet" size={14} inline /> {t('sc_view_outlet', lang)}
           </button>
         </div>
 
@@ -982,7 +1000,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('sc_removed_badge', lang)}</th>
                 <th style={th}>{t('expiry', lang)}</th>
                 <th style={th}>{t('last_upd', lang)}</th>
-                {(canAdjustQuantity || canReactivate || canViewMovementHistory) && <th style={th}></th>}
+                {(canCorrectStock || canReactivate || canViewMovementHistory) && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
@@ -1009,7 +1027,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           display name. */}
                       {isRemoved ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <PhoenixStatusBadge variant="err" label={`🚫 ${t('sc_removed_badge', lang)}`} />
+                          <PhoenixStatusBadge variant="err" icon="ban" label={t('sc_removed_badge', lang)} />
                           <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
                             {removalReasonLabel(r.removal_reason, lang)}
                           </span>
@@ -1031,7 +1049,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                       </div>
                     </td>
                     <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
-                    {(canAdjustQuantity || canReactivate || canViewMovementHistory) && (
+                    {(canCorrectStock || canReactivate || canViewMovementHistory) && (
                       <td style={td}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
                           {/* PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: a
@@ -1052,13 +1070,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                               </button>
                             )
                           ) : (
-                            canAdjustQuantity && (
+                            canCorrectStock && (
                               <button
-                                onClick={() => setAdjustRow(r)}
-                                aria-label={t('sc_adjust_qty', lang)}
+                                onClick={() => setCorrectRow(r as unknown as AvailabilityCorrectionRow)}
+                                aria-label={t('sc_correct_stock_action', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                               >
-                                ✏️ {t('sc_adjust_qty', lang)}
+                                <PhoenixIcon name="editor" size={12} inline /> {t('sc_correct_stock_action', lang)}
                               </button>
                             )
                           )}
@@ -1068,7 +1086,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                               aria-label={t('mvmt_history_action', lang)}
                               style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                             >
-                              🕘 {t('mvmt_history_action', lang)}
+                              <PhoenixIcon name="clock" size={12} inline /> {t('mvmt_history_action', lang)}
                             </button>
                           )}
                         </div>
@@ -1082,19 +1100,18 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         </div>
       )}
 
-      <AdjustQuantityModal
-        open={adjustRow !== null}
-        row={adjustRow}
+      <AvailabilityStockCorrectionModal
+        open={correctRow !== null}
+        row={correctRow}
+        orgId={effectiveOrgId ?? null}
         lang={lang}
-        myPermissions={myPermissions}
-        onClose={() => setAdjustRow(null)}
-        onSuccess={handleMovementSuccess}
+        onClose={() => setCorrectRow(null)}
+        onCorrected={handleMovementSuccess}
       />
       <ReactivateMaterialModal
         open={reactivateRow !== null}
         row={reactivateRow}
         lang={lang}
-        organizationId={effectiveOrgId ?? ''}
         myPermissions={myPermissions}
         onClose={() => setReactivateRow(null)}
         onSuccess={handleReactivateSuccess}
@@ -1141,7 +1158,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       {/* Material Exchange Command Center CTA */}
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>🔄 {t('material_exchange_center', lang)}</div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="refresh" size={15} inline /> {t('material_exchange_center', lang)}</div>
           <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '3px', opacity: 0.85 }}>{t('duplicate_exchange_moved_notice', lang)}</div>
         </div>
         <button

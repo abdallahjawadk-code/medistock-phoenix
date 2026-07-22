@@ -7,6 +7,12 @@ Hosting: **Vercel** (frontend) + **Supabase** (database/auth).
 > explicitly approved. Deployment is performed by pushing to GitHub `master`
 > (Vercel auto-builds) — never with `vercel --prod` directly.
 
+> 🚫 **OPEN HARD BLOCKER — do not deploy.** The manual warehouse
+> accumulating-receipt path can silently double-post the ledger across devices.
+> It is fail-closed in production builds by `warehouse-intake-safety.ts` until a
+> server expected-generation precondition lands. See
+> [`blocker-migration-065-accumulating-receipt-concurrency.md`](blocker-migration-065-accumulating-receipt-concurrency.md).
+
 ---
 
 ## 1. Required Vercel environment variables

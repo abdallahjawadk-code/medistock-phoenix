@@ -27,6 +27,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 /**
@@ -181,7 +182,7 @@ export function UserManagementScreen() {
     return (
       <div style={{ maxWidth: '900px', animation: 'fs .3s ease' }}>
         <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '12px' }}>{t('um_title', lang)}</h2>
-        <PhoenixEmptyState icon="🔒" title={t('um_no_users_perm', lang)} description={t('um_server_only', lang)} />
+        <PhoenixEmptyState icon="lock" title={t('um_no_users_perm', lang)} description={t('um_server_only', lang)} />
       </div>
     );
   }
@@ -205,7 +206,7 @@ export function UserManagementScreen() {
 
       {/* Secure server-path notice */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        🔐 {t('um_server_only', lang)}
+<PhoenixIcon name="lock" size={14} inline /> {t('um_server_only', lang)}
       </div>
 
       {showCreate && canCreate && (
@@ -224,7 +225,7 @@ export function UserManagementScreen() {
           {OFFICIAL_ROLES.map(r => <option key={r} value={r}>{t(OFFICIAL_ROLE_LABEL_KEY[r], lang)}</option>)}
         </select>
         <div style={{ position: 'relative', flex: 1, minWidth: '150px' }}>
-          <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}>🔍</span>
+          <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)', display: 'flex', pointerEvents: 'none' }}><PhoenixIcon name="search" size={15} /></span>
           <input type="search" placeholder={t('um_search', lang)} value={search} onChange={e => setSearch(e.target.value)}
             style={{ ...fieldStyle, paddingInlineStart: '34px' }} aria-label={t('um_search', lang)} />
         </div>
@@ -238,7 +239,7 @@ export function UserManagementScreen() {
             <PhoenixErrorState title={t('load_error', lang)} message={users.error} onRetry={users.reload} />
           )}
           {!users.loading && !users.error && rows.length === 0 && (
-            <PhoenixEmptyState icon="👥" title={t('um_empty', lang)} description={t('um_multi_officer', lang)} />
+            <PhoenixEmptyState icon="users" title={t('um_empty', lang)} description={t('um_multi_officer', lang)} />
           )}
           {rows.map(u => {
             const selected = u.id === selectedId;
@@ -266,22 +267,22 @@ export function UserManagementScreen() {
                       <>
                         <PhoenixButton variant="ghost" size="md"
                           onClick={() => setDisableTarget(u)}>
-                          ✅ {t('um_enable_user', lang)}
+<PhoenixIcon name="check" size={14} inline /> {t('um_enable_user', lang)}
                         </PhoenixButton>
                         {canRecycle && normalizeRole(u.role) !== 'super_admin' && (
                           <PhoenixButton variant="ghost" size="md"
                             onClick={() => setRecycleTarget(u)}>
-                            ♻ {t('um_recycle_account', lang)}
+                            <PhoenixIcon name="recycle" size={14} inline /> {t('um_recycle_account', lang)}
                           </PhoenixButton>
                         )}
                       </>
                     ) : (
                       <>
                         <PhoenixButton variant="ghost" size="md" onClick={() => setDisableTarget(u)}>
-                          🔕 {t('um_disable_user', lang)}
+<PhoenixIcon name="bell-off" size={14} inline /> {t('um_disable_user', lang)}
                         </PhoenixButton>
                         <PhoenixButton variant="ghost" size="md" onClick={() => setRotateTarget(u)}>
-                          🔑 {t('um_rotate_password', lang)}
+                          <PhoenixIcon name="key" size={14} inline /> {t('um_rotate_password', lang)}
                         </PhoenixButton>
                       </>
                     )}
@@ -295,7 +296,7 @@ export function UserManagementScreen() {
         {/* Selected-user panel: summary by default, permission matrix only when explicitly opened */}
         <div>
           {!selectedUser && (
-            <PhoenixEmptyState icon="🧩" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
+            <PhoenixEmptyState icon="scope" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
           )}
           {selectedUser && (
             <UserPermissionsPanel
@@ -430,11 +431,11 @@ function UserPermissionsPanel({ user, lang, actorRole, isSuper, actorId, actorPe
           <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
             {isSelf ? (
               <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: 0 }} dir="auto">
-                ⚠ {t('um_perm_self_edit_session_note', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('um_perm_self_edit_session_note', lang)}
               </p>
             ) : canManage ? (
               <PhoenixButton variant="primary" size="md" onClick={() => setOpen(true)}>
-                🔐 {t('um_manage_user_permissions', lang)}
+<PhoenixIcon name="lock" size={14} inline /> {t('um_manage_user_permissions', lang)}
               </PhoenixButton>
             ) : (
               <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: 0 }} dir="auto">
@@ -617,18 +618,18 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
 
       {migrationMissing && (
         <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
-          ⚠ {t('um_perm_unavailable', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('um_perm_unavailable', lang)}
         </div>
       )}
       {!migrationMissing && loadError && (
         <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--warn)' }}>
-          ⚠ {t(loadError === 'UNKNOWN_ERROR' ? 'load_error' : 'um_perm_network_error', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t(loadError === 'UNKNOWN_ERROR' ? 'load_error' : 'um_perm_network_error', lang)}
         </div>
       )}
 
       {!readOnly && (
         <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--err)' }} dir="auto">
-          ⚠ {t('um_editing_sensitive_permissions', lang)}
+          <PhoenixIcon name="warning" size={13} inline /> {t('um_editing_sensitive_permissions', lang)}
         </div>
       )}
 
@@ -637,7 +638,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
       {!eff.loading && (
         <>
           <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', pointerEvents: 'none' }}>🔍</span>
+            <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)', display: 'flex', pointerEvents: 'none' }}><PhoenixIcon name="search" size={14} /></span>
             <input type="search" placeholder={t('um_search_permissions', lang)} value={permSearch} onChange={e => setPermSearch(e.target.value)}
               style={{ ...fieldStyle, paddingInlineStart: '32px' }} aria-label={t('um_search_permissions', lang)} />
           </div>
@@ -673,7 +674,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
                             <span>{t(p.labelKey, lang)}</span>
                             {isDangerousPermission(p.key) && (
                               <span style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--err)', background: 'var(--err2)', padding: '1px 6px', borderRadius: 'var(--rpill)' }}>
-                                ⚠ {t('um_dangerous', lang)}
+<PhoenixIcon name="warning" size={12} inline /> {t('um_dangerous', lang)}
                               </span>
                             )}
                             {checked !== isDefault && (
@@ -721,8 +722,8 @@ function ContactSection({ orgId, lang }: { orgId: string | null; lang: 'ar' | 'e
       {(contacts.data ?? []).map(c => (
         <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12px', marginBottom: '4px' }}>
           <span dir="auto">{c.display_name}</span>
-          <a href={`tel:${c.phone}`} style={{ color: 'var(--pd)', fontWeight: 700 }} dir="ltr">📞 {c.phone}</a>
-          {c.is_primary && <PhoenixStatusBadge variant="ok" label="★" />}
+          <a href={`tel:${c.phone}`} style={{ color: 'var(--pd)', fontWeight: 700 }} dir="ltr"><PhoenixIcon name="phone" size={13} inline /> {c.phone}</a>
+          {c.is_primary && <PhoenixIcon name="star" size={13} title={lang === 'ar' ? 'جهة الاتصال الأساسية' : 'Primary contact'} style={{ color: 'var(--ok)' }} />}
           {/* UX-WHATSAPP-INSTITUTION-CONTACT-A: reuses this exact already-loaded
               contact phone — no new fetch, no fake number. */}
           <WhatsAppContactButton
@@ -817,14 +818,14 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('um_create_user', lang)}</h3>
 
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-        <span style={{ flexShrink: 0 }}>🔑</span>
+        <span style={{ flexShrink: 0, color: 'var(--info)' }}><PhoenixIcon name="key" size={15} inline /></span>
         <span dir="auto">{t('um_local_creation_msg', lang)}</span>
       </div>
 
       {/* Own-institution scope badge for institution_admin */}
       {isInstitutionAdmin && (
         <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '10px', fontSize: '12px', color: 'var(--t2)', display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <span>🏢</span>
+          <span style={{ display: 'flex', color: 'var(--t2)' }}><PhoenixIcon name="warehouse" size={14} inline /></span>
           <span dir="auto">{t('um_invite_own_org_only', lang)}</span>
         </div>
       )}
@@ -870,7 +871,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         {/* Temporary password */}
         <div style={{ padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>
           <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 12px 0', fontWeight: 600 }} dir="auto">
-            ⚠ {t('um_password_mode_warning', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('um_password_mode_warning', lang)}
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
@@ -932,7 +933,9 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
       <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
-          {isEnable ? `✅ ${t('um_enable_user', lang)}` : `🔕 ${t('um_disable_user', lang)}`}
+          {isEnable
+            ? <><PhoenixIcon name="check" size={15} inline /> {t('um_enable_user', lang)}</>
+            : <><PhoenixIcon name="bell-off" size={15} inline /> {t('um_disable_user', lang)}</>}
         </h3>
         <p style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '18px' }} dir="auto">
           <strong>{userName(user)}</strong> — {t('um_disable_confirm_q', lang)}
@@ -1006,7 +1009,7 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
       <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
-          🔑 {t('um_rotate_password', lang)}
+          <PhoenixIcon name="key" size={14} inline /> {t('um_rotate_password', lang)}
         </h3>
 
         {!resultPassword ? (
@@ -1053,7 +1056,7 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
         ) : (
           <>
             <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)', fontWeight: 600 }} dir="auto">
-              ⚠ {t('um_rotate_password_show_once', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('um_rotate_password_show_once', lang)}
             </div>
             <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{t('um_rotate_password_success', lang)}</p>
             <div style={{ padding: '10px 12px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', fontSize: '14px', fontWeight: 700, marginBottom: '16px', wordBreak: 'break-all' }} dir="ltr">
@@ -1142,14 +1145,14 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
       <PhoenixCard padding="24px" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
-          ♻ {t('um_recycle_account', lang)}
+          <PhoenixIcon name="recycle" size={14} inline /> {t('um_recycle_account', lang)}
         </h3>
         <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">
           <strong>{userName(user)}</strong>
         </p>
 
         <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)' }} dir="auto">
-          ⚠ {t('um_recycle_warning_local', lang)}
+<PhoenixIcon name="warning" size={13} inline /> {t('um_recycle_warning_local', lang)}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

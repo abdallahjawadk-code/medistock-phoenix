@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { formatStableDate } from '@/shared/lib/date';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -88,9 +89,9 @@ export function AvailabilityItemDetailsModal({ open, onClose, row, lang, pointNa
         <button
           onClick={onClose}
           aria-label={t('close', lang)}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--t2)', padding: '4px 8px' }}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--t2)', padding: '4px 8px', display: 'inline-flex', alignItems: 'center' }}
         >
-          ✕
+          <PhoenixIcon name="close" size={16} />
         </button>
       </div>
 

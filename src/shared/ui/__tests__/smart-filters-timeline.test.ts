@@ -231,8 +231,8 @@ describe('18. Existing export/print handlers remain connected', () => {
 });
 
 describe('19. Existing button handlers remain connected', () => {
-  it('StatusCenterScreen adjust/history row actions and MovementHistoryModal refresh/close remain wired', () => {
-    expect(statusCenter).toContain('onClick={() => setAdjustRow(r)}');
+  it('StatusCenterScreen correct/history row actions and MovementHistoryModal refresh/close remain wired', () => {
+    expect(statusCenter).toContain('setCorrectRow(r');
     expect(statusCenter).toContain('onClick={() => setHistoryRow(r)}');
     expect(movementHistoryModal).toContain('onClick={() => load(row.id)}');
     expect(movementHistoryModal).toContain('onClick={onClose}');
@@ -247,7 +247,10 @@ describe('19. Existing button handlers remain connected', () => {
 
 describe('20. Permissions visibility is preserved', () => {
   it('StatusCenterScreen row action visibility still gates on the same permission checks', () => {
-    expect(statusCenter).toContain('QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key))');
+    // CANONICAL-STOCK-CUTOVER: the correct-stock affordance is offered to the
+    // same flat permission cohort; the real per-outlet outlet_stock.count
+    // authorization is resolved inside the launcher and enforced server-side.
+    expect(statusCenter).toContain('STOCK_CORRECTION_VISIBILITY_KEYS.some(key => myPermissions.has(key))');
     expect(statusCenter).toContain("myPermissions.has('availability.movements.view')");
   });
 
@@ -271,13 +274,13 @@ describe('21. RTL/LTR handling remains present', () => {
 });
 
 describe('22. Mobile wrapping classes/styles exist', () => {
-  it('SmartFilterChips wraps with flexWrap and meets the 38px minimum touch height', () => {
+  it('SmartFilterChips wraps with flexWrap and meets the 44px minimum touch height', () => {
     expect(smartFilterChips).toContain("flexWrap: 'wrap'");
-    expect(smartFilterChips).toContain("minHeight: '38px'");
+    expect(smartFilterChips).toContain("minHeight: '44px'");
   });
 
-  it('MovementHistoryModal view-toggle buttons meet the 38px minimum touch height', () => {
-    expect(movementHistoryModal).toContain("minHeight: '38px'");
+  it('MovementHistoryModal view-toggle buttons meet the 44px minimum touch height', () => {
+    expect(movementHistoryModal).toContain("minHeight: '44px'");
   });
 });
 

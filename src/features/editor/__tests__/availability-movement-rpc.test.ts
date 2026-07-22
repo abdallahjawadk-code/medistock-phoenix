@@ -28,6 +28,10 @@ import {
   classifyAvailabilityMovementError,
   classifyAvailabilitySaveError,
 } from '@/shared/supabase/services/availability.service';
+import {
+  expectRetiredSurfaceAbsent,
+  expectScreenThreeIsInventoryCenter,
+} from '../../../../tests/helpers/retired-surfaces';
 
 const SRC     = join(__dirname, '../../../');
 const PHOENIX = join(__dirname, '../../../../');
@@ -390,11 +394,12 @@ describe('upsertAvailability and classifyAvailabilitySaveError are unchanged', (
 // ============================================================================
 
 describe('EditorScreen, StatusCenter, and QR are untouched by this phase', () => {
-  it('EditorScreen.tsx does not call applyAvailabilityMovement or reference movement types', () => {
-    const editorScreen = readSrc('features/editor/EditorScreen.tsx');
-    expect(editorScreen).not.toContain('applyAvailabilityMovement');
-    expect(editorScreen).not.toContain('phoenix_apply_availability_movement');
-    expect(editorScreen).not.toContain('AvailabilityMovementType');
+  // E6: this used to assert the retired EditorScreen never called the movement
+  // RPC. The screen is now deleted, so the isolation guard becomes an ABSENCE
+  // guard — strictly stronger than "the file exists and does not contain X".
+  it('EditorScreen is retired, so it cannot call the movement RPC at all', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
+    expectScreenThreeIsInventoryCenter();
   });
 
   it('StatusCenterScreen.tsx calls applyAvailabilityMovement only via the service wrapper (added by AVAILABILITY-QUANTITY-MOVEMENT-UI-A), never the raw RPC name', () => {

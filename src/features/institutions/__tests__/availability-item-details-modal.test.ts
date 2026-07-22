@@ -27,7 +27,7 @@ const strings = readSrc('shared/i18n/strings.ts');
 
 function portAvailabilitySectionBody(): string {
   const start = institutionScreen.indexOf('function PortAvailabilitySection');
-  const end = institutionScreen.indexOf('function QuickAvailForm');
+  const end = institutionScreen.indexOf('function PortCleanupWizard');
   return institutionScreen.slice(start, end);
 }
 
@@ -93,12 +93,11 @@ describe('B) Remove / QR / Edit / Disable / Clear-port actions do not accidental
     expect(body).not.toContain('<PortCleanupWizard');
   });
 
-  it('existing remove-from-outlet RPC call/behavior is unchanged (still the single unconditional applyAvailabilityMovement call)', () => {
+  it('remove-from-outlet is a single unconditional catalogue-visibility call (migration 084), not a quantity write', () => {
     const start = institutionScreen.indexOf('async function onConfirmRemove');
     const body = institutionScreen.slice(start, start + 900);
-    expect(body).toContain("movementType: 'set_exact'");
-    expect(body).toContain('amount: 0');
-    expect(body).toContain("reason: 'removed_from_outlet'");
+    expect(body).toMatch(/setAvailabilityVisibility\(\s*removeTarget\.id\s*,\s*true\s*,\s*'removed_from_outlet'\s*\)/);
+    expect(body).not.toContain("movementType: 'set_exact'");
     expect(body).not.toMatch(/if\s*\(\s*removeTarget\.quantity\s*!==\s*0\s*\)/);
   });
 
@@ -132,7 +131,9 @@ describe('C) AvailabilityItemDetailsModal is read-only', () => {
 
   it('has an explicit close (X) button in addition to the footer Close button', () => {
     expect(detailsModal).toContain('onClick={onClose}');
-    expect(detailsModal).toContain('✕');
+    // Phase E: the close affordance is the canonical Phoenix "close" SVG icon,
+    // not a raw ✕ glyph, but it remains an explicit icon-only close control.
+    expect(detailsModal).toContain('name="close"');
   });
 });
 

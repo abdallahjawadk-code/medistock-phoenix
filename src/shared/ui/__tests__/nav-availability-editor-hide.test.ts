@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { expectRetiredSurfaceAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -40,7 +41,6 @@ const mobileCommandScreen = readSrc('features/mesh/MobileCommandScreen.tsx');
 // QR-BUNDLE-CODE-SPLIT-A: the screen-number switch now lives in its own
 // lazy-loaded chunk (AuthenticatedApp.tsx), separate from App.tsx.
 const authenticatedApp    = readSrc('app/AuthenticatedApp.tsx');
-const editorScreen        = readSrc('features/editor/EditorScreen.tsx');
 
 // ============================================================================
 // 1. Desktop sidebar: nav_editor restored, nav_intake hidden
@@ -206,9 +206,22 @@ describe('nav_intake is hidden from all visible navigation', () => {
 // ============================================================================
 
 describe('App.tsx retains both routes (nothing removed)', () => {
-  it('imports and renders EditorScreen on case 3', () => {
-    expect(authenticatedApp).toContain("import { EditorScreen } from '@/features/editor/EditorScreen'");
-    expect(authenticatedApp).toMatch(/case 3:\s*return <EditorScreen \/>/);
+  // INVENTORY-CENTER-INTAKE-A: screen 3 is no longer the Availability Editor.
+  // The editor wrote item_availability directly with a hand-picked condition,
+  // competing with the warehouse ledger for stock truth; the Inventory Center
+  // replaces it and writes only through the migration-065 ledger RPCs. What
+  // this section still guards is that screen 3 remains a REACHABLE route and
+  // that screen 8 stays the frozen-intake page — see
+  // features/inventory/__tests__/inventory-center-invariants.test.ts for the
+  // replacement's own invariants.
+  it('imports and renders InventoryCenterScreen on case 3', () => {
+    expect(authenticatedApp).toContain("import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen'");
+    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen \/>/);
+  });
+
+  it('the retired Availability Editor is no longer routed anywhere', () => {
+    expect(authenticatedApp).not.toContain('<EditorScreen />');
+    expect(authenticatedApp).not.toContain("from '@/features/editor/EditorScreen'");
   });
 
   it('imports and renders IntakeFrozenScreen on case 8', () => {
@@ -222,19 +235,18 @@ describe('App.tsx retains both routes (nothing removed)', () => {
 // ============================================================================
 
 describe('EditorScreen.tsx save/permission logic is untouched', () => {
-  it('still gates save on availability.create/availability.update permissions', () => {
-    expect(editorScreen).toContain("myPermissions.has('availability.view')");
-    expect(editorScreen).toContain("myPermissions.has('availability.create')");
-    expect(editorScreen).toContain("myPermissions.has('availability.update')");
+  // E6: was an isolation assertion against EditorScreen.tsx. The screen is
+  // retired, so this is now an absence guard — strictly stronger.
+  it('EditorScreen stays retired (still gates save on availability.create/availability.update )', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('still calls upsertAvailability and classifyAvailabilitySaveError', () => {
-    expect(editorScreen).toContain('upsertAvailability(');
-    expect(editorScreen).toContain('classifyAvailabilitySaveError(');
+  it('the retired screen calls nothing at all — it is deleted', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('still keeps the super_admin org dropdown vs locked-display behavior', () => {
-    expect(editorScreen).toContain("const isSuper = role === 'super_admin'");
+  it('the retired screen keeps no behaviour — it is deleted', () => {
+    expectRetiredSurfaceAbsent('EditorScreen');
   });
 });
 

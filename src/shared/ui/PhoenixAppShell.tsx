@@ -7,6 +7,7 @@ import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
+import { MasarCopyrightSeal } from './MasarCopyrightSeal';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
@@ -20,6 +21,12 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   15: 'nav_my_account',
   16: 'nav_status_editor',
   17: 'nav_network',
+  // Screen 18 (Outlet Operations). Without this entry the topbar falls back to
+  // nav_status_center, so the corridor rendered "Status Center" above an Outlet
+  // Operations page — caught by the outlet-corridor visual evidence capture.
+  18: 'nav_outlet_ops',
+  // Screen 19 (Local Procurement, migration 087).
+  19: 'nav_local_procurement',
 };
 
 interface Props {
@@ -49,6 +56,10 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
       minHeight: '100dvh',
       position: 'relative',
     }}>
+      {/* A11Y-SHELL-LANDMARKS-A: keyboard-only skip link — first focusable
+          element, visually hidden until focused (WCAG 2.4.1). */}
+      <a href="#phoenix-main" className="nexus-skip-link">{t('skip_to_content', lang)}</a>
+
       {!isMobile && (
         <PhoenixSidebar
           currentScreen={currentScreen}
@@ -73,15 +84,29 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onMenuClick={() => setSidebarOpen(s => !s)}
         />
 
-        <main className="premium-main" style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: isMobile ? '16px 14px' : '24px 28px',
-          paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
-        }}>
+        <main
+          id="phoenix-main"
+          tabIndex={-1}
+          aria-label={t('shell_main_region', lang)}
+          className="premium-main"
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: isMobile ? '16px 14px' : '24px 28px',
+            paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
+          }}
+        >
           {children}
         </main>
+
+        {/* PART 5 choke point: exactly one MASAR copyright seal per operational
+            route, inherited by every screen. Compact on desktop (slim footer
+            strip), minimal on mobile (pinned just above the bottom-nav safe
+            area). Inert (pointer-events:none) so it never blocks controls. */}
+        <footer className="nexus-shell__brand" aria-label={lang === 'ar' ? 'حقوق النشر' : 'Copyright'}>
+          <MasarCopyrightSeal variant={isMobile ? 'minimal' : 'compact'} />
+        </footer>
       </div>
 
       {isMobile && (

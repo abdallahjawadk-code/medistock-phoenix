@@ -18,8 +18,11 @@ import {
   getScopeAssignments, assignProfileScope, revokeProfileScope,
   type NetworkWarehouse, type WarehouseKind, type ScopeKind, type RpcResult,
 } from './network.service';
-import { NetworkTopologyStage } from './NetworkTopologyStage';
+import { NetworkTopologyStage, type NodeAlert } from './NetworkTopologyStage';
 import { DirectSupplyOperations } from './DirectSupplyOperations';
+import { getInventoryAlerts } from '@/features/inventory/inventory-intelligence.service';
+
+const ALERT_SEVERITY_RANK = { high: 0, medium: 1, low: 2 } as const;
 
 /**
  * PHASE-B-NETWORK-UI-A — super_admin network structure management, plus the
@@ -73,7 +76,7 @@ export function NetworkManagementScreen() {
 
   if (tabs.length === 0) {
     return (
-      <PhoenixEmptyState icon="🔒" title={t('net_denied', lang)} />
+      <PhoenixEmptyState icon="lock" title={t('net_denied', lang)} />
     );
   }
 
@@ -143,12 +146,36 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const warehouses = useAsync(() => getAllWarehouses(), [reloadKey]);
   const { orgs, orgId, setOrgId, options } = useOrgSelector(lang, false);
   const routes = useAsync(() => getSupplyRoutes(), [reloadKey]);
+  const inventoryAlerts = useAsync(
+    () => orgId ? getInventoryAlerts(orgId) : Promise.resolve([]),
+    [orgId, reloadKey],
+  );
   const outlets = useAsync(
     () => orgId ? getPointsByOrg(orgId) : Promise.resolve([]),
     [orgId, reloadKey],
   );
   const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
+
+  // Aggregate real RLS-scoped inventory alerts by node (warehouse/outlet) id.
+  // Highest severity wins for the node's badge; count is the node's open total.
+  const nodeAlerts = useMemo(() => {
+    const map = new Map<string, NodeAlert>();
+    for (const alert of inventoryAlerts.data ?? []) {
+      const prev = map.get(alert.scopeId);
+      if (!prev) {
+        map.set(alert.scopeId, { severity: alert.severity, count: 1, topSignal: alert.signalType });
+      } else {
+        const escalates = ALERT_SEVERITY_RANK[alert.severity] < ALERT_SEVERITY_RANK[prev.severity];
+        map.set(alert.scopeId, {
+          severity: escalates ? alert.severity : prev.severity,
+          count: prev.count + 1,
+          topSignal: escalates ? alert.signalType : prev.topSignal,
+        });
+      }
+    }
+    return map;
+  }, [inventoryAlerts.data]);
 
   const reload = () => setReloadKey(k => k + 1);
   const inOrg = (warehouses.data ?? []).filter(w => w.organizationId === orgId);
@@ -190,6 +217,7 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
           routes={topologyRoutes}
           outlets={outlets.data ?? []}
           organizationName={options.find(option => option.value === orgId)?.label}
+          alerts={nodeAlerts}
         />
       )}
 
@@ -204,8 +232,8 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
         />
       )}
 
-      {!orgId && <PhoenixEmptyState icon="🏢" title={t('net_select_org_first', lang)} />}
-      {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="🏬" title={t('net_wh_empty', lang)} />}
+      {!orgId && <PhoenixEmptyState icon="institutions" title={t('net_select_org_first', lang)} />}
+      {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="warehouse" title={t('net_wh_empty', lang)} />}
 
       {central.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_central', lang)} rows={central} onChanged={(r) => { setStatus(r); reload(); }} />}
       {institution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={institution} onChanged={(r) => { setStatus(r); reload(); }} />}
@@ -362,7 +390,7 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
       </div>
 
       {status && <StatusLine msg={status.msg} error={status.error} />}
-      {!orgId && <PhoenixEmptyState icon="🏢" title={t('net_select_org_first', lang)} />}
+      {!orgId && <PhoenixEmptyState icon="institutions" title={t('net_select_org_first', lang)} />}
 
       {orgId && (profiles.loading || warehouses.loading || outlets.loading || assigns.loading) && <PhoenixLoadingState />}
 
@@ -380,7 +408,7 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
         />
       )}
 
-      {orgId && !assigns.loading && (assigns.data ?? []).length === 0 && <PhoenixEmptyState icon="🧭" title={t('net_sc_empty', lang)} />}
+      {orgId && !assigns.loading && (assigns.data ?? []).length === 0 && <PhoenixEmptyState icon="scope" title={t('net_sc_empty', lang)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
         {orgId && (assigns.data ?? []).map(a => {

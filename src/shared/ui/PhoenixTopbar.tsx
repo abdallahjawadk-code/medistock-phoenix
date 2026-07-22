@@ -13,16 +13,17 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
 
   return (
     <header className="premium-topbar" style={{
-      height: 'var(--tbh)',
-      background: 'var(--s)',
-      borderBottom: '1px solid var(--brd)',
+      minHeight: 'var(--tbh)',
+      background: 'var(--surface)',
+      borderBottom: '1px solid var(--line)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 18px',
-      gap: '12px',
+      padding: '10px 18px',
+      gap: '10px',
+      flexWrap: 'wrap',
       position: 'sticky',
       top: 0,
-      zIndex: 60,
+      zIndex: 'var(--z-topbar)',
       flexShrink: 0,
     }}>
       {isMobile && (
@@ -37,14 +38,19 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
         </button>
       )}
 
+      {/* The design source leads with the screen title and sets the scope line
+          beneath it, and drops the scope line on phones where the row has to
+          stay one line tall. */}
       <div className="nexus-topbar-title">
-        <span className="nexus-topbar-eyebrow">
-          {lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'BABIL HEALTH · PHARMACY DEPARTMENT'}
-        </span>
         <h1 className="nexus-topbar-heading">{title}</h1>
+        {!isMobile && (
+          <span className="nexus-topbar-scope">
+            {lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health Directorate · Pharmacy Department'}
+          </span>
+        )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginInlineStart: 'auto' }}>
         <button
           onClick={toggleLang}
           className="nexus-control nexus-control--language"

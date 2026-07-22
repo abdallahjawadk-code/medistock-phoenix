@@ -5,7 +5,7 @@ import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperien
 import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
-import { EditorScreen } from '@/features/editor/EditorScreen';
+import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
 import { MeshScreen } from '@/features/mesh/MeshScreen';
 import { QrScreen } from '@/features/qr/QrScreen';
@@ -20,6 +20,8 @@ import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
 import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
+import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
+import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -44,11 +46,7 @@ export function AuthenticatedApp() {
 
   // ── Wait for the session check before deciding login vs app ──
   if (!authReady) {
-    return (
-      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <PhoenixLoadingState />
-      </div>
-    );
+    return <PhoenixLoadingState fullScreen />;
   }
 
   if (!session) {
@@ -81,7 +79,11 @@ export function AuthenticatedApp() {
 
   const screenContent = () => {
     switch (screen) {
-      case 3:  return <EditorScreen />;
+      // INVENTORY-CENTER-INTAKE-A: screen 3 was the Availability Editor, which
+      // wrote item_availability directly with a hand-picked condition. It is
+      // replaced by the Inventory Center, whose only write path is the
+      // warehouse ledger (migration 065) — see InventoryCenterScreen.
+      case 3:  return <InventoryCenterScreen />;
       case 4:  return <RegistryScreen />;
       case 5:  return <MeshScreen onNavigate={setScreen} />;
       case 6:  return <QrScreen />;
@@ -96,6 +98,13 @@ export function AuthenticatedApp() {
       case 15: return <MyAccountScreen />;
       case 16: return <StatusEditorScreen />;
       case 17: return <NetworkManagementScreen />;
+      // OUTLET-CORRIDOR: the outlet operator's surface — receive, stock, returns,
+      // history — scoped to assigned outlets (062), server re-checked per action.
+      case 18: return <OutletOperationsScreen />;
+      // INSTITUTION-LOCAL-PROCUREMENT-087: suppliers, purchase orders,
+      // approvals, receiving and supplier returns — scoped to assigned
+      // institution warehouses (062), every write a guarded 087 RPC.
+      case 19: return <LocalProcurementScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;

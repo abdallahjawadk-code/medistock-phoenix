@@ -93,7 +93,7 @@ describe('StatusCenterScreen: movement/reporting counts and internal alerts are 
 
 describe('PortAvailabilitySection: cleared materials are removed from the outlet contents list entirely', () => {
   const fnStart = institutions.indexOf('function PortAvailabilitySection');
-  const fnBody = institutions.slice(fnStart, institutions.indexOf('function QuickAvailForm'));
+  const fnBody = institutions.slice(fnStart, institutions.indexOf('function PortCleanupWizard'));
 
   it('filters rows on the explicit removed_at marker before rendering, not merely hiding a button on a still-visible row (FRONTEND-LIVE-REMOVED-AT-FILTERS-A: superseded the old blunt quantity=0+missing heuristic, which also hid genuine still-open shortages)', () => {
     expect(fnBody).toMatch(/\.filter\(r => r\.removed_at == null\)/);
@@ -110,7 +110,7 @@ describe('PortAvailabilitySection: cleared materials are removed from the outlet
 
 describe('PortAvailabilitySection / PortCard: disabled outlet shows an honest empty state, not stale/hidden-but-implied contents', () => {
   const fnStart = institutions.indexOf('function PortAvailabilitySection');
-  const fnBody = institutions.slice(fnStart, institutions.indexOf('function QuickAvailForm'));
+  const fnBody = institutions.slice(fnStart, institutions.indexOf('function PortCleanupWizard'));
 
   it("returns the disabled-outlet message when pointStatus !== 'active', before rendering the normal add/list UI", () => {
     expect(fnBody).toMatch(/if \(pointStatus !== 'active'\) \{/);
@@ -207,7 +207,7 @@ describe('Permission gating for clear/remove/disable is unchanged by this phase'
 
   it('the outlet contents "Remove from outlet" button is still gated by canRemove, not canMutate', () => {
     const fnStart = institutions.indexOf('function PortAvailabilitySection');
-    const fnBody = institutions.slice(fnStart, institutions.indexOf('function QuickAvailForm'));
+    const fnBody = institutions.slice(fnStart, institutions.indexOf('function PortCleanupWizard'));
     expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const SRC = join(__dirname, '../../../');
@@ -32,7 +32,9 @@ describe('premium visual system', () => {
   it('adds dense command-center and organization card hierarchy without new data sources', () => {
     const dashboard = read('features/dashboard/DashboardScreen.tsx');
     const institutions = read('features/institutions/InstitutionScreen.tsx');
-    expect(dashboard).toContain('premium-command-hero');
+    // Phase D replaced the flat premium-command-hero text header with the
+    // design-source Dashboard hero band (reported-availability ring + live readouts).
+    expect(dashboard).toContain('nexus-dash-hero');
     expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
     expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');
     expect(institutions).toContain('premium-page-header');
@@ -43,8 +45,31 @@ describe('premium visual system', () => {
     expect(institutions).not.toContain("supabase.from('organizations')");
   });
 
-  it('uses CSS-only effects without visual library dependencies', () => {
+  it('avoids heavyweight motion libraries and isolates the WebGL stack to its lazy module', () => {
     const pkg = readFileSync(join(SRC, '../package.json'), 'utf8');
-    expect(pkg).not.toMatch(/three|react-three-fiber|framer-motion/);
+    // Motion is CSS or our own lazy WebGL engine — never a bundled animation lib.
+    expect(pkg).not.toMatch(/framer-motion|gsap|lottie/);
+
+    // three / @react-three/fiber ARE required now (the real cinematic Phoenix,
+    // see tests/webgl-deps-contract.test.ts), but they must only be imported
+    // from src/shared/webgl/** so Rollup keeps them in a lazy, code-split chunk
+    // out of every operational screen. Any three/fiber import elsewhere would
+    // pull the ~800KB GPU stack into a screen that must stay light.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(SRC, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(rel);
+        else if (/\.(ts|tsx)$/.test(entry.name)) {
+          if (/__tests__/.test(rel) || rel.startsWith('shared/webgl/')) continue;
+          const text = readFileSync(join(SRC, rel), 'utf8');
+          if (/from ['"]three['"]|from ['"]@react-three\/fiber/.test(text)) offenders.push(rel);
+        }
+      }
+    };
+    walk('features');
+    walk('shared');
+    walk('app');
+    expect(offenders, `three/fiber imported outside src/shared/webgl:\n${offenders.join('\n')}`).toEqual([]);
   });
 });

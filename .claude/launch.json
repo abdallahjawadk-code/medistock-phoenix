@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev", "--", "--host"],
       "port": 5175,
       "autoPort": true
+    },
+    {
+      "name": "phoenix-visual-qa",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5181", "--strictPort"],
+      "port": 5181
     }
   ]
 }

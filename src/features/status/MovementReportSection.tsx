@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
 import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
@@ -271,18 +272,18 @@ export function MovementReportSection() {
     <PhoenixCard padding="16px" style={{ marginTop: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
         <div>
-          <div style={{ fontSize: '15px', fontWeight: 800 }}>📊 {t('mvmt_report_title', lang)}</div>
+          <div style={{ fontSize: '15px', fontWeight: 800 }}><PhoenixIcon name="reports" size={15} inline /> {t('mvmt_report_title', lang)}</div>
           <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('mvmt_report_sub', lang)}</div>
           <div style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="auto">
-            🔒 {t('mvmt_report_history_preserved_note', lang)}
+<PhoenixIcon name="lock" size={13} inline /> {t('mvmt_report_history_preserved_note', lang)}
           </div>
         </div>
         <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {canExportCsv && (
-            <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('mvmt_report_export_csv', lang)} style={btnStyle}>📄 {t('mvmt_report_export_csv', lang)}</button>
+            <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('mvmt_report_export_csv', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('mvmt_report_export_csv', lang)}</button>
           )}
           {canPrint && (
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}>🖨 {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
           )}
         </div>
       </div>

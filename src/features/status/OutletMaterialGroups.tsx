@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import type { CanonicalStatus } from '@/shared/lib/status/canonical';
@@ -70,7 +71,7 @@ export function OutletMaterialGroups({ rows }: Props) {
   if (groups.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '40px 12px', color: 'var(--t2)' }}>
-        <div style={{ fontSize: '26px', marginBottom: '6px', opacity: 0.6 }}>📦</div>
+        <div style={{ marginBottom: '6px', opacity: 0.6, color: 'var(--t3)' }}><PhoenixIcon name="package" size={26} /></div>
         <div style={{ fontSize: '13px' }}>{t('sc_outlet_empty', lang)}</div>
       </div>
     );
@@ -86,7 +87,7 @@ export function OutletMaterialGroups({ rows }: Props) {
         return (
           <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px" hover>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--brd)' }}>
-              <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">📦 {lang === 'ar' ? g.nameAr : g.name}</span>
+              <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto"><PhoenixIcon name="package" size={13} inline /> {lang === 'ar' ? g.nameAr : g.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                 {attentionCount > 0 && (
                   <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--rpill)', padding: '2px 8px' }}>

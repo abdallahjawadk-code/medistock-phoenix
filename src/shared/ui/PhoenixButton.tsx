@@ -10,18 +10,41 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+/* Button vocabulary transcribed from design-source/MediStock-Phoenix.dc.html:
+   the committing action is an ember gradient with white text at weight 700;
+   secondary is a --chip fill with a --line hairline and --cyanDim text at 600;
+   ghost drops the fill entirely and keeps the cyan text. Danger and warn follow
+   the secondary shape with their own semantic hue so status never reads by
+   fill alone. Every colour here is a token — nothing is baked. */
 const variantStyles: Record<Variant, CSSProperties> = {
-  primary: { background: 'var(--p)', color: '#fff', border: '1px solid transparent', boxShadow: '0 8px 20px rgba(14,159,138,.22)' },
-  secondary: { background: 'var(--p2)', color: 'var(--pd)', border: '1px solid color-mix(in srgb, var(--p) 38%, var(--brd))' },
-  ghost: { background: 'transparent', color: 'var(--t2)', border: '1px solid var(--brd)' },
-  danger: { background: 'var(--err)', color: '#fff', border: '1px solid transparent' },
-  warn: { background: 'var(--warn2)', color: 'var(--warn)', border: '1px solid color-mix(in srgb, var(--warn) 48%, var(--brd))' },
+  primary: {
+    background: 'linear-gradient(92deg, var(--ember), var(--ember2))',
+    color: '#fff',
+    border: '1px solid transparent',
+    boxShadow: '0 10px 24px color-mix(in srgb, var(--ember) 26%, transparent)',
+    fontWeight: 700,
+  },
+  secondary: { background: 'var(--chip)', color: 'var(--cyanDim)', border: '1px solid var(--line)' },
+  ghost: { background: 'transparent', color: 'var(--cyanDim)', border: '1px solid var(--line)' },
+  danger: {
+    background: 'var(--chipD)',
+    color: 'var(--danger)',
+    border: '1px solid color-mix(in srgb, var(--danger) 45%, var(--line))',
+  },
+  warn: {
+    background: 'var(--chipW)',
+    color: 'var(--warn)',
+    border: '1px solid color-mix(in srgb, var(--warn) 45%, var(--line))',
+  },
 };
 
+/* The design source draws every button at 44-46px tall, so the size scale sets
+   padding and type only and lets .phoenix-button's min-height (--touch-target)
+   own the hit area. */
 const sizeStyles: Record<Size, CSSProperties> = {
-  sm: { padding: '7px 12px', fontSize: '12px', borderRadius: 'var(--r2)' },
-  md: { padding: '10px 16px', fontSize: '13px', borderRadius: 'var(--r3)' },
-  lg: { padding: '14px 20px', fontSize: '15px', borderRadius: 'var(--r3)', fontWeight: 700 },
+  sm: { padding: '0 14px', fontSize: '12px', borderRadius: 'var(--r2)' },
+  md: { padding: '0 18px', fontSize: '13px', borderRadius: 'var(--r2)' },
+  lg: { padding: '0 22px', fontSize: '15px', borderRadius: 'var(--r2)', fontWeight: 700 },
 };
 
 export function PhoenixButton({
@@ -44,9 +67,9 @@ export function PhoenixButton({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       style={{
+        fontWeight: 600,
         ...variantStyles[variant],
         ...sizeStyles[size],
-        fontWeight: 650,
         cursor: disabled || loading ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         transition: 'all 160ms var(--nx-ease, ease)',

@@ -20,26 +20,27 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
   const { lang } = useApp();
 
   const bns = (n: number) => ({
-    color: currentScreen === n ? 'var(--p)' : 'var(--t2)',
+    color: currentScreen === n ? 'var(--cyanDim)' : 'var(--muted)',
     fontWeight: currentScreen === n ? '700' : '500',
   });
 
   return (
-    <nav className="premium-topbar" style={{
+    <nav className="premium-bottom-nav" style={{
       position: 'fixed',
       bottom: 0,
       insetInlineStart: 0,
       insetInlineEnd: 0,
-      height: 'var(--bnh)',
-      background: 'var(--s)',
-      borderTop: '1px solid var(--brd)',
+      minHeight: 'var(--bnh)',
+      background: 'var(--surface)',
+      borderTop: '1px solid var(--line)',
       display: 'flex',
       alignItems: 'stretch',
       justifyContent: 'space-evenly',
-      paddingInline: 'max(env(safe-area-inset-left, 0px), 4px) max(env(safe-area-inset-right, 0px), 4px)',
-      paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-      zIndex: 70,
-      boxShadow: '0 -12px 34px rgba(7,28,52,.10)',
+      // The design source pads the bar itself and folds the safe-area inset
+      // into the bottom padding, so the row never sits under the home bar.
+      padding: '6px max(env(safe-area-inset-right, 0px), 4px) calc(6px + env(safe-area-inset-bottom, 0px)) max(env(safe-area-inset-left, 0px), 4px)',
+      zIndex: 'var(--z-sticky)',
+      boxShadow: 'none',
     }} aria-label="Bottom Navigation">
       {BOTTOM_NAV.map(item => {
         const s = bns(item.screen);
@@ -49,6 +50,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
             onClick={() => onNavigate(item.screen)}
             className="premium-bottom-nav-item"
             data-active={currentScreen === item.screen}
+            aria-current={currentScreen === item.screen ? 'page' : undefined}
             style={{
               flex: 1,
               display: 'flex',
@@ -58,16 +60,16 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
               gap: '3px',
               border: 'none',
               background: 'transparent',
-              padding: '8px 6px',
-              transition: 'all 120ms',
-              minWidth: '44px', minHeight: '44px',
+              padding: '6px',
+              transition: 'color var(--dur-fast) var(--ease-standard)',
+              minWidth: 'var(--touch-target)', minHeight: '52px',
               cursor: 'pointer',
               ...s,
             }}
             aria-label={t(item.labelKey, lang)}
           >
-            <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={20} /></span>
-            <span style={{ fontSize: '9.5px', fontWeight: s.fontWeight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '72px' }}>
+            <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={21} /></span>
+            <span style={{ fontSize: '10.5px', fontWeight: s.fontWeight, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '76px' }}>
               {t(item.labelKey, lang)}
             </span>
           </button>

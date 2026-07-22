@@ -1,7 +1,41 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { AppProvider, useApp } from './AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+
+/**
+ * VISUAL-QA-HARNESS-A: DEV/TEST-only visual gallery. The `if
+ * (!import.meta.env.DEV) return null` FIRST line matters — in a production
+ * build Vite replaces `import.meta.env.DEV` with `false`, making the guard
+ * `if (true) return null` and the dynamic `import()` below unreachable, so
+ * Rollup drops the harness chunk and every marker/fixture entirely. There is
+ * NO static import of the qa module from this entry, so nothing pulls it into
+ * the production graph. `tests/qa-harness-production-safety.test.ts` enforces
+ * this against a build with the QA flag forced on.
+ */
+function maybeQaHarness(): ReactNode {
+  // The single outer `if (import.meta.env.DEV)` is the canonical Vite dead-code
+  // guard: production replaces it with `if (false)`, so Rollup strips the whole
+  // block — including the dynamic import() — and never emits a harness chunk,
+  // regardless of VITE_ENABLE_VISUAL_QA.
+  if (import.meta.env.DEV) {
+    let requested = false;
+    try {
+      requested = new URLSearchParams(window.location.search).has('qa');
+    } catch {
+      requested = false;
+    }
+    if (import.meta.env.VITE_ENABLE_VISUAL_QA === 'true' && requested) {
+      const QaHarness = lazy(() => import('@/features/qa/QaHarness').then(m => ({ default: m.QaHarness })));
+      return (
+        <Suspense fallback={<PhoenixLoadingState fullScreen />}>
+          <QaHarness />
+        </Suspense>
+      );
+    }
+  }
+  return null;
+}
 
 /**
  * QR-BUNDLE-CODE-SPLIT-A: the anonymous public QR route and the
@@ -25,11 +59,7 @@ function publicQrId(): string | null {
 
 function LoadingFallback() {
   const { lang } = useApp();
-  return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <PhoenixLoadingState label={t('loading', lang)} />
-    </div>
-  );
+  return <PhoenixLoadingState fullScreen label={t('loading', lang)} />;
 }
 
 function AppInner({ qid }: { qid: string | null }) {
@@ -52,6 +82,12 @@ function AppInner({ qid }: { qid: string | null }) {
 }
 
 export function App() {
+  // VISUAL-QA-HARNESS-A: DEV/TEST-only visual gallery, self-contained (its own
+  // fixture provider, no AppProvider, no auth bootstrap, no live data). Returns
+  // null — and is fully tree-shaken — in production. See maybeQaHarness above.
+  const qa = maybeQaHarness();
+  if (qa) return qa;
+
   // Read once per render, before AppProvider decides whether to run its
   // auth-bootstrap effect (DB-PRESSURE-QUICK-WINS-A) — same detection logic
   // as before, just hoisted one level so AppProvider can see it too.

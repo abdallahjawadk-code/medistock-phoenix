@@ -20,18 +20,25 @@ describe('fonts are self-hosted (no external CDN)', () => {
     }
   });
 
-  it('imports the self-hosted @fontsource-variable weight-axis CSS in main', () => {
-    expect(mainTsx).toContain("@fontsource-variable/dm-sans/wght.css");
-    expect(mainTsx).toContain("@fontsource-variable/noto-sans-arabic/wght.css");
+  // The design source links both families from the Google Fonts CDN. We ship
+  // the same families self-hosted instead, because the production CSP allows
+  // font-src 'self' data: only. Inter has a variable build; IBM Plex Sans
+  // Arabic does not, so its four design weights are imported statically.
+  it('imports the self-hosted @fontsource CSS in main', () => {
+    expect(mainTsx).toContain('@fontsource-variable/inter/wght.css');
+    for (const w of [400, 500, 600, 700]) {
+      expect(mainTsx).toContain(`@fontsource/ibm-plex-sans-arabic/arabic-${w}.css`);
+      expect(mainTsx).toContain(`@fontsource/ibm-plex-sans-arabic/latin-${w}.css`);
+    }
   });
 
-  it('declares the variable families as dependencies', () => {
-    expect(pkg.dependencies?.['@fontsource-variable/dm-sans']).toBeTruthy();
-    expect(pkg.dependencies?.['@fontsource-variable/noto-sans-arabic']).toBeTruthy();
+  it('declares both families as dependencies', () => {
+    expect(pkg.dependencies?.['@fontsource-variable/inter']).toBeTruthy();
+    expect(pkg.dependencies?.['@fontsource/ibm-plex-sans-arabic']).toBeTruthy();
   });
 
-  it('points the central font tokens at the self-hosted variable families', () => {
-    expect(tokens).toContain("'DM Sans Variable'");
-    expect(tokens).toContain("'Noto Sans Arabic Variable'");
+  it('points the central font tokens at the self-hosted families', () => {
+    expect(tokens).toContain("'Inter Variable'");
+    expect(tokens).toContain("'IBM Plex Sans Arabic'");
   });
 });

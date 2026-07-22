@@ -93,6 +93,12 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+// VISUAL-QA-HARNESS-A: exported ONLY so the DEV/TEST-only visual-QA harness can
+// supply a deterministic fixture context (src/features/qa). Production code must
+// keep using <AppProvider> — this export grants no new capability at runtime.
+export { AppContext };
+export type { AppState };
+
 interface AppProviderProps {
   children: ReactNode;
   /**
@@ -109,7 +115,10 @@ interface AppProviderProps {
 
 export function AppProvider({ children, skipAuthBootstrap = false }: AppProviderProps) {
   const [lang, setLangState]   = useState<Lang>('ar');
-  const [theme, setThemeState] = useState<Theme>('light');
+  // Dark-first: the Phoenix design source ships dark as its default theme, and
+  // index.html sets data-theme="dark" on <html> so the first paint agrees.
+  // Light stays fully supported through the topbar toggle.
+  const [theme, setThemeState] = useState<Theme>('dark');
 
   const [authReady, setAuthReady] = useState(false);
   const authReadyRef = useRef(false);

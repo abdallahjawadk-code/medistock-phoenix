@@ -1,6 +1,7 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from './PhoenixCard';
+import { PhoenixIcon } from './PhoenixIcon';
 
 /**
  * UX-SMART-FILTERS-TIMELINE-A — a single, already-known-real timeline event.
@@ -55,10 +56,10 @@ export function TimelineEventCard({ entry, isLast }: EventCardProps) {
           </div>
         )}
         {entry.location && (
-          <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">🏥 {entry.location}</div>
+          <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto"><PhoenixIcon name="hospital" size={11} inline /> {entry.location}</div>
         )}
         {entry.actor && (
-          <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">👤 {entry.actor}</div>
+          <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto"><PhoenixIcon name="account" size={11} inline /> {entry.actor}</div>
         )}
         {entry.reason && (
           <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '2px' }} dir="auto">{entry.reason}</div>

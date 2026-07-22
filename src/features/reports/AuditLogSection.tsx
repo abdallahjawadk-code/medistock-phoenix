@@ -36,14 +36,14 @@ export function AuditLogSection() {
   const audit = useAsync(() => activeOrgId ? getAuditLog(activeOrgId) : Promise.resolve([]), [activeOrgId]);
 
   if (!activeOrgId) {
-    return <PhoenixEmptyState icon="🏥" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />;
+    return <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />;
   }
 
   return (
     <>
       {audit.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!audit.loading && audit.error && <PhoenixErrorState title={t('load_error', lang)} message={audit.error} onRetry={audit.reload} />}
-      {!audit.loading && !audit.error && (audit.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="📜" title={t('empty_audit', lang)} />}
+      {!audit.loading && !audit.error && (audit.data?.length ?? 0) === 0 && <PhoenixEmptyState icon="file" title={t('empty_audit', lang)} />}
       {!audit.loading && !audit.error && (audit.data?.length ?? 0) > 0 && (
         <PhoenixCard padding="16px" style={{ animation: 'fs .25s ease' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>

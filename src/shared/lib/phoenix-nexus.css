@@ -1,114 +1,78 @@
 /* ─── PHOENIX NEXUS — Cinematic production design layer ─────────────────────
-   W1 establishes the visual system without changing application behavior.
-   The same tokens and surfaces will host the later WebGL scene progressively.
+   The component/class layer for the Phoenix visual system.
+
+   tokens.css is the SINGLE source of truth for the palette, the scales and the
+   shadows. This file used to re-declare all of them (and, being imported after
+   tokens.css, silently won) — it no longer does. Every --nx-* name below is now
+   a semantic alias resolving to a canonical token, so a palette change in
+   tokens.css reaches this layer automatically and the two can never drift.
    ─────────────────────────────────────────────────────────────────────────── */
 
+:root,
+[data-theme="dark"] { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+
 :root {
-  color-scheme: light;
-  --nx-obsidian: #060b16;
-  --nx-navy: #0b1830;
-  --nx-ink: #102a4a;
-  --nx-pearl: #f5f8fc;
-  --nx-ice: #eaf3fa;
-  --nx-teal: #138f88;
-  --nx-cyan: #62e9ff;
-  --nx-emerald: #0ea58a;
-  --nx-ember: #ff7a1a;
-  --nx-gold: #ddba63;
-  --nx-danger: #d9424d;
-  --nx-glow-cyan: rgba(98, 233, 255, .22);
-  --nx-glow-emerald: rgba(14, 165, 138, .22);
-  --nx-glow-ember: rgba(255, 122, 26, .18);
-  --nx-line: rgba(41, 103, 142, .18);
-  --nx-line-strong: rgba(38, 128, 151, .28);
-  --nx-surface: rgba(255, 255, 255, .86);
-  --nx-surface-solid: #ffffff;
-  --nx-surface-raised: rgba(250, 253, 255, .95);
-  --nx-shadow-soft: 0 16px 44px rgba(11, 35, 63, .10);
-  --nx-shadow-deep: 0 28px 80px rgba(7, 28, 52, .16);
-  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .88);
-  --nx-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Cinematic accent aliases → canonical tokens (tokens.css). */
+  --nx-obsidian: var(--bg);
+  --nx-navy: var(--surface);
+  --nx-ink: var(--text);
+  --nx-pearl: var(--text);
+  --nx-ice: var(--surface2);
+  --nx-teal: var(--teal);
+  --nx-cyan: var(--cyan);
+  --nx-emerald: var(--ok);
+  --nx-ember: var(--ember);
+  --nx-gold: var(--gold);
+  --nx-danger: var(--danger);
 
-  --bg: #eef5fa;
-  --s: #ffffff;
-  --s2: #f3f8fb;
-  --sh: #e6f0f6;
-  --glass: rgba(255, 255, 255, .78);
-  --glass-strong: rgba(255, 255, 255, .93);
-  --ambient-a: rgba(14, 165, 138, .15);
-  --ambient-b: rgba(45, 137, 197, .14);
-  --ambient-c: rgba(244, 118, 33, .08);
-  --highlight: rgba(255, 255, 255, .9);
-  --t: #102a4a;
-  --t2: #58708a;
-  --t3: #91a4b8;
-  --p: #0e9f8a;
-  --p2: #d8f7f1;
-  --pd: #087a6d;
-  --sec: #267ba5;
-  --sec2: #e1f2fa;
-  --brd: rgba(52, 103, 139, .18);
-  --skel: #e4edf3;
-  --sw: 264px;
-  --tbh: 68px;
-  --bnh: 74px;
-  --r1: 8px;
-  --r2: 12px;
-  --r3: 16px;
-  --r4: 22px;
-  --r5: 28px;
-  --sh-xs: 0 2px 4px rgba(11, 35, 63, .04);
-  --sh-sm: 0 5px 16px rgba(11, 35, 63, .07);
-  --sh-md: var(--nx-shadow-soft);
-  --sh-lg: 0 22px 58px rgba(11, 35, 63, .13);
-  --sh-xl: var(--nx-shadow-deep);
-  --sh-depth: 0 18px 48px rgba(11, 35, 63, .13), var(--nx-bevel);
-  --sh-float: 0 34px 88px rgba(7, 28, 52, .22), var(--nx-bevel);
-}
+  --nx-glow-cyan: color-mix(in srgb, var(--cyan) 20%, transparent);
+  --nx-glow-emerald: color-mix(in srgb, var(--teal) 20%, transparent);
+  --nx-glow-ember: color-mix(in srgb, var(--ember) 16%, transparent);
 
-[data-theme="dark"] {
-  color-scheme: dark;
-  --nx-line: rgba(105, 215, 232, .12);
-  --nx-line-strong: rgba(105, 215, 232, .24);
-  --nx-surface: rgba(8, 22, 41, .82);
-  --nx-surface-solid: #0a1729;
-  --nx-surface-raised: rgba(13, 31, 53, .94);
-  --nx-shadow-soft: 0 18px 52px rgba(0, 0, 0, .38);
-  --nx-shadow-deep: 0 32px 96px rgba(0, 0, 0, .58);
-  --nx-bevel: inset 0 1px 0 rgba(255, 255, 255, .06);
-
-  --bg: #050b15;
-  --s: #09182a;
-  --s2: #0d2137;
-  --sh: #102a44;
-  --glass: rgba(8, 22, 40, .76);
-  --glass-strong: rgba(8, 22, 40, .94);
-  --ambient-a: rgba(14, 199, 167, .16);
-  --ambient-b: rgba(50, 142, 201, .14);
-  --ambient-c: rgba(244, 118, 33, .09);
-  --highlight: rgba(255, 255, 255, .055);
-  --t: #e9f5fb;
-  --t2: #91adc2;
-  --t3: #55758f;
-  --p: #24c5aa;
-  --p2: rgba(25, 191, 163, .15);
-  --pd: #6de9d5;
-  --sec: #62c8ee;
-  --sec2: rgba(77, 175, 220, .15);
-  --brd: rgba(110, 180, 211, .16);
-  --skel: #10243a;
-  --sh-xs: 0 2px 6px rgba(0, 0, 0, .28);
-  --sh-sm: 0 6px 18px rgba(0, 0, 0, .34);
-  --sh-md: var(--nx-shadow-soft);
-  --sh-lg: 0 24px 64px rgba(0, 0, 0, .48);
-  --sh-xl: var(--nx-shadow-deep);
-  --sh-depth: 0 20px 58px rgba(0, 0, 0, .45), var(--nx-bevel);
-  --sh-float: 0 38px 100px rgba(0, 0, 0, .64), var(--nx-bevel);
+  --nx-line: var(--line);
+  --nx-line-strong: color-mix(in srgb, var(--cyan) 26%, transparent);
+  --nx-surface: var(--glass);
+  --nx-surface-solid: var(--surface);
+  --nx-surface-raised: var(--glass-strong);
+  --nx-shadow-soft: var(--sh-md);
+  --nx-shadow-deep: var(--sh-xl);
+  --nx-bevel: inset 0 1px 0 var(--highlight);
+  --nx-ease: var(--ease-standard);
 }
 
 html body {
   min-width: 320px;
   background-color: var(--bg);
+}
+
+/* A11Y-SHELL-LANDMARKS-A: skip link is off-screen until it receives keyboard
+   focus, then anchors to the top of the reading order over the topbar. */
+.nexus-skip-link {
+  position: fixed;
+  top: 8px;
+  inset-inline-start: 8px;
+  z-index: calc(var(--z-toast) + 1);
+  /* 44px minimum: the skip link is keyboard-first but is also the first thing a
+     switch/touch user lands on. It measured 40px tall. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  color: #fff;
+  border-radius: var(--r2);
+  background: linear-gradient(120deg, var(--p), var(--pd));
+  box-shadow: var(--sh-lg);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  transform: translateY(-160%);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.nexus-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid var(--focus-ring-contrast);
+  outline-offset: 2px;
 }
 
 .premium-shell.nexus-shell {
@@ -165,35 +129,22 @@ html body {
   animation: nexus-page-enter .42s var(--nx-ease) both;
 }
 
+/* The design source's rail is a flat --surface panel behind a --line hairline.
+   The previous tinted gradients (and a baked rgba(36,197,170) teal wash in
+   dark) are gone; the component's own inline background now stands. */
 .nexus-shell .premium-sidebar {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--nx-surface-solid) 94%, var(--p2)), var(--nx-surface-solid) 44%, color-mix(in srgb, var(--nx-surface-solid) 96%, var(--sec2)));
-  border-inline-end-color: var(--nx-line-strong) !important;
-  box-shadow: 14px 0 52px rgba(9, 32, 57, .08);
-  backdrop-filter: blur(22px) saturate(138%);
+  background: var(--surface);
+  border-inline-end-color: var(--line) !important;
+  box-shadow: none;
 }
 
-[data-theme="dark"] .nexus-shell .premium-sidebar {
-  background:
-    radial-gradient(28rem 22rem at 18% 4%, rgba(36, 197, 170, .09), transparent 68%),
-    linear-gradient(180deg, rgba(7, 20, 36, .97), rgba(8, 23, 41, .97));
-  box-shadow: 18px 0 60px rgba(0, 0, 0, .28);
-}
-
+/* Brand lockup — the design source pairs a 42px rounded mark behind a gold
+   (--line2) hairline with the department line set in --gold, and closes the
+   block with a gold rule rather than the previous cyan/blue gradient seam. */
 .nexus-shell .premium-sidebar-brand {
   position: relative;
-  padding: 22px 18px 18px !important;
-  border-color: var(--nx-line) !important;
-}
-
-.nexus-shell .premium-sidebar-brand::after {
-  content: '';
-  position: absolute;
-  inset-inline: 18px;
-  bottom: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--p), var(--sec), transparent);
-  opacity: .5;
+  padding: 18px 16px !important;
+  border-bottom: 1px solid var(--line2) !important;
 }
 
 .nexus-brand-lockup {
@@ -207,125 +158,85 @@ html body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  border: 1px solid color-mix(in srgb, var(--nx-gold) 38%, var(--brd));
-  border-radius: 15px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid var(--line2);
+  border-radius: 11px;
   background:
-    radial-gradient(circle at 50% 28%, rgba(255, 225, 151, .20), transparent 52%),
-    linear-gradient(145deg, rgba(16, 42, 74, .98), rgba(5, 15, 29, .98));
+    radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--gold) 22%, transparent), transparent 52%),
+    linear-gradient(145deg, var(--surface2), var(--bg));
   box-shadow:
-    0 12px 28px rgba(7, 28, 52, .22),
-    0 0 24px rgba(244, 118, 33, .10),
-    inset 0 1px 0 rgba(255, 255, 255, .14);
-}
-
-.nexus-brand-mark::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border: 1px solid color-mix(in srgb, var(--nx-ember) 22%, transparent);
-  border-radius: 20px;
-  opacity: .72;
-  pointer-events: none;
+    var(--sh-md),
+    0 0 24px color-mix(in srgb, var(--ember) 10%, transparent),
+    inset 0 1px 0 var(--highlight);
 }
 
 .nexus-brand-title {
-  color: var(--t);
-  font-size: 13.5px;
-  font-weight: 760;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 700;
   letter-spacing: -.015em;
 }
 
 .nexus-brand-subtitle {
   margin-top: 2px;
-  color: var(--t2);
-  font-size: 9.5px;
-  line-height: 1.45;
+  color: var(--gold);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 
+/* Nav items are driven by PhoenixSidebar's inline state map (fill, text colour,
+   weight and the 3px ember rail on border-inline-start), exactly as the design
+   source does it. This layer no longer re-declares any of that with !important
+   — it used to paint its own cyan/blue gradient and a pseudo-element rail,
+   which fought the component and pinned the retired palette. */
 .nexus-shell .premium-nav-item {
   position: relative;
-  min-height: 46px;
-  padding: 11px 12px !important;
-  border: 1px solid transparent !important;
   overflow: hidden;
   isolation: isolate;
 }
 
-.nexus-shell .premium-nav-item::before {
-  content: '';
-  position: absolute;
-  inset-block: 8px;
-  inset-inline-start: 0;
-  width: 3px;
-  border-radius: 99px;
-  background: linear-gradient(180deg, var(--nx-cyan), var(--p), var(--nx-gold));
-  opacity: 0;
-  transform: scaleY(.25);
-  transition: opacity .18s ease, transform .26s var(--nx-ease);
-}
-
-.nexus-shell .premium-nav-item[data-active="true"] {
-  color: var(--pd) !important;
-  border-color: color-mix(in srgb, var(--p) 23%, var(--brd)) !important;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--p) 15%, transparent), color-mix(in srgb, var(--sec) 7%, transparent)) !important;
-  box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px rgba(14, 159, 138, .08);
-}
-
-.nexus-shell .premium-nav-item[data-active="true"]::before {
-  opacity: 1;
-  transform: scaleY(1);
-}
-
+/* Sizes to its glyph rather than a fixed box, so the sidebar (19px) and the
+   bottom nav (21px) can each set their own icon size. */
 .nexus-nav-icon {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  border-radius: 10px;
+  flex-shrink: 0;
   color: currentColor;
-  background: color-mix(in srgb, currentColor 7%, transparent);
-  transition: transform .24s var(--nx-ease), background .18s ease, color .18s ease;
-}
-
-.nexus-shell .premium-nav-item[data-active="true"] .nexus-nav-icon {
-  color: var(--p);
-  background: color-mix(in srgb, var(--p) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 13%, transparent);
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .nexus-shell .premium-sidebar-user {
-  margin: 10px;
-  padding: 11px 12px !important;
-  border: 1px solid var(--nx-line);
-  border-radius: 17px;
-  background: color-mix(in srgb, var(--nx-surface) 92%, var(--p2));
-  box-shadow: var(--nx-bevel), 0 10px 28px rgba(9, 32, 57, .07);
+  margin: 0;
+  padding: 14px 16px !important;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
+/* The design source's identity orb is a teal-to-cyan gradient disc. */
 .nexus-role-orb {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  color: var(--nx-gold);
-  border: 1px solid color-mix(in srgb, var(--nx-gold) 30%, var(--brd));
-  border-radius: 12px;
-  background: linear-gradient(145deg, rgba(16, 42, 74, .97), rgba(7, 18, 34, .97));
-  box-shadow: 0 8px 20px rgba(7, 28, 52, .18);
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  color: #fff;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--teal), var(--cyanDim));
+  box-shadow: var(--sh-sm);
 }
 
 .nexus-shell .premium-topbar {
   min-height: var(--tbh);
   border-color: var(--nx-line) !important;
-  background: color-mix(in srgb, var(--nx-surface) 94%, transparent) !important;
-  box-shadow: 0 8px 30px rgba(9, 32, 57, .055);
-  backdrop-filter: blur(24px) saturate(145%);
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--line) !important;
+  box-shadow: none;
 }
 
 .nexus-topbar-title {
@@ -335,21 +246,21 @@ html body {
   flex: 1;
 }
 
-.nexus-topbar-eyebrow {
-  color: var(--p);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .13em;
-  line-height: 1;
-  text-transform: uppercase;
+.nexus-topbar-heading {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.nexus-topbar-heading {
-  margin-top: 4px;
-  color: var(--t);
-  font-size: 15px;
-  font-weight: 720;
-  letter-spacing: -.015em;
+.nexus-topbar-scope {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -362,11 +273,11 @@ html body {
      and desktop; the compact glyph stays centered inside it. */
   min-inline-size: var(--touch-target);
   min-block-size: var(--touch-target);
-  border: 1px solid var(--nx-line-strong);
-  border-radius: 12px;
-  color: var(--t);
-  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent);
-  box-shadow: var(--nx-bevel);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  color: var(--text);
+  background: var(--field);
+  box-shadow: none;
 }
 
 .nexus-control:focus-visible {
@@ -377,8 +288,8 @@ html body {
 
 .nexus-control--language {
   padding-inline: 14px;
-  font-size: 11px;
-  font-weight: 750;
+  font-size: 11.5px;
+  font-weight: 700;
 }
 
 .nexus-shell .premium-drawer-backdrop {
@@ -393,9 +304,11 @@ html body {
 
 .nexus-shell .premium-bottom-nav-item {
   position: relative;
-  color: var(--t2);
+  color: var(--muted);
 }
 
+/* Matches the sidebar's ember rail so "where am I" reads the same on both
+   navigation surfaces, and by shape as well as by colour. */
 .nexus-shell .premium-bottom-nav-item::before {
   content: '';
   position: absolute;
@@ -403,7 +316,7 @@ html body {
   width: 28px;
   height: 2px;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--nx-cyan), var(--p));
+  background: var(--ember);
   opacity: 0;
   transform: scaleX(.35);
   transition: .2s var(--nx-ease);
@@ -415,7 +328,7 @@ html body {
 }
 
 .nexus-shell .premium-bottom-nav-item[data-active="true"] .nexus-nav-icon {
-  color: var(--p);
+  color: var(--cyanDim);
   transform: translateY(-2px);
 }
 
@@ -461,7 +374,7 @@ html body {
   .nexus-control:hover {
     border-color: color-mix(in srgb, var(--p) 44%, var(--brd));
     color: var(--p);
-    box-shadow: 0 8px 22px rgba(14, 159, 138, .12), var(--nx-bevel);
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--cyan) 12%, transparent), var(--nx-bevel);
     transform: translateY(-1px);
   }
 }
@@ -469,15 +382,6 @@ html body {
 @keyframes nexus-page-enter {
   from { opacity: 0; transform: translateY(8px); filter: saturate(.88); }
   to { opacity: 1; transform: translateY(0); filter: saturate(1); }
-}
-
-@keyframes nexus-orbit {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes nexus-breathe {
-  0%, 100% { opacity: .64; transform: scale(.96); }
-  50% { opacity: 1; transform: scale(1.04); }
 }
 
 @media (max-width: 767px) {
@@ -497,12 +401,14 @@ html body {
     padding-inline: 12px !important;
   }
 
-  .nexus-topbar-eyebrow {
+  /* PhoenixTopbar already drops the scope line on phones; this is the
+     media-query backstop for viewports that cross the breakpoint without a
+     re-render. */
+  .nexus-topbar-scope {
     display: none;
   }
 
   .nexus-topbar-heading {
-    margin-top: 0;
     font-size: 14px;
   }
 
@@ -542,46 +448,27 @@ html body {
     linear-gradient(135deg, color-mix(in srgb, var(--bg) 94%, var(--nx-navy)), var(--bg));
 }
 
-.nexus-login__atmosphere {
+.nexus-login__plate {
   position: absolute;
   inset: 0;
-  z-index: -2;
-  overflow: hidden;
-  pointer-events: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 28% center;
+  opacity: .92;
+  mask-image: linear-gradient(100deg, #000 0%, rgba(0, 0, 0, .82) 52%, transparent 88%);
 }
 
-.nexus-login__aurora {
-  position: absolute;
-  width: min(54vw, 820px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  filter: blur(22px);
-  opacity: .65;
+[data-theme="light"] .nexus-login__plate,
+:root:not([data-theme="dark"]) .nexus-login__plate {
+  opacity: .68;
 }
 
-.nexus-login__aurora--emerald {
-  top: -35%;
-  inset-inline-start: -16%;
-  background: radial-gradient(circle, rgba(14, 190, 156, .22), transparent 68%);
-  animation: nexus-breathe 8s ease-in-out infinite;
-}
-
-.nexus-login__aurora--cyan {
-  bottom: -42%;
-  inset-inline-end: -18%;
-  background: radial-gradient(circle, rgba(71, 179, 225, .20), transparent 70%);
-  animation: nexus-breathe 10s ease-in-out infinite reverse;
-}
-
-.nexus-login__mesh {
-  position: absolute;
-  inset: 0;
-  opacity: .26;
-  background-image:
-    linear-gradient(var(--nx-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--nx-line) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(100deg, #000 0%, rgba(0,0,0,.65) 54%, transparent 84%);
+@media (max-width: 900px) {
+  .nexus-login__plate {
+    object-position: center 30%;
+    mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 46%, transparent 76%);
+  }
 }
 
 .nexus-login__controls {
@@ -593,161 +480,20 @@ html body {
   gap: 8px;
 }
 
-.nexus-login__visual {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(54px, 7vw, 112px);
-  border-inline-end: 1px solid var(--nx-line);
-  overflow: hidden;
-}
-
-.nexus-login__visual::before {
-  content: '';
-  position: absolute;
-  inset: 5%;
-  border: 1px solid var(--nx-line);
-  border-radius: 38px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--nx-surface) 52%, transparent), transparent 72%);
-  box-shadow: var(--nx-bevel);
-  pointer-events: none;
-}
-
-.nexus-login__visual-copy,
-.nexus-login__network,
-.nexus-login__trust-row {
-  position: relative;
-  z-index: 2;
-}
-
-.nexus-login__visual-copy {
-  max-width: 620px;
-}
-
 .nexus-login__kicker {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  color: var(--p);
-  font-size: 10px;
+  color: var(--nx-gold, var(--gold));
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: .14em;
+  letter-spacing: .24em;
 }
-
-.nexus-login__kicker > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--p);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--p) 10%, transparent), 0 0 24px var(--p);
-}
-
-.nexus-login__visual-copy h1 {
-  max-width: 600px;
-  margin-top: 20px;
-  color: var(--t);
-  font-size: clamp(38px, 5vw, 74px);
-  font-weight: 760;
-  letter-spacing: -.055em;
-  line-height: .98;
-}
-
-.nexus-login__visual-copy p {
-  max-width: 590px;
-  margin-top: 22px;
-  color: var(--t2);
-  font-size: clamp(13px, 1.2vw, 17px);
-  line-height: 1.85;
-}
-
-.nexus-login__network {
-  width: min(32vw, 430px);
-  aspect-ratio: 1;
-  margin: clamp(22px, 4vh, 46px) auto;
-}
-
-.nexus-login__network::before,
-.nexus-login__network::after {
-  content: '';
-  position: absolute;
-  inset: 11%;
-  border: 1px solid color-mix(in srgb, var(--nx-cyan) 24%, transparent);
-  border-radius: 50%;
-}
-
-.nexus-login__network::after {
-  inset: 27%;
-  border-color: color-mix(in srgb, var(--nx-gold) 25%, transparent);
-  box-shadow: 0 0 44px rgba(244, 118, 33, .10);
-}
-
-.nexus-login__network-orbit {
-  position: absolute;
-  inset: 2%;
-  border: 1px dashed color-mix(in srgb, var(--p) 32%, transparent);
-  border-radius: 50%;
-  animation: nexus-orbit 28s linear infinite;
-}
-
-.nexus-login__network-orbit--two {
-  inset: 19%;
-  border-color: color-mix(in srgb, var(--sec) 28%, transparent);
-  animation-direction: reverse;
-  animation-duration: 20s;
-}
-
-.nexus-login__phoenix-core {
-  position: absolute;
-  inset: 31%;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--nx-gold) 35%, var(--brd));
-  border-radius: 28%;
-  background: linear-gradient(145deg, rgba(16,42,74,.97), rgba(4,12,24,.98));
-  box-shadow:
-    0 24px 64px rgba(4, 20, 38, .34),
-    0 0 52px rgba(244, 118, 33, .12),
-    inset 0 1px 0 rgba(255,255,255,.14);
-}
-
-.nexus-login__node {
-  position: absolute;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  color: var(--nx-cyan);
-  border: 1px solid color-mix(in srgb, var(--nx-cyan) 34%, var(--brd));
-  border-radius: 15px;
-  background: var(--nx-surface-raised);
-  box-shadow: 0 12px 30px rgba(7,28,52,.16), 0 0 22px rgba(88,228,239,.12), var(--nx-bevel);
-}
-
-.nexus-login__node--central { top: 4%; left: 50%; transform: translateX(-50%); color: var(--nx-gold); }
-.nexus-login__node--institution { bottom: 10%; left: 3%; color: var(--p); }
-.nexus-login__node--outlet { bottom: 10%; right: 3%; color: var(--nx-cyan); }
-
-.nexus-login__beam {
-  position: absolute;
-  z-index: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--nx-cyan), transparent);
-  transform-origin: 0 50%;
-  opacity: .58;
-  box-shadow: 0 0 14px var(--nx-cyan);
-}
-
-.nexus-login__beam--one { width: 34%; top: 29%; left: 50%; transform: rotate(130deg); }
-.nexus-login__beam--two { width: 34%; top: 29%; left: 50%; transform: rotate(50deg); }
-.nexus-login__beam--three { width: 50%; bottom: 14%; left: 25%; }
 
 .nexus-login__trust-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 9px;
 }
 
@@ -933,8 +679,8 @@ html body {
   color: #fff;
   border: 1px solid rgba(255,255,255,.16);
   background:
-    linear-gradient(115deg, color-mix(in srgb, var(--p) 92%, #fff), var(--pd) 58%, color-mix(in srgb, var(--pd) 86%, var(--nx-navy)));
-  box-shadow: 0 14px 30px rgba(14,159,138,.27), inset 0 1px 0 rgba(255,255,255,.25);
+    linear-gradient(92deg, var(--ember), var(--ember2));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--ember) 30%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
 .nexus-login__submit:disabled { opacity: .62; cursor: wait; }
@@ -992,6 +738,12 @@ html body {
   font-size: 9.5px;
 }
 
+/* Light theme: the auth card flips to light glass, so the rights block must
+   swap to ink values that keep >=4.5:1 there — the pale --t3 and the bright
+   Phoenix gold both fail on white. Deep slate + bronze hold the same hierarchy. */
+[data-theme="light"] .nexus-login__rights { color: #51667c; }
+[data-theme="light"] .nexus-login__rights > div { color: #7c5f16; }
+
 /* ─── Post-login Phoenix rebirth sequence ────────────────────────────────── */
 .nexus-welcome {
   position: fixed;
@@ -1009,59 +761,17 @@ html body {
     linear-gradient(145deg, #020710, #071426 54%, #030914);
 }
 
-.nexus-welcome__atmosphere {
+/* Real 3D rebirth layer — above the 2D atmosphere, below the live copy/skip. */
+.nexus-welcome__webgl {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
+  pointer-events: none;
   overflow: hidden;
 }
 
-.nexus-welcome__aurora {
-  position: absolute;
-  width: 60vw;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  filter: blur(48px);
-  opacity: .52;
-}
-
-.nexus-welcome__aurora--one {
-  top: -42%;
-  left: -16%;
-  background: radial-gradient(circle, rgba(19, 209, 173, .28), transparent 68%);
-  animation: nexus-breathe 8s ease-in-out infinite;
-}
-
-.nexus-welcome__aurora--two {
-  right: -22%;
-  bottom: -52%;
-  background: radial-gradient(circle, rgba(55, 161, 221, .24), transparent 70%);
-  animation: nexus-breathe 10s ease-in-out infinite reverse;
-}
-
-.nexus-welcome__grid {
-  position: absolute;
-  inset: 0;
-  opacity: .18;
-  background-image:
-    linear-gradient(rgba(98, 233, 255, .12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(98, 233, 255, .12) 1px, transparent 1px);
-  background-size: 58px 58px;
-  mask-image: radial-gradient(ellipse 70% 66% at 50% 48%, #000, transparent 78%);
-  transform: perspective(700px) rotateX(60deg) scale(1.3) translateY(26%);
-}
-
-.nexus-welcome__horizon {
-  position: absolute;
-  inset-inline: 8%;
-  top: 53%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(98,233,255,.46), #f2b35a, rgba(98,233,255,.46), transparent);
-  box-shadow: 0 0 38px rgba(98,233,255,.36), 0 0 80px rgba(244,118,33,.22);
-  opacity: .55;
-}
-
-.nexus-welcome__particle {
+/* When the 3D phoenix is on screen, dim the CSS backdrop so it reads as depth. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__particle {
   position: absolute;
   bottom: -12px;
   left: calc(var(--particle-index) * 4.15%);
@@ -1089,187 +799,77 @@ html body {
   font-weight: 680;
 }
 
-.nexus-welcome__content {
-  width: min(92vw, 760px);
-  padding: 42px 28px 26px;
+.nexus-welcome[data-phase="rise"] .nexus-welcome[data-phase="rise"] .nexus-welcome__kicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: #ddba63;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .34em;
+}
+
+.nexus-welcome__title {
+  margin-top: 14px;
+  color: #f4e6c0;
+  font-size: clamp(21px, 3.4vw, 40px);
+  font-weight: 720;
+  letter-spacing: -.01em;
+  line-height: 1.35;
+  text-wrap: balance;
+  text-shadow: 0 3px 26px rgba(0, 0, 0, .8);
+}
+
+/* Approved issuance & supervision credits card (verbatim Arabic). */
+.nexus-welcome__credits {
+  box-sizing: border-box;
+  width: min(100%, 640px);
+  margin: clamp(22px, 4vh, 40px) auto 0;
+  padding: clamp(18px, 3vh, 28px) clamp(22px, 4vw, 40px);
+  border: 1px solid rgba(221, 186, 99, .4);
+  border-radius: 18px;
+  background: rgba(4, 8, 14, .62);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
   text-align: center;
 }
 
-.nexus-welcome__sigil {
-  position: relative;
-  width: clamp(190px, 28vw, 290px);
-  aspect-ratio: 1;
-  margin: 0 auto;
+.nexus-welcome__credits-name {
+  margin-top: 14px;
+  color: #f6ecd4;
+  font-size: clamp(16px, 1.9vw, 22px);
+  font-weight: 600;
+  line-height: 1.7;
 }
 
-.nexus-welcome__orbit {
-  position: absolute;
-  border: 1px solid;
-  border-radius: 50%;
+.nexus-welcome__credits-rule {
+  width: 64px;
+  height: 1px;
+  margin: 14px auto;
+  background: rgba(221, 186, 99, .45);
 }
 
-.nexus-welcome__orbit--outer {
-  inset: 0;
-  border-color: rgba(98,233,255,.18);
-  border-style: dashed;
-  animation: nexus-orbit 24s linear infinite;
+.nexus-welcome__credits-sup {
+  color: #cbbb8e;
+  font-size: clamp(13px, 1.5vw, 17px);
+  line-height: 1.7;
 }
 
-.nexus-welcome__orbit--inner {
-  inset: 15%;
-  border-color: rgba(217,180,92,.24);
-  animation: nexus-orbit 18s linear infinite reverse;
-}
-
-.nexus-welcome__flare {
-  position: absolute;
-  inset: 18%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,221,143,.32), rgba(244,118,33,.13) 36%, rgba(14,165,138,.12) 58%, transparent 72%);
-  filter: blur(3px);
-  animation: nexus-breathe 2.8s ease-in-out infinite;
-}
-
-.nexus-welcome__phoenix {
-  position: absolute;
-  inset: 16%;
-  filter: drop-shadow(0 18px 30px rgba(0,0,0,.38)) drop-shadow(0 0 30px rgba(244,118,33,.25));
-  transform: scale(.72) translateY(12px);
-  opacity: .25;
-  transition: transform 1.5s var(--nx-ease), opacity 1.2s ease, filter 1.4s ease;
-}
-
-.nexus-welcome[data-phase="rise"] .nexus-welcome__phoenix {
-  opacity: 1;
-  transform: scale(1) translateY(0);
-  filter: drop-shadow(0 22px 36px rgba(0,0,0,.4)) drop-shadow(0 0 48px rgba(244,118,33,.34));
-}
-
-.nexus-welcome__copy {
-  margin-top: 8px;
-  opacity: .12;
-  transform: translateY(14px);
-  transition: opacity 1s ease .32s, transform 1.1s var(--nx-ease) .32s;
-}
-
-.nexus-welcome[data-phase="rise"] .nexus-welcome__copy {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.nexus-welcome__kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: #62e9ff;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .17em;
-}
-
-.nexus-welcome__pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #31d8ba;
-  box-shadow: 0 0 0 6px rgba(49,216,186,.10), 0 0 24px #31d8ba;
-}
-
-.nexus-welcome__copy h1 {
-  margin-top: 13px;
-  color: #f5fbff;
-  font-size: clamp(34px, 6vw, 68px);
-  font-weight: 760;
-  letter-spacing: -.055em;
-  line-height: 1;
-  text-shadow: 0 12px 38px rgba(0,0,0,.5);
-}
-
-.nexus-welcome__department {
-  margin-top: 12px;
-  color: rgba(218,235,245,.68);
-  font-size: clamp(11px, 1.5vw, 15px);
-}
-
-.nexus-welcome__credits {
-  display: grid;
-  gap: 7px;
-  width: min(100%, 600px);
-  margin: 23px auto 0;
-}
-
-.nexus-welcome__credits > div {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: rgba(228,241,248,.78);
-  font-size: 11px;
-}
-
-.nexus-welcome__credits svg { color: #d9b45c; }
-
-.nexus-welcome__progress {
-  width: min(74vw, 420px);
-  height: 2px;
-  margin: 27px auto 0;
-  overflow: hidden;
-  border-radius: 99px;
-  background: rgba(255,255,255,.08);
-}
-
-.nexus-welcome__progress > span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform: scaleX(0);
-  transform-origin: 0 50%;
-  background: linear-gradient(90deg, #0ea58a, #62e9ff, #d9b45c, #f47621);
-  box-shadow: 0 0 14px rgba(98,233,255,.4);
-  animation: nexus-welcome-progress 5s linear .15s forwards;
-}
-
-[dir="rtl"] .nexus-welcome__progress > span { transform-origin: 100% 50%; }
-
-@keyframes nexus-ember-rise {
+[dir="rtl"] @keyframes nexus-ember-rise {
   0% { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
   12% { opacity: .78; }
   100% { transform: translate3d(18px, -105vh, 0) scale(1.2); opacity: 0; }
 }
 
-@keyframes nexus-welcome-progress {
-  to { transform: scaleX(1); }
-}
-
 @media (hover: hover) and (pointer: fine) {
   .nexus-login__submit:not(:disabled):hover {
     transform: translateY(-2px);
-    box-shadow: 0 18px 38px rgba(14,159,138,.34), inset 0 1px 0 rgba(255,255,255,.3);
+    box-shadow: 0 18px 38px color-mix(in srgb, var(--ember) 36%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
   }
 
   .nexus-login__secondary:hover {
     border-color: color-mix(in srgb, var(--p) 36%, var(--brd));
     color: var(--p);
-  }
-}
-
-@media (max-width: 940px) {
-  .premium-login.nexus-login {
-    grid-template-columns: 1fr;
-  }
-
-  .nexus-login__visual {
-    display: none;
-  }
-
-  .nexus-login__auth {
-    min-height: 100dvh;
-    padding: 72px 22px 34px;
-  }
-
-  .nexus-login__brand,
-  .nexus-login__card {
-    width: min(100%, 470px);
   }
 }
 
@@ -1297,26 +897,19 @@ html body {
   .nexus-login__brand-name { font-size: 17px; }
   .nexus-login__card { padding: 23px 19px; border-radius: 22px; }
 
-  .nexus-welcome__content { padding-inline: 18px; }
-  .nexus-welcome__credits > div { align-items: flex-start; font-size: 10px; line-height: 1.65; }
+    .nexus-welcome__credits { padding: 18px 20px; }
   .nexus-welcome__skip { top: 14px; inset-inline-end: 14px; }
+
+  /* Perf: a heavy backdrop blur is the single most expensive compositing cost on
+     phones and it runs on the GPU alongside any WebGL scene. Cap the login/
+     welcome glass surfaces to ≤8px here so the two never fight for the GPU. */
+  .nexus-login__auth { backdrop-filter: blur(8px) saturate(120%); }
+  .nexus-welcome__skip { backdrop-filter: blur(8px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nexus-welcome__particle,
-  .nexus-welcome__orbit,
-  .nexus-welcome__flare,
-  .nexus-welcome__progress > span,
-  .nexus-login__aurora,
-  .nexus-login__network-orbit {
+  .nexus-welcome__particle {
     animation: none !important;
-  }
-
-  .nexus-welcome__phoenix,
-  .nexus-welcome__copy {
-    opacity: 1;
-    transform: none;
-    transition: none;
   }
 }
 
@@ -1404,6 +997,100 @@ html body {
   font-weight: 680;
   white-space: nowrap;
 }
+
+.nexus-topology__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Adjacent 3D / 2D view tabs. */
+.nexus-topology__viewtabs {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--nx-line, var(--brd));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--s2) 70%, transparent);
+}
+
+.nexus-topology__viewtabs button {
+  min-height: 34px;
+  padding-inline: 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.nexus-topology__viewtabs button[aria-selected="true"] {
+  background: var(--p);
+  color: #04121f;
+}
+
+.nexus-topology__viewtabs button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.nexus-topology__zoom {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.nexus-topology__zoom button {
+  min-width: 38px;
+  min-height: 38px;
+  padding-inline: 8px;
+  border: 1px solid var(--nx-line, var(--brd));
+  border-radius: 9px;
+  background: var(--field, var(--s2));
+  color: var(--t2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 2D SVG map — the same real topology, projected; also the safe fallback. */
+.nexus-topology__map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.nexus-topology__map-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nexus-topology-map-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes nexus-topology-map-pulse {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50% { opacity: .9; transform: scale(1.18); }
+}
+
+.nexus-topology__fallback--corner {
+  inset: auto;
+  top: 12px;
+  inset-inline-start: 14px;
+  display: flex;
+  place-content: unset;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--line2, var(--brd));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--s) 82%, transparent);
+  font-size: 10.5px;
+}
+
+.nexus-topology__fallback--corner svg { color: var(--warn); filter: none; }
 
 .nexus-topology__viewport {
   position: relative;
@@ -1576,6 +1263,74 @@ html body {
 .nexus-topology__selection strong { color: var(--t); }
 .nexus-topology__selection span { margin-inline-start: auto; }
 
+/* ── Digital-twin alert affordances — icon + text + pulsing ring (never colour
+   alone), driven by real RLS-scoped inventory alerts. ─────────────────────── */
+.nexus-topology__telemetry-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--nx-danger);
+  font-weight: 700;
+}
+.nexus-topology__telemetry-alert svg { color: var(--nx-danger); }
+
+.nexus-topology__node-alert {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  color: var(--nx-danger);
+  font-weight: 600;
+}
+.nexus-topology__node-alert svg { color: var(--nx-danger); }
+
+/* A pulsing ring on the node swatch marks an alerted node (severity by hue). */
+.nexus-topology__nodes button[data-alert] > span[data-kind] {
+  position: relative;
+}
+.nexus-topology__nodes button[data-alert] > span[data-kind]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--nx-danger);
+  animation: nexus-alert-pulse 1.8s var(--nx-ease) infinite;
+}
+.nexus-topology__nodes button[data-alert="medium"] > span[data-kind]::after,
+.nexus-topology__selection[data-alert="medium"] { border-color: var(--nx-ember); }
+.nexus-topology__nodes button[data-alert="medium"] > span[data-kind]::after {
+  border-color: var(--nx-ember);
+}
+.nexus-topology__nodes button[data-alert="low"] > span[data-kind]::after {
+  border-color: var(--nx-gold);
+}
+
+.nexus-topology__selection[data-alert] {
+  border-color: color-mix(in srgb, var(--nx-danger) 40%, var(--brd));
+  background: color-mix(in srgb, var(--nx-danger) 7%, var(--nx-surface));
+}
+.nexus-topology__selection-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: 0 !important;
+  color: var(--nx-danger);
+  font-weight: 700;
+}
+.nexus-topology__selection-alert svg { color: var(--nx-danger); }
+
+@keyframes nexus-alert-pulse {
+  0% { transform: scale(1); opacity: .9; }
+  70% { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-topology__nodes button[data-alert] > span[data-kind]::after {
+    animation: none;
+    opacity: .8;
+  }
+}
+
 @media (max-width: 620px) {
   .nexus-topology {
     padding: 14px;
@@ -1630,7 +1385,9 @@ html body {
 
 .phoenix-button {
   position: relative;
-  min-height: 38px;
+  /* The design source sizes every button at 44-46px, which also satisfies the
+     WCAG 2.5.5 / 2.5.8 minimum hit area without a separate rule. */
+  min-height: var(--touch-target);
   overflow: hidden;
   isolation: isolate;
 }
@@ -1645,9 +1402,15 @@ html body {
   transition: transform .7s var(--nx-ease);
 }
 
+/* The design source's committing action is the ember gradient, not a tinted
+   primary — see the transfer/entry submit buttons in MediStock-Phoenix.dc.html.
+   The glow is derived from --ember so it follows the theme instead of being a
+   baked teal rgba() as before. */
 .phoenix-button[data-variant="primary"] {
-  background: linear-gradient(120deg, color-mix(in srgb, var(--p) 94%, #fff), var(--pd)) !important;
-  box-shadow: 0 10px 24px rgba(14,159,138,.23), inset 0 1px 0 rgba(255,255,255,.22) !important;
+  background: linear-gradient(92deg, var(--ember), var(--ember2)) !important;
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--ember) 26%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.22) !important;
 }
 
 .phoenix-button__spinner {
@@ -1666,34 +1429,38 @@ html body {
 }
 
 .nexus-field > label {
-  color: var(--t2);
+  color: var(--muted);
   font-size: 10.5px;
   font-weight: 720;
   letter-spacing: .035em;
   text-transform: uppercase;
 }
 
+/* Fields in the design source sit on the recessed --field surface behind a
+   1.5px hairline, not on a raised glass panel — the extra half pixel is what
+   makes an input read as an input against --surface at these low contrasts. */
 .nexus-field__control {
   width: 100%;
-  min-height: 43px;
+  min-height: var(--touch-target);
   padding: 10px 12px;
-  color: var(--t);
-  border: 1px solid var(--nx-line-strong);
-  border-radius: 12px;
+  color: var(--text);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r2);
   outline: 0;
-  background: color-mix(in srgb, var(--nx-surface-raised) 94%, var(--s2));
-  box-shadow: inset 0 1px 2px rgba(7,28,52,.035);
-  font-size: 13px;
+  background: var(--field);
+  font-size: 13.5px;
 }
 
+.nexus-field__control::placeholder { color: var(--muted); }
+
 .nexus-field__control:focus {
-  border-color: color-mix(in srgb, var(--p) 64%, var(--brd));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--p) 10%, transparent), inset 0 1px 2px rgba(7,28,52,.03);
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 14%, transparent);
 }
 
 .nexus-field[data-error="true"] .nexus-field__control {
-  border-color: color-mix(in srgb, var(--err) 64%, var(--brd));
-  background: color-mix(in srgb, var(--err2) 62%, var(--nx-surface-raised));
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--chipD) 70%, var(--field));
 }
 
 .nexus-field__error {
@@ -1744,7 +1511,7 @@ html body {
   background:
     radial-gradient(circle at 45% 32%, color-mix(in srgb, var(--nx-cyan) 12%, transparent), transparent 55%),
     linear-gradient(145deg, var(--p2), color-mix(in srgb, var(--sec2) 58%, var(--p2)));
-  box-shadow: 0 14px 34px rgba(14,159,138,.12), var(--nx-bevel);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--cyan) 12%, transparent), var(--nx-bevel);
 }
 
 .nexus-empty__icon > span {
@@ -1772,7 +1539,7 @@ html body {
   border: 0;
   border-radius: 13px;
   background: linear-gradient(120deg, var(--p), var(--pd));
-  box-shadow: 0 10px 24px rgba(14,159,138,.22);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--cyan) 22%, transparent);
   font-size: 12.5px;
   font-weight: 680;
 }
@@ -1800,8 +1567,8 @@ html body {
   position: absolute;
   inset: 7px;
   border-radius: 18px;
-  background: linear-gradient(145deg, rgba(16,42,74,.98), rgba(5,15,29,.98));
-  box-shadow: 0 12px 28px rgba(7,28,52,.18), 0 0 28px rgba(244,118,33,.10);
+  background: linear-gradient(145deg, var(--surface2), var(--bg));
+  box-shadow: var(--sh-md), 0 0 28px color-mix(in srgb, var(--ember) 12%, transparent);
 }
 
 .nexus-loading__mark svg {
@@ -1895,4 +1662,650 @@ html body {
     grid-column: 1 / -1;
     width: 100%;
   }
+}
+
+/* ─── PHOENIX EFFECTS-MODE GATING ──────────────────────────────────────────────
+   The EffectsMode policy stamps data-effects="webgl|fallback" on the login
+   wrapper and data-webgl="on|off" on the welcome overlay. Use those to guarantee
+   only ONE layer draws at a time — never a full-bleed CSS scene AND a WebGL
+   scene compositing on top of each other. */
+
+/* 2.5D pointer parallax for medium/low login (no GL context). Driven by
+   --phoenix-px/--phoenix-py set on the wrapper by PhoenixExperience. The slight
+   overscale keeps edges hidden as the plate shifts. */
+[data-parallax="2d"] .nexus-login__plate {
+  transform:
+    translate3d(calc(var(--phoenix-px, 0) * -14px), calc(var(--phoenix-py, 0) * -10px), 0)
+    scale(1.06);
+  transition: transform .2s ease-out;
+  will-change: transform;
+}
+
+/* When the real WebGL welcome is on screen, stop the duplicated CSS embers and
+   the extra glow so the GPU only pays for one particle system. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__particle,
+.nexus-welcome[data-webgl="on"] @media (prefers-reduced-motion: reduce) {
+  /* A static plate must never carry a parallax transform. */
+  [data-parallax="2d"] .nexus-login__plate {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ─── Dashboard hero band (design-source Dashboard header) ────────────────── */
+.nexus-dash-hero {
+  position: relative;
+  display: flex;
+  gap: clamp(16px, 3vw, 26px);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid var(--line2, var(--brd));
+  border-radius: 18px;
+  background: var(--heroGrad, linear-gradient(140deg, var(--s2), var(--s)));
+  box-shadow: var(--shadow, var(--sh-md));
+  overflow: hidden;
+}
+
+.nexus-dash-hero__ring {
+  flex-shrink: 0;
+}
+
+.nexus-dash-hero__ring circle:last-of-type {
+  animation: nexus-ring-draw 1.1s cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes nexus-ring-draw {
+  from { stroke-dashoffset: 264; }
+}
+
+.nexus-dash-hero__copy {
+  flex: 1;
+  min-width: 200px;
+}
+
+.nexus-dash-hero__kicker {
+  color: var(--gold, var(--nx-gold));
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.nexus-dash-hero__copy h2 {
+  font-size: clamp(20px, 2.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--t);
+}
+
+.nexus-dash-hero__copy p {
+  margin-top: 6px;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+/* Clarifies that the hero ring reports manually reported availability
+   statuses, not an inventory balance. Deliberately always rendered and never
+   hover-gated or visually hidden: it is bound to the ring via
+   aria-describedby, which only resolves for an element in the a11y tree. */
+.nexus-dash-hero__note {
+  margin-top: 4px;
+  color: var(--t2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  opacity: .85;
+  max-width: 52ch;
+}
+
+.nexus-dash-hero__stats {
+  display: flex;
+  gap: clamp(16px, 2.5vw, 24px);
+  flex-wrap: wrap;
+}
+
+.nexus-dash-hero__stat {
+  text-align: center;
+}
+
+.nexus-dash-hero__stat-value {
+  font-family: var(--font-num, 'Inter', sans-serif);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.nexus-dash-hero__stat-label {
+  margin-top: 2px;
+  color: var(--t2);
+  font-size: 11.5px;
+}
+
+.nexus-dash-hero__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 18px;
+  border: none;
+  border-radius: var(--r3, 12px);
+  background: linear-gradient(92deg, var(--ember, var(--sec)), var(--ember2, var(--sec2)));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ember, var(--sec)) 26%, transparent);
+  transition: transform 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nexus-dash-hero__cta:hover { transform: translateY(-1px); }
+}
+
+@media (max-width: 640px) {
+  .nexus-dash-hero { gap: 14px; }
+  .nexus-dash-hero__cta { width: 100%; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-dash-hero__ring circle:last-of-type { animation: none; }
+}
+
+/* ── Digital twin: Three.js cinematic 3D stage ─────────────────────────────
+   Ported from the NEXUS redesign. The terrain is a plain static <picture>
+   (normal URL, no service worker involvement); the WebGL canvas layers above
+   it and fades in only once its first frame has rendered. The 2D SVG map
+   remains the fallback whenever WebGL is unavailable or the context is lost. */
+.nexus-twin {
+  position: relative;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(55rem 38rem at 50% 50%, rgba(33,114,145,.14), transparent 68%),
+    #020913;
+}
+
+.nexus-twin__terrain,
+.nexus-twin__terrain img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.nexus-twin__terrain img {
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(.88) contrast(1.04) brightness(.78);
+  user-select: none;
+}
+
+.nexus-twin__terrain-light {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 54%, rgba(255,156,46,.09), transparent 19%),
+    radial-gradient(circle at 53% 49%, transparent 34%, rgba(2,10,19,.18) 75%),
+    linear-gradient(180deg, rgba(2,10,18,.12), rgba(2,10,18,.03) 58%, rgba(0,5,10,.3));
+  mix-blend-mode: screen;
+}
+
+.nexus-twin__webgl {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 620ms ease;
+  pointer-events: auto;
+}
+.nexus-twin[data-ready="true"] .nexus-twin__webgl { opacity: 1; }
+.nexus-twin__webgl canvas { touch-action: pan-y; }
+
+.nexus-twin__scene-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.nexus-twin__scene-loading span {
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(96,232,245,.12);
+  border-top-color: rgba(96,232,245,.8);
+  border-radius: 50%;
+  animation: nexus-twin-spin 1.4s linear infinite;
+}
+@keyframes nexus-twin-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-twin__webgl { transition: none; }
+  .nexus-twin__scene-loading span { animation: none; }
+}
+
+/* ─── PHOENIX REFERENCE-LOCK REBUILD — Login & Welcome hero surfaces ─────────
+   The approved photoreal master images are the permanent visual heroes on both
+   surfaces; motion is restrained CSS layered OVER the plate, never replacing it.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Login — drifting embers over the phoenix (fade out before the form space). */
+.nexus-login__ember {
+  position: absolute;
+  bottom: -10px;
+  inset-inline-start: calc(6% + var(--ember-index) * 4.6%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #f7b853;
+  box-shadow: 0 0 12px #f47621;
+  opacity: 0;
+  animation: nexus-ember-rise calc(4.6s + var(--ember-index) * .12s) linear infinite;
+  animation-delay: calc(var(--ember-index) * -.34s);
+}
+[data-theme="light"] .nexus-login__art-embers,
+:root:not([data-theme="dark"]) .nexus-login__art-embers { opacity: .42; }
+
+/* Welcome — dominant full-screen approved plate with a slow cinematic push. */
+.nexus-welcome__stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+.nexus-welcome__plate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 44%;
+  opacity: 0;
+  transform: scale(1.02);
+  transition: opacity 1.4s ease;
+}
+.nexus-welcome[data-phase="rise"] .nexus-welcome__plate {
+  opacity: 1;
+  animation: nexus-welcome-push 6.4s ease-out forwards;
+}
+@keyframes nexus-welcome-push {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.07); }
+}
+/* Darken only the top and bottom edges for text legibility — the phoenix centre
+   stays clear, and there is no white/bloom wash anywhere. */
+.nexus-welcome__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(3, 7, 14, .74) 0%,
+    rgba(3, 7, 14, .18) 22%,
+    rgba(3, 7, 14, 0) 42%,
+    rgba(3, 7, 14, 0) 56%,
+    rgba(3, 7, 14, .58) 78%,
+    rgba(3, 7, 14, .86) 100%
+  );
+}
+.nexus-welcome__embers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Live title anchored to the top (matches the approved keyframe composition). */
+.nexus-welcome__masthead {
+  position: absolute;
+  top: clamp(26px, 6vh, 62px);
+  inset-inline: 0;
+  z-index: 2;
+  padding-inline: clamp(16px, 5vw, 44px);
+  text-align: center;
+  opacity: 0;
+  transform: translateY(-12px);
+  transition: opacity 1s ease .3s, transform 1.1s var(--nx-ease) .3s;
+}
+.nexus-welcome[data-phase="rise"] .nexus-welcome__masthead {
+  opacity: 1;
+  transform: none;
+}
+.nexus-welcome__masthead .nexus-welcome__title { margin-top: 12px; }
+
+/* Live credits card anchored to the bottom (approved keyframe composition). */
+.nexus-welcome__credits {
+  position: absolute;
+  bottom: clamp(24px, 6vh, 58px);
+  inset-inline: 0;
+  z-index: 2;
+  margin: 0 auto;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 1s ease .5s, transform 1.1s var(--nx-ease) .5s;
+}
+.nexus-welcome[data-phase="rise"] .nexus-welcome__credits {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-login__ember { animation: none; opacity: 0; }
+  .nexus-welcome__plate { animation: none !important; transform: none; transition: opacity .3s ease; }
+  .nexus-welcome__masthead,
+  .nexus-welcome__credits { transition: opacity .3s ease; transform: none; }
+}
+
+/* ─── Login Reference-A composition — FIXED physical two-column layout ───────
+   The form area is pinned to the physical LEFT and the Phoenix art to the
+   physical RIGHT via named grid areas, in BOTH Arabic and English. Only the
+   grid-template flips with direction so the physical sides never swap; text
+   direction/alignment inside each panel still follows the language. object-fit:
+   cover + object-position hold the COMPLETE bird (both wings + teal chest) in
+   frame — no repaint, no crop of the bird.
+
+   Login-scoped, surface-aware text colors: the art panel and the navy auth rail
+   stay DARK in both themes, so text on them uses fixed ivory/blue-gray/gold inks
+   instead of the theme tokens (which flip dark on a light theme and would vanish).
+   The form CARD is a light surface in light theme and keeps the theme tokens
+   (dark navy / slate) — so no global token or broad theme override is needed. */
+.premium-login.nexus-login {
+  --login-ink: #f3eee1;    /* primary text on dark login surfaces (ivory) */
+  --login-ink-2: #a9c0d6;  /* secondary text on dark (accessible blue-gray) */
+  --login-accent: #ddba63; /* accent / kicker on dark (Phoenix gold) */
+  display: grid;
+  grid-template-columns: minmax(340px, 460px) minmax(0, 1fr);
+  grid-template-areas: "form art";
+  min-height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(150deg, #0a1526 0%, #07111F 72%);
+}
+/* RTL: flip the template so the 460px form track lands on the physical LEFT and
+   the wide art track on the physical RIGHT — same physical composition as LTR. */
+[dir="rtl"] .premium-login.nexus-login {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 460px);
+  grid-template-areas: "art form";
+}
+.nexus-login__auth { grid-area: form; }
+.nexus-login__art { grid-area: art; }
+
+/* RIGHT — dominant Phoenix art panel (first in-flow child → inline-start track). */
+.nexus-login__art {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+.nexus-login__plate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 12% center; /* fire wing → teal chest → gold wing all in frame */
+  opacity: 1;
+  mask-image: none;
+}
+[data-theme="light"] .nexus-login__art .nexus-login__plate { opacity: .82; }
+
+/* Cinematic vignette + a soft fade on the panel's inline-end edge (toward the
+   form) so the two columns read as one field rather than a hard seam. */
+.nexus-login__art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 108% at 58% 42%, transparent 58%, rgba(3, 7, 14, .5) 100%),
+    linear-gradient(to bottom, rgba(3, 7, 14, .34) 0%, transparent 24%, transparent 62%, rgba(3, 7, 14, .5) 100%);
+}
+.nexus-login__art-embers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Restrained product caption over the lower art, kept clear of the bird's body. */
+.nexus-login__art-caption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: clamp(26px, 4vw, 56px) clamp(28px, 4.5vw, 64px) clamp(24px, 3.4vw, 44px);
+  background: linear-gradient(to top, rgba(2, 6, 12, .82) 0%, rgba(2, 6, 12, .3) 52%, transparent 82%);
+  pointer-events: none;
+}
+.nexus-login__art-caption h1 {
+  margin-top: 8px;
+  max-width: 34ch;
+  color: var(--t);
+  font-size: clamp(18px, 1.9vw, 27px);
+  font-weight: 720;
+  line-height: 1.4;
+  letter-spacing: -.01em;
+  text-shadow: 0 3px 20px rgba(0, 0, 0, .7);
+}
+.nexus-login__art-caption .nexus-login__trust-row { margin-top: 18px; pointer-events: auto; }
+
+/* LEFT — form panel on solid obsidian (no image behind it). */
+.nexus-login__auth {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: clamp(30px, 5vh, 60px) clamp(24px, 2.6vw, 48px);
+  background: linear-gradient(165deg, #0b1830 0%, #07111F 68%);
+  border-inline-start: 1px solid var(--nx-line);
+  box-shadow: -18px 0 60px rgba(2, 6, 12, .55);
+}
+
+/* ≤940px — AFTER the base template in source order so these actually win.
+   Both directions collapse to ONE true "form" area; the RTL selector is
+   repeated so this beats the higher-specificity [dir="rtl"] base template
+   (otherwise a phantom art column squeezes the form to one side). Mobile and
+   tablet are deliberately form-first: the full art panel is hidden and the
+   brand mark carries the Phoenix identity. */
+@media (max-width: 940px) {
+  .premium-login.nexus-login,
+  [dir="rtl"] .premium-login.nexus-login {
+    grid-template-columns: 1fr;
+    grid-template-areas: "form";
+  }
+
+  .nexus-login__art {
+    display: none;
+  }
+
+  .nexus-login__auth {
+    min-height: 100dvh;
+    padding: 72px 22px 34px;
+    border-inline-start: 0;
+    box-shadow: none;
+  }
+
+  .nexus-login__brand,
+  .nexus-login__card {
+    width: min(100%, 470px);
+    margin-inline: auto;
+  }
+}
+
+/* ─── MASAR COPYRIGHT SEAL ───────────────────────────────────────────────────
+   Approved gold emblem on its original navy, paired with LIVE copyright text.
+   Restrained dark-navy glass plaque + thin gold border in BOTH themes. The whole
+   seal is inert (pointer-events:none, no focusable/animated-by-default parts) so
+   it never blocks or competes with application controls. ─────────────────── */
+.masar-seal {
+  --seal-mark: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  max-width: 100%;
+  padding: 8px 14px 8px 10px;
+  border: 1px solid rgba(221, 186, 99, .42);
+  border-radius: 13px;
+  background: linear-gradient(150deg, rgba(11, 22, 40, .9), rgba(6, 13, 24, .92));
+  box-shadow: 0 6px 20px rgba(2, 6, 12, .38), inset 0 1px 0 rgba(221, 186, 99, .12);
+  pointer-events: none; /* never intercept app controls */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Emblem: the approved square master, never cropped or stretched. */
+.masar-seal__emblem {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(221, 186, 99, .3);
+}
+.masar-seal__mark {
+  display: block;
+  width: var(--seal-mark);
+  height: var(--seal-mark);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+/* Optional one-shot metallic sheen — static by default, motion only when allowed. */
+.masar-seal__sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 246, 214, .34) 50%, transparent 62%);
+  transform: translateX(-120%);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .masar-seal__sheen { animation: masar-sheen 1100ms ease-out .35s 1; }
+}
+@keyframes masar-sheen {
+  0% { transform: translateX(-120%); opacity: 0; }
+  22% { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+.masar-seal__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.15;
+  /* Latin brand lockup reads LTR regardless of surrounding RTL text flow. */
+  direction: ltr;
+  text-align: start;
+}
+.masar-seal__name {
+  color: #efe3c6; /* ivory on navy plaque ≈ 12:1 — theme-independent */
+  font-size: 12px;
+  font-weight: 680;
+  letter-spacing: .01em;
+  white-space: normal; /* wrap the full name rather than truncate it */
+  overflow-wrap: normal;
+}
+.masar-seal__year {
+  color: #ddba63; /* heritage gold on navy ≈ 8:1 */
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: .04em;
+}
+
+/* Variants */
+.masar-seal--compact { --seal-mark: 40px; }
+.masar-seal--credit {
+  --seal-mark: 52px;
+  gap: 13px;
+  padding: 10px 18px 10px 12px;
+}
+.masar-seal--credit .masar-seal__name { font-size: 13px; }
+.masar-seal--credit .masar-seal__year { font-size: 11px; }
+.masar-seal--minimal {
+  --seal-mark: 34px;
+  gap: 9px;
+  padding: 6px 12px 6px 8px;
+  border-radius: 11px;
+}
+.masar-seal--minimal .masar-seal__year { font-size: 11px; }
+
+/* Theme: the plaque stays navy in light mode too, so the gold emblem and the
+   ivory/gold text keep their premium look and WCAG contrast on light pages. */
+[data-theme="light"] .masar-seal,
+:root:not([data-theme="dark"]) .masar-seal {
+  border-color: rgba(180, 148, 66, .5);
+  box-shadow: 0 6px 18px rgba(20, 30, 48, .18), inset 0 1px 0 rgba(221, 186, 99, .14);
+}
+
+/* ─── Login contrast — text on the DARK surfaces (rail + art) ─────────────────
+   These elements sit on the always-dark navy rail / Phoenix art, so they use the
+   fixed Login inks rather than the theme tokens (which would turn dark-on-dark in
+   light mode). The form CARD keeps the theme tokens and is unaffected. All pairs
+   clear WCAG AA on the navy/obsidian surface (measured in the contrast harness). */
+.nexus-login__brand-name { color: var(--login-ink); }
+.nexus-login__brand-department { color: var(--login-ink-2); }
+.nexus-login__art-caption .nexus-login__kicker { color: var(--login-accent); }
+.nexus-login__art-caption h1 { color: var(--login-ink); }
+.nexus-login__art-caption .nexus-login__trust-row > span {
+  color: var(--login-ink-2);
+  background: rgba(6, 13, 24, .64);
+  border-color: rgba(221, 186, 99, .22);
+  box-shadow: none;
+  backdrop-filter: blur(4px);
+}
+
+/* Seal placement in the Login/Welcome credit areas (once per screen, centered). */
+.nexus-login__rights { display: flex; flex-direction: column; align-items: center; }
+.nexus-login__seal { margin: 2px 0 12px; }
+.nexus-welcome__seal { margin: 16px auto 0; }
+
+/* ─── Shell copyright footer (compact desktop strip / minimal mobile pin) ────── */
+.nexus-shell__brand {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 20px;
+  border-top: 1px solid var(--nx-line);
+  background: color-mix(in srgb, var(--nx-surface) 72%, transparent);
+}
+@media (max-width: 767px) {
+  .nexus-shell__brand {
+    position: fixed;
+    inset-inline: 0;
+    bottom: calc(var(--bnh, 64px) + 6px);
+    z-index: 5; /* above content, the bottom nav sits higher and is never covered */
+    justify-content: center;
+    padding: 0;
+    border-top: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+}
+/* Full-screen state surfaces: minimal seal below the state content. */
+.nexus-state__brand {
+  display: flex;
+  justify-content: center;
+  margin-top: 26px;
+}
+
+/* Full-screen (shell-absent) state wrapper: centered content + minimal seal. */
+.nexus-state-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  padding: 24px;
 }

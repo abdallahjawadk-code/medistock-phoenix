@@ -32,6 +32,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
+import { expectQuickAvailFormAbsent } from '../../../../tests/helpers/retired-surfaces';
 
 const SRC = join(__dirname, '../../../');
 const ROOT = join(__dirname, '../../../../');
@@ -47,47 +48,55 @@ function onConfirmRemoveBody(): string {
   return screen.slice(start, start + 900);
 }
 
-describe('A) The exact reported bug: the movement RPC call is no longer gated on quantity !== 0', () => {
-  it('onConfirmRemove has no `if (removeTarget.quantity !== 0)` guard around the movement call', () => {
+// CANONICAL-STOCK-CUTOVER: the original quantity-0 bug is now structurally
+// impossible. "Remove from outlet" is a CATALOGUE VISIBILITY action, not a
+// quantity write — it calls the migration-084 RPC phoenix_set_availability_visibility
+// (setAvailabilityVisibility(id, true, 'removed_from_outlet')), which sets ONLY
+// the 053 removed marker (removed_at/removed_by/removal_reason). It never reads
+// or writes quantity, so an already-out-of-stock material is removed by exactly
+// the same single, unconditional, idempotent call. Physical stock lives in the
+// canonical ledgers and is corrected through a separate, deliberate action.
+describe('A) The exact reported bug is structurally gone: the remove call is unconditional and quantity-independent', () => {
+  it('onConfirmRemove has no `if (removeTarget.quantity !== 0)` guard, and never inspects quantity at all', () => {
     const body = onConfirmRemoveBody();
     expect(body).not.toMatch(/if\s*\(\s*removeTarget\.quantity\s*!==\s*0\s*\)/);
+    expect(body).not.toMatch(/removeTarget\.quantity/);
   });
 
-  it('applyAvailabilityMovement is called unconditionally as the first statement in the try block', () => {
+  it('setAvailabilityVisibility is called unconditionally as the first statement in the try block', () => {
     const body = onConfirmRemoveBody();
     const tryIdx = body.indexOf('try {');
-    const callIdx = body.indexOf('await applyAvailabilityMovement(');
+    const callIdx = body.indexOf('await setAvailabilityVisibility(');
     expect(tryIdx).toBeGreaterThan(-1);
     expect(callIdx).toBeGreaterThan(tryIdx);
     // No `if` between try{ and the call.
     const between = body.slice(tryIdx, callIdx);
     expect(between).not.toMatch(/\bif\s*\(/);
   });
+
+  it('the retired manual-quantity remove path is gone (no movement RPC on remove)', () => {
+    const body = onConfirmRemoveBody();
+    expect(body).not.toContain('applyAvailabilityMovement');
+    expect(body).not.toContain("movementType: 'set_exact'");
+  });
 });
 
-describe('B) The RPC call uses the exact parameters migration 053 requires', () => {
+describe('B) The visibility call uses the exact parameters the 053 removed marker requires', () => {
   const body = onConfirmRemoveBody();
-  const callStart = body.indexOf('await applyAvailabilityMovement(');
+  const callStart = body.indexOf('await setAvailabilityVisibility(');
   const callEnd = body.indexOf(');', callStart) + 2;
   const call = body.slice(callStart, callEnd);
 
-  it('itemAvailabilityId is the target row id', () => {
-    expect(call).toContain('itemAvailabilityId: removeTarget.id');
+  it('the first argument is the target row id', () => {
+    expect(call).toMatch(/setAvailabilityVisibility\(\s*removeTarget\.id/);
   });
 
-  it('movementType is set_exact (not subtract, not add, not correction)', () => {
-    expect(call).toContain("movementType: 'set_exact'");
-    expect(call).not.toContain("movementType: 'subtract'");
-    expect(call).not.toContain("movementType: 'add'");
-    expect(call).not.toContain("movementType: 'correction'");
+  it('hidden is true (this hides, not reactivates)', () => {
+    expect(call).toMatch(/removeTarget\.id\s*,\s*true/);
   });
 
-  it('amount is exactly 0', () => {
-    expect(call).toContain('amount: 0');
-  });
-
-  it('reason is the exact literal removed_from_outlet migration 053 branches on', () => {
-    expect(call).toContain("reason: 'removed_from_outlet'");
+  it('reason is the exact literal removed_from_outlet (provenance for the removal marker)', () => {
+    expect(call).toContain("'removed_from_outlet'");
   });
 
   it('this is a genuine RPC call (via the service wrapper), not a direct table write', () => {
@@ -96,24 +105,27 @@ describe('B) The RPC call uses the exact parameters migration 053 requires', () 
 });
 
 describe('C) Works even when the row is already at quantity 0 (the exact failure scenario)', () => {
-  it('applyAvailabilityMovement (the service wrapper) forwards amount=0 to the RPC without any client-side skip for zero quantity', () => {
-    const start = availabilityService.indexOf('export async function applyAvailabilityMovement');
+  it('setAvailabilityVisibility (the service wrapper) sends no quantity/amount — it cannot be gated on quantity', () => {
+    const start = availabilityService.indexOf('export async function setAvailabilityVisibility');
     const end = availabilityService.indexOf('\n}', start);
     const body = availabilityService.slice(start, end);
+    expect(body).not.toMatch(/p_amount|p_counted_quantity|quantity/i);
     expect(body).not.toMatch(/if\s*\(.*amount/);
-    expect(body).toContain('p_amount:               input.amount');
   });
 
-  it('phoenix_apply_availability_movement (migration 034) accepts set_exact with amount=0 — amount must be >= 0 for set_exact, not > 0 like add/subtract', () => {
-    const migration034 = readFileSync(join(ROOT, 'supabase/migrations/034_phoenix_apply_availability_movement_rpc.sql'), 'utf8');
-    expect(migration034).toMatch(/p_movement_type IN \('set_exact', 'correction'\) AND p_amount < 0/);
-    expect(migration034).not.toMatch(/p_movement_type IN \('set_exact'.*\) AND p_amount <= 0/);
+  it('phoenix_set_availability_visibility (migration 084) edits ONLY the 053 removed marker, never quantity/condition', () => {
+    const migration084 = readFileSync(join(ROOT, 'supabase/migrations/084_phoenix_availability_visibility.sql'), 'utf8');
+    expect(migration084).toMatch(/removed_at/);
+    // The visibility RPC must not write the derived quantity/condition columns.
+    expect(migration084).not.toMatch(/SET[\s\S]{0,200}\bquantity\s*=/i);
   });
 });
 
-describe('D) No subtract-0 path was used instead', () => {
-  it('onConfirmRemove never uses movementType: \'subtract\'', () => {
-    expect(onConfirmRemoveBody()).not.toContain("movementType: 'subtract'");
+describe('D) No subtract/set_exact quantity path was used instead', () => {
+  it('onConfirmRemove never uses a movement type', () => {
+    const body = onConfirmRemoveBody();
+    expect(body).not.toContain("movementType: 'subtract'");
+    expect(body).not.toContain("movementType: 'set_exact'");
   });
 });
 
@@ -122,8 +134,15 @@ describe('E) The redundant upsertAvailability follow-up call was removed, not ju
     expect(onConfirmRemoveBody()).not.toContain('upsertAvailability');
   });
 
-  it('upsertAvailability import is still present in the file (still used by QuickAvailForm to add materials — unrelated to remove)', () => {
-    expect(screen).toContain('upsertAvailability,');
+  // E6: this asserted the import SURVIVED, because QuickAvailForm still needed
+  // it — the point being that the remove path's cleanup had not over-reached.
+  // QuickAvailForm is now retired, so the import is legitimately gone. The
+  // original intent is preserved and strengthened: remove still works, through
+  // the recorded-movement RPC it always used.
+  it('the upsertAvailability import is gone with its last caller, and remove is unaffected', () => {
+    expect(screen).not.toContain('upsertAvailability,');
+    expectQuickAvailFormAbsent();
+    expect(onConfirmRemoveBody()).toContain('setAvailabilityVisibility');
   });
 });
 
@@ -138,7 +157,7 @@ describe('F) No hard delete of item_availability anywhere in the remove path', (
 describe('G) Genuine missing/shortage rows (removed_at null) are not globally hidden by this fix', () => {
   it('the outlet-list display filter still keys only on removed_at, unrelated to this onConfirmRemove change', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
-    const fnBody = screen.slice(fnStart, screen.indexOf('function QuickAvailForm'));
+    const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toContain('filter(r => r.removed_at == null)');
     expect(fnBody).not.toMatch(/condition === 'missing'/);
   });
@@ -172,7 +191,7 @@ describe('I) Success/error UX is preserved', () => {
   it('still classifies and surfaces RPC errors via the existing classifier', () => {
     const body = onConfirmRemoveBody();
     expect(body).toMatch(/catch \(e\)/);
-    expect(body).toContain('classifyAvailabilityMovementError(e)');
+    expect(body).toContain('classifyAvailabilityVisibilityError(e)');
     expect(body).toContain('setRemoveError(');
   });
 });

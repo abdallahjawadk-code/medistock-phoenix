@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -65,12 +66,6 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
-      <div className="nexus-login__atmosphere" aria-hidden="true">
-        <div className="nexus-login__aurora nexus-login__aurora--emerald" />
-        <div className="nexus-login__aurora nexus-login__aurora--cyan" />
-        <div className="nexus-login__mesh" />
-      </div>
-
       <div className="nexus-login__controls">
         <button onClick={toggleLang} className="nexus-control nexus-control--language">
           {lang === 'ar' ? 'EN' : 'عربي'}
@@ -84,38 +79,45 @@ export function LoginScreen() {
         </button>
       </div>
 
-      <section className="nexus-login__visual" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي' : 'Medicine supply network'}>
-        <div className="nexus-login__visual-copy">
-          <div className="nexus-login__kicker">
-            <span />
-            {lang === 'ar' ? 'البنية التشغيلية الحية' : 'LIVE OPERATIONAL FABRIC'}
-          </div>
-          <h1>{lang === 'ar' ? 'شبكة دوائية موحّدة.' : 'One medicine network.'}</h1>
-          <p>
+      {/* Two-column layout: the form panel stays on the LEFT; the approved
+          photoreal Phoenix master (AVIF→WebP) dominates the RIGHT art panel. It is
+          the permanent hero — never a procedural point-cloud. object-fit:cover +
+          object-position keep the COMPLETE bird (fiery wing, gold/pearl wing and
+          the teal medical chest) in frame; only restrained CSS embers move over
+          it, and three.js stays off the login critical path. Being the first
+          in-flow child, this panel resolves to the inline-start (physical right)
+          column under RTL. */}
+      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شعار طائر الفينيكس' : 'Phoenix emblem'}>
+        <picture>
+          <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
+          <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
+          <img
+            className="nexus-login__plate"
+            src="/assets/phoenix/runtime/phoenix-login.webp"
+            alt=""
+            width={1680}
+            height={941}
+            decoding="async"
+            loading="eager"
+          />
+        </picture>
+        <div className="nexus-login__art-embers" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, i) => (
+            <span key={i} className="nexus-login__ember" style={{ '--ember-index': i } as CSSProperties} />
+          ))}
+        </div>
+        <div className="nexus-login__art-caption">
+          <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
+          <h1>
             {lang === 'ar'
-              ? 'من مخازن قسم الصيدلة إلى مذاخر المؤسسات ومنافذ الصرف، برؤية فورية وصلاحيات دقيقة.'
-              : 'From Pharmacy Department warehouses to institution stores and dispensing outlets, with live visibility and exact scope control.'}
-          </p>
-        </div>
-
-        <div className="nexus-login__network" aria-hidden="true">
-          <div className="nexus-login__network-orbit nexus-login__network-orbit--one" />
-          <div className="nexus-login__network-orbit nexus-login__network-orbit--two" />
-          <div className="nexus-login__phoenix-core">
-            <PhoenixMark size="100%" title="" />
+              ? 'منظومة الإمداد الدوائي — من المخزن المركزي إلى منفذ الصرف.'
+              : 'The medicine supply fabric — from central store to dispensing outlet.'}
+          </h1>
+          <div className="nexus-login__trust-row">
+            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
+            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
+            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
           </div>
-          <span className="nexus-login__node nexus-login__node--central"><PhoenixIcon name="warehouse" size={18} /></span>
-          <span className="nexus-login__node nexus-login__node--institution"><PhoenixIcon name="institutions" size={18} /></span>
-          <span className="nexus-login__node nexus-login__node--outlet"><PhoenixIcon name="outlet" size={18} /></span>
-          <span className="nexus-login__beam nexus-login__beam--one" />
-          <span className="nexus-login__beam nexus-login__beam--two" />
-          <span className="nexus-login__beam nexus-login__beam--three" />
-        </div>
-
-        <div className="nexus-login__trust-row">
-          <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
-          <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
-          <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
         </div>
       </section>
 
@@ -231,6 +233,7 @@ export function LoginScreen() {
           )}
 
           <div className="premium-login__rights nexus-login__rights">
+            <MasarCopyrightSeal variant="credit" className="nexus-login__seal" />
             <div dir="ltr">{t('login_rights_code', lang)}</div>
             <span dir="auto">{t('login_supervision_line', lang)}</span>
           </div>
