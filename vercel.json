@@ -26,6 +26,10 @@
         {
           "key": "Permissions-Policy",
           "value": "camera=(self), geolocation=(), microphone=(), payment=(), usb=(), browsing-topics=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
         }
       ]
     }
