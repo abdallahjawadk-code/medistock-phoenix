@@ -52,6 +52,7 @@ export function buildOutletReturnRequestReceipt(input: {
     currency: null,
     priceBasis: null,
     supplyType: null,
+    purchaseOrigin: null,
     notes: null,
     // Provenance: the exact original dispatch line this return anchors to.
     originalSupplyReference: l.originalDispatchLineId,
@@ -111,6 +112,7 @@ export function buildOutletReturnShipmentReceipt(input: {
     currency: null,
     priceBasis: null,
     supplyType: null,
+    purchaseOrigin: null,
     notes: null,
     originalSupplyReference: l.originalDispatchLineId,
   }));

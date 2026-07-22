@@ -18,7 +18,7 @@ function line(over: Partial<ReceiptLine> = {}): ReceiptLine {
     expiryDate: '2027-06-30', requestedQuantity: 240, approvedQuantity: 240,
     movedQuantity: 240, receivedQuantity: null, onHandSnapshot: null,
     returnReason: null, disposition: null, custodyState: null,
-    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', supplyType: 'central',
+    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', purchaseOrigin: null, supplyType: 'central',
     notes: null, originalSupplyReference: null,
     ...over,
   };

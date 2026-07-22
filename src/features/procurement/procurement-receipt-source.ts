@@ -48,7 +48,7 @@ export function buildProcurementReceiptDocument(input: {
       unitPrice: rl.unitPrice,
       currency: ol?.currency ?? order.currency,
       priceBasis: 'purchase',
-      supplyType: 'local_procurement',
+      purchaseOrigin: 'supplementary', supplyType: 'local_procurement',
       notes: ol?.notes ?? null,
       originalSupplyReference: null,
     };
