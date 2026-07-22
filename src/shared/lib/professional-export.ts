@@ -27,6 +27,7 @@
  */
 
 import type ExcelJS from 'exceljs';
+import { displaySupplyType } from './supply-types';
 import {
   REPORT_BRAND,
   escHtml,
@@ -977,7 +978,17 @@ const OUTLET_REPORT_DICTIONARY: { field: string; description: string }[] = [
 ];
 
 function outletReportCellValue(row: OutletReportRow, key: OutletReportColumnKey): string | number | Date {
-  if (key === 'supplyType') return neutralizeFormulaValue(row.supplyType || '—');
+  if (key === 'supplyType') {
+    // CANONICAL-SUPPLY-PROVENANCE: exports carry the canonical bilingual
+    // category (donations never appear — legacy values map to aid); an
+    // unmappable legacy value falls back to its raw text.
+    const canonical = displaySupplyType(row.supplyType);
+    const label = canonical === 'aid' ? 'Aid / مساعدات'
+      : canonical === 'kimadia' ? 'Kimadia / كيماديا'
+      : canonical === 'purchase' ? 'Purchases / مشتريات'
+      : (row.supplyType || '—');
+    return neutralizeFormulaValue(label);
+  }
   if (key === 'removed') return neutralizeFormulaValue(row.removedLabel || '—');
   return availExportCellValue(row, key as AvailExportColumnDef['key']);
 }

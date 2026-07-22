@@ -28,6 +28,7 @@ import {
   type MovementStatus, type MovementStatusResult, type MovementStatusDeps,
 } from './movement-status';
 import { getMovementTimeline, type MovementTimeline } from '@/features/movement/movement-timeline.service';
+import { searchMovementDocuments, type TraceCandidate } from '@/features/movement/movement-search.service';
 
 type Lang = 'ar' | 'en';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -66,10 +67,55 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
   const [kindHint, setKindHint] = useState<MovementDocumentKind>('return_request');
   const [state, setState] = useState<ViewState>({ phase: 'idle' });
 
+  const [candidates, setCandidates] = useState<TraceCandidate[] | null>(null);
+
+  /** SMART SEARCH: QR / UUID / official number / order-receipt number /
+      external reference — auto-detected; multiple hits are LISTED (external
+      refs are not unique), never auto-picked. */
+  const smartLookup = useCallback(async () => {
+    setCandidates(null);
+    setState({ phase: 'loading' });
+    try {
+      const found = await searchMovementDocuments(raw);
+      if (!found.ok) {
+        setState({ phase: 'result', result: { ok: false, reason: found.reason === 'invalid_input' ? 'invalid_input' : 'not_available' }, timeline: null, fetchedAt: Date.now() });
+        return;
+      }
+      if (found.candidates.length > 1) {
+        setCandidates(found.candidates);
+        setState({ phase: 'idle' });
+        return;
+      }
+      await lookupCandidate(found.candidates[0]);
+    } catch {
+      setState({ phase: 'error' });
+    }
+    // raw is the only live input; lookupCandidate is stable per deps.
+  }, [raw]); // lookupCandidate intentionally omitted (declared below, stable)
+
+  const lookupCandidate = useCallback(async (candidate: TraceCandidate) => {
+    setCandidates(null);
+    setState({ phase: 'loading' });
+    try {
+      const kind = (candidate.kind === 'return_request' || candidate.kind === 'return_shipment')
+        ? candidate.kind : undefined;
+      const [result, timeline] = await Promise.all([
+        kind
+          ? resolveMovementStatus({ kind, id: candidate.id }, deps)
+          : Promise.resolve({ ok: false, reason: 'unsupported_kind', kind: 'return_request' } as MovementStatusResult),
+        getMovementTimeline(candidate.id).catch(() => null),
+      ]);
+      setState({ phase: 'result', result, timeline, fetchedAt: Date.now() });
+    } catch {
+      setState({ phase: 'error' });
+    }
+  }, [deps]);
+
   const lookup = useCallback(async () => {
     const target = parseMovementStatusInput(raw, kindHint);
     if (!target) {
-      setState({ phase: 'result', result: { ok: false, reason: 'invalid_input' }, timeline: null, fetchedAt: Date.now() });
+      // Not a QR/UUID: route through the smart document search.
+      await smartLookup();
       return;
     }
     setState({ phase: 'loading' });
@@ -129,6 +175,21 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
           </div>
         </div>
       </PhoenixCard>
+
+      {candidates && candidates.length > 1 && (
+        <PhoenixCard data-testid="movement-search-candidates">
+          <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '8px' }}>{t('or_search_multiple', lang)}</p>
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {candidates.map(candidate => (
+              <PhoenixButton key={candidate.id} variant="ghost" size="sm" onClick={() => void lookupCandidate(candidate)}>
+                <span dir="ltr">{candidate.number ?? candidate.id}</span>
+                {candidate.status ? ` · ${candidate.status}` : ''}
+                {candidate.externalReference ? ` · ${candidate.externalReference}` : ''}
+              </PhoenixButton>
+            ))}
+          </div>
+        </PhoenixCard>
+      )}
 
       {state.phase === 'loading' && <PhoenixLoadingState />}
       {state.phase === 'error' && (

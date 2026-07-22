@@ -743,6 +743,7 @@ export const T: Dict = {
   sp_official_order_no:    { ar: 'رقم الطلب الرسمي',                en: 'Official order number' },
   sp_official_receipt_no:  { ar: 'رقم الوصل الرسمي',                en: 'Official receipt number' },
   sp_awaiting_migration:   { ar: 'ميزة الإدخال المباشر بانتظار تفعيل migration 089', en: 'Direct entry awaits migration 089 activation' },
+  or_search_multiple:  { ar: 'أكثر من نتيجة مطابقة — اختر المستند المطلوب:', en: 'Multiple matching documents — choose one:' },
   sb_title:                  { ar: 'أرصدة المصادر',                 en: 'Source balances' },
   sb_supplied_from_pharmacy: { ar: 'المجهز من مخازن قسم الصيدلة',    en: 'Supplied from pharmacy department warehouses' },
   sb_total:                  { ar: 'الإجمالي',                       en: 'Total' },
