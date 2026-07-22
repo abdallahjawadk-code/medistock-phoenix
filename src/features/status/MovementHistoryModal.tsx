@@ -12,7 +12,6 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { MaterialTimeline, type MaterialTimelineEntry } from '@/shared/ui/MaterialTimeline';
-import type { AdjustQuantityRow } from './AdjustQuantityModal';
 
 /**
  * AVAILABILITY-MOVEMENT-HISTORY-VIEW-A
@@ -25,6 +24,19 @@ import type { AdjustQuantityRow } from './AdjustQuantityModal';
  * availability.movements.view. Visibility of the row action that opens this
  * modal is UX-only — RLS is the real read boundary.
  */
+
+/** The read-only item_availability display row this history viewer needs.
+ *  Defined locally so this viewer no longer depends on the retired
+ *  AdjustQuantityModal (canonical-stock cutover). */
+export interface MovementHistoryRow {
+  id: string;
+  scientific_name: string | null;
+  trade_name: string | null;
+  concentration: string | null;
+  dosage_form: string | null;
+  quantity: number;
+  distribution_points: { id: string; name: string; name_ar: string } | null;
+}
 
 const MOVEMENT_TYPE_LABEL_KEY: Record<AvailabilityMovementType, string> = {
   set_exact: 'mvmt_set_exact',
@@ -42,7 +54,7 @@ function formatDelta(type: AvailabilityMovementType, delta: number): string {
 
 interface Props {
   open: boolean;
-  row: AdjustQuantityRow | null;
+  row: MovementHistoryRow | null;
   lang: 'ar' | 'en';
   onClose: () => void;
 }
