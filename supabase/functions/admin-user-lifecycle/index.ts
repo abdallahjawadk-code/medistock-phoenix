@@ -71,6 +71,13 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// Platform-managed identities: only a super_admin (Platform Manager) may run a
+// lifecycle action against these. central_warehouse_manager is the pharmacy-
+// department / inventory-control role — a platform-level, cross-institution
+// identity, NOT an institution's own operational user. An institution_admin
+// must never disable, rotate or delete one, even inside a matching org.
+const PLATFORM_MANAGED_ROLES = ['super_admin', 'institution_admin', 'central_warehouse_manager'];
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
@@ -143,10 +150,13 @@ Deno.serve(async (req: Request) => {
     .from('profiles').select('role, status, organization_id').eq('id', targetId).single();
   if (!targetProfile) return json({ ok: false, error: 'TARGET_NOT_FOUND' }, 404);
 
-  // institution_admin scope guards: own org only, cannot act on super_admin /
-  // institution_admin, and cannot hard-delete anyone.
+  // institution_admin scope guards: own org only, cannot act on any platform-
+  // managed identity (super_admin / institution_admin / central_warehouse_
+  // manager), and cannot hard-delete anyone. Blocking central_warehouse_manager
+  // here is the fix for the pharmacy-department rotate/disable gap: only the
+  // Platform Manager (super_admin) may run lifecycle actions on that role.
   if (isCallerInstitutionAdmin) {
-    if (['super_admin', 'institution_admin'].includes(targetProfile.role)) {
+    if (PLATFORM_MANAGED_ROLES.includes(targetProfile.role)) {
       return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
     }
     if (callerProfile.organization_id !== targetProfile.organization_id) {
@@ -227,15 +237,69 @@ Deno.serve(async (req: Request) => {
     });
     if (pwErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
 
-    // Best-effort: must_change_password / password_changed_at exist since
-    // migration 016; degrade gracefully if a project hasn't applied it yet.
+    // Revoke every existing session/refresh token so the OLD credential can no
+    // longer be used from any device — a password rotation that left prior
+    // sessions alive would not actually lock out a compromised login. GoTrue's
+    // admin logout endpoint (global scope) is the authoritative way to do this
+    // for another user by id; failure is non-fatal (the password is already
+    // changed) but is recorded in the audit payload.
+    let sessionsRevoked = false;
+    try {
+      // Preferred: SDK admin signOut with global scope (all sessions of the user).
+      const anyAdmin = admin.auth.admin as unknown as {
+        signOut?: (id: string, scope?: string) => Promise<{ error: unknown }>;
+      };
+      if (typeof anyAdmin.signOut === 'function') {
+        const { error: soErr } = await anyAdmin.signOut(targetId, 'global');
+        sessionsRevoked = !soErr;
+      } else {
+        // Fallback: GoTrue REST admin logout (DELETE all sessions for the user).
+        const resp = await fetch(`${url}/auth/v1/admin/users/${targetId}/sessions`, {
+          method: 'DELETE',
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+        });
+        sessionsRevoked = resp.ok;
+      }
+    } catch {
+      sessionsRevoked = false;
+    }
+
+    // Force a password change on next login. Best-effort: must_change_password /
+    // password_changed_at exist since migration 016; degrade gracefully if a
+    // project hasn't applied it yet.
     try {
       await admin.from('profiles').update({ must_change_password: true }).eq('id', targetId);
     } catch {
       // Column may not exist yet — the password itself is still rotated.
     }
 
-    return json({ ok: true, action: 'password_rotated', user_id: targetId });
+    // Audit event — never stores the password, only the fact of the rotation,
+    // the actor, the target and whether prior sessions were revoked.
+    try {
+      await admin.from('audit_logs').insert({
+        organization_id: targetProfile.organization_id ?? callerProfile.organization_id ?? null,
+        actor_id: callerId,
+        actor_role: callerProfile.role,
+        action: 'user.password_rotated',
+        entity_type: 'profile',
+        entity_id: targetId,
+        payload: {
+          target_role: targetProfile.role,
+          sessions_revoked: sessionsRevoked,
+          forced_password_change: true,
+        },
+      });
+    } catch {
+      // Audit insert failure is non-fatal — the rotation itself already happened.
+    }
+
+    return json({
+      ok: true,
+      action: 'password_rotated',
+      user_id: targetId,
+      sessions_revoked: sessionsRevoked,
+      must_change_password: true,
+    });
   }
 
   // ── action: delete ─────────────────────────────────────────────────────────

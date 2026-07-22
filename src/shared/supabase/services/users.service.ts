@@ -1,3 +1,4 @@
+import { FunctionsHttpError, FunctionsFetchError, FunctionsRelayError } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../client';
 import type { OverrideMap } from '@/shared/lib/permissions';
 import type { OfficialRole } from '@/shared/lib/roles';
@@ -348,6 +349,116 @@ export async function resetProfilePermissions(
   }
 }
 
+// ── Edge Function failure classification (USER-ACCOUNT-EDGE-ERROR-CLASSIFY-A) ─
+//
+// supabase-js reports EVERY non-2xx response from a DEPLOYED function as an
+// `error` (FunctionsHttpError) — at a glance indistinguishable from a function
+// that is genuinely not deployed (FunctionsFetchError / a bare platform 404).
+// Earlier code collapsed BOTH into EDGE_NOT_DEPLOYED, which hid real, safe
+// backend rejection codes: a 403 role/scope denial
+// (CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER, CROSS_ORG_FORBIDDEN), a 400
+// validation error, or a DB-constraint failure surfaced as
+// CREATE_PROFILE_FAILED. That masking is exactly why a failing
+// pharmacy-department (central_warehouse_manager) create/rotate looked like a
+// deployment problem instead of the specific reason the server returned.
+//
+// These helpers separate the three real cases — unreachable / rejected /
+// unknown — and stamp every attempt with a correlation id so an operator can
+// match a failure to the server logs. Only structural, non-secret fields are
+// ever read or surfaced; request payloads, passwords and tokens never are.
+
+/** How an Edge Function attempt failed, without masking. */
+export type EdgeOutcome = 'unreachable' | 'rejected' | 'unknown';
+
+export interface EdgeFailure {
+  outcome: EdgeOutcome;
+  /** Safe, non-secret code: 'EDGE_NOT_DEPLOYED' | the function's own error code | 'UNKNOWN_ERROR'. */
+  code: string;
+  /** Optional safe message echoed from the function body (never secrets). */
+  message?: string;
+  /** HTTP status when the function actually responded. */
+  status?: number;
+  /** Correlation id for support/audit — never a secret. */
+  correlationId: string;
+}
+
+/**
+ * RFC-4122 id used to correlate a client attempt with server logs. Contains no
+ * user data, credential material, or request content — safe to display/log.
+ */
+export function newCorrelationId(): string {
+  try {
+    const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+  } catch { /* fall through to the non-crypto id */ }
+  return `cid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Classify a `supabase.functions.invoke` error WITHOUT masking. A DEPLOYED
+ * function that returns a non-2xx arrives as FunctionsHttpError carrying the
+ * original Response in `.context`; we read its safe JSON `error` code so the
+ * caller can surface the true reason instead of a false "not deployed". A
+ * genuine transport failure (offline/DNS/TLS) or a bare 404 with no JSON
+ * contract is the only thing mapped to EDGE_NOT_DEPLOYED.
+ */
+export async function classifyEdgeError(error: unknown, correlationId: string): Promise<EdgeFailure> {
+  // Genuinely unreachable: fetch-level failure (offline/DNS/TLS) or relay/edge routing.
+  if (error instanceof FunctionsFetchError || error instanceof FunctionsRelayError) {
+    return { outcome: 'unreachable', code: 'EDGE_NOT_DEPLOYED', correlationId };
+  }
+
+  // Deployed, but the function itself responded with a non-2xx status.
+  if (error instanceof FunctionsHttpError) {
+    const res = (error as { context?: Response }).context;
+    const status = res?.status;
+    let bodyCode: string | undefined;
+    let message: string | undefined;
+    if (res && typeof res.clone === 'function' && typeof res.json === 'function') {
+      try {
+        const body = (await res.clone().json()) as { error?: string; message?: string };
+        if (typeof body?.error === 'string') bodyCode = body.error;
+        if (typeof body?.message === 'string') message = body.message;
+      } catch { /* non-JSON body — no safe code to extract */ }
+    }
+    // A parseable business error (e.g. TARGET_NOT_FOUND at 404, or a 403 role
+    // denial) is always a real rejection. Only a bare 404 with no JSON contract
+    // means the route/function is not actually there.
+    if (bodyCode) return { outcome: 'rejected', code: bodyCode, message, status, correlationId };
+    if (status === 404) return { outcome: 'unreachable', code: 'EDGE_NOT_DEPLOYED', status, correlationId };
+    return { outcome: 'rejected', code: status ? `HTTP_${status}` : 'EDGE_REJECTED', message, status, correlationId };
+  }
+
+  // Anything else: an unexpected client-side throw or an unrecognised shape.
+  return { outcome: 'unknown', code: 'UNKNOWN_ERROR', correlationId };
+}
+
+/** Shared, non-masking failure fields attached to every Edge account result. */
+export interface EdgeResultMeta {
+  /** True ONLY when the Edge Function is unreachable / not deployed. */
+  edgeMissing?: boolean;
+  /** True when a DEPLOYED function rejected the request (real code in `error`). */
+  edgeRejected?: boolean;
+  /** True on an unexpected client-side failure (distinct from the above). */
+  unknownError?: boolean;
+  /** Safe human message echoed from the function (never secrets). */
+  errorMessage?: string;
+  /** Correlation id stamped on every attempt for support/audit. */
+  correlationId?: string;
+}
+
+/** Fold a classified EdgeFailure into the flat result-meta shape callers return. */
+function edgeFailureMeta(f: EdgeFailure): EdgeResultMeta & { error: string } {
+  return {
+    error: f.code,
+    errorMessage: f.message,
+    edgeMissing: f.outcome === 'unreachable',
+    edgeRejected: f.outcome === 'rejected',
+    unknownError: f.outcome === 'unknown',
+    correlationId: f.correlationId,
+  };
+}
+
 // ── User creation (secure Edge Function path only) ───────────────────────────
 
 export interface CreateUserInput {
@@ -371,7 +482,7 @@ export interface CreateUserInput {
   password?: string;
 }
 
-export interface CreateUserResult {
+export interface CreateUserResult extends EdgeResultMeta {
   ok: boolean;
   userId?: string;
   invited?: boolean;
@@ -380,8 +491,6 @@ export interface CreateUserResult {
   /** Echoes loginMode back so the UI can show the right success message. */
   loginMode?: 'local' | 'email';
   error?: string;
-  /** True when the admin-create-user Edge Function is not deployed. */
-  edgeMissing?: boolean;
 }
 
 /**
@@ -391,7 +500,8 @@ export interface CreateUserResult {
  * and are never stored in the profiles table.
  */
 export async function createUserViaEdge(input: CreateUserInput): Promise<CreateUserResult> {
-  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const correlationId = newCorrelationId();
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED', correlationId };
 
   try {
     const body: Record<string, string> = {
@@ -410,17 +520,20 @@ export async function createUserViaEdge(input: CreateUserInput): Promise<CreateU
       if (input.password) body.password = input.password;
     }
 
-    const { data, error } = await supabase.functions.invoke('admin-create-user', { body });
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      body,
+      headers: { 'x-correlation-id': correlationId },
+    });
 
-    if (error) {
-      return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
-    }
+    // Never collapse a deployed function's real rejection into "not deployed":
+    // classify unreachable vs. rejected (safe code preserved) vs. unknown.
+    if (error) return { ok: false, ...edgeFailureMeta(await classifyEdgeError(error, correlationId)) };
 
     const res = data as {
       ok: boolean; user_id?: string; invited?: boolean; password_mode?: boolean;
       login_mode?: 'local' | 'email'; error?: string;
     };
-    if (!res) return { ok: false, error: 'UNKNOWN' };
+    if (!res) return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
     return {
       ok:           res.ok,
       userId:       res.user_id,
@@ -428,31 +541,41 @@ export async function createUserViaEdge(input: CreateUserInput): Promise<CreateU
       passwordMode: res.password_mode,
       loginMode:    res.login_mode,
       error:        res.error,
+      correlationId,
     };
   } catch {
-    return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+    // A throw here is an unexpected client-side failure — NOT proof the
+    // function is undeployed. Surface it as its own honest state.
+    return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
   }
 }
 
 // ── User lifecycle (disable / enable / delete via Edge Function) ──────────────
 
-export interface LifecycleResult {
+export interface LifecycleResult extends EdgeResultMeta {
   ok: boolean;
   action?: string;
   error?: string;
-  /** True when the admin-user-lifecycle Edge Function is not deployed. */
-  edgeMissing?: boolean;
+  /** rotate_password: whether prior sessions were revoked server-side. */
+  sessions_revoked?: boolean;
+  /** rotate_password: whether the target is forced to change password next login. */
+  must_change_password?: boolean;
 }
 
 async function invokeLifecycle(payload: Record<string, string>): Promise<LifecycleResult> {
-  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const correlationId = newCorrelationId();
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED', correlationId };
   try {
-    const { data, error } = await supabase.functions.invoke('admin-user-lifecycle', { body: payload });
-    if (error) return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
-    const res = data as LifecycleResult;
-    return res ?? { ok: false, error: 'UNKNOWN' };
+    const { data, error } = await supabase.functions.invoke('admin-user-lifecycle', {
+      body: payload,
+      headers: { 'x-correlation-id': correlationId },
+    });
+    if (error) return { ok: false, ...edgeFailureMeta(await classifyEdgeError(error, correlationId)) };
+    const res = data as LifecycleResult | null;
+    if (!res) return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
+    return { ...res, correlationId };
   } catch {
-    return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+    return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
   }
 }
 
@@ -507,7 +630,7 @@ export interface RecycleUserInput {
   newEmail?: string;
 }
 
-export interface RecycleUserResult {
+export interface RecycleUserResult extends EdgeResultMeta {
   ok: boolean;
   targetProfileId?: string;
   newEmail?: string;
@@ -518,11 +641,11 @@ export interface RecycleUserResult {
   newUsername?: string;
   temporaryPasswordSet?: boolean;
   error?: string;
-  edgeMissing?: boolean;
 }
 
 export async function recycleUserViaEdge(input: RecycleUserInput): Promise<RecycleUserResult> {
-  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED' };
+  const correlationId = newCorrelationId();
+  if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED', correlationId };
 
   try {
     const body: Record<string, string> = {
@@ -541,9 +664,12 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
       if (input.newEmail) body.new_email = input.newEmail;
     }
 
-    const { data, error } = await supabase.functions.invoke('admin-recycle-user', { body });
+    const { data, error } = await supabase.functions.invoke('admin-recycle-user', {
+      body,
+      headers: { 'x-correlation-id': correlationId },
+    });
 
-    if (error) return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+    if (error) return { ok: false, ...edgeFailureMeta(await classifyEdgeError(error, correlationId)) };
 
     const res = data as {
       ok: boolean;
@@ -556,7 +682,7 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
       temporary_password_set?: boolean;
       error?: string;
     };
-    if (!res) return { ok: false, error: 'UNKNOWN' };
+    if (!res) return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
     return {
       ok:                   res.ok,
       targetProfileId:      res.target_profile_id,
@@ -567,9 +693,10 @@ export async function recycleUserViaEdge(input: RecycleUserInput): Promise<Recyc
       newUsername:          res.new_username,
       temporaryPasswordSet: res.temporary_password_set,
       error:                res.error,
+      correlationId,
     };
   } catch {
-    return { ok: false, edgeMissing: true, error: 'EDGE_NOT_DEPLOYED' };
+    return { ok: false, error: 'UNKNOWN_ERROR', unknownError: true, correlationId };
   }
 }
 

@@ -739,6 +739,16 @@ function ContactSection({ orgId, lang }: { orgId: string | null; lang: 'ar' | 'e
 
 /* ── Create user form (secure server path only) ── */
 
+/**
+ * Append the support/correlation reference to an error message when the service
+ * returned one. Every Edge account failure carries a correlation id so an
+ * operator can match the on-screen error to the server logs — this is what
+ * makes a masked "not deployed" no longer the end of the diagnostic trail.
+ */
+function withSupportRef(msg: string, lang: 'ar' | 'en', correlationId?: string): string {
+  return correlationId ? `${msg} · ${t('um_support_ref', lang)}: ${correlationId}` : msg;
+}
+
 function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast, onCreated }: {
   lang: 'ar' | 'en';
   isSuper: boolean;
@@ -793,14 +803,23 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         ...(contactEmail.trim() ? { contactEmail: contactEmail.trim() } : {}),
       });
 
-      if (res.edgeMissing) { setError(t('um_edge_disabled', lang)); return; }
+      // Unreachable / not deployed → the honest "not enabled" message.
+      if (res.edgeMissing) { setError(withSupportRef(t('um_edge_disabled', lang), lang, res.correlationId)); return; }
+      // Unexpected client-side failure → its own state, never "not deployed".
+      if (res.unknownError) { setError(withSupportRef(t('um_unknown_error', lang), lang, res.correlationId)); return; }
       if (!res.ok) {
-        if (res.error === 'CANNOT_CREATE_SUPER_ADMIN')       setError(t('um_cannot_create_super', lang));
-        else if (res.error === 'CANNOT_CREATE_INSTITUTION_ADMIN') setError(t('um_cannot_create_institution_admin', lang));
-        else if (res.error === 'CROSS_ORG_FORBIDDEN')        setError(t('um_cannot_create_outside_org', lang));
-        else if (res.error === 'PASSWORD_TOO_SHORT')         setError(t('um_password_too_short', lang));
-        else if (res.error === 'INVALID_USERNAME')           setError(t('um_username_invalid', lang));
-        else setError(t('um_edge_disabled', lang));
+        // A DEPLOYED function rejected the request: surface the true reason
+        // (including the pharmacy-department role gate) instead of masking it.
+        let msg: string;
+        if (res.error === 'CANNOT_CREATE_SUPER_ADMIN')       msg = t('um_cannot_create_super', lang);
+        else if (res.error === 'CANNOT_CREATE_INSTITUTION_ADMIN') msg = t('um_cannot_create_institution_admin', lang);
+        else if (res.error === 'CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER') msg = t('um_cannot_create_central', lang);
+        else if (res.error === 'CROSS_ORG_FORBIDDEN')        msg = t('um_cannot_create_outside_org', lang);
+        else if (res.error === 'PASSWORD_TOO_SHORT')         msg = t('um_password_too_short', lang);
+        else if (res.error === 'INVALID_USERNAME')           msg = t('um_username_invalid', lang);
+        else if (res.error === 'CREATE_PROFILE_FAILED' || res.error === 'CREATE_AUTH_USER_FAILED') msg = t('um_create_failed', lang);
+        else msg = `${t('um_edge_rejected', lang)} · ${res.error ?? ''}`;
+        setError(withSupportRef(msg, lang, res.correlationId));
         return;
       }
 
@@ -972,6 +991,7 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultPassword, setResultPassword] = useState<string | null>(null);
+  const [sessionsRevoked, setSessionsRevoked] = useState(false);
 
   const valid = newPassword.length >= 8 && newPassword === confirmPassword;
 
@@ -985,10 +1005,21 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
       const res = await rotatePasswordViaEdge(user.id, newPassword);
       if (res.ok) {
         // Shown exactly once, from the value already held locally — the
-        // server never echoes the password back.
+        // server never echoes the password back. Note whether prior sessions
+        // were revoked so the toast can confirm the credential is fully locked.
         setResultPassword(newPassword);
+        setSessionsRevoked(Boolean(res.sessions_revoked));
+      } else if (res.edgeMissing) {
+        setError(withSupportRef(t('um_edge_disabled', lang), lang, res.correlationId));
+      } else if (res.unknownError) {
+        setError(withSupportRef(t('um_unknown_error', lang), lang, res.correlationId));
+      } else if (res.error === 'LAST_SUPER_ADMIN') {
+        setError(withSupportRef(t('um_last_super_admin', lang), lang, res.correlationId));
+      } else if (res.error === 'INSUFFICIENT_PERMISSION') {
+        // e.g. an institution_admin attempting a pharmacy-department rotation.
+        setError(withSupportRef(t('um_cannot_create_central', lang), lang, res.correlationId));
       } else {
-        setError(res.error === 'LAST_SUPER_ADMIN' ? t('um_last_super_admin', lang) : t('um_rotate_password_failed', lang));
+        setError(withSupportRef(t('um_rotate_password_failed', lang), lang, res.correlationId));
       }
     } catch {
       setError(t('um_rotate_password_failed', lang));
@@ -1058,7 +1089,7 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
             <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--warn)', fontWeight: 600 }} dir="auto">
 <PhoenixIcon name="warning" size={13} inline /> {t('um_rotate_password_show_once', lang)}
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{t('um_rotate_password_success', lang)}</p>
+            <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{sessionsRevoked ? t('um_rotate_sessions_revoked', lang) : t('um_rotate_password_success', lang)}</p>
             <div style={{ padding: '10px 12px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', fontSize: '14px', fontWeight: 700, marginBottom: '16px', wordBreak: 'break-all' }} dir="ltr">
               {resultPassword}
             </div>
