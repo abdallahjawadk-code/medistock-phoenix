@@ -3176,6 +3176,54 @@ AS $recon$
 $recon$;
 GRANT EXECUTE ON FUNCTION public.phoenix_provenance_reconciliation() TO authenticated;
 
+
+-- == E. Regulatory acknowledgement audit record ==
+-- Creating or approving an inter-institution transfer requires the operator to
+-- confirm they reviewed the applicable regulations. The confirmation is an
+-- AUDIT FACT (who/when/what), never an automated ruling on permissibility.
+CREATE OR REPLACE FUNCTION public.phoenix_record_regulatory_ack(
+  p_entity_type text,
+  p_entity_id   uuid,
+  p_action      text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $reg_ack$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_role  text;
+  v_name  text;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF COALESCE(btrim(p_entity_type), '') NOT IN ('warehouse_transfer_request') THEN
+    RAISE EXCEPTION 'invalid_ack_entity' USING ERRCODE = '23514';
+  END IF;
+  IF COALESCE(btrim(p_action), '') NOT IN ('transfer.create_ack', 'transfer.review_ack') THEN
+    RAISE EXCEPTION 'invalid_ack_action' USING ERRCODE = '23514';
+  END IF;
+  SELECT pr.organization_id, pr.role, pr.full_name INTO v_org, v_role, v_name
+    FROM public.profiles pr WHERE pr.id = v_actor AND pr.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_org, v_actor, v_role, p_action, p_entity_type, p_entity_id, v_name,
+    jsonb_build_object('acknowledged_at', now(),
+      'statement', 'reviewed regulations and verified transfer permissibility')
+  );
+  RETURN jsonb_build_object('ok', true);
+END;
+$reg_ack$;
+REVOKE ALL ON FUNCTION public.phoenix_record_regulatory_ack(text, uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.phoenix_record_regulatory_ack(text, uuid, text) TO authenticated;
+
 COMMIT;
 
 -- ============================================================================

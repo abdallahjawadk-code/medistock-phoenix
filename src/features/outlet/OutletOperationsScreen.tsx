@@ -36,7 +36,7 @@ import { getOutletStock, getOutletStockMovements, type OutletStockRow } from './
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 
-type OutletTab = 'incoming' | 'stock' | 'returns' | 'history' | 'status';
+type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
 
 export function OutletOperationsScreen() {
@@ -75,12 +75,14 @@ export function OutletOperationsScreen() {
     return <div dir={dir}>{header}<PhoenixEmptyState icon="package" title={t('or_no_outlet_scope', lang)} description={t('empty_hint', lang)} /></div>;
   }
 
+  // MOVEMENT-TRACKING-MERGE: "movement history" and "movement status" are ONE
+  // tab — سجل وتتبع الحركة / Movement History & Tracking — the ledger list plus
+  // the 081/082 server-authoritative timeline tracker.
   const tabs: Array<{ id: OutletTab; labelKey: string }> = [
     { id: 'incoming', labelKey: 'or_tab_incoming' },
     { id: 'stock', labelKey: 'or_tab_stock' },
     { id: 'returns', labelKey: 'or_tab_returns' },
     { id: 'history', labelKey: 'or_tab_history' },
-    { id: 'status', labelKey: 'or_tab_status' },
   ];
 
   return (
@@ -131,9 +133,12 @@ export function OutletOperationsScreen() {
 
       {tab === 'returns' && <OutletReturnsTab distributionPointId={activeOutlet.id} outletName={outletName} lang={lang} />}
 
-      {tab === 'history' && <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />}
-
-      {tab === 'status' && <CurrentMovementStatus lang={lang} />}
+      {tab === 'history' && (
+        <div style={{ display: 'grid', gap: '18px' }}>
+          <CurrentMovementStatus lang={lang} />
+          <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />
+        </div>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import { assessFieldConfidence, orderForReview, REQUIRED_CONFIRMATION_FIELDS } f
 import { OcrReviewWorkspace, type ReviewFieldModel, type ReviewWarning } from './OcrReviewWorkspace';
 import type { OcrLanguage, OcrProvider, OcrProgress, OcrDocumentResult } from './types';
 import { OcrCancelledError, OcrUnavailableError } from './types';
+import { displaySupplyType } from '@/shared/lib/supply-types';
 
 /**
  * PHARMA-OCR-A — the staged OCR intake flow.
@@ -367,7 +368,9 @@ export function OcrIntakeFlow({
       batchNumber: values.batchNumber || null,
       expiryDate: values.expiryDate || null,
       unitPrice: values.unitPrice ? Number(values.unitPrice) : null,
-      supplyType: values.supplyType || null,
+      // 088: the wire value is the CLOSED vocabulary only. OCR text is coerced
+      // through the display mapping (donations → aid); unmappable → null.
+      supplyType: displaySupplyType(values.supplyType) ?? null,
       sourceDocumentNumber: values.sourceDocumentNumber || null,
       // Entry method is recorded in the EXISTING free-text notes contract — no
       // schema field, no migration, no new column.

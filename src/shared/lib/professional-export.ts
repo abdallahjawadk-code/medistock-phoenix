@@ -971,7 +971,7 @@ const OUTLET_REPORT_COLUMNS: { key: OutletReportColumnKey; width: number; kind: 
 /** Extra Data Dictionary entries for the outlet-report-only "Supply Type"/"Removed" columns, plus a corrected Scope note (this report CAN include removed rows, unlike the main export). */
 const OUTLET_REPORT_DICTIONARY: { field: string; description: string }[] = [
   ...AVAIL_EXPORT_DICTIONARY.slice(0, -1), // drop the main export's "excludes removed materials" Scope line — replaced below
-  { field: OUTLET_REPORT_HEADERS.supplyType, description: 'Free-text supply/procurement category recorded for this material (e.g. purchases, Kimadia, donations, aid), if any. / تصنيف نصي حر لمصدر/طريقة تجهيز هذه المادة (مثل مشتريات، كيماديا، هبات، مساعدات)، إن وُجد.' },
+  { field: OUTLET_REPORT_HEADERS.supplyType, description: 'Canonical supply category recorded for this material: aid, purchases (central/supplementary) or Kimadia. / تصنيف التجهيز المعتمد لهذه المادة: مساعدات أو مشتريات (مركزية/فرعية) أو كيماديا.' },
   { field: OUTLET_REPORT_HEADERS.removed, description: 'Whether this material is currently active at the outlet or was intentionally removed (removed_at marker) — never a raw removed-by user id. / يوضح ما إذا كانت هذه المادة فعالة حالياً في المنفذ أو تمت إزالتها عمداً (علامة removed_at) — لا يعرض معرّف المستخدم الخام لمن قام بالإزالة.' },
   { field: 'Scope / النطاق', description: 'This is an outlet operations report: it includes removed materials only when the modal\'s "Removed status" filter is set to show them, and every such row is clearly labeled Removed above. / هذا تقرير تشغيلي للمنفذ: يتضمن المواد المُزالة فقط عند ضبط فلتر "حالة الإزالة" في النافذة لعرضها، ويتم وسم كل صف من هذا النوع بوضوح كمُزال أعلاه.' },
 ];

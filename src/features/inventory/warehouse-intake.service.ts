@@ -101,7 +101,14 @@ export interface ReceiveWarehouseStockInput {
   unitPrice?: number | null;
   priceBasis?: string | null;
   currency?: string | null;
+  /**
+   * CANONICAL-SUPPLY-PROVENANCE-088: closed vocabulary ('aid'|'purchase'|
+   * 'kimadia'). Part of LOT IDENTITY server-side. A 'purchase' received at a
+   * pharmacy-department warehouse defaults its origin to 'central' — the
+   * server enforces the same rule.
+   */
   supplyType?: string | null;
+  purchaseOrigin?: string | null;
   sourceDocumentNumber?: string | null;
   notes?: string | null;
   /**
@@ -209,6 +216,9 @@ export interface WarehouseReceiptLotIdentity {
   nationalCode?: string | null;
   batchNumber?: string | null;
   expiryDate?: string | null;
+  /** 088: canonical provenance participates in lot identity. */
+  supplyType?: string | null;
+  purchaseOrigin?: string | null;
 }
 
 /** The exact column filter the canonical read uses, exported so tests can pin it. */
@@ -221,6 +231,10 @@ export interface NormalizedLotFilter {
   batch_number: string | null;
   internal_batch_reference: string | null;
   expiry_date: string | null;
+  /** 088 provenance identity axes. Mirrors the server's normalization: a
+   *  'purchase' with no explicit origin resolves as 'central'. */
+  supply_type: string | null;
+  purchase_origin: string | null;
 }
 
 /** Mirror of the server's NULLIF(btrim(x), '') normalization. */
@@ -246,6 +260,8 @@ export function receiptInternalBatchReference(
 
 /** Build the exact canonical filter the server resolves the receipt against. */
 export function normalizedLotFilter(identity: WarehouseReceiptLotIdentity): NormalizedLotFilter {
+  const supplyType = normalizeIdentityText(identity.supplyType);
+  const explicitOrigin = normalizeIdentityText(identity.purchaseOrigin);
   return {
     warehouse_id:             identity.warehouseId,
     scientific_name:          normalizeIdentityText(identity.scientificName) ?? '',
@@ -255,6 +271,9 @@ export function normalizedLotFilter(identity: WarehouseReceiptLotIdentity): Norm
     batch_number:             normalizeIdentityText(identity.batchNumber),
     internal_batch_reference: receiptInternalBatchReference(identity),
     expiry_date:              normalizeIdentityText(identity.expiryDate),
+    supply_type:              supplyType,
+    // Mirror of the server rule: purchase defaults to 'central'.
+    purchase_origin:          supplyType === 'purchase' ? (explicitOrigin ?? 'central') : explicitOrigin,
   };
 }
 
@@ -296,6 +315,9 @@ export async function getWarehouseReceiptLotGeneration(
       ['batch_number', filter.batch_number],
       ['internal_batch_reference', filter.internal_batch_reference],
       ['expiry_date', filter.expiry_date],
+      // 088: the per-source lot is the identity — read ITS generation.
+      ['supply_type', filter.supply_type],
+      ['purchase_origin', filter.purchase_origin],
     ] as const;
     for (const [column, value] of optional) {
       query = value === null ? query.is(column, null) : query.eq(column, value);
@@ -372,6 +394,9 @@ export function receiveWarehouseStock(
     p_supply_type_text:       input.supplyType ?? null,
     p_source_document_number: input.sourceDocumentNumber ?? null,
     p_notes:                  input.notes ?? null,
+    // 088 canonical provenance — identity axis, validated server-side.
+    p_supply_type:            input.supplyType ?? null,
+    p_purchase_origin:        input.purchaseOrigin ?? null,
   });
 }
 

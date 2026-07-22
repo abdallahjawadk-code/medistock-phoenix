@@ -121,6 +121,22 @@ export function InventoryIntelligencePanel() {
     if (res.ok) suggestions.reload();
   }
 
+  /** ONE refresh act: recompute alerts + regenerate suggestions (permission-gated pieces). */
+  async function runRefreshAll() {
+    if (!activeOrgId) return;
+    setBusy(true);
+    if (canRecompute) {
+      const res = await recomputeInventoryAlerts(activeOrgId);
+      if (res.ok) alerts.reload();
+    }
+    if (canSuggest) {
+      const res2 = await suggestInventoryTransfers(activeOrgId);
+      if (res2.ok) suggestions.reload();
+    }
+    setBusy(false);
+    flash(t('inv_saved', lang));
+  }
+
   if (!canView) {
     return (
       <PhoenixEmptyState icon="lock" title={t('inv_title', lang)} description={t('inv_denied', lang)} />
@@ -141,14 +157,12 @@ export function InventoryIntelligencePanel() {
           <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }} dir="auto">{t('inv_subtitle', lang)}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {canRecompute && (
-            <PhoenixButton variant="secondary" size="sm" loading={busy} onClick={runRecompute}>
-              ↻ {t('inv_action_recompute', lang)}
-            </PhoenixButton>
-          )}
-          {canSuggest && (
-            <PhoenixButton variant="secondary" size="sm" loading={busy} onClick={runSuggest}>
-              <PhoenixIcon name="sparkle" size={13} inline /> {t('inv_action_regenerate', lang)}
+          {/* INTELLIGENCE-SIMPLIFICATION: the analysis follows every canonical
+              movement automatically server-side; the two manual actions
+              (recompute + regenerate) are ONE "refresh data" act. */}
+          {(canRecompute || canSuggest) && (
+            <PhoenixButton variant="secondary" size="sm" loading={busy} onClick={runRefreshAll}>
+              ↻ {t('inv_action_refresh_data', lang)}
             </PhoenixButton>
           )}
           {canThresholds && (

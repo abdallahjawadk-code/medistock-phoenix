@@ -59,26 +59,27 @@ describe('the app shell has exactly one scroll owner and the final control is re
     expect(appShell).toContain("overflowY: 'auto'");
   });
 
-  it('mobile bottom padding clears nav + seal + safe area, so the last card scrolls into view', () => {
+  it('mobile bottom padding clears nav + safe area, so the last card scrolls into view', () => {
     expect(appShell).toContain(
-      "'calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 18px + env(safe-area-inset-bottom, 0px))'",
+      "'calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))'",
     );
-    expect(nexusCss).toContain('--nx-seal-clearance: 46px;');
   });
 
-  it('the pinned mobile seal is inert, shrunk, and safe-area aware', () => {
-    const sealRule = nexusCss.slice(
-      nexusCss.lastIndexOf('.nexus-shell__brand {', nexusCss.indexOf('transform: scale(.78)')),
-      nexusCss.indexOf('transform-origin: center bottom;'),
-    );
-    expect(sealRule).toContain('pointer-events: none;');
-    expect(sealRule).toContain('transform: scale(.78)');
-    expect(sealRule).toContain('env(safe-area-inset-bottom, 0px)');
+  it('RIGHTS-SEAL-IN-FLOW: the seal is a REAL footer in normal flow — never fixed/sticky', () => {
+    // The footer lives INSIDE the main scroller, after the growing content.
+    expect(appShell).toContain("<div style={{ flex: '1 0 auto', minWidth: 0 }}>{children}</div>");
+    expect(appShell).toMatch(/<footer className="nexus-shell__brand"/);
+    // No fixed/sticky/absolute positioning anywhere in the seal rules.
+    const sealRules = nexusCss.split('.nexus-shell__brand').slice(1).map(x => x.slice(0, 400)).join(' ');
+    expect(sealRules).not.toContain('position: fixed');
+    expect(sealRules).not.toContain('position: sticky');
+    expect(sealRules).not.toContain('position: absolute');
+    expect(sealRules).not.toContain('transform: scale');
   });
 
-  it('the floating search sits above the seal band and retreats when the keyboard opens', () => {
+  it('the floating search clears the bottom nav and retreats when the keyboard opens', () => {
     expect(nexusCss).toContain(
-      'bottom: calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 10px + env(safe-area-inset-bottom, 0px)) !important;',
+      'bottom: calc(var(--bnh) + 12px + env(safe-area-inset-bottom, 0px)) !important;',
     );
     expect(nexusCss).toContain('html[data-keyboard="open"] .nexus-shell .premium-command-trigger');
     // The shell maintains the marker from the visual viewport.

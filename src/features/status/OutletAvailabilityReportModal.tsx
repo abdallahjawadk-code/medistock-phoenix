@@ -58,11 +58,10 @@ const EXPORT_CONDITION_LABELS: Record<CanonicalCondition, string> = {
   expired:     'Expired / منتهي الصلاحية',
 };
 
-type SupplyCategory = 'purchases' | 'kimadia' | 'donations' | 'aid';
+type SupplyCategory = 'purchases' | 'kimadia' | 'aid';
 const SUPPLY_CATEGORIES: { value: SupplyCategory; labelKey: string }[] = [
   { value: 'purchases', labelKey: 'sc_supply_purchases' },
   { value: 'kimadia',   labelKey: 'sc_supply_kimadia' },
-  { value: 'donations', labelKey: 'sc_supply_donations' },
   { value: 'aid',       labelKey: 'sc_supply_aid' },
 ];
 
@@ -72,7 +71,8 @@ function normalizeSupplyType(v?: string | null): SupplyCategory | null {
   if (!s) return null;
   if (s.includes('kimadia') || s.includes('كيماديا') || s.includes('كماديا')) return 'kimadia';
   if (s.includes('purchase') || s.includes('مشتر') || s.includes('شراء')) return 'purchases';
-  if (s.includes('donation') || s.includes('هب') || s.includes('تبرع') || s.includes('منح')) return 'donations';
+  // Legacy donations display under aid (closed vocabulary, data untouched).
+  if (s.includes('donation') || s.includes('هب') || s.includes('تبرع') || s.includes('منح')) return 'aid';
   if (s.includes('aid') || s.includes('مساعد') || s.includes('إغاث') || s.includes('اغاث')) return 'aid';
   return null;
 }

@@ -27,6 +27,7 @@ import {
   parseMovementStatusInput, resolveMovementStatus,
   type MovementStatus, type MovementStatusResult, type MovementStatusDeps,
 } from './movement-status';
+import { getMovementTimeline, type MovementTimeline } from '@/features/movement/movement-timeline.service';
 
 type Lang = 'ar' | 'en';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -42,7 +43,7 @@ type ViewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
   | { phase: 'error' }
-  | { phase: 'result'; result: MovementStatusResult; fetchedAt: number };
+  | { phase: 'result'; result: MovementStatusResult; timeline: MovementTimeline | null; fetchedAt: number };
 
 interface Props {
   lang: Lang;
@@ -68,13 +69,21 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
   const lookup = useCallback(async () => {
     const target = parseMovementStatusInput(raw, kindHint);
     if (!target) {
-      setState({ phase: 'result', result: { ok: false, reason: 'invalid_input' }, fetchedAt: Date.now() });
+      setState({ phase: 'result', result: { ok: false, reason: 'invalid_input' }, timeline: null, fetchedAt: Date.now() });
       return;
     }
     setState({ phase: 'loading' });
     try {
-      const result = await resolveMovementStatus(target, deps);
-      setState({ phase: 'result', result, fetchedAt: Date.now() });
+      // MOVEMENT-TRACKING-MERGE: the current status AND the full 081/082
+      // server-side timeline resolve together. The timeline RPC is org-scoped
+      // server-side and returns the SAME empty shape for unknown and
+      // unauthorized ids — no existence leak, no duplicated events (each event
+      // row is one append-only ledger/lifecycle record).
+      const [result, timeline] = await Promise.all([
+        resolveMovementStatus(target, deps),
+        getMovementTimeline(target.id).catch(() => null),
+      ]);
+      setState({ phase: 'result', result, timeline, fetchedAt: Date.now() });
     } catch {
       setState({ phase: 'error' });
     }
@@ -121,8 +130,6 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
         </div>
       </PhoenixCard>
 
-      <p style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('or_status_timeline_note', lang)}</p>
-
       {state.phase === 'loading' && <PhoenixLoadingState />}
       {state.phase === 'error' && (
         <div data-testid="movement-status-error" style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--err)' }}>
@@ -145,7 +152,47 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
       {state.phase === 'result' && state.result.ok && (
         <StatusResult status={state.result.status} fetchedAt={state.fetchedAt} lang={lang} />
       )}
+
+      {/* The unified, ordered, server-authoritative timeline (081/082) — shown
+          for ANY resolvable trace id, including corridors the status card does
+          not cover yet. */}
+      {state.phase === 'result' && state.timeline && state.timeline.events.length > 0 && (
+        <TimelineResult timeline={state.timeline} lang={lang} />
+      )}
     </div>
+  );
+}
+
+function TimelineResult({ timeline, lang }: { timeline: MovementTimeline; lang: Lang }) {
+  return (
+    <PhoenixCard data-testid="movement-timeline">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <h4 style={{ fontSize: '13.5px', fontWeight: 700 }}>{t('or_timeline_title', lang)}</h4>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => window.print()}>
+          {t('or_timeline_print', lang)}
+        </PhoenixButton>
+      </div>
+      <ol style={{ listStyle: 'none', marginTop: '10px', display: 'grid', gap: '8px' }}>
+        {timeline.events.map(e => (
+          <li key={e.eventId} style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '12px', borderInlineStart: '2px solid var(--p)', paddingInlineStart: '10px' }}>
+            <span dir="ltr" style={{ color: 'var(--t3)', whiteSpace: 'nowrap', fontSize: '11px' }}>
+              {new Date(e.occurredAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <strong>{dash(e.statusAfter)}</strong>
+              {e.materialLabel ? ` · ${e.materialLabel}` : ''}
+              {e.batchLabel ? ` (${e.batchLabel})` : ''}
+              {e.quantityDelta != null ? ` · ${e.quantityDelta > 0 ? '+' : ''}${e.quantityDelta}` : ''}
+              {e.actorName ? ` · ${e.actorName}` : ''}
+              {e.referenceLabel ? ` · ${e.referenceLabel}` : ''}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {!timeline.complete && timeline.completenessNote && (
+        <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '8px' }}>{timeline.completenessNote}</p>
+      )}
+    </PhoenixCard>
   );
 }
 

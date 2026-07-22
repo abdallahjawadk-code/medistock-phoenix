@@ -20,6 +20,7 @@ import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
+import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
@@ -443,7 +444,7 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
         batchNumber: batchNumber.trim() || null,
         expiryDate: expiryDate || null,
         unitPrice: unitPrice.trim() === '' ? null : Number(unitPrice),
-        supplyType: supplyType.trim() || null,
+        supplyType: supplyType || null,
         sourceDocumentNumber: sourceDocument.trim() || null,
         notes: notes.trim() || null,
       };
@@ -506,7 +507,25 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
         />
         <PhoenixInput label={t('inv_expiry_date', lang)} type="date" value={expiryDate} onChange={e => { setExpiryDate(e.target.value); touch(); }} />
         <PhoenixInput label={t('inv_unit_price', lang)} type="number" min={0} step="0.01" value={unitPrice} onChange={e => { setUnitPrice(e.target.value); touch(); }} />
-        <PhoenixInput label={t('inv_supply_type', lang)} value={supplyType} onChange={e => { setSupplyType(e.target.value); touch(); }} />
+        {/* CANONICAL-SUPPLY-PROVENANCE-088: CLOSED three-value vocabulary — never
+            free text. A 'purchase' at a pharmacy-department warehouse is saved
+            as a CENTRAL purchase server-side. */}
+        <div>
+          <PhoenixSelect
+            label={t('inv_supply_type', lang)}
+            value={supplyType}
+            onChange={e => { setSupplyType(e.target.value); touch(); }}
+            options={[
+              { value: '', label: '—' },
+              ...SUPPLY_TYPES.map(x => ({ value: x, label: t(supplyTypeLabelKey(x), lang) })),
+            ]}
+          />
+          {supplyType === 'purchase' && (
+            <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '4px' }}>
+              {t('st_purchase_central_note', lang)}
+            </p>
+          )}
+        </div>
         <PhoenixInput label={t('inv_source_document', lang)} value={sourceDocument} onChange={e => { setSourceDocument(e.target.value); touch(); }} />
       </div>
 

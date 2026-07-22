@@ -47,6 +47,20 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // PHARMACY-PULSE-LOADER: pause decorative animations while the page is
+  // hidden (background tab) — CSS reads html[data-page-hidden].
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) document.documentElement.setAttribute('data-page-hidden', '');
+      else document.documentElement.removeAttribute('data-page-hidden');
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      document.documentElement.removeAttribute('data-page-hidden');
+    };
+  }, []);
+
   // MOBILE-SCROLL-OWNER-HOTFIX-A: mark the document while the on-screen
   // keyboard is open (visual viewport shrinks well below the layout viewport)
   // so CSS can retreat the floating search control and nothing floats over a
@@ -121,20 +135,26 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
             overflowX: 'hidden',
             padding: isMobile ? '16px 14px' : '24px 28px',
             paddingBottom: isMobile
-              ? 'calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 18px + env(safe-area-inset-bottom, 0px))'
+              ? 'calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))'
               : '28px',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          {children}
-        </main>
+          {/* The page content grows; the footer below it stays in NORMAL flow. */}
+          <div style={{ flex: '1 0 auto', minWidth: 0 }}>{children}</div>
 
-        {/* PART 5 choke point: exactly one MASAR copyright seal per operational
-            route, inherited by every screen. Compact on desktop (slim footer
-            strip), minimal on mobile (pinned just above the bottom-nav safe
-            area). Inert (pointer-events:none) so it never blocks controls. */}
-        <footer className="nexus-shell__brand" aria-label={lang === 'ar' ? 'حقوق النشر' : 'Copyright'}>
-          <MasarCopyrightSeal variant={isMobile ? 'minimal' : 'compact'} />
-        </footer>
+          {/* PART 5 choke point: exactly ONE MASAR copyright seal per
+              operational route, inherited by every screen — a REAL footer in
+              normal document flow at the END of the scrollable content. On a
+              short page the flex column pushes it to the bottom of the
+              scroller; on a long page it appears only when the operator
+              reaches the end. It never floats, never covers a card/button or
+              the bottom navigation, and scrolls WITH the page. */}
+          <footer className="nexus-shell__brand" aria-label={lang === 'ar' ? 'حقوق النشر' : 'Copyright'}>
+            <MasarCopyrightSeal variant={isMobile ? 'minimal' : 'compact'} />
+          </footer>
+        </main>
       </div>
 
       {isMobile && (

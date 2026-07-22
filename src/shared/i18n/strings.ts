@@ -610,7 +610,7 @@ export const T: Dict = {
 
   /* ── Central Status Center ── */
   nav_status_center:  { ar: 'مركز المواقف',                      en: 'Status Center' },
-  nav_inter_alerts:   { ar: 'تنبيهات بين المؤسسات',             en: 'Inter-Institution Alerts' },
+  nav_inter_alerts:   { ar: 'اقتراحات المناقلات',               en: 'Transfer Suggestions' },
   sc_sub:             { ar: 'تقارير مركزية · شحيح / فائض / قريب النفاد / مفقود', en: 'Central reports · Scarce / Surplus / Near expiry / Missing' },
   sc_add:             { ar: 'إضافة تقرير',                       en: 'Add Report' },
   sc_edit:            { ar: 'تعديل التقرير',                     en: 'Edit Report' },
@@ -709,14 +709,23 @@ export const T: Dict = {
   sc_all_supply_types:  { ar: 'كل أنواع التجهيز',                  en: 'All supply types' },
   sc_supply_purchases:  { ar: 'مشتريات',                          en: 'Purchases' },
   sc_supply_kimadia:    { ar: 'كيماديا',                           en: 'Kimadia' },
-  sc_supply_donations:  { ar: 'هبات',                             en: 'Donations' },
+  /* CANONICAL-SUPPLY-PROVENANCE-088: purchase origin badges + filters. */
+  inv_action_refresh_data:  { ar: 'تحديث البيانات',                  en: 'Refresh data' },
+  st_origin_central:        { ar: 'مشتريات مركزية',                  en: 'Central purchases' },
+  st_origin_supplementary:  { ar: 'مشتريات فرعية',                   en: 'Supplementary purchases' },
+  st_purchase_central_note: { ar: 'يُحفظ تلقائيًا كمشتريات مركزية',   en: 'Saved automatically as a central purchase' },
+  st_purchases_all:         { ar: 'جميع المشتريات',                   en: 'All purchases' },
+  /* Transfer-suggestion regulatory acknowledgement. */
+  ts_regulatory_notice:     { ar: 'تنبيه تنظيمي: يجب الرجوع إلى الضوابط والتعليمات النافذة والتحقق من إمكانية إجراء المناقلة، ولا سيما عند وجود مواد خاضعة لسياقات أو ضوابط خاصة. اقتراح المناقلة إرشادي ولا يمثل موافقة قانونية أو إدارية.', en: 'Regulatory notice: consult the applicable regulations and instructions and verify that the transfer is permissible, especially for materials under special controls. A transfer suggestion is advisory and does not constitute legal or administrative approval.' },
+  ts_ack_checkbox:          { ar: 'أؤكد أنني اطلعت على الضوابط والتعليمات وتحققت من إمكانية إجراء المناقلة.', en: 'I confirm that I have reviewed the regulations and instructions and verified that the transfer is permissible.' },
+  ts_ack_required:          { ar: 'يجب تأكيد الاطلاع على الضوابط قبل المتابعة', en: 'You must confirm the regulatory review before continuing' },
   sc_supply_aid:        { ar: 'مساعدات',                           en: 'Aid' },
   sc_generated_at:      { ar: 'تاريخ الإنشاء',                     en: 'Generated at' },
   sc_total_rows:        { ar: 'إجمالي السجلات',                    en: 'Total rows' },
   sc_selected_filters:  { ar: 'عوامل التصفية المحددة',            en: 'Selected filters' },
   sc_no_match:          { ar: 'لا توجد سجلات مطابقة لعوامل التصفية الحالية', en: 'No rows match current filters' },
-  material_exchange_center:       { ar: 'مركز تبادل المواد',  en: 'Material Exchange Command Center' },
-  open_exchange_center:           { ar: 'فتح مركز تبادل المواد', en: 'Open Exchange Center' },
+  material_exchange_center:       { ar: 'مركز المناقلات بين المؤسسات',  en: 'Inter-Institution Transfer Center' },
+  open_exchange_center:           { ar: 'فتح مركز المناقلات بين المؤسسات', en: 'Open the Inter-Institution Transfer Center' },
   duplicate_exchange_moved_notice: { ar: 'تنبيهات التبادل بين المؤسسات أصبحت متوفرة في مركز تبادل المواد', en: 'Inter-institution exchange alerts are now managed in the Material Exchange Command Center' },
   st_scarce:          { ar: 'شحيح',                              en: 'Scarce' },
   st_surplus:         { ar: 'فائض',                              en: 'Surplus' },
@@ -740,7 +749,7 @@ export const T: Dict = {
   ea_all_priorities:  { ar: 'كل الأولويات',                      en: 'All Priorities' },
 
   /* ── Inter-Institution Alerts (dedicated page) ── */
-  iia_title:          { ar: 'تنبيهات بين المؤسسات',             en: 'Inter-Institution Alerts' },
+  iia_title:          { ar: 'اقتراحات المناقلات',               en: 'Transfer Suggestions' },
   iia_sub:            { ar: 'تظهر هنا المواد الفائضة أو قريبة النفاد في مؤسسة وتقابلها مواد شحيحة أو مفقودة في مؤسسة أخرى', en: 'This page shows surplus or near-expiry items in one institution that match scarce or missing items in another institution' },
   iia_priority_high:  { ar: 'تنبيه عالي الأولوية',              en: 'High-priority alert' },
   iia_priority_medium:{ ar: 'تنبيه متوسط الأولوية',            en: 'Medium-priority alert' },
@@ -758,7 +767,7 @@ export const T: Dict = {
   iia_copy_reco:      { ar: 'نسخ توصية التواصل',               en: 'Copy contact recommendation' },
   iia_manual:         { ar: 'يتطلب إجراء يدوي',                 en: 'Manual action required' },
   iia_no_transfer:    { ar: 'لا نقل تلقائي · لا موافقة تلقائية · تواصل يدوي فقط', en: 'No auto-transfer · No auto-approval · Manual communication only' },
-  iia_empty:          { ar: 'لا توجد تنبيهات بين المؤسسات حالياً', en: 'No inter-institution alerts yet' },
+  iia_empty:          { ar: 'لا توجد اقتراحات مناقلات حالياً',   en: 'No transfer suggestions yet' },
   iia_filter_priority:{ ar: 'تصفية حسب الأولوية',              en: 'Filter by priority' },
   iia_filter_item:    { ar: 'تصفية حسب المادة',                en: 'Filter by item' },
   iia_filter_inst:    { ar: 'تصفية حسب المؤسسة',               en: 'Filter by institution' },
@@ -774,7 +783,7 @@ export const T: Dict = {
   iia_pair_expiry_scarce:   { ar: 'قريب النفاد ← شحيح',        en: 'Near-expiry → Scarce' },
 
   /* ── LIVE-INTER-INSTITUTION-ALERTS-UI-A: live, item_availability-based alerts ── */
-  lia_title:               { ar: 'تنبيهات بين المؤسسات',                              en: 'Inter-Institution Alerts' },
+  lia_title:               { ar: 'اقتراحات المناقلات',                                en: 'Transfer Suggestions' },
   lia_sub:                 { ar: 'تنبيهات محسوبة من التوفر الحالي المباشر',           en: 'Alerts computed from current live availability' },
   lia_summary_total:       { ar: 'مجموع التنبيهات',                                   en: 'Total alerts' },
   lia_summary_high:        { ar: 'عالية الأولوية',                                    en: 'High severity' },
@@ -820,7 +829,7 @@ export const T: Dict = {
   lia_visible_alerts_label:  { ar: 'تنبيهات مرئية',                                   en: 'visible alerts' },
 
   /* ── LIVE-ALERTS-DASHBOARD-SUMMARY-A: Dashboard live inter-institution summary ── */
-  d_live_alerts_title:     { ar: 'تنبيهات حية بين المؤسسات',                          en: 'Live Inter-Institution Alerts' },
+  d_live_alerts_title:     { ar: 'اقتراحات مناقلات حية',                              en: 'Live Transfer Suggestions' },
 
   /* ── User Management & Permission Matrix ── */
   nav_users:          { ar: 'إدارة المستخدمين',                 en: 'User Management' },
@@ -986,7 +995,7 @@ export const T: Dict = {
   permmod_availability:             { ar: 'التوفر',              en: 'Availability' },
   permmod_status_center:            { ar: 'مركز المواقف',        en: 'Status Center' },
   permmod_exchange_alerts:          { ar: 'تنبيهات التبادل',     en: 'Exchange Alerts' },
-  permmod_inter_institution_alerts: { ar: 'تنبيهات بين المؤسسات', en: 'Inter-Institution Alerts' },
+  permmod_inter_institution_alerts: { ar: 'اقتراحات المناقلات', en: 'Transfer Suggestions' },
   permmod_status_contacts:          { ar: 'جهات الاتصال',        en: 'Status Contacts' },
   permmod_deletion_wizard:          { ar: 'معالج الحذف',         en: 'Deletion Wizard' },
 
@@ -1025,7 +1034,7 @@ export const T: Dict = {
   perm_status_center_edit:                { ar: 'تعديل تقارير المواقف',  en: 'Edit status reports' },
   perm_status_center_resolve:             { ar: 'إغلاق تقارير المواقف',  en: 'Resolve status reports' },
   perm_exchange_alerts_view:              { ar: 'عرض تنبيهات التبادل',   en: 'View exchange alerts' },
-  perm_inter_institution_alerts_view:     { ar: 'عرض تنبيهات بين المؤسسات', en: 'View inter-institution alerts' },
+  perm_inter_institution_alerts_view:     { ar: 'عرض اقتراحات المناقلات', en: 'View transfer suggestions' },
   /* FINAL-POLISH-PERMISSIONS-QR-A: labels mirror permission_keys.label_ar/label_en (migration 038). */
   perm_inter_institution_alerts_acknowledge: { ar: 'تأكيد الاطلاع على التنبيه بين المؤسسات', en: 'Acknowledge inter-institution alert' },
   perm_inter_institution_alerts_manage:      { ar: 'إدارة التنبيه بين المؤسسات (بدء/إعادة فتح)', en: 'Manage inter-institution alert (start/reopen)' },
@@ -1495,7 +1504,7 @@ export const T: Dict = {
   net_tab_scopes:         { ar: 'إسناد النطاقات',                 en: 'Scope Assignments' },
   /* ── W077: direct central→institution supply (route-free) ── */
   net_ds_hint:            { ar: 'اختر المؤسسة ثم مذخرها النشط وجهّزه مباشرة من مخزن مركزي — دون مسار تجهيز.', en: 'Pick the institution, then its active warehouse, and supply it directly from a central warehouse — no supply route.' },
-  net_ds_source:          { ar: 'المخزن المركزي المصدر',           en: 'Source central warehouse' },
+  net_ds_source:          { ar: 'مخزن قسم الصيدلة المصدر',           en: 'Source pharmacy department warehouse' },
   net_ds_institution:     { ar: 'المؤسسة',                        en: 'Institution' },
   net_ds_warehouse:       { ar: 'مذخر المؤسسة النشط',              en: 'Active institution warehouse' },
   net_ds_number:          { ar: 'رقم الطلب',                      en: 'Request number' },
@@ -1545,7 +1554,7 @@ export const T: Dict = {
   net_op_disp_restock:    { ar: 'إعادة للمخزون',                   en: 'Restockable' },
   net_op_disp_quarantine: { ar: 'حجْر',                            en: 'Quarantine' },
   net_op_return_source:   { ar: 'مذخر المؤسسة (المصدر)',           en: 'Institution warehouse (source)' },
-  net_op_return_dest:     { ar: 'المخزن المركزي (الوجهة)',         en: 'Central warehouse (destination)' },
+  net_op_return_dest:     { ar: 'مخزن قسم الصيدلة (الوجهة)',         en: 'Pharmacy department warehouse (destination)' },
   net_op_return_request:  { ar: 'طلب إرجاع (من المؤسسة)',          en: 'Request return (institution)' },
   net_op_recall:          { ar: 'استدعاء (من المركزي)',            en: 'Recall (central)' },
   net_op_original_line:   { ar: 'بند التحويل الأصلي',              en: 'Original transfer line' },
@@ -1827,7 +1836,7 @@ export const T: Dict = {
   or_tab_incoming:        { ar: 'التوريدات الواردة',                             en: 'Incoming Supplies' },
   or_tab_stock:           { ar: 'المخزون والدفعات',                              en: 'Stock & Batches' },
   or_tab_returns:         { ar: 'المرتجعات',                                     en: 'Returns' },
-  or_tab_history:         { ar: 'سجل الحركة',                                    en: 'Movement History' },
+  or_tab_history:         { ar: 'سجل وتتبع الحركة',                              en: 'Movement History & Tracking' },
   or_no_outlet_scope:     { ar: 'لا توجد منافذ ضمن نطاقك',                        en: 'No outlets in your scope' },
   or_select_outlet:       { ar: 'اختر المنفذ',                                   en: 'Select outlet' },
   or_stock_none:          { ar: 'لا يوجد مخزون في هذا المنفذ',                    en: 'No stock at this outlet' },
@@ -1850,7 +1859,6 @@ export const T: Dict = {
   outlet_correct_reason_required: { ar: 'السبب مطلوب للتصحيح',                  en: 'A reason is required for a correction' },
   outlet_correct_request_conflict: { ar: 'تعارض في الطلب. أعد التحميل ثم حاول مرة أخرى.', en: 'Request conflict. Reload and try again.' },
   outlet_correct_forbidden: { ar: 'غير مصرّح بتصحيح مخزون هذا المنفذ',          en: 'Not authorized to correct stock at this outlet' },
-  or_tab_status:          { ar: 'حالة الحركة',                                   en: 'Movement status' },
   or_status_title:        { ar: 'الحالة الحالية للحركة',                          en: 'Current Movement Status' },
   or_status_hint:         { ar: 'امسح رمز QR للوصل أو الصق المُعرِّف القانوني (UUID).', en: 'Scan a receipt QR code, or paste the canonical UUID.' },
   or_status_input_label:  { ar: 'رمز QR أو UUID',                                en: 'QR payload or UUID' },
@@ -1863,15 +1871,16 @@ export const T: Dict = {
   or_status_unsupported:  { ar: 'هذا النوع من المستندات غير مدعوم في هذا العرض بعد', en: 'This document kind is not supported in this view yet' },
   or_status_offline:      { ar: 'أنت غير متصل — قد تكون الحالة قديمة',            en: 'You are offline — status may be stale' },
   or_status_error:        { ar: 'تعذّر جلب الحالة، حاول مرة أخرى',                en: 'Could not fetch status, please try again' },
-  or_status_timeline_note: { ar: 'هذه هي الحالة الحالية فقط. السجل الزمني الكامل غير متاح حتى تتوفّر خدمة الخادم للسجل الزمني.', en: 'This is the current status only. The complete historical timeline is unavailable until the backend timeline RPC exists.' },
+  or_timeline_title:      { ar: 'الخط الزمني للحركة',                              en: 'Movement timeline' },
+  or_timeline_print:      { ar: 'طباعة ملخص التتبع',                              en: 'Print tracking summary' },
   or_kind_return_request: { ar: 'طلب إرجاع',                                     en: 'Return request' },
   or_kind_return_shipment: { ar: 'شحنة إرجاع',                                   en: 'Return shipment' },
   mv_h_reprinted_at:      { ar: 'وقت إعادة الطباعة',                             en: 'Reprinted at' },
 
   // An operator-typed number is NOT a controlled serial — no atomic allocator
   // exists in the database, so it is labelled honestly wherever it appears.
-  mv_external_reference:  { ar: 'مرجع خارجي (إدخال المستخدم)',                   en: 'External / operator reference' },
-  mv_external_reference_hint: { ar: 'ليس تسلسلًا رسميًا — المعرّف الدائم أعلاه هو المرجع المعتمد', en: 'Not an official serial — the permanent trace key above is the authoritative reference' },
+  mv_external_reference:  { ar: 'رقم الكتاب أو المستند الخارجي — اختياري',        en: 'Official letter / external document number — optional' },
+  mv_external_reference_hint: { ar: 'أدخل رقم الكتاب أو المحضر الورقي إن وجد. ينشئ MediStock رقم الطلب والتتبع الرسمي تلقائيًا.', en: 'Enter the paper letter/minute number if one exists. MediStock generates the official order and trace numbers automatically.' },
   mv_not_available:       { ar: 'غير متاح',                                      en: 'Not available' },
   mv_no_lines:            { ar: 'لا توجد مواد',                                  en: 'No materials' },
   mv_page:                { ar: 'صفحة',                                          en: 'Page' },
@@ -2014,12 +2023,12 @@ export const T: Dict = {
   mv_export_xlsx:         { ar: 'تصدير Excel',                                    en: 'Export Excel' },
 
   /* ── INSTITUTION-LOCAL-PROCUREMENT-087 — Screen 19, Local Procurement ── */
-  nav_local_procurement:  { ar: 'المشتريات المحلية',                              en: 'Local Procurement' },
-  mv_doc_procurement_receipt: { ar: 'وصل استلام مشتريات محلية',                   en: 'Local Procurement Receipt' },
-  lp_screen_title:        { ar: 'المشتريات المحلية',                              en: 'Local Procurement' },
+  nav_local_procurement:  { ar: 'المشتريات الفرعية',                              en: 'Supplementary Purchases' },
+  mv_doc_procurement_receipt: { ar: 'وصل استلام مشتريات فرعية',                   en: 'Supplementary Purchase Receipt' },
+  lp_screen_title:        { ar: 'المشتريات الفرعية',                              en: 'Supplementary Purchases' },
   lp_screen_sub:          { ar: 'موردون، طلبات شراء، موافقات، استلام، وإرجاع — كلها مقيّدة بمخزن المؤسسة', en: 'Suppliers, purchase orders, approvals, receiving and returns — scoped to the institution warehouse' },
   lp_no_warehouse_scope:  { ar: 'لا يوجد مخزن مؤسسة ضمن صلاحياتك',               en: 'No institution warehouse in your scope' },
-  lp_denied_title:        { ar: 'لا تملك صلاحية عرض المشتريات المحلية',           en: 'You do not have permission to view local procurement' },
+  lp_denied_title:        { ar: 'لا تملك صلاحية عرض المشتريات الفرعية',           en: 'You do not have permission to view supplementary purchases' },
   lp_denied_hint:         { ar: 'اطلب صلاحية local_procurement.view من مسؤول المؤسسة', en: 'Ask your administrator for the local_procurement.view permission' },
   lp_select_warehouse:    { ar: 'مخزن المؤسسة',                                   en: 'Institution warehouse' },
   lp_tab_orders:          { ar: 'طلبات الشراء',                                   en: 'Purchase Orders' },

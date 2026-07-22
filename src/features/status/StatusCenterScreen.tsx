@@ -106,13 +106,15 @@ function parsePriceInput(v: string): number | null {
   return n;
 }
 
-type SupplyCategory = 'purchases' | 'kimadia' | 'donations' | 'aid';
+// CANONICAL-SUPPLY-PROVENANCE-088: CLOSED vocabulary — donations is no longer
+// offered anywhere; legacy donation rows DISPLAY under aid (mساعدات) via the
+// safe mapping below without any data rewrite.
+type SupplyCategory = 'purchases' | 'kimadia' | 'aid';
 
 const SUPPLY_CATEGORIES: { value: SupplyCategory; labelKey: string }[] = [
+  { value: 'aid',       labelKey: 'sc_supply_aid' },
   { value: 'purchases', labelKey: 'sc_supply_purchases' },
   { value: 'kimadia',   labelKey: 'sc_supply_kimadia' },
-  { value: 'donations', labelKey: 'sc_supply_donations' },
-  { value: 'aid',       labelKey: 'sc_supply_aid' },
 ];
 
 /**
@@ -125,9 +127,10 @@ function normalizeSupplyType(v?: string | null): SupplyCategory | null {
   const s = v.trim().toLowerCase();
   if (!s) return null;
   if (s.includes('kimadia') || s.includes('كيماديا') || s.includes('كماديا')) return 'kimadia';
-  if (s.includes('purchase') || s.includes('مشتر') || s.includes('شراء')) return 'purchases';
-  if (s.includes('donation') || s.includes('هب') || s.includes('تبرع') || s.includes('منح')) return 'donations';
-  if (s.includes('aid') || s.includes('مساعد') || s.includes('إغاث') || s.includes('اغاث')) return 'aid';
+  if (s.includes('purchase') || s.includes('local_procurement') || s.includes('مشتر') || s.includes('شراء')) return 'purchases';
+  // Legacy donations display under aid — safe mapping, data untouched.
+  if (s.includes('donation') || s.includes('تبرع') || s.includes('منح')) return 'aid';
+  if (s.includes('aid') || s.includes('مساعد') || s.includes('إغاث') || s.includes('اغاث') || s.startsWith('هب')) return 'aid';
   return null;
 }
 

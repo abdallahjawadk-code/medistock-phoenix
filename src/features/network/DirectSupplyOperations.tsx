@@ -9,6 +9,7 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { supabase } from '@/shared/supabase/client';
 import {
   getAllWarehouses,
   createDirectTransferRequest, addTransferRequestLine, updateTransferRequestLine,
@@ -438,6 +439,18 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
     [request, lines.data, orgNameById, whById, lang],
   );
 
+  // TRANSFER-REGULATORY-ACK state: per-request, reset on navigation.
+  const [regAck, setRegAck] = useState(false);
+  const recordAck = async (action: 'transfer.create_ack' | 'transfer.review_ack') => {
+    try {
+      await supabase.rpc('phoenix_record_regulatory_ack', {
+        p_entity_type: 'warehouse_transfer_request',
+        p_entity_id: request.id,
+        p_action: action,
+      });
+    } catch { /* best-effort audit record; the transfer RPC's own audit rows still capture the action */ }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -472,14 +485,37 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
         ))}
       </div>
 
-      {isSubmitted && (lines.data ?? []).length > 0 && (
+      {/* TRANSFER-REGULATORY-ACK: viewing needs nothing; CREATING (submit) or
+          APPROVING (review) requires the explicit confirmation below. The ack
+          is recorded in the audit trail (who/when) via
+          phoenix_record_regulatory_ack and is NEVER an automated ruling that
+          the transfer is permissible. */}
+      {((isDraft || isSubmitted) && (lines.data ?? []).length > 0) && (
+        <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: 'var(--r3)', background: 'var(--warn2)', border: '1px solid var(--warn)' }}>
+          <p style={{ fontSize: '11.5px', color: 'var(--warn)', marginBottom: '8px' }} dir="auto">{t('ts_regulatory_notice', lang)}</p>
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={regAck} onChange={e => setRegAck(e.target.checked)} data-testid="transfer-reg-ack" />
+            <span dir="auto">{t('ts_ack_checkbox', lang)}</span>
+          </label>
+          {!regAck && <p style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '5px' }}>{t('ts_ack_required', lang)}</p>}
+        </div>
+      )}
+
+      {isSubmitted && (lines.data ?? []).length > 0 && regAck && (
         <ReviewForm lang={lang} lines={lines.data ?? []}
-          onSubmit={(decisions) => reviewTransferRequest(request.id, decisions).then(r => set(r))} />
+          onSubmit={async (decisions) => {
+            await recordAck('transfer.review_ack');
+            return reviewTransferRequest(request.id, decisions).then(r => set(r));
+          }} />
       )}
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
         {isDraft && (lines.data ?? []).length > 0 && (
-          <PhoenixButton onClick={async () => set(await submitTransferRequest(request.id))}>{t('net_op_submit', lang)}</PhoenixButton>
+          <PhoenixButton disabled={!regAck} onClick={async () => {
+            if (!regAck) return;
+            await recordAck('transfer.create_ack');
+            set(await submitTransferRequest(request.id));
+          }}>{t('net_op_submit', lang)}</PhoenixButton>
         )}
         {(isDraft || isSubmitted) && (
           <CancelControl lang={lang} onCancel={(reason) => cancelTransferRequest(request.id, reason).then(set)} />
