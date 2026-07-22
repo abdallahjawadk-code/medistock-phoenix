@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { t } from '@/shared/i18n/strings';
 import type { Lang } from '@/shared/lib/types';
 import {
@@ -146,7 +147,7 @@ export function MovementPrintFieldSelector({
                   }}
                 />
                 {t(field.labelKey, lang)}
-                {field.locked && ' 🔒'}
+                {field.locked && <> <PhoenixIcon name="lock" inline /></>}
               </label>
             );
           })}

@@ -78,14 +78,18 @@ describe('no client-side document-number sequence exists', () => {
     expect(text).toMatch(/not applied/i);
   });
 
-  it('no migration file was added for document numbering', () => {
+  it('no migration file was added for MOVEMENT document numbering', () => {
     const migrations = readdirSync(join(ROOT, 'supabase', 'migrations')).filter(f => f.endsWith('.sql'));
-    // 085 (the prepared availability-writer revoke) is the highest reviewed
-    // migration. None of 083 (inventory-derived availability), 084 (catalogue
-    // visibility) or 085 add document numbering; the point of this guard is that
-    // no sequence/numbering migration appears, which the name check below pins.
-    // The ceiling moves with each reviewed non-numbering migration.
-    const beyond = migrations.filter(f => /^0*(08[6-9]|09\d|[1-9]\d{2,})/.test(f));
+    // 087 (institution local procurement) is the highest reviewed migration.
+    // None of 083–086 add document numbering. 087 DOES create a sequence —
+    // procurement_receipt_number_seq — but it is a SERVER-side allocator for
+    // PROCUREMENT receipt numbers, consumed only inside the SECURITY DEFINER
+    // receive RPC: exactly the safe direction this guard exists to protect
+    // (the danger is a CLIENT inventing an authoritative-looking number).
+    // The movement corridor's request/transfer/return/shipment numbers remain
+    // unallocated and the proposal remains unapplied. The ceiling moves with
+    // each reviewed migration that adds no MOVEMENT numbering.
+    const beyond = migrations.filter(f => /^0*(08[8-9]|09\d|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });

@@ -510,7 +510,8 @@ describe('No UI strings were added in this phase (schema-only)', () => {
 describe('Regression: UI screens and unrelated systems untouched', () => {
   const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
   const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
-  const adjustModal = readFileSync(join(__dirname, '../../../src/features/status/AdjustQuantityModal.tsx'), 'utf8');
+  // AdjustQuantityModal is retired (canonical-stock cutover); its absence is
+  // asserted in the retired-surface audit. Movement history remains.
   const historyModal = readFileSync(join(__dirname, '../../../src/features/status/MovementHistoryModal.tsx'), 'utf8');
   const service = readFileSync(join(__dirname, '../../../src/features/alerts/live-inter-institution-alerts.service.ts'), 'utf8');
 
@@ -524,8 +525,7 @@ describe('Regression: UI screens and unrelated systems untouched', () => {
     expect(dashboardScreen).not.toContain('inter_org_alert_events');
   });
 
-  it('AdjustQuantityModal / MovementHistoryModal are unaffected', () => {
-    expect(adjustModal).not.toContain('inter_org_alert_states');
+  it('MovementHistoryModal is unaffected', () => {
     expect(historyModal).not.toContain('inter_org_alert_states');
   });
 

@@ -36,6 +36,17 @@ export const RETIRED_SURFACES = [
     renderMarker: '<EditorScreen',
     replacedBy: 'InventoryCenterScreen (screen 3)',
   },
+  {
+    // CANONICAL-STOCK-CUTOVER: the last item_availability quantity writer
+    // (Status Center → applyAvailabilityMovement, migration 034). Corrections
+    // now require explicit canonical lot selection through the guarded
+    // migration-086 path, so this manual aggregate writer is deleted.
+    name: 'AdjustQuantityModal',
+    path: 'src/features/status/AdjustQuantityModal.tsx',
+    importMarker: 'features/status/AdjustQuantityModal',
+    renderMarker: '<AdjustQuantityModal',
+    replacedBy: 'AvailabilityStockCorrectionModal → OutletStockCorrectionModal (086)',
+  },
 ] as const;
 
 /** Every production entry point that could reach a screen. */

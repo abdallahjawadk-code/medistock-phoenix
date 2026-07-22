@@ -218,10 +218,12 @@ describe('17. Mobile layout classes/wrapping exist', () => {
 describe('18. Existing button handlers remain connected', () => {
   // SAFE-PROFESSIONAL-XLSX-EXPORT-A: the export button's onClick now calls
   // exportXlsx instead of the old exportCsv — same button, same location.
-  it('StatusCenterScreen export/print/adjust/history buttons still call their original handlers', () => {
+  it('StatusCenterScreen export/print/correct/history buttons still call their original handlers', () => {
     expect(statusCenter).toContain('onClick={exportXlsx}');
     expect(statusCenter).toContain('onClick={printReport}');
-    expect(statusCenter).toContain('onClick={() => setAdjustRow(r)}');
+    // CANONICAL-STOCK-CUTOVER: the row correction action opens the canonical
+    // lot-level launcher instead of the retired aggregate writer.
+    expect(statusCenter).toContain('setCorrectRow(r');
     expect(statusCenter).toContain('onClick={() => setHistoryRow(r)}');
   });
 });

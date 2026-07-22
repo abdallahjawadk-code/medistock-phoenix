@@ -23,6 +23,10 @@ export interface OutletStockRow {
   onHandQuantity: number;
   reservedQuantity: number;
   availableQuantity: number;
+  /** Server-owned optimistic-concurrency generation (migration 086). Read here
+   *  and passed back as expectedGeneration to phoenix_count_outlet_stock_guarded
+   *  so a stale correction cannot silently overwrite a fresher one. */
+  generation: number;
 }
 
 interface OutletStockDbRow {
@@ -30,11 +34,12 @@ interface OutletStockDbRow {
   dosage_form: string | null; unit: string | null; national_code: string | null;
   batch_number: string | null; internal_batch_reference: string | null; expiry_date: string | null;
   on_hand_quantity: number; reserved_quantity: number; available_quantity: number;
+  movement_seq: number | string;
 }
 
 const OUTLET_STOCK_COLUMNS =
   'id, scientific_name, trade_name, concentration, dosage_form, unit, national_code, ' +
-  'batch_number, internal_batch_reference, expiry_date, on_hand_quantity, reserved_quantity, available_quantity';
+  'batch_number, internal_batch_reference, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, movement_seq';
 
 /** Current on-hand batches at one outlet, soonest-expiry first. RLS-scoped, read-only. */
 export async function getOutletStock(distributionPointId: string): Promise<OutletStockRow[]> {
@@ -49,7 +54,80 @@ export async function getOutletStock(distributionPointId: string): Promise<Outle
     dosageForm: r.dosage_form, unit: r.unit, nationalCode: r.national_code, batchNumber: r.batch_number,
     internalBatchReference: r.internal_batch_reference, expiryDate: r.expiry_date,
     onHandQuantity: r.on_hand_quantity, reservedQuantity: r.reserved_quantity, availableQuantity: r.available_quantity,
+    generation: typeof r.movement_seq === 'string' ? Number(r.movement_seq) : r.movement_seq,
   }));
+}
+
+/**
+ * CANONICAL-STOCK-CUTOVER (migration 086): correct one outlet_stock LOT's on-hand
+ * quantity to an absolute counted value via the guarded RPC. This is the only
+ * outlet correction path — it operates on canonical outlet_stock, never
+ * item_availability (which is now a read-only projection). The RPC is idempotent
+ * on requestId, non-negative, reservation-safe, reason-mandatory, outlet-scoped,
+ * and writes an append-only 'correction' movement + audit row. expectedGeneration
+ * (the lot's last-read generation) makes a stale correction fail closed with a
+ * conflict rather than silently overwrite a fresher count.
+ */
+export interface CorrectOutletStockInput {
+  requestId: string;
+  outletStockId: string;
+  countedQuantity: number;
+  reason: string;
+  expectedGeneration: number;
+  notes?: string;
+}
+
+export interface CorrectOutletStockResult {
+  ok: boolean;
+  idempotentReplay: boolean;
+  outletStockId: string;
+  movementId: string;
+  quantityBefore: number;
+  quantityDelta: number;
+  quantityAfter: number;
+}
+
+export async function correctOutletStock(input: CorrectOutletStockInput): Promise<CorrectOutletStockResult> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.rpc('phoenix_count_outlet_stock_guarded', {
+    p_request_id:          input.requestId,
+    p_outlet_stock_id:     input.outletStockId,
+    p_counted_quantity:    input.countedQuantity,
+    p_reason:              input.reason,
+    p_expected_generation: input.expectedGeneration,
+    p_notes:               input.notes ?? null,
+  });
+  if (error) throw error;
+  const r = data as {
+    ok: boolean; idempotent_replay: boolean; outlet_stock_id: string; movement_id: string;
+    quantity_before: number; quantity_delta: number; quantity_after: number;
+  };
+  return {
+    ok: r.ok,
+    idempotentReplay: r.idempotent_replay,
+    outletStockId: r.outlet_stock_id,
+    movementId: r.movement_id,
+    quantityBefore: r.quantity_before,
+    quantityDelta: r.quantity_delta,
+    quantityAfter: r.quantity_after,
+  };
+}
+
+/**
+ * Classify a phoenix_count_outlet_stock_guarded failure into an i18n string key.
+ * 40001 generation conflict is the "reload and retry" case; the rest are the
+ * 067/086 validation vocabulary.
+ */
+export function classifyOutletCorrectionError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+  if (code === '40001' || message.includes('outlet_stock_generation_conflict')) return 'outlet_correct_generation_conflict';
+  if (message.includes('outlet_quantity_below_reserved')) return 'outlet_correct_below_reserved';
+  if (message.includes('counted_quantity_must_be_non_negative')) return 'outlet_correct_negative';
+  if (message.includes('outlet_count_reason_required')) return 'outlet_correct_reason_required';
+  if (message.includes('request_id_conflict')) return 'outlet_correct_request_conflict';
+  if (code === '42501' || /forbidden/.test(message)) return 'outlet_correct_forbidden';
+  return 'load_error';
 }
 
 export interface OutletMovementRow {

@@ -45,6 +45,10 @@ const NAV_ITEMS: NavItem[] = [
   // profile's 062 outlet assignments (manageableOutlets), and every action is
   // re-checked server-side. Never gated on a raw role name.
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
+  // INSTITUTION-LOCAL-PROCUREMENT-087: ungated like nav_editor — the screen
+  // self-gates by 062 warehouse assignments plus the scoped local_procurement.*
+  // keys, and every action is re-checked server-side.
+  { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [

@@ -60,18 +60,22 @@ describe('Material remove action: visible in the outlet material list', () => {
 });
 
 describe('Material remove action: calls the correct existing service/RPC path', () => {
-  it('imports applyAvailabilityMovement and classifyAvailabilityMovementError from the existing availability service', () => {
-    expect(screen).toContain('applyAvailabilityMovement');
-    expect(screen).toContain('classifyAvailabilityMovementError');
+  // CANONICAL-STOCK-CUTOVER: remove-from-outlet is now a catalogue VISIBILITY
+  // action (migration 084's phoenix_set_availability_visibility) — it sets only
+  // the 053 removed marker and never writes quantity. item_availability is a
+  // read-only projection; physical stock is corrected through a separate path.
+  it('imports setAvailabilityVisibility and classifyAvailabilityVisibilityError from the existing availability service', () => {
+    expect(screen).toContain('setAvailabilityVisibility');
+    expect(screen).toContain('classifyAvailabilityVisibilityError');
     expect(screen).toContain("from '@/shared/supabase/services/availability.service'");
   });
 
-  it('onConfirmRemove zeroes quantity AND marks the removed_from_outlet reason via the single audited movement RPC, not a direct write', () => {
+  it('onConfirmRemove hides the catalogue row via the audited visibility RPC (removed marker only), never a quantity write or a direct table write', () => {
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
-    expect(fnBody).toContain("movementType: 'set_exact'");
-    expect(fnBody).toContain('amount: 0');
-    expect(fnBody).toContain("reason: 'removed_from_outlet'");
+    expect(fnBody).toMatch(/setAvailabilityVisibility\(\s*removeTarget\.id\s*,\s*true\s*,\s*'removed_from_outlet'\s*\)/);
+    expect(fnBody).not.toContain("movementType: 'set_exact'");
+    expect(fnBody).not.toContain('applyAvailabilityMovement');
     expect(fnBody).not.toMatch(/\.update\(|\.delete\(|DELETE FROM/);
   });
 
@@ -108,7 +112,7 @@ describe('Material remove: success refreshes the list; errors are shown honestly
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
     expect(fnBody).toMatch(/catch \(e\)/);
-    expect(fnBody).toContain('classifyAvailabilityMovementError(e)');
+    expect(fnBody).toContain('classifyAvailabilityVisibilityError(e)');
     expect(fnBody).toContain('setRemoveError(');
   });
 
@@ -396,7 +400,7 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
     const fnStart = screen.indexOf('async function onConfirmRemove');
     const fnBody = screen.slice(fnStart, fnStart + 1500);
     expect(fnBody).toMatch(/catch \(e\)/);
-    expect(fnBody).toContain('classifyAvailabilityMovementError(e)');
+    expect(fnBody).toContain('classifyAvailabilityVisibilityError(e)');
     expect(fnBody).toContain('setRemoveError(');
   });
 

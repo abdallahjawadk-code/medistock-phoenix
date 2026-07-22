@@ -5,6 +5,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
   receiveWarehouseStock, newRequestId, classifyIntakeError,
   type ReceiveWarehouseStockInput,
@@ -419,7 +420,7 @@ export function OcrIntakeFlow({
           padding: '10px 14px', fontSize: '12.5px', fontWeight: 600, color: 'var(--warn)',
         }}
       >
-        ⚠ {t('ocr_beta_banner', lang)}
+        <PhoenixIcon name="warning" inline /> {t('ocr_beta_banner', lang)}
       </div>
 
       {errorKey && (

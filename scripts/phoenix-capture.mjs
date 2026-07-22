@@ -23,6 +23,7 @@ mkdirSync(OUT, { recursive: true });
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
+  { name: 'tablet', width: 834, height: 1112 },
   { name: 'mobile', width: 390, height: 844 },
 ];
 const LANGS = ['ar', 'en'];

@@ -154,17 +154,15 @@ describe('7. Empty state appears with the required translated copy when all rows
 });
 
 describe('8. No DB/RPC write path was changed by this fix', () => {
-  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: PortAvailabilitySection's own
-  // onConfirmRemove now only calls applyAvailabilityMovement (the follow-up
-  // upsertAvailability call was removed — see that phase's own tests).
-  // upsertAvailability is still used elsewhere in this file (QuickAvailForm,
-  // a sibling function rendered by PortAvailabilitySection, uses it to add a
-  // new material), so it remains a valid RPC for the whole file's writes.
-  it('PortAvailabilitySection still only reads via getAvailabilityByPoint and removes materials via the existing audited movement RPC', () => {
+  // CANONICAL-STOCK-CUTOVER: PortAvailabilitySection's onConfirmRemove now hides
+  // the catalogue row via the audited migration-084 visibility RPC
+  // (setAvailabilityVisibility) — the removed marker only, no quantity write.
+  // It still reads via getAvailabilityByPoint and issues no direct table write.
+  it('PortAvailabilitySection still only reads via getAvailabilityByPoint and removes materials via the audited visibility RPC', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('getAvailabilityByPoint(pointId)');
-    expect(section).toContain('applyAvailabilityMovement(');
-    expect(section).not.toMatch(/\.rpc\(\s*['"](?!phoenix_apply_availability_movement|phoenix_upsert_availability)/);
+    expect(section).toContain('setAvailabilityVisibility(');
+    expect(section).not.toMatch(/\.rpc\(\s*['"](?!phoenix_set_availability_visibility|phoenix_apply_availability_movement|phoenix_upsert_availability)/);
   });
 
   // E6: QuickAvailForm was the ONLY upsertAvailability caller in this file and

@@ -245,4 +245,50 @@ export const QA_FIXTURES: Record<string, unknown> = {
   'rpc:phoenix_get_live_inter_institution_alerts_with_state': {
     ok: true, alerts: [], computed_at: '2026-07-20T09:00:00Z',
   },
+
+  // ── INSTITUTION-LOCAL-PROCUREMENT-087 — Screen 19 fixtures ────────────────
+  // Column names are the REAL snake_case DB columns the mapXxx() readers in
+  // procurement.service.ts consume; the fixture client filters on the same
+  // .eq('warehouse_id'|'organization_id'|'order_id', …) the service issues.
+  // Rows span every lifecycle status so the composer / approvals / receiving /
+  // history tabs each render populated, and the History tab reaches the
+  // official receipt (print · XLSX · QR) and a provenance-pinned return.
+  procurement_suppliers: [
+    { id: 'qa-sup-1', organization_id: ORG_A, name: 'QA · Al-Rasheed Medical Supplies', name_ar: 'QA · الرشيد للتجهيزات الطبية', contact_person: 'QA · علي حسن', phone: '0790-000-0001', email: null, address: 'QA · الحلة', tax_number: null, notes: null, status: 'active' },
+    { id: 'qa-sup-2', organization_id: ORG_A, name: 'QA · Babil Pharma Trading', name_ar: 'QA · بابل لتجارة الأدوية', contact_person: 'QA · حسين كريم', phone: '0770-000-0002', email: null, address: 'QA · بابل', tax_number: null, notes: null, status: 'active' },
+    { id: 'qa-sup-3', organization_id: ORG_A, name: 'QA · Retired Supplier', name_ar: 'QA · مورد موقوف', contact_person: null, phone: null, email: null, address: null, tax_number: null, notes: null, status: 'inactive' },
+  ],
+  procurement_orders: [
+    { id: 'qa-po-draft', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-1', order_number: 'QA-PO-1001', status: 'draft', invoice_number: 'QA-INV-1001', invoice_date: '2026-07-10', external_reference: null, currency: 'IQD', notes: null, ocr_assisted: false, order_generation: 1, submitted_by: null, submitted_at: null, decided_by: null, decided_at: null, decision_notes: null, cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-10T08:00:00Z' },
+    { id: 'qa-po-submitted', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-1', order_number: 'QA-PO-1002', status: 'submitted', invoice_number: 'QA-INV-1002', invoice_date: '2026-07-12', external_reference: null, currency: 'IQD', notes: null, ocr_assisted: true, order_generation: 3, submitted_by: 'qa-user-2', submitted_at: '2026-07-12T09:30:00Z', decided_by: null, decided_at: null, decision_notes: null, cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-12T08:00:00Z' },
+    { id: 'qa-po-approved', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-2', order_number: 'QA-PO-1003', status: 'approved', invoice_number: 'QA-INV-1003', invoice_date: '2026-07-13', external_reference: null, currency: 'IQD', notes: null, ocr_assisted: false, order_generation: 4, submitted_by: 'qa-user-2', submitted_at: '2026-07-13T09:00:00Z', decided_by: 'qa-user-1', decided_at: '2026-07-13T11:00:00Z', decision_notes: 'QA · معتمد', cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-13T08:00:00Z' },
+    { id: 'qa-po-partial', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-2', order_number: 'QA-PO-1004', status: 'partially_received', invoice_number: 'QA-INV-1004', invoice_date: '2026-07-14', external_reference: null, currency: 'IQD', notes: null, ocr_assisted: false, order_generation: 6, submitted_by: 'qa-user-2', submitted_at: '2026-07-14T09:00:00Z', decided_by: 'qa-user-1', decided_at: '2026-07-14T10:00:00Z', decision_notes: null, cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-14T08:00:00Z' },
+    { id: 'qa-po-received', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-1', order_number: 'QA-PO-1005', status: 'received', invoice_number: 'QA-INV-1005', invoice_date: '2026-07-08', external_reference: null, currency: 'IQD', notes: null, ocr_assisted: false, order_generation: 7, submitted_by: 'qa-user-2', submitted_at: '2026-07-08T09:00:00Z', decided_by: 'qa-user-1', decided_at: '2026-07-08T10:00:00Z', decision_notes: null, cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-08T08:00:00Z' },
+    { id: 'qa-po-rejected', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-1', order_number: 'QA-PO-1006', status: 'rejected', invoice_number: null, invoice_date: null, external_reference: null, currency: 'IQD', notes: null, ocr_assisted: false, order_generation: 3, submitted_by: 'qa-user-2', submitted_at: '2026-07-09T09:00:00Z', decided_by: 'qa-user-1', decided_at: '2026-07-09T12:00:00Z', decision_notes: 'QA · خارج الحاجة الحالية', cancel_reason: null, created_by: 'qa-user-2', created_at: '2026-07-09T08:00:00Z' },
+  ],
+  procurement_order_lines: [
+    { id: 'qa-pol-1', order_id: 'qa-po-approved', central_item_id: null, scientific_name: 'QA · Paracetamol', trade_name: 'QA · Pamol', concentration: '500 mg', dosage_form: 'Tablet', unit: 'box', national_code: 'QA-NC-01', batch_number: 'QA-B-100', expiry_date: '2027-06-30', ordered_quantity: 40, received_quantity: 0, unit_price: 250, currency: 'IQD', notes: null },
+    { id: 'qa-pol-2', order_id: 'qa-po-approved', central_item_id: null, scientific_name: 'QA · Ibuprofen', trade_name: null, concentration: '400 mg', dosage_form: 'Tablet', unit: 'box', national_code: null, batch_number: null, expiry_date: '2027-09-30', ordered_quantity: 20, received_quantity: 0, unit_price: 400, currency: 'IQD', notes: null },
+    { id: 'qa-pol-3', order_id: 'qa-po-partial', central_item_id: null, scientific_name: 'QA · Amoxicillin', trade_name: null, concentration: '500 mg', dosage_form: 'Capsule', unit: 'box', national_code: 'QA-NC-03', batch_number: 'QA-B-300', expiry_date: '2027-03-31', ordered_quantity: 30, received_quantity: 10, unit_price: 300, currency: 'IQD', notes: null },
+    { id: 'qa-pol-4', order_id: 'qa-po-received', central_item_id: null, scientific_name: 'QA · Omeprazole', trade_name: null, concentration: '20 mg', dosage_form: 'Capsule', unit: 'box', national_code: 'QA-NC-04', batch_number: 'QA-B-400', expiry_date: '2028-01-31', ordered_quantity: 12, received_quantity: 12, unit_price: 500, currency: 'IQD', notes: null },
+    { id: 'qa-pol-5', order_id: 'qa-po-draft', central_item_id: null, scientific_name: 'QA · Metformin', trade_name: null, concentration: '850 mg', dosage_form: 'Tablet', unit: 'box', national_code: null, batch_number: null, expiry_date: '2027-12-31', ordered_quantity: 25, received_quantity: 0, unit_price: 180, currency: 'IQD', notes: null },
+    { id: 'qa-pol-6', order_id: 'qa-po-submitted', central_item_id: null, scientific_name: 'QA · Azithromycin', trade_name: null, concentration: '250 mg', dosage_form: 'Tablet', unit: 'box', national_code: null, batch_number: null, expiry_date: '2027-11-30', ordered_quantity: 15, received_quantity: 0, unit_price: 600, currency: 'IQD', notes: null },
+  ],
+  procurement_receipts: [
+    { id: 'qa-prc-1', order_id: 'qa-po-received', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-1', receipt_number: 'QA-PR-2026-000001', invoice_number: 'QA-INV-1005', notes: null, received_by: 'qa-user-2', received_by_name: 'QA · أمين مذخر', received_by_role: 'warehouse_officer', created_at: '2026-07-08T12:00:00Z' },
+    { id: 'qa-prc-2', order_id: 'qa-po-partial', organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', supplier_id: 'qa-sup-2', receipt_number: 'QA-PR-2026-000002', invoice_number: 'QA-INV-1004', notes: 'QA · دفعة أولى', received_by: 'qa-user-2', received_by_name: 'QA · أمين مذخر', received_by_role: 'warehouse_officer', created_at: '2026-07-14T12:00:00Z' },
+  ],
+  procurement_receipt_lines: [
+    { id: 'qa-prl-1', receipt_id: 'qa-prc-1', order_line_id: 'qa-pol-4', quantity: 12, batch_number: 'QA-B-400', has_no_batch_number: false, national_code: 'QA-NC-04', expiry_date: '2028-01-31', unit_price: 500, warehouse_stock_id: 'qa-ws-400', movement_id: 'qa-mv-400', created_at: '2026-07-08T12:00:00Z' },
+    { id: 'qa-prl-2', receipt_id: 'qa-prc-2', order_line_id: 'qa-pol-3', quantity: 10, batch_number: 'QA-B-300', has_no_batch_number: false, national_code: 'QA-NC-03', expiry_date: '2027-03-31', unit_price: 300, warehouse_stock_id: 'qa-ws-300', movement_id: 'qa-mv-300', created_at: '2026-07-14T12:00:00Z' },
+  ],
+  procurement_returns: [
+    { id: 'qa-pret-1', order_id: 'qa-po-received', receipt_line_id: 'qa-prl-1', quantity: 2, reason: 'QA · تلف أثناء النقل', notes: null, movement_id: 'qa-mv-ret-1', actor_name: 'QA · أمين مذخر', created_at: '2026-07-09T09:00:00Z' },
+  ],
+  procurement_order_events: [
+    { id: 'qa-pev-1', order_id: 'qa-po-received', event_type: 'created', from_status: null, to_status: 'draft', actor_name: 'QA · أمين مذخر', actor_role: 'warehouse_officer', notes: null, created_at: '2026-07-08T08:00:00Z' },
+    { id: 'qa-pev-2', order_id: 'qa-po-received', event_type: 'submitted', from_status: 'draft', to_status: 'submitted', actor_name: 'QA · أمين مذخر', actor_role: 'warehouse_officer', notes: null, created_at: '2026-07-08T09:00:00Z' },
+    { id: 'qa-pev-3', order_id: 'qa-po-received', event_type: 'approved', from_status: 'submitted', to_status: 'approved', actor_name: 'QA · مسؤول النظام', actor_role: 'super_admin', notes: null, created_at: '2026-07-08T10:00:00Z' },
+    { id: 'qa-pev-4', order_id: 'qa-po-received', event_type: 'receipt_posted', from_status: 'approved', to_status: 'received', actor_name: 'QA · أمين مذخر', actor_role: 'warehouse_officer', notes: null, created_at: '2026-07-08T12:00:00Z' },
+  ],
 };

@@ -41,14 +41,16 @@ import {
   classifyClearPortItemsError,
   archiveOrganization,
 } from '@/shared/supabase/services/lifecycle.service';
-// upsertAvailability / classifyAvailabilitySaveError are deliberately NOT
-// imported here any more: their only caller in this file was the retired
-// QuickAvailForm manual-availability writer. Quantity changes on this screen go
-// through applyAvailabilityMovement, which records a movement row.
+// This screen no longer writes item_availability quantity at all. item_availability
+// is a read-only projection (migration 083); "Remove from outlet" is a CATALOGUE
+// VISIBILITY change, done through migration 084's phoenix_set_availability_visibility
+// (setAvailabilityVisibility) — it clears/sets only the 053 removed marker, never
+// a quantity or a manual movement. Physical outlet stock is corrected on the
+// canonical outlet_stock ledger (migration 086 guarded correction), not here.
 import {
   getAvailabilityByPoint,
-  applyAvailabilityMovement,
-  classifyAvailabilityMovementError,
+  setAvailabilityVisibility,
+  classifyAvailabilityVisibilityError,
 } from '@/shared/supabase/services/availability.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -1671,30 +1673,17 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
   const rows = ((avail.data ?? []) as unknown as AvailRow[])
     .filter(r => r.removed_at == null);
 
-  // BUGFIX-OUTLET-MATERIAL-AND-OUTLET-DELETE-A / REMOVE-BUTTON-MARKS-REMOVED-AT-A:
-  // "Remove from outlet" — no hard DELETE exists (or is allowed) for
-  // item_availability rows tied to movement history/audit, so this calls the
-  // single audited phoenix_apply_availability_movement RPC (the only
-  // permitted quantity-write path — migration 035's hard guard blocks direct
-  // quantity writes) with reason='removed_from_outlet'. Migration 053's own
-  // branch on that exact reason forces quantity=0, condition='missing',
-  // removed_at=now(), removed_by=auth.uid(), removal_reason=
-  // 'removed_from_outlet' on the row in one atomic write — history/reports/
-  // QR audit trail are untouched.
-  //
-  // REMOVE-BUTTON-MARKS-REMOVED-AT-A: this RPC call used to be guarded by
-  // `if (removeTarget.quantity !== 0)`, skipping it entirely whenever the row
-  // was already at quantity 0 — the exact case a user pressing "Remove from
-  // outlet" on an already-out-of-stock material hits. Since only this RPC
-  // call (never the plain upsertAvailability call that used to follow it)
-  // sets removed_at/removed_by/removal_reason, skipping it meant the row was
-  // left at quantity=0/condition='missing'/removed_at=NULL — indistinguishable
-  // from a genuine ongoing shortage, and invisible to nothing (it stayed in
-  // every live view). set_exact with amount=0 is valid and idempotent even
-  // when the current quantity is already 0, so the guard and the subsequent
-  // upsertAvailability call (which was redundant — the RPC branch above
-  // already sets condition='missing' itself) are both removed: this is now
-  // the single, unconditional call for every remove action.
+  // CANONICAL-STOCK-CUTOVER: "Remove from outlet" is a CATALOGUE VISIBILITY
+  // action, not a stock write. item_availability is a read-only projection
+  // (migration 083); the physical quantity lives in outlet_stock and is never
+  // touched by hiding a catalogue entry. This calls migration 084's
+  // phoenix_set_availability_visibility (setAvailabilityVisibility(id, true, …)),
+  // which sets ONLY removed_at/removed_by/removal_reason='removed_from_outlet' —
+  // no quantity, no condition, no manual movement. It is unconditional and
+  // idempotent (hiding an already-hidden row is a no-op re-stamp), so an
+  // already-out-of-stock material can still be removed. History/reports/QR audit
+  // trail are untouched. To actually zero physical stock, use the outlet_stock
+  // correction (migration 086), a separate, deliberate action.
   const [removeTarget, setRemoveTarget] = useState<AvailRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -1704,17 +1693,15 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
     setRemoveBusy(true);
     setRemoveError(null);
     try {
-      await applyAvailabilityMovement({
-        itemAvailabilityId: removeTarget.id,
-        movementType: 'set_exact',
-        amount: 0,
-        reason: 'removed_from_outlet',
-      });
+      // Visibility-only: hide the catalogue row (053 removed marker). No
+      // quantity/condition write — availability is derived (083), and physical
+      // stock is untouched by hiding a catalogue entry.
+      await setAvailabilityVisibility(removeTarget.id, true, 'removed_from_outlet');
       setRemoveTarget(null);
       onToast(t('avail_removed_from_outlet', lang));
       avail.reload();
     } catch (e) {
-      setRemoveError(t(classifyAvailabilityMovementError(e), lang));
+      setRemoveError(t(classifyAvailabilityVisibilityError(e), lang));
     } finally {
       setRemoveBusy(false);
     }

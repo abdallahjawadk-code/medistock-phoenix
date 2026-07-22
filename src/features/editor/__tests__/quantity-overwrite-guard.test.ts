@@ -89,20 +89,23 @@ describe('the replacement screen derives condition from the ledger', () => {
   });
 });
 
-describe('adjacent surfaces stay untouched by this retirement', () => {
-  it('Status Center still owns Adjust Quantity via the movement modal', () => {
+describe('CANONICAL-STOCK-CUTOVER: Status Center corrections route to the canonical lot-level path', () => {
+  it('Status Center no longer mounts the retired item_availability writer, and mounts the canonical correction launcher', () => {
     const status = readSrc('features/status/StatusCenterScreen.tsx');
-    expect(status).toContain('AdjustQuantityModal');
+    expect(status).not.toContain('<AdjustQuantityModal');
+    expect(status).toContain('<AvailabilityStockCorrectionModal');
   });
 
-  it('AdjustQuantityModal still calls the movement service, not a raw RPC', () => {
-    const modal = readSrc('features/status/AdjustQuantityModal.tsx');
-    expect(modal).toContain('applyAvailabilityMovement');
-    expect(modal).not.toContain("supabase.rpc('phoenix_apply_availability_movement'");
+  it('Status Center itself calls no item_availability quantity writer', () => {
+    const status = readSrc('features/status/StatusCenterScreen.tsx');
+    expect(status).not.toContain('applyAvailabilityMovement');
+    expect(status).not.toContain('upsertAvailability');
   });
 
-  it('the locked-quantity helper string is preserved for the movement UX', () => {
-    const strings = readSrc('shared/i18n/strings.ts');
-    expect(strings).toContain('avail_qty_locked_note');
+  it('the correction launcher forces explicit canonical lot selection and the guarded 086 path', () => {
+    const launcher = readSrc('features/status/AvailabilityStockCorrectionModal.tsx');
+    expect(launcher).toContain('getOutletStock(');
+    expect(launcher).toContain('OutletStockCorrectionModal');
+    expect(launcher).not.toContain('applyAvailabilityMovement');
   });
 });

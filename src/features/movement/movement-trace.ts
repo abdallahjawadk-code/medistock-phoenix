@@ -23,10 +23,12 @@ export type MovementDocumentKind =
   | 'supply_request'    // A — طلب تجهيز مباشر (editable, not a stock movement)
   | 'supply_dispatch'   // B — وصل تجهيز (issued only once materials are dispatched)
   | 'return_request'    // C — طلب إرجاع مباشر (editable, not a stock movement)
-  | 'return_shipment';  // D — وصل إرجاع (issued only once materials are returned)
+  | 'return_shipment'   // D — وصل إرجاع (issued only once materials are returned)
+  | 'procurement_receipt'; // E — وصل استلام مشتريات محلية (087; issued only once stock is posted)
 
 /** Documents that represent an actual stock movement, so may carry an OFFICIAL receipt. */
-const OFFICIAL_RECEIPT_KINDS: readonly MovementDocumentKind[] = ['supply_dispatch', 'return_shipment'];
+const OFFICIAL_RECEIPT_KINDS: readonly MovementDocumentKind[] =
+  ['supply_dispatch', 'return_shipment', 'procurement_receipt'];
 
 /** True when this document kind may be printed as an official receipt at all. */
 export function isOfficialReceiptKind(kind: MovementDocumentKind): boolean {
@@ -58,6 +60,7 @@ const KIND_CODES: Record<MovementDocumentKind, string> = {
   supply_dispatch: 'sdsp',
   return_request: 'rreq',
   return_shipment: 'rshp',
+  procurement_receipt: 'prcp',
 };
 const CODE_KINDS: Record<string, MovementDocumentKind> = Object.fromEntries(
   Object.entries(KIND_CODES).map(([k, v]) => [v, k as MovementDocumentKind]),

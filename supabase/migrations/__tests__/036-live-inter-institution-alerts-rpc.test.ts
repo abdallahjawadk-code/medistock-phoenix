@@ -441,7 +441,6 @@ describe('Service layer: getLiveInterInstitutionAlerts wrapper', () => {
 });
 
 describe('Regression guards: unrelated systems untouched', () => {
-  const adjustModal = readFileSync(join(__dirname, '../../../src/features/status/AdjustQuantityModal.tsx'), 'utf8');
   const historyModal = readFileSync(join(__dirname, '../../../src/features/status/MovementHistoryModal.tsx'), 'utf8');
   const reportSection = readFileSync(join(__dirname, '../../../src/features/status/MovementReportSection.tsx'), 'utf8');
 
@@ -452,8 +451,10 @@ describe('Regression guards: unrelated systems untouched', () => {
     expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('AdjustQuantityModal.tsx is unaffected', () => {
-    expect(adjustModal).not.toContain('phoenix_get_live_inter_institution_alerts');
+  // CANONICAL-STOCK-CUTOVER: AdjustQuantityModal is retired (deleted) — a
+  // deleted writer cannot reference this phase.
+  it('AdjustQuantityModal stays retired, so it cannot reference this phase', () => {
+    expectRetiredSurfaceAbsent('AdjustQuantityModal');
   });
 
   it('MovementHistoryModal.tsx is unaffected', () => {

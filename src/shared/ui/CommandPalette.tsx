@@ -33,6 +33,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
   // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by outlet scope.
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
+  // INSTITUTION-LOCAL-PROCUREMENT-087: ungated — the screen self-gates by warehouse scope.
+  { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
   { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
