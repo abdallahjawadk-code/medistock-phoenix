@@ -711,6 +711,7 @@ export const T: Dict = {
   sc_supply_kimadia:    { ar: 'كيماديا',                           en: 'Kimadia' },
   /* CANONICAL-SUPPLY-PROVENANCE-088: purchase origin badges + filters. */
   inv_action_refresh_data:  { ar: 'تحديث البيانات',                  en: 'Refresh data' },
+  inv_stock_search: { ar: 'بحث: علمي / تجاري / رمز وطني / دفعة', en: 'Search: scientific / trade / national code / batch' },
   st_origin_central:        { ar: 'مشتريات مركزية',                  en: 'Central purchases' },
   st_origin_supplementary:  { ar: 'مشتريات فرعية',                   en: 'Supplementary purchases' },
   st_purchase_central_note: { ar: 'يُحفظ تلقائيًا كمشتريات مركزية',   en: 'Saved automatically as a central purchase' },
@@ -726,7 +727,7 @@ export const T: Dict = {
   sc_no_match:          { ar: 'لا توجد سجلات مطابقة لعوامل التصفية الحالية', en: 'No rows match current filters' },
   material_exchange_center:       { ar: 'مركز المناقلات بين المؤسسات',  en: 'Inter-Institution Transfer Center' },
   open_exchange_center:           { ar: 'فتح مركز المناقلات بين المؤسسات', en: 'Open the Inter-Institution Transfer Center' },
-  duplicate_exchange_moved_notice: { ar: 'تنبيهات التبادل بين المؤسسات أصبحت متوفرة في مركز تبادل المواد', en: 'Inter-institution exchange alerts are now managed in the Material Exchange Command Center' },
+  duplicate_exchange_moved_notice: { ar: 'تنبيهات التبادل بين المؤسسات أصبحت متوفرة في مركز المناقلات بين المؤسسات', en: 'Inter-institution exchange alerts are now managed in the Material Exchange Command Center' },
   st_scarce:          { ar: 'شحيح',                              en: 'Scarce' },
   st_surplus:         { ar: 'فائض',                              en: 'Surplus' },
   st_near_expiry:     { ar: 'قريب النفاد',                       en: 'Near Expiry' },
@@ -1129,7 +1130,7 @@ export const T: Dict = {
 
   /* ── Smart Material Alerts (SMART-MATERIAL-ALERTS-AND-INTERINSTITUTION-UX-LEAP-A) ── */
   smart_material_alerts:            { ar: 'التنبيهات الذكية للمواد',                         en: 'Smart Material Alerts' },
-  material_exchange_command_center: { ar: 'مركز تبادل المواد بين المؤسسات',                 en: 'Material Exchange Command Center' },
+  material_exchange_command_center: { ar: 'مركز المناقلات بين المؤسسات بين المؤسسات',                 en: 'Material Exchange Command Center' },
   exchange_command_subtitle:        { ar: 'تنبيهات وفرص إعادة توزيع محسوبة من الموقف الحالي', en: 'Alerts and redistribution opportunities computed from the current position' },
   expires_within_9_months:          { ar: 'ينتهي خلال 9 أشهر',                              en: 'Expires within 9 months' },
   expires_within_6_months:          { ar: 'ينتهي خلال 6 أشهر',                              en: 'Expires within 6 months' },

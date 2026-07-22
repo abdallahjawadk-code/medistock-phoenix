@@ -21,6 +21,7 @@ import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
+import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
@@ -580,12 +581,31 @@ interface StockListProps {
 }
 
 function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: StockListProps) {
+  // MATERIAL-SMART-SEARCH: one normalized query over the four identity fields
+  // (scientific, trade, national code, batch) — AR/EN, hamza/taa/diacritic
+  // folding, case-insensitive; the query is NEVER treated as a new material.
+  const [query, setQuery] = useState('');
   if (state.loading) return <PhoenixLoadingState />;
-  const batches = state.data ?? [];
-  if (batches.length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
+  const batches = (state.data ?? []).filter(b =>
+    !query.trim()
+    || normalizedIncludes(b.scientificName ?? '', query)
+    || normalizedIncludes(b.nationalCode ?? '', query)
+    || normalizedIncludes(b.batchNumber ?? '', query));
+  if ((state.data ?? []).length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <input
+        type="search"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder={t('inv_stock_search', lang)}
+        aria-label={t('inv_stock_search', lang)}
+        className="premium-field"
+        dir="auto"
+        style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' }}
+      />
+      {batches.length === 0 && <PhoenixEmptyState icon="search" title={t('cc_palette_no_results', lang)} />}
       {batches.map(b => (
         <BatchRow
           key={b.id}

@@ -103,24 +103,6 @@ export function InventoryIntelligencePanel() {
     setPending(null);
   }
 
-  async function runRecompute() {
-    if (!activeOrgId) return;
-    setBusy(true);
-    const res = await recomputeInventoryAlerts(activeOrgId);
-    setBusy(false);
-    flash(res.ok ? t('inv_saved', lang) : (res.error ?? 'error'));
-    if (res.ok) alerts.reload();
-  }
-
-  async function runSuggest() {
-    if (!activeOrgId) return;
-    setBusy(true);
-    const res = await suggestInventoryTransfers(activeOrgId);
-    setBusy(false);
-    flash(res.ok ? t('inv_saved', lang) : (res.error ?? 'error'));
-    if (res.ok) suggestions.reload();
-  }
-
   /** ONE refresh act: recompute alerts + regenerate suggestions (permission-gated pieces). */
   async function runRefreshAll() {
     if (!activeOrgId) return;

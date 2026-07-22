@@ -6,7 +6,7 @@
  *   purchase مشتريات   (always carries an origin: central | supplementary)
  *   kimadia  كيماديا
  *
- * "هبات" (donations) is REMOVED from the vocabulary. Legacy free-text values
+ * "Donations" is REMOVED from the vocabulary. Legacy free-text values
  * (including donations) are never rewritten in the database; they are mapped
  * for DISPLAY ONLY — donations displays under مساعدات (aid).
  */
@@ -31,7 +31,7 @@ export function purchaseOriginLabelKey(origin: PurchaseOrigin): string {
 /**
  * Map ANY stored value (canonical token or legacy free text) to its canonical
  * display type. Display-only — never used to rewrite stored data. Legacy
- * donations/هبات/تبرع/منح display under 'aid' (مساعدات) by explicit safe
+ * donations/donations/تبرع/منح display under 'aid' (مساعدات) by explicit safe
  * mapping. Unmappable values return null (shown under their raw label).
  */
 export function displaySupplyType(value?: string | null): CanonicalSupplyType | null {
