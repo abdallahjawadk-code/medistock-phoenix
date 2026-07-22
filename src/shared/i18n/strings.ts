@@ -2015,7 +2015,7 @@ export const T: Dict = {
   lp_screen_sub:          { ar: 'موردون، طلبات شراء، موافقات، استلام، وإرجاع — كلها مقيّدة بمخزن المؤسسة', en: 'Suppliers, purchase orders, approvals, receiving and returns — scoped to the institution warehouse' },
   lp_no_warehouse_scope:  { ar: 'لا يوجد مخزن مؤسسة ضمن صلاحياتك',               en: 'No institution warehouse in your scope' },
   lp_denied_title:        { ar: 'لا تملك صلاحية عرض المشتريات المحلية',           en: 'You do not have permission to view local procurement' },
-  lp_denied_hint:         { ar: 'اطلب صلاحية local_procurement.view من مدير المؤسسة', en: 'Ask your administrator for the local_procurement.view permission' },
+  lp_denied_hint:         { ar: 'اطلب صلاحية local_procurement.view من مسؤول المؤسسة', en: 'Ask your administrator for the local_procurement.view permission' },
   lp_select_warehouse:    { ar: 'مخزن المؤسسة',                                   en: 'Institution warehouse' },
   lp_tab_orders:          { ar: 'طلبات الشراء',                                   en: 'Purchase Orders' },
   lp_tab_approvals:       { ar: 'الموافقات',                                      en: 'Approvals' },
