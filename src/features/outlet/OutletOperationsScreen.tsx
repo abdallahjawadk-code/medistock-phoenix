@@ -22,14 +22,17 @@ import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
+import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
+import { OutletStockCorrectionModal } from './OutletStockCorrectionModal';
 import { CurrentMovementStatus } from './CurrentMovementStatus';
-import { getOutletStock, getOutletStockMovements } from './outlet-stock.service';
+import { getOutletStock, getOutletStockMovements, type OutletStockRow } from './outlet-stock.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 
@@ -124,7 +127,7 @@ export function OutletOperationsScreen() {
         />
       )}
 
-      {tab === 'stock' && <OutletStockTab distributionPointId={activeOutlet.id} lang={lang} />}
+      {tab === 'stock' && <OutletStockTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />}
 
       {tab === 'returns' && <OutletReturnsTab distributionPointId={activeOutlet.id} outletName={outletName} lang={lang} />}
 
@@ -135,9 +138,23 @@ export function OutletOperationsScreen() {
   );
 }
 
-/** Tab 2 — read-only on-hand batches. No control here can change a balance. */
-function OutletStockTab({ distributionPointId, lang }: { distributionPointId: string; lang: 'ar' | 'en' }) {
+/**
+ * Tab 2 — on-hand batches. Read-only for outlet operators: no operator control
+ * can change a balance. The ONE deliberate exception is a physical-count
+ * CORRECTION, shown per-lot only to actors holding the scoped `outlet_stock.count`
+ * permission on this outlet (useOutletCountPermission). Even then nothing is
+ * written from React: the correction is submitted to the guarded canonical RPC
+ * phoenix_count_outlet_stock_guarded (migration 086, via OutletStockCorrectionModal),
+ * which the server adjudicates — expected-generation, non-negative, reservation-
+ * safe, reason-mandatory, append-only movement + audit. item_availability is a
+ * read-only projection and is never touched here.
+ */
+function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | null; distributionPointId: string; lang: 'ar' | 'en' }) {
   const stock = useAsync(() => getOutletStock(distributionPointId), [distributionPointId]);
+  const countPerm = useOutletCountPermission(orgId, distributionPointId);
+  const canCorrect = countPerm.data === true;
+  const [correctLot, setCorrectLot] = useState<OutletStockRow | null>(null);
+
   if (stock.loading && !stock.data) return <PhoenixLoadingState />;
   const rows = stock.data ?? [];
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('or_stock_none', lang)} />;
@@ -146,23 +163,41 @@ function OutletStockTab({ distributionPointId, lang }: { distributionPointId: st
     <div style={{ display: 'grid', gap: '10px' }} data-testid="outlet-stock-list">
       {rows.map(r => (
         <PhoenixCard key={r.id}>
-          <div style={{ fontSize: '13px', fontWeight: 700 }}>{r.scientificName}</div>
-          <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>
-            {dash(r.tradeName)} · {dash(r.concentration)} · {dash(r.dosageForm)} · {dash(r.unit)}
-          </div>
-          <div style={{ fontSize: '11.5px', color: 'var(--t2)' }}>
-            {t('mv_f_batch_number', lang)}: {dash(r.batchNumber)} ·{' '}
-            {t('mv_f_expiry_date', lang)}: {dash(r.expiryDate)} ·{' '}
-            {t('mv_f_national_code', lang)}: {dash(r.nationalCode)}
-          </div>
-          <div style={{ fontSize: '12px', fontWeight: 700, marginTop: '4px' }}>
-            {t('mv_available', lang)}: {r.availableQuantity}
-            <span style={{ fontWeight: 400, color: 'var(--t2)' }}>
-              {' '}({t('mv_f_received_quantity', lang)}: {r.onHandQuantity} · {t('mv_returned_against', lang)}: {r.reservedQuantity})
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: 700 }}>{r.scientificName}</div>
+              <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>
+                {dash(r.tradeName)} · {dash(r.concentration)} · {dash(r.dosageForm)} · {dash(r.unit)}
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--t2)' }}>
+                {t('mv_f_batch_number', lang)}: {dash(r.batchNumber)} ·{' '}
+                {t('mv_f_expiry_date', lang)}: {dash(r.expiryDate)} ·{' '}
+                {t('mv_f_national_code', lang)}: {dash(r.nationalCode)}
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, marginTop: '4px' }}>
+                {t('mv_available', lang)}: {r.availableQuantity}
+                <span style={{ fontWeight: 400, color: 'var(--t2)' }}>
+                  {' '}({t('mv_f_received_quantity', lang)}: {r.onHandQuantity} · {t('mv_returned_against', lang)}: {r.reservedQuantity})
+                </span>
+              </div>
+            </div>
+            {canCorrect && (
+              <PhoenixButton variant="ghost" size="sm" onClick={() => setCorrectLot(r)}>
+                {t('oc_correct_action', lang)}
+              </PhoenixButton>
+            )}
           </div>
         </PhoenixCard>
       ))}
+
+      <OutletStockCorrectionModal
+        open={correctLot !== null}
+        lot={correctLot}
+        lang={lang}
+        canCorrect={canCorrect}
+        onClose={() => setCorrectLot(null)}
+        onSuccess={() => { setCorrectLot(null); stock.reload(); }}
+      />
     </div>
   );
 }
