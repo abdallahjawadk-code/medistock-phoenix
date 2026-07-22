@@ -41,6 +41,8 @@ const ALL_NAV: {
   // Screen 19 is reachable on mobile too; the screen self-gates by 062
   // warehouse scope + the scoped local_procurement.* keys, re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
+  // MONTHLY-STATUS-REDESIGN-092: mirrors the desktop sidebar entry.
+  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the

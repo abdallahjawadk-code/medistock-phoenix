@@ -53,6 +53,11 @@ const NAV_ITEMS: NavItem[] = [
   // self-gates by 062 warehouse assignments plus the scoped local_procurement.*
   // keys, and every action is re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
+  // MONTHLY-STATUS-REDESIGN-092: ungated like nav_editor — the screen
+  // self-gates by the scoped status_center.* keys (prepare_own/classify_own/
+  // confirm_missing/review_submit_own/review_all/return_for_clarification/
+  // approve_lock), re-checked server-side by every RPC.
+  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [

@@ -25,6 +25,7 @@ import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
 import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
+import { MonthlyStatusScreen } from '@/features/status/MonthlyStatusScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -121,6 +122,10 @@ export function AuthenticatedApp() {
       // approvals, receiving and supplier returns — scoped to assigned
       // institution warehouses (062), every write a guarded 087 RPC.
       case 19: return <LocalProcurementScreen />;
+      // MONTHLY-STATUS-REDESIGN-092: prepare/classify/confirm/submit/review/
+      // approve+lock the monthly institution material status — scoped to the
+      // status_center.* keys, every write a guarded 092 RPC.
+      case 20: return <MonthlyStatusScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;

@@ -50,6 +50,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
   // INSTITUTION-LOCAL-PROCUREMENT-087: ungated — the screen self-gates by warehouse scope.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
+  // MONTHLY-STATUS-REDESIGN-092: ungated — the screen self-gates by the scoped status_center.* keys.
+  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
   { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
   { screen: 15, icon: 'account', labelKey: 'nav_my_account' },

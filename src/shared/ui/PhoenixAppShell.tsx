@@ -27,6 +27,8 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   18: 'nav_outlet_ops',
   // Screen 19 (Local Procurement, migration 087).
   19: 'nav_local_procurement',
+  // Screen 20 (Monthly Status, migration 092).
+  20: 'nav_monthly_status',
 };
 
 interface Props {
