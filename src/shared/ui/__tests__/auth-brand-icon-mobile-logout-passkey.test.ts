@@ -150,9 +150,19 @@ describe('Login screen: technical badges removed', () => {
 });
 
 describe('Login screen: professional rights/supervision block', () => {
-  it('renders the rights code and supervision line via i18n keys', () => {
-    expect(loginScreen).toContain("t('login_rights_code'");
+  // RIGHTS-SEAL-SCOPE: the MASAR seal and its rights phrase must NEVER return
+  // to Login or Welcome — the single seal lives in the shell footer only.
+  it('renders the supervision line, and NO MASAR seal or rights code', () => {
     expect(loginScreen).toContain("t('login_supervision_line'");
+    expect(loginScreen).not.toContain('MasarCopyrightSeal');
+    expect(loginScreen).not.toContain("t('login_rights_code'");
+    const welcome = readSrc('features/auth/PhoenixWelcomeExperience.tsx');
+    expect(welcome).not.toContain('MasarCopyrightSeal');
+    // The approved welcome credit lines stay verbatim.
+    expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
+    expect(welcome).toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    // Exactly ONE mounted seal remains: the shell footer.
+    expect(appShell).toContain('<MasarCopyrightSeal');
   });
 
   it('login_rights_code contains the exact required text', () => {

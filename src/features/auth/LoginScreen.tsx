@@ -4,7 +4,6 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -232,9 +231,10 @@ export function LoginScreen() {
             </>
           )}
 
+          {/* RIGHTS-SEAL-SCOPE: the MASAR seal and its rights phrase are
+              deliberately ABSENT from the login screen — the single seal lives
+              in the authenticated shell footer. The supervision credit stays. */}
           <div className="premium-login__rights nexus-login__rights">
-            <MasarCopyrightSeal variant="credit" className="nexus-login__seal" />
-            <div dir="ltr">{t('login_rights_code', lang)}</div>
             <span dir="auto">{t('login_supervision_line', lang)}</span>
           </div>
         </form>

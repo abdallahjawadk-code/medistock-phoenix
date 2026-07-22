@@ -10,6 +10,8 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { supabase } from '@/shared/supabase/client';
+import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
+import type { ResolvedMaterial } from '@/shared/materials/material-resolver.service';
 import {
   getAllWarehouses,
   createDirectTransferRequest, addTransferRequestLine, updateTransferRequestLine,
@@ -528,23 +530,44 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
 function AddForwardLineForm({ lang, requestId, onDone }: {
   lang: Lang; requestId: string; onDone: (r: RpcResult) => void;
 }) {
-  const [name, setName] = useState('');
+  // REGISTERED-MATERIAL-ONLY: a transfer line is composed from a resolver
+  // SELECTION, never from typed text. The selection carries the registered
+  // identity (central item / concentration / dosage / unit) into the line.
+  const [selected, setSelected] = useState<ResolvedMaterial | null>(null);
   const [qty, setQty] = useState('');
   const [busy, setBusy] = useState(false);
   const n = parseInt(qty, 10);
-  const canAdd = name.trim() !== '' && Number.isFinite(n) && n > 0 && !busy;
+  const canAdd = selected !== null && Number.isFinite(n) && n > 0 && !busy;
   return (
     <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
-      <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: '2fr 1fr auto', alignItems: 'end' }}>
-        <PhoenixInput label={t('net_op_scientific', lang)} value={name} onChange={e => setName(e.target.value)} />
-        <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
-        <PhoenixButton loading={busy} disabled={!canAdd} onClick={async () => {
-          setBusy(true);
-          const res = await addTransferRequestLine({ transferRequestId: requestId, scientificName: name.trim(), requestedQuantity: n });
-          setBusy(false);
-          if (res.ok) { setName(''); setQty(''); }
-          onDone(res);
-        }}>{t('net_op_add_line', lang)}</PhoenixButton>
+      <div style={{ display: 'grid', gap: '8px' }}>
+        {selected === null ? (
+          <PhoenixMaterialResolver lang={lang} onSelect={setSelected} />
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)' }}>
+            <strong dir="auto">{selected.scientificName}{selected.tradeName ? ` (${selected.tradeName})` : ''}</strong>
+            <PhoenixButton variant="ghost" size="sm" onClick={() => setSelected(null)}>✕</PhoenixButton>
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
+          <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
+          <PhoenixButton loading={busy} disabled={!canAdd} onClick={async () => {
+            if (!selected) return;
+            setBusy(true);
+            const res = await addTransferRequestLine({
+              transferRequestId: requestId,
+              scientificName: selected.scientificName,
+              requestedQuantity: n,
+              centralItemId: selected.centralItemId,
+              concentration: selected.concentration,
+              dosageForm: selected.dosageForm,
+              unit: selected.unit,
+            });
+            setBusy(false);
+            if (res.ok) { setSelected(null); setQty(''); }
+            onDone(res);
+          }}>{t('net_op_add_line', lang)}</PhoenixButton>
+        </div>
       </div>
     </PhoenixCard>
   );

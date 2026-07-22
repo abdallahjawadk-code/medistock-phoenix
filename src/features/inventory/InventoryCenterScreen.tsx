@@ -22,6 +22,7 @@ import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
+import { SourceBalancesPanel } from './SourceBalancesPanel';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
@@ -231,6 +232,9 @@ export function InventoryCenterScreen() {
           onConflictReload={reloadCanonicalStock}
         />
       ) : tab === 'stock' ? (
+        <div style={{ display: 'grid', gap: '12px' }}>
+        {/* SOURCE-BALANCES-PANEL (088): fail-closed readiness gate inside. */}
+        <SourceBalancesPanel warehouseId={activeWarehouseId} />
         <StockList
           state={stock}
           lang={lang}
@@ -240,6 +244,7 @@ export function InventoryCenterScreen() {
           onError={showToast}
           onConflictReload={reloadCanonicalStock}
         />
+        </div>
       ) : tab === 'incoming' && canReceive ? (
         <InstitutionIncomingSupplies
           destinationWarehouseId={activeWarehouseId}

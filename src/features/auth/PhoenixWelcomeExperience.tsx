@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
-import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 interface Props {
   onComplete: () => void;
@@ -94,7 +93,8 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
         <div className="nexus-welcome__credits-rule" aria-hidden="true" />
         <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
-        <MasarCopyrightSeal variant="credit" className="nexus-welcome__seal" />
+        {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
+            single seal lives in the authenticated shell footer. */}
       </div>
     </div>
   );
