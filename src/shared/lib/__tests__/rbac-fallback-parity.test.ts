@@ -144,15 +144,6 @@ describe('C. No collateral damage to other roles', () => {
     expect(roleDefaults('hospital_admin').has('warehouses.manage')).toBe(true);
   });
 
-  it('viewer remains read-only', () => {
-    const d = roleDefaults('viewer');
-    expect(d.has('warehouses.view')).toBe(true);
-    expect(d.has('warehouses.manage')).toBe(false);
-    for (const k of [...d]) {
-      expect(k.endsWith('.view') || k === 'availability.movements.view', `viewer holds non-read key ${k}`).toBe(true);
-    }
-  });
-
   it('transfer_manager receives no new 062 permission', () => {
     const d = roleDefaults('transfer_manager');
     for (const k of NEW_062_KEYS) {
@@ -161,8 +152,7 @@ describe('C. No collateral damage to other roles', () => {
     expect(d.has('warehouses.manage')).toBe(false);
   });
 
-  it('transfer_manager stays authorization-distinct from monthly_status_officer', () => {
-    // Identical today by 010's copy, but resolved through its OWN frozen list.
+  it('transfer_manager stays authorization-distinct — resolved through its OWN frozen list', () => {
     expect(normalizeRole('transfer_manager')).toBe('transfer_manager');
     expect(roleDefaults('transfer_manager').has('reports.view')).toBe(false);
   });
@@ -175,7 +165,6 @@ describe('C. No collateral damage to other roles', () => {
     }
     expect(snapshot).toMatchObject({
       warehouse_officer: 25, // 26 before the correction
-      viewer: 11,
       transfer_manager: 12,
     });
   });

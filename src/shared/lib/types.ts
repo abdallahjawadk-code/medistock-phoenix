@@ -114,15 +114,13 @@ const ROLE_RANK: Record<Role, number> = {
   outlet_officer: 4,
   port_officer: 4,
   point_operator: 4,
-  monthly_status_officer: 3,
   transfer_manager: 3,
-  viewer: 1,
 };
 
 export function canAssignRole(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === 'super_admin') return true;
   if (actorRole === 'institution_admin' || actorRole === 'hospital_admin') {
-    return ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'].includes(targetRole);
+    return ['warehouse_officer', 'outlet_officer'].includes(targetRole);
   }
   return false;
 }
@@ -138,17 +136,15 @@ export function canManageOrg(role: Role): boolean {
 export const ASSIGNABLE_ROLES_BY_ACTOR: Record<Role, readonly Role[]> = {
   super_admin: [
     'super_admin', 'institution_admin', 'central_warehouse_manager',
-    'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+    'warehouse_officer', 'outlet_officer',
   ],
-  institution_admin: ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'],
-  hospital_admin: ['warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer'],
+  institution_admin: ['warehouse_officer', 'outlet_officer'],
+  hospital_admin: ['warehouse_officer', 'outlet_officer'],
   central_warehouse_manager: [],
   warehouse_officer: [],
   warehouse_manager: [],
   outlet_officer: [],
   port_officer: [],
   point_operator: [],
-  monthly_status_officer: [],
   transfer_manager: [],
-  viewer: [],
 };

@@ -1044,8 +1044,6 @@ export const T: Dict = {
   orole_warehouse_officer:      { ar: 'مسؤول المذخر',           en: 'Store Officer' },
   orole_outlet_officer:         { ar: 'مسؤول المنفذ',           en: 'Outlet Officer' },
   orole_port_officer:           { ar: 'مسؤول المنفذ',           en: 'Port Officer' },
-  orole_monthly_status_officer: { ar: 'مسؤول المواقف الشهرية',  en: 'Monthly Status Officer' },
-  orole_viewer:                 { ar: 'مشاهد',                   en: 'Viewer' },
   orole_legacy_admin:           { ar: 'مدير مؤسسة (إرث)',        en: 'Institution Admin (legacy)' },
   orole_legacy_warehouse_manager: { ar: 'مدير مذخر (إرث)',       en: 'Warehouse Manager (legacy)' },
   orole_legacy_port_officer:    { ar: 'مسؤول منفذ (إرث)',        en: 'Port Officer (legacy)' },
@@ -1192,7 +1190,7 @@ export const T: Dict = {
   ma_org_contact_enable_success:  { ar: 'تم تفعيل رقمك كرقم تواصل رسمي للمؤسسة',                                 en: 'Your number was enabled as the official organization contact' },
   ma_org_contact_disable_success: { ar: 'تم إلغاء تفعيل رقمك كرقم تواصل رسمي للمؤسسة',                           en: 'Your number was disabled as the official organization contact' },
   ma_org_contact_error:           { ar: 'تعذر تحديث رقم التواصل الرسمي للمؤسسة',                                 en: 'Could not update official organization contact' },
-  ma_org_contact_ineligible:      { ar: 'متاح لمسؤول المؤسسة ومسؤول المواقف الشهرية فقط',                        en: 'Available only to institution managers and monthly status officers' },
+  ma_org_contact_ineligible:      { ar: 'متاح لمسؤول المؤسسة فقط',                                              en: 'Available only to institution managers' },
 
   /* ── Smart Material Alerts (SMART-MATERIAL-ALERTS-AND-INTERINSTITUTION-UX-LEAP-A) ── */
   smart_material_alerts:            { ar: 'التنبيهات الذكية للمواد',                         en: 'Smart Material Alerts' },

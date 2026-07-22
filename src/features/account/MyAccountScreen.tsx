@@ -20,7 +20,7 @@ const fieldStyle = {
 // a UX convenience only (hide/disable the action for obviously-ineligible
 // profiles) — phoenix_set_my_org_whatsapp_contact (migration 046) re-checks
 // role/status/organization_id server-side and is the final authority.
-const ORG_CONTACT_ELIGIBLE_ROLES = ['institution_admin', 'hospital_admin', 'monthly_status_officer'];
+const ORG_CONTACT_ELIGIBLE_ROLES = ['institution_admin'];
 
 export function MyAccountScreen() {
   const { lang, profile, session, requestPasswordReset, updatePassword, reloadProfile } = useApp();

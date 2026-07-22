@@ -60,8 +60,6 @@ const OFFICIAL_ROLES = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
-  'monthly_status_officer',
-  'viewer',
 ];
 
 const CORS = {

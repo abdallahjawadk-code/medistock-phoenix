@@ -481,13 +481,13 @@ describe('Account lifecycle policy: docs/account-lifecycle-policy.md', () => {
     expect(policy).toContain('recycled');
   });
 
-  it('covers all official roles', () => {
+  it('covers all official roles (PHOENIX-FIVE-ROLE-CUTOVER-091: monthly_status_officer/viewer removed)', () => {
     expect(policy).toContain('super_admin');
     expect(policy).toContain('institution_admin');
     expect(policy).toContain('warehouse_officer');
-    expect(policy).toContain('port_officer');
-    expect(policy).toContain('monthly_status_officer');
-    expect(policy).toContain('viewer');
+    expect(policy).toContain('outlet_officer');
+    expect(policy).not.toContain('monthly_status_officer');
+    expect(policy).not.toContain('viewer');
   });
 
   it('defines disable, correction, password reset, recycling, and hard delete', () => {

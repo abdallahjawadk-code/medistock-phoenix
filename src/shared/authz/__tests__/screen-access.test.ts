@@ -66,7 +66,7 @@ describe('role assignment protections (self-escalation / equal-or-higher)', () =
   });
 
   it('non-admin roles can assign nothing', () => {
-    for (const role of ['central_warehouse_manager', 'warehouse_officer', 'outlet_officer', 'viewer'] as const) {
+    for (const role of ['central_warehouse_manager', 'warehouse_officer', 'outlet_officer'] as const) {
       expect(ASSIGNABLE_ROLES_BY_ACTOR[role]).toEqual([]);
     }
   });

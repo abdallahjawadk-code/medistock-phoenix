@@ -91,7 +91,9 @@ describe('no client-side document-number sequence exists', () => {
     // each reviewed migration that adds no MOVEMENT numbering.
     // 088 (canonical supply provenance) is reviewed and adds NO document
     // numbering — provenance columns + identity only.
-    const beyond = migrations.filter(f => /^0*(09[1-9]|[1-9]\d{2,})/.test(f));
+    // 091 (PHOENIX-FIVE-ROLE-CUTOVER-091) is reviewed and adds NO document
+    // numbering — role/RLS/RPC cutover only. The ceiling moves to 092.
+    const beyond = migrations.filter(f => /^0*(09[2-9]|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -100,6 +102,7 @@ describe('no client-side document-number sequence exists', () => {
     // 090 stamps SERVER-side official numbers (WR-/WA- via a sequence inside a
     // BEFORE INSERT trigger) — again the safe direction; no client numbering.
     expect(migrations).toContain('090_phoenix_warehouse_receipt_official_number.sql');
+    expect(migrations).toContain('091_phoenix_five_role_cutover.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

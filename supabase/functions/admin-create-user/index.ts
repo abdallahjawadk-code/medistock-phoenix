@@ -12,8 +12,8 @@
 //   POST { full_name, organization_id, role, login_mode, ... }  (Bearer = caller JWT)
 //   - Caller must be authenticated.
 //   - super_admin: may create any official role in any organization.
-//   - institution_admin: may create warehouse_officer/port_officer/
-//     monthly_status_officer/viewer in own org only (requires users.create).
+//   - institution_admin: may create warehouse_officer/outlet_officer in own
+//     org only (requires users.create).
 //   - Non-super: may create users ONLY if they hold users.create AND only in
 //     their own organization; may NOT create super_admin or institution_admin.
 //   - Only super_admin may create super_admin or institution_admin.
@@ -50,8 +50,6 @@ const OFFICIAL_ROLES = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
-  'monthly_status_officer',
-  'viewer',
 ];
 
 const CORS = {

@@ -99,13 +99,6 @@ export function permissionsByModule(): Record<string, PermissionKeyDef[]> {
 
 // ── Layer 1: role default permissions ────────────────────────────────────────
 
-const VIEWER_DEFAULTS = [
-  'dashboard.view', 'organizations.view', 'warehouses.view', 'ports.view',
-  'qr.view', 'availability.view', 'status_center.view', 'exchange_alerts.view',
-  'inter_institution_alerts.view', 'status_contacts.view',
-  'availability.movements.view',
-];
-
 // RBAC-FALLBACK-ALIGNMENT: `warehouses.manage` is deliberately absent.
 // Migration 062 (C1) sets this default to false — warehouse_officer is a DATA
 // ENTRY role, not a warehouse owner: the key authorizes org-wide INSERT/UPDATE
@@ -158,16 +151,6 @@ const CENTRAL_WAREHOUSE_MANAGER_DEFAULTS = [
 
 const OUTLET_OFFICER_DEFAULTS: readonly string[] = [];
 
-const MONTHLY_STATUS_OFFICER_DEFAULTS = [
-  'dashboard.view', 'availability.view',
-  'status_center.view', 'status_center.create', 'status_center.edit', 'status_center.resolve',
-  'exchange_alerts.view', 'inter_institution_alerts.view',
-  'status_contacts.view', 'status_contacts.manage',
-  'availability.movements.view',
-  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — monthly_status_officer: acknowledge only.
-  'inter_institution_alerts.acknowledge',
-];
-
 // Institution administrator — org-scoped user manager.
 // Cannot create/archive organizations, cannot manage permissions, cannot delete users.
 // users.disable granted only when migration 011 is applied (not in defaults).
@@ -210,26 +193,19 @@ const LEGACY_ADMIN_DEFAULTS = [
 ];
 
 /**
- * transfer_manager — hidden legacy role, FROZEN default set.
+ * transfer_manager — hidden legacy role, FROZEN default set. The DB can no
+ * longer assign this role at all after PHOENIX-FIVE-ROLE-CUTOVER-091
+ * (profiles_role_check accepts only the five canonical roles), so this
+ * fallback is unreachable in practice; it is kept as a frozen historical
+ * snapshot rather than deleted so legacy-role-alignment.test.ts continues to
+ * pin the pre-cutover parity it documents.
  *
- * RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT.
- *
- * This is a byte-for-byte snapshot of MONTHLY_STATUS_OFFICER_DEFAULTS as it
- * stands today, and it is a COPY on purpose — the two lists must be free to
- * diverge, because the database has already diverged them:
- *
- *   • migration 010 seeded transfer_manager BY COPYING monthly_status_officer's
- *     defaults at that time. That is why this snapshot is identical today, and
- *     why nothing here changes what a transfer_manager can currently do.
- *   • migration 062 then granted monthly_status_officer reports.view and
- *     audit.view, and gave transfer_manager NEITHER (absent row = false), while
- *     explicitly denying it the other eight new keys.
- *
- * Deriving this list from monthly_status_officer's would re-create exactly the
- * inheritance 062 rejected: the next key added there would silently become a
- * transfer_manager grant that the database denies. A snapshot cannot do that.
- * legacy-role-alignment.test.ts pins both halves — today's parity, and the
- * prohibition on any 062 key ever appearing here.
+ * This list was originally a byte-for-byte snapshot of the (now removed)
+ * monthly_status_officer defaults at migration-010 time, kept as an
+ * independent COPY (not a derived alias) because migration 062 later granted
+ * monthly_status_officer reports.view/audit.view while explicitly denying
+ * transfer_manager those same keys — deriving one from the other would have
+ * silently re-created the inheritance 062 rejected.
  */
 const TRANSFER_MANAGER_LEGACY_DEFAULTS = [
   'dashboard.view', 'availability.view',
@@ -278,8 +254,6 @@ const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   central_warehouse_manager: CENTRAL_WAREHOUSE_MANAGER_DEFAULTS,
   warehouse_officer:      WAREHOUSE_OFFICER_DEFAULTS,
   outlet_officer:         OUTLET_OFFICER_DEFAULTS,
-  monthly_status_officer: MONTHLY_STATUS_OFFICER_DEFAULTS,
-  viewer:                 VIEWER_DEFAULTS,
 };
 
 /** Default permission set for any role string (legacy-aware). */

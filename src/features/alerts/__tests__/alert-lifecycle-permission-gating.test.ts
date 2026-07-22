@@ -111,14 +111,18 @@ describe('F-04: role defaults mirror migration 038', () => {
     }
   });
 
-  it('monthly_status_officer (and legacy transfer_manager) has acknowledge only', () => {
-    for (const role of ['monthly_status_officer', 'transfer_manager']) {
-      const d = roleDefaults(role);
-      expect(d.has('inter_institution_alerts.acknowledge')).toBe(true);
-      expect(d.has('inter_institution_alerts.manage')).toBe(false);
-      expect(d.has('inter_institution_alerts.resolve')).toBe(false);
-      expect(d.has('inter_institution_alerts.dismiss')).toBe(false);
-    }
+  it('transfer_manager (legacy) has acknowledge only', () => {
+    const d = roleDefaults('transfer_manager');
+    expect(d.has('inter_institution_alerts.acknowledge')).toBe(true);
+    expect(d.has('inter_institution_alerts.manage')).toBe(false);
+    expect(d.has('inter_institution_alerts.resolve')).toBe(false);
+    expect(d.has('inter_institution_alerts.dismiss')).toBe(false);
+  });
+
+  it('monthly_status_officer (removed, PHOENIX-FIVE-ROLE-CUTOVER-091) holds no lifecycle key at all', () => {
+    const d = roleDefaults('monthly_status_officer');
+    LIFECYCLE_KEYS.forEach(key => expect(d.has(key)).toBe(false));
+    expect(d.has('inter_institution_alerts.acknowledge')).toBe(false);
   });
 
   it('viewer has none of the 4 lifecycle write keys', () => {

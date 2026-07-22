@@ -604,7 +604,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   }
 
   const modules = permissionsByModule();
-  const isMonthlyOfficer = normalizeRole(user.role) === 'monthly_status_officer';
+  const isOrgContactEligible = normalizeRole(user.role) === 'institution_admin';
 
   return (
     <PhoenixCard padding="16px">
@@ -690,7 +690,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
             })}
           </div>
 
-          {isMonthlyOfficer && <ContactSection orgId={user.organization_id} lang={lang} />}
+          {isOrgContactEligible && <ContactSection orgId={user.organization_id} lang={lang} />}
 
           {!readOnly && (
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
@@ -771,7 +771,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
   const [tempConfirm,  setTempConfirm]  = useState('');
   const [showTempPwd,  setShowTempPwd]  = useState(false);
   const [orgId,       setOrgId]       = useState(actorOrgId ?? '');
-  const [selRole,     setSelRole]     = useState<OfficialRole>('viewer');
+  const [selRole,     setSelRole]     = useState<OfficialRole>('outlet_officer');
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
@@ -1128,7 +1128,7 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
   const [tempPassword, setTempPassword] = useState('');
   const [tempConfirm,  setTempConfirm]  = useState('');
   const [showTempPwd,  setShowTempPwd]  = useState(false);
-  const [newRole,    setNewRole]    = useState<OfficialRole>('viewer');
+  const [newRole,    setNewRole]    = useState<OfficialRole>('outlet_officer');
   const [newOrgId,   setNewOrgId]   = useState(user.organization_id ?? actorOrgId ?? '');
   const [confirm,    setConfirm]    = useState('');
   const [busy,       setBusy]       = useState(false);

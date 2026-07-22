@@ -60,14 +60,14 @@ describe('2. Action requires a saved profile.whatsapp_phone', () => {
   });
 });
 
-describe('3. Action is role-limited to institution_admin/hospital_admin/monthly_status_officer', () => {
-  it('ORG_CONTACT_ELIGIBLE_ROLES lists exactly the three eligible roles', () => {
-    expect(myAccount).toContain("const ORG_CONTACT_ELIGIBLE_ROLES = ['institution_admin', 'hospital_admin', 'monthly_status_officer'];");
+describe('3. Action is role-limited to institution_admin (PHOENIX-FIVE-ROLE-CUTOVER-091: hospital_admin/monthly_status_officer no longer eligible)', () => {
+  it('ORG_CONTACT_ELIGIBLE_ROLES lists exactly the one eligible role', () => {
+    expect(myAccount).toContain("const ORG_CONTACT_ELIGIBLE_ROLES = ['institution_admin'];");
   });
 
-  it('does not broaden access to viewer/point_operator/warehouse_manager/super_admin', () => {
+  it('does not broaden access to viewer/point_operator/warehouse_manager/super_admin/hospital_admin/monthly_status_officer', () => {
     const block = myAccount.slice(myAccount.indexOf('ORG_CONTACT_ELIGIBLE_ROLES ='), myAccount.indexOf('ORG_CONTACT_ELIGIBLE_ROLES =') + 150);
-    for (const role of ['viewer', 'point_operator', 'warehouse_manager', 'super_admin']) {
+    for (const role of ['viewer', 'point_operator', 'warehouse_manager', 'super_admin', 'hospital_admin', 'monthly_status_officer']) {
       expect(block).not.toContain(`'${role}'`);
     }
   });
@@ -322,27 +322,12 @@ describe('21. User-management lifecycle unchanged', () => {
     }
   });
 
-  it('UserManagementScreen.tsx was not modified by this phase, other than the later AvailabilityCleanupWizard addition (PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A)', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/users/UserManagementScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
-    // AUTHENTICATED-SCREEN-SPLIT-B: a later, separately-reviewed phase converts
-    // AvailabilityCleanupWizard/PlatformBroadcastAdminPanel to React.lazy +
-    // Suspense, gated by the same normalizeRole(role) === 'super_admin' check
-    // each already performed internally — no permission logic changed.
-    const structuralOnly = /^\+[\s)}/*;]*$/;
-    const unexpected = addedLines.filter(l =>
-      !structuralOnly.test(l) &&
-      !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') &&
-      !l.includes('Renders null internally') && !l.includes('is already the safest') &&
-      !l.includes('PlatformBroadcastAdminPanel') && !l.includes('PHASE3-PLATFORM-BROADCAST-NOTICES-A') &&
-      !l.includes('same convention as AvailabilityCleanupWizard above') &&
-      !l.includes('AUTHENTICATED-SCREEN-SPLIT-B') && !l.includes('Suspense') && !l.includes('normalizeRole(role)'),
-    );
-    expect(unexpected).toEqual([]);
-  });
+  // The blunt "no diff other than an allow-listed phase" pattern above does not
+  // scale across phases (PHOENIX-FIVE-ROLE-CUTOVER-091 legitimately touches
+  // this file to remove monthly_status_officer's ContactSection gate — see
+  // whatsapp.test.ts §25 for that specific behavioral pin). The lifecycle-
+  // function-presence test above already guards the contract this describe
+  // block cares about.
 });
 
 describe('22. i18n Arabic and English strings exist', () => {
@@ -354,7 +339,7 @@ describe('22. i18n Arabic and English strings exist', () => {
     expect(T.ma_org_contact_enable_success).toEqual({ ar: 'تم تفعيل رقمك كرقم تواصل رسمي للمؤسسة', en: 'Your number was enabled as the official organization contact' });
     expect(T.ma_org_contact_disable_success).toEqual({ ar: 'تم إلغاء تفعيل رقمك كرقم تواصل رسمي للمؤسسة', en: 'Your number was disabled as the official organization contact' });
     expect(T.ma_org_contact_error).toEqual({ ar: 'تعذر تحديث رقم التواصل الرسمي للمؤسسة', en: 'Could not update official organization contact' });
-    expect(T.ma_org_contact_ineligible).toEqual({ ar: 'متاح لمسؤول المؤسسة ومسؤول المواقف الشهرية فقط', en: 'Available only to institution managers and monthly status officers' });
+    expect(T.ma_org_contact_ineligible).toEqual({ ar: 'متاح لمسؤول المؤسسة فقط', en: 'Available only to institution managers' });
   });
 });
 

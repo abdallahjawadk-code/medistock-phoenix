@@ -380,7 +380,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     }
   }, []);
 
-  const role: Role = profile?.role ?? 'viewer';
+  const role: Role = profile?.role ?? 'outlet_officer';
 
   return (
     <AppContext.Provider value={{
