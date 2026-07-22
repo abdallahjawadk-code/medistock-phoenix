@@ -92,7 +92,7 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
       return;
     }
     setScanNote(t('scan_unknown_code', lang));
-  }, [lang]); // eslint-disable-line
+  }, [lang]);
 
 
   /** SMART SEARCH: QR / UUID / official number / order-receipt number /
