@@ -7,7 +7,8 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
-  receiveWarehouseStock, newRequestId, classifyIntakeError,
+  receiveWarehouseStock, getWarehouseReceiptLotGeneration,
+  newRequestId, classifyIntakeError, GENERATION_UNAVAILABLE_CODE,
   type ReceiveWarehouseStockInput,
 } from '../warehouse-intake.service';
 import { validateImageFile, ACCEPT_ATTRIBUTE, rejectionMessageKey } from './image/validate';
@@ -48,6 +49,8 @@ interface Props {
   canSubmitIntake: boolean;
   onCancel: () => void;
   onSubmitted: (messageKey: string) => void;
+  /** 078 generation conflict — parent reloads canonical stock; retry stays explicit. */
+  onConflict?: () => void;
 }
 
 const FIELD_LABEL_KEYS: Partial<Record<PharmaFieldName, string>> = {
@@ -74,7 +77,7 @@ const SUBMITTED_FIELDS: PharmaFieldName[] = [
 ];
 
 export function OcrIntakeFlow({
-  warehouseId, catalog, existingBatches, canSubmitIntake, onCancel, onSubmitted,
+  warehouseId, catalog, existingBatches, canSubmitIntake, onCancel, onSubmitted, onConflict,
 }: Props) {
   const { lang, dir } = useApp();
 
@@ -305,6 +308,9 @@ export function OcrIntakeFlow({
     // re-affirm what they actually changed it to.
     setConfirmed(previous => ({ ...previous, [field]: false }));
     setReviewFields(previous => previous.map(f => (f.field === field ? { ...f, confirmed: false } : f)));
+    // A changed payload is a NEW logical attempt with its own idempotency key;
+    // only an UNCHANGED resubmit (a lost-response retry) replays the previous one.
+    setRequestId(newRequestId());
   };
 
   const onToggleConfirm = (field: PharmaFieldName, isConfirmed: boolean) => {
@@ -345,7 +351,7 @@ export function OcrIntakeFlow({
     if (!canSubmit) return;
     setStage('submitting');
 
-    const payload: ReceiveWarehouseStockInput = {
+    const base: Omit<ReceiveWarehouseStockInput, 'expectedGeneration'> = {
       requestId,
       warehouseId,
       scientificName: values.scientificName ?? '',
@@ -368,6 +374,18 @@ export function OcrIntakeFlow({
       notes: [values.notes, `[${t('ocr_entry_method_note', lang)}]`].filter(Boolean).join(' '),
     };
 
+    // 078 discipline: the canonical generation is read ONLY here — after the
+    // mandatory human review and explicit confirmations froze the material and
+    // batch identity above (canSubmit). OCR confidence never invents a
+    // generation; a failed read refuses without calling any writer.
+    const generation = await getWarehouseReceiptLotGeneration(base);
+    if (!generation.ok) {
+      setErrorKey(classifyIntakeError(GENERATION_UNAVAILABLE_CODE));
+      setStage('preview');
+      return;
+    }
+
+    const payload: ReceiveWarehouseStockInput = { ...base, expectedGeneration: generation.generation };
     const result = await receiveWarehouseStock(payload);
     if (result.ok) {
       releaseImage();
@@ -375,7 +393,11 @@ export function OcrIntakeFlow({
       onSubmitted(result.data?.replayed ? 'inv_intake_replayed' : 'inv_intake_ok');
       setStage('done');
     } else {
-      setErrorKey(classifyIntakeError(result.error));
+      const failureKey = classifyIntakeError(result.error);
+      setErrorKey(failureKey);
+      // The canonical lot moved between the read and the post: the parent
+      // reloads canonical stock; the retry stays an explicit operator act.
+      if (failureKey === 'inv_err_generation_conflict') onConflict?.();
       // Corrections survive a failed submit; the operator retries with the SAME
       // request id, so a timeout cannot post the quantity twice.
       setStage('preview');

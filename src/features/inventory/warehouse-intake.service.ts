@@ -190,6 +190,129 @@ export async function getWarehouseStockGeneration(
 /** Refusal token when a mutation was attempted without a proven generation. */
 export const GENERATION_UNAVAILABLE_CODE = 'expected_generation_unavailable';
 
+/**
+ * The lot identity a warehouse RECEIPT resolves against, matching migration
+ * 065/078's server-side resolution EXACTLY: (warehouse_id, trimmed
+ * scientific_name, concentration, dosage_form, national_code, batch_number,
+ * expiry_date, internal_batch_reference). `requestId` participates because a
+ * receipt that explicitly has NO batch number targets a brand-new lot whose
+ * internal_batch_reference the server derives from the request id — see
+ * {@link receiptInternalBatchReference}.
+ */
+export interface WarehouseReceiptLotIdentity {
+  requestId: string;
+  warehouseId: string;
+  scientificName: string;
+  hasNoBatchNumber: boolean;
+  concentration?: string | null;
+  dosageForm?: string | null;
+  nationalCode?: string | null;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+}
+
+/** The exact column filter the canonical read uses, exported so tests can pin it. */
+export interface NormalizedLotFilter {
+  warehouse_id: string;
+  scientific_name: string;
+  concentration: string | null;
+  dosage_form: string | null;
+  national_code: string | null;
+  batch_number: string | null;
+  internal_batch_reference: string | null;
+  expiry_date: string | null;
+}
+
+/** Mirror of the server's NULLIF(btrim(x), '') normalization. */
+function normalizeIdentityText(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Mirror of migration 065/078's internal-batch-reference derivation: a receipt
+ * that explicitly has no batch number is assigned `WSNB-<request id sans
+ * dashes>` — unique per request, so such a receipt ALWAYS creates a fresh lot
+ * and its canonical generation is 0 by construction. A batch-carrying receipt
+ * has no internal reference.
+ */
+export function receiptInternalBatchReference(
+  identity: Pick<WarehouseReceiptLotIdentity, 'hasNoBatchNumber' | 'requestId'>,
+): string | null {
+  return identity.hasNoBatchNumber
+    ? `WSNB-${identity.requestId.replace(/-/g, '')}`
+    : null;
+}
+
+/** Build the exact canonical filter the server resolves the receipt against. */
+export function normalizedLotFilter(identity: WarehouseReceiptLotIdentity): NormalizedLotFilter {
+  return {
+    warehouse_id:             identity.warehouseId,
+    scientific_name:          normalizeIdentityText(identity.scientificName) ?? '',
+    concentration:            normalizeIdentityText(identity.concentration),
+    dosage_form:              normalizeIdentityText(identity.dosageForm),
+    national_code:            normalizeIdentityText(identity.nationalCode),
+    batch_number:             normalizeIdentityText(identity.batchNumber),
+    internal_batch_reference: receiptInternalBatchReference(identity),
+    expiry_date:              normalizeIdentityText(identity.expiryDate),
+  };
+}
+
+/** Injectable transport for the canonical lot read; production hits PostgREST. */
+export type LotGenerationQuery = (filter: NormalizedLotFilter) => Promise<{
+  data: { movement_seq?: number } | null;
+  error: { code?: string } | null;
+}>;
+
+/**
+ * Read the canonical generation of the lot a RECEIPT will resolve to, by the
+ * SAME identity the guarded RPC locks (078). Performed fresh immediately
+ * before each logical mutation. Same discriminated fail-closed contract as
+ * {@link getWarehouseStockGeneration}: absent lot IS generation 0 (a first
+ * receipt); any read failure — missing column, RLS/permission, network,
+ * ambiguous identity (more than one matching row) — refuses and must never
+ * collapse into 0 or null.
+ */
+export async function getWarehouseReceiptLotGeneration(
+  identity: WarehouseReceiptLotIdentity,
+  deps: { query?: LotGenerationQuery } = {},
+): Promise<GenerationRead> {
+  const filter = normalizedLotFilter(identity);
+
+  let result: Awaited<ReturnType<LotGenerationQuery>>;
+  if (deps.query) {
+    result = await deps.query(filter);
+  } else {
+    if (!supabaseConfigured) return { ok: false, reason: 'not_configured' };
+    let query = supabase
+      .from('warehouse_stock')
+      .select('movement_seq')
+      .eq('warehouse_id', filter.warehouse_id)
+      .eq('scientific_name', filter.scientific_name);
+    const optional = [
+      ['concentration', filter.concentration],
+      ['dosage_form', filter.dosage_form],
+      ['national_code', filter.national_code],
+      ['batch_number', filter.batch_number],
+      ['internal_batch_reference', filter.internal_batch_reference],
+      ['expiry_date', filter.expiry_date],
+    ] as const;
+    for (const [column, value] of optional) {
+      query = value === null ? query.is(column, null) : query.eq(column, value);
+    }
+    // maybeSingle errors on >1 row: an ambiguous identity is a failed read,
+    // never a guessable generation.
+    result = await query.maybeSingle();
+  }
+
+  if (result.error) {
+    return { ok: false, reason: result.error.code === UNDEFINED_COLUMN ? 'not_deployed' : 'unreadable' };
+  }
+  if (result.data === null) return { ok: true, generation: 0, absent: true };
+  const seq = result.data.movement_seq;
+  return typeof seq === 'number' ? { ok: true, generation: seq } : { ok: false, reason: 'unreadable' };
+}
+
 export interface ReceiveWarehouseStockResult {
   ok: boolean;
   warehouse_stock_id: string;

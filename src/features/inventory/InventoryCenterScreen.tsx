@@ -22,8 +22,10 @@ import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
-  newRequestId, classifyIntakeError,
+  getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
+  newRequestId, classifyIntakeError, GENERATION_UNAVAILABLE_CODE,
   WAREHOUSE_ADJUSTMENT_TYPES, type WarehouseStockMovementType,
+  type ReceiveWarehouseStockInput,
 } from './warehouse-intake.service';
 
 /**
@@ -156,6 +158,11 @@ export function InventoryCenterScreen() {
     setReloadKey(k => k + 1);
   };
 
+  // 078 generation conflict: the canonical lot moved under the operator. Reload
+  // the canonical stock so the retry is composed against fresh truth — the
+  // retry itself stays an EXPLICIT operator act, never automatic.
+  const reloadCanonicalStock = () => setReloadKey(k => k + 1);
+
   return (
     <div dir={dir}>
       {header}
@@ -219,6 +226,7 @@ export function InventoryCenterScreen() {
           stock={stock.data ?? []}
           onSuccess={afterWrite}
           onError={showToast}
+          onConflictReload={reloadCanonicalStock}
         />
       ) : tab === 'stock' ? (
         <StockList
@@ -228,6 +236,7 @@ export function InventoryCenterScreen() {
           canCorrect={canCorrect}
           onSuccess={afterWrite}
           onError={showToast}
+          onConflictReload={reloadCanonicalStock}
         />
       ) : tab === 'incoming' && canReceive ? (
         <InstitutionIncomingSupplies
@@ -269,6 +278,8 @@ interface IntakeTabProps {
   stock: WarehouseStockBatch[];
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
+  /** 078 generation conflict — reload canonical stock; retry stays explicit. */
+  onConflictReload: () => void;
 }
 
 /**
@@ -282,7 +293,7 @@ const OcrIntakeFlow = lazy(() =>
   import('./ocr/OcrIntakeFlow').then(module => ({ default: module.OcrIntakeFlow })),
 );
 
-function IntakeTab({ warehouseId, canSubmit, lang, stock, onSuccess, onError }: IntakeTabProps) {
+function IntakeTab({ warehouseId, canSubmit, lang, stock, onSuccess, onError, onConflictReload }: IntakeTabProps) {
   const [mode, setMode] = useState<'manual' | 'ocr'>('manual');
 
   // The authorized catalog is fetched only when OCR is opened — matching data
@@ -315,6 +326,7 @@ function IntakeTab({ warehouseId, canSubmit, lang, stock, onSuccess, onError }: 
           canSubmitIntake={canSubmit}
           onCancel={() => setMode('manual')}
           onSubmitted={onSuccess}
+          onConflict={onConflictReload}
         />
       </Suspense>
     );
@@ -333,6 +345,7 @@ function IntakeTab({ warehouseId, canSubmit, lang, stock, onSuccess, onError }: 
         lang={lang}
         onSuccess={onSuccess}
         onError={onError}
+        onConflictReload={onConflictReload}
       />
     </>
   );
@@ -346,6 +359,8 @@ interface IntakeFormProps {
   lang: 'ar' | 'en';
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
+  /** 078 generation conflict — reload canonical stock; retry stays explicit. */
+  onConflictReload: () => void;
 }
 
 /**
@@ -353,9 +368,17 @@ interface IntakeFormProps {
  * held across retries: if the first submit times out, pressing the button again
  * replays the SAME idempotency key, and migration 065 returns the original
  * result instead of posting the quantity a second time. A fresh key is minted
- * only after a confirmed success clears the form.
+ * after a confirmed success clears the form — and by `touch()` whenever ANY
+ * payload field is edited, because a changed payload is a NEW logical attempt,
+ * not a retry of the previous one (the server's request fingerprint would
+ * reject the mismatch anyway; the fresh key makes the intent explicit).
+ *
+ * 078 discipline: submit performs a FRESH canonical generation read of the
+ * exact lot identity the server resolves, immediately before the post. An
+ * absent lot is generation 0 (a first receipt); a failed read refuses without
+ * calling any writer and never degrades to 0 or null.
  */
-function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: IntakeFormProps) {
+function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConflictReload }: IntakeFormProps) {
   const [requestId, setRequestId] = useState(newRequestId);
   const [scientificName, setScientificName] = useState('');
   const [tradeName, setTradeName] = useState('');
@@ -393,12 +416,19 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: Intake
     setAttempted(false);
   };
 
+  /**
+   * Editing ANY payload field starts a NEW logical attempt with its own
+   * idempotency key. Only an UNCHANGED resubmit (a lost-response retry) keeps
+   * the previous key so migration 065 can replay it instead of double-posting.
+   */
+  const touch = () => setRequestId(newRequestId());
+
   const submit = async () => {
     setAttempted(true);
     if (!formValid || busy) return;
     setBusy(true);
     try {
-      const result = await receiveWarehouseStock({
+      const base: Omit<ReceiveWarehouseStockInput, 'expectedGeneration'> = {
         requestId,
         warehouseId,
         scientificName,
@@ -416,12 +446,24 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: Intake
         supplyType: supplyType.trim() || null,
         sourceDocumentNumber: sourceDocument.trim() || null,
         notes: notes.trim() || null,
-      });
+      };
+      // Fresh canonical generation read, immediately before the post. A failed
+      // read refuses here — it never reaches a writer and never becomes 0.
+      const generation = await getWarehouseReceiptLotGeneration(base);
+      if (!generation.ok) {
+        onError(classifyIntakeError(GENERATION_UNAVAILABLE_CODE));
+        return;
+      }
+      const result = await receiveWarehouseStock({ ...base, expectedGeneration: generation.generation });
       if (result.ok) {
         onSuccess(result.data?.replayed ? 'inv_intake_replayed' : 'inv_intake_ok');
         reset();
       } else {
-        onError(classifyIntakeError(result.error));
+        const errorKey = classifyIntakeError(result.error);
+        onError(errorKey);
+        // The canonical lot moved between the read and the post: reload the
+        // canonical view and leave the retry to an explicit operator act.
+        if (errorKey === 'inv_err_generation_conflict') onConflictReload();
       }
     } finally {
       setBusy(false);
@@ -434,38 +476,38 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: Intake
         <PhoenixInput
           label={t('inv_scientific_name', lang)}
           value={scientificName}
-          onChange={e => setScientificName(e.target.value)}
+          onChange={e => { setScientificName(e.target.value); touch(); }}
           error={attempted && !scientificName.trim() ? t('inv_err_invalid', lang) : undefined}
         />
-        <PhoenixInput label={t('inv_trade_name', lang)} value={tradeName} onChange={e => setTradeName(e.target.value)} />
-        <PhoenixInput label={t('inv_concentration', lang)} value={concentration} onChange={e => setConcentration(e.target.value)} />
-        <PhoenixInput label={t('inv_dosage_form', lang)} value={dosageForm} onChange={e => setDosageForm(e.target.value)} />
-        <PhoenixInput label={t('inv_unit', lang)} value={unit} onChange={e => setUnit(e.target.value)} />
+        <PhoenixInput label={t('inv_trade_name', lang)} value={tradeName} onChange={e => { setTradeName(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_concentration', lang)} value={concentration} onChange={e => { setConcentration(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_dosage_form', lang)} value={dosageForm} onChange={e => { setDosageForm(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_unit', lang)} value={unit} onChange={e => { setUnit(e.target.value); touch(); }} />
         <PhoenixInput
           label={t('inv_quantity_received', lang)}
           type="number"
           min={1}
           step={1}
           value={quantity}
-          onChange={e => setQuantity(e.target.value)}
+          onChange={e => { setQuantity(e.target.value); touch(); }}
           error={attempted && !quantityValid ? t('inv_err_qty_positive', lang) : undefined}
         />
         <PhoenixInput
           label={t('inv_national_code', lang)}
           value={nationalCode}
           disabled={noNationalCode}
-          onChange={e => setNationalCode(e.target.value)}
+          onChange={e => { setNationalCode(e.target.value); touch(); }}
         />
         <PhoenixInput
           label={t('inv_batch_number', lang)}
           value={batchNumber}
           disabled={noBatchNumber}
-          onChange={e => setBatchNumber(e.target.value)}
+          onChange={e => { setBatchNumber(e.target.value); touch(); }}
         />
-        <PhoenixInput label={t('inv_expiry_date', lang)} type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
-        <PhoenixInput label={t('inv_unit_price', lang)} type="number" min={0} step="0.01" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} />
-        <PhoenixInput label={t('inv_supply_type', lang)} value={supplyType} onChange={e => setSupplyType(e.target.value)} />
-        <PhoenixInput label={t('inv_source_document', lang)} value={sourceDocument} onChange={e => setSourceDocument(e.target.value)} />
+        <PhoenixInput label={t('inv_expiry_date', lang)} type="date" value={expiryDate} onChange={e => { setExpiryDate(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_unit_price', lang)} type="number" min={0} step="0.01" value={unitPrice} onChange={e => { setUnitPrice(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_supply_type', lang)} value={supplyType} onChange={e => { setSupplyType(e.target.value); touch(); }} />
+        <PhoenixInput label={t('inv_source_document', lang)} value={sourceDocument} onChange={e => { setSourceDocument(e.target.value); touch(); }} />
       </div>
 
       {/* Explicit acknowledgements — a blank field is NOT read as "none exists". */}
@@ -474,7 +516,7 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: Intake
           <input
             type="checkbox"
             checked={noNationalCode}
-            onChange={e => { setNoNationalCode(e.target.checked); if (e.target.checked) setNationalCode(''); }}
+            onChange={e => { setNoNationalCode(e.target.checked); if (e.target.checked) setNationalCode(''); touch(); }}
           />
           {t('inv_no_national_code', lang)}
         </label>
@@ -482,13 +524,13 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError }: Intake
           <input
             type="checkbox"
             checked={noBatchNumber}
-            onChange={e => { setNoBatchNumber(e.target.checked); if (e.target.checked) setBatchNumber(''); }}
+            onChange={e => { setNoBatchNumber(e.target.checked); if (e.target.checked) setBatchNumber(''); touch(); }}
           />
           {t('inv_no_batch_number', lang)}
         </label>
       </div>
 
-      <PhoenixInput label={t('inv_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
+      <PhoenixInput label={t('inv_notes', lang)} value={notes} onChange={e => { setNotes(e.target.value); touch(); }} />
 
       {attempted && !identityResolved && (
         <p style={{ fontSize: '12px', color: 'var(--err)', marginTop: '8px' }}>
@@ -514,9 +556,11 @@ interface StockListProps {
   canCorrect: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
+  /** 078 generation conflict — reload canonical stock; retry stays explicit. */
+  onConflictReload: () => void;
 }
 
-function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError }: StockListProps) {
+function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: StockListProps) {
   if (state.loading) return <PhoenixLoadingState />;
   const batches = state.data ?? [];
   if (batches.length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
@@ -532,6 +576,7 @@ function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError }: S
           canCorrect={canCorrect}
           onSuccess={onSuccess}
           onError={onError}
+          onConflictReload={onConflictReload}
         />
       ))}
     </div>
@@ -545,9 +590,11 @@ interface BatchRowProps {
   canCorrect: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
+  /** 078 generation conflict — reload canonical stock; retry stays explicit. */
+  onConflictReload: () => void;
 }
 
-function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError }: BatchRowProps) {
+function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: BatchRowProps) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
   const [movementType, setMovementType] = useState<WarehouseStockMovementType>('add');
@@ -566,23 +613,38 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError }: Ba
     x => (x === 'correction' ? canCorrect : canAdjust),
   );
 
+  /** A changed payload is a NEW logical attempt; only an unchanged retry replays. */
+  const touch = () => setRequestId(newRequestId());
+
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
     try {
+      // Fresh canonical generation read of THIS lot, immediately before the
+      // post (078). A failed read refuses without calling any writer.
+      const generation = await getWarehouseStockGeneration(batch.id);
+      if (!generation.ok) {
+        onError(classifyIntakeError(GENERATION_UNAVAILABLE_CODE));
+        return;
+      }
       const result = await applyWarehouseStockMovement({
         requestId,
         warehouseStockId: batch.id,
         movementType,
         amount: amountNum,
         reason: reason.trim() || null,
+        expectedGeneration: generation.generation,
       });
       if (result.ok) {
         onSuccess('inv_movement_ok');
         setRequestId(newRequestId());
         setAmount(''); setReason(''); setOpen(false);
       } else {
-        onError(classifyIntakeError(result.error));
+        const errorKey = classifyIntakeError(result.error);
+        onError(errorKey);
+        // The canonical lot moved between the read and the post: reload and
+        // leave the retry to an explicit operator act.
+        if (errorKey === 'inv_err_generation_conflict') onConflictReload();
       }
     } finally {
       setBusy(false);
@@ -618,7 +680,7 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError }: Ba
           <PhoenixSelect
             label={t('inv_movement', lang)}
             value={movementType}
-            onChange={e => setMovementType(e.target.value as WarehouseStockMovementType)}
+            onChange={e => { setMovementType(e.target.value as WarehouseStockMovementType); touch(); }}
             options={allowedTypes.map(x => ({
               value: x,
               label: t(x === 'add' ? 'inv_mv_add' : x === 'subtract' ? 'inv_mv_subtract' : 'inv_mv_correction', lang),
@@ -630,12 +692,12 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError }: Ba
             min={needsReason ? 0 : 1}
             step={1}
             value={amount}
-            onChange={e => setAmount(e.target.value)}
+            onChange={e => { setAmount(e.target.value); touch(); }}
           />
           <PhoenixInput
             label={t('inv_reason', lang)}
             value={reason}
-            onChange={e => setReason(e.target.value)}
+            onChange={e => { setReason(e.target.value); touch(); }}
             error={needsReason && reason.trim() === '' ? t('inv_err_reason_required', lang) : undefined}
           />
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>

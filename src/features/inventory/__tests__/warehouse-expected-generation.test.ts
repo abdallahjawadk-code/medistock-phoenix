@@ -230,10 +230,12 @@ describe('the production gate stays fail-closed until the server contract is liv
     expect(t.callRpc).not.toHaveBeenCalled();
   });
 
-  it('the blocker flag is still FALSE — 078 is authored but not applied', async () => {
+  it('the blocker flag is TRUE — 078/079 are applied in production and the client is wired', async () => {
     const { MIGRATION_065_CONCURRENCY_RESOLVED } = await import('../warehouse-intake-safety');
-    // Flipping this before the migration is applied AND parity is observed in
-    // production would re-open the exact defect 078 closes.
-    expect(MIGRATION_065_CONCURRENCY_RESOLVED).toBe(false);
+    // Flipped only once (a) migrations 078/079 were applied and verified in
+    // production AND (b) every production call site performs a fresh canonical
+    // generation read immediately before posting — the exact contract the
+    // warehouse-generation-wiring suite pins.
+    expect(MIGRATION_065_CONCURRENCY_RESOLVED).toBe(true);
   });
 });

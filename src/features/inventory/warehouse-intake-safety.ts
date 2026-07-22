@@ -70,12 +70,17 @@ export const MIGRATION_065_CONCURRENCY_BLOCKER =
   'PHOENIX_BLOCKER_MIGRATION_065_ACCUMULATING_RECEIPT_CONCURRENCY';
 
 /**
- * Flip to `true` ONLY in the same commit that lands the expected-generation
- * precondition described above. Flipping it without that migration re-opens the
- * double-post hole in production — the safety test exists to make that a
- * deliberate, reviewed act rather than an accident.
+ * RESOLVED (Stage C activation, 2026-07-22). The required server contract is
+ * live and verified in production: migration 078 added the per-batch
+ * `warehouse_stock.movement_seq` generation plus the guarded RPCs, and 079
+ * makes them REFUSE a NULL expected generation. In the SAME commit as this
+ * flip, every production call site (manual IntakeForm, BatchRow adjustment,
+ * OCR confirmAndSubmit) performs a fresh canonical generation read immediately
+ * before posting — an absent lot is generation 0, and ANY failed read refuses
+ * without touching a writer (see getWarehouseReceiptLotGeneration /
+ * getWarehouseStockGeneration in warehouse-intake.service.ts).
  */
-export const MIGRATION_065_CONCURRENCY_RESOLVED = false;
+export const MIGRATION_065_CONCURRENCY_RESOLVED = true;
 
 /** Error code returned by the intake service when the gate is closed. */
 export const WAREHOUSE_INTAKE_BLOCKED_CODE = 'blocked_migration_065_concurrency';

@@ -43,14 +43,17 @@ describe('the gate is a pure decision over (isProd, blockerResolved)', () => {
   });
 });
 
-describe('the blocker is registered and unresolved', () => {
+describe('the blocker is registered and RESOLVED', () => {
   it('names a stable marker for the pre-deployment safety scan', () => {
     expect(MIGRATION_065_CONCURRENCY_BLOCKER)
       .toBe('PHOENIX_BLOCKER_MIGRATION_065_ACCUMULATING_RECEIPT_CONCURRENCY');
   });
 
-  it('is still unresolved — this pin must be flipped only alongside the migration', () => {
-    expect(MIGRATION_065_CONCURRENCY_RESOLVED).toBe(false);
+  it('is resolved — 078/079 are live in production and every call site reads a fresh generation', () => {
+    // Flipped in the SAME commit that wires getWarehouseReceiptLotGeneration /
+    // getWarehouseStockGeneration into IntakeForm, BatchRow and OcrIntakeFlow,
+    // exactly as the safety contract in warehouse-intake-safety.ts requires.
+    expect(MIGRATION_065_CONCURRENCY_RESOLVED).toBe(true);
   });
 
   it('INVARIANT: while unresolved, a production build can never enable the path', () => {
