@@ -9,7 +9,11 @@
 // them, so the browser handles them exactly as if this worker did not
 // exist).
 
-const CACHE_VERSION = 'medistock-shell-v1';
+// APP-ICON-REFRESH-HOTFIX-A: bumped so every client discards the v1 app-shell
+// cache (which pinned the retired icon assets) on activation. The activate
+// handler below already deletes every cache whose key differs, and ONLY
+// app-shell caches ever exist here - Supabase/API responses are never cached.
+const CACHE_VERSION = 'medistock-shell-v2';
 
 function isSupabaseOrApiRequest(url) {
   return (

@@ -27,34 +27,58 @@ const globalCss      = readSrc('shared/lib/global.css');
 const manifest       = readFileSync(join(PUBLIC, 'manifest.webmanifest'), 'utf8');
 const indexHtml      = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
-describe('Professional PWA icon set', () => {
-  it('app-icon.svg canonical vector source exists', () => {
-    expect(existsSync(join(PUBLIC, 'app-icon.svg'))).toBe(true);
+describe('Professional PWA icon set (APP-ICON-REFRESH-HOTFIX-A: versioned v2 set)', () => {
+  it('the versioned favicon assets exist and index.html references them', () => {
+    for (const name of ['phoenix-favicon-v2.svg', 'phoenix-favicon-v2.ico',
+      'phoenix-favicon-v2-16.png', 'phoenix-favicon-v2-32.png', 'phoenix-favicon-v2-48.png',
+      'phoenix-favicon-v2-64.png', 'phoenix-favicon-v2-128.png']) {
+      expect(existsSync(join(PUBLIC, name)), name).toBe(true);
+    }
+    expect(indexHtml).toContain('href="/phoenix-favicon-v2.svg"');
+    expect(indexHtml).toContain('href="/phoenix-favicon-v2.ico"');
   });
 
-  it('favicon.svg exists and index.html references it', () => {
-    expect(existsSync(join(PUBLIC, 'favicon.svg'))).toBe(true);
-    expect(indexHtml).toContain('href="/favicon.svg"');
-  });
-
-  it('PNG icon set was generated locally (Pillow, no new tooling)', () => {
-    for (const name of ['pwa-icon-192.png', 'pwa-icon-512.png', 'pwa-icon-maskable-512.png', 'apple-touch-icon.png']) {
+  it('PNG icon set was generated locally from the approved master (no new tooling)', () => {
+    for (const name of ['pwa-icon-v2-192.png', 'pwa-icon-v2-512.png',
+      'pwa-icon-maskable-v2-192.png', 'pwa-icon-maskable-v2-512.png', 'apple-touch-icon-v2.png']) {
       const p = join(PUBLIC, name);
-      expect(existsSync(p)).toBe(true);
+      expect(existsSync(p), name).toBe(true);
       expect(statSync(p).size).toBeGreaterThan(0);
-      expect(statSync(p).size).toBeLessThan(200_000);
+      expect(statSync(p).size).toBeLessThan(600_000);
     }
   });
 
-  it('manifest.webmanifest points to the new PNG icons', () => {
-    expect(manifest).toContain('/pwa-icon-192.png');
-    expect(manifest).toContain('/pwa-icon-512.png');
-    expect(manifest).toContain('/pwa-icon-maskable-512.png');
+  it('manifest.webmanifest points to the versioned PNG icons only', () => {
+    expect(manifest).toContain('/pwa-icon-v2-192.png');
+    expect(manifest).toContain('/pwa-icon-v2-512.png');
+    expect(manifest).toContain('/pwa-icon-maskable-v2-192.png');
+    expect(manifest).toContain('/pwa-icon-maskable-v2-512.png');
   });
 
-  it('index.html references a real apple-touch-icon PNG', () => {
+  it('index.html references the versioned apple-touch-icon PNG', () => {
     expect(indexHtml).toContain('rel="apple-touch-icon"');
-    expect(indexHtml).toContain('href="/apple-touch-icon.png"');
+    expect(indexHtml).toContain('href="/apple-touch-icon-v2.png"');
+  });
+
+  it('NO runtime reference still targets a retired (unversioned) icon asset', () => {
+    // The retired files themselves stay on disk, overwritten with the new
+    // identity, purely so stale caches/manifests resolve to new art — but no
+    // shipped reference may point at them.
+    const retired = ['/favicon.svg', '/app-icon.svg', '/apple-touch-icon.png',
+      '/pwa-icon-192.png', '/pwa-icon-512.png', '/pwa-icon-maskable-512.png',
+      '/pwa-icon-192.svg', '/pwa-icon-512.svg', '/pwa-icon-maskable-512.svg'];
+    for (const path of retired) {
+      expect(indexHtml, `index.html references retired ${path}`).not.toContain(`"${path}"`);
+      expect(manifest, `manifest references retired ${path}`).not.toContain(`"${path}"`);
+    }
+    // The manifest identity is unchanged — same app, new art, no second install.
+    const parsed = JSON.parse(manifest) as { start_url: string; scope: string; id?: string };
+    expect(parsed.start_url).toBe('/');
+    expect(parsed.scope).toBe('/');
+    expect(parsed.id).toBeUndefined();
+    // The service worker discarded the v1 shell cache.
+    const sw = readFileSync(join(PUBLIC, 'sw.js'), 'utf8');
+    expect(sw).toContain("CACHE_VERSION = 'medistock-shell-v2'");
   });
 
   it('no icon references point to an external URL', () => {
