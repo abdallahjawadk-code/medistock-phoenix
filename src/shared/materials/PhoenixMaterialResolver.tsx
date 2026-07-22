@@ -13,6 +13,7 @@ import { supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import {
   resolveMaterials, type ResolvedMaterial, type MatchGrade,
 } from './material-resolver.service';
+import { SmartScanner, type ScanClassification } from './SmartScanner';
 
 const GRADE_KEY: Record<MatchGrade, string> = {
   confirmed: 'mr_grade_confirmed',
@@ -39,7 +40,16 @@ export function PhoenixMaterialResolver({ lang, warehouseId, onSelect, label, au
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ResolvedMaterial[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  /** Barcode scans become a QUERY (a filter) — never a material. */
+  const onScanned = (scan: ScanClassification) => {
+    setScannerOpen(false);
+    if (scan.kind === 'barcode') setQuery(scan.value);
+    else if (scan.kind === 'movement') setQuery(scan.id);
+    else if (scan.kind === 'establishment') setQuery(scan.qid);
+  };
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -76,6 +86,14 @@ export function PhoenixMaterialResolver({ lang, warehouseId, onSelect, label, au
         style={fieldStyle}
         data-phoenix-local-search
       />
+
+      <div style={{ marginTop: '6px' }}>
+        <button type="button" onClick={() => setScannerOpen(o => !o)}
+          style={{ fontSize: '11px', color: 'var(--p)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          {t('scan_open', lang)}
+        </button>
+      </div>
+      {scannerOpen && <SmartScanner lang={lang} onScan={onScanned} onClose={() => setScannerOpen(false)} />}
 
       {busy && <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '6px' }}>{t('loading', lang)}</p>}
 

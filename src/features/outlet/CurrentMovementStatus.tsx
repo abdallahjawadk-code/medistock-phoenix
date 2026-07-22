@@ -29,6 +29,7 @@ import {
 } from './movement-status';
 import { getMovementTimeline, type MovementTimeline } from '@/features/movement/movement-timeline.service';
 import { searchMovementDocuments, type TraceCandidate } from '@/features/movement/movement-search.service';
+import { SmartScanner, type ScanClassification } from '@/shared/materials/SmartScanner';
 
 type Lang = 'ar' | 'en';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -68,6 +69,31 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
   const [state, setState] = useState<ViewState>({ phase: 'idle' });
 
   const [candidates, setCandidates] = useState<TraceCandidate[] | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+
+  /** SMART-SCANNER routing: movement QR -> lookup; establishment QR -> link;
+      barcode/unknown -> safe note. Nothing is created from a code. */
+  const onScanned = useCallback((scan: ScanClassification) => {
+    setScannerOpen(false);
+    setScanNote(null);
+    if (scan.kind === 'movement') {
+      setRaw(scan.id);
+      void lookupCandidate({ kind: scan.docKind, id: scan.id, number: null, externalReference: null, label: null, status: null });
+      return;
+    }
+    if (scan.kind === 'establishment') {
+      window.open(`/?qid=${encodeURIComponent(scan.qid)}`, '_blank', 'noopener');
+      return;
+    }
+    if (scan.kind === 'barcode') {
+      setRaw(scan.value);
+      void smartLookup();
+      return;
+    }
+    setScanNote(t('scan_unknown_code', lang));
+  }, [lang]); // eslint-disable-line
+
 
   /** SMART SEARCH: QR / UUID / official number / order-receipt number /
       external reference — auto-detected; multiple hits are LISTED (external
@@ -165,7 +191,8 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
               { value: 'return_shipment', label: t('or_kind_return_shipment', lang) },
             ]}
           />
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <PhoenixButton variant="ghost" onClick={() => setScannerOpen(o => !o)}>{t('scan_open', lang)}</PhoenixButton>
             <PhoenixButton disabled={!raw.trim() || state.phase === 'loading'} onClick={() => void lookup()} data-testid="movement-status-lookup">
               {t('or_status_lookup', lang)}
             </PhoenixButton>
@@ -175,6 +202,9 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
           </div>
         </div>
       </PhoenixCard>
+
+      {scannerOpen && <PhoenixCard><SmartScanner lang={lang} onScan={onScanned} onClose={() => setScannerOpen(false)} /></PhoenixCard>}
+      {scanNote && <p role="status" style={{ fontSize: '12px', color: 'var(--warn)' }} dir="auto">{scanNote}</p>}
 
       {candidates && candidates.length > 1 && (
         <PhoenixCard data-testid="movement-search-candidates">
