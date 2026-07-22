@@ -1,58 +1,31 @@
 // =============================================================================
 // MediStock Phoenix V2 — Edge Function: admin-user-lifecycle
 //
-// Secure server-side user disable / enable / hard-delete.
+// Secure server-side user disable / enable / rotate_password / hard-delete.
 // The service_role key lives ONLY here in the Deno runtime.
 //
-// Deploy:
-//   supabase functions deploy admin-user-lifecycle --project-ref <ref>
-//   (SUPABASE_SERVICE_ROLE_KEY is already set from admin-create-user deploy)
+// SECURITY-ARCH-HARDENING-A (D1 + D2):
+//   This function no longer checks the last-super-admin invariant nor mutates
+//   profile role/status directly. Every authority decision and every profile
+//   state transition goes through the atomic server-side contract in migration
+//   093 (phoenix_lifecycle_reserve / _commit / _note_delete / _compensate /
+//   _enable / _authorize_rotation), called with the CALLER's JWT so auth.uid()
+//   is the acting admin. The invariant + the state change happen under one
+//   advisory lock and are COMMITTED together, so two concurrent disable/delete
+//   calls can never drain the platform to zero super_admins; if the external
+//   Auth Admin call then fails, we compensate to restore the exact prior state
+//   (no half-deleted account, no privilege expansion).
 //
-// Contract:
+//   Authorization / existence denials come back as a single generic
+//   REQUEST_DENIED (never TARGET_NOT_FOUND vs CROSS_ORG vs INSUFFICIENT_*), so
+//   the response can't be used as a user-/org-existence oracle. The real reason
+//   is recorded server-side in the RLS-protected audit_logs with the same
+//   correlation id the client already stamps on the request.
+//
+// Contract (unchanged wire shape):
 //   POST { action, target_user_id, confirmation?, new_password? }  (Bearer = caller JWT)
-//
-//   action = 'disable'
-//     - Bans the auth user (prevents login immediately).
-//     - Sets profiles.status = 'suspended'.
-//     - Sets profiles.disabled_at / disabled_by if columns exist (migration 011).
-//     - Caller must be super_admin OR institution_admin (with users.disable).
-//     - institution_admin: own org only; cannot disable super_admin/institution_admin.
-//     - Cannot disable self.
-//     - Cannot disable the last active super_admin
-//       (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A: this guard previously only
-//       existed for 'delete' — disabling the only super_admin would have left
-//       the platform with zero usable admin access just as surely as deleting
-//       them would).
-//
-//   action = 'enable'
-//     - Removes the auth ban.
-//     - Sets profiles.status = 'active', clears disabled_at / disabled_by.
-//     - Caller must be super_admin OR institution_admin (with users.disable).
-//     - institution_admin: own org only; cannot enable super_admin/institution_admin.
-//
-//   action = 'rotate_password'
-//     - Sets a new temporary password directly on the auth user
-//       (auth.admin.updateUserById — server-side only).
-//     - Sets profiles.must_change_password = true if the column exists
-//       (migration 016) so the user is prompted to change it at next login.
-//     - Caller must be super_admin OR institution_admin (with users.disable —
-//       reuses the existing lifecycle permission key; no new key introduced).
-//     - institution_admin: own org only; cannot rotate super_admin/institution_admin.
-//     - Cannot rotate own password through this admin action (self-service
-//       password change is a separate, already-existing flow).
-//     - Requires { new_password } (min 8 chars). The temporary password is
-//       never logged, never stored in profiles/audit_logs, and is only ever
-//       known to the caller who already typed/generated it client-side —
-//       this function does not echo it back.
-//
-//   action = 'delete'
-//     - Caller must be super_admin ONLY (institution_admin cannot hard-delete).
-//     - Cannot delete self.
-//     - Cannot delete the last active super_admin.
-//     - confirmation must equal 'DELETE_USER_' + target email.
-//     - Deletes auth user (profile cascades via ON DELETE CASCADE).
-//
-//   Returns structured JSON. Never leaks raw provider errors.
+//   action ∈ { disable, enable, rotate_password, delete }
+//   Returns structured JSON. Never leaks raw provider errors or the password.
 // =============================================================================
 
 // @ts-nocheck — Deno edge runtime; not part of app tsconfig.
@@ -60,7 +33,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-correlation-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -71,12 +44,19 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// Platform-managed identities: only a super_admin (Platform Manager) may run a
-// lifecycle action against these. central_warehouse_manager is the pharmacy-
-// department / inventory-control role — a platform-level, cross-institution
-// identity, NOT an institution's own operational user. An institution_admin
-// must never disable, rotate or delete one, even inside a matching org.
-const PLATFORM_MANAGED_ROLES = ['super_admin', 'institution_admin', 'central_warehouse_manager'];
+// Map an atomic-contract RPC result to an HTTP status. All authorization /
+// existence denials share REQUEST_DENIED (403); the invariant and operational
+// states keep their own distinct, non-oracle codes.
+function statusForCode(code: string): number {
+  switch (code) {
+    case 'NOT_AUTHENTICATED': return 401;
+    case 'REQUEST_DENIED': return 403;
+    case 'LAST_SUPER_ADMIN': return 403;
+    case 'LIFECYCLE_IN_PROGRESS': return 409;
+    case 'INVALID_ACTION': return 400;
+    default: return 400;
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -90,17 +70,22 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
+  // Correlation id: reuse the client's stamp so client and server logs line up.
+  const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
+
+  // Caller-scoped client: RPCs run with the caller's JWT, so auth.uid() inside
+  // the atomic contract is the acting admin (the contract does its own authz).
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+  // Privileged client: used ONLY for Auth Admin operations (ban/unban/password/
+  // delete/session-revoke). It never mutates profile role/status directly.
   const admin  = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
-  // Verify caller identity.
+  // Verify the caller is authenticated at all (the contract re-checks authority).
   const { data: userData, error: userErr } = await caller.auth.getUser();
-  if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
-  const callerId = userData.user.id;
+  if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED', correlation_id: correlationId }, 401);
 
-  // Parse body.
   let body: { action?: string; target_user_id?: string; confirmation?: string; new_password?: string };
-  try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST' }, 400); }
+  try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST', correlation_id: correlationId }, 400); }
 
   const action       = body.action ?? '';
   const targetId     = (body.target_user_id ?? '').trim();
@@ -108,144 +93,44 @@ Deno.serve(async (req: Request) => {
   const newPassword  = (body.new_password ?? '').trim(); // never logged
 
   if (!['disable', 'enable', 'delete', 'rotate_password'].includes(action)) {
-    return json({ ok: false, error: 'INVALID_ACTION' }, 400);
+    return json({ ok: false, error: 'INVALID_ACTION', correlation_id: correlationId }, 400);
   }
-  if (!targetId) return json({ ok: false, error: 'MISSING_TARGET' }, 400);
+  if (!targetId) return json({ ok: false, error: 'MISSING_TARGET', correlation_id: correlationId }, 400);
   if (action === 'rotate_password') {
-    if (!newPassword) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
-    if (newPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+    if (!newPassword) return json({ ok: false, error: 'MISSING_FIELDS', correlation_id: correlationId }, 400);
+    if (newPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT', correlation_id: correlationId }, 400);
   }
 
-  // Caller profile (role + org) — resolved via privileged client, bypasses RLS.
-  const { data: callerProfile } = await admin
-    .from('profiles').select('role, organization_id').eq('id', callerId).single();
-  if (!callerProfile) return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
+  // Small helper: surface an RPC failure verbatim (generic code + correlation).
+  const rpcDenied = (r: { error?: string; correlation_id?: string }) =>
+    json({ ok: false, error: r.error ?? 'REQUEST_DENIED', correlation_id: r.correlation_id ?? correlationId },
+         statusForCode(r.error ?? 'REQUEST_DENIED'));
 
-  const isCallerSuper          = callerProfile.role === 'super_admin';
-  const isCallerInstitutionAdmin = callerProfile.role === 'institution_admin';
-
-  // Only super_admin and institution_admin may call lifecycle actions.
-  if (!isCallerSuper && !isCallerInstitutionAdmin) {
-    return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
-  }
-
-  // institution_admin must hold users.disable effective permission.
-  if (isCallerInstitutionAdmin) {
-    const { data: canDisable } = await admin.rpc('phoenix_profile_has_permission', {
-      p_profile_id: callerId,
-      p_key: 'users.disable',
-    });
-    if (canDisable !== true) {
-      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
-    }
-  }
-
-  // Self-action guard.
-  if (targetId === callerId) {
-    return json({ ok: false, error: 'SELF_ACTION_FORBIDDEN' }, 403);
-  }
-
-  // Fetch target profile.
-  const { data: targetProfile } = await admin
-    .from('profiles').select('role, status, organization_id').eq('id', targetId).single();
-  if (!targetProfile) return json({ ok: false, error: 'TARGET_NOT_FOUND' }, 404);
-
-  // institution_admin scope guards: own org only, cannot act on any platform-
-  // managed identity (super_admin / institution_admin / central_warehouse_
-  // manager), and cannot hard-delete anyone. Blocking central_warehouse_manager
-  // here is the fix for the pharmacy-department rotate/disable gap: only the
-  // Platform Manager (super_admin) may run lifecycle actions on that role.
-  if (isCallerInstitutionAdmin) {
-    if (PLATFORM_MANAGED_ROLES.includes(targetProfile.role)) {
-      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
-    }
-    if (callerProfile.organization_id !== targetProfile.organization_id) {
-      return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN' }, 403);
-    }
-    if (action === 'delete') {
-      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
-    }
-  }
-
-  // Shared guard: cannot disable/delete the last active super_admin. Reused by
-  // both 'disable' and 'delete' so the platform can never end up with zero
-  // usable super_admin access (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A).
-  async function isLastActiveSuperAdmin(): Promise<boolean> {
-    if (targetProfile.role !== 'super_admin') return false;
-    const { count } = await admin
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'super_admin')
-      .eq('status', 'active');
-    return (count ?? 0) <= 1;
-  }
-
-  // ── action: disable ────────────────────────────────────────────────────────
-  if (action === 'disable') {
-    if (await isLastActiveSuperAdmin()) {
-      return json({ ok: false, error: 'LAST_SUPER_ADMIN' }, 403);
-    }
-
-    // Ban the auth user so they cannot log in.
-    const { error: banErr } = await admin.auth.admin.updateUserById(targetId, {
-      ban_duration: '876000h', // ~100 years
-    });
-    if (banErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
-
-    // Mark profile suspended. Set optional audit columns if they exist.
-    const updatePayload: Record<string, unknown> = { status: 'suspended' };
-    // Best-effort: if migration 011 added these columns, set them.
-    try {
-      updatePayload.disabled_at = new Date().toISOString();
-      updatePayload.disabled_by = callerId;
-      await admin.from('profiles').update(updatePayload).eq('id', targetId);
-    } catch {
-      // Columns may not exist yet (migration 011 not applied); fall back.
-      await admin.from('profiles').update({ status: 'suspended' }).eq('id', targetId);
-    }
-
-    return json({ ok: true, action: 'disabled', user_id: targetId });
-  }
-
-  // ── action: enable ─────────────────────────────────────────────────────────
+  // ── action: enable ─ authorize + set active via the contract, then unban ────
   if (action === 'enable') {
-    const { error: unbanErr } = await admin.auth.admin.updateUserById(targetId, {
-      ban_duration: 'none',
-    });
-    if (unbanErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
-
-    const updatePayload: Record<string, unknown> = { status: 'active' };
-    try {
-      updatePayload.disabled_at = null;
-      updatePayload.disabled_by = null;
-      await admin.from('profiles').update(updatePayload).eq('id', targetId);
-    } catch {
-      await admin.from('profiles').update({ status: 'active' }).eq('id', targetId);
+    const { data: en } = await caller.rpc('phoenix_lifecycle_enable',
+      { p_target_id: targetId, p_correlation_id: correlationId });
+    if (!en?.ok) return rpcDenied(en ?? {});
+    const { error: unbanErr } = await admin.auth.admin.updateUserById(targetId, { ban_duration: 'none' });
+    if (unbanErr) {
+      // Profile is active but auth still banned — safe, retryable (idempotent).
+      return json({ ok: false, error: 'ACTION_FAILED', correlation_id: correlationId }, 500);
     }
-
-    return json({ ok: true, action: 'enabled', user_id: targetId });
+    return json({ ok: true, action: 'enabled', user_id: targetId, correlation_id: correlationId });
   }
 
-  // ── action: rotate_password ────────────────────────────────────────────────
-  // Sets a brand-new temporary password on the SAME identity (username/email/
-  // role/org untouched) — distinct from admin-recycle-user, which requires the
-  // target to already be suspended and reassigns the whole identity. This is
-  // for an active user who forgot/needs a reset of their credential only.
+  // ── action: rotate_password ─ authorize via contract, then rotate in Auth ───
   if (action === 'rotate_password') {
-    const { error: pwErr } = await admin.auth.admin.updateUserById(targetId, {
-      password: newPassword,
-    });
-    if (pwErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
+    const { data: az } = await caller.rpc('phoenix_lifecycle_authorize_rotation',
+      { p_target_id: targetId, p_correlation_id: correlationId });
+    if (!az?.ok) return rpcDenied(az ?? {});
 
-    // Revoke every existing session/refresh token so the OLD credential can no
-    // longer be used from any device — a password rotation that left prior
-    // sessions alive would not actually lock out a compromised login. GoTrue's
-    // admin logout endpoint (global scope) is the authoritative way to do this
-    // for another user by id; failure is non-fatal (the password is already
-    // changed) but is recorded in the audit payload.
+    const { error: pwErr } = await admin.auth.admin.updateUserById(targetId, { password: newPassword });
+    if (pwErr) return json({ ok: false, error: 'ACTION_FAILED', correlation_id: correlationId }, 500);
+
+    // Revoke every existing session so the OLD credential is dead everywhere.
     let sessionsRevoked = false;
     try {
-      // Preferred: SDK admin signOut with global scope (all sessions of the user).
       const anyAdmin = admin.auth.admin as unknown as {
         signOut?: (id: string, scope?: string) => Promise<{ error: unknown }>;
       };
@@ -253,78 +138,63 @@ Deno.serve(async (req: Request) => {
         const { error: soErr } = await anyAdmin.signOut(targetId, 'global');
         sessionsRevoked = !soErr;
       } else {
-        // Fallback: GoTrue REST admin logout (DELETE all sessions for the user).
         const resp = await fetch(`${url}/auth/v1/admin/users/${targetId}/sessions`, {
           method: 'DELETE',
           headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
         });
         sessionsRevoked = resp.ok;
       }
-    } catch {
-      sessionsRevoked = false;
-    }
-
-    // Force a password change on next login. Best-effort: must_change_password /
-    // password_changed_at exist since migration 016; degrade gracefully if a
-    // project hasn't applied it yet.
-    try {
-      await admin.from('profiles').update({ must_change_password: true }).eq('id', targetId);
-    } catch {
-      // Column may not exist yet — the password itself is still rotated.
-    }
-
-    // Audit event — never stores the password, only the fact of the rotation,
-    // the actor, the target and whether prior sessions were revoked.
-    try {
-      await admin.from('audit_logs').insert({
-        organization_id: targetProfile.organization_id ?? callerProfile.organization_id ?? null,
-        actor_id: callerId,
-        actor_role: callerProfile.role,
-        action: 'user.password_rotated',
-        entity_type: 'profile',
-        entity_id: targetId,
-        payload: {
-          target_role: targetProfile.role,
-          sessions_revoked: sessionsRevoked,
-          forced_password_change: true,
-        },
-      });
-    } catch {
-      // Audit insert failure is non-fatal — the rotation itself already happened.
-    }
+    } catch { sessionsRevoked = false; }
 
     return json({
-      ok: true,
-      action: 'password_rotated',
-      user_id: targetId,
-      sessions_revoked: sessionsRevoked,
-      must_change_password: true,
+      ok: true, action: 'password_rotated', user_id: targetId,
+      sessions_revoked: sessionsRevoked, must_change_password: true, correlation_id: correlationId,
     });
   }
 
-  // ── action: delete ─────────────────────────────────────────────────────────
-  if (action === 'delete') {
-    // Fetch target auth user to get email for confirmation check.
-    const { data: targetAuthData } = await admin.auth.admin.getUserById(targetId);
-    const targetEmail = targetAuthData?.user?.email ?? '';
+  // ── action: disable ─ reserve (atomic invariant + suspend), ban, commit ─────
+  if (action === 'disable') {
+    const { data: rv } = await caller.rpc('phoenix_lifecycle_reserve',
+      { p_target_id: targetId, p_action: 'disable', p_correlation_id: correlationId });
+    if (!rv?.ok) return rpcDenied(rv ?? {});
 
-    // Confirmation string must equal DELETE_USER_<email>.
-    const expected = `DELETE_USER_${targetEmail}`;
-    if (confirmation !== expected) {
-      return json({ ok: false, error: 'INVALID_CONFIRMATION' }, 400);
+    const { error: banErr } = await admin.auth.admin.updateUserById(targetId, { ban_duration: '876000h' });
+    if (banErr) {
+      // External failure → compensate: restore the exact prior status.
+      await caller.rpc('phoenix_lifecycle_compensate', { p_target_id: targetId, p_correlation_id: correlationId });
+      return json({ ok: false, error: 'ACTION_FAILED', correlation_id: correlationId }, 500);
     }
-
-    // Guard: cannot delete the last active super_admin.
-    if (await isLastActiveSuperAdmin()) {
-      return json({ ok: false, error: 'LAST_SUPER_ADMIN' }, 403);
-    }
-
-    // Delete auth user — profile cascades (ON DELETE CASCADE from migration 001).
-    const { error: deleteErr } = await admin.auth.admin.deleteUser(targetId);
-    if (deleteErr) return json({ ok: false, error: 'ACTION_FAILED' }, 500);
-
-    return json({ ok: true, action: 'deleted', user_id: targetId });
+    await caller.rpc('phoenix_lifecycle_commit', { p_target_id: targetId, p_correlation_id: correlationId });
+    return json({ ok: true, action: 'disabled', user_id: targetId, correlation_id: correlationId });
   }
 
-  return json({ ok: false, error: 'UNHANDLED' }, 500);
+  // ── action: delete ─ reserve, confirm, delete in Auth, note (or compensate) ─
+  if (action === 'delete') {
+    const { data: rv } = await caller.rpc('phoenix_lifecycle_reserve',
+      { p_target_id: targetId, p_action: 'delete', p_correlation_id: correlationId });
+    if (!rv?.ok) return rpcDenied(rv ?? {});
+    const targetRole = rv.target_role ?? null;
+
+    // Confirmation string must equal DELETE_USER_<email>. The email lookup and
+    // check happen AFTER reserve so target existence stays behind the generic
+    // gate; a mismatch compensates the reservation back to active.
+    const { data: targetAuthData } = await admin.auth.admin.getUserById(targetId);
+    const targetEmail = targetAuthData?.user?.email ?? '';
+    if (confirmation !== `DELETE_USER_${targetEmail}`) {
+      await caller.rpc('phoenix_lifecycle_compensate', { p_target_id: targetId, p_correlation_id: correlationId });
+      return json({ ok: false, error: 'INVALID_CONFIRMATION', correlation_id: correlationId }, 400);
+    }
+
+    const { error: deleteErr } = await admin.auth.admin.deleteUser(targetId);
+    if (deleteErr) {
+      await caller.rpc('phoenix_lifecycle_compensate', { p_target_id: targetId, p_correlation_id: correlationId });
+      return json({ ok: false, error: 'ACTION_FAILED', correlation_id: correlationId }, 500);
+    }
+    // Profile (+ its reservation) cascaded away; record the completed deletion.
+    await caller.rpc('phoenix_lifecycle_note_delete',
+      { p_target_id: targetId, p_target_role: targetRole, p_correlation_id: correlationId });
+    return json({ ok: true, action: 'deleted', user_id: targetId, correlation_id: correlationId });
+  }
+
+  return json({ ok: false, error: 'UNHANDLED', correlation_id: correlationId }, 500);
 });
