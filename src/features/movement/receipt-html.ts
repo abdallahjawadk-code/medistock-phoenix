@@ -24,6 +24,7 @@ const TITLE_KEY: Record<ReceiptDocument['kind'], string> = {
   supply_dispatch: 'mv_doc_supply_dispatch',
   return_request: 'mv_doc_return_request',
   return_shipment: 'mv_doc_return_shipment',
+  procurement_receipt: 'mv_doc_procurement_receipt',
 };
 
 const WATERMARK_KEY: Record<Exclude<ReceiptDocument['watermark'], 'none'>, string> = {

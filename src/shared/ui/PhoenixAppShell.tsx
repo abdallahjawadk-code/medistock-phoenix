@@ -25,6 +25,8 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   // nav_status_center, so the corridor rendered "Status Center" above an Outlet
   // Operations page — caught by the outlet-corridor visual evidence capture.
   18: 'nav_outlet_ops',
+  // Screen 19 (Local Procurement, migration 087).
+  19: 'nav_local_procurement',
 };
 
 interface Props {
