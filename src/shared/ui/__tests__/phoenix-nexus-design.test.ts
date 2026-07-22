@@ -118,6 +118,7 @@ describe('Phoenix Nexus production design boundaries', () => {
     // title bar match the app instead of the retired light teal.
     expect(parsed.background_color).toBe('#07111F');
     expect(parsed.theme_color).toBe('#07111F');
-    expect(parsed.icons.some(icon => icon.src === '/pwa-icon-maskable-512.png' && icon.purpose === 'maskable')).toBe(true);
+    // APP-ICON-REFRESH-HOTFIX-A: the maskable icon is the versioned v2 asset.
+    expect(parsed.icons.some(icon => icon.src === '/pwa-icon-maskable-v2-512.png' && icon.purpose === 'maskable')).toBe(true);
   });
 });

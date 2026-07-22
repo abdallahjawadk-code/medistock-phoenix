@@ -1239,6 +1239,11 @@ export const T: Dict = {
   cc_palette_placeholder: { ar: 'ابحث عن صفحة أو إجراء...',      en: 'Search for a page or action…' },
   cc_palette_no_results:  { ar: 'لا توجد نتائج مطابقة',           en: 'No matching results' },
   cc_palette_hint:        { ar: 'Ctrl/Cmd + K للفتح، Esc للإغلاق', en: 'Ctrl/Cmd + K to open, Esc to close' },
+  /* SMART-SEARCH-HOTFIX-A: context-aware search additions. */
+  cc_palette_clear:        { ar: 'مسح البحث',                     en: 'Clear search' },
+  cc_palette_results:      { ar: 'نتيجة',                          en: 'result(s)' },
+  cc_palette_screens:      { ar: 'الشاشات',                        en: 'Screens' },
+  cc_palette_institutions: { ar: 'المؤسسات',                       en: 'Institutions' },
 
   /* ── UX-COMMAND-CENTER-SMART-A: Quick Actions + Activity Feed ── */
   cc_quick_actions_sub: { ar: 'انتقل مباشرة إلى الشاشات الأكثر استخدامًا', en: 'Jump straight to the screens you use most' },
