@@ -43,13 +43,28 @@ function rigUrl() {
   return u.toString();
 }
 
-// Migration files 001..NNN in filename order. Skips non-.sql and the __tests__ dir.
+// PREPARED-ONLY cutover migrations that are NOT part of the standard applied
+// chain: they are fail-closed and applied LAST, by hand, only at a production
+// parity/cutover (they RAISE unless an operator sets an explicit attestation).
+// The disposable rig models the chain that IS applied now (001-084 + 086...),
+// so it skips these — otherwise the fail-closed 085 aborts the whole replay and
+// no later migration could ever be exercised. Their own static tests + a
+// dedicated abort proof cover them; they stay on disk and in the registry.
+const PREPARED_ONLY_SKIP = new Set([
+  '085_phoenix_revoke_manual_availability_writers.sql',
+]);
+
+// Migration files 001..NNN in filename order. Skips non-.sql, the __tests__ dir,
+// and prepared-only cutover migrations (see PREPARED_ONLY_SKIP).
 export function migrationFiles(upTo = Infinity) {
   return readdirSync(MIGRATIONS_DIR)
     .filter((f) => /^\d{3}_.*\.sql$/.test(f))
+    .filter((f) => !PREPARED_ONLY_SKIP.has(f))
     .sort()
     .filter((f) => parseInt(f.slice(0, 3), 10) <= upTo);
 }
+
+export { PREPARED_ONLY_SKIP };
 
 // The 023 in-memory shim, applied ONLY to that one file's text at load time.
 // Exported so the DR acceptance test can compare shimmed vs raw behaviour.
