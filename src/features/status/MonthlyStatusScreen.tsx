@@ -8,7 +8,7 @@
  * gating here is UX only — the real boundary is server-side, re-checked by
  * every RPC and by RLS on every read.
  */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
