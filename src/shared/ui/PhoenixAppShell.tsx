@@ -47,6 +47,26 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // MOBILE-SCROLL-OWNER-HOTFIX-A: mark the document while the on-screen
+  // keyboard is open (visual viewport shrinks well below the layout viewport)
+  // so CSS can retreat the floating search control and nothing floats over a
+  // focused field. Purely presentational; browsers without visualViewport
+  // simply never set the attribute.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const onViewport = () => {
+      const keyboardOpen = viewport.height < window.innerHeight * 0.75;
+      if (keyboardOpen) document.documentElement.setAttribute('data-keyboard', 'open');
+      else document.documentElement.removeAttribute('data-keyboard');
+    };
+    viewport.addEventListener('resize', onViewport);
+    return () => {
+      viewport.removeEventListener('resize', onViewport);
+      document.documentElement.removeAttribute('data-keyboard');
+    };
+  }, []);
+
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_status_center', lang);
 
   return (
@@ -91,10 +111,18 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           className="premium-main"
           style={{
             flex: 1,
+            // MOBILE-SCROLL-OWNER-HOTFIX-A: minHeight 0 + the shell's fixed
+            // dvh frame make THIS element the single scroll owner. The mobile
+            // bottom padding clears the fixed bottom nav, the pinned seal and
+            // the device safe area, so the final control of every screen can
+            // always be scrolled fully into view.
+            minHeight: 0,
             overflowY: 'auto',
             overflowX: 'hidden',
             padding: isMobile ? '16px 14px' : '24px 28px',
-            paddingBottom: isMobile ? 'calc(var(--bnh) + 14px)' : '28px',
+            paddingBottom: isMobile
+              ? 'calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 18px + env(safe-area-inset-bottom, 0px))'
+              : '28px',
           }}
         >
           {children}

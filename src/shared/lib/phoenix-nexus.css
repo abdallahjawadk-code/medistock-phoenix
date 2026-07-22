@@ -76,7 +76,14 @@ html body {
 }
 
 .premium-shell.nexus-shell {
-  min-height: 100dvh;
+  /* MOBILE-SCROLL-OWNER-HOTFIX-A: the shell is a FIXED viewport frame, so
+     <main class="premium-main"> is the single scroll owner. With only
+     min-height the app column grew to content height, the DOCUMENT became the
+     scroller, and the fixed bottom nav / seal covered the tail of every long
+     screen. vh fallback first, then dvh (Android browser chrome, the on-screen
+     keyboard and orientation changes all resize dvh correctly). */
+  height: 100vh;
+  height: 100dvh;
   overflow: clip;
   background:
     radial-gradient(60rem 48rem at -8% -8%, var(--nx-glow-emerald), transparent 62%),
@@ -109,6 +116,11 @@ html body {
 .nexus-app-column {
   position: relative;
   isolation: isolate;
+  /* MOBILE-SCROLL-OWNER-HOTFIX-A: a flex child defaults to min-height:auto
+     and refuses to shrink below its content, silently re-delegating scrolling
+     to the document. min-height:0 keeps the column bounded by the shell frame
+     so the <main> scroller actually scrolls. */
+  min-height: 0;
 }
 
 .nexus-app-column::before {
@@ -388,6 +400,10 @@ html body {
   :root {
     --tbh: 64px;
     --bnh: 72px;
+    /* MOBILE-SCROLL-OWNER-HOTFIX-A: height reserved above the bottom nav for
+       the pinned (scaled-down, pointer-events:none) copyright seal. The main
+       scroller's bottom padding adds this on top of --bnh + safe-area. */
+    --nx-seal-clearance: 46px;
   }
 
   .premium-shell.nexus-shell {
@@ -417,8 +433,16 @@ html body {
   }
 
   .nexus-shell .premium-command-trigger {
-    bottom: calc(var(--bnh) + 14px) !important;
+    bottom: calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 10px + env(safe-area-inset-bottom, 0px)) !important;
     inset-inline-end: 14px !important;
+  }
+
+  /* MOBILE-SCROLL-OWNER-HOTFIX-A: when the on-screen keyboard is open the
+     floating search control retreats entirely (App sets data-keyboard="open"
+     on <html> from visualViewport) so it never floats over a focused field. */
+  html[data-keyboard="open"] .nexus-shell .premium-command-trigger {
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
@@ -752,7 +776,11 @@ html body {
   display: grid;
   place-items: center;
   min-height: 100dvh;
-  overflow: hidden;
+  /* WELCOME-PHOENIX-COMPOSITION-HOTFIX-A: when the masthead + credits exceed
+     a short viewport (small landscape phones), the experience scrolls instead
+     of clipping the credits or the seal. */
+  overflow-y: auto;
+  overflow-x: hidden;
   isolation: isolate;
   color: #f4fbff;
   background:
@@ -1922,10 +1950,25 @@ html body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* WELCOME-PHOENIX-COMPOSITION-HOTFIX-A: approved focal point for the cover
+     crop — keeps the head, medical chest and wing roots centred on wide
+     viewports. */
   object-position: center 44%;
   opacity: 0;
   transform: scale(1.02);
   transition: opacity 1.4s ease;
+}
+/* WELCOME-PHOENIX-COMPOSITION-HOTFIX-A: the approved clean plate is a
+   1672×941 landscape master. `cover` on a portrait phone showed only ~25% of
+   its width — both wings and the tail amputated. In portrait (and any narrow
+   viewport) the COMPLETE Phoenix is shown proportionally with `contain`,
+   blended into the obsidian backdrop the stage already paints; nothing is
+   stretched, squashed or repainted. */
+@media (max-aspect-ratio: 5/4) {
+  .nexus-welcome__plate {
+    object-fit: contain;
+    object-position: center 46%;
+  }
 }
 .nexus-welcome[data-phase="rise"] .nexus-welcome__plate {
   opacity: 1;
@@ -2283,13 +2326,19 @@ html body {
   .nexus-shell__brand {
     position: fixed;
     inset-inline: 0;
-    bottom: calc(var(--bnh, 64px) + 6px);
+    bottom: calc(var(--bnh, 64px) + 4px + env(safe-area-inset-bottom, 0px));
     z-index: 5; /* above content, the bottom nav sits higher and is never covered */
     justify-content: center;
     padding: 0;
     border-top: 0;
     background: transparent;
     pointer-events: none;
+    /* MOBILE-SCROLL-OWNER-HOTFIX-A: shrink the pinned seal so the reserved
+       clearance band (--nx-seal-clearance) stays small; the seal itself is
+       inert and lives entirely inside the main scroller's bottom padding, so
+       it can never obscure a field or card. */
+    transform: scale(.78);
+    transform-origin: center bottom;
   }
 }
 /* Full-screen state surfaces: minimal seal below the state content. */

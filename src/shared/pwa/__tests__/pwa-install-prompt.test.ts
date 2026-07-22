@@ -90,8 +90,10 @@ describe('index.html PWA wiring', () => {
     expect(html).toContain('<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />');
   });
 
-  it('keeps the viewport meta correct (not broken by this change)', () => {
-    expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1.0" />');
+  it('keeps the viewport meta correct (MOBILE-SCROLL-OWNER-HOTFIX-A: safe-area + keyboard-resize aware)', () => {
+    expect(html).toContain(
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />',
+    );
   });
 
   it('still loads /src/main.tsx as the module entry (Vite not broken)', () => {

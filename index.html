@@ -5,10 +5,20 @@
 <html lang="ar" dir="rtl" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- MOBILE-SCROLL-OWNER-HOTFIX-A: viewport-fit exposes the safe-area env()
+         insets the shell padding uses; interactive-widget keeps Android's
+         on-screen keyboard resizing the layout so 100dvh stays truthful. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="description" content="MediStock Phoenix — Intelligent medicine supply network for Babil Health Directorate" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <!-- APP-ICON-REFRESH-HOTFIX-A: every icon reference targets a VERSIONED
+         "-v2" asset derived from the approved photorealistic 3D Phoenix master
+         (scripts/phoenix-app-icons.mjs), so no browser/Android/Windows icon
+         cache can keep resolving the retired emblem. -->
+    <link rel="icon" type="image/svg+xml" href="/phoenix-favicon-v2.svg" />
+    <link rel="icon" type="image/x-icon" sizes="16x16 32x32 48x48" href="/phoenix-favicon-v2.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/phoenix-favicon-v2-32.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/phoenix-favicon-v2-128.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v2.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#07111F" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
