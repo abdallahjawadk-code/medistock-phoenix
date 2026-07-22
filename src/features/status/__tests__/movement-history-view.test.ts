@@ -27,7 +27,6 @@ const modalPath    = join(SRC, 'features/status/MovementHistoryModal.tsx');
 const modal        = readFileSync(modalPath, 'utf8');
 const service      = readSrc('shared/supabase/services/availability.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
-const adjustModal  = readSrc('features/status/AdjustQuantityModal.tsx');
 
 // ============================================================================
 // 1. History button visibility
@@ -52,12 +51,11 @@ describe('History action visibility is permission-gated on availability.movement
     expect(strings).toMatch(/mvmt_history_action:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/);
   });
 
-  // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: for a non-removed row the
-  // Adjust Quantity button is still gated on canAdjustQuantity alone,
-  // unchanged — only removed rows now show Reactivate in this slot instead.
-  it('Adjust Quantity button remains independently gated (unchanged)', () => {
-    expect(statusCenter).toContain('canAdjustQuantity');
-    expect(statusCenter).toMatch(/canAdjustQuantity && \(/);
+  // CANONICAL-STOCK-CUTOVER: for a non-removed row the Correct-stock button is
+  // gated on canCorrectStock alone; only removed rows show Reactivate instead.
+  it('the correct-stock button remains independently gated (canCorrectStock)', () => {
+    expect(statusCenter).toContain('canCorrectStock');
+    expect(statusCenter).toMatch(/canCorrectStock && \(/);
   });
 });
 
@@ -250,16 +248,15 @@ describe('Read-only guard: no write UI, no direct RPC/write calls', () => {
 // ============================================================================
 
 describe('Existing features remain intact', () => {
-  it('Adjust Quantity button/modal remains wired in StatusCenterScreen', () => {
-    expect(statusCenter).toContain('AdjustQuantityModal');
-    expect(statusCenter).toContain('setAdjustRow');
+  it('the canonical correction launcher is wired in StatusCenterScreen (the writer is retired)', () => {
+    expect(statusCenter).toContain('AvailabilityStockCorrectionModal');
+    expect(statusCenter).toContain('setCorrectRow');
     expect(statusCenter).toContain('handleMovementSuccess');
+    expect(statusCenter).not.toContain('<AdjustQuantityModal');
   });
 
-  it('AdjustQuantityModal.tsx itself is unchanged (still only calls applyAvailabilityMovement)', () => {
-    expect(adjustModal).toContain('applyAvailabilityMovement');
-    expect(adjustModal).not.toContain('getAvailabilityMovementsByItem');
-    expect(adjustModal).not.toContain('MovementHistoryModal');
+  it('AdjustQuantityModal stays retired (deleted) — the last item_availability quantity writer is gone', () => {
+    expectRetiredSurfaceAbsent('AdjustQuantityModal');
   });
 
   it('EditorScreen.tsx is untouched by this phase', () => {

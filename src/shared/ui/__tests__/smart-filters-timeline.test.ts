@@ -231,8 +231,8 @@ describe('18. Existing export/print handlers remain connected', () => {
 });
 
 describe('19. Existing button handlers remain connected', () => {
-  it('StatusCenterScreen adjust/history row actions and MovementHistoryModal refresh/close remain wired', () => {
-    expect(statusCenter).toContain('onClick={() => setAdjustRow(r)}');
+  it('StatusCenterScreen correct/history row actions and MovementHistoryModal refresh/close remain wired', () => {
+    expect(statusCenter).toContain('setCorrectRow(r');
     expect(statusCenter).toContain('onClick={() => setHistoryRow(r)}');
     expect(movementHistoryModal).toContain('onClick={() => load(row.id)}');
     expect(movementHistoryModal).toContain('onClick={onClose}');
@@ -247,7 +247,10 @@ describe('19. Existing button handlers remain connected', () => {
 
 describe('20. Permissions visibility is preserved', () => {
   it('StatusCenterScreen row action visibility still gates on the same permission checks', () => {
-    expect(statusCenter).toContain('QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key))');
+    // CANONICAL-STOCK-CUTOVER: the correct-stock affordance is offered to the
+    // same flat permission cohort; the real per-outlet outlet_stock.count
+    // authorization is resolved inside the launcher and enforced server-side.
+    expect(statusCenter).toContain('STOCK_CORRECTION_VISIBILITY_KEYS.some(key => myPermissions.has(key))');
     expect(statusCenter).toContain("myPermissions.has('availability.movements.view')");
   });
 

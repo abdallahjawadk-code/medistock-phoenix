@@ -21,11 +21,27 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
-import { AdjustQuantityModal, QUANTITY_MOVEMENT_PERMISSION_KEYS, type AdjustQuantityRow } from './AdjustQuantityModal';
+// CANONICAL-STOCK-CUTOVER: AdjustQuantityModal (the item_availability quantity
+// writer, migration 034) is retired. item_availability is a read-only projection
+// (083); a Status Center aggregate row can never be edited directly. Corrections
+// go through AvailabilityStockCorrectionModal, which forces explicit canonical
+// outlet_stock LOT selection and the guarded migration-086 RPC.
+import { AvailabilityStockCorrectionModal, type AvailabilityCorrectionRow } from './AvailabilityStockCorrectionModal';
 import { ReactivateMaterialModal, REACTIVATE_PERMISSION_KEYS, type ReactivateRow } from './ReactivateMaterialModal';
-import { MovementHistoryModal } from './MovementHistoryModal';
+import { MovementHistoryModal, type MovementHistoryRow } from './MovementHistoryModal';
 import { MovementReportSection } from './MovementReportSection';
-import type { ApplyAvailabilityMovementResult } from '@/shared/supabase/services/availability.service';
+
+// The prior "who may correct quantity" cohort (migration 032 flat permission
+// keys) still decides whether the Correct-stock affordance is OFFERED. The real
+// authorization is the scoped outlet_stock.count permission, resolved per-outlet
+// inside AvailabilityStockCorrectionModal and re-enforced server-side by the
+// guarded RPC — the flat keys are a UX visibility proxy only, never the boundary.
+const STOCK_CORRECTION_VISIBILITY_KEYS = [
+  'availability.quantity.set',
+  'availability.quantity.add',
+  'availability.quantity.subtract',
+  'availability.quantity.correct',
+];
 import { computeInternalAlerts } from './internalAlerts';
 import { InternalAlertsSection } from './InternalAlertsSection';
 import { OutletMaterialGroups } from './OutletMaterialGroups';
@@ -149,9 +165,8 @@ export interface LiveAvailRow {
   // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: removal_reason (migration
   // 053's free-text removal label) is now shown to the user via a friendly
   // bilingual mapping. national_code/price are already selected by
-  // getAvailabilityByOrg — needed here so ReactivateMaterialModal can pass
-  // every identity/data field back to upsertAvailability unchanged, exactly
-  // as they were before removal (only quantity/condition are user-chosen).
+  // getAvailabilityByOrg and displayed here. (Reactivation is now catalogue-
+  // visibility only — migration 084 — and writes no quantity/condition.)
   removal_reason?: string | null;
   national_code?: string | null;
   price?: number | null;
@@ -278,8 +293,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // AVAILABILITY-QUANTITY-MOVEMENT-UI-A: row-level "Adjust Quantity" action.
   // Visibility is UX-only — phoenix_apply_availability_movement (migration 034)
   // independently re-enforces the same permission matrix server-side.
-  const canAdjustQuantity = QUANTITY_MOVEMENT_PERMISSION_KEYS.some(key => myPermissions.has(key));
-  const [adjustRow, setAdjustRow] = useState<AdjustQuantityRow | null>(null);
+  const canCorrectStock = STOCK_CORRECTION_VISIBILITY_KEYS.some(key => myPermissions.has(key));
+  const [correctRow, setCorrectRow] = useState<AvailabilityCorrectionRow | null>(null);
   const [movementToast, setMovementToast] = useState<string | null>(null);
 
   // PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: row-level "Reactivate" action,
@@ -294,7 +309,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   // independently re-enforces availability.movements.view + org scope on the
   // actual read; hiding the button here never substitutes for that.
   const canViewMovementHistory = myPermissions.has('availability.movements.view');
-  const [historyRow, setHistoryRow] = useState<AdjustQuantityRow | null>(null);
+  const [historyRow, setHistoryRow] = useState<MovementHistoryRow | null>(null);
 
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling window.open/window.print directly.
@@ -693,10 +708,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
     }
   }
 
-  function handleMovementSuccess(result: ApplyAvailabilityMovementResult) {
-    setMovementToast(
-      `${t('mvmt_success', lang)}: ${result.quantityBefore} → ${result.quantityAfter}`,
-    );
+  // CANONICAL-STOCK-CUTOVER: a correction now lands on a canonical outlet_stock
+  // lot via the guarded RPC (migration 086); this only reloads the read
+  // projection so the aggregate reflects the corrected lot. (Name kept as the
+  // post-correction success handler / structural anchor.)
+  function handleMovementSuccess() {
+    setMovementToast(t('mvmt_success', lang));
     setTimeout(() => setMovementToast(null), 3000);
     live.reload();
   }
@@ -983,7 +1000,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 <th style={th}>{t('sc_removed_badge', lang)}</th>
                 <th style={th}>{t('expiry', lang)}</th>
                 <th style={th}>{t('last_upd', lang)}</th>
-                {(canAdjustQuantity || canReactivate || canViewMovementHistory) && <th style={th}></th>}
+                {(canCorrectStock || canReactivate || canViewMovementHistory) && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
@@ -1032,7 +1049,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                       </div>
                     </td>
                     <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
-                    {(canAdjustQuantity || canReactivate || canViewMovementHistory) && (
+                    {(canCorrectStock || canReactivate || canViewMovementHistory) && (
                       <td style={td}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
                           {/* PHASE2-REMOVED-MATERIAL-REACTIVATION-UX-A: a
@@ -1053,13 +1070,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                               </button>
                             )
                           ) : (
-                            canAdjustQuantity && (
+                            canCorrectStock && (
                               <button
-                                onClick={() => setAdjustRow(r)}
-                                aria-label={t('sc_adjust_qty', lang)}
+                                onClick={() => setCorrectRow(r as unknown as AvailabilityCorrectionRow)}
+                                aria-label={t('sc_correct_stock_action', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                               >
-                                <PhoenixIcon name="editor" size={12} inline /> {t('sc_adjust_qty', lang)}
+                                <PhoenixIcon name="editor" size={12} inline /> {t('sc_correct_stock_action', lang)}
                               </button>
                             )
                           )}
@@ -1083,13 +1100,13 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         </div>
       )}
 
-      <AdjustQuantityModal
-        open={adjustRow !== null}
-        row={adjustRow}
+      <AvailabilityStockCorrectionModal
+        open={correctRow !== null}
+        row={correctRow}
+        orgId={effectiveOrgId ?? null}
         lang={lang}
-        myPermissions={myPermissions}
-        onClose={() => setAdjustRow(null)}
-        onSuccess={handleMovementSuccess}
+        onClose={() => setCorrectRow(null)}
+        onCorrected={handleMovementSuccess}
       />
       <ReactivateMaterialModal
         open={reactivateRow !== null}

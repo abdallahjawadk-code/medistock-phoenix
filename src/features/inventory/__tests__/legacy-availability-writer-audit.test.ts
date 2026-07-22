@@ -138,6 +138,25 @@ describe('no legacy availability quantity writer is reachable', () => {
     expect(callers).toEqual([]);
   });
 
+  it('applyAvailabilityMovement (the migration-034 quantity writer) now has ZERO production call sites', () => {
+    // CANONICAL-STOCK-CUTOVER: the last caller was Status Center's
+    // AdjustQuantityModal (now deleted). item_availability is a read-only
+    // projection (083); corrections go to the canonical lot-level guarded RPCs
+    // (outlet 086 / warehouse 078). A new entry here means the movement RPC
+    // became reachable from the UI again — the item_availability zero-writer
+    // invariant is broken and this must be re-audited before it ships. The
+    // service wrapper's own definition and the classifier are excluded (the
+    // CALL form `applyAvailabilityMovement(` prefixed by `await` or `= `).
+    const callers = productionSourceFiles()
+      .filter(f => {
+        const src = readFileSync(f, 'utf8');
+        return /\bawait applyAvailabilityMovement\(|=\s*applyAvailabilityMovement\(/.test(src);
+      })
+      .map(f => f.replace(/\\/g, '/').split('/src/')[1])
+      .sort();
+    expect(callers).toEqual([]);
+  });
+
   it('the Inventory Center never writes availability by hand', () => {
     const inventory = read('features/inventory/InventoryCenterScreen.tsx');
     expect(inventory).not.toContain('upsertAvailability');

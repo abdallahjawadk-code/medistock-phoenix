@@ -218,6 +218,13 @@ export const T: Dict = {
   sc_adjust_qty:              { ar: 'تعديل الكمية',                          en: 'Adjust Quantity' },
   sc_adjust_qty_title:        { ar: 'تعديل كمية الصنف',                     en: 'Adjust Item Quantity' },
   sc_adjust_qty_no_permission_tooltip: { ar: 'لا تملك صلاحية تعديل الكمية', en: 'You do not have permission to adjust quantity' },
+  // Canonical stock correction launcher (item_availability is read-only; corrections
+  // target an explicit outlet_stock lot via the guarded migration-086 RPC).
+  sc_correct_stock_action:    { ar: 'تصحيح المخزون',                        en: 'Correct stock' },
+  sc_correct_stock_title:     { ar: 'تصحيح مخزون الدفعة (جرد)',             en: 'Correct lot stock (count)' },
+  sc_correct_stock_pick_lot:  { ar: 'اختر الدفعة المراد تصحيحها. لا يمكن تعديل الإجمالي مباشرةً.', en: 'Select the lot to correct. The aggregate cannot be edited directly.' },
+  sc_correct_stock_no_lots:   { ar: 'لا توجد دفعات مخزون أساسية لهذا الصنف في هذا المنفذ', en: 'No canonical stock lots for this item at this outlet' },
+  sc_correct_stock_no_outlet: { ar: 'يتم التصحيح على مستوى المنفذ فقط',      en: 'Correction is only available at the outlet level' },
   mvmt_current_qty:           { ar: 'الكمية الحالية',                       en: 'Current quantity' },
   mvmt_type_label:            { ar: 'نوع الحركة',                          en: 'Movement type' },
   mvmt_set_exact:             { ar: 'تعيين الكمية',                        en: 'Set exact quantity' },

@@ -33,7 +33,6 @@ const readSrc = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 const service      = readSrc('shared/supabase/services/availability.service.ts');
 const section      = readSrc('features/status/MovementReportSection.tsx');
 const historyModal = readSrc('features/status/MovementHistoryModal.tsx');
-const adjustModal  = readSrc('features/status/AdjustQuantityModal.tsx');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 
 // ============================================================================
@@ -218,9 +217,8 @@ describe('Regression: existing quantity-movement features remain intact', () => 
     expect(historyModal).not.toContain('getAvailabilityMovementsReport');
   });
 
-  it('AdjustQuantityModal still calls applyAvailabilityMovement, unaffected by this fix', () => {
-    expect(adjustModal).toContain('applyAvailabilityMovement');
-    expect(adjustModal).not.toContain('getAvailabilityMovementsReport');
+  it('AdjustQuantityModal stays retired (deleted), unaffected by this fix', () => {
+    expectRetiredSurfaceAbsent('AdjustQuantityModal');
   });
 
   it('the fixed report function performs no insert/update/delete', () => {
@@ -257,8 +255,9 @@ describe('Regression: existing quantity-movement features remain intact', () => 
     expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('StatusCenterScreen still renders Adjust Quantity, Movement History, and the Report section', () => {
-    expect(statusCenter).toContain('AdjustQuantityModal');
+  it('StatusCenterScreen renders the canonical correction launcher, Movement History, and the Report section', () => {
+    expect(statusCenter).toContain('AvailabilityStockCorrectionModal');
+    expect(statusCenter).not.toContain('<AdjustQuantityModal');
     expect(statusCenter).toContain('MovementHistoryModal');
     expect(statusCenter).toContain('MovementReportSection');
   });

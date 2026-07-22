@@ -26,7 +26,6 @@ const section      = readFileSync(sectionPath, 'utf8');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const service      = readSrc('shared/supabase/services/availability.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
-const adjustModal   = readSrc('features/status/AdjustQuantityModal.tsx');
 const historyModal  = readSrc('features/status/MovementHistoryModal.tsx');
 
 // ============================================================================
@@ -328,9 +327,8 @@ describe('Guards: no unrelated changes, existing features intact', () => {
     expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  it('AdjustQuantityModal.tsx is untouched by this phase', () => {
-    expect(adjustModal).not.toContain('MovementReportSection');
-    expect(adjustModal).not.toContain('getAvailabilityMovementsReport');
+  it('AdjustQuantityModal stays retired (deleted) by this phase', () => {
+    expectRetiredSurfaceAbsent('AdjustQuantityModal');
   });
 
   it('MovementHistoryModal.tsx remains read-only and untouched by this phase', () => {
@@ -340,10 +338,11 @@ describe('Guards: no unrelated changes, existing features intact', () => {
     expect(historyModal).not.toContain('.rpc(');
   });
 
-  it('StatusCenterScreen still renders Adjust Quantity and Movement History unchanged', () => {
-    expect(statusCenter).toContain('AdjustQuantityModal');
+  it('StatusCenterScreen renders the canonical correction launcher and Movement History', () => {
+    expect(statusCenter).toContain('AvailabilityStockCorrectionModal');
+    expect(statusCenter).not.toContain('<AdjustQuantityModal');
     expect(statusCenter).toContain('MovementHistoryModal');
-    expect(statusCenter).toContain('canAdjustQuantity');
+    expect(statusCenter).toContain('canCorrectStock');
     expect(statusCenter).toContain('canViewMovementHistory');
   });
 

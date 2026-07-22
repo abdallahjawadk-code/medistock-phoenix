@@ -91,31 +91,33 @@ describe('B) Status Center: removed-row badge and safe details', () => {
   });
 });
 
-describe('C) Status Center: Reactivate button appears only for removed rows, replacing Adjust Quantity', () => {
-  it('the actions cell renders Reactivate for isRemoved rows and Adjust Quantity otherwise (never both for the same row)', () => {
+describe('C) Status Center: Reactivate button appears only for removed rows, replacing the correct-stock action', () => {
+  it('the actions cell renders Reactivate for isRemoved rows and the canonical Correct-stock action otherwise (never both for the same row)', () => {
     // The actions cell is located by its own render condition rather than by an
     // indentation-exact `{isRemoved ? (\n<spaces>canReactivate` string, so
     // reformatting the JSX cannot make this guard silently stop looking at it.
     const cellBody = balancedBlockAt(
       statusCenter,
-      '{(canAdjustQuantity || canReactivate || canViewMovementHistory) && (',
+      '{(canCorrectStock || canReactivate || canViewMovementHistory) && (',
     );
-    // Reactivate and Adjust Quantity are the two arms of one ternary on
-    // isRemoved — never both for the same row.
+    // Reactivate and Correct-stock are the two arms of one ternary on
+    // isRemoved — never both for the same row. CANONICAL-STOCK-CUTOVER: the
+    // non-removed arm no longer edits the aggregate; it opens the canonical
+    // lot-level correction launcher.
     expect(cellBody).toContain('{isRemoved ? (');
     expect(cellBody).toContain('canReactivate && (');
     expect(cellBody).toContain('setReactivateRow(r');
     expect(cellBody).toContain("t('sc_reactivate_action', lang)");
-    expect(cellBody).toContain('canAdjustQuantity && (');
-    expect(cellBody).toContain('setAdjustRow(r)');
+    expect(cellBody).toContain('canCorrectStock && (');
+    expect(cellBody).toContain('setCorrectRow(r');
   });
 
   it('Reactivate visibility is gated on canReactivate (both quantity.set and update permissions)', () => {
     expect(statusCenter).toContain('const canReactivate = REACTIVATE_PERMISSION_KEYS.every(key => myPermissions.has(key));');
   });
 
-  it('the actions column header shows for canReactivate too (alongside canAdjustQuantity/canViewMovementHistory)', () => {
-    expect(statusCenter).toContain('(canAdjustQuantity || canReactivate || canViewMovementHistory)');
+  it('the actions column header shows for canReactivate too (alongside canCorrectStock/canViewMovementHistory)', () => {
+    expect(statusCenter).toContain('(canCorrectStock || canReactivate || canViewMovementHistory)');
   });
 
   it('ReactivateMaterialModal is wired with the reactivateRow state and reload-on-success handler', () => {
