@@ -73,8 +73,8 @@ describe('InterInstitutionAlertsScreen: does not render supply_type', () => {
 });
 
 describe('InterInstitutionAlertsScreen: forbidden wording removed', () => {
-  it('does not use suggestion/suggested wording', () => {
-    expect(screen.toLowerCase()).not.toMatch(/suggestion|suggested/);
+  it('does not use opportunity/promotional wording (suggestion IS the mandated term now)', () => {
+    expect(screen.toLowerCase()).not.toMatch(/opportunit/);
   });
 
   it('does not use recommendation/recommended wording', () => {
@@ -85,8 +85,9 @@ describe('InterInstitutionAlertsScreen: forbidden wording removed', () => {
     expect(screen.toLowerCase()).not.toMatch(/opportunit/);
   });
 
-  it('does not use Arabic اقتراح/فرصة wording', () => {
-    expect(screen).not.toContain('اقتراح');
+  it('does not use Arabic فرصة wording (اقتراح is the mandated term now)', () => {
+    expect(screen).not.toContain('فرصة');
+    void 0;
     expect(screen).not.toContain('فرصة');
   });
 
@@ -94,8 +95,8 @@ describe('InterInstitutionAlertsScreen: forbidden wording removed', () => {
     expect(screen).toContain('lia_title');
     expect(screen).toContain('lia_required_action');
     const titleLine = strings.split('\n').find(l => l.includes('lia_title:'));
-    expect(titleLine).toContain('Inter-Institution Alerts');
-    expect(titleLine).toContain('تنبيهات بين المؤسسات');
+    expect(titleLine).toContain('Transfer Suggestions'); // UNIFIED-DOMAIN §11
+    expect(titleLine).toContain('اقتراحات المناقلات');
     const reqActionLine = strings.split('\n').find(l => l.includes('lia_required_action:'));
     expect(reqActionLine).toContain('Required Action');
     expect(reqActionLine).toContain('إجراء مطلوب');
@@ -104,8 +105,8 @@ describe('InterInstitutionAlertsScreen: forbidden wording removed', () => {
   it('none of the new lia_* strings use suggestion/recommendation/opportunity/اقتراح/فرصة', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
-    expect(joined).not.toContain('اقتراح');
+    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
+    expect(joined).not.toContain('فرصة');
     expect(joined).not.toContain('فرصة');
   });
 });
@@ -208,8 +209,8 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: no exchange workflow, no Servic
   it('none of the new lia_*/smart-view strings use forbidden wording (including new Arabic terms)', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
-    expect(joined).not.toContain('اقتراح');
+    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
+    expect(joined).not.toContain('فرصة');
     expect(joined).not.toContain('فرصة');
     expect(joined).not.toContain('توصية');
     expect(joined).not.toContain('طلب تبادل');
@@ -287,8 +288,8 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-B: priority sort + critical lane (
   it('no forbidden wording near the sort/critical-lane additions', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_(sort_|critical_lane_|visible_alerts_)/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
-    expect(joined).not.toContain('اقتراح');
+    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
+    expect(joined).not.toContain('فرصة');
     expect(joined).not.toContain('فرصة');
     expect(joined).not.toContain('توصية');
     expect(joined).not.toContain('طلب تبادل');

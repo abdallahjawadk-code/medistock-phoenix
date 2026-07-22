@@ -44,8 +44,10 @@ describe('StatusCenter: live availability reporting center', () => {
     expect(screen).toContain('sc_all_statuses');
   });
 
-  it('(5) supply type filter labels exist for purchases, kimadia, donations, aid', () => {
-    for (const c of ['purchases', 'kimadia', 'donations', 'aid']) {
+  it('(5) supply type filter labels exist for the CLOSED vocabulary (aid, purchases, kimadia)', () => {
+    // UNIFIED-DOMAIN: donations removed from the vocabulary; legacy donation
+    // rows display under aid via the safe mapping.
+    for (const c of ['purchases', 'kimadia', 'aid']) {
       expect(screen).toContain(`labelKey: 'sc_supply_${c}'`);
     }
     expect(screen).toContain('setFilterSupply');
@@ -214,7 +216,7 @@ describe('StatusCenter live report i18n (AR + EN)', () => {
     const keys = [
       'sc_print_report', 'sc_export_excel', 'sc_print_pdf',
       'sc_all_statuses', 'sc_all_supply_types',
-      'sc_supply_purchases', 'sc_supply_kimadia', 'sc_supply_donations', 'sc_supply_aid',
+      'sc_supply_purchases', 'sc_supply_kimadia', 'sc_supply_aid',
       'sc_generated_at', 'sc_total_rows', 'sc_selected_filters', 'sc_no_match',
     ];
     for (const k of keys) {
@@ -225,7 +227,7 @@ describe('StatusCenter live report i18n (AR + EN)', () => {
   it('Arabic supply-type labels match the product spec', () => {
     expect(strings).toMatch(/sc_supply_purchases:\s*\{\s*ar:\s*'مشتريات'/);
     expect(strings).toMatch(/sc_supply_kimadia:\s*\{\s*ar:\s*'كيماديا'/);
-    expect(strings).toMatch(/sc_supply_donations:\s*\{\s*ar:\s*'هبات'/);
+    expect(strings).not.toContain('sc_supply_donations'); // closed vocabulary
     expect(strings).toMatch(/sc_supply_aid:\s*\{\s*ar:\s*'مساعدات'/);
   });
 });

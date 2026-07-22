@@ -66,8 +66,8 @@ describe('no client-side document-number sequence exists', () => {
   it('operator-typed numbers are labelled as external references, not serials', () => {
     const strings = readFileSync(join(ROOT, 'src', 'shared', 'i18n', 'strings.ts'), 'utf8');
     expect(strings).toContain('mv_external_reference');
-    expect(strings).toMatch(/External \/ operator reference/);
-    expect(strings).toMatch(/مرجع خارجي/);
+    expect(strings).toContain('Official letter / external document number');
+    expect(strings).toContain('رقم الكتاب أو المستند الخارجي'); // UNIFIED-DOMAIN relabel
   });
 
   it('the migration proposal exists and is explicitly not applied', () => {
@@ -89,8 +89,11 @@ describe('no client-side document-number sequence exists', () => {
     // The movement corridor's request/transfer/return/shipment numbers remain
     // unallocated and the proposal remains unapplied. The ceiling moves with
     // each reviewed migration that adds no MOVEMENT numbering.
-    const beyond = migrations.filter(f => /^0*(08[8-9]|09\d|[1-9]\d{2,})/.test(f));
+    // 088 (canonical supply provenance) is reviewed and adds NO document
+    // numbering — provenance columns + identity only.
+    const beyond = migrations.filter(f => /^0*(089|09\d|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

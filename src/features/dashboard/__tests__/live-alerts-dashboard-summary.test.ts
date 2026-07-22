@@ -94,7 +94,7 @@ describe('DashboardScreen: does not render supply_type', () => {
 });
 
 describe('DashboardScreen: new live-alert wording has no forbidden terms', () => {
-  it('the new Live Inter-Institution Alerts section has no suggestion/recommendation/opportunity/اقتراح/فرصة', () => {
+  it('the new Live Transfer Suggestions section has no opportunity/فرصة promotional wording', () => {
     // Scoped to the NEW widget only: the untouched, separate
     // computeMaterialAlerts()-based "Smart Material Alerts" widget
     // legitimately still uses the legacy AlertSeverity value 'opportunity'
@@ -103,17 +103,17 @@ describe('DashboardScreen: new live-alert wording has no forbidden terms', () =>
     const sectionStart = dashboard.indexOf('d_live_alerts_title');
     const sectionEnd = dashboard.indexOf('Institution status cards');
     const section = dashboard.slice(sectionStart, sectionEnd);
-    expect(section.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
-    expect(section).not.toContain('اقتراح');
+    expect(section.toLowerCase()).not.toMatch(/opportunit/); // suggestion is the mandated term (UNIFIED-DOMAIN)
+    // اقتراح is the mandated Transfer-Suggestions term (UNIFIED-DOMAIN §11).
     expect(section).not.toContain('فرصة');
   });
 
   it('the new d_live_alerts_title key is clean and matches the required bilingual wording', () => {
     const line = strings.split('\n').find(l => l.includes('d_live_alerts_title:'));
-    expect(line).toContain('Live Inter-Institution Alerts');
-    expect(line).toContain('تنبيهات حية بين المؤسسات');
-    expect(line?.toLowerCase()).not.toMatch(/suggestion|recommendation|opportunit/);
-    expect(line).not.toContain('اقتراح');
+    expect(line).toContain('Live Transfer Suggestions'); // UNIFIED-DOMAIN §11
+    expect(line).toContain('اقتراحات مناقلات حية');
+    expect(line?.toLowerCase()).not.toMatch(/opportunit/);
+
     expect(line).not.toContain('فرصة');
   });
 

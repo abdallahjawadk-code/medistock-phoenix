@@ -292,10 +292,10 @@ describe('Inter-institution alerts: bilingual labels', () => {
   });
 
   it('Arabic empty-state text matches the spec', () => {
-    expect(strings).toContain('لا توجد تنبيهات بين المؤسسات حالياً');
+    expect(strings).toContain('لا توجد اقتراحات مناقلات حالياً'); // UNIFIED-DOMAIN: renamed to Transfer Suggestions
   });
   it('Arabic title matches the spec', () => {
-    expect(strings).toContain('تنبيهات بين المؤسسات');
+    expect(strings).toContain('اقتراحات المناقلات');
   });
 });
 
