@@ -311,9 +311,16 @@ describe('B8. migration 066 legacy operational roles remain explicit and fail cl
   });
 
   it('reserves central manager assignment for super_admin on both server paths', () => {
+    // create keeps its distinct pre-check message (no existence-oracle surface).
     expect(createUser).toContain("role === 'central_warehouse_manager' && !isSuper");
     expect(createUser).toContain('CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER');
-    expect(recycleUser).toContain("newRole === 'central_warehouse_manager'");
-    expect(recycleUser).toContain('CANNOT_ASSIGN_ELEVATED_ROLE');
+    // recycle now enforces the same rule inside the atomic contract (migration
+    // 093, phoenix_recycle_apply), which the Edge Function delegates to.
+    expect(recycleUser).toContain('phoenix_recycle_apply');
+    const mig = readFileSync(
+      join(__dirname, '../../../../supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql'),
+      'utf8');
+    expect(mig).toContain("p_new_role in ('super_admin','institution_admin','central_warehouse_manager')");
+    expect(mig).toContain("'cannot_assign_elevated_role'");
   });
 });

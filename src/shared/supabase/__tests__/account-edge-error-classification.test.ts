@@ -222,19 +222,25 @@ describe('rotation (rotate_password) surfaces session revocation + forced change
 describe('admin-user-lifecycle server contract for rotation & pharmacy-department protection', () => {
   const ROOT = join(__dirname, '../../../../');
   const lifecycle = readFileSync(join(ROOT, 'supabase/functions/admin-user-lifecycle/index.ts'), 'utf8');
+  // SECURITY-ARCH-HARDENING-A: the pharmacy-department (central_warehouse_manager)
+  // gate, the forced password change, and the audit write now live in the atomic
+  // contract (migration 093). The Edge Function delegates to it.
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql'), 'utf8');
 
-  it('only the Platform Manager may run lifecycle actions on central_warehouse_manager', () => {
-    expect(lifecycle).toContain('PLATFORM_MANAGED_ROLES');
-    expect(lifecycle).toMatch(/PLATFORM_MANAGED_ROLES\s*=\s*\[[^\]]*'central_warehouse_manager'/);
-    expect(lifecycle).toContain('PLATFORM_MANAGED_ROLES.includes(targetProfile.role)');
+  it('only the Platform Manager may run lifecycle actions on central_warehouse_manager (in the contract)', () => {
+    // An institution_admin actor is refused for any platform-managed target role.
+    expect(mig).toContain("v_trole in ('super_admin', 'institution_admin', 'central_warehouse_manager')");
+    expect(mig).toContain("'target_platform_managed'");
   });
 
-  it('rotate_password revokes prior sessions, forces a password change, and writes an audit event', () => {
-    const rotate = lifecycle.slice(lifecycle.indexOf("action === 'rotate_password'"));
+  it('rotate_password revokes prior sessions (edge) and forces a change + writes audit (contract)', () => {
+    const rotate = lifecycle.slice(lifecycle.indexOf("action === 'rotate_password'"), lifecycle.indexOf("action === 'disable'"));
     expect(rotate).toMatch(/sessions|signOut|\/sessions/);
-    expect(rotate).toContain('must_change_password: true');
-    expect(rotate).toContain("action: 'user.password_rotated'");
-    expect(rotate).toContain("from('audit_logs')");
+    expect(rotate).toContain('phoenix_lifecycle_authorize_rotation');
+    // The forced change + audit event live in the contract.
+    expect(mig).toContain('must_change_password = true');
+    expect(mig).toContain("'user.password_rotated'");
+    expect(mig).toContain("audit_logs");
   });
 
   it('the rotation password is never written into audit_logs or profiles', () => {

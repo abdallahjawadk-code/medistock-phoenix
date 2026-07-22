@@ -684,6 +684,9 @@ describe('admin-create-user Edge Function', () => {
 // ============================================================================
 describe('admin-user-lifecycle Edge Function', () => {
   const fn = readPhoenix('supabase/functions/admin-user-lifecycle/index.ts');
+  // SECURITY-ARCH-HARDENING-A: authority + the last-super-admin invariant now
+  // live in the atomic contract (migration 093); the Edge Function delegates.
+  const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
 
   it('reads service_role only from the server env', () => {
     expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
@@ -696,8 +699,9 @@ describe('admin-user-lifecycle Edge Function', () => {
     const leaks = lines.filter(l => l.includes('json(') && l.includes('SUPABASE_SERVICE_ROLE_KEY'));
     expect(leaks).toHaveLength(0);
   });
-  it('guards against self-action', () => {
-    expect(fn).toContain('SELF_ACTION_FORBIDDEN');
+  it('guards against self-action (in the contract)', () => {
+    expect(mig).toContain("'self_action'");
+    expect(mig).toContain('p_target_id = v_actor');
   });
   it('guards against last super_admin deletion', () => {
     expect(fn).toContain('LAST_SUPER_ADMIN');
@@ -714,23 +718,19 @@ describe('admin-user-lifecycle Edge Function', () => {
     expect(fn).toContain('INVALID_ACTION');
     expect(fn).toContain("'disable', 'enable', 'delete'");
   });
-  it('requires super_admin or institution_admin caller (with users.disable)', () => {
-    expect(fn).toContain('INSUFFICIENT_PERMISSION');
-    expect(fn).toContain('institution_admin');
-    expect(fn).toContain("p_key: 'users.disable'");
+  it('requires super_admin or institution_admin caller (with users.disable) — in the contract', () => {
+    expect(mig).toContain("v_arole = 'super_admin'");
+    expect(mig).toContain("v_arole = 'institution_admin'");
+    expect(mig).toContain("phoenix_profile_has_permission(v_actor, 'users.disable')");
   });
-  it('institution_admin cannot act on super_admin or institution_admin targets', () => {
-    expect(fn).toContain("'super_admin', 'institution_admin'");
-    expect(fn).toContain('CROSS_ORG_FORBIDDEN');
+  it('institution_admin cannot act on platform-managed targets (in the contract)', () => {
+    expect(mig).toContain("'super_admin', 'institution_admin', 'central_warehouse_manager'");
+    expect(mig).toContain("'target_platform_managed'");
   });
-  it('institution_admin cannot hard-delete users', () => {
-    // institution_admin scope guard rejects delete action before reaching delete logic
-    const lines = fn.split('\n');
-    const institutionAdminBlock = lines.slice(
-      lines.findIndex(l => l.includes('isCallerInstitutionAdmin')),
-      lines.findIndex(l => l.includes("action === 'delete'")) + 5,
-    ).join('\n');
-    expect(institutionAdminBlock).toContain('INSUFFICIENT_PERMISSION');
+  it('institution_admin cannot hard-delete users (in the contract)', () => {
+    // The reserve guard rejects a delete action for an institution_admin actor.
+    expect(mig).toContain("'delete_forbidden_for_role'");
+    expect(mig).toContain("v_is_inst");
   });
 });
 
@@ -893,14 +893,18 @@ describe('institution_admin role scoping (UI + Edge Function)', () => {
     expect(createFn).toContain('CANNOT_CREATE_INSTITUTION_ADMIN');
   });
 
-  it('admin-user-lifecycle allows institution_admin caller with users.disable', () => {
-    expect(lifecycleFn).toContain('isCallerInstitutionAdmin');
-    expect(lifecycleFn).toContain("p_key: 'users.disable'");
+  it('admin-user-lifecycle allows institution_admin caller with users.disable (in the contract)', () => {
+    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(mig).toContain("v_arole = 'institution_admin'");
+    expect(mig).toContain("phoenix_profile_has_permission(v_actor, 'users.disable')");
+    // The Edge Function delegates to the contract rather than gating locally.
+    expect(lifecycleFn).toContain('phoenix_lifecycle_reserve');
   });
 
-  it('admin-user-lifecycle institution_admin cross-org guard', () => {
-    expect(lifecycleFn).toContain('CROSS_ORG_FORBIDDEN');
-    expect(lifecycleFn).toContain('organization_id');
+  it('admin-user-lifecycle institution_admin cross-org guard (in the contract)', () => {
+    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(mig).toContain("'cross_org'");
+    expect(mig).toContain('v_aorg is distinct from v_torg');
   });
 
   it('institution_admin canTargetRole: can create operator-level roles, not admin-level', () => {

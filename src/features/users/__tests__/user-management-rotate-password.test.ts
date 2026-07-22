@@ -31,6 +31,11 @@ const screen = readSrc('features/users/UserManagementScreen.tsx');
 const usersService = readSrc('shared/supabase/services/users.service.ts');
 const strings = readSrc('shared/i18n/strings.ts');
 const lifecycleFn = readRoot('supabase/functions/admin-user-lifecycle/index.ts');
+// SECURITY-ARCH-HARDENING-A: the self-action guard, the last-active-super_admin
+// invariant, and every profile role/status transition now live in the atomic
+// contract (migration 093). The Edge Function delegates to it. These guards
+// verify the property in its new home plus the delegation.
+const mig093 = readRoot('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
 const createFn = readRoot('supabase/functions/admin-create-user/index.ts');
 
 describe('1-2. Create-user UI is a real edge-function call, not a fake/stubbed success', () => {
@@ -86,46 +91,44 @@ describe('4. Duplicate username/internal-email conflict is a server-side rejecti
 });
 
 describe('5-6. Self-disable / last-active-super_admin protection', () => {
-  it('admin-user-lifecycle rejects any action against the caller themself', () => {
-    expect(lifecycleFn).toContain('SELF_ACTION_FORBIDDEN');
-    const idx = lifecycleFn.indexOf('Self-action guard');
-    const block = lifecycleFn.slice(idx, idx + 200);
-    expect(block).toContain('targetId === callerId');
+  it('the contract rejects any action against the caller themself (self-action guard)', () => {
+    expect(mig093).toContain("'self_action'");
+    expect(mig093).toContain('p_target_id = v_actor');
   });
 
-  it('disable now shares the same last-active-super_admin guard as delete (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A fix)', () => {
-    const disableStart = lifecycleFn.indexOf("if (action === 'disable')");
-    const disableBlock = lifecycleFn.slice(disableStart, lifecycleFn.indexOf("if (action === 'enable')"));
-    expect(disableBlock).toContain('isLastActiveSuperAdmin()');
-    expect(disableBlock).toContain('LAST_SUPER_ADMIN');
+  it('disable and delete share the atomic last-active-super_admin invariant in the contract', () => {
+    // Both routes go through phoenix_lifecycle_reserve, which enforces the
+    // invariant under a shared advisory lock before persisting the transition.
+    const disableBlock = lifecycleFn.slice(
+      lifecycleFn.indexOf("if (action === 'disable')"),
+      lifecycleFn.indexOf('// ── action: delete'));
+    const deleteBlock = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'delete')"));
+    expect(disableBlock).toContain('phoenix_lifecycle_reserve');
+    expect(deleteBlock).toContain('phoenix_lifecycle_reserve');
+    expect(mig093).toContain('LAST_SUPER_ADMIN');
   });
 
-  it('delete still checks the shared last-active-super_admin guard', () => {
-    const deleteStart = lifecycleFn.indexOf("if (action === 'delete')");
-    const deleteBlock = lifecycleFn.slice(deleteStart);
-    expect(deleteBlock).toContain('isLastActiveSuperAdmin()');
-    expect(deleteBlock).toContain('LAST_SUPER_ADMIN');
-  });
-
-  it('the shared guard only counts active super_admin profiles', () => {
-    const idx = lifecycleFn.indexOf('async function isLastActiveSuperAdmin');
-    const fn = lifecycleFn.slice(idx, idx + 400);
-    expect(fn).toContain("eq('role', 'super_admin')");
-    expect(fn).toContain("eq('status', 'active')");
-    expect(fn).toContain('<= 1');
+  it('the invariant only counts active super_admin profiles, under an advisory lock', () => {
+    expect(mig093).toContain("role = 'super_admin'");
+    expect(mig093).toContain("status = 'active'");
+    expect(mig093).toContain('<= 1');
+    expect(mig093).toContain('pg_advisory_xact_lock');
   });
 });
 
 describe('7-8. Disable/enable a normal (non-admin, non-self) user', () => {
-  it('disable action bans the auth user and suspends the profile', () => {
-    const block = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'disable')"), lifecycleFn.indexOf("if (action === 'enable')"));
+  it('disable action bans the auth user; the contract suspends the profile', () => {
+    const block = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'disable')"), lifecycleFn.indexOf('// ── action: delete'));
     expect(block).toContain("ban_duration: '876000h'");
-    expect(block).toContain("status: 'suspended'");
+    expect(block).toContain('phoenix_lifecycle_reserve');
+    // The suspend transition itself is committed inside the contract.
+    expect(mig093).toContain("status = 'suspended'");
   });
-  it('enable action removes the ban and reactivates the profile', () => {
+  it('enable action removes the ban; the contract reactivates the profile', () => {
     const block = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'enable')"), lifecycleFn.indexOf('// ── action: rotate_password'));
     expect(block).toContain("ban_duration: 'none'");
-    expect(block).toContain("status: 'active'");
+    expect(block).toContain('phoenix_lifecycle_enable');
+    expect(mig093).toContain("status = 'active'");
   });
   it('UI wires disable/enable buttons to disableUserViaEdge/enableUserViaEdge behind a confirmation modal', () => {
     expect(screen).toContain('enableUserViaEdge(disableTarget.id)');
@@ -177,7 +180,7 @@ describe('9-11. Rotate temporary password: confirmation, one-time display, no pe
   });
 
   it('the Edge Function never echoes the new password back in its response', () => {
-    const block = lifecycleFn.slice(lifecycleFn.indexOf('// ── action: rotate_password'), lifecycleFn.indexOf('// ── action: delete'));
+    const block = lifecycleFn.slice(lifecycleFn.indexOf('// ── action: rotate_password'), lifecycleFn.indexOf('// ── action: disable'));
     const returnLine = block.slice(block.lastIndexOf('return json('));
     expect(returnLine).not.toContain('newPassword');
     expect(returnLine).not.toMatch(/\bpassword\s*:/);
@@ -189,13 +192,16 @@ describe('9-11. Rotate temporary password: confirmation, one-time display, no pe
   });
 
   it('rotate_password requires new_password and enforces an 8-char minimum server-side', () => {
-    expect(lifecycleFn).toContain("if (!newPassword) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);");
-    expect(lifecycleFn).toContain("if (newPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);");
+    expect(lifecycleFn).toMatch(/if \(!newPassword\) return json\(\{ ok: false, error: 'MISSING_FIELDS'/);
+    expect(lifecycleFn).toMatch(/if \(newPassword\.length < 8\) return json\(\{ ok: false, error: 'PASSWORD_TOO_SHORT'/);
   });
 
-  it('sets must_change_password after rotation so the temporary password must be changed at next login', () => {
-    const block = lifecycleFn.slice(lifecycleFn.indexOf('// ── action: rotate_password'), lifecycleFn.indexOf('// ── action: delete'));
-    expect(block).toContain('must_change_password: true');
+  it('the contract forces a password change after rotation (must_change_password)', () => {
+    // Authority + the must_change_password flag now live in the contract; the
+    // Edge Function only performs the Auth password change + session revoke.
+    const block = lifecycleFn.slice(lifecycleFn.indexOf('// ── action: rotate_password'), lifecycleFn.indexOf('// ── action: disable'));
+    expect(block).toContain('phoenix_lifecycle_authorize_rotation');
+    expect(mig093).toContain('must_change_password = true');
   });
 });
 
@@ -216,16 +222,26 @@ describe('13-16. Edge Function auth/authorization guards', () => {
     expect(idx).toBeGreaterThan(-1);
     expect(lifecycleFn.slice(0, idx)).not.toMatch(/\.from\('profiles'\)/);
   });
-  it('rejects non-super_admin / non-institution_admin callers for lifecycle actions', () => {
-    expect(lifecycleFn).toContain('isCallerSuper');
-    expect(lifecycleFn).toContain('!isCallerSuper && !isCallerInstitutionAdmin');
-    expect(lifecycleFn).toContain("return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);");
+  it('rejects non-super_admin / non-institution_admin callers (in the contract)', () => {
+    // Authority is re-derived from auth.uid() inside the contract, which admits
+    // only an active super_admin or institution_admin (the latter with
+    // users.disable) and returns a generic REQUEST_DENIED otherwise.
+    expect(mig093).toContain("v_arole = 'super_admin'");
+    expect(mig093).toContain("v_arole = 'institution_admin'");
+    expect(mig093).toContain("'actor_not_authorized'");
+    expect(mig093).toContain('REQUEST_DENIED');
   });
-  it('rejects self-delete (and self-rotate/self-disable) via the shared self-action guard', () => {
-    expect(lifecycleFn).toContain('SELF_ACTION_FORBIDDEN');
+  it('rejects self-delete (and self-rotate/self-disable) via the contract self-action guard', () => {
+    expect(mig093).toContain("'self_action'");
+    expect(mig093).toContain('p_target_id = v_actor');
   });
-  it('rejects deleting or disabling the last active super_admin', () => {
-    expect(lifecycleFn.match(/LAST_SUPER_ADMIN/g)?.length).toBeGreaterThanOrEqual(2);
+  it('rejects deleting or disabling the last active super_admin (in the contract)', () => {
+    expect(mig093.match(/LAST_SUPER_ADMIN/g)?.length).toBeGreaterThanOrEqual(1);
+    // Both disable and delete route through the same reserve guard.
+    const disableBlock = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'disable')"), lifecycleFn.indexOf('// ── action: delete'));
+    const deleteBlock = lifecycleFn.slice(lifecycleFn.indexOf("if (action === 'delete')"));
+    expect(disableBlock).toContain("p_action: 'disable'");
+    expect(deleteBlock).toContain("p_action: 'delete'");
   });
 });
 
@@ -318,7 +334,8 @@ describe('19-22. Safety guards', () => {
     // README updates are documentation-only and intentionally out of scope for
     // this phase; the code comment contract at the top of index.ts is the
     // authoritative, in-scope source of truth.
-    expect(lifecycleFn).toContain("action = 'rotate_password'");
+    expect(lifecycleFn).toContain('rotate_password');
+    expect(lifecycleFn).toContain("if (action === 'rotate_password')");
   });
 });
 
