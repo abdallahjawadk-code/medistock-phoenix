@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { t } from '@/shared/i18n/strings';
+import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -31,8 +34,14 @@ import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
  * QR route (App.tsx / PublicQrScreen). Moved verbatim out of App.tsx — no
  * auth/session/business logic changed, only the file it lives in.
  */
+/** ROLE-REORG-§5: a role-refused screen (e.g. non-admin hitting institutions). */
+function ForbiddenScreen() {
+  const { lang } = useApp();
+  return <PhoenixEmptyState icon="lock" title={t('access_forbidden_title', lang)} description={t('access_forbidden_hint', lang)} />;
+}
+
 export function AuthenticatedApp() {
-  const { authReady, session, signOut, passwordRecovery } = useApp();
+  const { authReady, session, signOut, passwordRecovery, role } = useApp();
   // PRODUCTION-READINESS-CLEANUP-A: the central dashboard (screen 2) was
   // removed from navigation and no longer renders; Status Center (screen 12)
   // is the real-data landing screen.
@@ -91,7 +100,14 @@ export function AuthenticatedApp() {
       case 8:  return <IntakeFrozenScreen onNavigate={setScreen} />;
       case 9:  return <ReportsScreen />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
-      case 11: return <InstitutionScreen />;
+      // ROLE-REORG-§5: institutions management is platform-admin exclusive; an
+      // institution admin gets the same route scoped to "My Organization". Any
+      // other role reaching this route directly is refused (403) — the server
+      // RLS is the real boundary; this stops a mis-typed URL from rendering.
+      case 11:
+        return institutionsScreenAccess(role) === false
+          ? <ForbiddenScreen />
+          : <InstitutionScreen />;
       case 12: return <StatusCenterScreen onNavigate={setScreen} />;
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;

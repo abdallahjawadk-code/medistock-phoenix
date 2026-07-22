@@ -1,4 +1,5 @@
 import { useApp } from '@/app/AppContext';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
@@ -133,6 +134,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
 
         <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
           {ALL_NAV
+            .filter(item => item.screen !== 11 || institutionsScreenAccess(role) !== false)
+            .map(item => item.screen === 11 && institutionsScreenAccess(role) === 'own'
+              ? { ...item, labelKey: 'nav_my_organization' } : item)
             .filter(item => !item.superAdminOnly || role === 'super_admin')
             .filter(item => !item.requiresUsersView || canSeeUsers)
             .filter(item => !item.requiresNetwork || canSeeNetwork)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
@@ -129,13 +130,17 @@ export function CommandPalette({ onNavigate }: Props) {
   // assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
+  const instAccess = institutionsScreenAccess(role);
   const items = useMemo(
-    () => PALETTE_ITEMS.filter(i =>
+    () => PALETTE_ITEMS
+      .filter(i => i.screen !== 11 || instAccess !== false)
+      .map(i => i.screen === 11 && instAccess === 'own' ? { ...i, labelKey: 'nav_my_organization' } : i)
+      .filter(i =>
       (!i.superAdminOnly || role === 'super_admin') &&
       (i.screen !== 14 || canSeeUsers) &&
       (i.screen !== 17 || canSeeNetwork),
     ),
-    [canSeeUsers, canSeeNetwork, role],
+    [canSeeUsers, canSeeNetwork, role, instAccess],
   );
 
   const filtered = useMemo(() => {

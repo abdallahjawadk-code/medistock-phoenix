@@ -745,6 +745,9 @@ export const T: Dict = {
   sp_awaiting_migration:   { ar: 'ميزة الإدخال المباشر بانتظار تفعيل migration 089', en: 'Direct entry awaits migration 089 activation' },
   or_search_multiple:  { ar: 'أكثر من نتيجة مطابقة — اختر المستند المطلوب:', en: 'Multiple matching documents — choose one:' },
   /* SMART-SCANNER */
+  nav_my_organization:     { ar: 'إعدادات مؤسستي',                 en: 'My Organization' },
+  access_forbidden_title:  { ar: 'لا تملك صلاحية الوصول إلى هذه الصفحة', en: 'You do not have access to this page' },
+  access_forbidden_hint:   { ar: 'هذه الصفحة مخصصة لمدير المنصة فقط', en: 'This page is restricted to the platform administrator' },
   scan_open:               { ar: 'مسح بالكاميرا',                  en: 'Scan with camera' },
   scan_camera_denied:      { ar: 'تعذر الوصول إلى الكاميرا — استخدم الإدخال اليدوي أدناه', en: 'Camera unavailable — use manual entry below' },
   scan_fallback_hint:      { ar: 'هذا المتصفح لا يدعم الكشف المباشر؛ ألصق محتوى الرمز يدويًا', en: 'This browser lacks live detection; paste the code content manually' },

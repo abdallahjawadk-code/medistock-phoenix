@@ -1,4 +1,5 @@
 import { useApp } from '@/app/AppContext';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
@@ -14,6 +15,9 @@ interface NavItem {
   requiresUsersView?: boolean;
   /** PHASE-B-NETWORK-UI-A: super_admin (structure) or users.edit_scope (scope tab). */
   requiresNetwork?: boolean;
+  /** ROLE-REORG-§5: screen 11 — platform admin (directory) or institution
+   *  admin ("My Organization"); hidden for everyone else. */
+  institutionsGate?: boolean;
 }
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_status_editor, nav_reg, and nav_qr_audit are
@@ -34,7 +38,7 @@ interface NavItem {
 // Restore the sidebar entry for super_admin only; other roles retain the
 // Phase-2 navigation surface and Audit Log remains in Status Center.
 const NAV_ITEMS: NavItem[] = [
-  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions', institutionsGate: true },
   { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
   { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
@@ -76,6 +80,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
+  // ROLE-REORG-§5: institutions management is platform-admin only; an
+  // institution admin sees the same entry relabelled "My Organization".
+  const instAccess = institutionsScreenAccess(role);
 
   /* Nav item states, transcribed from the design source's mkNav():
      active   → --chip fill, --cyanDim text, weight 700, 3px ember rail
@@ -126,6 +133,9 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           .filter(item => !item.superAdminOnly || role === 'super_admin')
           .filter(item => !item.requiresUsersView || canSeeUsers)
           .filter(item => !item.requiresNetwork || canSeeNetwork)
+          .filter(item => !item.institutionsGate || instAccess !== false)
+          .map(item => item.institutionsGate && instAccess === 'own'
+            ? { ...item, labelKey: 'nav_my_organization' } : item)
           .map(item => {
           const s = ns(item.screen);
           return (
