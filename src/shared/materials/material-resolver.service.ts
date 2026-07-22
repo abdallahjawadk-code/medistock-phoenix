@@ -53,6 +53,16 @@ export interface ResolvedMaterial {
 export interface ResolveOptions {
   /** Scope stock-lot matches (batch numbers, on-hand) to ONE warehouse. */
   warehouseId?: string | null;
+  /**
+   * Which identity fields a query may match.
+   *   'internal' (default): scientific name, trade name, national code, batch
+   *                         number and medicine barcode — the operator view.
+   *   'public'  : scientific or trade NAME only. A public outlet visitor must
+   *               not be able to enumerate the catalog by national code, batch
+   *               number or barcode, and never sees lot-level stock. Any
+   *               warehouse scope is ignored in this mode.
+   */
+  audience?: 'internal' | 'public';
   signal?: AbortSignal;
   limit?: number;
 }
@@ -104,23 +114,31 @@ export async function resolveMaterials(rawQuery: string, opts: ResolveOptions = 
   if (!supabaseConfigured || norm.length < 2) return [];
   const limit = opts.limit ?? 12;
 
+  const audience = opts.audience ?? 'internal';
+  const isPublic = audience === 'public';
+
   const ilikeRaw = escapePostgrestIlikeValue(raw);
   const ilikeNorm = escapePostgrestIlikeValue(norm);
 
   // 1+2+4 — the registered catalog (server-side, capped, RLS applies).
+  // Public visitors may match by NAME only (scientific = name, trade = name_ar);
+  // barcode-exact matching is an operator-only capability.
+  const catalogOr = [
+    `name.ilike.${ilikeRaw}`, `name_ar.ilike.${ilikeRaw}`,
+    `name.ilike.${ilikeNorm}`, `name_ar.ilike.${ilikeNorm}`,
+  ];
+  if (!isPublic) catalogOr.unshift(`barcode.eq.${JSON.stringify(raw)}`);
   let catalogQuery = supabase
     .from('central_items')
     .select('id, name, name_ar, barcode, unit, status')
-    .or([
-      `barcode.eq.${JSON.stringify(raw)}`,
-      `name.ilike.${ilikeRaw}`, `name_ar.ilike.${ilikeRaw}`,
-      `name.ilike.${ilikeNorm}`, `name_ar.ilike.${ilikeNorm}`,
-    ].join(','))
+    .or(catalogOr.join(','))
     .limit(limit);
   if (opts.signal) catalogQuery = catalogQuery.abortSignal(opts.signal);
 
   // 3 — canonical stock lots inside the given warehouse scope (RLS re-scopes).
-  const stockPromise = opts.warehouseId
+  // Never for a public audience: lot-level batch/on-hand is not public data,
+  // and national-code / batch lookups are operator-only.
+  const stockPromise = (opts.warehouseId && !isPublic)
     ? (() => {
         let q = supabase
           .from('warehouse_stock')

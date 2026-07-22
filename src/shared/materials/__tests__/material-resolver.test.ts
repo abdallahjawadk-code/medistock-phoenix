@@ -6,8 +6,10 @@
  * prove the CONTRACT per source, not just source-guard greps.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { resolveMaterials } from '../material-resolver.service';
-import { classifyScanPayload } from '../SmartScanner';
+import { classifyScanPayload, evaluateDetectedCodes } from '../SmartScanner';
 
 // ── A fake supabase client: records .from() table + .or() filter, returns
 //    canned rows so we can assert grading per identity source. ──
@@ -151,5 +153,104 @@ describe('resolveMaterials — grading per identity source', () => {
     }, () => resolveMaterials('amox', { warehouseId: 'wh1' }));
     expect(rows.length).toBeGreaterThan(1);
     expect(rows[0].grade).toBe('confirmed'); // exact national code wins
+  });
+});
+
+// ── §7: internal vs public search-field scoping ──────────────────────────────
+describe('resolveMaterials — audience scoping (internal vs public outlet)', () => {
+  it('INTERNAL matches by name, national code, batch AND barcode; searches stock in scope', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (calls) => resolveMaterials('amoxi', { warehouseId: 'wh1', audience: 'internal' }).then(() => calls));
+    const catalog = calls.find(c => c.table === 'central_items');
+    expect(catalog?.or).toContain('barcode.eq');
+    // stock lots (national code + batch) are reachable for the operator
+    expect(calls.some(c => c.table === 'warehouse_stock')).toBe(true);
+  });
+
+  it('PUBLIC restricts to scientific/trade NAME only — no barcode, no national code, no batch', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (calls) => resolveMaterials('amoxi', { warehouseId: 'wh1', audience: 'public' }).then(() => calls));
+    const catalog = calls.find(c => c.table === 'central_items');
+    expect(catalog?.or).not.toContain('barcode.eq');
+    expect(catalog?.or).toContain('name.ilike');
+    expect(catalog?.or).toContain('name_ar.ilike');
+    // a public visitor never reaches lot-level stock (batch / on-hand), even
+    // when a warehouse id is supplied.
+    expect(calls.some(c => c.table === 'warehouse_stock')).toBe(false);
+  });
+
+  it('defaults to INTERNAL when no audience is given', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (calls) => resolveMaterials('amoxi', { warehouseId: 'wh1' }).then(() => calls));
+    const catalog = calls.find(c => c.table === 'central_items');
+    expect(catalog?.or).toContain('barcode.eq');
+  });
+});
+
+// ── §7: camera frame evaluation never auto-selects unsafe results ────────────
+describe('evaluateDetectedCodes — auto-detect safety', () => {
+  it('no code this frame → none (keep scanning)', () => {
+    expect(evaluateDetectedCodes([])).toEqual({ status: 'none' });
+    expect(evaluateDetectedCodes([{ rawValue: '' }])).toEqual({ status: 'none' });
+  });
+
+  it('one recognised code → hit with its classification', () => {
+    const out = evaluateDetectedCodes([{ rawValue: '6291234567890' }]);
+    expect(out).toEqual({ status: 'hit', result: { kind: 'barcode', value: '6291234567890' } });
+  });
+
+  it('one code that classifies to unknown → invalid, never a hit', () => {
+    const out = evaluateDetectedCodes([{ rawValue: 'not a code !!' }]);
+    expect(out.status).toBe('invalid');
+  });
+
+  it('more than one DISTINCT code in a frame → ambiguous, never auto-select', () => {
+    const out = evaluateDetectedCodes([{ rawValue: '6291234567890' }, { rawValue: '5000159407236' }]);
+    expect(out).toEqual({ status: 'ambiguous' });
+  });
+
+  it('duplicate reads of the SAME code are not ambiguous → the single hit', () => {
+    const out = evaluateDetectedCodes([{ rawValue: '6291234567890' }, { rawValue: '6291234567890' }]);
+    expect(out.status).toBe('hit');
+  });
+});
+
+// ── §7: SmartScanner component wiring (source contract) ──────────────────────
+describe('SmartScanner — state machine + lifecycle contract', () => {
+  const src = readFileSync(join(__dirname, '../SmartScanner.tsx'), 'utf8');
+
+  it('declares every required distinct phase', () => {
+    for (const phase of ['loading', 'scanning', 'unsupported', 'denied', 'offline', 'invalid', 'ambiguous']) {
+      expect(src).toContain(`'${phase}'`);
+    }
+  });
+
+  it('gates on capability (unsupported) and connectivity (offline) before opening the camera', () => {
+    expect(src).toContain("setPhase('unsupported')");
+    expect(src).toContain("setPhase('offline')");
+    expect(src).toMatch(/navigator\.onLine/);
+    expect(src).toMatch(/BarcodeDetector|createDetector/);
+  });
+
+  it('stops all camera tracks on close and on unmount', () => {
+    expect(src).toMatch(/getTracks\(\)\.forEach\(track => track\.stop\(\)\)/);
+    // cleanup returned from the mount effect calls stopCamera
+    expect(src).toMatch(/return \(\) => \{ stopCamera\(\); \}/);
+    // the close button also stops the camera
+    expect(src).toMatch(/onClick=\{\(\) => \{ stopCamera\(\); onClose\(\)/);
+  });
+
+  it('offers retry and a manual paste fallback in non-scanning states', () => {
+    expect(src).toContain("t('scan_retry'");
+    expect(src).toContain("t('scan_fallback_placeholder'");
+    expect(src).toContain('showManual');
+  });
+
+  it('routes hits through evaluateDetectedCodes and never onScan on invalid/ambiguous', () => {
+    expect(src).toContain('evaluateDetectedCodes(');
+    // onScan only appears inside the 'hit' branch of the tick loop
+    const tick = src.slice(src.indexOf('const tick'), src.indexOf('void tick();'));
+    expect(tick).toMatch(/outcome\.status === 'hit'[\s\S]*onScan\(outcome\.result\)/);
+    expect(tick).not.toMatch(/status === 'invalid'[^\n]*onScan/);
   });
 });

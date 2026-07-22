@@ -31,12 +31,18 @@ interface Props {
   lang: 'ar' | 'en';
   /** Scope lot-level matches (batch, on-hand) to one warehouse. */
   warehouseId?: string | null;
+  /**
+   * 'internal' (default) matches scientific/trade name, national code, batch
+   * and barcode; 'public' restricts to scientific or trade NAME only and never
+   * reaches lot-level stock — for the public outlet page.
+   */
+  audience?: 'internal' | 'public';
   onSelect: (material: ResolvedMaterial) => void;
   label?: string;
   autoFocus?: boolean;
 }
 
-export function PhoenixMaterialResolver({ lang, warehouseId, onSelect, label, autoFocus }: Props) {
+export function PhoenixMaterialResolver({ lang, warehouseId, audience, onSelect, label, autoFocus }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ResolvedMaterial[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,12 +64,12 @@ export function PhoenixMaterialResolver({ lang, warehouseId, onSelect, label, au
     abortRef.current = controller;
     setBusy(true);
     const timer = setTimeout(() => {
-      resolveMaterials(query, { warehouseId, signal: controller.signal })
+      resolveMaterials(query, { warehouseId, audience, signal: controller.signal })
         .then(rows => { if (!controller.signal.aborted) { setResults(rows); setBusy(false); } })
         .catch(() => { if (!controller.signal.aborted) { setResults([]); setBusy(false); } });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, warehouseId]);
+  }, [query, warehouseId, audience]);
 
   const fieldStyle = {
     width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)',
