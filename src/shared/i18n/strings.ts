@@ -928,6 +928,7 @@ export const T: Dict = {
   um_reset_done:      { ar: 'تمت إعادة الصلاحيات الافتراضية',   en: 'Reset to role defaults' },
   um_edge_disabled:   { ar: 'إنشاء المستخدمين غير مفعّل بعد · يتطلب نشر دالة الخادم الآمنة', en: 'User creation is not enabled yet · requires the secure server function to be deployed' },
   um_edge_rejected:   { ar: 'رفض الخادم الطلب', en: 'The server rejected the request' },
+  um_request_denied:  { ar: 'تعذّر تنفيذ هذا الإجراء. إذا كنت تعتقد أنه ينبغي السماح به، تواصل مع مدير المنصة بالرقم المرجعي أدناه.', en: 'This action could not be completed. If you believe it should be allowed, contact a platform administrator with the reference below.' },
   um_unknown_error:   { ar: 'حدث خطأ غير متوقع. حاول مرة أخرى.', en: 'An unexpected error occurred. Please try again.' },
   um_support_ref:     { ar: 'رقم مرجعي للدعم', en: 'Support reference' },
   um_cannot_create_central:      { ar: 'إنشاء حساب قسم الصيدلة/الرقابة المخزنية مقصور على مدير المنصة فقط', en: 'Only the Platform Manager may create a Pharmacy Department / Inventory Control account' },

@@ -331,7 +331,9 @@ export function UserManagementScreen() {
             } else {
               showToast(res.error === 'LAST_SUPER_ADMIN'
                 ? t('um_last_super_admin', lang)
-                : t('um_lifecycle_failed', lang));
+                : res.error === 'REQUEST_DENIED'
+                  ? withSupportRef(t('um_request_denied', lang), lang, res.correlationId)
+                  : t('um_lifecycle_failed', lang));
             }
           }}
           isEnable={((users.data ?? []).find(u => u.id === disableTarget.id)?.status === 'suspended')}
