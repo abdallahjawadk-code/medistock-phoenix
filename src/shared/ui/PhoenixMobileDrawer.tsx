@@ -36,6 +36,10 @@ const ALL_NAV: {
   // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by the
   // profile's 062 outlet assignments; every action is re-checked server-side.
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
+  // INSTITUTION-LOCAL-PROCUREMENT-087: mirrors the desktop sidebar entry so
+  // Screen 19 is reachable on mobile too; the screen self-gates by 062
+  // warehouse scope + the scoped local_procurement.* keys, re-checked server-side.
+  { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the
