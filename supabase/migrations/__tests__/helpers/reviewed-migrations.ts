@@ -154,6 +154,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '091_phoenix_five_role_cutover.sql',
   '092_phoenix_monthly_status_redesign.sql',
   '093_phoenix_super_admin_lifecycle_guard.sql',
+  '094_phoenix_custody_chain_notifications.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

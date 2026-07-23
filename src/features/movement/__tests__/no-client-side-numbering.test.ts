@@ -99,9 +99,13 @@ describe('no client-side document-number sequence exists', () => {
     // string.
     // 093 (SECURITY-ARCH-HARDENING-A) is reviewed and adds NO document
     // numbering — account-lifecycle contract only (reservations keyed by
-    // profile uuid; no client- or server-numbered document string). The
-    // ceiling moves to 094.
-    const beyond = migrations.filter(f => /^0*(09[4-9]|[1-9]\d{2,})/.test(f));
+    // profile uuid; no client- or server-numbered document string).
+    // 094 (CUSTODY-CHAIN-NOTIFICATIONS-094-A) is reviewed and adds NO document
+    // numbering — the notification feed and its dedupe_key reuse the SAME
+    // uuid ':' status text 082 already writes to phoenix_movement_events; no
+    // new sequence, no client- or server-numbered document string. The
+    // ceiling moves to 095.
+    const beyond = migrations.filter(f => /^0*(09[5-9]|[1-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -113,6 +117,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('091_phoenix_five_role_cutover.sql');
     expect(migrations).toContain('092_phoenix_monthly_status_redesign.sql');
     expect(migrations).toContain('093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(migrations).toContain('094_phoenix_custody_chain_notifications.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
