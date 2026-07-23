@@ -20,6 +20,8 @@ import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
+import { useQuarantinePermission } from './useQuarantinePermission';
+import { QuarantinePanel } from './QuarantinePanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import { SourceBalancesPanel } from './SourceBalancesPanel';
@@ -48,7 +50,7 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine';
 
 export function InventoryCenterScreen() {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -80,6 +82,12 @@ export function InventoryCenterScreen() {
   // destination warehouse), never a role name. The RPC re-checks server-side.
   const returnReceive = useReturnReceivePermission(activeOrgId, activeWarehouseId || null);
   const canReceiveReturns = returnReceive.data ?? false;
+
+  // QUARANTINE-DISPOSITION — gated on the exact scoped key 099's release/
+  // destroy RPCs check (warehouse_transfer.return_request on the quarantine
+  // row's own warehouse), matching 105's widened read policy.
+  const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
+  const canDisposeQuarantine = quarantinePerm.data ?? false;
 
   const [tab, setTab] = useState<Tab>('intake');
   const [toast, setToast] = useState<string | null>(null);
@@ -204,6 +212,9 @@ export function InventoryCenterScreen() {
           // §071 — receiving outlet returns into this warehouse, for holders of
           // the scoped outlet_stock.return_receive permission on it.
           ...(canReceiveReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
+          // QUARANTINE-DISPOSITION — for holders of the scoped
+          // warehouse_transfer.return_request permission on it (099/105).
+          ...(canDisposeQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -283,6 +294,8 @@ export function InventoryCenterScreen() {
           canReceive={canReceiveReturns}
           lang={lang}
         />
+      ) : tab === 'quarantine' && canDisposeQuarantine ? (
+        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />
       )}
