@@ -220,6 +220,42 @@ export function addDispatchLine(input: {
   });
 }
 
+export interface FefoBatch {
+  stockId: string;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  availableQuantity: number;
+}
+
+interface FefoBatchDbRow {
+  stock_id: string; batch_number: string | null; expiry_date: string | null; available_quantity: number;
+}
+
+/**
+ * Every eligible batch for this material at this warehouse, FEFO-ordered
+ * (072's own read: expiry_date ASC NULLS LAST, then id ASC — the SAME order
+ * 097/102's guard compares against). Read-only; used to show the operator
+ * WHY a pick was refused and what the earliest alternative actually is,
+ * never to pick automatically.
+ */
+export async function getFefoAlternatives(
+  organizationId: string, warehouseId: string, scientificName: string, nationalCode: string | null,
+): Promise<FefoBatch[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase.rpc('phoenix_inventory_fefo_batches', {
+    p_organization_id: organizationId,
+    p_scope_kind: 'warehouse',
+    p_scope_id: warehouseId,
+    p_scientific_name: scientificName,
+    p_national_code: nationalCode,
+  });
+  if (error) throw error;
+  return ((data as FefoBatchDbRow[] | null) ?? []).map(r => ({
+    stockId: r.stock_id, batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    availableQuantity: r.available_quantity,
+  }));
+}
+
 export function updateDispatchLineQuantity(input: { dispatchLineId: string; quantity: number }): Promise<RpcResult> {
   return callRpc('phoenix_update_dispatch_line_quantity', {
     p_dispatch_line_id: input.dispatchLineId, p_quantity: input.quantity,

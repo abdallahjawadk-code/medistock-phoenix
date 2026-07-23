@@ -32,7 +32,10 @@ import { StockMaterialPicker } from '@/features/movement/ui/StockMaterialPicker'
 import { MovementLineTable } from '@/features/movement/ui/MovementLineTable';
 import {
   createWarehouseDispatch, addDispatchLine, getWarehouseDispatchLines,
+  getFefoAlternatives, type FefoBatch,
 } from './dispatch.service';
+import { FefoOverrideDialog } from './FefoOverrideDialog';
+import { useFefoOverridePermission } from '@/features/inventory/useFefoOverridePermission';
 
 const newKey = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -61,7 +64,7 @@ interface Props {
 export function OutletDispatchComposer({
   sourceWarehouseId, sourceWarehouseName, outlets, onCancel, onCreated,
 }: Props) {
-  const { lang, dir } = useApp();
+  const { lang, dir, activeOrgId } = useApp();
 
   const [step, setStep] = useState<ComposerStep>('parties');
   const [outletId, setOutletId] = useState('');
@@ -77,6 +80,17 @@ export function OutletDispatchComposer({
   const [progress, setProgress] = useState<CommitProgress | null>(null);
   const [result, setResult] = useState<CommitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // FEFO-REASONED-OVERRIDE (097/102) — a non-earliest pick is never added
+  // silently. `fefoPrompt` holds the candidate awaiting a decision;
+  // `lineOverrides` records, per draft line (keyed by its stable
+  // idempotencyKey), the override reason actually confirmed — read back at
+  // commit time so addDispatchLine passes the SAME override it was granted
+  // for, never a fresh unaudited one.
+  const canOverrideFefo = useFefoOverridePermission(activeOrgId, sourceWarehouseId).data ?? false;
+  const [fefoPrompt, setFefoPrompt] = useState<{ candidate: StockCandidate; quantity: number; alternatives: FefoBatch[] } | null>(null);
+  const [lineOverrides, setLineOverrides] = useState<Record<string, string>>({});
+  const [fefoCheckBusy, setFefoCheckBusy] = useState(false);
 
   const loadStock = useCallback(async () => {
     if (!sourceWarehouseId) { setStock([]); return; }
@@ -96,6 +110,50 @@ export function OutletDispatchComposer({
   const confirmable = useMemo(() => draftIsConfirmable(lines, 'supply'), [lines]);
   const partiesComplete = Boolean(sourceWarehouseId && outletId);
   const outlet = outlets.find(o => o.id === outletId) ?? null;
+
+  /**
+   * Every pick is checked against 072's own FEFO order BEFORE it ever enters
+   * the draft. A compliant pick adds immediately (identical to before this
+   * feature existed); a non-compliant one opens FefoOverrideDialog and adds
+   * NOTHING until the operator explicitly decides — cancelling never adds
+   * the line.
+   */
+  const handlePick = async (candidate: StockCandidate, quantity: number) => {
+    if (!activeOrgId || fefoCheckBusy) return;
+    setFefoCheckBusy(true);
+    try {
+      const alternatives = await getFefoAlternatives(
+        activeOrgId, sourceWarehouseId, candidate.scientificName, candidate.nationalCode,
+      );
+      const earliest = alternatives[0] ?? null;
+      if (!earliest || earliest.stockId === candidate.warehouseStockId) {
+        setLines(previous => [...previous, draftLineFromStock(candidate, quantity, newKey())]);
+      } else {
+        setFefoPrompt({ candidate, quantity, alternatives });
+      }
+    } catch {
+      // A failed compliance READ must never fall through to a silent add —
+      // fail closed and let the operator retry the pick.
+      setError(t('err_generic', lang));
+    } finally {
+      setFefoCheckBusy(false);
+    }
+  };
+
+  const handleFefoConfirmOverride = (reason: string) => {
+    if (!fefoPrompt) return;
+    const key = newKey();
+    setLines(previous => [...previous, draftLineFromStock(fefoPrompt.candidate, fefoPrompt.quantity, key)]);
+    setLineOverrides(previous => ({ ...previous, [key]: reason }));
+    setFefoPrompt(null);
+  };
+
+  const handleFefoUseAlternative = (stockId: string) => {
+    if (!fefoPrompt) return;
+    const alt = stock.find(s => s.warehouseStockId === stockId);
+    if (alt) setLines(previous => [...previous, draftLineFromStock(alt, fefoPrompt.quantity, newKey())]);
+    setFefoPrompt(null);
+  };
 
   const enterReview = async () => {
     setStep('review');
@@ -126,6 +184,11 @@ export function OutletDispatchComposer({
         dispatchId,
         warehouseStockId: line.warehouseStockId as string,
         quantity: line.quantity,
+        // The SAME override reason confirmed at pick-time, never re-derived —
+        // a retry of this line must replay the identical decision, not ask
+        // the server to accept a fresh unaudited one.
+        fefoOverride: line.idempotencyKey in lineOverrides,
+        overrideReason: lineOverrides[line.idempotencyKey] ?? null,
       }),
       onProgress: setProgress,
     });
@@ -157,6 +220,8 @@ export function OutletDispatchComposer({
       createHeader: () => Promise.resolve({ ok: true, data: { id: result.requestId as string } }),
       addLine: (dispatchId, line) => addDispatchLine({
         dispatchId, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity,
+        fefoOverride: line.idempotencyKey in lineOverrides,
+        overrideReason: lineOverrides[line.idempotencyKey] ?? null,
       }),
       onProgress: setProgress,
     });
@@ -220,10 +285,21 @@ export function OutletDispatchComposer({
           lang={lang}
           candidates={stock}
           usedStockIds={lines.map(l => l.warehouseStockId).filter((v): v is string => Boolean(v))}
-          loading={stockLoading}
-          onAdd={(candidate, quantity) => setLines(previous => [...previous, draftLineFromStock(candidate, quantity, newKey())])}
+          loading={stockLoading || fefoCheckBusy}
+          onAdd={(candidate, quantity) => void handlePick(candidate, quantity)}
         />
       )}
+
+      <FefoOverrideDialog
+        open={fefoPrompt !== null}
+        picked={fefoPrompt?.candidate ?? null}
+        alternatives={fefoPrompt?.alternatives ?? []}
+        canOverride={canOverrideFefo}
+        onCancel={() => setFefoPrompt(null)}
+        onConfirmOverride={handleFefoConfirmOverride}
+        onUseAlternative={handleFefoUseAlternative}
+        lang={lang}
+      />
 
       {step === 'review' && (
         <div style={{ display: 'grid', gap: '12px' }}>

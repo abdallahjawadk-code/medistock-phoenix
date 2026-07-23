@@ -32,7 +32,13 @@ describe('070 dispatch service maps to the exact 070 RPCs', () => {
   }
   it('add-line sources a CANONICAL warehouse_stock lot (p_warehouse_stock_id), never free text', () => {
     expect(dispatch).toMatch(/p_warehouse_stock_id: input\.warehouseStockId/);
-    expect(dispatch).not.toMatch(/p_scientific_name/);
+    // Scoped to addDispatchLine itself: getFefoAlternatives (097/102 support)
+    // legitimately takes a scientific_name as a READ-ONLY lookup key for
+    // showing FEFO alternatives — a fundamentally different thing from
+    // add-line accepting one as a material IDENTITY.
+    const start = dispatch.indexOf('export function addDispatchLine');
+    const body = dispatch.slice(start, dispatch.indexOf('\n}', start));
+    expect(body).not.toMatch(/p_scientific_name/);
   });
   it('send carries a fresh idempotency token', () => {
     expect(dispatch).toMatch(/p_request_id: input\.requestId/);
