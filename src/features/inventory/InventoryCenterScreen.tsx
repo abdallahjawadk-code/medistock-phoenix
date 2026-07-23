@@ -104,6 +104,13 @@ export function InventoryCenterScreen() {
     return o ? (lang === 'ar' ? o.name_ar : o.name) : '';
   }, [orgs.data, activeOrgId, lang]);
   const activeWarehouseName = warehouseOptions.find(o => o.value === activeWarehouseId)?.label ?? '';
+  // CLOSED-CUSTODY-102-B: an institution warehouse receives ONLY from pharmacy-
+  // department (central) stores via the canonical transfer/return receive
+  // corridors — never by hand-typed or OCR-assisted entry. The server enforces
+  // this unconditionally (migration 103); this is the UX reflection of that
+  // same rule, not the authority for it.
+  const activeWarehouseKind = manageableWarehouses.find(w => w.id === activeWarehouseId)?.warehouseKind ?? null;
+  const isInstitutionWarehouse = activeWarehouseKind === 'institution';
   // Outlets belonging to the selected institution warehouse (parent link), and
   // within the officer's manageable scope — the only valid dispatch destinations.
   const outletsForWarehouse = useMemo(
@@ -222,15 +229,23 @@ export function InventoryCenterScreen() {
       {!activeWarehouseId ? (
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
-        <IntakeTab
-          warehouseId={activeWarehouseId}
-          canSubmit={canAdjust}
-          lang={lang}
-          stock={stock.data ?? []}
-          onSuccess={afterWrite}
-          onError={showToast}
-          onConflictReload={reloadCanonicalStock}
-        />
+        isInstitutionWarehouse ? (
+          <PhoenixEmptyState
+            icon="🔒"
+            title={t('inv_institution_intake_blocked_title', lang)}
+            description={t('inv_institution_intake_blocked_description', lang)}
+          />
+        ) : (
+          <IntakeTab
+            warehouseId={activeWarehouseId}
+            canSubmit={canAdjust}
+            lang={lang}
+            stock={stock.data ?? []}
+            onSuccess={afterWrite}
+            onError={showToast}
+            onConflictReload={reloadCanonicalStock}
+          />
+        )
       ) : tab === 'stock' ? (
         <div style={{ display: 'grid', gap: '12px' }}>
         {/* SOURCE-BALANCES-PANEL (088): fail-closed readiness gate inside. */}
@@ -240,6 +255,7 @@ export function InventoryCenterScreen() {
           lang={lang}
           canAdjust={canAdjust}
           canCorrect={canCorrect}
+          isInstitutionWarehouse={isInstitutionWarehouse}
           onSuccess={afterWrite}
           onError={showToast}
           onConflictReload={reloadCanonicalStock}
@@ -579,13 +595,17 @@ interface StockListProps {
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
+  /** CLOSED-CUSTODY-102-B: institution warehouses may only ever be corrected
+   *  (second-person-approval-gated, migration 101), never freely add/subtract/
+   *  set_exact'd — that quantity must come from a canonical receive corridor. */
+  isInstitutionWarehouse: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
   /** 078 generation conflict — reload canonical stock; retry stays explicit. */
   onConflictReload: () => void;
 }
 
-function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: StockListProps) {
+function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: StockListProps) {
   // MATERIAL-SMART-SEARCH: one normalized query over the four identity fields
   // (scientific, trade, national code, batch) — AR/EN, hamza/taa/diacritic
   // folding, case-insensitive; the query is NEVER treated as a new material.
@@ -618,6 +638,7 @@ function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onC
           lang={lang}
           canAdjust={canAdjust}
           canCorrect={canCorrect}
+          isInstitutionWarehouse={isInstitutionWarehouse}
           onSuccess={onSuccess}
           onError={onError}
           onConflictReload={onConflictReload}
@@ -632,13 +653,14 @@ interface BatchRowProps {
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
+  isInstitutionWarehouse: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
   /** 078 generation conflict — reload canonical stock; retry stays explicit. */
   onConflictReload: () => void;
 }
 
-function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: BatchRowProps) {
+function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
   const [movementType, setMovementType] = useState<WarehouseStockMovementType>('add');
@@ -653,9 +675,14 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onCo
 
   // 'correction' is only offered to warehouse_stock.correct holders; add/subtract
   // need warehouse_stock.adjust. The RPC picks the same key server-side.
-  const allowedTypes = WAREHOUSE_ADJUSTMENT_TYPES.filter(
-    x => (x === 'correction' ? canCorrect : canAdjust),
-  );
+  // CLOSED-CUSTODY-102-B: at an institution warehouse, add/subtract/set_exact
+  // would invent or erase quantity outside any canonical corridor — the server
+  // (migration 103) refuses them unconditionally there, so only 'correction'
+  // is ever offered for this batch's row.
+  const allowedTypes = WAREHOUSE_ADJUSTMENT_TYPES.filter(x => {
+    if (isInstitutionWarehouse && x !== 'correction') return false;
+    return x === 'correction' ? canCorrect : canAdjust;
+  });
 
   /** A changed payload is a NEW logical attempt; only an unchanged retry replays. */
   const touch = () => setRequestId(newRequestId());

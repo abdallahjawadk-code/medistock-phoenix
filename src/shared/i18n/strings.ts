@@ -1748,6 +1748,11 @@ export const T: Dict = {
   inv_derived_notice:     { ar: 'حالة التوفر تُشتق من سجل المخزن ولا تُدخل يدويًا', en: 'Availability condition is derived from the ledger and is never entered by hand' },
   inv_center_denied:      { ar: 'لا تملك صلاحية على أي مخزن',                   en: 'You have no warehouse permissions' },
   inv_read_only_scope:    { ar: 'عرض فقط — لا تملك صلاحية الكتابة في هذا المخزن', en: 'Read-only — you cannot write to this warehouse' },
+  inv_institution_intake_blocked_title: { ar: 'الإدخال اليدوي وOCR غير متاحين لمخازن المؤسسات', en: 'Manual entry and OCR are not available for institution warehouses' },
+  inv_institution_intake_blocked_description: {
+    ar: 'يستلم مخزن المؤسسة فقط من مخازن قسم الصيدلة عبر التحويل الوارد أو مرتجعات المنافذ. استخدم تبويب «الوارد» لاستلام تحويل، أو تبويب «المرتجعات» لاستلام مرتجع منفذ.',
+    en: 'An institution warehouse receives only from pharmacy-department stores, via an incoming transfer or an outlet return. Use the Incoming tab to receive a transfer, or the Returns tab to receive an outlet return.',
+  },
 
   inv_err_not_authorized: { ar: 'لا تملك الصلاحية لهذه العملية',                en: 'You are not authorized for this operation' },
   inv_err_cross_org:      { ar: 'لا يمكنك العمل خارج مؤسستك',                   en: 'You cannot act outside your own organization' },
