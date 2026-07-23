@@ -1997,6 +1997,1892 @@
         "overlapsBottomNav": false,
         "bottomNavRect": null
       }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": false
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 200.609375,
+        "bottom": 643.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 146.0625,
+        "bottom": 697.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 200.609375,
+        "bottom": 643.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 146.0625,
+        "bottom": 697.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 176.984375,
+        "bottom": 667.015625,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "phone",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-phone.png",
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 121.046875,
+        "bottom": 722.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "top": 772,
+          "right": 390,
+          "bottom": 844,
+          "left": 0
+        }
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 239.984375,
+        "bottom": 660,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 175.75,
+        "bottom": 724.25,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 239.984375,
+        "bottom": 660,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "ar",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-ar-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 175.75,
+        "bottom": 724.25,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "dark",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-dark-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "denied",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-denied-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 220.609375,
+        "bottom": 679.375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
+    },
+    {
+      "screen": "inventory-dispatch-fefo-override",
+      "label": "reason-required",
+      "lang": "en",
+      "theme": "light",
+      "viewport": "desktop",
+      "file": "inventory-dispatch-fefo-override-reason-required-en-light-desktop.png",
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440
+      },
+      "footerCheck": {
+        "present": true,
+        "top": 166.0625,
+        "bottom": 733.9375,
+        "overlapsBottomNav": false,
+        "withinViewport": true,
+        "bottomNavRect": null
+      }
     }
-  ]
+  ],
+  "fefoOverrideCapture": {
+    "capturedAt": "2026-07-23T21:32:44.718Z",
+    "base": "http://localhost:5183",
+    "assertions": [
+      {
+        "name": "denied/ar/dark/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/ar/dark/phone: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/phone: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/phone: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "allowed/ar/dark/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/ar/dark/phone: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/phone: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/phone: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "denied/ar/light/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/ar/light/phone: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/phone: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/phone: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "allowed/ar/light/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/ar/light/phone: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/phone: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/phone: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "denied/en/dark/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/en/dark/phone: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/phone: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/phone: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "allowed/en/dark/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/en/dark/phone: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/phone: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/phone: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "denied/en/light/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/en/light/phone: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/phone: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/phone: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "allowed/en/light/phone: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/en/light/phone: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/phone: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/phone: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/phone: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "denied/ar/dark/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/ar/dark/desktop: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/desktop: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/desktop: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/dark/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "allowed/ar/dark/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/ar/dark/desktop: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/desktop: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/desktop: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/dark/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "denied/ar/light/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/ar/light/desktop: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/desktop: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/desktop: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/ar/light/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "allowed/ar/light/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/ar/light/desktop: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/desktop: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/desktop: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+            "B4471X · 2028-01-31 · المتاح: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/ar/light/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · المتاح: 80استخدام هذه الدفعة",
+          "B4471X · 2028-01-31 · المتاح: 160"
+        ]
+      },
+      {
+        "name": "denied/en/dark/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/en/dark/desktop: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/desktop: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/desktop: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/dark/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "allowed/en/dark/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/en/dark/desktop: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/desktop: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/desktop: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/dark/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "denied/en/light/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "denied/en/light/desktop: no checkbox rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/desktop: no reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/desktop: denial message shown",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": false,
+          "hasReasonInput": false,
+          "deniedMessageShown": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "denied/en/light/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      },
+      {
+        "name": "allowed/en/light/desktop: dialog opened",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "allowed/en/light/desktop: checkbox rendered and checked",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/desktop: reason input rendered",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/desktop: confirm disabled with empty reason",
+        "pass": true,
+        "detail": {
+          "hasCheckbox": true,
+          "checkboxChecked": true,
+          "hasReasonInput": true,
+          "confirmDisabled": true,
+          "alternativesOrder": [
+            "B4470E · 2027-06-30 · Available: 80Use this batch",
+            "B4471X · 2028-01-31 · Available: 160"
+          ]
+        }
+      },
+      {
+        "name": "allowed/en/light/desktop: earliest batch listed first",
+        "pass": true,
+        "detail": [
+          "B4470E · 2027-06-30 · Available: 80Use this batch",
+          "B4471X · 2028-01-31 · Available: 160"
+        ]
+      }
+    ]
+  }
 }
