@@ -15,7 +15,9 @@ const ret = read('outlet-return.service.ts');
 describe('070 dispatch service maps to the exact 070 RPCs', () => {
   const pairs: Array<[string, string]> = [
     ['createWarehouseDispatch', 'phoenix_create_warehouse_dispatch'],
-    ['addDispatchLine', 'phoenix_add_dispatch_line'],
+    // 097/102 FEFO enforcement: the real add-line RPC is the guarded wrapper,
+    // not the bare 070 RPC it delegates to internally.
+    ['addDispatchLine', 'phoenix_add_dispatch_line_fefo_guarded'],
     ['updateDispatchLineQuantity', 'phoenix_update_dispatch_line_quantity'],
     ['deleteDispatchLine', 'phoenix_delete_dispatch_line'],
     ['sendWarehouseDispatch', 'phoenix_send_warehouse_dispatch'],

@@ -23,7 +23,10 @@ export interface RpcResult<T = Record<string, unknown>> {
 function rpcErrorCode(message: string | undefined): string {
   if (!message) return 'unknown_error';
   const head = message.split(':', 1)[0]?.trim() ?? message;
-  return /^[A-Z0-9_]+$/.test(head) ? head : 'unknown_error';
+  // Accepts BOTH this corridor's historical 'CODE: message' uppercase
+  // convention and 065/097/102's bare lowercase_snake RAISE convention
+  // (e.g. 'fefo_override_required') — a strict widening, never narrower.
+  return /^[A-Za-z0-9_]+$/.test(head) ? head : 'unknown_error';
 }
 
 async function callRpc<T = Record<string, unknown>>(fn: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
@@ -196,14 +199,24 @@ export function createWarehouseDispatch(input: {
   });
 }
 
-/** Adds one line from a CANONICAL institution warehouse_stock lot (never free text). */
+/**
+ * Adds one line from a CANONICAL institution warehouse_stock lot (never free
+ * text). Calls 097/102's FEFO-guarded RPC — picking a non-earliest-expiry
+ * batch fails closed with 'fefo_override_required' unless `fefoOverride` is
+ * set together with a reason. This is the ONLY dispatch-line-add call site;
+ * FEFO enforcement is therefore active for every real caller, not just a
+ * server-side capability nothing in the UI actually reaches.
+ */
 export function addDispatchLine(input: {
   dispatchId: string; warehouseStockId: string; quantity: number;
-}): Promise<RpcResult> {
-  return callRpc('phoenix_add_dispatch_line', {
+  fefoOverride?: boolean; overrideReason?: string | null;
+}): Promise<RpcResult<{ dispatch_line_id?: string; fefo_override_applied?: boolean }>> {
+  return callRpc('phoenix_add_dispatch_line_fefo_guarded', {
     p_dispatch_id: input.dispatchId,
     p_warehouse_stock_id: input.warehouseStockId,
     p_quantity: input.quantity,
+    p_fefo_override: input.fefoOverride ?? false,
+    p_override_reason: input.overrideReason ?? null,
   });
 }
 
