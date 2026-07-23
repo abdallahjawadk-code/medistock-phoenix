@@ -139,8 +139,11 @@ describe('no client-side document-number sequence exists', () => {
     // 104 (RETURN-QUARANTINE-INSERT-COLUMN-FIX-104-A) adds NO document
     // numbering — a column/value alignment fix inside 069/071's existing
     // quarantine-credit branches; no new identity of any kind, request-id/
-    // fingerprint scheme untouched. The ceiling moves to 105.
-    const beyond = migrations.filter(f => /^(10[5-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // fingerprint scheme untouched.
+    // 105 (QUARANTINE-READ-POLICY-DISPOSITION-PARITY-105-A) adds NO document
+    // numbering — a pure RLS SELECT-policy widening, no RPC, no identity of
+    // any kind. The ceiling moves to 106.
+    const beyond = migrations.filter(f => /^(10[6-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -163,6 +166,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('102_phoenix_transfer_send_fefo_guarded.sql');
     expect(migrations).toContain('103_phoenix_institution_warehouse_no_direct_entry.sql');
     expect(migrations).toContain('104_phoenix_return_quarantine_insert_column_fix.sql');
+    expect(migrations).toContain('105_phoenix_quarantine_read_policy_disposition_parity.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
