@@ -143,7 +143,12 @@ describe('no client-side document-number sequence exists', () => {
     // 105 (QUARANTINE-READ-POLICY-DISPOSITION-PARITY-105-A) adds NO document
     // numbering — a pure RLS SELECT-policy widening, no RPC, no identity of
     // any kind. The ceiling moves to 106.
-    const beyond = migrations.filter(f => /^(10[6-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // 106 (DISPATCH-LINE-IDEMPOTENCY-106-A) adds NO document numbering — an
+    // OPTIONAL p_request_id dedup layer over 097's phoenix_add_dispatch_line_
+    // fefo_guarded (a dedicated phoenix_dispatch_line_requests ledger keyed
+    // on a client-derived uuid request id, not a document/sequence number of
+    // any kind). The ceiling moves to 107.
+    const beyond = migrations.filter(f => /^(10[7-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -167,6 +172,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('103_phoenix_institution_warehouse_no_direct_entry.sql');
     expect(migrations).toContain('104_phoenix_return_quarantine_insert_column_fix.sql');
     expect(migrations).toContain('105_phoenix_quarantine_read_policy_disposition_parity.sql');
+    expect(migrations).toContain('106_phoenix_dispatch_line_idempotency.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
