@@ -27,8 +27,12 @@ const permHook = read(SRC, 'features/inventory/useOutletCountPermission.ts');
 const strings = read(SRC, 'shared/i18n/strings.ts');
 
 describe('A) correctOutletStock maps to the guarded canonical RPC with exact params', () => {
-  it('calls phoenix_count_outlet_stock_guarded (086), not the raw 067 or a table write', () => {
-    expect(service).toContain("supabase.rpc('phoenix_count_outlet_stock_guarded'");
+  // 098 SECOND-PERSON-CORRECTION-APPROVAL: the real correction entry point is
+  // the REQUEST RPC, not the bare guarded RPC it delegates to internally for
+  // within-threshold variances (086's own RPC is still called, just not from
+  // React directly — see 098's own SQL for that delegation).
+  it('calls phoenix_request_outlet_stock_correction (098), not the raw 067/086 or a table write', () => {
+    expect(service).toContain("supabase.rpc('phoenix_request_outlet_stock_correction'");
     expect(service).not.toMatch(/\.from\([^)]*\)\.(insert|update|upsert|delete)/);
     expect(service).not.toMatch(/service_role|auth\.admin/);
   });

@@ -159,6 +159,7 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
   const countPerm = useOutletCountPermission(orgId, distributionPointId);
   const canCorrect = countPerm.data === true;
   const [correctLot, setCorrectLot] = useState<OutletStockRow | null>(null);
+  const [correctionMessage, setCorrectionMessage] = useState<string | null>(null);
 
   if (stock.loading && !stock.data) return <PhoenixLoadingState />;
   const rows = stock.data ?? [];
@@ -195,13 +196,22 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
         </PhoenixCard>
       ))}
 
+      {correctionMessage && (
+        <div style={{ fontSize: '12px', color: 'var(--ok)', textAlign: 'center' }}>{correctionMessage}</div>
+      )}
+
       <OutletStockCorrectionModal
         open={correctLot !== null}
         lot={correctLot}
         lang={lang}
         canCorrect={canCorrect}
         onClose={() => setCorrectLot(null)}
-        onSuccess={() => { setCorrectLot(null); stock.reload(); }}
+        onSuccess={(requiresApproval) => {
+          setCorrectLot(null);
+          setCorrectionMessage(t(requiresApproval ? 'oc_submitted_for_approval' : 'oc_applied_immediately', lang));
+          setTimeout(() => setCorrectionMessage(null), 5000);
+          stock.reload();
+        }}
       />
     </div>
   );

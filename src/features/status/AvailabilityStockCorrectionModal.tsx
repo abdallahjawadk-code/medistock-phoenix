@@ -135,6 +135,9 @@ export function AvailabilityStockCorrectionModal({ open, row, orgId, lang, onClo
         canCorrect={canCorrect}
         onClose={() => setSelectedLot(null)}
         onSuccess={() => { setSelectedLot(null); onCorrected(); onClose(); }}
+        // requiresApproval is not surfaced here — the Status Center's onCorrected
+        // just triggers a reload; OutletOperationsScreen is the surface that
+        // shows the applied-vs-pending distinction to the operator.
       />
     </>
   );

@@ -473,6 +473,164 @@ export function applyWarehouseStockMovement(
   });
 }
 
+// ─── Second-person approval — correction request/approve/reject (101) ───────
+
+export interface RequestWarehouseStockCorrectionInput {
+  requestId: string;
+  warehouseStockId: string;
+  newQuantity: number;
+  reason: string;
+  expectedGeneration?: number | null;
+  sourceDocumentNumber?: string | null;
+  notes?: string | null;
+}
+
+export interface RequestWarehouseStockCorrectionResult {
+  ok: boolean;
+  idempotent_replay?: boolean;
+  /** true when this landed as a PENDING request awaiting a second person —
+   *  warehouse_stock was NOT touched; false when it applied immediately
+   *  (variance within the org's configured threshold — the SAME policy
+   *  098 uses for outlet corrections). */
+  requires_approval: boolean;
+  correction_request_id?: string;
+  status?: 'pending' | 'approved' | 'rejected';
+  variance?: number;
+  threshold?: number;
+  warehouse_stock_id?: string;
+  movement_id?: string;
+  quantity_before?: number;
+  quantity_delta?: number;
+  quantity_after?: number;
+}
+
+/**
+ * Request a warehouse stock correction (migration 101) — the ONLY warehouse
+ * correction entry point. Never phoenix_apply_warehouse_stock_movement(_guarded)
+ * directly for movement_type='correction': that would bypass the second-
+ * person-approval gate entirely. A variance within the organization's
+ * configured threshold applies immediately; a larger one is queued pending a
+ * DIFFERENT authorized person's decision — the proposer can never approve
+ * their own request, enforced server-side by profile identity.
+ */
+export function requestWarehouseStockCorrection(
+  input: RequestWarehouseStockCorrectionInput,
+  deps: WarehouseIntakeDeps = {},
+): Promise<IntakeResult<RequestWarehouseStockCorrectionResult>> {
+  const call = deps.callRpc ?? callRpc;
+  return call<RequestWarehouseStockCorrectionResult>('phoenix_request_warehouse_stock_correction', {
+    p_request_id:             input.requestId,
+    p_warehouse_stock_id:     input.warehouseStockId,
+    p_new_quantity:           input.newQuantity,
+    p_reason:                 input.reason,
+    p_expected_generation:    input.expectedGeneration ?? null,
+    p_source_document_number: input.sourceDocumentNumber ?? null,
+    p_notes:                  input.notes ?? null,
+  });
+}
+
+export interface PendingWarehouseCorrection {
+  id: string;
+  warehouseStockId: string;
+  onHandBefore: number;
+  newQuantity: number;
+  variance: number;
+  reason: string;
+  sourceDocumentNumber: string | null;
+  notes: string | null;
+  proposedBy: string;
+  proposedByName: string | null;
+  proposedAt: string;
+  /** Enriched client-side from warehouse_stock — read fresh, not snapshotted. */
+  scientificName: string | null;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  warehouseId: string | null;
+  currentGeneration: number | null;
+  currentOnHand: number | null;
+}
+
+interface PendingWarehouseCorrectionDbRow {
+  id: string; warehouse_stock_id: string; on_hand_before: number; new_quantity: number;
+  variance: number; reason: string; source_document_number: string | null; notes: string | null;
+  proposed_by: string; proposed_at: string;
+}
+
+/** Every PENDING warehouse correction request in the caller's organization (RLS-scoped). */
+export async function listPendingWarehouseCorrections(): Promise<PendingWarehouseCorrection[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('phoenix_warehouse_correction_requests')
+    .select('id, warehouse_stock_id, on_hand_before, new_quantity, variance, reason, source_document_number, notes, proposed_by, proposed_at')
+    .eq('status', 'pending')
+    .order('proposed_at', { ascending: true });
+  if (error) throw error;
+  const rows = (data as unknown as PendingWarehouseCorrectionDbRow[] | null) ?? [];
+  if (rows.length === 0) return [];
+
+  const stockIds = Array.from(new Set(rows.map(r => r.warehouse_stock_id)));
+  const proposerIds = Array.from(new Set(rows.map(r => r.proposed_by)));
+  const [{ data: stockRows, error: stockError }, { data: profileRows, error: profileError }] = await Promise.all([
+    supabase.from('warehouse_stock')
+      .select('id, scientific_name, batch_number, expiry_date, warehouse_id, on_hand_quantity, movement_seq')
+      .in('id', stockIds),
+    supabase.from('profiles').select('id, full_name').in('id', proposerIds),
+  ]);
+  if (stockError) throw stockError;
+  if (profileError) throw profileError;
+  interface StockLookupRow {
+    id: string; scientific_name: string | null; batch_number: string | null; expiry_date: string | null;
+    warehouse_id: string | null; on_hand_quantity: number; movement_seq: number | string;
+  }
+  interface ProfileLookupRow { id: string; full_name: string | null }
+  const stockById = new Map((stockRows as StockLookupRow[] ?? []).map(s => [s.id, s]));
+  const nameById = new Map((profileRows as ProfileLookupRow[] ?? []).map(p => [p.id, p.full_name]));
+
+  return rows.map(r => {
+    const stock = stockById.get(r.warehouse_stock_id);
+    return {
+      id: r.id, warehouseStockId: r.warehouse_stock_id, onHandBefore: r.on_hand_before,
+      newQuantity: r.new_quantity, variance: r.variance, reason: r.reason,
+      sourceDocumentNumber: r.source_document_number, notes: r.notes,
+      proposedBy: r.proposed_by, proposedByName: nameById.get(r.proposed_by) ?? null, proposedAt: r.proposed_at,
+      scientificName: stock?.scientific_name ?? null, batchNumber: stock?.batch_number ?? null,
+      expiryDate: stock?.expiry_date ?? null, warehouseId: stock?.warehouse_id ?? null,
+      currentGeneration: stock ? Number(stock.movement_seq) : null,
+      currentOnHand: stock?.on_hand_quantity ?? null,
+    };
+  });
+}
+
+export interface CorrectionDecisionResult {
+  ok: boolean;
+  quantity_before?: number;
+  quantity_after?: number;
+}
+
+/** A DIFFERENT authorized person approves — applies the correction inline, server-side. */
+export function approveWarehouseStockCorrection(
+  correctionRequestId: string, expectedGeneration: number | null,
+  deps: WarehouseIntakeDeps = {},
+): Promise<IntakeResult<CorrectionDecisionResult>> {
+  const call = deps.callRpc ?? callRpc;
+  return call<CorrectionDecisionResult>('phoenix_approve_warehouse_stock_correction', {
+    p_correction_request_id: correctionRequestId,
+    p_expected_generation: expectedGeneration,
+  });
+}
+
+/** Rejects a pending request — no stock write of any kind. */
+export function rejectWarehouseStockCorrection(
+  correctionRequestId: string, decisionReason: string,
+  deps: WarehouseIntakeDeps = {},
+): Promise<IntakeResult<{ ok: boolean }>> {
+  const call = deps.callRpc ?? callRpc;
+  return call<{ ok: boolean }>('phoenix_reject_warehouse_stock_correction', {
+    p_correction_request_id: correctionRequestId,
+    p_decision_reason: decisionReason,
+  });
+}
+
 /**
  * One posted movement in a warehouse's ledger. Read-only: warehouse_stock_movements
  * grants SELECT only to client roles (migration 065), and its RLS policy
@@ -581,6 +739,16 @@ export function classifyIntakeError(code: string | undefined): string {
   if (c === 'unit_price_must_be_non_negative') return 'inv_err_price_non_negative';
 
   if (c === 'warehouse_correction_reason_required') return 'inv_err_reason_required';
+
+  // 101 second-person correction approval — same distinguishable vocabulary as
+  // 098's classifyCorrectionDecisionError (outlet-stock.service.ts), so an
+  // approve/reject failure on the WAREHOUSE scope surfaces the same specific
+  // message instead of collapsing into the generic fallback below.
+  if (c === 'proposer_cannot_approve_own_correction') return 'correction_proposer_cannot_approve';
+  if (c === 'forbidden_correction_approval') return 'correction_forbidden_approval';
+  if (c === 'correction_request_not_pending') return 'correction_not_pending';
+  if (c === 'correction_request_not_found') return 'correction_not_found';
+  if (c === 'decision_reason_required') return 'correction_reason_required';
 
   // item_availability is a projection — any attempt to write it directly is a bug.
   if (c === 'warehouse_managed_availability_read_only'

@@ -22,6 +22,8 @@ import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { useQuarantinePermission } from './useQuarantinePermission';
 import { QuarantinePanel } from './QuarantinePanel';
+import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
+import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import { SourceBalancesPanel } from './SourceBalancesPanel';
@@ -31,6 +33,7 @@ import {
   newRequestId, classifyIntakeError, GENERATION_UNAVAILABLE_CODE,
   WAREHOUSE_ADJUSTMENT_TYPES, type WarehouseStockMovementType,
   type ReceiveWarehouseStockInput,
+  requestWarehouseStockCorrection,
 } from './warehouse-intake.service';
 
 /**
@@ -50,7 +53,7 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine' | 'corrections';
 
 export function InventoryCenterScreen() {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -88,6 +91,12 @@ export function InventoryCenterScreen() {
   // row's own warehouse), matching 105's widened read policy.
   const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
   const canDisposeQuarantine = quarantinePerm.data ?? false;
+
+  // SECOND-PERSON-CORRECTION-APPROVAL — both keys are ORG-WIDE (never
+  // warehouse/outlet-scoped), matching phoenix_status_center_authorized.
+  const canApproveOutletCorrection = useApproveCorrectionPermission(activeOrgId, 'outlet_stock.approve_correction').data ?? false;
+  const canApproveWarehouseCorrection = useApproveCorrectionPermission(activeOrgId, 'warehouse_stock.approve_correction').data ?? false;
+  const canApproveAnyCorrection = canApproveOutletCorrection || canApproveWarehouseCorrection;
 
   const [tab, setTab] = useState<Tab>('intake');
   const [toast, setToast] = useState<string | null>(null);
@@ -215,6 +224,9 @@ export function InventoryCenterScreen() {
           // QUARANTINE-DISPOSITION — for holders of the scoped
           // warehouse_transfer.return_request permission on it (099/105).
           ...(canDisposeQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
+          // SECOND-PERSON-CORRECTION-APPROVAL — org-wide, for holders of
+          // outlet_stock.approve_correction and/or warehouse_stock.approve_correction (098/101).
+          ...(canApproveAnyCorrection ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -296,6 +308,11 @@ export function InventoryCenterScreen() {
         />
       ) : tab === 'quarantine' && canDisposeQuarantine ? (
         <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
+      ) : tab === 'corrections' && canApproveAnyCorrection ? (
+        <PendingCorrectionsPanel
+          canApproveOutlet={canApproveOutletCorrection}
+          canApproveWarehouse={canApproveWarehouseCorrection}
+        />
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />
       )}
@@ -711,6 +728,33 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, 
         onError(classifyIntakeError(GENERATION_UNAVAILABLE_CODE));
         return;
       }
+
+      // SECOND-PERSON-CORRECTION-APPROVAL (101): 'correction' NEVER goes
+      // through the raw apply RPC directly — that would bypass the
+      // approval gate entirely. add/subtract keep the existing path (a
+      // different concept: recording physical movement, not adjudicating a
+      // discrepancy), and remain unreachable at institution warehouses
+      // regardless (103).
+      if (movementType === 'correction') {
+        const result = await requestWarehouseStockCorrection({
+          requestId,
+          warehouseStockId: batch.id,
+          newQuantity: amountNum,
+          reason: reason.trim(),
+          expectedGeneration: generation.generation,
+        });
+        if (result.ok) {
+          onSuccess(result.data?.requires_approval ? 'inv_correction_pending' : 'inv_movement_ok');
+          setRequestId(newRequestId());
+          setAmount(''); setReason(''); setOpen(false);
+        } else {
+          const errorKey = classifyIntakeError(result.error);
+          onError(errorKey);
+          if (errorKey === 'inv_err_generation_conflict') onConflictReload();
+        }
+        return;
+      }
+
       const result = await applyWarehouseStockMovement({
         requestId,
         warehouseStockId: batch.id,
