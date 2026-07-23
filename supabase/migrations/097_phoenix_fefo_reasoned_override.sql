@@ -170,7 +170,10 @@ COMMIT;
 -- POST-CONDITIONS
 -- ============================================================================
 -- 1. inventory.fefo_override exists in permission_keys, is_dangerous=true.
--- 2. Only central_warehouse_manager holds it by default:
+-- 2. Only warehouse_officer holds it by default (the actor who builds a
+--    dispatch and thus reaches this RPC — see section A's reasoning above;
+--    102 later extends this SAME key to central_warehouse_manager for the
+--    068 transfer-send corridor, a distinct actor at a distinct RPC):
 --    SELECT role FROM role_permission_defaults
 --     WHERE permission_key='inventory.fefo_override' AND allowed=true;
 -- 3. phoenix_add_dispatch_line (070) is completely untouched — same source

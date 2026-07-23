@@ -126,8 +126,12 @@ describe('no client-side document-number sequence exists', () => {
     // 101 (WAREHOUSE-SECOND-PERSON-CORRECTION-APPROVAL-101-A) adds NO
     // document numbering — mirrors 098's uuid-only correction-request
     // identity (phoenix_warehouse_correction_requests rows are identified by
-    // uuid only). The ceiling moves to 102.
-    const beyond = migrations.filter(f => /^(10[2-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // uuid only).
+    // 102 (TRANSFER-SEND-FEFO-GUARDED-102-A) adds NO document numbering —
+    // a permission + audit gate delegating to 068/088's existing
+    // phoenix_send_warehouse_transfer_line, whose own request-id/fingerprint
+    // identity is untouched. The ceiling moves to 103.
+    const beyond = migrations.filter(f => /^(10[3-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -147,6 +151,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('099_phoenix_notification_wiring_and_quarantine_disposition.sql');
     expect(migrations).toContain('100_phoenix_bulk_receive_remaining_corridors.sql');
     expect(migrations).toContain('101_phoenix_warehouse_second_person_correction_approval.sql');
+    expect(migrations).toContain('102_phoenix_transfer_send_fefo_guarded.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
