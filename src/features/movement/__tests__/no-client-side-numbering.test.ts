@@ -148,7 +148,13 @@ describe('no client-side document-number sequence exists', () => {
     // fefo_guarded (a dedicated phoenix_dispatch_line_requests ledger keyed
     // on a client-derived uuid request id, not a document/sequence number of
     // any kind). The ceiling moves to 107.
-    const beyond = migrations.filter(f => /^(10[7-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // 107 (DISPATCH-LINE-REQUEST-ID-REQUIRED-107-A) adds NO document
+    // numbering — tightens 106's p_request_id from optional to REQUIRED (a
+    // fail-closed IF p_request_id IS NULL THEN RAISE guard as the first
+    // statement in the function body), same signature, same uuid-keyed
+    // phoenix_dispatch_line_requests dedup ledger, no document/sequence
+    // number of any kind introduced. The ceiling moves to 108.
+    const beyond = migrations.filter(f => /^(10[8-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
