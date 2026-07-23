@@ -36,11 +36,49 @@ import {
 } from './dispatch.service';
 import { FefoOverrideDialog } from './FefoOverrideDialog';
 import { useFefoOverridePermission } from '@/features/inventory/useFefoOverridePermission';
+import { operationToken } from '@/shared/lib/operation-token';
+import { canonicalIntent } from '@/shared/lib/canonical-intent';
 
 const newKey = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+/**
+ * 106's server-side idempotency key for one add-line attempt, derived the
+ * SAME way every other stock mutation in this app derives its request id
+ * (operation-token.ts / stock-mutation-runner.ts) rather than minted fresh
+ * per call: stable across a retry of the identical attempt (same line,
+ * unchanged quantity/override), but a DIFFERENT value the instant the
+ * operator edits the quantity or the confirmed override reason — which 106's
+ * own conflict check (23505) would otherwise correctly reject as "same
+ * request id, different payload" if this derivation reused a stale token.
+ *
+ * `generation` is a constant 0: unlike a receive/send RPC that advances an
+ * existing row's server-tracked progress, add-line only ever CREATES a new
+ * row for a given draft line, so there is no canonical "already partially
+ * done" measure to fold in — planRetry (movement-commit.ts) is what excludes
+ * a line the server already confirmed from ever reaching this function again.
+ *
+ * Fails closed: if Web Crypto is unavailable, this throws
+ * (OperationTokenUnavailableError) rather than falling back to an unguarded
+ * call — the caller must not add a dispatch line it cannot safely retry.
+ */
+async function deriveDispatchLineRequestId(line: {
+  idempotencyKey: string; warehouseStockId: string; quantity: number;
+}, fefoOverride: boolean, overrideReason: string | null): Promise<string> {
+  return operationToken({
+    kind: 'outlet_dispatch_add_line',
+    entityId: line.idempotencyKey,
+    generation: 0,
+    intent: canonicalIntent({
+      warehouseStockId: line.warehouseStockId,
+      quantity: line.quantity,
+      fefoOverride,
+      overrideReason,
+    }),
+  });
+}
 
 const toCandidates = (batches: Awaited<ReturnType<typeof getWarehouseStock>>): StockCandidate[] =>
   batches.map(b => ({
@@ -180,16 +218,32 @@ export function OutletDispatchComposer({
         dispatchNumber: externalReference.trim(),
         notes: notes.trim() || null,
       }),
-      addLine: (dispatchId, line) => addDispatchLine({
-        dispatchId,
-        warehouseStockId: line.warehouseStockId as string,
-        quantity: line.quantity,
-        // The SAME override reason confirmed at pick-time, never re-derived —
-        // a retry of this line must replay the identical decision, not ask
-        // the server to accept a fresh unaudited one.
-        fefoOverride: line.idempotencyKey in lineOverrides,
-        overrideReason: lineOverrides[line.idempotencyKey] ?? null,
-      }),
+      addLine: async (dispatchId, line) => {
+        const fefoOverride = line.idempotencyKey in lineOverrides;
+        const overrideReason = lineOverrides[line.idempotencyKey] ?? null;
+        let requestId: string;
+        try {
+          requestId = await deriveDispatchLineRequestId(
+            { idempotencyKey: line.idempotencyKey, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity },
+            fefoOverride, overrideReason,
+          );
+        } catch {
+          // Fail closed, matching operation-token.ts's own rule: a line that
+          // cannot derive a stable retry key must not be added at all.
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addDispatchLine({
+          dispatchId,
+          warehouseStockId: line.warehouseStockId as string,
+          quantity: line.quantity,
+          // The SAME override reason confirmed at pick-time, never re-derived —
+          // a retry of this line must replay the identical decision, not ask
+          // the server to accept a fresh unaudited one.
+          fefoOverride,
+          overrideReason,
+          requestId,
+        });
+      },
       onProgress: setProgress,
     });
 
@@ -218,11 +272,23 @@ export function OutletDispatchComposer({
 
     const retried = await commitDraft(plan.toSend, {
       createHeader: () => Promise.resolve({ ok: true, data: { id: result.requestId as string } }),
-      addLine: (dispatchId, line) => addDispatchLine({
-        dispatchId, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity,
-        fefoOverride: line.idempotencyKey in lineOverrides,
-        overrideReason: lineOverrides[line.idempotencyKey] ?? null,
-      }),
+      addLine: async (dispatchId, line) => {
+        const fefoOverride = line.idempotencyKey in lineOverrides;
+        const overrideReason = lineOverrides[line.idempotencyKey] ?? null;
+        let requestId: string;
+        try {
+          requestId = await deriveDispatchLineRequestId(
+            { idempotencyKey: line.idempotencyKey, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity },
+            fefoOverride, overrideReason,
+          );
+        } catch {
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addDispatchLine({
+          dispatchId, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity,
+          fefoOverride, overrideReason, requestId,
+        });
+      },
       onProgress: setProgress,
     });
 

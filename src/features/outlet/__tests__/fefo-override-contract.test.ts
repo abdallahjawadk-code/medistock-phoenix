@@ -151,25 +151,52 @@ describe('G) Per-line idempotency key is stable across retry, fresh per distinct
   });
 
   it('the commit call reads the override for THIS line by its own idempotencyKey, not a global/last-used reason', () => {
-    expect(composer).toContain('fefoOverride: line.idempotencyKey in lineOverrides');
-    expect(composer).toContain('overrideReason: lineOverrides[line.idempotencyKey] ?? null');
+    expect(composer).toContain('const fefoOverride = line.idempotencyKey in lineOverrides;');
+    expect(composer).toContain('const overrideReason = lineOverrides[line.idempotencyKey] ?? null;');
   });
 
   it('retryUnsent replays the SAME idempotencyKey → override mapping, not a freshly re-derived one', () => {
     const retryFn = composer.slice(composer.indexOf('const retryUnsent ='), composer.indexOf('const lineStates ='));
-    expect(retryFn).toContain('fefoOverride: line.idempotencyKey in lineOverrides');
-    expect(retryFn).toContain('overrideReason: lineOverrides[line.idempotencyKey] ?? null');
+    expect(retryFn).toContain('const fefoOverride = line.idempotencyKey in lineOverrides;');
+    expect(retryFn).toContain('const overrideReason = lineOverrides[line.idempotencyKey] ?? null;');
   });
 
-  it('DEFECT NOTE (documented, not silently accepted): phoenix_add_dispatch_line_fefo_guarded (097) itself takes no ' +
-     'request/idempotency id — retry-safety here is ENTIRELY client-side, via movement-commit\'s planRetry ' +
-     'content-match reconciliation against canonical server lines, the same documented pattern already used by ' +
-     'every other movement composer in this codebase (see movement-commit.ts).', () => {
+  it('106 CLOSES the prior client-only-retry-safety gap: addDispatchLine now accepts an OPTIONAL server-side ' +
+     'p_request_id, forwarded only when the caller supplies one — so 106s idempotency dedup on ' +
+     'phoenix_add_dispatch_line_fefo_guarded is reachable, while every OTHER caller (omitting requestId) still ' +
+     'gets the exact pre-106 behavior.', () => {
     const addLineFn = dispatchService.slice(
       dispatchService.indexOf('export function addDispatchLine'),
       dispatchService.indexOf('export interface FefoBatch'),
     );
-    expect(addLineFn).not.toMatch(/p_request_id/);
+    expect(addLineFn).toContain('requestId?: string');
+    expect(addLineFn).toMatch(/\.\.\.\(input\.requestId \? \{ p_request_id: input\.requestId \} : \{\}\)/);
+  });
+
+  it('the request id is DERIVED via operation-token.ts (never minted fresh per call), matching this app\'s ' +
+     'established stock-mutation idempotency convention (stock-mutation-runner.ts / OutletDispatchOperations.tsx)', () => {
+    expect(composer).toContain("import { operationToken } from '@/shared/lib/operation-token';");
+    expect(composer).toContain("import { canonicalIntent } from '@/shared/lib/canonical-intent';");
+    expect(composer).toContain('async function deriveDispatchLineRequestId(');
+    // entityId is the line's own STABLE idempotencyKey — the same identity
+    // already used for the override-reason lookup above, not a fresh uuid.
+    expect(composer).toContain('entityId: line.idempotencyKey,');
+    // The intent folds in exactly the fields that change the RPC's outcome —
+    // an edited quantity or a different override reason must derive a
+    // DIFFERENT request id, never replay the stale one.
+    expect(composer).toMatch(/intent:\s*canonicalIntent\(\{\s*warehouseStockId:\s*line\.warehouseStockId,\s*quantity:\s*line\.quantity,\s*fefoOverride,\s*overrideReason,/);
+  });
+
+  it('both commit call sites (initial confirm AND retry) derive the request id fresh from the CURRENT line state ' +
+     'and fail closed — never call addDispatchLine at all — if the token cannot be derived', () => {
+    expect(composer).toContain('deriveDispatchLineRequestId(');
+    // Two call sites: confirmAndCreate's addLine and retryUnsent's addLine.
+    expect(composer.match(/deriveDispatchLineRequestId\(/g)?.length).toBe(3); // 1 definition + 2 call sites
+    expect(composer).toContain("return { ok: false, error: 'operation_token_unavailable' };");
+  });
+
+  it('movement-commit.ts itself is UNTOUCHED by 106 — planRetry\'s content-match reconciliation stays the shared ' +
+     'safety net for every OTHER movement composer that still has no server-side idempotency token', () => {
     const movementCommit = readSrc('features/movement/movement-commit.ts');
     expect(movementCommit).toContain('`phoenix_add_*_line` has no idempotency token');
     expect(composer).toContain("import { commitDraft, planRetry");
