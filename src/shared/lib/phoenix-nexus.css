@@ -883,7 +883,14 @@ html body {
   line-height: 1.7;
 }
 
-[dir="rtl"] @keyframes nexus-ember-rise {
+/* PHASE3-LIVING-INTERFACE-A: this used to carry an invalid "[dir=\"rtl\"] "
+   selector prefix directly on an @keyframes rule (not valid CSS — a
+   keyframes block can't be scoped by an ancestor selector), which esbuild's
+   CSS minifier silently dropped at build time, so neither the login art
+   embers (line ~811) nor the welcome embers (line ~1994) ever animated in
+   the production bundle. Both consumers are already direction-agnostic
+   (translate3d is a physical, not logical, offset intentionally). */
+@keyframes nexus-ember-rise {
   0% { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
   12% { opacity: .78; }
   100% { transform: translate3d(18px, -105vh, 0) scale(1.2); opacity: 0; }
@@ -1763,10 +1770,17 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
 }
 
 /* When the real WebGL welcome is on screen, stop the duplicated CSS embers and
-   the extra glow so the GPU only pays for one particle system. */
-.nexus-welcome[data-webgl="on"] .nexus-welcome__particle,
-.nexus-welcome[data-webgl="on"] @media (prefers-reduced-motion: reduce) {
-  /* A static plate must never carry a parallax transform. */
+   the extra glow so the GPU only pays for one particle system.
+   PHASE3-LIVING-INTERFACE-A: this used to be one malformed rule (a selector
+   list ending in a bare "@media (...)" token, which is invalid CSS — no
+   browser parses a media query as part of a selector) so the reduced-motion
+   override below silently never applied. Split into two valid rules. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__particle {
+  display: none;
+}
+
+/* A static plate must never carry a parallax transform. */
+@media (prefers-reduced-motion: reduce) {
   [data-parallax="2d"] .nexus-login__plate {
     transform: none;
     transition: none;
