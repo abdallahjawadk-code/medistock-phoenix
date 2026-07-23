@@ -135,8 +135,12 @@ describe('no client-side document-number sequence exists', () => {
     // numbering — a warehouse_kind fail-closed check inserted into 065/088's
     // existing phoenix_receive_warehouse_stock and 065's phoenix_apply_
     // warehouse_stock_movement; both functions' request-id/fingerprint
-    // identity scheme is otherwise untouched. The ceiling moves to 104.
-    const beyond = migrations.filter(f => /^(10[4-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // identity scheme is otherwise untouched.
+    // 104 (RETURN-QUARANTINE-INSERT-COLUMN-FIX-104-A) adds NO document
+    // numbering — a column/value alignment fix inside 069/071's existing
+    // quarantine-credit branches; no new identity of any kind, request-id/
+    // fingerprint scheme untouched. The ceiling moves to 105.
+    const beyond = migrations.filter(f => /^(10[5-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -158,6 +162,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('101_phoenix_warehouse_second_person_correction_approval.sql');
     expect(migrations).toContain('102_phoenix_transfer_send_fefo_guarded.sql');
     expect(migrations).toContain('103_phoenix_institution_warehouse_no_direct_entry.sql');
+    expect(migrations).toContain('104_phoenix_return_quarantine_insert_column_fix.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
