@@ -154,7 +154,12 @@ describe('no client-side document-number sequence exists', () => {
     // statement in the function body), same signature, same uuid-keyed
     // phoenix_dispatch_line_requests dedup ledger, no document/sequence
     // number of any kind introduced. The ceiling moves to 108.
-    const beyond = migrations.filter(f => /^(10[8-9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // 108 (CUSTODY-CHAIN-DIRECT-WRITE-LOCKDOWN-108-A) adds NO document
+    // numbering — a pure REVOKE of INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/
+    // REFERENCES from authenticated/anon/PUBLIC on custody-chain tables
+    // (closing a TRUNCATE-grant gap every prior REVOKE missed); no RPC, no
+    // schema change, no identity of any kind. The ceiling moves to 109.
+    const beyond = migrations.filter(f => /^(10[9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

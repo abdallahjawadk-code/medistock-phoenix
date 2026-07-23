@@ -168,6 +168,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '105_phoenix_quarantine_read_policy_disposition_parity.sql',
   '106_phoenix_dispatch_line_idempotency.sql',
   '107_phoenix_dispatch_line_request_id_required.sql',
+  '108_phoenix_custody_chain_direct_write_lockdown.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
