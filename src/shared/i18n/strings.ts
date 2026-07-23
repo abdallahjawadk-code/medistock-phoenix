@@ -2278,6 +2278,41 @@ export const T: Dict = {
   mst_returned:           { ar: 'تمت الإعادة للتوضيح',                             en: 'Returned for clarification' },
   mst_locked:             { ar: 'تم الاعتماد والقفل',                              en: 'Approved and locked' },
   mst_amended:            { ar: 'تم فتح تعديل جديد',                               en: 'A new amendment was opened' },
+
+  /* ── Notifications (Phase 2 closed-custody-chain, migrations 094/099) ── */
+  notif_bell_label:       { ar: 'الإشعارات',                                       en: 'Notifications' },
+  notif_panel_title:      { ar: 'الإشعارات',                                       en: 'Notifications' },
+  notif_mark_all_read:    { ar: 'تعليم الكل كمقروء',                               en: 'Mark all as read' },
+  notif_empty_title:      { ar: 'لا توجد إشعارات',                                 en: 'No notifications' },
+  notif_empty_description:{ ar: 'ستظهر هنا إشعارات الطلبات والشحن والاستلام والحجر والتصحيحات.', en: 'Requests, shipments, receipts, quarantine and correction events will appear here.' },
+  notif_load_error:       { ar: 'تعذّر تحميل الإشعارات',                           en: 'Could not load notifications' },
+  notif_view_all:         { ar: 'عرض الكل',                                       en: 'View all' },
+  notif_unread_badge_overflow: { ar: '+9',                                        en: '9+' },
+  // Event-type labels — keyed by the RAW "<table>.<status>" / "<table>.<movement_type>"
+  // string 082/099's triggers write verbatim, so a missing translation is loud
+  // (falls back to the raw key via t()'s own fallback) rather than silently blank.
+  'notif_evt_warehouse_transfer_requests.draft':      { ar: 'إنشاء طلب تجهيز',            en: 'Transfer request created' },
+  'notif_evt_warehouse_transfer_requests.submitted':  { ar: 'تقديم طلب تجهيز',            en: 'Transfer request submitted' },
+  'notif_evt_warehouse_transfer_requests.approved':   { ar: 'اعتماد طلب تجهيز',           en: 'Transfer request approved' },
+  'notif_evt_warehouse_transfer_requests.cancelled':  { ar: 'إلغاء طلب تجهيز',            en: 'Transfer request cancelled' },
+  'notif_evt_warehouse_dispatches.draft':             { ar: 'إنشاء تجهيز للمنفذ',         en: 'Outlet dispatch created' },
+  'notif_evt_warehouse_dispatches.sent':              { ar: 'إرسال تجهيز للمنفذ',         en: 'Outlet dispatch sent' },
+  'notif_evt_warehouse_dispatches.partially_accepted':{ ar: 'استلام جزئي للتجهيز',        en: 'Dispatch partially received' },
+  'notif_evt_warehouse_dispatches.accepted':          { ar: 'استلام كامل للتجهيز',        en: 'Dispatch fully received' },
+  'notif_evt_warehouse_return_requests.submitted':    { ar: 'تقديم طلب إرجاع',            en: 'Return request submitted' },
+  'notif_evt_outlet_return_requests.submitted':       { ar: 'تقديم طلب إرجاع من منفذ',    en: 'Outlet return request submitted' },
+  'notif_evt_procurement_orders.submitted':           { ar: 'تقديم طلب شراء فرعي',        en: 'Local procurement order submitted' },
+  'notif_evt_procurement_orders.approved':            { ar: 'اعتماد طلب شراء فرعي',       en: 'Local procurement order approved' },
+  'notif_evt_procurement_orders.received':            { ar: 'استلام طلب شراء فرعي',       en: 'Local procurement order received' },
+  'notif_evt_inventory_status_reports.submitted':     { ar: 'تقديم الموقف المخزني الشهري', en: 'Monthly status report submitted' },
+  'notif_evt_inventory_status_reports.locked':        { ar: 'اعتماد وقفل الموقف الشهري',   en: 'Monthly status report locked' },
+  'notif_evt_outlet_stock_movements.dispense':        { ar: 'صرف من مخزون منفذ',           en: 'Outlet stock dispensed' },
+  'notif_evt_outlet_stock_movements.correction':      { ar: 'تصحيح مخزون منفذ',            en: 'Outlet stock corrected' },
+  'notif_evt_warehouse_stock_movements.correction':   { ar: 'تصحيح مخزون مذخر',            en: 'Warehouse stock corrected' },
+  'notif_evt_warehouse_quarantine_stock_movements.quarantine_receive': { ar: 'إدخال مادة إلى الحجر', en: 'Material entered quarantine' },
+  'notif_evt_warehouse_quarantine_stock_movements.quarantine_release': { ar: 'إفراج عن مادة من الحجر', en: 'Material released from quarantine' },
+  'notif_evt_warehouse_quarantine_stock_movements.quarantine_destroy': { ar: 'إتلاف مادة من الحجر',   en: 'Material destroyed from quarantine' },
+  'notif_evt_stocktakes.created':                     { ar: 'تسجيل جلسة جرد',              en: 'Stocktake session recorded' },
 };
 
 export function t(key: string, lang: Lang): string {

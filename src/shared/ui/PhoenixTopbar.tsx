@@ -1,6 +1,7 @@
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from './PhoenixIcon';
+import { NotificationBell } from './NotificationBell';
 
 interface Props {
   title: string;
@@ -51,6 +52,8 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginInlineStart: 'auto' }}>
+        <NotificationBell />
+
         <button
           onClick={toggleLang}
           className="nexus-control nexus-control--language"

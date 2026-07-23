@@ -126,6 +126,61 @@ run('095-099 Phase 2b core — dynamic', () => {
         expect(ok.ok).toBe(true);
       });
     });
+
+    it('the effective cap is the MIN of physical availability and the historical cap, in EITHER direction', async () => {
+      // Reverse of the scenario above: physical availability is generous
+      // (on_hand=100, reserved=0 -> available=100), but the historical cap
+      // (received-returned) is tight: received=20, already returned=15 ->
+      // remaining historical=5. A request for 10 must fail on the
+      // HISTORICAL cap specifically, not silently pass because physical
+      // availability alone would allow it — proving neither check alone is
+      // sufficient and the MIN of both is what actually binds.
+      const dispatchId = randomUUID();
+      const dispatchLineId = randomUUID();
+      const outletStockId = randomUUID();
+      const sourceStockId = randomUUID();
+
+      await rig.asAdmin(async (c: any) => {
+        await c.query(`INSERT INTO warehouse_dispatches (id, organization_id, warehouse_id, destination_distribution_point_id, dispatch_number, status, sent_by, sent_at)
+          VALUES ($1,$2,$3,$4,'P2B-DSP-1B','accepted',$5,now())`,
+          [dispatchId, ORG, WH_INST, DP, WO1]);
+        await c.query(`INSERT INTO warehouse_stock (id, organization_id, warehouse_id, scientific_name, has_no_national_code, has_no_batch_number, batch_number, on_hand_quantity, reserved_quantity, movement_seq)
+          VALUES ($1,$2,$3,'P2B-Material-B',true,false,'B-095B',0,0,0)`, [sourceStockId, ORG, WH_INST]);
+        // Physical availability generous: 100 on hand, 0 reserved.
+        await c.query(`INSERT INTO outlet_stock (id, organization_id, distribution_point_id, point_type, scientific_name, has_no_national_code, has_no_batch_number, batch_number, on_hand_quantity, reserved_quantity, movement_seq)
+          VALUES ($1,$2,$3,'pharmacy','P2B-Material-B',true,false,'B-095B',100,0,0)`, [outletStockId, ORG, DP]);
+        // Historical: received=20, already returned=15 -> remaining=5.
+        await c.query(`INSERT INTO warehouse_dispatch_lines
+          (id, organization_id, dispatch_id, warehouse_stock_id, scientific_name, has_no_national_code, has_no_batch_number, batch_number, sent_quantity, received_quantity, returned_quantity, status, accepted_at, resulting_outlet_stock_id)
+          VALUES ($1,$2,$3,$4,'P2B-Material-B',true,false,'B-095B',20,20,15,'accepted',now(),$5)`,
+          [dispatchLineId, ORG, dispatchId, sourceStockId, outletStockId]);
+        await c.query(`INSERT INTO outlet_stock_movements
+          (id, outlet_stock_id, organization_id, distribution_point_id, movement_type, on_hand_before, on_hand_delta, on_hand_after, reserved_before, reserved_delta, reserved_after, dispatch_line_id, reference_type, reference_id, request_fingerprint, actor_id, scientific_name_snapshot)
+          VALUES ($1,$2,$3,$4,'dispatch_receive',0,100,100,0,0,0,$5,'outlet_request',$6,repeat('b',64),$7,'P2B-Material-B')`,
+          [randomUUID(), outletStockId, ORG, DP, dispatchLineId, randomUUID(), WO1]);
+      });
+
+      let returnRequestId = '';
+      await rig.asUser(OO, async (c: any) => {
+        const req = await call(c, 'phoenix_request_outlet_return', [DP, 'P2B-RET-1B', null]);
+        expect(req.ok).toBe(true);
+        returnRequestId = req.return_request_id;
+      }, { commit: true });
+
+      // 10 > historical remaining (5), even though physical availability
+      // (100) would easily allow it -> must fail on the historical cap.
+      await rig.asUser(OO, async (c: any) => {
+        await expect(call(c, 'phoenix_add_outlet_return_request_line',
+          [returnRequestId, dispatchLineId, 10, 'excess', null])).rejects.toThrow(/exceeds_returnable_cap/);
+      });
+
+      // Exactly the historical remaining (5) succeeds.
+      await rig.asUser(OO, async (c: any) => {
+        const ok = await call(c, 'phoenix_add_outlet_return_request_line',
+          [returnRequestId, dispatchLineId, 5, 'excess', null]);
+        expect(ok.ok).toBe(true);
+      });
+    });
   });
 
   // ── 096: bulk receive matching lines ────────────────────────────────────
