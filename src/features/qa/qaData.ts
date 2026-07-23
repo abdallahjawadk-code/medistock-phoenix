@@ -147,6 +147,16 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // without any mutation. Columns match getWarehouseStock's select exactly.
   warehouse_stock: [
     { id: 'qa-ws-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', on_hand_quantity: 180, reserved_quantity: 20, available_quantity: 160, national_code: '1234567' },
+    // FEFO-OVERRIDE-DIALOG-CAPTURE: a SECOND Amoxicillin batch at the SAME
+    // warehouse, same national_code, with an EARLIER expiry than qa-ws-1 —
+    // the FEFO-compliant alternative. Picking qa-ws-1 (the later-expiry batch)
+    // in the dispatch composer's StockMaterialPicker is therefore a genuine
+    // non-earliest pick, and `OutletDispatchComposer.handlePick` opens
+    // FefoOverrideDialog for it exactly as the real 072/097 wiring would.
+    // Picking qa-ws-1b (this row) is FEFO-compliant and adds directly with no
+    // dialog. See `rpc:phoenix_inventory_fefo_batches` below for the paired
+    // fixture that answers `getFefoAlternatives` with both rows, earliest first.
+    { id: 'qa-ws-1b', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4470E', expiry_date: '2027-06-30', on_hand_quantity: 90, reserved_quantity: 10, available_quantity: 80, national_code: '1234567' },
     { id: 'qa-ws-2', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Omeprazole', batch_number: 'OMP5512', expiry_date: '2027-02-28', on_hand_quantity: 640, reserved_quantity: 0, available_quantity: 640, national_code: '2223334' },
     { id: 'qa-ws-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', on_hand_quantity: 42, reserved_quantity: 12, available_quantity: 30, national_code: null },
   ],
@@ -245,6 +255,27 @@ export const QA_FIXTURES: Record<string, unknown> = {
   'rpc:phoenix_get_live_inter_institution_alerts_with_state': {
     ok: true, alerts: [], computed_at: '2026-07-20T09:00:00Z',
   },
+
+  // FEFO-OVERRIDE-DIALOG-CAPTURE — phoenix_inventory_fefo_batches (072) →
+  // FEFO-ordered eligible batches (expiry_date ASC NULLS LAST). Pairs with the
+  // two qa-ws-1 / qa-ws-1b Amoxicillin rows above so the dispatch composer's
+  // getFefoAlternatives (dispatch.service.ts) returns BOTH, earliest first —
+  // the exact shape OutletDispatchComposer.handlePick and FefoOverrideDialog
+  // need to render a real earliest-vs-picked comparison.
+  //
+  // LIMITATION (documented, not worked around): qaFixtureClient.rpc(name)
+  // resolves by RPC NAME ONLY — it does not read the call's arguments — so
+  // this fixture answers EVERY phoenix_inventory_fefo_batches call in a QA
+  // session identically, regardless of which material/warehouse was actually
+  // asked about. That is harmless for this capture (which deliberately drives
+  // ONLY the two Amoxicillin batches through the picker) but means picking any
+  // OTHER material in the same composer during a QA session would also
+  // (incorrectly, for that other material) open the override dialog against
+  // these two Amoxicillin rows. Scoped to this one fixture, dev/test only.
+  'rpc:phoenix_inventory_fefo_batches': [
+    { stock_id: 'qa-ws-1b', batch_number: 'B4470E', expiry_date: '2027-06-30', available_quantity: 80 },
+    { stock_id: 'qa-ws-1', batch_number: 'B4471X', expiry_date: '2028-01-31', available_quantity: 160 },
+  ],
 
   // ── INSTITUTION-LOCAL-PROCUREMENT-087 — Screen 19 fixtures ────────────────
   // Column names are the REAL snake_case DB columns the mapXxx() readers in

@@ -44,6 +44,23 @@ export interface QaResult {
   count: number | null;
 }
 
+/**
+ * FEFO-OVERRIDE-DIALOG-CAPTURE — a small, additive, OBSERVE-ONLY call log.
+ *
+ * Every `.rpc(name, args)` call is recorded here BEFORE this module decides
+ * how to answer it (fixture / mutation outcome / read-only error) — the log
+ * reflects exactly what the calling code sent, unmodified. Nothing about the
+ * existing resolution logic changes: the same fixture/outcome/READONLY_ERROR
+ * decision that ran before this was added still runs, on the same inputs,
+ * with the same outputs. This exists so the visual-QA capture tooling can
+ * assert a genuine negative ("Cancel fired zero RPC calls") and a genuine
+ * positive ("this exact name+args reached the client") instead of inferring
+ * either from DOM state alone. Dev/test only, same module, same
+ * tree-shaking proof as the rest of this file.
+ */
+export const QA_RPC_CALLS: Array<{ name: string; args: Record<string, unknown> }> = [];
+export function clearQaRpcCalls(): void { QA_RPC_CALLS.length = 0; }
+
 const READONLY_ERROR = {
   message: `${QA_HARNESS_MARKER}: fixture client is read-only (SELECT fixtures only). No writes reach any database.`,
   code: 'QA_READONLY',
@@ -125,7 +142,8 @@ export function createQaFixtureClient(): SupabaseClient {
       const rows = QA_FIXTURES[table];
       return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : []);
     },
-    rpc(name: string) {
+    rpc(name: string, args?: Record<string, unknown>) {
+      QA_RPC_CALLS.push({ name, args: args ?? {} });
       // Read RPCs registered in fixtures return their data (an array OR an
       // object, matching the real RPC's schema).
       const fixture = QA_FIXTURES[`rpc:${name}`];

@@ -97,8 +97,8 @@ export function FefoOverrideDialog({
         <p style={{ fontSize: '12.5px', color: 'var(--err)', textAlign: 'center' }} dir="auto">{t('fefo_override_no_permission', lang)}</p>
       ) : (
         <>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', marginBottom: '10px', cursor: 'pointer' }}>
-            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', padding: '4px 2px', fontSize: '12.5px', marginBottom: '10px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ width: '18px', height: '18px', flexShrink: 0 }} />
             {t('fefo_confirm_override_checkbox', lang)}
           </label>
           {confirmed && (
@@ -107,7 +107,7 @@ export function FefoOverrideDialog({
                 {t('fefo_override_reason_label', lang)} *
               </label>
               <input id="fefo-reason" type="text" dir="auto" value={reason} onChange={e => setReason(e.target.value)}
-                style={{ width: '100%', padding: '9px 11px', borderRadius: 'var(--r2)', border: `1px solid ${reasonValid ? 'var(--brd)' : 'var(--err)'}`, background: 'var(--s)', color: 'var(--t)', fontSize: '13px' }} />
+                style={{ width: '100%', minHeight: '44px', padding: '9px 11px', borderRadius: 'var(--r2)', border: `1px solid ${reasonValid ? 'var(--brd)' : 'var(--err)'}`, background: 'var(--s)', color: 'var(--t)', fontSize: '13px', boxSizing: 'border-box' }} />
               {!reasonValid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>{t('fefo_override_reason_required', lang)}</p>}
             </div>
           )}
