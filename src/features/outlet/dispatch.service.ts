@@ -208,18 +208,21 @@ export function createWarehouseDispatch(input: {
  * real caller, not just a server-side capability nothing in the UI actually
  * reaches.
  *
- * `requestId` is OPTIONAL (106's p_request_id is DEFAULT NULL, so omitting it
- * reproduces the exact pre-106 behavior for any other caller). When supplied
- * it MUST be derived via operation-token.ts (see OutletDispatchComposer),
- * never minted fresh per call — that derivation is what makes a retry of the
- * SAME logical add-line attempt replay the original result server-side
- * instead of creating a second line, while an actual payload change (a
- * different quantity, a different override reason) derives a DIFFERENT id
- * and is correctly treated as a new request.
+ * `requestId` is REQUIRED (107 tightened 106's p_request_id from optional to
+ * mandatory server-side, closing the NULL bypass — omitting it now raises
+ * 'request_id_required' before any read or write). It MUST be derived via
+ * operation-token.ts (see OutletDispatchComposer), never minted fresh per
+ * call — that derivation is what makes a retry of the SAME logical add-line
+ * attempt replay the original result server-side instead of creating a
+ * second line, while an actual payload change (a different quantity, a
+ * different override reason) derives a DIFFERENT id and is correctly
+ * treated as a new request. The TS type is intentionally honest about this
+ * requirement (requestId: string, not requestId?: string) so a caller that
+ * forgets to derive one fails to compile, not just fails at the RPC.
  */
 export function addDispatchLine(input: {
   dispatchId: string; warehouseStockId: string; quantity: number;
-  fefoOverride?: boolean; overrideReason?: string | null; requestId?: string;
+  fefoOverride?: boolean; overrideReason?: string | null; requestId: string;
 }): Promise<RpcResult<{ dispatch_line_id?: string; fefo_override_applied?: boolean }>> {
   return callRpc('phoenix_add_dispatch_line_fefo_guarded', {
     p_dispatch_id: input.dispatchId,
@@ -227,7 +230,7 @@ export function addDispatchLine(input: {
     p_quantity: input.quantity,
     p_fefo_override: input.fefoOverride ?? false,
     p_override_reason: input.overrideReason ?? null,
-    ...(input.requestId ? { p_request_id: input.requestId } : {}),
+    p_request_id: input.requestId,
   });
 }
 

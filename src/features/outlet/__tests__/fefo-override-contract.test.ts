@@ -161,16 +161,16 @@ describe('G) Per-line idempotency key is stable across retry, fresh per distinct
     expect(retryFn).toContain('const overrideReason = lineOverrides[line.idempotencyKey] ?? null;');
   });
 
-  it('106 CLOSES the prior client-only-retry-safety gap: addDispatchLine now accepts an OPTIONAL server-side ' +
-     'p_request_id, forwarded only when the caller supplies one — so 106s idempotency dedup on ' +
-     'phoenix_add_dispatch_line_fefo_guarded is reachable, while every OTHER caller (omitting requestId) still ' +
-     'gets the exact pre-106 behavior.', () => {
+  it('106 CLOSED the prior client-only-retry-safety gap by making p_request_id reachable, and 107 tightened it ' +
+     'from optional to REQUIRED (closing the NULL bypass): addDispatchLine now demands requestId at the TS type ' +
+     'level, always forwarded as p_request_id, so a caller that forgets to derive one fails to compile.', () => {
     const addLineFn = dispatchService.slice(
       dispatchService.indexOf('export function addDispatchLine'),
       dispatchService.indexOf('export interface FefoBatch'),
     );
-    expect(addLineFn).toContain('requestId?: string');
-    expect(addLineFn).toMatch(/\.\.\.\(input\.requestId \? \{ p_request_id: input\.requestId \} : \{\}\)/);
+    expect(addLineFn).toContain('requestId: string');
+    expect(addLineFn).not.toContain('requestId?: string');
+    expect(addLineFn).toContain('p_request_id: input.requestId,');
   });
 
   it('the request id is DERIVED via operation-token.ts (never minted fresh per call), matching this app\'s ' +
