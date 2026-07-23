@@ -169,6 +169,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '106_phoenix_dispatch_line_idempotency.sql',
   '107_phoenix_dispatch_line_request_id_required.sql',
   '108_phoenix_custody_chain_direct_write_lockdown.sql',
+  '109_phoenix_public_schema_default_privileges_lockdown.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

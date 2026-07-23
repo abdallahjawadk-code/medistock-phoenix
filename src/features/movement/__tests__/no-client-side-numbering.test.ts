@@ -159,7 +159,12 @@ describe('no client-side document-number sequence exists', () => {
     // REFERENCES from authenticated/anon/PUBLIC on custody-chain tables
     // (closing a TRUNCATE-grant gap every prior REVOKE missed); no RPC, no
     // schema change, no identity of any kind. The ceiling moves to 109.
-    const beyond = migrations.filter(f => /^(10[9]|1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // 109 (PUBLIC-SCHEMA-DEFAULT-PRIVILEGES-LOCKDOWN-109) adds NO document
+    // numbering — pure ALTER DEFAULT PRIVILEGES statements closing the
+    // default-ACL root cause behind 108 (future tables/sequences/functions
+    // no longer inherit broad authenticated/anon/PUBLIC access); no RPC, no
+    // new table, no identity of any kind. The ceiling moves to 110.
+    const beyond = migrations.filter(f => /^(1[1-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
