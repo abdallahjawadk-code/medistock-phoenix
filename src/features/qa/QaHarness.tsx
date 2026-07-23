@@ -33,9 +33,9 @@ import { createQaFixtureClient } from './qaFixtureClient';
 // is a no-op in a production build (see client.ts).
 __installQaSupabaseClient(createQaFixtureClient());
 
-type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -86,6 +86,21 @@ const OutletOperationsScreen = lazy(() =>
  *  client's read-only error, so the harness cannot post a purchase or stock. */
 const LocalProcurementScreen = lazy(() =>
   import('@/features/procurement/LocalProcurementScreen').then(m => ({ default: m.LocalProcurementScreen })),
+);
+/** Screen 12 — Status Center («مواقف»). Rendered against fixtures; every write
+ *  still resolves to the fixture client's read-only error. */
+const StatusCenterScreen = lazy(() =>
+  import('@/features/status/StatusCenterScreen').then(m => ({ default: m.StatusCenterScreen })),
+);
+/** Screen 20 — Monthly Stock Status («الموقف المخزني الشهري»). Fixtures cover
+ *  an open (submitted) report with mixed classifications plus a locked prior
+ *  version, so prepare/classify/submit/review/amend controls all render. */
+const MonthlyStatusScreen = lazy(() =>
+  import('@/features/status/MonthlyStatusScreen').then(m => ({ default: m.MonthlyStatusScreen })),
+);
+/** Screen 9 — Reports & tracking («التقارير والتتبع»). */
+const ReportsScreen = lazy(() =>
+  import('@/features/reports/ReportsScreen').then(m => ({ default: m.ReportsScreen })),
 );
 
 // Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
@@ -157,12 +172,14 @@ export function QaHarness() {
   const [scene, setScene] = useState<SceneId>(initial.scene);
   const handleNavigate = (n: number) =>
     setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory'
-      : n === 18 ? 'outlet' : n === 19 ? 'procurement' : n === 2 ? 'dashboard' : 'shell');
+      : n === 18 ? 'outlet' : n === 19 ? 'procurement' : n === 2 ? 'dashboard'
+      : n === 12 ? 'status' : n === 20 ? 'monthly' : n === 9 ? 'reports' : 'shell');
   // Reflect the active scene as the production screen number its nav item uses,
   // so the correct sidebar/drawer item reads as current (twin = 17 / network).
   const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11
     : scene === 'inventory' ? 3 : scene === 'outlet' ? 18 : scene === 'procurement' ? 19
-    : scene === 'dashboard' ? 2 : 1;
+    : scene === 'dashboard' ? 2 : scene === 'status' ? 12 : scene === 'monthly' ? 20
+    : scene === 'reports' ? 9 : 1;
 
   return (
     <QaAppProvider persona={active} lang={lang} theme={theme} orgId={org ?? undefined}>
@@ -204,6 +221,18 @@ export function QaHarness() {
             ) : scene === 'procurement' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <LocalProcurementScreen />
+              </Suspense>
+            ) : scene === 'status' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <StatusCenterScreen onNavigate={() => { /* QA: inert */ }} />
+              </Suspense>
+            ) : scene === 'monthly' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <MonthlyStatusScreen />
+              </Suspense>
+            ) : scene === 'reports' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <ReportsScreen />
               </Suspense>
             ) : scene === 'dashboard' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
