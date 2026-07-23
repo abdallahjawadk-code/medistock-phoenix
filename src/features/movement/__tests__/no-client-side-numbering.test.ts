@@ -103,9 +103,22 @@ describe('no client-side document-number sequence exists', () => {
     // 094 (CUSTODY-CHAIN-NOTIFICATIONS-094-A) is reviewed and adds NO document
     // numbering — the notification feed and its dedupe_key reuse the SAME
     // uuid ':' status text 082 already writes to phoenix_movement_events; no
-    // new sequence, no client- or server-numbered document string. The
-    // ceiling moves to 095.
-    const beyond = migrations.filter(f => /^0*(09[5-9]|[1-9]\d{2,})/.test(f));
+    // new sequence, no client- or server-numbered document string.
+    // 095 (RETURN-AVAILABILITY-CAP-095-A) adds NO document numbering — a
+    // quantity cap on an existing return-line RPC, identified by uuid only.
+    // 096 (BULK-RECEIVE-MATCHING-DISPATCH-LINES-096-A) adds NO document
+    // numbering — bulk delegation to 070's existing per-line RPC, no new
+    // document identity of any kind.
+    // 097 (FEFO-REASONED-OVERRIDE-097-A) adds NO document numbering — a
+    // permission + audit gate on an existing line-insert RPC.
+    // 098 (SECOND-PERSON-CORRECTION-APPROVAL-098-A) adds NO document
+    // numbering — phoenix_stock_correction_requests rows are identified by
+    // uuid only, never a client- or server-numbered document string.
+    // 099 (NOTIFICATION-WIRING-AND-QUARANTINE-DISPOSITION-099-A) adds NO
+    // document numbering — reuses 082's dedupe pattern and uuid identity
+    // throughout, including the new quarantine disposition RPCs. The
+    // ceiling moves to 100.
+    const beyond = migrations.filter(f => /^0*(1\d{2}|[2-9]\d{2,})/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -118,6 +131,11 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('092_phoenix_monthly_status_redesign.sql');
     expect(migrations).toContain('093_phoenix_super_admin_lifecycle_guard.sql');
     expect(migrations).toContain('094_phoenix_custody_chain_notifications.sql');
+    expect(migrations).toContain('095_phoenix_return_availability_cap.sql');
+    expect(migrations).toContain('096_phoenix_bulk_receive_matching_dispatch_lines.sql');
+    expect(migrations).toContain('097_phoenix_fefo_reasoned_override.sql');
+    expect(migrations).toContain('098_phoenix_second_person_correction_approval.sql');
+    expect(migrations).toContain('099_phoenix_notification_wiring_and_quarantine_disposition.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

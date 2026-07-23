@@ -155,6 +155,11 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '092_phoenix_monthly_status_redesign.sql',
   '093_phoenix_super_admin_lifecycle_guard.sql',
   '094_phoenix_custody_chain_notifications.sql',
+  '095_phoenix_return_availability_cap.sql',
+  '096_phoenix_bulk_receive_matching_dispatch_lines.sql',
+  '097_phoenix_fefo_reasoned_override.sql',
+  '098_phoenix_second_person_correction_approval.sql',
+  '099_phoenix_notification_wiring_and_quarantine_disposition.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
