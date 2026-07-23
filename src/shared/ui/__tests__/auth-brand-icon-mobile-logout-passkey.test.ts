@@ -23,7 +23,6 @@ const loginScreen = readSrc('features/auth/LoginScreen.tsx');
 const strings      = readSrc('shared/i18n/strings.ts');
 const drawer        = readSrc('shared/ui/PhoenixMobileDrawer.tsx');
 const appShell       = readSrc('shared/ui/PhoenixAppShell.tsx');
-const globalCss      = readSrc('shared/lib/global.css');
 const manifest       = readFileSync(join(PUBLIC, 'manifest.webmanifest'), 'utf8');
 const indexHtml      = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
@@ -149,37 +148,35 @@ describe('Login screen: technical badges removed', () => {
   });
 });
 
-describe('Login screen: professional rights/supervision block', () => {
-  // RIGHTS-SEAL-SCOPE: the MASAR seal and its rights phrase must NEVER return
-  // to Login or Welcome — the single seal lives in the shell footer only.
-  it('renders the supervision line, and NO MASAR seal or rights code', () => {
-    expect(loginScreen).toContain("t('login_supervision_line'");
+describe('Login screen: professional rights block, supervision credit removed', () => {
+  // RIGHTS-SEAL-SCOPE: the MASAR seal must NEVER return to Login or Welcome —
+  // the single seal lives in the shell footer only.
+  // PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the supervision-credit line and
+  // its login_supervision_line key were intentionally removed (a later,
+  // explicit product decision) — these assertions now guard the ABSENCE of
+  // that line/key instead of its presence, and must never be flipped back
+  // without an equally explicit instruction to reintroduce the credit.
+  it('does not render the removed supervision line, and still has NO MASAR seal', () => {
+    expect(loginScreen).not.toContain("t('login_supervision_line'");
     expect(loginScreen).not.toContain('MasarCopyrightSeal');
-    expect(loginScreen).not.toContain("t('login_rights_code'");
     const welcome = readSrc('features/auth/PhoenixWelcomeExperience.tsx');
     expect(welcome).not.toContain('MasarCopyrightSeal');
-    // The approved welcome credit lines stay verbatim.
+    expect(welcome).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    // The remaining approved issuer credit line stays verbatim.
     expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
-    expect(welcome).toContain('بإشراف الصيدلاني باسم كاظم رمح');
     // Exactly ONE mounted seal remains: the shell footer.
     expect(appShell).toContain('<MasarCopyrightSeal');
   });
 
-  it('login_rights_code contains the exact required text', () => {
+  it('login_supervision_line key no longer exists in strings.ts', () => {
+    expect(strings).not.toMatch(/^\s*login_supervision_line:/m);
+    expect(strings).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    expect(strings).not.toContain('Under the supervision of Pharmacist Basim Kazim Ramh');
+  });
+
+  it('login_rights_code key is untouched (unrelated to the removed credit)', () => {
     const line = strings.split('\n').find(l => l.includes('login_rights_code:'));
     expect(line).toContain('ph.Abdallahjawadk@2026');
-  });
-
-  it('login_supervision_line contains the exact required Arabic text', () => {
-    const line = strings.split('\n').find(l => l.includes('login_supervision_line:'));
-    // Canonical spelling uses hamzat qaṭʿ: "بإشراف" (under the supervision of),
-    // matching PhoenixWelcomeExperience. "بأشراف" (أشراف/nobles) was a typo.
-    expect(line).toContain('بإشراف الصيدلاني باسم كاظم رمح');
-  });
-
-  it('rights block uses a dedicated, styled CSS class (not a security-internals badge)', () => {
-    expect(loginScreen).toContain('premium-login__rights');
-    expect(globalCss).toContain('.premium-login__rights');
   });
 });
 

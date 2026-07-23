@@ -231,12 +231,14 @@ export function LoginScreen() {
             </>
           )}
 
-          {/* RIGHTS-SEAL-SCOPE: the MASAR seal and its rights phrase are
-              deliberately ABSENT from the login screen — the single seal lives
-              in the authenticated shell footer. The supervision credit stays. */}
-          <div className="premium-login__rights nexus-login__rights">
-            <span dir="auto">{t('login_supervision_line', lang)}</span>
-          </div>
+          {/* RIGHTS-SEAL-SCOPE: the MASAR seal is deliberately ABSENT from the
+              login screen — the single seal lives in the authenticated shell
+              footer.
+              PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the supervision-credit
+              line naming the supervising pharmacist, and its rights block,
+              have been intentionally removed from this screen — a later,
+              explicit product decision that supersedes the prior "stays"
+              note. */}
         </form>
       </main>
     </div>

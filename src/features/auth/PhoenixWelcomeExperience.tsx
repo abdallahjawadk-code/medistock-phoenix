@@ -86,13 +86,16 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
       </header>
 
-      {/* Approved issuance & supervision credits — the EXACT approved Arabic text,
-          verbatim per the authoritative handoff. Do not paraphrase either line.
-          Always rendered in Arabic (dir=rtl) regardless of the UI language. */}
+      {/* Approved issuance credit — the EXACT approved Arabic text, verbatim
+          per the authoritative handoff. Do not paraphrase.
+          PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the separate supervision
+          credit line naming the supervising pharmacist, and its divider rule,
+          were intentionally removed — a later, explicit product decision that
+          supersedes the prior "verbatim per the authoritative handoff" note
+          for that line specifically. Always rendered in Arabic (dir=rtl)
+          regardless of the UI language. */}
       <div className="nexus-welcome__credits" dir="rtl">
         <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
-        <div className="nexus-welcome__credits-rule" aria-hidden="true" />
-        <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
         {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
             single seal lives in the authenticated shell footer. */}
       </div>

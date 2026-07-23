@@ -18,10 +18,15 @@ export const T: Dict = {
   shell_primary_nav: { ar: 'التنقّل الرئيسي', en: 'Primary navigation' },
   shell_main_region: { ar: 'المحتوى الرئيسي', en: 'Main content' },
 
-  /* ── Login rights/supervision block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
+  /* ── Login rights block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
      Replaces the removed technical badges (RLS / QR Public Safe / Intake Frozen). */
   login_rights_code:      { ar: 'ph.Abdallahjawadk@2026',                              en: 'ph.Abdallahjawadk@2026' },
-  login_supervision_line: { ar: 'بإشراف الصيدلاني باسم كاظم رمح',                      en: 'Under the supervision of Pharmacist Basim Kazim Ramh' },
+  /* PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the supervision-credit line
+     naming the supervising pharmacist was intentionally removed from the
+     login/welcome flow per an explicit, later product decision — it
+     superseded the prior "approved/verbatim/do not paraphrase" note that used
+     to sit next to this key. Do not reintroduce the login_supervision_line
+     key or its copy. */
 
   /* ── Mobile logout (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ── */
   auth_sign_out: { ar: 'تسجيل الخروج', en: 'Sign out' },
