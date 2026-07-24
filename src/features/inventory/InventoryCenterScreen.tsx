@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -15,7 +15,7 @@ import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionInco
 import { OutletDispatchOperations } from '@/features/outlet/OutletDispatchOperations';
 import { InstitutionReturnReceipts } from '@/features/outlet/InstitutionReturnReceipts';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
-import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
+import { getAllCentralItems, searchCentralItems, type CentralItem } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
@@ -435,14 +435,15 @@ interface IntakeFormProps {
  */
 function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConflictReload }: IntakeFormProps) {
   const [requestId, setRequestId] = useState(newRequestId);
-  const [scientificName, setScientificName] = useState('');
-  const [tradeName, setTradeName] = useState('');
-  const [concentration, setConcentration] = useState('');
-  const [dosageForm, setDosageForm] = useState('');
+  // 115 — CATALOG-ONLY identity: the operator selects a unified drug catalog
+  // item; there is no free-text scientific/trade name here anymore. Manual
+  // identity entry is reserved exclusively for supplementary purchases.
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogResults, setCatalogResults] = useState<CentralItem[]>([]);
+  const [catalogSearching, setCatalogSearching] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<CentralItem | null>(null);
   const [unit, setUnit] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [nationalCode, setNationalCode] = useState('');
-  const [noNationalCode, setNoNationalCode] = useState(false);
   const [batchNumber, setBatchNumber] = useState('');
   const [noBatchNumber, setNoBatchNumber] = useState(false);
   const [expiryDate, setExpiryDate] = useState('');
@@ -453,19 +454,29 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
 
+  useEffect(() => {
+    if (catalogQuery.trim().length < 2) { setCatalogResults([]); return; }
+    let cancelled = false;
+    setCatalogSearching(true);
+    const timer = setTimeout(() => {
+      void searchCentralItems(catalogQuery.trim())
+        .then(rows => { if (!cancelled) setCatalogResults(rows); })
+        .finally(() => { if (!cancelled) setCatalogSearching(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [catalogQuery]);
+
   const qty = Number(quantity);
   const quantityValid = Number.isInteger(qty) && qty > 0;
   // Mirrors migration 065's explicit_identity_flags_required / *_flag_mismatch
   // checks so the operator is told BEFORE a round trip. The RPC still enforces it.
-  const identityResolved =
-    (noNationalCode ? nationalCode.trim() === '' : nationalCode.trim() !== '')
-    && (noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== '');
-  const formValid = scientificName.trim() !== '' && quantityValid && identityResolved;
+  const identityResolved = noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== '';
+  const formValid = selectedItem !== null && quantityValid && identityResolved;
 
   const reset = () => {
     setRequestId(newRequestId());
-    setScientificName(''); setTradeName(''); setConcentration(''); setDosageForm('');
-    setUnit(''); setQuantity(''); setNationalCode(''); setNoNationalCode(false);
+    setCatalogQuery(''); setCatalogResults([]); setSelectedItem(null);
+    setUnit(''); setQuantity('');
     setBatchNumber(''); setNoBatchNumber(false); setExpiryDate(''); setUnitPrice('');
     setSupplyType(''); setSourceDocument(''); setNotes('');
     setAttempted(false);
@@ -480,21 +491,26 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
 
   const submit = async () => {
     setAttempted(true);
-    if (!formValid || busy) return;
+    if (!formValid || busy || selectedItem === null) return;
     setBusy(true);
     try {
+      // 115 — the RPC derives scientific_name/trade_name/concentration/
+      // dosage_form/national_code from central_item_id UNCONDITIONALLY; these
+      // client-side values exist only so the LOCAL generation lookup (below)
+      // filters on the same identity the server will resolve to.
       const base: Omit<ReceiveWarehouseStockInput, 'expectedGeneration'> = {
         requestId,
         warehouseId,
-        scientificName,
+        scientificName: selectedItem.name,
         quantity: qty,
-        hasNoNationalCode: noNationalCode,
+        hasNoNationalCode: !selectedItem.barcode,
         hasNoBatchNumber: noBatchNumber,
-        tradeName: tradeName.trim() || null,
-        concentration: concentration.trim() || null,
-        dosageForm: dosageForm.trim() || null,
+        centralItemId: selectedItem.id,
+        tradeName: selectedItem.trade_name || null,
+        concentration: selectedItem.concentration || null,
+        dosageForm: selectedItem.dosage_form || null,
         unit: unit.trim() || null,
-        nationalCode: nationalCode.trim() || null,
+        nationalCode: selectedItem.barcode || null,
         batchNumber: batchNumber.trim() || null,
         expiryDate: expiryDate || null,
         unitPrice: unitPrice.trim() === '' ? null : Number(unitPrice),
@@ -527,16 +543,49 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
 
   return (
     <PhoenixCard>
+      {/* 115 — catalog-only material selection. No free-text identity here. */}
+      <div style={{ marginBottom: '12px' }}>
+        {selectedItem === null ? (
+          <>
+            <PhoenixInput
+              label={t('inv_catalog_search', lang)}
+              value={catalogQuery}
+              onChange={e => setCatalogQuery(e.target.value)}
+              error={attempted && selectedItem === null ? t('inv_err_invalid', lang) : undefined}
+            />
+            {catalogSearching && <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '4px' }}>{t('inv_catalog_searching', lang)}</p>}
+            {!catalogSearching && catalogQuery.trim().length >= 2 && catalogResults.length === 0 && (
+              <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '4px' }} dir="auto">{t('inv_catalog_no_match', lang)}</p>
+            )}
+            {catalogResults.length > 0 && (
+              <div style={{ marginTop: '6px', display: 'grid', gap: '4px', maxHeight: '220px', overflowY: 'auto' }}>
+                {catalogResults.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => { setSelectedItem(item); setCatalogQuery(''); setCatalogResults([]); touch(); }}
+                    style={{ textAlign: 'start', padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', cursor: 'pointer', fontSize: '12.5px' }}
+                    dir="auto"
+                  >
+                    {lang === 'ar' ? (item.name_ar || item.name) : item.name}
+                    {item.trade_name ? ` (${item.trade_name})` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)' }}>
+            <strong dir="auto">
+              {lang === 'ar' ? (selectedItem.name_ar || selectedItem.name) : selectedItem.name}
+              {selectedItem.trade_name ? ` (${selectedItem.trade_name})` : ''}
+            </strong>
+            <PhoenixButton variant="ghost" size="sm" onClick={() => { setSelectedItem(null); touch(); }}>✕</PhoenixButton>
+          </div>
+        )}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: '12px' }}>
-        <PhoenixInput
-          label={t('inv_scientific_name', lang)}
-          value={scientificName}
-          onChange={e => { setScientificName(e.target.value); touch(); }}
-          error={attempted && !scientificName.trim() ? t('inv_err_invalid', lang) : undefined}
-        />
-        <PhoenixInput label={t('inv_trade_name', lang)} value={tradeName} onChange={e => { setTradeName(e.target.value); touch(); }} />
-        <PhoenixInput label={t('inv_concentration', lang)} value={concentration} onChange={e => { setConcentration(e.target.value); touch(); }} />
-        <PhoenixInput label={t('inv_dosage_form', lang)} value={dosageForm} onChange={e => { setDosageForm(e.target.value); touch(); }} />
         <PhoenixInput label={t('inv_unit', lang)} value={unit} onChange={e => { setUnit(e.target.value); touch(); }} />
         <PhoenixInput
           label={t('inv_quantity_received', lang)}
@@ -546,12 +595,6 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
           value={quantity}
           onChange={e => { setQuantity(e.target.value); touch(); }}
           error={attempted && !quantityValid ? t('inv_err_qty_positive', lang) : undefined}
-        />
-        <PhoenixInput
-          label={t('inv_national_code', lang)}
-          value={nationalCode}
-          disabled={noNationalCode}
-          onChange={e => { setNationalCode(e.target.value); touch(); }}
         />
         <PhoenixInput
           label={t('inv_batch_number', lang)}
@@ -583,16 +626,10 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
         <PhoenixInput label={t('inv_source_document', lang)} value={sourceDocument} onChange={e => { setSourceDocument(e.target.value); touch(); }} />
       </div>
 
-      {/* Explicit acknowledgements — a blank field is NOT read as "none exists". */}
+      {/* Explicit acknowledgement — a blank field is NOT read as "none exists".
+          National code is now catalog-derived (115); no client acknowledgement
+          needed for it here. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', minHeight: '44px' }}>
-          <input
-            type="checkbox"
-            checked={noNationalCode}
-            onChange={e => { setNoNationalCode(e.target.checked); if (e.target.checked) setNationalCode(''); touch(); }}
-          />
-          {t('inv_no_national_code', lang)}
-        </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', minHeight: '44px' }}>
           <input
             type="checkbox"
