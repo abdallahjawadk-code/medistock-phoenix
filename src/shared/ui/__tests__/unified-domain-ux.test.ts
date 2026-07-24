@@ -60,7 +60,8 @@ describe('supply type is a closed three-value vocabulary', () => {
 
   it('OCR coerces its extracted supply text through the closed mapping', () => {
     const flow = read('features/inventory/ocr/OcrIntakeFlow.tsx');
-    expect(flow).toContain('displaySupplyType(values.supplyType) ?? null');
+    expect(flow).toContain('const normalizedSupplyType = displaySupplyType(values.supplyType);');
+    expect(flow).toContain('const supplyTypeValid = normalizedSupplyType !== null;');
   });
 });
 
