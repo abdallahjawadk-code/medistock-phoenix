@@ -578,6 +578,25 @@ export const T: Dict = {
   cond_surplus:       { ar: 'فائض',                             en: 'Surplus' },
   cond_near_expiry:   { ar: 'قريب النفاذ',                       en: 'Near expiry' },
   cond_expired:       { ar: 'منتهي الصلاحية',                    en: 'Expired' },
+  /* DECISION-INTELLIGENCE-REPORTS-119 */
+  dir_screen_title:   { ar: 'مركز التقارير والذكاء القراري',      en: 'Decision Intelligence Reports' },
+  dir_screen_sub:     { ar: 'نظرة تنفيذية حية ومكتبة تقارير رسمية غير قابلة للتعديل', en: 'A live executive view and an immutable official-report library' },
+  dir_tab_overview:   { ar: 'النظرة التنفيذية',                  en: 'Executive Overview' },
+  dir_tab_library:    { ar: 'مكتبة التقارير الرسمية',             en: 'Official Report Library' },
+  dir_as_of:          { ar: 'اعتبارًا من',                        en: 'As of' },
+  dir_materials_tracked: { ar: 'المواد المتابَعة',                en: 'Materials tracked' },
+  dir_col_indicator:  { ar: 'المؤشر',                             en: 'Indicator' },
+  dir_col_value:      { ar: 'القيمة',                             en: 'Value' },
+  dir_create_snapshot: { ar: 'إصدار تقرير رسمي',                  en: 'Create official snapshot' },
+  dir_snapshot_created: { ar: 'تم إصدار التقرير الرسمي',          en: 'Official snapshot created' },
+  dir_snapshot_replayed: { ar: 'تم استرجاع نفس التقرير (طلب مكرر آمن)', en: 'Same snapshot replayed (safe retry)' },
+  dir_snapshot_failed: { ar: 'تعذّر إصدار التقرير الرسمي',        en: 'Failed to create the official snapshot' },
+  dir_library_empty:  { ar: 'لا توجد تقارير رسمية بعد',           en: 'No official reports yet' },
+  dir_supply_kimadia:  { ar: 'كيماديا',                           en: 'Kimadia' },
+  dir_supply_aid:      { ar: 'مساعدات',                           en: 'Aid' },
+  dir_supply_purchase_central: { ar: 'مشتريات مركزية',            en: 'Central purchases' },
+  dir_supply_purchase_supplementary: { ar: 'مشتريات فرعية',       en: 'Supplementary purchases' },
+  dir_supply_unclassified: { ar: 'غير مصنّف',                     en: 'Unclassified' },
   // STATUS-EDITOR-CLEANUP-A: 'near_expiry' removed from the manual condition
   // dropdown (EditorScreen.tsx) — shown next to it as an explanatory note.
   avail_near_expiry_auto_note: { ar: 'قريب النفاذ يُحسب تلقائياً من تاريخ النفاذ', en: 'Near expiry is calculated automatically from the expiry date' },
@@ -2340,6 +2359,7 @@ export const T: Dict = {
 
   /* ── MONTHLY-STATUS-REDESIGN-092 — Screen 20, الموقف المخزني الشهري ── */
   nav_monthly_status:     { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
+  nav_decision_reports:   { ar: 'مركز التقارير والذكاء القراري',                  en: 'Decision Intelligence Reports' },
   mst_title:              { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
   mst_sub:                { ar: 'القائمة الموحدة لمواد المذخر والمنافذ التابعة — إعداد، تصنيف، مراجعة واعتماد', en: 'Unified warehouse + outlet material list — prepare, classify, review and approve' },
   mst_no_open_report:     { ar: 'لا يوجد تقرير مفتوح حاليًا',                     en: 'No open report right now' },

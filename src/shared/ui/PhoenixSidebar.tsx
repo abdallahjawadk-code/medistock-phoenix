@@ -58,6 +58,11 @@ const NAV_ITEMS: NavItem[] = [
   // confirm_missing/review_submit_own/review_all/return_for_clarification/
   // approve_lock), re-checked server-side by every RPC.
   { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
+  // DECISION-INTELLIGENCE-REPORTS-119: ungated like nav_editor — the screen
+  // self-gates on reports.view (already-seeded 062 key), re-checked
+  // server-side by every RPC (phoenix_executive_overview/
+  // phoenix_create_report_snapshot).
+  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 
 const SECONDARY_ITEMS: NavItem[] = [

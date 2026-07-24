@@ -53,6 +53,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
   // MONTHLY-STATUS-REDESIGN-092: ungated — the screen self-gates by the scoped status_center.* keys.
   { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
   { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
+  // DECISION-INTELLIGENCE-REPORTS-119: ungated — the screen self-gates on reports.view.
+  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
   { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
 ];

@@ -26,6 +26,7 @@ import { NetworkManagementScreen } from '@/features/network/NetworkManagementScr
 import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { MonthlyStatusScreen } from '@/features/status/MonthlyStatusScreen';
+import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -126,6 +127,11 @@ export function AuthenticatedApp() {
       // approve+lock the monthly institution material status — scoped to the
       // status_center.* keys, every write a guarded 092 RPC.
       case 20: return <MonthlyStatusScreen />;
+      // DECISION-INTELLIGENCE-REPORTS-119: live executive overview + an
+      // immutable official-report library — scoped to reports.view (062),
+      // every RPC (phoenix_executive_overview/phoenix_create_report_snapshot)
+      // re-checked server-side.
+      case 21: return <DecisionIntelligenceReportsScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;

@@ -43,6 +43,9 @@ const ALL_NAV: {
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   // MONTHLY-STATUS-REDESIGN-092: mirrors the desktop sidebar entry.
   { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
+  // DECISION-INTELLIGENCE-REPORTS-119: mirrors the desktop sidebar entry;
+  // the screen self-gates on reports.view.
+  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the
