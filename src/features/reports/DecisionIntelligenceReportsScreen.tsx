@@ -37,6 +37,7 @@ import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.se
 import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
 import { MovementReportSection } from '@/features/status/MovementReportSection';
 import { AuditLogSection } from './AuditLogSection';
+import { ReportsTabErrorBoundary } from './ReportsTabErrorBoundary';
 import { listCorrectionHistory, type CorrectionHistoryRow } from './differences-corrections.service';
 import {
   listCustodyDispatches, listCustodyReturnRequests, listCustodyReturnShipments,
@@ -118,64 +119,76 @@ export function DecisionIntelligenceReportsScreen() {
       </div>
 
       {tab === 'overview' && (
-        <ExecutiveOverviewTab
-          key={activeOrgId}
-          orgId={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_overview', lang), 'medistock-executive-overview')}
-        />
+        <ReportsTabErrorBoundary key={`overview:${activeOrgId}`} lang={lang}>
+          <ExecutiveOverviewTab
+            orgId={activeOrgId}
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_overview', lang), 'medistock-executive-overview')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'institutions' && (
-        <InstitutionStatusTab
-          key={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
-        />
+        <ReportsTabErrorBoundary key={`institutions:${activeOrgId}`} lang={lang}>
+          <InstitutionStatusTab
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'materials' && (
-        <MaterialsAndBatchesTab
-          key={activeOrgId}
-          orgId={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
-        />
+        <ReportsTabErrorBoundary key={`materials:${activeOrgId}`} lang={lang}>
+          <MaterialsAndBatchesTab
+            orgId={activeOrgId}
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'movements' && (
-        <div data-testid="movements-tab"><MovementReportSection /></div>
+        <ReportsTabErrorBoundary key={`movements:${activeOrgId}`} lang={lang}>
+          <div data-testid="movements-tab"><MovementReportSection /></div>
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'custody' && (
-        <CustodyChainTab
-          key={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
-        />
+        <ReportsTabErrorBoundary key={`custody:${activeOrgId}`} lang={lang}>
+          <CustodyChainTab
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'supplementary' && (
-        <SupplementaryPurchasesTab
-          key={activeOrgId}
-          orgId={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_supplementary', lang), 'medistock-supplementary-purchases')}
-        />
+        <ReportsTabErrorBoundary key={`supplementary:${activeOrgId}`} lang={lang}>
+          <SupplementaryPurchasesTab
+            orgId={activeOrgId}
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_supplementary', lang), 'medistock-supplementary-purchases')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'corrections' && (
-        <CorrectionsHistoryTab
-          key={activeOrgId}
-          lang={lang}
-          onToast={showToast}
-          onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
-        />
+        <ReportsTabErrorBoundary key={`corrections:${activeOrgId}`} lang={lang}>
+          <CorrectionsHistoryTab
+            lang={lang}
+            onToast={showToast}
+            onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
+          />
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'audit' && (
-        <div data-testid="audit-tab"><AuditLogSection /></div>
+        <ReportsTabErrorBoundary key={`audit:${activeOrgId}`} lang={lang}>
+          <div data-testid="audit-tab"><AuditLogSection /></div>
+        </ReportsTabErrorBoundary>
       )}
       {tab === 'library' && (
-        <ReportLibraryTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
+        <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
+          <ReportLibraryTab orgId={activeOrgId} lang={lang} />
+        </ReportsTabErrorBoundary>
       )}
 
       {toast && <PhoenixToast message={toast} />}
@@ -639,7 +652,7 @@ function MaterialsAndBatchesTab({ orgId, lang, onToast, onMobilePrint }: {
  * and the resulting balance are exactly what the approval RPCs already
  * computed and stored.
  */
-function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
+export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
@@ -647,8 +660,12 @@ function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
   const history = useAsync(() => listCorrectionHistory(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
-  if (history.loading && !history.data) return <PhoenixLoadingState />;
-  if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
+  // `?? []` so `rows`/`outletIds` are stable on EVERY render (including the
+  // initial loading render) — required so the paper-reference hook below is
+  // called unconditionally, before any early return. Calling a hook after a
+  // conditional early return violates React's fixed-hook-order rule and, in
+  // the sibling Custody Chain tab, crashed the whole app shell on first load
+  // the same way ("Rendered more hooks than during the previous render").
   const rows = history.data ?? [];
 
   /**
@@ -661,6 +678,10 @@ function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
   const outletIds = rows.filter(r => r.scope === 'outlet').map(r => r.id);
   const paperRefs = useAsync(() => getPaperReferencesFor('stock_correction_request', outletIds), [outletIds.join(',')]);
 
+  // Both hooks above are now invoked unconditionally on every render — safe
+  // to early-return past this point.
+  if (history.loading && !history.data) return <PhoenixLoadingState />;
+  if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
 
   function exportConfig() {
@@ -767,7 +788,7 @@ interface CustodyTraceEventRow {
   occurredAt: string; actorName: string | null; material: string | null;
 }
 
-function CustodyChainTab({ lang, onToast, onMobilePrint }: {
+export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
@@ -781,23 +802,12 @@ function CustodyChainTab({ lang, onToast, onMobilePrint }: {
   const [xlsxBusy, setXlsxBusy] = useState(false);
   const [fullXlsxBusy, setFullXlsxBusy] = useState(false);
 
-  async function toggleTrace(id: string) {
-    if (traceOpenFor === id) { setTraceOpenFor(null); return; }
-    setTraceOpenFor(id);
-    setTraceError(null);
-    if (!traceCache[id]) {
-      try {
-        const result = await getMovementTimeline(id);
-        setTraceCache(c => ({ ...c, [id]: result }));
-      } catch (e) {
-        setTraceError(e instanceof Error ? e.message : String(e));
-      }
-    }
-  }
-
-  if (dispatches.loading && !dispatches.data) return <PhoenixLoadingState />;
-  if (dispatches.error) return <PhoenixErrorState message={dispatches.error} onRetry={dispatches.reload} />;
-
+  // `?? []` so these are stable, safely-typed arrays on EVERY render (including
+  // the initial loading render) — required so the two paper-reference hooks
+  // below can be called unconditionally, before any early return. Calling
+  // hooks after a conditional early return violates React's fixed-hook-order
+  // rule and previously crashed the whole app shell on first load ("Rendered
+  // more hooks than during the previous render").
   const dispatchRows = dispatches.data ?? [];
   const requestRows = returnRequests.data ?? [];
   const shipmentRows = returnShipments.data ?? [];
@@ -819,6 +829,36 @@ function CustodyChainTab({ lang, onToast, onMobilePrint }: {
     () => getPaperReferencesFor('outlet_return_request', requestRows.map(r => r.id)),
     [requestRows.map(r => r.id).join(',')],
   );
+
+  async function toggleTrace(id: string) {
+    if (traceOpenFor === id) { setTraceOpenFor(null); return; }
+    setTraceOpenFor(id);
+    setTraceError(null);
+    if (!traceCache[id]) {
+      try {
+        const result = await getMovementTimeline(id);
+        setTraceCache(c => ({ ...c, [id]: result }));
+      } catch (e) {
+        setTraceError(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  // Every hook above is now invoked unconditionally on every render — safe to
+  // early-return past this point. Loading/error is checked across all THREE
+  // reads (dispatches, return requests, return shipments), not dispatches
+  // alone, so a slow/failed return-requests or return-shipments fetch is
+  // never silently ignored while dispatches happens to resolve first.
+  const anyLoading = (dispatches.loading && !dispatches.data)
+    || (returnRequests.loading && !returnRequests.data)
+    || (returnShipments.loading && !returnShipments.data);
+  if (anyLoading) return <PhoenixLoadingState />;
+
+  const firstErrored = dispatches.error ? dispatches
+    : returnRequests.error ? returnRequests
+    : returnShipments.error ? returnShipments
+    : null;
+  if (firstErrored) return <PhoenixErrorState message={firstErrored.error!} onRetry={firstErrored.reload} />;
 
   const combined: CustodyCombinedRow[] = [
     ...dispatchRows.map((d): CustodyCombinedRow => ({ id: d.id, kind: t('dir_custody_dispatch', lang), number: d.dispatchNumber, status: d.status, date: d.sentAt ?? d.createdAt })),
