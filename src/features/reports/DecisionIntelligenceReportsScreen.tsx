@@ -29,7 +29,7 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 import {
-  exportProfessionalXlsx, triggerProfessionalPrint,
+  exportProfessionalXlsx, exportProfessionalMultiSheetXlsx, triggerProfessionalPrint,
   type ProfessionalReportColumn,
 } from '@/shared/lib/professional-export';
 import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
@@ -43,12 +43,13 @@ import {
   getMovementTimeline, type MovementTimelineResult,
 } from './custody-chain.service';
 import { listSupplementaryPurchaseOrders } from './supplementary-purchases.service';
-import { getSuppliers, getReceipts, getReceiptLines, type OrderRow, type ReceiptLineRow } from '@/features/procurement/procurement.service';
+import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
+import { getSuppliers, getReceipts, getReceiptLines, type OrderRow, type ReceiptRow, type ReceiptLineRow } from '@/features/procurement/procurement.service';
 import { StatusBadge } from '@/features/procurement/OrderComposerPanel';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
-  getSupplySourcesDetail,
-  type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow,
+  getSupplySourcesDetail, checkSnapshotParity,
+  type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
 
 type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'library';
@@ -63,9 +64,10 @@ export function DecisionIntelligenceReportsScreen() {
   const { lang, dir, activeOrgId } = useApp();
   const [tab, setTab] = useState<Tab>('overview');
   const [toast, setToast] = useState<string | null>(null);
-  const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+  const [mobilePrint, setMobilePrint] = useState<{ html: string; title: string; fileNameBase: string } | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const openMobilePrint = (html: string, title: string, fileNameBase: string) => setMobilePrint({ html, title, fileNameBase });
 
   const header = (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -121,26 +123,53 @@ export function DecisionIntelligenceReportsScreen() {
           orgId={activeOrgId}
           lang={lang}
           onToast={showToast}
-          onMobilePrint={setMobilePrintHtml}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_overview', lang), 'medistock-executive-overview')}
         />
       )}
       {tab === 'institutions' && (
-        <InstitutionStatusTab key={activeOrgId} lang={lang} />
+        <InstitutionStatusTab
+          key={activeOrgId}
+          lang={lang}
+          onToast={showToast}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
+        />
       )}
       {tab === 'materials' && (
-        <MaterialsAndBatchesTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
+        <MaterialsAndBatchesTab
+          key={activeOrgId}
+          orgId={activeOrgId}
+          lang={lang}
+          onToast={showToast}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
+        />
       )}
       {tab === 'movements' && (
         <div data-testid="movements-tab"><MovementReportSection /></div>
       )}
       {tab === 'custody' && (
-        <CustodyChainTab key={activeOrgId} lang={lang} />
+        <CustodyChainTab
+          key={activeOrgId}
+          lang={lang}
+          onToast={showToast}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
+        />
       )}
       {tab === 'supplementary' && (
-        <SupplementaryPurchasesTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
+        <SupplementaryPurchasesTab
+          key={activeOrgId}
+          orgId={activeOrgId}
+          lang={lang}
+          onToast={showToast}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_supplementary', lang), 'medistock-supplementary-purchases')}
+        />
       )}
       {tab === 'corrections' && (
-        <CorrectionsHistoryTab key={activeOrgId} lang={lang} />
+        <CorrectionsHistoryTab
+          key={activeOrgId}
+          lang={lang}
+          onToast={showToast}
+          onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
+        />
       )}
       {tab === 'audit' && (
         <div data-testid="audit-tab"><AuditLogSection /></div>
@@ -150,14 +179,14 @@ export function DecisionIntelligenceReportsScreen() {
       )}
 
       {toast && <PhoenixToast message={toast} />}
-      {mobilePrintHtml !== null && (
+      {mobilePrint !== null && (
         <MobilePrintFallbackModal
           open
-          html={mobilePrintHtml}
-          title={t('dir_tab_overview', lang)}
-          fileNameBase="medistock-executive-overview"
+          html={mobilePrint.html}
+          title={mobilePrint.title}
+          fileNameBase={mobilePrint.fileNameBase}
           lang={lang}
-          onClose={() => setMobilePrintHtml(null)}
+          onClose={() => setMobilePrint(null)}
         />
       )}
     </div>
@@ -184,6 +213,7 @@ function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
   const overview = useAsync(() => getExecutiveOverview(orgId), [orgId]);
   const [snapBusy, setSnapBusy] = useState(false);
   const [xlsxBusy, setXlsxBusy] = useState(false);
+  const [fullXlsxBusy, setFullXlsxBusy] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState<{ officialNumber: string; qr: string } | null>(null);
   const [requestId, setRequestId] = useState(() => newRequestId());
 
@@ -196,13 +226,14 @@ function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
   const supplyRows = supplySourceRows(data, lang);
   const rows: BucketRow[] = [...classRows, ...supplyRows];
 
-  function exportConfig() {
+  function bucketsSheetConfig(moduleName: string) {
     const columns: ProfessionalReportColumn<BucketRow>[] = [
       { key: 'label', label: t('dir_col_indicator', lang), value: r => r.label },
       { key: 'value', label: t('dir_col_value', lang), value: r => String(r.value), numeric: true, excelValue: r => r.value },
     ];
     return {
       reportTitle: t('dir_tab_overview', lang),
+      moduleName,
       generatedAt: new Date(),
       filtersSummary: t('sc_all', lang),
       columns,
@@ -218,6 +249,10 @@ function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
     };
   }
 
+  function exportConfig() {
+    return bucketsSheetConfig(t('dir_tab_overview', lang));
+  }
+
   async function exportXlsx() {
     if (xlsxBusy) return;
     setXlsxBusy(true);
@@ -226,6 +261,54 @@ function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
       if (!ok) onToast(t('csv_export_failed', lang));
     } finally {
       setXlsxBusy(false);
+    }
+  }
+
+  /**
+   * Multi-sheet export: sheet 1 = the classification+supply-source bucket
+   * totals (same as exportXlsx), sheet 2 = the per-lot detail behind EVERY
+   * supply-source bucket, not just the one bucket a user happens to have
+   * expanded — the same phoenix_supply_sources_detail data
+   * SupplySourceDrilldown shows on expand, fetched here for all 5 buckets
+   * so the export is never missing detail the screen can show.
+   */
+  async function exportFullXlsx() {
+    if (fullXlsxBusy) return;
+    setFullXlsxBusy(true);
+    try {
+      const perBucket = await Promise.all(
+        supplyRows.map(async b => ({ bucket: b, detail: await getSupplySourcesDetail(orgId, b.key) })),
+      );
+      const detailRows: (SupplySourceDetailRow & { bucketLabel: string })[] = perBucket.flatMap(
+        ({ bucket, detail }) => detail.map(d => ({ ...d, bucketLabel: bucket.label })),
+      );
+      const detailSheet = {
+        reportTitle: t('dir_tab_overview', lang),
+        moduleName: 'Supply Sources Detail',
+        generatedAt: new Date(),
+        filtersSummary: t('sc_all', lang),
+        columns: [
+          { key: 'bucket', label: t('dir_supply_sources_title', lang), value: (r: typeof detailRows[number]) => r.bucketLabel },
+          { key: 'material', label: t('avail_scientific_name', lang), value: (r: typeof detailRows[number]) => r.scientific_name },
+          { key: 'trade', label: t('inv_trade_name', lang), value: (r: typeof detailRows[number]) => r.trade_name ?? '—' },
+          { key: 'location', label: t('dir_col_location', lang), value: (r: typeof detailRows[number]) => (lang === 'ar' ? r.location_name_ar || r.location_name : r.location_name) },
+          { key: 'batch', label: t('batch_no', lang), value: (r: typeof detailRows[number]) => r.batch_number ?? '—', ltr: true },
+          { key: 'expiry', label: t('expiry', lang), value: (r: typeof detailRows[number]) => r.expiry_date ?? '—', ltr: true, dateColumn: 'date', excelValue: (r: typeof detailRows[number]) => r.expiry_date },
+          { key: 'qty', label: t('qty', lang), value: (r: typeof detailRows[number]) => String(r.on_hand_quantity), numeric: true, excelValue: (r: typeof detailRows[number]) => r.on_hand_quantity },
+        ] as ProfessionalReportColumn<typeof detailRows[number]>[],
+        rows: detailRows,
+        lang,
+        fileNameBase: 'medistock-executive-overview-detail',
+        footerText: t('report_footer_generated_by', lang),
+        labels: { generatedAt: t('sc_generated_at', lang), filtersSummary: t('sc_selected_filters', lang), rowCount: t('sc_total_rows', lang) },
+      };
+      const ok = await exportProfessionalMultiSheetXlsx(
+        [bucketsSheetConfig('Overview'), detailSheet],
+        'medistock-executive-overview-full',
+      );
+      if (!ok) onToast(t('csv_export_failed', lang));
+    } finally {
+      setFullXlsxBusy(false);
     }
   }
 
@@ -276,6 +359,9 @@ function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
           <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
             {t('mv_export_xlsx', lang)}
+          </PhoenixButton>
+          <PhoenixButton variant="ghost" size="sm" onClick={() => void exportFullXlsx()} loading={fullXlsxBusy}>
+            {t('dir_export_full_with_detail', lang)}
           </PhoenixButton>
           <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
             {t('se_print', lang)}
@@ -433,7 +519,11 @@ interface MaterialAvailRow {
  * already-computed condition and expiry-risk.ts's already-computed tier —
  * no classification math lives in this screen.
  */
-function MaterialsAndBatchesTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
+function MaterialsAndBatchesTab({ orgId, lang, onToast, onMobilePrint }: {
+  orgId: string; lang: 'ar' | 'en';
+  onToast: (msg: string) => void;
+  onMobilePrint: (html: string) => void;
+}) {
   const records = useAsync(() => getAvailabilityByOrg(orgId), [orgId]);
   const [search, setSearch] = useState('');
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -483,6 +573,12 @@ function MaterialsAndBatchesTab({ orgId, lang }: { orgId: string; lang: 'ar' | '
     try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
   }
 
+  function printReport() {
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
+    if (!ok) onToast(t('print_popup_blocked', lang));
+  }
+
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="materials-batches-tab">
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -495,6 +591,9 @@ function MaterialsAndBatchesTab({ orgId, lang }: { orgId: string; lang: 'ar' | '
         />
         <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
           {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
+          {t('se_print', lang)}
         </PhoenixButton>
       </div>
       {rows.length === 0 ? (
@@ -540,13 +639,28 @@ function MaterialsAndBatchesTab({ orgId, lang }: { orgId: string; lang: 'ar' | '
  * and the resulting balance are exactly what the approval RPCs already
  * computed and stored.
  */
-function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
+function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
+  lang: 'ar' | 'en';
+  onToast: (msg: string) => void;
+  onMobilePrint: (html: string) => void;
+}) {
   const history = useAsync(() => listCorrectionHistory(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
   if (history.loading && !history.data) return <PhoenixLoadingState />;
   if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
   const rows = history.data ?? [];
+
+  /**
+   * PAPER-REFERENCE-CONTRACT-110's 'stock_correction_request' document_type
+   * maps ONLY to phoenix_stock_correction_requests (outlet scope) — see
+   * PendingCorrectionsPanel.tsx's identical comment. Warehouse-scope
+   * corrections have no covered document_type, so no paper reference is
+   * fetched or shown for those rows.
+   */
+  const outletIds = rows.filter(r => r.scope === 'outlet').map(r => r.id);
+  const paperRefs = useAsync(() => getPaperReferencesFor('stock_correction_request', outletIds), [outletIds.join(',')]);
+
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
 
   function exportConfig() {
@@ -585,6 +699,12 @@ function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
     try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
   }
 
+  function printReport() {
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
+    if (!ok) onToast(t('print_popup_blocked', lang));
+  }
+
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="corrections-history-tab">
       <div style={{ overflowX: 'auto' }}>
@@ -598,6 +718,7 @@ function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
               <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('dir_col_variance', lang)}</th>
               <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_status', lang)}</th>
               <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('lp_return_reason', lang)}</th>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_paper_reference', lang)}</th>
             </tr>
           </thead>
           <tbody>
@@ -610,14 +731,18 @@ function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
                 <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.variance}</td>
                 <td style={{ padding: '6px 8px' }}>{t('dir_correction_status_' + r.status, lang)}</td>
                 <td style={{ padding: '6px 8px' }} dir="auto">{r.reason}</td>
+                <td style={{ padding: '6px 8px' }} dir="ltr">{r.scope === 'outlet' ? (paperRefs.data?.get(r.id)?.paperReferenceNumber ?? '—') : '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
           {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
+          {t('se_print', lang)}
         </PhoenixButton>
       </div>
     </div>
@@ -636,7 +761,17 @@ function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
  * reconstructed from what was actually persisted (surfaced as-is here,
  * never hidden or overstated).
  */
-function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
+interface CustodyCombinedRow { id: string; kind: string; number: string; status: string; date: string | null; }
+interface CustodyTraceEventRow {
+  documentKind: string; documentNumber: string; eventType: string; status: string | null;
+  occurredAt: string; actorName: string | null; material: string | null;
+}
+
+function CustodyChainTab({ lang, onToast, onMobilePrint }: {
+  lang: 'ar' | 'en';
+  onToast: (msg: string) => void;
+  onMobilePrint: (html: string) => void;
+}) {
   const dispatches = useAsync(() => listCustodyDispatches(), []);
   const returnRequests = useAsync(() => listCustodyReturnRequests(), []);
   const returnShipments = useAsync(() => listCustodyReturnShipments(), []);
@@ -644,6 +779,7 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
   const [traceCache, setTraceCache] = useState<Record<string, MovementTimelineResult>>({});
   const [traceError, setTraceError] = useState<string | null>(null);
   const [xlsxBusy, setXlsxBusy] = useState(false);
+  const [fullXlsxBusy, setFullXlsxBusy] = useState(false);
 
   async function toggleTrace(id: string) {
     if (traceOpenFor === id) { setTraceOpenFor(null); return; }
@@ -666,14 +802,32 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
   const requestRows = returnRequests.data ?? [];
   const shipmentRows = returnShipments.data ?? [];
 
-  function exportConfig() {
-    interface CombinedRow { kind: string; number: string; status: string; date: string | null; }
-    const combined: CombinedRow[] = [
-      ...dispatchRows.map((d): CombinedRow => ({ kind: t('dir_custody_dispatch', lang), number: d.dispatchNumber, status: d.status, date: d.sentAt ?? d.createdAt })),
-      ...requestRows.map((r): CombinedRow => ({ kind: t('dir_custody_return_request', lang), number: r.returnNumber, status: r.status, date: r.createdAt })),
-      ...shipmentRows.map((s): CombinedRow => ({ kind: t('dir_custody_return_shipment', lang), number: s.shipmentNumber, status: s.status, date: null })),
-    ];
-    const columns: ProfessionalReportColumn<CombinedRow>[] = [
+  /**
+   * PAPER-REFERENCE-CONTRACT-110 is read-only here (no writer control — the
+   * paper reference is set from the operational dispatch/return screens,
+   * not from this reports screen). Only the two document types 110 actually
+   * covers for these tables: 'warehouse_dispatch' and 'outlet_return_request'
+   * (see OutletDispatchComposer.tsx/OutletReturnComposer.tsx for the same
+   * mapping). Return SHIPMENTS have no covered document_type — 110 does not
+   * extend to them, so no paper reference is fetched or shown for that list.
+   */
+  const dispatchPaperRefs = useAsync(
+    () => getPaperReferencesFor('warehouse_dispatch', dispatchRows.map(d => d.id)),
+    [dispatchRows.map(d => d.id).join(',')],
+  );
+  const requestPaperRefs = useAsync(
+    () => getPaperReferencesFor('outlet_return_request', requestRows.map(r => r.id)),
+    [requestRows.map(r => r.id).join(',')],
+  );
+
+  const combined: CustodyCombinedRow[] = [
+    ...dispatchRows.map((d): CustodyCombinedRow => ({ id: d.id, kind: t('dir_custody_dispatch', lang), number: d.dispatchNumber, status: d.status, date: d.sentAt ?? d.createdAt })),
+    ...requestRows.map((r): CustodyCombinedRow => ({ id: r.id, kind: t('dir_custody_return_request', lang), number: r.returnNumber, status: r.status, date: r.createdAt })),
+    ...shipmentRows.map((s): CustodyCombinedRow => ({ id: s.id, kind: t('dir_custody_return_shipment', lang), number: s.shipmentNumber, status: s.status, date: null })),
+  ];
+
+  function summarySheetConfig(moduleName: string) {
+    const columns: ProfessionalReportColumn<CustodyCombinedRow>[] = [
       { key: 'kind', label: t('dir_col_document_type', lang), value: r => r.kind },
       { key: 'number', label: t('dir_col_document_number', lang), value: r => r.number, ltr: true },
       { key: 'status', label: t('dir_col_status', lang), value: r => r.status.replace(/_/g, ' ') },
@@ -681,6 +835,7 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
     ];
     return {
       reportTitle: t('dir_tab_custody', lang),
+      moduleName,
       generatedAt: new Date(),
       filtersSummary: t('sc_all', lang),
       columns,
@@ -696,10 +851,77 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
     };
   }
 
+  function exportConfig() {
+    return summarySheetConfig(t('dir_tab_custody', lang));
+  }
+
   async function exportXlsx() {
     if (xlsxBusy) return;
     setXlsxBusy(true);
     try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+  }
+
+  function printReport() {
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
+    if (!ok) onToast(t('print_popup_blocked', lang));
+  }
+
+  /**
+   * Multi-sheet export: sheet 1 = the combined document summary (same as
+   * exportXlsx), sheet 2 = the full movement-timeline trace for EVERY
+   * document, not just the ones the user happened to expand — the same
+   * phoenix_movement_timeline data toggleTrace shows on click, fetched here
+   * for the whole list so the export is never missing detail the screen can
+   * show.
+   */
+  async function exportFullXlsx() {
+    if (fullXlsxBusy) return;
+    setFullXlsxBusy(true);
+    try {
+      const traces = await Promise.all(combined.map(async row => {
+        const cached = traceCache[row.id];
+        const result = cached ?? await getMovementTimeline(row.id).catch(() => null);
+        return { row, result };
+      }));
+      const eventRows: CustodyTraceEventRow[] = traces.flatMap(({ row, result }) =>
+        (result?.events ?? []).map(ev => ({
+          documentKind: row.kind,
+          documentNumber: row.number,
+          eventType: ev.event_type,
+          status: ev.status,
+          occurredAt: ev.occurred_at,
+          actorName: ev.actor_name,
+          material: ev.material,
+        })),
+      );
+      const traceSheet = {
+        reportTitle: t('dir_tab_custody', lang),
+        moduleName: 'Trace Events',
+        generatedAt: new Date(),
+        filtersSummary: t('sc_all', lang),
+        columns: [
+          { key: 'kind', label: t('dir_col_document_type', lang), value: (r: CustodyTraceEventRow) => r.documentKind },
+          { key: 'number', label: t('dir_col_document_number', lang), value: (r: CustodyTraceEventRow) => r.documentNumber, ltr: true },
+          { key: 'event', label: 'Event', value: (r: CustodyTraceEventRow) => r.eventType, ltr: true },
+          { key: 'status', label: t('dir_col_status', lang), value: (r: CustodyTraceEventRow) => r.status ?? '—' },
+          { key: 'occurredAt', label: t('dir_as_of', lang), value: (r: CustodyTraceEventRow) => r.occurredAt, ltr: true, dateColumn: 'datetime', excelValue: (r: CustodyTraceEventRow) => r.occurredAt },
+          { key: 'actor', label: t('dir_col_proposed_by', lang), value: (r: CustodyTraceEventRow) => r.actorName ?? '—' },
+          { key: 'material', label: 'Material', value: (r: CustodyTraceEventRow) => r.material ?? '—' },
+        ] as ProfessionalReportColumn<CustodyTraceEventRow>[],
+        rows: eventRows,
+        lang,
+        fileNameBase: 'medistock-custody-chain-trace',
+        footerText: t('report_footer_generated_by', lang),
+        labels: { generatedAt: t('sc_generated_at', lang), filtersSummary: t('sc_selected_filters', lang), rowCount: t('sc_total_rows', lang) },
+      };
+      await exportProfessionalMultiSheetXlsx(
+        [summarySheetConfig('Documents'), traceSheet],
+        'medistock-custody-chain-full',
+      );
+    } finally {
+      setFullXlsxBusy(false);
+    }
   }
 
   const traceBlock = (id: string) => traceOpenFor === id && (
@@ -726,9 +948,15 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
 
   return (
     <div style={{ display: 'grid', gap: '14px' }} data-testid="custody-chain-tab">
-      <div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
           {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportFullXlsx()} loading={fullXlsxBusy}>
+          {t('dir_export_full_with_detail', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
+          {t('se_print', lang)}
         </PhoenixButton>
       </div>
 
@@ -736,15 +964,23 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
         <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>{t('dir_custody_dispatch', lang)}</div>
         {dispatchRows.length === 0 ? <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /> : (
           <div style={{ display: 'grid', gap: '6px' }}>
-            {dispatchRows.map(d => (
-              <div key={d.id} style={{ fontSize: '11.5px' }}>
-                <button type="button" onClick={() => void toggleTrace(d.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
-                  <span dir="ltr">{d.dispatchNumber}</span>
-                  <span>{d.status.replace(/_/g, ' ')}</span>
-                </button>
-                {traceBlock(d.id)}
-              </div>
-            ))}
+            {dispatchRows.map(d => {
+              const paperRef = dispatchPaperRefs.data?.get(d.id);
+              return (
+                <div key={d.id} style={{ fontSize: '11.5px' }}>
+                  <button type="button" onClick={() => void toggleTrace(d.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
+                    <span dir="ltr">{d.dispatchNumber}</span>
+                    <span>{d.status.replace(/_/g, ' ')}</span>
+                  </button>
+                  {paperRef?.paperReferenceNumber && (
+                    <div style={{ padding: '2px 8px', color: 'var(--t2)' }} dir="ltr">
+                      {t('dir_col_paper_reference', lang)}: {paperRef.paperReferenceNumber}
+                    </div>
+                  )}
+                  {traceBlock(d.id)}
+                </div>
+              );
+            })}
           </div>
         )}
       </PhoenixCard>
@@ -753,15 +989,23 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
         <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>{t('dir_custody_return_request', lang)}</div>
         {requestRows.length === 0 ? <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /> : (
           <div style={{ display: 'grid', gap: '6px' }}>
-            {requestRows.map(r => (
-              <div key={r.id} style={{ fontSize: '11.5px' }}>
-                <button type="button" onClick={() => void toggleTrace(r.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
-                  <span dir="ltr">{r.returnNumber}</span>
-                  <span>{r.status.replace(/_/g, ' ')}</span>
-                </button>
-                {traceBlock(r.id)}
-              </div>
-            ))}
+            {requestRows.map(r => {
+              const paperRef = requestPaperRefs.data?.get(r.id);
+              return (
+                <div key={r.id} style={{ fontSize: '11.5px' }}>
+                  <button type="button" onClick={() => void toggleTrace(r.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
+                    <span dir="ltr">{r.returnNumber}</span>
+                    <span>{r.status.replace(/_/g, ' ')}</span>
+                  </button>
+                  {paperRef?.paperReferenceNumber && (
+                    <div style={{ padding: '2px 8px', color: 'var(--t2)' }} dir="ltr">
+                      {t('dir_col_paper_reference', lang)}: {paperRef.paperReferenceNumber}
+                    </div>
+                  )}
+                  {traceBlock(r.id)}
+                </div>
+              );
+            })}
           </div>
         )}
       </PhoenixCard>
@@ -798,19 +1042,31 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
  * for a specific receipt remains on the existing LocalProcurementScreen
  * (screen 19) rather than being duplicated a second time here — this tab is
  * the traceability list + drill-down, not a second receipt-rendering UI.
+ *
+ * PAPER-REFERENCE-CONTRACT-110 does NOT cover procurement_orders or
+ * procurement_receipts — PaperReferenceDocumentType is limited to
+ * warehouse_dispatch / warehouse_return_request / outlet_return_request /
+ * stock_correction_request / warehouse_stock_movement (paper-reference.
+ * service.ts). No paper reference is surfaced here; extending 110 to this
+ * table is a backend contract change out of scope for this reports screen.
  */
-function SupplementaryPurchasesTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
+function SupplementaryPurchasesTab({ orgId, lang, onToast, onMobilePrint }: {
+  orgId: string; lang: 'ar' | 'en';
+  onToast: (msg: string) => void;
+  onMobilePrint: (html: string) => void;
+}) {
   const orders = useAsync(() => listSupplementaryPurchaseOrders(orgId), [orgId]);
   const suppliers = useAsync(() => getSuppliers(orgId), [orgId]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [xlsxBusy, setXlsxBusy] = useState(false);
+  const [fullXlsxBusy, setFullXlsxBusy] = useState(false);
 
   if (orders.loading && !orders.data) return <PhoenixLoadingState />;
   if (orders.error) return <PhoenixErrorState message={orders.error} onRetry={orders.reload} />;
   const rows = orders.data ?? [];
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} />;
 
-  function exportConfig() {
+  function ordersSheetConfig(moduleName: string) {
     const columns: ProfessionalReportColumn<OrderRow>[] = [
       { key: 'number', label: t('dir_col_document_number', lang), value: r => r.orderNumber, ltr: true },
       { key: 'status', label: t('dir_col_status', lang), value: r => r.status.replace(/_/g, ' ') },
@@ -819,6 +1075,7 @@ function SupplementaryPurchasesTab({ orgId, lang }: { orgId: string; lang: 'ar' 
     ];
     return {
       reportTitle: t('dir_tab_supplementary', lang),
+      moduleName,
       generatedAt: new Date(),
       filtersSummary: t('sc_all', lang),
       columns,
@@ -834,17 +1091,100 @@ function SupplementaryPurchasesTab({ orgId, lang }: { orgId: string; lang: 'ar' 
     };
   }
 
+  function exportConfig() {
+    return ordersSheetConfig(t('dir_tab_supplementary', lang));
+  }
+
   async function exportXlsx() {
     if (xlsxBusy) return;
     setXlsxBusy(true);
     try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
   }
 
+  function printReport() {
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
+    if (!ok) onToast(t('print_popup_blocked', lang));
+  }
+
+  /**
+   * Multi-sheet export: sheet 1 = orders (same as exportXlsx), sheet 2 =
+   * every receipt across every order, sheet 3 = every receipt line across
+   * every receipt — the same order->receipt->line drill-down the UI shows
+   * on open, but fetched for ALL orders instead of only the one expanded,
+   * so the export is never missing detail the screen can show.
+   */
+  async function exportFullXlsx() {
+    if (fullXlsxBusy) return;
+    setFullXlsxBusy(true);
+    try {
+      const perOrder = await Promise.all(rows.map(async o => ({ order: o, receipts: await getReceipts(o.id) })));
+      const receiptRows: (ReceiptRow & { orderNumber: string })[] = perOrder.flatMap(
+        ({ order, receipts }) => receipts.map(r => ({ ...r, orderNumber: order.orderNumber })),
+      );
+      const perReceiptLines = await Promise.all(
+        receiptRows.map(async r => ({ receipt: r, lines: await getReceiptLines(r.id) })),
+      );
+      const lineRows: (ReceiptLineRow & { receiptNumber: string })[] = perReceiptLines.flatMap(
+        ({ receipt, lines }) => lines.map(rl => ({ ...rl, receiptNumber: receipt.receiptNumber })),
+      );
+
+      const receiptsSheet = {
+        reportTitle: t('dir_tab_supplementary', lang),
+        moduleName: 'Receipts',
+        generatedAt: new Date(),
+        filtersSummary: t('sc_all', lang),
+        columns: [
+          { key: 'order', label: t('dir_col_document_number', lang), value: (r: typeof receiptRows[number]) => r.orderNumber, ltr: true },
+          { key: 'receipt', label: t('dir_col_receipt_number', lang), value: (r: typeof receiptRows[number]) => r.receiptNumber, ltr: true },
+          { key: 'invoice', label: t('sp_invoice_ref', lang), value: (r: typeof receiptRows[number]) => r.invoiceNumber ?? '—', ltr: true },
+          { key: 'date', label: t('dir_as_of', lang), value: (r: typeof receiptRows[number]) => r.createdAt, ltr: true, dateColumn: 'datetime', excelValue: (r: typeof receiptRows[number]) => r.createdAt },
+        ] as ProfessionalReportColumn<typeof receiptRows[number]>[],
+        rows: receiptRows,
+        lang,
+        fileNameBase: 'medistock-supplementary-purchases-receipts',
+        footerText: t('report_footer_generated_by', lang),
+        labels: { generatedAt: t('sc_generated_at', lang), filtersSummary: t('sc_selected_filters', lang), rowCount: t('sc_total_rows', lang) },
+      };
+
+      const linesSheet = {
+        reportTitle: t('dir_tab_supplementary', lang),
+        moduleName: 'Receipt Lines',
+        generatedAt: new Date(),
+        filtersSummary: t('sc_all', lang),
+        columns: [
+          { key: 'receipt', label: t('dir_col_receipt_number', lang), value: (r: typeof lineRows[number]) => r.receiptNumber, ltr: true },
+          { key: 'qty', label: t('lp_qty', lang), value: (r: typeof lineRows[number]) => String(r.quantity), numeric: true, excelValue: (r: typeof lineRows[number]) => r.quantity },
+          { key: 'batch', label: t('mv_f_batch_number', lang), value: (r: typeof lineRows[number]) => r.batchNumber ?? '—', ltr: true },
+          { key: 'expiry', label: t('mv_f_expiry_date', lang), value: (r: typeof lineRows[number]) => r.expiryDate ?? '—', ltr: true, dateColumn: 'date', excelValue: (r: typeof lineRows[number]) => r.expiryDate },
+        ] as ProfessionalReportColumn<typeof lineRows[number]>[],
+        rows: lineRows,
+        lang,
+        fileNameBase: 'medistock-supplementary-purchases-lines',
+        footerText: t('report_footer_generated_by', lang),
+        labels: { generatedAt: t('sc_generated_at', lang), filtersSummary: t('sc_selected_filters', lang), rowCount: t('sc_total_rows', lang) },
+      };
+
+      await exportProfessionalMultiSheetXlsx(
+        [ordersSheetConfig('Orders'), receiptsSheet, linesSheet],
+        'medistock-supplementary-purchases-full',
+      );
+    } finally {
+      setFullXlsxBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="supplementary-purchases-tab">
-      <div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
           {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportFullXlsx()} loading={fullXlsxBusy}>
+          {t('dir_export_full_with_detail', lang)}
+        </PhoenixButton>
+        <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
+          {t('se_print', lang)}
         </PhoenixButton>
       </div>
       {rows.map(o => {
@@ -903,7 +1243,11 @@ function SupplementaryPurchaseDrilldown({ orderId, lang }: { orderId: string; la
   );
 }
 
-function InstitutionStatusTab({ lang }: { lang: 'ar' | 'en' }) {
+function InstitutionStatusTab({ lang, onToast, onMobilePrint }: {
+  lang: 'ar' | 'en';
+  onToast: (msg: string) => void;
+  onMobilePrint: (html: string) => void;
+}) {
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
@@ -947,6 +1291,12 @@ function InstitutionStatusTab({ lang }: { lang: 'ar' | 'en' }) {
     }
   }
 
+  function printReport() {
+    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
+    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
+    if (!ok) onToast(t('print_popup_blocked', lang));
+  }
+
   return (
     <div style={{ display: 'grid', gap: '12px' }} data-testid="institution-status-tab">
       <PhoenixCard>
@@ -968,9 +1318,12 @@ function InstitutionStatusTab({ lang }: { lang: 'ar' | 'en' }) {
             );
           })}
         </div>
-        <div style={{ marginTop: '14px' }}>
+        <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
             {t('mv_export_xlsx', lang)}
+          </PhoenixButton>
+          <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
+            {t('se_print', lang)}
           </PhoenixButton>
         </div>
       </PhoenixCard>
@@ -1014,10 +1367,72 @@ function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' })
                 ))}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--t2)' }} dir="ltr">{s.qr_payload}</div>
+              {s.report_type === 'executive_overview' && <SnapshotParityCheck snapshot={s} lang={lang} />}
             </div>
           )}
         </PhoenixCard>
       ))}
+    </div>
+  );
+}
+
+/**
+ * On-demand only (never auto-run): re-fetches phoenix_executive_overview
+ * for the snapshot's org RIGHT NOW and reports every classification/supply
+ * bucket that has drifted since the snapshot was frozen. Drift is the
+ * expected, normal outcome once stock has moved since the snapshot was
+ * taken — this is an audit tool, not an assertion that the two must match.
+ * The instant-of-creation equality is already proven server-side (119's own
+ * test); this is the complementary "how has live data moved since" check.
+ */
+function SnapshotParityCheck({ snapshot, lang }: { snapshot: ReportSnapshotRow; lang: 'ar' | 'en' }) {
+  const [result, setResult] = useState<SnapshotParityResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await checkSnapshotParity(snapshot));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--brd)', paddingTop: '10px', fontSize: '11.5px' }} data-testid="dir-snapshot-parity">
+      <PhoenixButton variant="ghost" size="sm" onClick={() => void run()} loading={busy}>
+        {t('dir_check_parity', lang)}
+      </PhoenixButton>
+      {error && <div style={{ color: 'var(--err)', marginTop: '6px' }}>{error}</div>}
+      {result && (
+        <div style={{ marginTop: '8px' }}>
+          <div style={{ color: result.matches ? 'var(--ok)' : 'var(--warn)', fontWeight: 700 }}>
+            {result.matches ? t('dir_parity_matches', lang) : t('dir_parity_drifted', lang)}
+          </div>
+          {!result.matches && (
+            <div style={{ marginTop: '6px', display: 'grid', gap: '4px' }}>
+              {result.materialsTrackedSnapshot !== result.materialsTrackedLive && (
+                <div>{t('dir_materials_tracked', lang)}: {result.materialsTrackedSnapshot} → {result.materialsTrackedLive}</div>
+              )}
+              {Object.entries(result.classificationDiffs).map(([key, d]) => (
+                <div key={key}>{t('cond_' + key, lang)}: {d.snapshot} → {d.live} ({d.delta > 0 ? '+' : ''}{d.delta})</div>
+              ))}
+              {(['warehouse', 'outlet'] as const).flatMap(loc =>
+                Object.entries(result.supplySourceDiffs[loc]).map(([key, d]) => (
+                  <div key={`${loc}-${key}`}>
+                    {t('dir_supply_' + key, lang)} ({loc}): {d.snapshot} → {d.live} ({d.delta > 0 ? '+' : ''}{d.delta})
+                  </div>
+                )),
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

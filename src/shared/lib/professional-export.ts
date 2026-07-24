@@ -226,15 +226,28 @@ function loadExcelJS(): Promise<typeof ExcelJS> {
  */
 export async function buildProfessionalWorkbook<T>(config: ProfessionalExportConfig<T>): Promise<ExcelJS.Workbook> {
   const ExcelJSRuntime = await loadExcelJS();
-  const columns = sanitizedColumns(config);
-  const metaLines = buildMetaLines(config);
-  const isRtl = config.lang === 'ar';
-  const colCount = Math.max(columns.length, 1);
-
   const wb = new ExcelJSRuntime.Workbook();
   wb.creator = 'MediStock Phoenix';
   wb.created = config.generatedAt;
   wb.modified = config.generatedAt;
+  addProfessionalDataSheet(wb, config);
+  return wb;
+}
+
+/**
+ * Adds one data sheet (title/module/brand/metadata block + frozen,
+ * auto-filtered, bold/colored header + alternating-row data table) to an
+ * existing workbook, using the same styling as buildProfessionalWorkbook's
+ * single sheet. Extracted so a multi-sheet workbook (e.g. parent rows on one
+ * sheet, drill-down detail rows on another) can reuse the exact same
+ * per-sheet rendering without duplicating it — see
+ * buildMultiSheetProfessionalWorkbook.
+ */
+function addProfessionalDataSheet<T>(wb: ExcelJS.Workbook, config: ProfessionalExportConfig<T>): void {
+  const columns = sanitizedColumns(config);
+  const metaLines = buildMetaLines(config);
+  const isRtl = config.lang === 'ar';
+  const colCount = Math.max(columns.length, 1);
 
   const ws = wb.addWorksheet(safeSheetName(config.moduleName || config.reportTitle), {
     views: [{ rightToLeft: isRtl }],
@@ -318,8 +331,43 @@ export async function buildProfessionalWorkbook<T>(config: ProfessionalExportCon
 
   // Freeze everything above and including the header row so it stays visible while scrolling.
   ws.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: headerRow.number }];
+}
 
+/**
+ * Builds one workbook containing a data sheet per config, in order — e.g.
+ * parent rows on sheet 1, drill-down detail rows on sheet 2+. Each config's
+ * `moduleName` becomes its sheet name, so callers must give each a distinct
+ * `moduleName` (sanitizedColumns/safeSheetName already dedupe illegal
+ * characters and length, but not cross-sheet name collisions). Does not
+ * download anything — see exportProfessionalMultiSheetXlsx.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- each sheet's ProfessionalExportConfig<T> has its own row type; a heterogeneous array (e.g. orders + receipts + lines) needs type erasure at this boundary, same as procurement.service.ts's row mappers.
+export async function buildMultiSheetProfessionalWorkbook(configs: ProfessionalExportConfig<any>[]): Promise<ExcelJS.Workbook> {
+  const ExcelJSRuntime = await loadExcelJS();
+  const wb = new ExcelJSRuntime.Workbook();
+  const generatedAt = configs[0]?.generatedAt ?? new Date();
+  wb.creator = 'MediStock Phoenix';
+  wb.created = generatedAt;
+  wb.modified = generatedAt;
+  for (const config of configs) addProfessionalDataSheet(wb, config);
   return wb;
+}
+
+/**
+ * Builds a multi-sheet workbook via buildMultiSheetProfessionalWorkbook and
+ * downloads it as a true `.xlsx` file. Mirrors exportProfessionalXlsx's
+ * error-handling contract (returns false, never throws).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see buildMultiSheetProfessionalWorkbook above.
+export async function exportProfessionalMultiSheetXlsx(configs: ProfessionalExportConfig<any>[], fileNameBase: string): Promise<boolean> {
+  try {
+    const wb = await buildMultiSheetProfessionalWorkbook(configs);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    return await downloadBlob(buildStableFileName(fileNameBase, 'xlsx'), blob);
+  } catch {
+    return false;
+  }
 }
 
 async function downloadBlob(filename: string, blob: Blob): Promise<boolean> {

@@ -111,6 +111,68 @@ export interface SupplySourceDetailRow {
   supply_bucket: string;
 }
 
+export interface SnapshotParityBucketDiff { snapshot: number; live: number; delta: number; }
+
+export interface SnapshotParityResult {
+  /** True only when every classification/supply bucket and materials_tracked match exactly. */
+  matches: boolean;
+  snapshotAsOf: string;
+  liveAsOf: string;
+  materialsTrackedSnapshot: number;
+  materialsTrackedLive: number;
+  /** Only buckets that DIFFER are present — an empty object means that group matches exactly. */
+  classificationDiffs: Record<string, SnapshotParityBucketDiff>;
+  supplySourceDiffs: {
+    warehouse: Record<string, SnapshotParityBucketDiff>;
+    outlet: Record<string, SnapshotParityBucketDiff>;
+  };
+}
+
+function diffBuckets(snapshotCounts: Record<string, number>, liveCounts: Record<string, number>): Record<string, SnapshotParityBucketDiff> {
+  const diffs: Record<string, SnapshotParityBucketDiff> = {};
+  const keys = new Set([...Object.keys(snapshotCounts), ...Object.keys(liveCounts)]);
+  for (const key of keys) {
+    const snapshot = snapshotCounts[key] ?? 0;
+    const live = liveCounts[key] ?? 0;
+    if (snapshot !== live) diffs[key] = { snapshot, live, delta: live - snapshot };
+  }
+  return diffs;
+}
+
+/**
+ * 119's OWN test proves a snapshot equals the live RPC's output AT THE
+ * INSTANT of creation (same transaction, same function call — see
+ * 119-report-snapshots-and-executive-overview.dynamic.test.ts). This is the
+ * complementary check for an OLDER snapshot: re-fetches
+ * phoenix_executive_overview for the snapshot's organization right now and
+ * reports every field that has since drifted. Drift is the EXPECTED,
+ * normal outcome once any stock movement has happened since the snapshot
+ * was taken — this function documents/audits that drift, it does not assert
+ * the two must be equal.
+ */
+export async function checkSnapshotParity(snapshot: ReportSnapshotRow): Promise<SnapshotParityResult> {
+  const live = await getExecutiveOverview(snapshot.organization_id);
+  const classificationDiffs = diffBuckets(snapshot.payload.classification_counts, live.classification_counts);
+  const supplySourceDiffs = {
+    warehouse: diffBuckets(snapshot.payload.supply_source_totals.warehouse, live.supply_source_totals.warehouse),
+    outlet: diffBuckets(snapshot.payload.supply_source_totals.outlet, live.supply_source_totals.outlet),
+  };
+  const materialsTrackedLive = live.materials_tracked;
+  const materialsTrackedSnapshot = snapshot.payload.materials_tracked;
+  return {
+    matches: materialsTrackedSnapshot === materialsTrackedLive
+      && Object.keys(classificationDiffs).length === 0
+      && Object.keys(supplySourceDiffs.warehouse).length === 0
+      && Object.keys(supplySourceDiffs.outlet).length === 0,
+    snapshotAsOf: snapshot.source_as_of,
+    liveAsOf: live.as_of,
+    materialsTrackedSnapshot,
+    materialsTrackedLive,
+    classificationDiffs,
+    supplySourceDiffs,
+  };
+}
+
 /** 120 — per-lot drill-down behind one supply-source bucket total. */
 export async function getSupplySourcesDetail(
   organizationId: string,
