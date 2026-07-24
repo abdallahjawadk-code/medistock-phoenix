@@ -53,9 +53,16 @@ describe('119 frontend — screen', () => {
     expect(screen).toContain('mobileHtml !== undefined');
   });
 
-  it('renders both the live overview and the official report library as tabs', () => {
+  it('renders the overview, institution status and official report library as tabs', () => {
     expect(screen).toContain("id: 'overview'");
+    expect(screen).toContain("id: 'institutions'");
     expect(screen).toContain("id: 'library'");
+  });
+
+  it('institution status is a PURE reuse of the existing getInstitutionOverviews — no new RPC, no reimplemented counting', () => {
+    expect(screen).toContain("from '@/shared/supabase/services/dashboard.service'");
+    expect(screen).toContain('getInstitutionOverviews()');
+    expect(screen).not.toMatch(/supabase\.rpc\('phoenix_get_institution/);
   });
 
   it('an org-less profile sees the shared empty-scope state, not a broken query', () => {

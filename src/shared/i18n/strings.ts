@@ -582,6 +582,7 @@ export const T: Dict = {
   dir_screen_title:   { ar: 'مركز التقارير والذكاء القراري',      en: 'Decision Intelligence Reports' },
   dir_screen_sub:     { ar: 'نظرة تنفيذية حية ومكتبة تقارير رسمية غير قابلة للتعديل', en: 'A live executive view and an immutable official-report library' },
   dir_tab_overview:   { ar: 'النظرة التنفيذية',                  en: 'Executive Overview' },
+  dir_tab_institutions: { ar: 'حالة المؤسسات',                    en: 'Institution Status' },
   dir_tab_library:    { ar: 'مكتبة التقارير الرسمية',             en: 'Official Report Library' },
   dir_as_of:          { ar: 'اعتبارًا من',                        en: 'As of' },
   dir_materials_tracked: { ar: 'المواد المتابَعة',                en: 'Materials tracked' },

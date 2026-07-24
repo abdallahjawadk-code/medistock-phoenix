@@ -1,19 +1,21 @@
 /**
- * DECISION-INTELLIGENCE-REPORTS-119 — Screen 21.
+ * DECISION-INTELLIGENCE-REPORTS-119/120 — Screen 21.
  *
- * First increment of the reporting center: a live Executive Overview
- * (aggregated ONLY from existing canonical sources — item_availability's
- * already-computed condition and warehouse_stock/outlet_stock's already-
- * computed supply provenance, migration 119) plus an Official Report
- * Library of immutable, server-numbered snapshots of it.
+ * Executive Overview (119: item_availability's already-computed condition +
+ * warehouse_stock/outlet_stock's already-computed supply provenance) with a
+ * 120 per-lot supply-source drill-down, an Institution Status tab (REUSES
+ * ReportsScreen's existing getInstitutionOverviews()/
+ * phoenix_get_institution_condition_counts — no new backend, no new
+ * classification math, same server-side org scoping that function already
+ * enforces), and an Official Report Library of immutable, server-numbered
+ * snapshots.
  *
- * The remaining report sections (institution status, materials/batches,
- * movements, custody chain, supplementary purchases, differences/
- * corrections, audit-sensitive actions) are NOT built here — they either
- * already exist on other screens (StatusCenterScreen, MonthlyStatusScreen,
- * ReportsScreen's AuditLogSection) or are follow-up work on top of this
- * same snapshot/numbering scaffolding. See the PR description for the full
- * gap list.
+ * The remaining report sections (materials/batches, movements, custody
+ * chain, supplementary purchases, differences/corrections, audit-sensitive
+ * actions) are NOT built here — they either already exist on other screens
+ * (StatusCenterScreen, MonthlyStatusScreen, ReportsScreen's AuditLogSection)
+ * or are follow-up work on top of this same snapshot/numbering scaffolding.
+ * See the PR description for the full gap list.
  */
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
@@ -31,13 +33,14 @@ import {
   exportProfessionalXlsx, triggerProfessionalPrint,
   type ProfessionalReportColumn,
 } from '@/shared/lib/professional-export';
+import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
   getSupplySourcesDetail,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'library';
+type Tab = 'overview' | 'institutions' | 'library';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -69,6 +72,7 @@ export function DecisionIntelligenceReportsScreen() {
 
   const tabs: Array<{ id: Tab; labelKey: string }> = [
     { id: 'overview', labelKey: 'dir_tab_overview' },
+    { id: 'institutions', labelKey: 'dir_tab_institutions' },
     { id: 'library', labelKey: 'dir_tab_library' },
   ];
 
@@ -102,6 +106,9 @@ export function DecisionIntelligenceReportsScreen() {
           onToast={showToast}
           onMobilePrint={setMobilePrintHtml}
         />
+      )}
+      {tab === 'institutions' && (
+        <InstitutionStatusTab key={activeOrgId} lang={lang} />
       )}
       {tab === 'library' && (
         <ReportLibraryTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
@@ -358,6 +365,88 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Institution Status — pure reuse of ReportsScreen's existing
+ * getInstitutionOverviews() (which delegates ALL counting to
+ * phoenix_get_institution_condition_counts, migration 054). No new backend,
+ * no new classification math, no new RBAC surface: the RPC already scopes a
+ * non-super_admin caller to their own organization's row.
+ */
+function InstitutionStatusTab({ lang }: { lang: 'ar' | 'en' }) {
+  const overview = useAsync(() => getInstitutionOverviews(), []);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+
+  if (overview.loading && !overview.data) return <PhoenixLoadingState />;
+  if (overview.error) return <PhoenixErrorState message={overview.error} onRetry={overview.reload} />;
+  const rows = overview.data ?? [];
+  if (rows.length === 0) return <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} />;
+
+  function exportConfig() {
+    const columns: ProfessionalReportColumn<InstitutionOverview>[] = [
+      { key: 'name', label: t('nav_institutions', lang), value: r => (lang === 'ar' ? r.name_ar : r.name) },
+      { key: 'available', label: t('cond_available', lang), value: r => String(r.available), numeric: true, excelValue: r => r.available },
+      { key: 'low', label: t('cond_low_stock', lang), value: r => String(r.low), numeric: true, excelValue: r => r.low },
+      { key: 'missing', label: t('cond_missing', lang), value: r => String(r.missing), numeric: true, excelValue: r => r.missing },
+    ];
+    return {
+      reportTitle: t('dir_tab_institutions', lang),
+      generatedAt: new Date(),
+      filtersSummary: t('sc_all', lang),
+      columns,
+      rows,
+      lang,
+      fileNameBase: 'medistock-institution-status',
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
+    try {
+      const ok = await exportProfessionalXlsx(exportConfig());
+      if (!ok) return;
+    } finally {
+      setXlsxBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '12px' }} data-testid="institution-status-tab">
+      <PhoenixCard>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {rows.map(o => {
+            const total = o.available + o.low + o.missing;
+            const pct = total > 0 ? Math.round((o.available / total) * 100) : 0;
+            const c = pct >= 90 ? 'var(--p)' : pct >= 75 ? 'var(--ok)' : 'var(--warn)';
+            return (
+              <div key={o.id} style={{ fontSize: '12.5px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600 }} dir="auto">{lang === 'ar' ? o.name_ar : o.name}</span>
+                  <span style={{ fontSize: '11px', color: c }}>{pct}%</span>
+                </div>
+                <div style={{ height: '8px', background: 'var(--brd)', borderRadius: 'var(--rpill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: c, borderRadius: 'var(--rpill)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: '14px' }}>
+          <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
+            {t('mv_export_xlsx', lang)}
+          </PhoenixButton>
+        </div>
+      </PhoenixCard>
     </div>
   );
 }
