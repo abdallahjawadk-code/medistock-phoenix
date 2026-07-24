@@ -612,6 +612,8 @@ export const T: Dict = {
   dir_check_parity: { ar: 'مطابقة مع البيانات الحية',               en: 'Check parity vs. live' },
   dir_parity_matches: { ar: 'مطابق تماماً للبيانات الحية الآن',      en: 'Matches live data exactly, right now' },
   dir_parity_drifted: { ar: 'تغيّرت البيانات منذ إنشاء هذا التقرير', en: 'Live data has drifted since this snapshot was taken' },
+  dir_tab_error_title: { ar: 'تعذّر عرض هذا القسم',                 en: 'This section could not be displayed' },
+  dir_tab_error_message: { ar: 'حدث خطأ غير متوقع أثناء عرض هذا التقرير. يمكنك إعادة المحاولة أو التبديل إلى قسم آخر.', en: 'An unexpected error occurred while rendering this report. You can retry or switch to a different section.' },
   dir_custody_dispatch: { ar: 'التجهيزات (مذخر → منفذ)',          en: 'Dispatches (warehouse → outlet)' },
   dir_custody_return_request: { ar: 'طلبات الإرجاع (منفذ → مؤسسة)', en: 'Return requests (outlet → institution)' },
   dir_custody_return_shipment: { ar: 'شحنات الإرجاع',              en: 'Return shipments' },
