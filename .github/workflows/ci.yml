@@ -120,9 +120,15 @@ jobs:
       # additionally pins everything to one worker process, matching how this
       # rig has only ever been exercised locally (see the dynamic tests' own
       # PHOENIX_RIG_PG usage comments).
+      # vitest's CLI filter argument is a plain substring/regex match against
+      # normalized file paths, NOT a glob — a quoted "**/*.dynamic.test.ts"
+      # pattern matches nothing ("No test files found", exit 1) and this step
+      # silently ran zero tests until this fix. "dynamic.test.ts" as a bare
+      # substring matches every *.dynamic.test.ts file under the repo, which
+      # is exactly and only supabase/migrations/__tests__/*.dynamic.test.ts.
       - name: Run *.dynamic.test.ts suites against the disposable rig (serial)
         run: >-
-          npx vitest run "supabase/migrations/__tests__/**/*.dynamic.test.ts"
+          npx vitest run "dynamic.test.ts"
           --fileParallelism=false --pool=forks --poolOptions.forks.singleFork
         env:
           PHOENIX_RIG_PG: postgres://postgres@localhost:55432/postgres
