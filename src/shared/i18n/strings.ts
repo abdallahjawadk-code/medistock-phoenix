@@ -1754,6 +1754,7 @@ export const T: Dict = {
 
   inv_warehouse:          { ar: 'المخزن',                                       en: 'Warehouse' },
   inv_select_warehouse:   { ar: 'اختر المخزن',                                  en: 'Select a warehouse' },
+  inv_central_manual_note:{ ar: 'إدخال مخازن قسم الصيدلة يدوي ومستقل عن المشتريات الفرعية. عند اختيار «مشتريات» يُثبّت المصدر تلقائيًا كمشتريات مركزية.', en: 'Pharmacy Department warehouse intake is manual and separate from supplementary purchases. Choosing “Purchases” automatically records a central purchase.' },
   inv_scientific_name:    { ar: 'الاسم العلمي',                                 en: 'Scientific name' },
   inv_trade_name:         { ar: 'الاسم التجاري',                                en: 'Trade name' },
   inv_concentration:      { ar: 'التركيز',                                      en: 'Concentration' },
