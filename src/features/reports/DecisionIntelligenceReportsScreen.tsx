@@ -39,12 +39,16 @@ import { MovementReportSection } from '@/features/status/MovementReportSection';
 import { AuditLogSection } from './AuditLogSection';
 import { listCorrectionHistory, type CorrectionHistoryRow } from './differences-corrections.service';
 import {
+  listCustodyDispatches, listCustodyReturnRequests, listCustodyReturnShipments,
+  getMovementTimeline, type MovementTimelineResult,
+} from './custody-chain.service';
+import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
   getSupplySourcesDetail,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'corrections' | 'audit' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'corrections' | 'audit' | 'library';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -79,6 +83,7 @@ export function DecisionIntelligenceReportsScreen() {
     { id: 'institutions', labelKey: 'dir_tab_institutions' },
     { id: 'materials', labelKey: 'dir_tab_materials' },
     { id: 'movements', labelKey: 'dir_tab_movements' },
+    { id: 'custody', labelKey: 'dir_tab_custody' },
     { id: 'corrections', labelKey: 'dir_tab_corrections' },
     { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'library', labelKey: 'dir_tab_library' },
@@ -123,6 +128,9 @@ export function DecisionIntelligenceReportsScreen() {
       )}
       {tab === 'movements' && (
         <div data-testid="movements-tab"><MovementReportSection /></div>
+      )}
+      {tab === 'custody' && (
+        <CustodyChainTab key={activeOrgId} lang={lang} />
       )}
       {tab === 'corrections' && (
         <CorrectionsHistoryTab key={activeOrgId} lang={lang} />
@@ -605,6 +613,168 @@ function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
           {t('mv_export_xlsx', lang)}
         </PhoenixButton>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Custody Chain — request/review/approval/dispatch/in-transit/receipt for
+ * institution-warehouse-to-outlet corridors, plus outlet-to-institution
+ * returns. Reuses the exact header list functions the operational screens
+ * already call (dispatch.service.ts/outlet-return.service.ts), called with
+ * NO id filter so RLS returns every document in the caller's organization —
+ * not a new list surface. Per-document drill-down reuses
+ * phoenix_movement_timeline (081/082) verbatim, including its own honest
+ * `complete: false` / completeness_note when the full history cannot be
+ * reconstructed from what was actually persisted (surfaced as-is here,
+ * never hidden or overstated).
+ */
+function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
+  const dispatches = useAsync(() => listCustodyDispatches(), []);
+  const returnRequests = useAsync(() => listCustodyReturnRequests(), []);
+  const returnShipments = useAsync(() => listCustodyReturnShipments(), []);
+  const [traceOpenFor, setTraceOpenFor] = useState<string | null>(null);
+  const [traceCache, setTraceCache] = useState<Record<string, MovementTimelineResult>>({});
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+
+  async function toggleTrace(id: string) {
+    if (traceOpenFor === id) { setTraceOpenFor(null); return; }
+    setTraceOpenFor(id);
+    setTraceError(null);
+    if (!traceCache[id]) {
+      try {
+        const result = await getMovementTimeline(id);
+        setTraceCache(c => ({ ...c, [id]: result }));
+      } catch (e) {
+        setTraceError(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  if (dispatches.loading && !dispatches.data) return <PhoenixLoadingState />;
+  if (dispatches.error) return <PhoenixErrorState message={dispatches.error} onRetry={dispatches.reload} />;
+
+  const dispatchRows = dispatches.data ?? [];
+  const requestRows = returnRequests.data ?? [];
+  const shipmentRows = returnShipments.data ?? [];
+
+  function exportConfig() {
+    interface CombinedRow { kind: string; number: string; status: string; date: string | null; }
+    const combined: CombinedRow[] = [
+      ...dispatchRows.map((d): CombinedRow => ({ kind: t('dir_custody_dispatch', lang), number: d.dispatchNumber, status: d.status, date: d.sentAt ?? d.createdAt })),
+      ...requestRows.map((r): CombinedRow => ({ kind: t('dir_custody_return_request', lang), number: r.returnNumber, status: r.status, date: r.createdAt })),
+      ...shipmentRows.map((s): CombinedRow => ({ kind: t('dir_custody_return_shipment', lang), number: s.shipmentNumber, status: s.status, date: null })),
+    ];
+    const columns: ProfessionalReportColumn<CombinedRow>[] = [
+      { key: 'kind', label: t('dir_col_document_type', lang), value: r => r.kind },
+      { key: 'number', label: t('dir_col_document_number', lang), value: r => r.number, ltr: true },
+      { key: 'status', label: t('dir_col_status', lang), value: r => r.status.replace(/_/g, ' ') },
+      { key: 'date', label: t('dir_as_of', lang), value: r => r.date ?? '—', ltr: true },
+    ];
+    return {
+      reportTitle: t('dir_tab_custody', lang),
+      generatedAt: new Date(),
+      filtersSummary: t('sc_all', lang),
+      columns,
+      rows: combined,
+      lang,
+      fileNameBase: 'medistock-custody-chain',
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
+    try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+  }
+
+  const traceBlock = (id: string) => traceOpenFor === id && (
+    <div style={{ marginTop: '6px', padding: '8px 10px', background: 'var(--s2)', borderRadius: 'var(--r2)', fontSize: '11px' }}>
+      {!traceCache[id] && !traceError && <PhoenixLoadingState />}
+      {traceError && <div style={{ color: 'var(--err)' }}>{traceError}</div>}
+      {traceCache[id] && (
+        <>
+          <div style={{ color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{traceCache[id].completeness_note}</div>
+          {traceCache[id].events.length === 0
+            ? <div style={{ color: 'var(--t2)' }}>{t('dir_library_empty', lang)}</div>
+            : traceCache[id].events.map(ev => (
+              <div key={ev.event_id} style={{ borderTop: '1px solid var(--brd)', padding: '4px 0' }}>
+                <strong>{ev.event_type}</strong>{ev.status ? ` → ${ev.status}` : ''}
+                {' · '}{new Date(ev.occurred_at).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
+                {ev.actor_name ? ` · ${ev.actor_name}` : ''}
+                {ev.material ? ` · ${ev.material}` : ''}
+              </div>
+            ))}
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'grid', gap: '14px' }} data-testid="custody-chain-tab">
+      <div>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
+          {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+      </div>
+
+      <PhoenixCard>
+        <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>{t('dir_custody_dispatch', lang)}</div>
+        {dispatchRows.length === 0 ? <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /> : (
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {dispatchRows.map(d => (
+              <div key={d.id} style={{ fontSize: '11.5px' }}>
+                <button type="button" onClick={() => void toggleTrace(d.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
+                  <span dir="ltr">{d.dispatchNumber}</span>
+                  <span>{d.status.replace(/_/g, ' ')}</span>
+                </button>
+                {traceBlock(d.id)}
+              </div>
+            ))}
+          </div>
+        )}
+      </PhoenixCard>
+
+      <PhoenixCard>
+        <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>{t('dir_custody_return_request', lang)}</div>
+        {requestRows.length === 0 ? <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /> : (
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {requestRows.map(r => (
+              <div key={r.id} style={{ fontSize: '11.5px' }}>
+                <button type="button" onClick={() => void toggleTrace(r.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
+                  <span dir="ltr">{r.returnNumber}</span>
+                  <span>{r.status.replace(/_/g, ' ')}</span>
+                </button>
+                {traceBlock(r.id)}
+              </div>
+            ))}
+          </div>
+        )}
+      </PhoenixCard>
+
+      <PhoenixCard>
+        <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>{t('dir_custody_return_shipment', lang)}</div>
+        {shipmentRows.length === 0 ? <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /> : (
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {shipmentRows.map(s => (
+              <div key={s.id} style={{ fontSize: '11.5px' }}>
+                <button type="button" onClick={() => void toggleTrace(s.id)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '6px 8px', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', cursor: 'pointer', color: 'var(--t)' }}>
+                  <span dir="ltr">{s.shipmentNumber}</span>
+                  <span>{s.status.replace(/_/g, ' ')}</span>
+                </button>
+                {traceBlock(s.id)}
+              </div>
+            ))}
+          </div>
+        )}
+      </PhoenixCard>
     </div>
   );
 }

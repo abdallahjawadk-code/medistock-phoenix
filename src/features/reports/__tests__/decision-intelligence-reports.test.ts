@@ -51,6 +51,27 @@ describe('differences & corrections — service layer', () => {
   });
 });
 
+describe('custody chain — service layer', () => {
+  const custodyService = readFileSync(join(FEAT, 'custody-chain.service.ts'), 'utf8');
+
+  it('reuses the EXACT header list functions the operational screens already call — no new list surface', () => {
+    expect(custodyService).toContain("from '@/features/outlet/dispatch.service'");
+    expect(custodyService).toContain("from '@/features/outlet/outlet-return.service'");
+    expect(custodyService).toContain('getWarehouseDispatches()');
+    expect(custodyService).toContain('getOutletReturnRequests()');
+    expect(custodyService).toContain('getOutletReturnShipments()');
+  });
+
+  it('per-document drill-down reuses phoenix_movement_timeline verbatim — no reimplemented timeline logic', () => {
+    expect(custodyService).toContain("supabase.rpc('phoenix_movement_timeline'");
+  });
+
+  it('never overstates completeness — the RPC own completeness signal is passed through, not discarded', () => {
+    expect(custodyService).toContain('MovementTimelineResult');
+    expect(custodyService).not.toMatch(/complete:\s*true/);
+  });
+});
+
 describe('119 frontend — screen', () => {
   it('mints a fresh request id after every snapshot attempt (a retry never silently reuses a stale key across edits)', () => {
     expect(screen).toContain('setRequestId(newRequestId());');
@@ -67,10 +88,16 @@ describe('119 frontend — screen', () => {
     expect(screen).toContain('mobileHtml !== undefined');
   });
 
-  it('renders all seven tabs', () => {
-    for (const id of ['overview', 'institutions', 'materials', 'movements', 'corrections', 'audit', 'library']) {
+  it('renders all eight tabs', () => {
+    for (const id of ['overview', 'institutions', 'materials', 'movements', 'custody', 'corrections', 'audit', 'library']) {
       expect(screen).toContain(`id: '${id}'`);
     }
+  });
+
+  it('custody chain never hardcodes complete:true and surfaces the RPC completeness note as-is', () => {
+    const custody = screen.slice(screen.indexOf('function CustodyChainTab'));
+    expect(custody).toContain('completeness_note');
+    expect(custody).not.toMatch(/'complete':\s*true|complete:\s*true/);
   });
 
   it('institution status is a PURE reuse of the existing getInstitutionOverviews — no new RPC, no reimplemented counting', () => {
