@@ -368,7 +368,7 @@ describe('No forbidden content or scope creep', () => {
     });
   });
 
-  it('no package.json runtime dependency changes beyond the explicitly approved additions (exceljs, self-hosted W1 fonts, and the cinematic WebGL stack), checked structurally, not just diff', () => {
+  it('keeps the approved runtime dependency set exact, including removal of unused router packages', () => {
     const pkg = JSON.parse(readRoot('package.json'));
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       // W1: self-hosted variable fonts replacing the external Google Fonts CDN
@@ -385,12 +385,10 @@ describe('No forbidden content or scope creep', () => {
       // src/shared/webgl/**). Asset/capture tooling (sharp, playwright-core)
       // lives in devDependencies, not here.
       '@react-three/fiber', 'three',
-      // SECURITY: react-router pinned as a direct (exact-version) dependency
-      // alongside react-router-dom so both upgrade together — see
-      // tests/navigation-open-redirect-guard.test.ts. react-router-dom pulls
-      // it in as a transitive dep regardless; pinning it directly stops the
-      // two ever drifting to different resolved versions.
-      '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router', 'react-router-dom',
+      // SECURITY: react-router/react-router-dom are intentionally absent:
+      // application navigation is state-based and the unused packages were
+      // removed rather than retained as an unnecessary attack surface.
+      '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom',
       // PHARMA-OCR-A: browser-local OCR engine. Loaded ONLY through a dynamic
       // import after the operator chooses to scan a document — verified absent
       // from the entry chunks by ocr-safety-invariants.test.ts. Its worker,
