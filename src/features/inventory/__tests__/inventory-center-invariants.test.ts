@@ -164,12 +164,12 @@ describe('Identity invariant: a blank field is never read as "none exists"', () 
     expect(screen).toContain("noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== ''");
   });
 
-  it('115: national code is CATALOG-derived, never a client acknowledgement', () => {
-    // The old free-text nationalCode/noNationalCode pair no longer exists —
-    // the catalog item's own barcode is the ONLY national code source, and
-    // the RPC ignores whatever the client sends for it regardless.
-    expect(screen).toContain('hasNoNationalCode: !selectedItem.barcode');
-    expect(screen).not.toContain('noNationalCode');
+  it('118: Pharmacy Department identity is manual-only, never catalog-selected', () => {
+    expect(screen).toContain('centralItemId: null');
+    expect(screen).toContain('hasNoNationalCode: noNationalCode');
+    expect(screen).toContain("purchaseOrigin: supplyType === 'purchase' ? 'central' : null");
+    expect(screen).not.toContain('searchCentralItems');
+    expect(screen).not.toContain('selectedItem');
   });
 
   it('the batch acknowledgement flag is a required parameter, not optional', () => {
