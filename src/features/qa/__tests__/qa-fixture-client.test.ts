@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createQaFixtureClient } from '../qaFixtureClient';
-import { QA_MUTATION_OUTCOMES } from '../qaData';
+import { createQaFixtureClient, QA_RPC_CALLS, clearQaRpcCalls } from '../qaFixtureClient';
+import { QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER } from '../qaData';
 
 /**
  * VISUAL-QA-HARNESS-A — the fixture client performs no writes. These lock the
@@ -98,5 +98,56 @@ describe('simulated mutation outcomes are narrow and fail closed', () => {
     const { data, error } = await builder.update();
     expect(data).toBeNull();
     expect(error?.code).toBe('QA_READONLY');
+  });
+});
+
+/**
+ * FEFO-REASON-REQUESTID-LIVE-PROOF — the ONE narrow, args-scoped synthetic
+ * success for `phoenix_create_warehouse_dispatch`. It is deliberately NOT in
+ * QA_MUTATION_OUTCOMES (see qaData.ts) so it stays excluded there for every
+ * OTHER call shape — only the exact warehouse→outlet header this one live
+ * proof drives gets a fabricated id back.
+ */
+describe('FEFO live-proof: args-scoped synthetic success for phoenix_create_warehouse_dispatch', () => {
+  it('returns a fabricated header id ONLY for the exact warehouse/outlet header the proof drives', async () => {
+    const client = createQaFixtureClient();
+    const { data, error } = await client.rpc('phoenix_create_warehouse_dispatch', {
+      p_warehouse_id: QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.warehouseId,
+      p_destination_distribution_point_id: QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.outletId,
+      p_dispatch_number: '',
+      p_document_number: null,
+      p_default_currency: null,
+      p_notes: null,
+    });
+    expect(error).toBeNull();
+    expect((data as { ok?: boolean; id?: string } | null)?.ok).toBe(true);
+    expect((data as { id?: string }).id).toBe(QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.dispatchId);
+  });
+
+  it.each([
+    ['different warehouse, same outlet', { p_warehouse_id: 'qa-wh-inst-a-empty', p_destination_distribution_point_id: 'qa-outlet-1' }],
+    ['same warehouse, different outlet', { p_warehouse_id: 'qa-wh-inst-a', p_destination_distribution_point_id: 'qa-outlet-2' }],
+    ['no args at all', {}],
+  ])('still fails closed with QA_READONLY for %s — the scoping is exact-args, not a blanket allow', async (_label, args) => {
+    const client = createQaFixtureClient();
+    const { data, error } = await client.rpc('phoenix_create_warehouse_dispatch', args);
+    expect(data).toBeNull();
+    expect((error as { code?: string } | null)?.code).toBe('QA_READONLY');
+  });
+
+  it('QA_MUTATION_OUTCOMES (the real allowlist) is untouched by this addition', () => {
+    expect(QA_MUTATION_OUTCOMES).not.toHaveProperty('phoenix_create_warehouse_dispatch');
+  });
+
+  it('the call is still logged to QA_RPC_CALLS exactly as sent, before the synthetic answer', async () => {
+    const client = createQaFixtureClient();
+    clearQaRpcCalls();
+    const args = {
+      p_warehouse_id: QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.warehouseId,
+      p_destination_distribution_point_id: QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.outletId,
+    };
+    await client.rpc('phoenix_create_warehouse_dispatch', args);
+    expect(QA_RPC_CALLS).toHaveLength(1);
+    expect(QA_RPC_CALLS[0]).toEqual({ name: 'phoenix_create_warehouse_dispatch', args });
   });
 });

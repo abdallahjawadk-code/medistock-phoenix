@@ -36,7 +36,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { QA_HARNESS_MARKER } from './qaConfig';
-import { QA_FIXTURES, QA_MUTATION_OUTCOMES, type QaRow } from './qaData';
+import { QA_FIXTURES, QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER, type QaRow } from './qaData';
 
 export interface QaResult {
   data: unknown;
@@ -154,6 +154,26 @@ export function createQaFixtureClient(): SupabaseClient {
       // receipt) are reachable. Nothing is written and no database is touched.
       if (Object.prototype.hasOwnProperty.call(QA_MUTATION_OUTCOMES, name)) {
         return Promise.resolve(ok(QA_MUTATION_OUTCOMES[name]));
+      }
+
+      // FEFO-REASON-REQUESTID-LIVE-PROOF — a single, ARGS-SCOPED synthetic
+      // success. `phoenix_create_warehouse_dispatch` is deliberately NOT on
+      // the QA_MUTATION_OUTCOMES allowlist above (see qaData.ts's comment on
+      // QA_FEFO_LIVE_PROOF_DISPATCH_HEADER for why). Only the ONE exact
+      // warehouse→outlet header the FEFO-override live-interaction proof
+      // drives gets a fabricated header id back; a call with any other
+      // p_warehouse_id / p_destination_distribution_point_id still falls
+      // through to the ordinary QA_READONLY failure below, unchanged from
+      // every prior QA scenario. Nothing is written, no database is touched —
+      // this only lets the composer's OWN real client logic proceed to call
+      // phoenix_add_dispatch_line_fefo_guarded next, which is what the proof
+      // actually observes (via QA_RPC_CALLS above).
+      if (
+        name === 'phoenix_create_warehouse_dispatch' &&
+        args?.p_warehouse_id === QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.warehouseId &&
+        args?.p_destination_distribution_point_id === QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.outletId
+      ) {
+        return Promise.resolve(ok({ ok: true, id: QA_FEFO_LIVE_PROOF_DISPATCH_HEADER.dispatchId }));
       }
 
       // Everything else — mutating or unknown — still fails closed.

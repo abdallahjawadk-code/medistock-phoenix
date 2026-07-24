@@ -30,6 +30,27 @@ export const QA_MUTATION_OUTCOMES: Record<string, unknown> = {
   phoenix_receive_outlet_return_shipment_line: { ok: true },
 };
 
+/**
+ * FEFO-REASON-REQUESTID-LIVE-PROOF — a single, ARGS-SCOPED synthetic success
+ * for `phoenix_create_warehouse_dispatch`, deliberately kept OUT of
+ * `QA_MUTATION_OUTCOMES` above.
+ *
+ * `phoenix_create_warehouse_dispatch` is intentionally NOT on the real-mutation
+ * allowlist — unlike the migration-071 outcomes above, it stays excluded for
+ * every OTHER call shape, so any other QA scenario driving OutletDispatchComposer
+ * still sees the ordinary QA_READONLY failure exactly as before. This constant
+ * exists ONLY so `qaFixtureClient.rpc` can recognise the ONE specific header
+ * (this warehouse → this outlet) the FEFO-override live-interaction proof
+ * drives, and answer THAT single shape with a fabricated header id — never a
+ * real write, never a blanket allow. See qaFixtureClient.ts for the args match.
+ */
+export const QA_FEFO_LIVE_PROOF_DISPATCH_HEADER = {
+  warehouseId: 'qa-wh-inst-a',
+  outletId: 'qa-outlet-1',
+  /** Obviously-synthetic fabricated id — never written anywhere. */
+  dispatchId: '0ff66666-0000-4000-8000-000000000001',
+};
+
 /** Exported so the scope-assignment fixtures bind to the SAME organization ids. */
 export const ORG_A = 'qa-org-a1';
 export const ORG_B = 'qa-org-b2';
