@@ -192,7 +192,26 @@ describe('no client-side document-number sequence exists', () => {
     // eleven RPCs; no new table, no sequence, no MOVEMENT document identity
     // of any kind (a privilege grant is not a document number). The ceiling
     // moves to 114.
-    const beyond = migrations.filter(f => /^(11[4-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 114 (CENTRAL-ITEMS-CATALOG-DETAIL-114) adds NO document numbering —
+    // three nullable text columns on central_items (trade_name/concentration/
+    // dosage_form); no sequence, no MOVEMENT document identity of any kind.
+    // The ceiling moves to 115.
+    // 115 (CENTRAL-INTAKE-CATALOG-LOCKDOWN-115) adds NO document numbering —
+    // redefines phoenix_receive_warehouse_stock to require and derive
+    // identity from an existing central_items row; reuses 090's WR-/WA-
+    // official-number trigger unchanged, allocates no new sequence, no
+    // MOVEMENT document identity of any kind. The ceiling moves to 116.
+    // 116 (SUBPURCHASE-NATIONAL-CODE-116) adds NO document numbering — adds
+    // an optional p_national_code parameter to phoenix_subpurchase_direct_entry,
+    // threaded into the existing order/receipt line rows; the SP-/PR- number
+    // sequences it reuses are 089's/087's UNCHANGED server-owned allocators,
+    // no new sequence, no MOVEMENT document identity of any kind. The
+    // ceiling moves to 117.
+    // 117 (SUBPURCHASE-DUPLICATE-CANDIDATES-117) adds NO document numbering —
+    // a read-only advisory fuzzy-match RPC (phoenix_subpurchase_duplicate_candidates);
+    // no table, no sequence, no MOVEMENT document identity of any kind. The
+    // ceiling moves to 118.
+    const beyond = migrations.filter(f => /^(11[8-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

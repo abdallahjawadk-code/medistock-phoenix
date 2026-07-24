@@ -174,6 +174,10 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '111_phoenix_threshold_batch_apply.sql',
   '112_phoenix_status_classification_boundary_correction.sql',
   '113_phoenix_monthly_status_direct_write_lockdown.sql',
+  '114_phoenix_central_items_catalog_detail.sql',
+  '115_phoenix_central_intake_catalog_lockdown.sql',
+  '116_phoenix_subpurchase_national_code.sql',
+  '117_phoenix_subpurchase_duplicate_candidates.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
