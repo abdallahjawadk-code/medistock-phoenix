@@ -15,7 +15,7 @@
  * pre-089 production the submit refuses with an explicit "awaiting migration"
  * message (RPC absent → 42883/PGRST202).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -23,7 +23,7 @@ import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
 import type { ResolvedMaterial } from '@/shared/materials/material-resolver.service';
-import { newRequestId } from './procurement.service';
+import { newRequestId, getDuplicateCandidates, type DuplicateCandidate } from './procurement.service';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -47,6 +47,8 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
   const [concentration, setConcentration] = useState('');
   const [dosageForm, setDosageForm] = useState('');
   const [unit, setUnit] = useState('');
+  const [nationalCode, setNationalCode] = useState('');
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
   const [batch, setBatch] = useState('');
   const [noBatch, setNoBatch] = useState(false);
   const [expiry, setExpiry] = useState('');
@@ -71,6 +73,21 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
     && (noBatch ? batch.trim() === '' : batch.trim() !== '')
     && confirmed && !busy;
 
+  // 117 — advisory-only duplicate suggestion while typing a NEW identity.
+  // Never blocks submission; purely a "did you mean...?" hint.
+  useEffect(() => {
+    if (!newIdentity || material !== null || scientificName.trim().length < 2) {
+      setDuplicates([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void getDuplicateCandidates(warehouseId, scientificName, tradeName, nationalCode)
+        .then(rows => { if (!cancelled) setDuplicates(rows); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [newIdentity, material, warehouseId, scientificName, tradeName, nationalCode]);
+
   async function submit() {
     if (!valid || !supabaseConfigured) return;
     setBusy(true);
@@ -93,6 +110,7 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
       p_concentration: (material?.concentration ?? concentration.trim()) || null,
       p_dosage_form: (material?.dosageForm ?? dosageForm.trim()) || null,
       p_unit: (material?.unit ?? unit.trim()) || null,
+      p_national_code: nationalCode.trim() || null,
     });
     setBusy(false);
     if (rpcError) {
@@ -145,7 +163,58 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
               <PhoenixInput label={t('inv_concentration', lang)} value={concentration} onChange={e => { setConcentration(e.target.value); touch(); }} />
               <PhoenixInput label={t('inv_dosage_form', lang)} value={dosageForm} onChange={e => { setDosageForm(e.target.value); touch(); }} />
               <PhoenixInput label={t('inv_unit', lang)} value={unit} onChange={e => { setUnit(e.target.value); touch(); }} />
+              <PhoenixInput label={t('sp_national_code_optional', lang)} value={nationalCode} onChange={e => { setNationalCode(e.target.value); touch(); }} />
             </div>
+
+            {/* 117 — advisory-only, never blocks creating a new material. */}
+            {duplicates.length > 0 && (
+              <div data-testid="subpurchase-duplicate-hint" role="status" style={{ padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--warn-bg, #fff7e6)', border: '1px solid var(--warn, #d9a441)', display: 'grid', gap: '6px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700 }} dir="auto">{t('sp_duplicate_hint_title', lang)}</div>
+                <div style={{ display: 'grid', gap: '4px' }}>
+                  {duplicates.map(d => (
+                    <div key={`${d.source}-${d.sourceId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11.5px', flexWrap: 'wrap' }}>
+                      <span dir="auto">
+                        {d.scientificName}{d.tradeName ? ` (${d.tradeName})` : ''}
+                        {' '}· {t(d.source === 'catalog' ? 'sp_duplicate_source_catalog' : 'sp_duplicate_source_lot', lang)}
+                      </span>
+                      {d.source === 'catalog' && (
+                        <PhoenixButton
+                          variant="ghost" size="sm"
+                          onClick={() => {
+                            setMaterial({
+                              source: 'catalog',
+                              centralItemId: d.sourceId,
+                              warehouseStockId: null,
+                              scientificName: d.scientificName,
+                              tradeName: d.tradeName,
+                              concentration: d.concentration,
+                              dosageForm: d.dosageForm,
+                              unit: null,
+                              nationalCode: d.nationalCode,
+                              barcode: d.nationalCode,
+                              batchNumber: null,
+                              expiryDate: null,
+                              onHand: null,
+                              reserved: null,
+                              available: null,
+                              supplyType: null,
+                              grade: 'confirmed',
+                              reasonKey: 'sp_duplicate_use_this',
+                            } satisfies ResolvedMaterial);
+                            setNewIdentity(false);
+                            touch();
+                          }}
+                        >
+                          {t('sp_duplicate_use_this', lang)}
+                        </PhoenixButton>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">{t('sp_duplicate_hint_note', lang)}</div>
+              </div>
+            )}
+
             <PhoenixButton variant="ghost" size="sm" onClick={() => { setNewIdentity(false); touch(); }}>
               {t('sp_back_to_search', lang)}
             </PhoenixButton>
