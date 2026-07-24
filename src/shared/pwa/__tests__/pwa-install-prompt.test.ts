@@ -385,7 +385,12 @@ describe('No forbidden content or scope creep', () => {
       // src/shared/webgl/**). Asset/capture tooling (sharp, playwright-core)
       // lives in devDependencies, not here.
       '@react-three/fiber', 'three',
-      '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router-dom',
+      // SECURITY: react-router pinned as a direct (exact-version) dependency
+      // alongside react-router-dom so both upgrade together — see
+      // tests/navigation-open-redirect-guard.test.ts. react-router-dom pulls
+      // it in as a transitive dep regardless; pinning it directly stops the
+      // two ever drifting to different resolved versions.
+      '@supabase/supabase-js', 'exceljs', 'qrcode', 'react', 'react-dom', 'react-router', 'react-router-dom',
       // PHARMA-OCR-A: browser-local OCR engine. Loaded ONLY through a dynamic
       // import after the operator chooses to scan a document — verified absent
       // from the entry chunks by ocr-safety-invariants.test.ts. Its worker,
