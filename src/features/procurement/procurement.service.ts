@@ -181,7 +181,7 @@ function mapSupplier(r: any): SupplierRow {
   };
 }
 
-function mapOrder(r: any): OrderRow {
+export function mapOrder(r: any): OrderRow {
   return {
     id: r.id, organizationId: r.organization_id, warehouseId: r.warehouse_id,
     supplierId: r.supplier_id, orderNumber: r.order_number, status: r.status,

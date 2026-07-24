@@ -605,6 +605,7 @@ export const T: Dict = {
   dir_tab_corrections: { ar: 'الفروقات والتصحيحات',               en: 'Differences & Corrections' },
   dir_tab_audit:      { ar: 'الإجراءات الحساسة (تدقيق)',          en: 'Audit-Sensitive Actions' },
   dir_tab_custody:    { ar: 'سلسلة العهدة',                       en: 'Custody Chain' },
+  dir_tab_supplementary: { ar: 'تتبّع المشتريات الفرعية',          en: 'Supplementary Purchases Traceability' },
   dir_custody_dispatch: { ar: 'التجهيزات (مذخر → منفذ)',          en: 'Dispatches (warehouse → outlet)' },
   dir_custody_return_request: { ar: 'طلبات الإرجاع (منفذ → مؤسسة)', en: 'Return requests (outlet → institution)' },
   dir_custody_return_shipment: { ar: 'شحنات الإرجاع',              en: 'Return shipments' },

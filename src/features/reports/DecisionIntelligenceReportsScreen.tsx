@@ -42,13 +42,16 @@ import {
   listCustodyDispatches, listCustodyReturnRequests, listCustodyReturnShipments,
   getMovementTimeline, type MovementTimelineResult,
 } from './custody-chain.service';
+import { listSupplementaryPurchaseOrders } from './supplementary-purchases.service';
+import { getSuppliers, getReceipts, getReceiptLines, type OrderRow, type ReceiptLineRow } from '@/features/procurement/procurement.service';
+import { StatusBadge } from '@/features/procurement/OrderComposerPanel';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
   getSupplySourcesDetail,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'corrections' | 'audit' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'library';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -84,6 +87,7 @@ export function DecisionIntelligenceReportsScreen() {
     { id: 'materials', labelKey: 'dir_tab_materials' },
     { id: 'movements', labelKey: 'dir_tab_movements' },
     { id: 'custody', labelKey: 'dir_tab_custody' },
+    { id: 'supplementary', labelKey: 'dir_tab_supplementary' },
     { id: 'corrections', labelKey: 'dir_tab_corrections' },
     { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'library', labelKey: 'dir_tab_library' },
@@ -131,6 +135,9 @@ export function DecisionIntelligenceReportsScreen() {
       )}
       {tab === 'custody' && (
         <CustodyChainTab key={activeOrgId} lang={lang} />
+      )}
+      {tab === 'supplementary' && (
+        <SupplementaryPurchasesTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
       )}
       {tab === 'corrections' && (
         <CorrectionsHistoryTab key={activeOrgId} lang={lang} />
@@ -775,6 +782,123 @@ function CustodyChainTab({ lang }: { lang: 'ar' | 'en' }) {
           </div>
         )}
       </PhoenixCard>
+    </div>
+  );
+}
+
+/**
+ * Supplementary Purchases — traceability. procurement_orders/receipts/lines
+ * (087/089) ARE the supplementary-purchase corridor by construction; no new
+ * table. Adds the ONE missing org-wide list (getOrders() in
+ * procurement.service.ts requires a warehouseId — the operational screen's
+ * own per-warehouse scope), still through the SAME RLS
+ * (phoenix_can_read_local_procurement) every operational read already goes
+ * through. Drill-down (order -> receipt -> line) reuses getReceipts/
+ * getReceiptLines UNCHANGED. Full official-document print/XLSX/QR rendering
+ * for a specific receipt remains on the existing LocalProcurementScreen
+ * (screen 19) rather than being duplicated a second time here — this tab is
+ * the traceability list + drill-down, not a second receipt-rendering UI.
+ */
+function SupplementaryPurchasesTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
+  const orders = useAsync(() => listSupplementaryPurchaseOrders(orgId), [orgId]);
+  const suppliers = useAsync(() => getSuppliers(orgId), [orgId]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+
+  if (orders.loading && !orders.data) return <PhoenixLoadingState />;
+  if (orders.error) return <PhoenixErrorState message={orders.error} onRetry={orders.reload} />;
+  const rows = orders.data ?? [];
+  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} />;
+
+  function exportConfig() {
+    const columns: ProfessionalReportColumn<OrderRow>[] = [
+      { key: 'number', label: t('dir_col_document_number', lang), value: r => r.orderNumber, ltr: true },
+      { key: 'status', label: t('dir_col_status', lang), value: r => r.status.replace(/_/g, ' ') },
+      { key: 'invoice', label: t('sp_invoice_ref', lang), value: r => r.invoiceNumber ?? '—', ltr: true },
+      { key: 'date', label: t('dir_as_of', lang), value: r => r.createdAt, ltr: true, dateColumn: 'datetime', excelValue: r => r.createdAt },
+    ];
+    return {
+      reportTitle: t('dir_tab_supplementary', lang),
+      generatedAt: new Date(),
+      filtersSummary: t('sc_all', lang),
+      columns,
+      rows,
+      lang,
+      fileNameBase: 'medistock-supplementary-purchases',
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
+    try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '10px' }} data-testid="supplementary-purchases-tab">
+      <div>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
+          {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+      </div>
+      {rows.map(o => {
+        const supplier = suppliers.data?.find(s => s.id === o.supplierId) ?? null;
+        return (
+          <PhoenixCard key={o.id}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span dir="ltr">{o.orderNumber}</span> <StatusBadge status={o.status} lang={lang} />
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>
+                  {t('lp_supplier', lang)}: {supplier ? (lang === 'ar' ? (supplier.nameAr || supplier.name) : supplier.name) : '—'} ·{' '}
+                  {new Date(o.createdAt).toLocaleDateString(lang === 'ar' ? 'ar' : 'en')}
+                </div>
+              </div>
+              <PhoenixButton variant="ghost" size="sm" onClick={() => setOpenId(openId === o.id ? null : o.id)}>
+                {openId === o.id ? t('lp_close', lang) : t('lp_open', lang)}
+              </PhoenixButton>
+            </div>
+            {openId === o.id && <SupplementaryPurchaseDrilldown orderId={o.id} lang={lang} />}
+          </PhoenixCard>
+        );
+      })}
+    </div>
+  );
+}
+
+function SupplementaryPurchaseDrilldown({ orderId, lang }: { orderId: string; lang: 'ar' | 'en' }) {
+  const detail = useAsync(async () => {
+    const receipts = await getReceipts(orderId);
+    const lines = new Map<string, ReceiptLineRow[]>();
+    await Promise.all(receipts.map(async r => { lines.set(r.id, await getReceiptLines(r.id)); }));
+    return { receipts, lines };
+  }, [orderId]);
+
+  if (detail.loading && !detail.data) return <PhoenixLoadingState />;
+  if (detail.error) return <PhoenixErrorState message={detail.error} onRetry={detail.reload} />;
+  const d = detail.data;
+  if (!d) return null;
+
+  return (
+    <div style={{ marginTop: '10px', borderTop: '1px solid var(--brd)', paddingTop: '10px', fontSize: '11.5px' }}>
+      {d.receipts.length === 0 && <div style={{ color: 'var(--t2)' }}>{t('lp_detail_no_receipts', lang)}</div>}
+      {d.receipts.map(r => (
+        <div key={r.id} style={{ marginBottom: '8px' }}>
+          <div style={{ fontWeight: 700 }} dir="ltr">{r.receiptNumber}</div>
+          {(d.lines.get(r.id) ?? []).map(rl => (
+            <div key={rl.id} style={{ color: 'var(--t2)' }}>
+              {t('lp_qty', lang)}: {rl.quantity} · {t('mv_f_batch_number', lang)}: {rl.batchNumber ?? '—'} · {t('mv_f_expiry_date', lang)}: {rl.expiryDate ?? '—'}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

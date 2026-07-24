@@ -72,6 +72,20 @@ describe('custody chain — service layer', () => {
   });
 });
 
+describe('supplementary purchases traceability — service layer', () => {
+  const supplementaryService = readFileSync(join(FEAT, 'supplementary-purchases.service.ts'), 'utf8');
+
+  it('reads the EXACT procurement_orders table 087/089 already write — no new table, no purchase_origin filter invented', () => {
+    expect(supplementaryService).toContain("from('procurement_orders')");
+    expect(supplementaryService).not.toMatch(/\.eq\('purchase_origin'/);
+  });
+
+  it('reuses the shared mapOrder from procurement.service.ts — no duplicated row-mapping logic', () => {
+    expect(supplementaryService).toContain("from '@/features/procurement/procurement.service'");
+    expect(supplementaryService).toContain('mapOrder');
+  });
+});
+
 describe('119 frontend — screen', () => {
   it('mints a fresh request id after every snapshot attempt (a retry never silently reuses a stale key across edits)', () => {
     expect(screen).toContain('setRequestId(newRequestId());');
@@ -88,10 +102,16 @@ describe('119 frontend — screen', () => {
     expect(screen).toContain('mobileHtml !== undefined');
   });
 
-  it('renders all eight tabs', () => {
-    for (const id of ['overview', 'institutions', 'materials', 'movements', 'custody', 'corrections', 'audit', 'library']) {
+  it('renders all nine tabs', () => {
+    for (const id of ['overview', 'institutions', 'materials', 'movements', 'custody', 'supplementary', 'corrections', 'audit', 'library']) {
       expect(screen).toContain(`id: '${id}'`);
     }
+  });
+
+  it('supplementary purchases drill-down reuses getReceipts/getReceiptLines UNCHANGED — no duplicated receipt read', () => {
+    expect(screen).toContain("from '@/features/procurement/procurement.service'");
+    expect(screen).toContain('getReceipts(orderId)');
+    expect(screen).toContain('getReceiptLines(r.id)');
   });
 
   it('custody chain never hardcodes complete:true and surfaces the RPC completeness note as-is', () => {
