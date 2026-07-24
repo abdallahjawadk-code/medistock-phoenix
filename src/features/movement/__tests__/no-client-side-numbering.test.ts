@@ -164,7 +164,17 @@ describe('no client-side document-number sequence exists', () => {
     // default-ACL root cause behind 108 (future tables/sequences/functions
     // no longer inherit broad authenticated/anon/PUBLIC access); no RPC, no
     // new table, no identity of any kind. The ceiling moves to 110.
-    const beyond = migrations.filter(f => /^(1[1-9]\d|[2-9]\d\d)_/.test(f));
+    // 110 (PAPER-REFERENCE-CONTRACT-110) adds NO document numbering —
+    // phoenix_paper_references.paper_reference_number is a deliberately
+    // OPTIONAL, operator-typed EXTERNAL reference (the paper document a real
+    // instruction traces back to), exactly like the pre-existing
+    // mv_external_reference field this same guard already protects — never
+    // an authoritative serial. Nothing in 110 allocates a client- or
+    // server-side sequence for a MOVEMENT document; the row's own identity
+    // is its uuid, and the canonical document/official numbers it links to
+    // (dispatch_number, return_number, official_number) are 100% untouched.
+    // The ceiling moves to 111.
+    const beyond = migrations.filter(f => /^(11[1-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -189,6 +199,10 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('104_phoenix_return_quarantine_insert_column_fix.sql');
     expect(migrations).toContain('105_phoenix_quarantine_read_policy_disposition_parity.sql');
     expect(migrations).toContain('106_phoenix_dispatch_line_idempotency.sql');
+    expect(migrations).toContain('107_phoenix_dispatch_line_request_id_required.sql');
+    expect(migrations).toContain('108_phoenix_custody_chain_direct_write_lockdown.sql');
+    expect(migrations).toContain('109_phoenix_public_schema_default_privileges_lockdown.sql');
+    expect(migrations).toContain('110_phoenix_paper_reference_contract.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
