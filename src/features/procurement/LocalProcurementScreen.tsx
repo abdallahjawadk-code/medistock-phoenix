@@ -1,20 +1,19 @@
 /**
- * INSTITUTION-LOCAL-PROCUREMENT-087 — Screen 19, Local Procurement workspace.
+ * SUPPLEMENTARY-PURCHASES-REDESIGN — Screen 19, المشتريات الفرعية workspace.
  *
- * The single surface an institution works from to purchase locally: suppliers,
- * order composing, the approval queue, partial/full receiving, and purchase
- * history with printable receipts (print · genuine XLSX · QR traceability).
+ * Three tabs only: direct entry (089/116), history & receipts, returns. The
+ * full supplier/order/approval/receiving cycle (087) is NOT surfaced here —
+ * its RPCs and tables remain in place (history/returns read them, and 089's
+ * direct entry still composes the same canonical rows internally for audit),
+ * but the interactive multi-step workflow UI is intentionally hidden: this
+ * screen's contract is a single human-confirmed act, not a visible
+ * order -> approval -> receive cycle.
  *
  * Scope: the profile's assigned institution warehouses (062), re-checked
  * per-warehouse by useProcurementPermissions and AGAIN server-side inside
- * every migration-087 RPC. Nothing here writes a stock table: stock enters
- * only through phoenix_procurement_receive_order, and item_availability stays
- * a read-only projection.
- *
- * OCR: deliberately absent. If an OCR draft ever pre-fills the composer it is
- * still a reviewable DRAFT that walks submit → approve → receive like any
- * hand-typed order (the ocr_assisted provenance flag exists for that path);
- * OCR can never post stock.
+ * every RPC. Nothing here writes a stock table directly: stock enters only
+ * through the canonical RPCs, and item_availability stays a read-only
+ * projection.
  */
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
@@ -25,14 +24,10 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useProcurementPermissions } from './useProcurementPermissions';
-import { SupplierPanel } from './SupplierPanel';
 import { DirectEntryPanel } from './DirectEntryPanel';
-import { OrderComposerPanel } from './OrderComposerPanel';
-import { ApprovalQueuePanel } from './ApprovalQueuePanel';
-import { ReceivingPanel } from './ReceivingPanel';
 import { PurchaseHistoryPanel } from './PurchaseHistoryPanel';
 
-type Tab = 'entry' | 'orders' | 'approvals' | 'receiving' | 'history' | 'suppliers';
+type Tab = 'entry' | 'history' | 'returns';
 
 export function LocalProcurementScreen() {
   const { lang, dir, activeOrgId } = useApp();
@@ -76,18 +71,14 @@ export function LocalProcurementScreen() {
   const warehouseName = lang === 'ar' ? (activeWarehouse.nameAr || activeWarehouse.name) : activeWarehouse.name;
 
   const tabs: Array<{ id: Tab; labelKey: string; show: boolean }> = [
-    // SUBPURCHASE-DIRECT-ENTRY (089): the PRIMARY surface — one simple act,
-    // no visible order/supplier/approval cycle. The cycle tabs remain for
-    // operators who use the full workflow.
+    // SUBPURCHASE-DIRECT-ENTRY (089/116): the ONLY entry surface — one simple
+    // act, no visible order/supplier/approval cycle.
     { id: 'entry', labelKey: 'sp_tab_entry', show: p.canManage && p.canReceive },
-    { id: 'orders', labelKey: 'lp_tab_orders', show: true },
-    { id: 'approvals', labelKey: 'lp_tab_approvals', show: p.canApprove },
-    { id: 'receiving', labelKey: 'lp_tab_receiving', show: p.canReceive },
-    { id: 'history', labelKey: 'lp_tab_history', show: true },
-    { id: 'suppliers', labelKey: 'lp_tab_suppliers', show: true },
+    { id: 'history', labelKey: 'sp_tab_history', show: true },
+    { id: 'returns', labelKey: 'sp_tab_returns', show: p.canReturn },
   ];
   const visibleTabs = tabs.filter(x => x.show);
-  const activeTab = visibleTabs.some(x => x.id === tab) ? tab : (visibleTabs[0]?.id ?? 'orders');
+  const activeTab = visibleTabs.some(x => x.id === tab) ? tab : (visibleTabs[0]?.id ?? 'history');
 
   return (
     <div dir={dir}>
@@ -127,33 +118,25 @@ export function LocalProcurementScreen() {
         <DirectEntryPanel key={activeWarehouse.id} lang={lang} warehouseId={activeWarehouse.id} onDone={() => { /* result card is the feedback */ }} />
       )}
 
-      {activeTab === 'orders' && (
-        <OrderComposerPanel
-          key={activeWarehouse.id}
-          orgId={activeOrgId}
-          warehouseId={activeWarehouse.id}
-          canManage={p.canManage}
-          lang={lang}
-        />
-      )}
-      {activeTab === 'approvals' && p.canApprove && (
-        <ApprovalQueuePanel key={activeWarehouse.id} warehouseId={activeWarehouse.id} lang={lang} />
-      )}
-      {activeTab === 'receiving' && p.canReceive && (
-        <ReceivingPanel key={activeWarehouse.id} warehouseId={activeWarehouse.id} lang={lang} />
-      )}
       {activeTab === 'history' && (
         <PurchaseHistoryPanel
           key={activeWarehouse.id}
           orgId={activeOrgId}
           warehouseId={activeWarehouse.id}
           warehouseName={warehouseName}
-          canReturn={p.canReturn}
+          canReturn={false}
           lang={lang}
         />
       )}
-      {activeTab === 'suppliers' && (
-        <SupplierPanel orgId={activeOrgId} canManage={p.canManage} lang={lang} />
+      {activeTab === 'returns' && p.canReturn && (
+        <PurchaseHistoryPanel
+          key={`${activeWarehouse.id}-returns`}
+          orgId={activeOrgId}
+          warehouseId={activeWarehouse.id}
+          warehouseName={warehouseName}
+          canReturn={p.canReturn}
+          lang={lang}
+        />
       )}
     </div>
   );
