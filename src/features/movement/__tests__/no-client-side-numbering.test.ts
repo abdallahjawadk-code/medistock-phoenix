@@ -214,7 +214,13 @@ describe('no client-side document-number sequence exists', () => {
     // 118 (CENTRAL-INTAKE-MANUAL-IDENTITY-118) adds NO document numbering —
     // it redefines the existing intake writer and preserves the unchanged
     // 090 WR-/WA- server-owned allocator. The ceiling moves to 119.
-    const beyond = migrations.filter(f => /^(119|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 119 (REPORT-SNAPSHOTS-AND-EXECUTIVE-OVERVIEW-119) adds a NEW document
+    // family (official report snapshots, RP-YYYY-nnnnnn) — not a MOVEMENT
+    // document, but numbered with the exact same safe discipline this guard
+    // exists to enforce: a REVOKEd sequence, stamped by a BEFORE INSERT
+    // trigger (090's pattern verbatim), never a client-supplied or
+    // client-computed number. The ceiling moves to 120.
+    const beyond = migrations.filter(f => /^(12\d|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
