@@ -68,3 +68,62 @@ jobs:
 
       - name: Validate Vercel configuration
         run: node -e "JSON.parse(require('node:fs').readFileSync('vercel.json', 'utf8'))"
+
+  pg-rig:
+    name: PostgreSQL pg-rig
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      # tools/pg-rig/rig.mjs replays the FULL canonical chain (001..latest,
+      # minus PREPARED_ONLY_SKIP) against a throwaway `phoenix_rig` database on
+      # THIS service container only — never a Supabase/production credential.
+      - name: Replay migrations 001->latest onto the disposable rig
+        run: node tools/pg-rig/apply.mjs
+        env:
+          PHOENIX_RIG_PG: postgres://postgres@localhost:55432/postgres
+
+      # Every dynamic suite calls buildRig(), which drops and recreates the
+      # SAME 'phoenix_rig' database name (tools/pg-rig/rig.mjs) — running two
+      # suites at once would race on that drop/recreate. --fileParallelism=false
+      # keeps suite files strictly serial; --pool=forks --poolOptions.forks.singleFork
+      # additionally pins everything to one worker process, matching how this
+      # rig has only ever been exercised locally (see the dynamic tests' own
+      # PHOENIX_RIG_PG usage comments).
+      - name: Run *.dynamic.test.ts suites against the disposable rig (serial)
+        run: >-
+          npx vitest run "supabase/migrations/__tests__/**/*.dynamic.test.ts"
+          --fileParallelism=false --pool=forks --poolOptions.forks.singleFork
+        env:
+          PHOENIX_RIG_PG: postgres://postgres@localhost:55432/postgres
+          TZ: Asia/Baghdad
