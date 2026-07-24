@@ -63,7 +63,9 @@ describe('OCR never writes stock on its own', () => {
     // Warehouse is confirmed separately at the preview — see the
     // critical-field suite below — so it is part of the submit gate too.
     expect(flow).toContain("const canSubmit = stage === 'preview' && canReachPreview && canSubmitIntake && warehouseConfirmed;");
-    expect(flow).toContain('const canReachPreview = !hasBlockingWarning && outstandingConfirmations.length === 0 && quantityValid;');
+    expect(flow).toContain('const canReachPreview =');
+    expect(flow).toContain('!hasBlockingWarning && outstandingConfirmations.length === 0');
+    expect(flow).toContain('&& quantityValid && supplyTypeValid;');
   });
 
   it('OCR uses the SAME intake service as manual entry — no OCR-specific write path', () => {
