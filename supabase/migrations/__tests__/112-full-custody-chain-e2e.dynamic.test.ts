@@ -99,6 +99,7 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
 
       await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, warehouse_id, is_active)
         VALUES ('${CWM}','${ORG}','warehouse','${WH_CENTRAL}',true),
+               ('${CWM}','${ORG}','warehouse','${WH_INST}',true),
                ('${WO}','${ORG}','warehouse','${WH_INST}',true),
                ('${WO_B}','${ORG_B}','warehouse','${WH_INST_B}',true)
         ON CONFLICT DO NOTHING;`);
@@ -251,10 +252,20 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
   });
 
   it('5b. 111/112 — before distribution, 100 units classifies as surplus against a batch-applied threshold', async () => {
+    // reorder_point/target_max chosen so this material's classification
+    // genuinely transitions from surplus (here) to scarce (6d, below) purely
+    // through real chain events — NOT through a re-configured threshold.
+    // phoenix_status_prepare_report (092, unmodified) sums on-hand across
+    // BOTH warehouse_stock AND outlet_stock for the same organization_id, so
+    // a same-org warehouse->outlet distribution (step 6) never by itself
+    // changes this total — it only moves WHERE the balance sits. Only an
+    // actual net reduction (dispense in step 7, the stocktake shortfall in
+    // 8/9, the quarantine removal in step 10) lowers the org-wide total that
+    // this classification is computed against; see 6d for the final number.
     const batch = await rig.asUser(CWM, async (c: any) => {
       const r = await c.query(
         `SELECT public.phoenix_batch_upsert_inventory_threshold($1,$2,$3,$4) AS r`,
-        [ORG, 'warehouse', WH_INST, JSON.stringify([{ scientific_name: 'CHAIN-MAT', reorder_point: 40, target_max: 90 }])],
+        [ORG, 'warehouse', WH_INST, JSON.stringify([{ scientific_name: 'CHAIN-MAT', reorder_point: 65, target_max: 95 }])],
       );
       return r.rows[0].r;
     }, { commit: true });
@@ -274,7 +285,8 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
       );
       return r.rows[0];
     });
-    // available = 100 (on_hand) - 0 (reserved) = 100 >= target_max(90) -> surplus.
+    // available = warehouse on_hand(100) + outlet on_hand(0) - reserved(0)
+    // = 100 >= target_max(95) -> surplus.
     expect(line.suggested_classification).toBe('surplus');
   });
 
@@ -285,12 +297,20 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
       ]);
       expect(dispatch.ok).toBe(true);
       dispatchId = dispatch.dispatch_id;
+    }, { commit: true });
 
-      // 107: p_request_id is now REQUIRED — omitting it must fail closed.
+    // 107: p_request_id is now REQUIRED — omitting it must fail closed. Run
+    // this negative check in its OWN transaction: once Postgres raises inside
+    // a transaction, every later statement in that SAME transaction fails
+    // with "current transaction is aborted" (no SAVEPOINT protects the calls
+    // below) — this must not poison the real, required calls that follow.
+    await rig.asUser(WO, async (c: any) => {
       await expect(call(c, 'phoenix_add_dispatch_line_fefo_guarded', [
         dispatchId, instStockId, 70, false, null, null,
       ])).rejects.toThrow(/request_id_required/);
+    });
 
+    await rig.asUser(WO, async (c: any) => {
       const reqId = randomUUID();
       const line = await call(c, 'phoenix_add_dispatch_line_fefo_guarded', [
         dispatchId, instStockId, 70, false, null, reqId,
@@ -373,26 +393,13 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
     });
   });
 
-  it('6c. 111/112 — after distribution, 30 units classifies as scarce against the same threshold', async () => {
-    const prepared = await rig.asUser(WO, async (c: any) => {
-      const r = await c.query(`SELECT public.phoenix_status_prepare_report($1) AS r`, [ORG]);
-      return r.rows[0].r;
-    }, { commit: true });
-
-    const line = await rig.asAdmin(async (c: any) => {
-      const r = await c.query(
-        `SELECT suggested_classification FROM inventory_status_report_lines
-          WHERE report_id = $1 AND scientific_name = 'CHAIN-MAT'`,
-        [prepared.report_id],
-      );
-      return r.rows[0];
-    });
-    // available = 30 <= reorder_point(40) -> scarce. The classification is
-    // LIVE — it moved from 'surplus' (step 5b) to 'scarce' purely because
-    // the real balance changed through the chain, not from a re-configured
-    // threshold.
-    expect(line.suggested_classification).toBe('scarce');
-  });
+  // 6c (checking classification immediately after step 6/6b) was removed —
+  // a same-org warehouse->outlet distribution alone can never change this
+  // material's org-wide total (see 5b's comment), so a classification check
+  // at that point could never legitimately show anything but 'surplus'
+  // again. The live surplus->scarce transition is checked at 6d, below,
+  // after step 10 — the first point in the chain where the org-wide total
+  // has actually, genuinely fallen.
 
   it('7. onward outlet dispatch/consumption — the outlet dispenses 20 units', async () => {
     await rig.asUser(OO, async (c: any) => {
@@ -502,6 +509,33 @@ run('Full custody chain E2E through 112 — 106-112 increment', () => {
       const outlet = await c.query(`SELECT on_hand_quantity FROM outlet_stock WHERE id=$1`, [outletStockId]);
       expect(outlet.rows[0].on_hand_quantity).toBe(35); // 50 - 15
     });
+  });
+
+  it('6d. 111/112 — after real depletion through the chain, the material classifies as scarce against the same (never reconfigured) threshold', async () => {
+    const prepared = await rig.asUser(WO, async (c: any) => {
+      const r = await c.query(`SELECT public.phoenix_status_prepare_report($1) AS r`, [ORG]);
+      return r.rows[0].r;
+    }, { commit: true });
+
+    const line = await rig.asAdmin(async (c: any) => {
+      const r = await c.query(
+        `SELECT suggested_classification FROM inventory_status_report_lines
+          WHERE report_id = $1 AND scientific_name = 'CHAIN-MAT'`,
+        [prepared.report_id],
+      );
+      return r.rows[0];
+    });
+    // available = warehouse on_hand(27, after the 8/9 stocktake correction)
+    // + outlet on_hand(35, after the step-10 return) - reserved(0) = 62.
+    // The 15 units in quarantine are NOT counted (a separate ledger, never
+    // "available") — confirmed by step 10's own assertion that warehouse
+    // on_hand is unaffected by quarantine receipt. 0 < 62 <= reorder_point
+    // (65) -> scarce. This is the SAME threshold row 5b set — the
+    // classification moved from 'surplus' to 'scarce' purely because real
+    // balances changed through dispense (step 7), a stocktake-driven
+    // correction (steps 8-9) and a quarantine removal (step 10), never
+    // because the threshold itself was ever touched again.
+    expect(line.suggested_classification).toBe('scarce');
   });
 
   it('conservation — every unit ever received is accounted for at this stopping point', async () => {

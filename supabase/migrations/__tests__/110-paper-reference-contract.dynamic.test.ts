@@ -128,7 +128,9 @@ run('110 paper-reference contract — dynamic', () => {
     }, { commit: true });
 
     await rig.asAdmin(async (c: any) => {
-      await c.query(`UPDATE warehouse_dispatches SET status = 'sent', sent_by = $1 WHERE id = $2`, [WO_A, dispatchId]);
+      // warehouse_dispatches_sent_at_chk requires sent_at NOT NULL whenever
+      // status is 'sent' (and every other terminal status it covers).
+      await c.query(`UPDATE warehouse_dispatches SET status = 'sent', sent_by = $1, sent_at = now() WHERE id = $2`, [WO_A, dispatchId]);
     });
 
     await expect(

@@ -44,6 +44,13 @@ run('111 threshold batch apply — dynamic', () => {
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG}' WHERE id='${CWM}';`);
       await c.query(`UPDATE profiles SET role='warehouse_officer',status='active',organization_id='${ORG}' WHERE id='${WO}';`);
+      // central_warehouse_manager is an OPERATIONAL role, not one of
+      // phoenix_profile_has_scoped_permission's org-wide roles (only
+      // institution_admin is) — it must hold an explicit scope assignment
+      // for the SPECIFIC warehouse it manages thresholds for, exactly like
+      // any other per-resource role.
+      await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, warehouse_id, is_active)
+        VALUES ('${CWM}','${ORG}','warehouse','${WH}',true) ON CONFLICT DO NOTHING;`);
     });
   }, 60000);
 
