@@ -180,7 +180,13 @@ describe('no client-side document-number sequence exists', () => {
     // phoenix_upsert_inventory_threshold; no new table, no sequence, no
     // MOVEMENT document identity of any kind (thresholds are not movement
     // documents). The ceiling moves to 112.
-    const beyond = migrations.filter(f => /^(11[2-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 112 (STATUS-CLASSIFICATION-BOUNDARY-CORRECTION-112) adds NO document
+    // numbering — corrects the available/scarce/unavailable/surplus
+    // classification comparisons and widens two CHECK constraints on
+    // inventory_status_report_lines; no new table, no sequence, no MOVEMENT
+    // document identity of any kind (a classification value is not a
+    // document number). The ceiling moves to 113.
+    const beyond = migrations.filter(f => /^(11[3-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -210,6 +216,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('109_phoenix_public_schema_default_privileges_lockdown.sql');
     expect(migrations).toContain('110_phoenix_paper_reference_contract.sql');
     expect(migrations).toContain('111_phoenix_threshold_batch_apply.sql');
+    expect(migrations).toContain('112_phoenix_status_classification_boundary_correction.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

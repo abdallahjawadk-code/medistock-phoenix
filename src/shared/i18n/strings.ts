@@ -1514,7 +1514,9 @@ export const T: Dict = {
   inv_th_scientific_name:   { ar: 'الاسم العلمي',                               en: 'Scientific name' },
   inv_th_national_code:     { ar: 'الرمز الوطني (اختياري)',                      en: 'National code (optional)' },
   inv_th_reorder_point:     { ar: 'حدّ إعادة الطلب',                            en: 'Reorder point' },
-  inv_th_target_max:        { ar: 'الحدّ الأقصى المستهدف',                        en: 'Target max' },
+  // THRESHOLD-BOUNDARY-CORRECTION-112: label only — the column/param stays
+  // target_max (never renamed); user-facing copy calls it what it means.
+  inv_th_target_max:        { ar: 'حدّ الفائض',                                  en: 'Surplus threshold' },
   inv_th_near_expiry_days:  { ar: 'نافذة قرب الصلاحية (يوم)',                    en: 'Near-expiry window (days)' },
   inv_th_near_expiry_hint:  { ar: '1–270، فارغ = 270 يومًا افتراضيًا',           en: '1–270, empty = 270-day default' },
   inv_th_scope:             { ar: 'النطاق',                                      en: 'Scope' },
@@ -2361,6 +2363,11 @@ export const T: Dict = {
   mst_amend_desc:         { ar: 'التقرير معتمد ومقفل؛ أي تصحيح يفتح نسخة جديدة موصولة بالأصل', en: 'The report is approved and locked; any correction opens a new version linked to the original' },
   mst_amend_action:       { ar: 'فتح تعديل',                                       en: 'Open amendment' },
   mst_class_available:    { ar: 'متوفر',                                           en: 'Available' },
+  // STATUS-CLASSIFICATION-BOUNDARY-CORRECTION-112: distinct from both
+  // 'scarce' (present but low) and 'suspected_missing' (a stocktake-variance
+  // claim requiring evidence + approval) — a plain, always-computed fact
+  // that on-hand minus reserved is exactly zero.
+  mst_class_unavailable:  { ar: 'غير متوفر',                                       en: 'Unavailable' },
   mst_class_scarce:       { ar: 'شحيح',                                            en: 'Scarce' },
   mst_class_surplus:      { ar: 'فائض',                                            en: 'Surplus' },
   mst_class_suspected_missing: { ar: 'مشتبه بفقدانه',                              en: 'Suspected missing' },

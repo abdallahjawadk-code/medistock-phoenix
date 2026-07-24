@@ -8,7 +8,14 @@
 import { supabase, supabaseConfigured } from '../client';
 
 export type StatusReportStatus = 'draft' | 'submitted' | 'returned' | 'locked';
-export type MaterialClassification = 'available' | 'scarce' | 'surplus' | 'suspected_missing';
+/**
+ * STATUS-CLASSIFICATION-BOUNDARY-CORRECTION-112: 'unavailable' is a
+ * distinct, always-computed classification for available=0 (on_hand -
+ * reserved), separate from and never conflated with 'suspected_missing'
+ * (which only ever originates from the stocktake-variance evidence flow —
+ * see phoenix_status_confirm_missing).
+ */
+export type MaterialClassification = 'available' | 'unavailable' | 'scarce' | 'surplus' | 'suspected_missing';
 
 export interface MonthlyStatusReport {
   id: string;
@@ -42,7 +49,7 @@ export interface MonthlyStatusLine {
   central_qty: number;
   supplementary_qty: number;
   nearest_expiry_date: string | null;
-  suggested_classification: 'available' | 'scarce' | 'surplus';
+  suggested_classification: 'available' | 'unavailable' | 'scarce' | 'surplus';
   classification: MaterialClassification | null;
   classification_reason: string | null;
   classification_overridden: boolean;

@@ -36,12 +36,16 @@ import {
 
 const CLASSIFICATION_LABEL_KEY: Record<MaterialClassification, string> = {
   available: 'mst_class_available',
+  unavailable: 'mst_class_unavailable',
   scarce: 'mst_class_scarce',
   surplus: 'mst_class_surplus',
   suspected_missing: 'mst_class_suspected_missing',
 };
 const CLASSIFICATION_VARIANT: Record<MaterialClassification, 'ok' | 'warn' | 'err' | 'neutral'> = {
-  available: 'ok', scarce: 'warn', surplus: 'ok', suspected_missing: 'err',
+  // 'unavailable' is a plain zero-balance fact, distinct from the ERROR-toned
+  // suspected_missing (which requires stocktake evidence + confirmation) —
+  // rendered as a warning, never conflated with the missing/error state.
+  available: 'ok', unavailable: 'warn', scarce: 'warn', surplus: 'ok', suspected_missing: 'err',
 };
 
 export function MonthlyStatusScreen() {
@@ -413,7 +417,7 @@ export function MonthlyStatusScreen() {
               label={t('mst_col_classification', lang)}
               value={bulkClassification}
               onChange={e => setBulkClassification(e.target.value as MaterialClassification)}
-              options={(['available', 'scarce', 'surplus', 'suspected_missing'] as MaterialClassification[])
+              options={(['available', 'unavailable', 'scarce', 'surplus', 'suspected_missing'] as MaterialClassification[])
                 .map(c => ({ value: c, label: t(CLASSIFICATION_LABEL_KEY[c], lang) }))}
             />
             <PhoenixInput label={t('mst_reason_placeholder', lang)} value={bulkReason} onChange={e => setBulkReason(e.target.value)} dir="auto" />
