@@ -211,7 +211,10 @@ describe('no client-side document-number sequence exists', () => {
     // a read-only advisory fuzzy-match RPC (phoenix_subpurchase_duplicate_candidates);
     // no table, no sequence, no MOVEMENT document identity of any kind. The
     // ceiling moves to 118.
-    const beyond = migrations.filter(f => /^(11[8-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 118 (CENTRAL-INTAKE-MANUAL-IDENTITY-118) adds NO document numbering —
+    // it redefines the existing intake writer and preserves the unchanged
+    // 090 WR-/WA- server-owned allocator. The ceiling moves to 119.
+    const beyond = migrations.filter(f => /^(119|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -243,6 +246,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('111_phoenix_threshold_batch_apply.sql');
     expect(migrations).toContain('112_phoenix_status_classification_boundary_correction.sql');
     expect(migrations).toContain('113_phoenix_monthly_status_direct_write_lockdown.sql');
+    expect(migrations).toContain('118_phoenix_central_intake_manual_identity.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
