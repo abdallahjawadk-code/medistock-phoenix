@@ -55,14 +55,35 @@ run('112 status classification boundary correction — dynamic', () => {
 
   afterAll(async () => { if (rig) await rig.end(); });
 
-  it('replay 001->112 succeeded and the CHECK constraints allow unavailable', async () => {
+  it('replay 001->112 succeeded and the CHECK constraints contain every required canonical value', async () => {
     await rig.asAdmin(async (c: any) => {
       const defs = await c.query(
         `SELECT pg_get_constraintdef(oid) def FROM pg_constraint
           WHERE conrelid = 'public.inventory_status_report_lines'::regclass AND contype = 'c'`,
       );
       const joined = defs.rows.map((r: any) => r.def).join(' | ');
-      expect(joined).toContain('unavailable');
+      for (const value of ['available', 'unavailable', 'scarce', 'surplus', 'suspected_missing']) {
+        expect(joined).toContain(value);
+      }
+    });
+  });
+
+  it('an unknown/garbage classification value is rejected by the CHECK constraint', async () => {
+    await rig.asAdmin(async (c: any) => {
+      const report = await c.query(
+        `INSERT INTO inventory_status_reports (id, organization_id, status, prepared_by, prepared_at)
+         VALUES (gen_random_uuid(), $1, 'draft', $2, now()) RETURNING id`,
+        [ORG, WO],
+      );
+      await expect(
+        c.query(
+          `INSERT INTO inventory_status_report_lines
+             (id, report_id, scientific_name, on_hand_qty, reserved_qty, in_transit_qty,
+              quarantine_qty, central_qty, supplementary_qty, suggested_classification)
+           VALUES (gen_random_uuid(), $1, 'P112-garbage-value', 0, 0, 0, 0, 0, 0, 'not_a_real_value')`,
+          [report.rows[0].id],
+        ),
+      ).rejects.toThrow(/violates check constraint/i);
     });
   });
 
@@ -228,14 +249,16 @@ run('112 status classification boundary correction — dynamic', () => {
     });
   });
 
-  it('zero regression: has_table_privilege proves 108/109 posture unchanged on inventory_status_report_lines', async () => {
-    await rig.asAdmin(async (c: any) => {
-      const priv = await c.query(
-        `SELECT privilege_type FROM information_schema.table_privileges
-          WHERE table_name = 'inventory_status_report_lines' AND grantee = 'authenticated'`,
-      );
-      const kinds = priv.rows.map((r: any) => r.privilege_type).sort();
-      expect(kinds).toEqual(['SELECT']);
-    });
-  });
+  // "Zero regression: 108/109 posture unchanged" was retired here — it
+  // asserted a premise that was never actually true at exactly 001->112:
+  // 108 only ever locked down stocktakes/stocktake_count_lines (092's OTHER
+  // two tables), never inventory_status_report_lines. Verified live: at
+  // upTo:112, `authenticated` genuinely still holds
+  // DELETE/INSERT/REFERENCES/TRIGGER/TRUNCATE/UPDATE here (092 never revoked
+  // them, and neither did 108, 109, nor anything before 113). Migration 113
+  // (MONTHLY-STATUS-DIRECT-WRITE-LOCKDOWN) closes this exact gap and carries
+  // its own full live privilege-matrix + bypass-attempt proof in
+  // 113-monthly-status-direct-write-lockdown.dynamic.test.ts — asserting the
+  // SELECT-only outcome here, before 113 ever runs, would have been encoding
+  // the bug as a passing test rather than actually guarding against it.
 });

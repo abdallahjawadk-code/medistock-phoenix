@@ -53,7 +53,22 @@
 --     those two columns. The constraint name is looked up dynamically from
 --     pg_constraint rather than hard-coded, since 092 left both checks
 --     unnamed (Postgres auto-names them) and guessing the generated name
---     wrong would silently no-op instead of failing loud.
+--     wrong would silently no-op instead of failing loud. The lookup itself
+--     identifies each constraint by TABLE+COLUMN IDENTITY via pg_attribute's
+--     attnum and pg_constraint.conkey — a single-column CHECK constraint's
+--     conkey is exactly ARRAY[that column's attnum] — never by matching text
+--     inside pg_get_constraintdef(). A prior version of this migration tried
+--     `... LIKE '%column%IN%'`, which is exactly the kind of fragile text
+--     match this contract avoids: Postgres rewrites `x IN (a,b,c)` internally
+--     into `x = ANY (ARRAY[a,b,c])` before it is ever stored, so the
+--     definition reconstructed by pg_get_constraintdef() never contains a
+--     literal "IN" token — the LIKE pattern silently matched nothing on a
+--     real Postgres and aborted the whole replay (caught by the pg-rig CI
+--     job this session added, which is exactly what it exists to catch).
+--     Matching on conkey identity is immune to how Postgres chooses to print
+--     the definition back, and a wrong-cardinality result (zero or more than
+--     one CHECK constraint on that exact column) fails loud rather than
+--     guessing.
 --
 -- PRECONDITIONS: 001..111 applied.
 -- ============================================================================
@@ -80,39 +95,66 @@ $precond$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Widen both CHECK constraints to allow 'unavailable'.
+--    Each constraint is located by TABLE+COLUMN IDENTITY (pg_attribute.attnum
+--    vs pg_constraint.conkey), never by pattern-matching pg_get_constraintdef()
+--    text — see the file header for why. A single-column CHECK constraint's
+--    conkey is exactly a one-element array holding that column's attnum;
+--    finding zero or more than one such constraint on the target column is a
+--    hard, loud failure — never a silent guess.
 -- ─────────────────────────────────────────────────────────────────────────────
 DO $constraints$
 DECLARE
+  v_attnum  smallint;
   v_conname text;
+  v_count   integer;
 BEGIN
-  SELECT conname INTO v_conname FROM pg_constraint
+  SELECT attnum INTO v_attnum FROM pg_attribute
+  WHERE attrelid = 'public.inventory_status_report_lines'::regclass
+    AND attname = 'suggested_classification' AND NOT attisdropped;
+  IF v_attnum IS NULL THEN
+    RAISE EXCEPTION '112: column suggested_classification not found on inventory_status_report_lines';
+  END IF;
+
+  SELECT count(*), max(conname) INTO v_count, v_conname FROM pg_constraint
   WHERE conrelid = 'public.inventory_status_report_lines'::regclass
-    AND contype = 'c'
-    AND pg_get_constraintdef(oid) LIKE '%suggested_classification%IN%';
-  IF v_conname IS NULL THEN
-    RAISE EXCEPTION '112: could not locate the suggested_classification CHECK constraint';
+    AND contype = 'c' AND conkey = ARRAY[v_attnum];
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '112: expected exactly one single-column CHECK constraint on suggested_classification, found %', v_count;
   END IF;
   EXECUTE format('ALTER TABLE public.inventory_status_report_lines DROP CONSTRAINT %I', v_conname);
 
-  SELECT conname INTO v_conname FROM pg_constraint
+  SELECT attnum INTO v_attnum FROM pg_attribute
+  WHERE attrelid = 'public.inventory_status_report_lines'::regclass
+    AND attname = 'classification' AND NOT attisdropped;
+  IF v_attnum IS NULL THEN
+    RAISE EXCEPTION '112: column classification not found on inventory_status_report_lines';
+  END IF;
+
+  SELECT count(*), max(conname) INTO v_count, v_conname FROM pg_constraint
   WHERE conrelid = 'public.inventory_status_report_lines'::regclass
-    AND contype = 'c'
-    AND pg_get_constraintdef(oid) LIKE '%classification%IN%'
-    AND pg_get_constraintdef(oid) LIKE '%suspected_missing%';
-  IF v_conname IS NULL THEN
-    RAISE EXCEPTION '112: could not locate the classification CHECK constraint';
+    AND contype = 'c' AND conkey = ARRAY[v_attnum];
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '112: expected exactly one single-column CHECK constraint on classification, found %', v_count;
   END IF;
   EXECUTE format('ALTER TABLE public.inventory_status_report_lines DROP CONSTRAINT %I', v_conname);
 END
 $constraints$;
 
+-- NOT VALID + explicit VALIDATE (still inside this same migration's
+-- transaction) rather than a plain ADD CONSTRAINT that validates implicitly —
+-- makes the "does every existing row already satisfy the new list" check an
+-- explicit, visible step rather than an implicit side effect of the ADD.
 ALTER TABLE public.inventory_status_report_lines
   ADD CONSTRAINT inventory_status_report_lines_suggested_classification_check
-  CHECK (suggested_classification IN ('available', 'unavailable', 'scarce', 'surplus'));
+  CHECK (suggested_classification IN ('available', 'unavailable', 'scarce', 'surplus')) NOT VALID;
+ALTER TABLE public.inventory_status_report_lines
+  VALIDATE CONSTRAINT inventory_status_report_lines_suggested_classification_check;
 
 ALTER TABLE public.inventory_status_report_lines
   ADD CONSTRAINT inventory_status_report_lines_classification_check
-  CHECK (classification IN ('available', 'unavailable', 'scarce', 'surplus', 'suspected_missing'));
+  CHECK (classification IN ('available', 'unavailable', 'scarce', 'surplus', 'suspected_missing')) NOT VALID;
+ALTER TABLE public.inventory_status_report_lines
+  VALIDATE CONSTRAINT inventory_status_report_lines_classification_check;
 
 COMMENT ON COLUMN public.inventory_status_report_lines.suggested_classification IS
   'Server-computed at prepare time (112): unavailable at available=0; scarce at '
@@ -381,19 +423,31 @@ GRANT EXECUTE ON FUNCTION public.phoenix_status_classify_lines(uuid, jsonb) TO a
 -- 4. Verify
 -- ─────────────────────────────────────────────────────────────────────────────
 DO $verify$
+DECLARE
+  v_suggested_attnum smallint;
+  v_classification_attnum smallint;
+  v_def text;
 BEGIN
-  ASSERT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.inventory_status_report_lines'::regclass
-      AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%unavailable%'
-      AND pg_get_constraintdef(oid) LIKE '%suggested_classification%'
-  ), 'VERIFY FAILED (112): suggested_classification constraint missing unavailable';
-  ASSERT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.inventory_status_report_lines'::regclass
-      AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%unavailable%'
-      AND pg_get_constraintdef(oid) LIKE '%suspected_missing%'
-  ), 'VERIFY FAILED (112): classification constraint missing unavailable';
+  SELECT attnum INTO v_suggested_attnum FROM pg_attribute
+  WHERE attrelid = 'public.inventory_status_report_lines'::regclass
+    AND attname = 'suggested_classification' AND NOT attisdropped;
+  SELECT pg_get_constraintdef(oid) INTO v_def FROM pg_constraint
+  WHERE conrelid = 'public.inventory_status_report_lines'::regclass
+    AND contype = 'c' AND conkey = ARRAY[v_suggested_attnum];
+  ASSERT v_def IS NOT NULL AND v_def LIKE '%available%' AND v_def LIKE '%unavailable%'
+    AND v_def LIKE '%scarce%' AND v_def LIKE '%surplus%',
+    'VERIFY FAILED (112): suggested_classification constraint missing a required canonical value';
+
+  SELECT attnum INTO v_classification_attnum FROM pg_attribute
+  WHERE attrelid = 'public.inventory_status_report_lines'::regclass
+    AND attname = 'classification' AND NOT attisdropped;
+  SELECT pg_get_constraintdef(oid) INTO v_def FROM pg_constraint
+  WHERE conrelid = 'public.inventory_status_report_lines'::regclass
+    AND contype = 'c' AND conkey = ARRAY[v_classification_attnum];
+  ASSERT v_def IS NOT NULL AND v_def LIKE '%available%' AND v_def LIKE '%unavailable%'
+    AND v_def LIKE '%scarce%' AND v_def LIKE '%surplus%' AND v_def LIKE '%suspected_missing%',
+    'VERIFY FAILED (112): classification constraint missing a required canonical value';
+
   ASSERT to_regprocedure('public.phoenix_status_prepare_report(uuid)') IS NOT NULL,
     'VERIFY FAILED (112): phoenix_status_prepare_report missing';
   ASSERT to_regprocedure('public.phoenix_status_classify_lines(uuid, jsonb)') IS NOT NULL,
