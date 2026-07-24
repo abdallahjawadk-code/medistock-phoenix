@@ -1,21 +1,20 @@
 /**
  * DECISION-INTELLIGENCE-REPORTS-119/120 — Screen 21.
  *
- * Executive Overview (119: item_availability's already-computed condition +
- * warehouse_stock/outlet_stock's already-computed supply provenance) with a
- * 120 per-lot supply-source drill-down, an Institution Status tab (REUSES
- * ReportsScreen's existing getInstitutionOverviews()/
- * phoenix_get_institution_condition_counts — no new backend, no new
- * classification math, same server-side org scoping that function already
- * enforces), and an Official Report Library of immutable, server-numbered
- * snapshots.
+ * Executive Overview (119) with a 120 per-lot supply-source drill-down, an
+ * Institution Status tab, a Materials & Batches tab (item_availability's
+ * already-computed condition + expiry-risk.ts's already-computed tier — no
+ * new classification math), a Stock Movements tab and an Audit-Sensitive
+ * Actions tab (both PURE embeds of StatusCenterScreen's/ReportsScreen's
+ * existing self-contained components), a Differences & Corrections tab
+ * (reads the existing second-person-approval tables' full history, RLS
+ * already permits it), and an Official Report Library of immutable,
+ * server-numbered snapshots.
  *
- * The remaining report sections (materials/batches, movements, custody
- * chain, supplementary purchases, differences/corrections, audit-sensitive
- * actions) are NOT built here — they either already exist on other screens
- * (StatusCenterScreen, MonthlyStatusScreen, ReportsScreen's AuditLogSection)
- * or are follow-up work on top of this same snapshot/numbering scaffolding.
- * See the PR description for the full gap list.
+ * Custody-chain lifecycle reporting and supplementary-purchase traceability
+ * are NOT built in this increment — see the PR description for the current
+ * gap list and why (both need a dedicated org-wide read path this pass
+ * didn't reach).
  */
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
@@ -34,13 +33,18 @@ import {
   type ProfessionalReportColumn,
 } from '@/shared/lib/professional-export';
 import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
+import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
+import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
+import { MovementReportSection } from '@/features/status/MovementReportSection';
+import { AuditLogSection } from './AuditLogSection';
+import { listCorrectionHistory, type CorrectionHistoryRow } from './differences-corrections.service';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
   getSupplySourcesDetail,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'corrections' | 'audit' | 'library';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -73,6 +77,10 @@ export function DecisionIntelligenceReportsScreen() {
   const tabs: Array<{ id: Tab; labelKey: string }> = [
     { id: 'overview', labelKey: 'dir_tab_overview' },
     { id: 'institutions', labelKey: 'dir_tab_institutions' },
+    { id: 'materials', labelKey: 'dir_tab_materials' },
+    { id: 'movements', labelKey: 'dir_tab_movements' },
+    { id: 'corrections', labelKey: 'dir_tab_corrections' },
+    { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'library', labelKey: 'dir_tab_library' },
   ];
 
@@ -109,6 +117,18 @@ export function DecisionIntelligenceReportsScreen() {
       )}
       {tab === 'institutions' && (
         <InstitutionStatusTab key={activeOrgId} lang={lang} />
+      )}
+      {tab === 'materials' && (
+        <MaterialsAndBatchesTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
+      )}
+      {tab === 'movements' && (
+        <div data-testid="movements-tab"><MovementReportSection /></div>
+      )}
+      {tab === 'corrections' && (
+        <CorrectionsHistoryTab key={activeOrgId} lang={lang} />
+      )}
+      {tab === 'audit' && (
+        <div data-testid="audit-tab"><AuditLogSection /></div>
       )}
       {tab === 'library' && (
         <ReportLibraryTab key={activeOrgId} orgId={activeOrgId} lang={lang} />
@@ -376,6 +396,219 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
  * no new classification math, no new RBAC surface: the RPC already scopes a
  * non-super_admin caller to their own organization's row.
  */
+
+interface MaterialAvailRow {
+  id: string;
+  scientific_name: string | null;
+  trade_name: string | null;
+  quantity: number;
+  condition: string | null;
+  batch_number: string | null;
+  expiry_date: string | null;
+  supply_type: string | null;
+  distribution_points: { id: string; name: string; name_ar: string } | null;
+}
+
+/**
+ * Materials & Batches — closes BOTH "materials_and_statuses" and
+ * "batches_expiry_and_FEFO" from the SAME data source (item_availability
+ * already carries condition, batch_number and expiry_date together — a
+ * second query would just be a filtered view of the first). Reuses
+ * getAvailabilityByOrg (StatusCenterScreen's own source) for the
+ * already-computed condition and expiry-risk.ts's already-computed tier —
+ * no classification math lives in this screen.
+ */
+function MaterialsAndBatchesTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
+  const records = useAsync(() => getAvailabilityByOrg(orgId), [orgId]);
+  const [search, setSearch] = useState('');
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+
+  if (records.loading && !records.data) return <PhoenixLoadingState />;
+  if (records.error) return <PhoenixErrorState message={records.error} onRetry={records.reload} />;
+  const all = (records.data ?? []) as unknown as MaterialAvailRow[];
+  const rows = search.trim()
+    ? all.filter(r => (r.scientific_name ?? '').toLowerCase().includes(search.trim().toLowerCase())
+      || (r.trade_name ?? '').toLowerCase().includes(search.trim().toLowerCase())
+      || (r.batch_number ?? '').toLowerCase().includes(search.trim().toLowerCase()))
+    : all;
+
+  function exportConfig() {
+    const columns: ProfessionalReportColumn<MaterialAvailRow>[] = [
+      { key: 'sci', label: t('avail_scientific_name', lang), value: r => r.scientific_name ?? '—' },
+      { key: 'trade', label: t('inv_trade_name', lang), value: r => r.trade_name ?? '—' },
+      { key: 'point', label: t('dir_col_location', lang), value: r => (r.distribution_points ? (lang === 'ar' ? r.distribution_points.name_ar : r.distribution_points.name) : '—') },
+      { key: 'qty', label: t('qty', lang), value: r => String(r.quantity ?? 0), numeric: true, excelValue: r => r.quantity ?? 0 },
+      { key: 'status', label: t('avail_material_status', lang), value: r => (r.condition ? t('cond_' + r.condition, lang) : '—') },
+      { key: 'batch', label: t('batch_no', lang), value: r => r.batch_number ?? '—', ltr: true },
+      { key: 'expiry', label: t('expiry', lang), value: r => r.expiry_date ?? '—', ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
+      { key: 'expiryRisk', label: t('expiry_risk_column', lang), value: r => getExpiryRiskLabel(getExpiryRiskTier(r.expiry_date), lang) },
+      { key: 'supply', label: t('avail_supply_type', lang), value: r => r.supply_type ?? '—' },
+    ];
+    return {
+      reportTitle: t('dir_tab_materials', lang),
+      generatedAt: new Date(),
+      filtersSummary: search.trim() ? `${t('search', lang)}: ${search.trim()}` : t('sc_all', lang),
+      columns,
+      rows,
+      lang,
+      fileNameBase: 'medistock-materials-batches',
+      emptyMessage: t('se_no_records', lang),
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
+    try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '10px' }} data-testid="materials-batches-tab">
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          type="search"
+          placeholder={t('search', lang)}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px', minWidth: '200px' }}
+        />
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
+          {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+      </div>
+      {rows.length === 0 ? (
+        <PhoenixEmptyState icon="package" title={t('se_no_records', lang)} />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('avail_scientific_name', lang)}</th>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_location', lang)}</th>
+                <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('qty', lang)}</th>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('avail_material_status', lang)}</th>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('batch_no', lang)}</th>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('expiry', lang)}</th>
+                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('expiry_risk_column', lang)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} style={{ borderTop: '1px solid var(--brd)' }}>
+                  <td style={{ padding: '6px 8px' }} dir="auto">{r.scientific_name}{r.trade_name ? ` (${r.trade_name})` : ''}</td>
+                  <td style={{ padding: '6px 8px' }} dir="auto">{r.distribution_points ? (lang === 'ar' ? r.distribution_points.name_ar : r.distribution_points.name) : '—'}</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.quantity}</td>
+                  <td style={{ padding: '6px 8px' }}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
+                  <td style={{ padding: '6px 8px' }} dir="ltr">{r.batch_number ?? '—'}</td>
+                  <td style={{ padding: '6px 8px' }} dir="ltr">{r.expiry_date ?? '—'}</td>
+                  <td style={{ padding: '6px 8px' }}>{getExpiryRiskLabel(getExpiryRiskTier(r.expiry_date), lang)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Differences & Corrections — reads the FULL history (any status) of the
+ * existing second-person-approval tables (098 outlet, 101 warehouse). No
+ * new table, no new RPC, no new classification: the "difference" (variance)
+ * and the resulting balance are exactly what the approval RPCs already
+ * computed and stored.
+ */
+function CorrectionsHistoryTab({ lang }: { lang: 'ar' | 'en' }) {
+  const history = useAsync(() => listCorrectionHistory(), []);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+
+  if (history.loading && !history.data) return <PhoenixLoadingState />;
+  if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
+  const rows = history.data ?? [];
+  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
+
+  function exportConfig() {
+    const columns: ProfessionalReportColumn<CorrectionHistoryRow>[] = [
+      { key: 'scope', label: t('dir_col_scope', lang), value: r => t('dir_scope_' + r.scope, lang) },
+      { key: 'material', label: t('avail_scientific_name', lang), value: r => r.scientificName ?? '—' },
+      { key: 'batch', label: t('batch_no', lang), value: r => r.batchNumber ?? '—', ltr: true },
+      { key: 'before', label: t('dir_col_before', lang), value: r => String(r.onHandBefore), numeric: true, excelValue: r => r.onHandBefore },
+      { key: 'after', label: t('dir_col_after', lang), value: r => String(r.afterOrProposed), numeric: true, excelValue: r => r.afterOrProposed },
+      { key: 'variance', label: t('dir_col_variance', lang), value: r => String(r.variance), numeric: true, excelValue: r => r.variance },
+      { key: 'status', label: t('dir_col_status', lang), value: r => t('dir_correction_status_' + r.status, lang) },
+      { key: 'reason', label: t('lp_return_reason', lang), value: r => r.reason },
+      { key: 'proposedBy', label: t('dir_col_proposed_by', lang), value: r => r.proposedByName ?? '—' },
+      { key: 'proposedAt', label: t('dir_as_of', lang), value: r => r.proposedAt, ltr: true, dateColumn: 'datetime', excelValue: r => r.proposedAt },
+    ];
+    return {
+      reportTitle: t('dir_tab_corrections', lang),
+      generatedAt: new Date(),
+      filtersSummary: t('sc_all', lang),
+      columns,
+      rows,
+      lang,
+      fileNameBase: 'medistock-differences-corrections',
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
+
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
+    try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '10px' }} data-testid="corrections-history-tab">
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('avail_scientific_name', lang)}</th>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('batch_no', lang)}</th>
+              <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('dir_col_before', lang)}</th>
+              <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('dir_col_after', lang)}</th>
+              <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('dir_col_variance', lang)}</th>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_status', lang)}</th>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('lp_return_reason', lang)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={`${r.scope}-${r.id}`} style={{ borderTop: '1px solid var(--brd)' }}>
+                <td style={{ padding: '6px 8px' }} dir="auto">{r.scientificName ?? '—'}</td>
+                <td style={{ padding: '6px 8px' }} dir="ltr">{r.batchNumber ?? '—'}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.onHandBefore}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.afterOrProposed}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.variance}</td>
+                <td style={{ padding: '6px 8px' }}>{t('dir_correction_status_' + r.status, lang)}</td>
+                <td style={{ padding: '6px 8px' }} dir="auto">{r.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
+          {t('mv_export_xlsx', lang)}
+        </PhoenixButton>
+      </div>
+    </div>
+  );
+}
+
 function InstitutionStatusTab({ lang }: { lang: 'ar' | 'en' }) {
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);

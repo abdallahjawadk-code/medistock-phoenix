@@ -37,6 +37,20 @@ describe('119 frontend — service layer', () => {
   });
 });
 
+describe('differences & corrections — service layer', () => {
+  const correctionsService = readFileSync(join(FEAT, 'differences-corrections.service.ts'), 'utf8');
+
+  it('reads the SAME tables the second-person-approval workflow already writes — no new table, no new RPC', () => {
+    expect(correctionsService).toContain("from('phoenix_warehouse_correction_requests')");
+    expect(correctionsService).toContain("from('phoenix_stock_correction_requests')");
+    expect(correctionsService).not.toMatch(/\.rpc\(/);
+  });
+
+  it('reads ALL statuses, not just pending — a report is a history, not an approval queue', () => {
+    expect(correctionsService).not.toMatch(/\.eq\('status',\s*'pending'\)/);
+  });
+});
+
 describe('119 frontend — screen', () => {
   it('mints a fresh request id after every snapshot attempt (a retry never silently reuses a stale key across edits)', () => {
     expect(screen).toContain('setRequestId(newRequestId());');
@@ -53,16 +67,29 @@ describe('119 frontend — screen', () => {
     expect(screen).toContain('mobileHtml !== undefined');
   });
 
-  it('renders the overview, institution status and official report library as tabs', () => {
-    expect(screen).toContain("id: 'overview'");
-    expect(screen).toContain("id: 'institutions'");
-    expect(screen).toContain("id: 'library'");
+  it('renders all seven tabs', () => {
+    for (const id of ['overview', 'institutions', 'materials', 'movements', 'corrections', 'audit', 'library']) {
+      expect(screen).toContain(`id: '${id}'`);
+    }
   });
 
   it('institution status is a PURE reuse of the existing getInstitutionOverviews — no new RPC, no reimplemented counting', () => {
     expect(screen).toContain("from '@/shared/supabase/services/dashboard.service'");
     expect(screen).toContain('getInstitutionOverviews()');
     expect(screen).not.toMatch(/supabase\.rpc\('phoenix_get_institution/);
+  });
+
+  it('materials & batches reuses getAvailabilityByOrg and expiry-risk.ts — no classification math inline', () => {
+    expect(screen).toContain("from '@/shared/supabase/services/availability.service'");
+    expect(screen).toContain("from '@/shared/lib/expiry-risk'");
+    expect(screen).not.toMatch(/reorder_point|target_max/);
+  });
+
+  it('stock movements and audit-sensitive actions are PURE embeds of existing self-contained components', () => {
+    expect(screen).toContain("from '@/features/status/MovementReportSection'");
+    expect(screen).toContain("from './AuditLogSection'");
+    expect(screen).toContain('<MovementReportSection />');
+    expect(screen).toContain('<AuditLogSection />');
   });
 
   it('an org-less profile sees the shared empty-scope state, not a broken query', () => {
