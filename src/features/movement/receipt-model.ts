@@ -76,6 +76,18 @@ export interface ReceiptDocument {
   watermark: ReceiptWatermark;
   reprintedAt: string | null;
   lines: ReceiptLine[];
+  /**
+   * PAPER-REFERENCE-CONTRACT-110: the optional paper-trail reference
+   * (رقم/تاريخ الكتاب، الجهة المصدرة) for this document, when one has been
+   * recorded via phoenix_set_paper_reference. Purely additive display data —
+   * `traceKey` (the uuid) remains the canonical key. Optional so every
+   * EXISTING ReceiptDocument literal in this codebase keeps compiling
+   * unchanged; a caller that has not yet been wired to fetch the paper
+   * reference simply omits these and nothing renders.
+   */
+  paperReferenceNumber?: string | null;
+  paperReferenceDate?: string | null;
+  issuingAuthority?: string | null;
 }
 
 // ── field selector ───────────────────────────────────────────────────────────

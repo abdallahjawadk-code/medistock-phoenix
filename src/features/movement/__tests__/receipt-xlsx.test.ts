@@ -65,6 +65,27 @@ describe('receipt workbook structure', () => {
     expect(joined).toContain('Event date and time');
   });
 
+  it('PAPER-REFERENCE-CONTRACT-110: shows the paper reference rows only when the document carries one', async () => {
+    const withoutRef = await buildReceiptWorkbook({ document: doc(), selectedFields: fieldsForPreset('compact', SUPPLY), lang: 'en' });
+    const textWithout: string[] = [];
+    withoutRef.getWorksheet('Summary')!.eachRow(row => row.eachCell(c => textWithout.push(cellText(c.value))));
+    expect(textWithout.join(' | ')).not.toContain('Paper reference number');
+
+    const withRef = await buildReceiptWorkbook({
+      document: doc({ paperReferenceNumber: 'PR-2026-042', paperReferenceDate: '2026-06-01', issuingAuthority: 'وزارة الصحة' }),
+      selectedFields: fieldsForPreset('compact', SUPPLY), lang: 'en',
+    });
+    const textWith: string[] = [];
+    withRef.getWorksheet('Summary')!.eachRow(row => row.eachCell(c => textWith.push(cellText(c.value))));
+    const joinedWith = textWith.join(' | ');
+    expect(joinedWith).toContain('Paper reference number');
+    expect(joinedWith).toContain('PR-2026-042');
+    expect(joinedWith).toContain('2026-06-01');
+    expect(joinedWith).toContain('وزارة الصحة');
+    // The uuid trace key remains present and canonical alongside the paper reference.
+    expect(joinedWith).toContain(TRACE);
+  });
+
   it('the Material Lines sheet has exactly the selected columns', async () => {
     const selected = normalizeSelection(['batchNumber', 'expiryDate'], SUPPLY);
     const wb = await buildReceiptWorkbook({ document: doc(), selectedFields: selected, lang: 'en' });

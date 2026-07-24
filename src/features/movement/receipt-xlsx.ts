@@ -73,6 +73,15 @@ export async function buildReceiptWorkbook(config: ReceiptWorkbookConfig): Promi
     [t('mv_h_destination', lang), party(doc.destination)],
     [t('mv_h_request_reference', lang), doc.requestTraceKey ?? '—'],
     [t('mv_h_original_supply_reference', lang), doc.originalSupplyTraceKey ?? '—'],
+    // PAPER-REFERENCE-CONTRACT-110: shown only when a caller has fetched and
+    // attached one — additive, never replacing the trace key above.
+    ...(doc.paperReferenceNumber
+      ? ([
+          [t('mv_h_paper_reference_number', lang), doc.paperReferenceNumber],
+          [t('mv_h_paper_reference_date', lang), doc.paperReferenceDate ?? '—'],
+          [t('mv_h_issuing_authority', lang), doc.issuingAuthority ?? '—'],
+        ] as Array<[string, string]>)
+      : []),
     [
       t(doc.kind === 'return_shipment' ? 'mv_h_returned_by' : 'mv_h_dispatched_by', lang),
       doc.actorName ? `${doc.actorName}${doc.actorRole ? ` (${doc.actorRole})` : ''}` : t('mv_not_available', lang),
