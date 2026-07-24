@@ -186,7 +186,13 @@ describe('no client-side document-number sequence exists', () => {
     // inventory_status_report_lines; no new table, no sequence, no MOVEMENT
     // document identity of any kind (a classification value is not a
     // document number). The ceiling moves to 113.
-    const beyond = migrations.filter(f => /^(11[3-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 113 (MONTHLY-STATUS-DIRECT-WRITE-LOCKDOWN-113) adds NO document
+    // numbering — pure REVOKE/GRANT statements closing 092's unrevoked
+    // default-ACL grants on three tables plus PUBLIC's un-revoked EXECUTE on
+    // eleven RPCs; no new table, no sequence, no MOVEMENT document identity
+    // of any kind (a privilege grant is not a document number). The ceiling
+    // moves to 114.
+    const beyond = migrations.filter(f => /^(11[4-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -217,6 +223,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('110_phoenix_paper_reference_contract.sql');
     expect(migrations).toContain('111_phoenix_threshold_batch_apply.sql');
     expect(migrations).toContain('112_phoenix_status_classification_boundary_correction.sql');
+    expect(migrations).toContain('113_phoenix_monthly_status_direct_write_lockdown.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
