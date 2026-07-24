@@ -220,7 +220,11 @@ describe('no client-side document-number sequence exists', () => {
     // exists to enforce: a REVOKEd sequence, stamped by a BEFORE INSERT
     // trigger (090's pattern verbatim), never a client-supplied or
     // client-computed number. The ceiling moves to 120.
-    const beyond = migrations.filter(f => /^(12\d|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 120 (SUPPLY-SOURCES-DETAIL-120) adds NO document numbering — a
+    // read-only drill-down function over warehouse_stock/outlet_stock's
+    // existing rows; no table, no sequence, no MOVEMENT document identity
+    // of any kind. The ceiling moves to 121.
+    const beyond = migrations.filter(f => /^(12[1-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

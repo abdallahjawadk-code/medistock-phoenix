@@ -597,6 +597,8 @@ export const T: Dict = {
   dir_supply_purchase_central: { ar: 'مشتريات مركزية',            en: 'Central purchases' },
   dir_supply_purchase_supplementary: { ar: 'مشتريات فرعية',       en: 'Supplementary purchases' },
   dir_supply_unclassified: { ar: 'غير مصنّف',                     en: 'Unclassified' },
+  dir_supply_sources_title: { ar: 'مصادر التجهيز — تفصيل',        en: 'Supply sources — detail' },
+  dir_col_location:   { ar: 'الموقع',                             en: 'Location' },
   // STATUS-EDITOR-CLEANUP-A: 'near_expiry' removed from the manual condition
   // dropdown (EditorScreen.tsx) — shown next to it as an explanatory note.
   avail_near_expiry_auto_note: { ar: 'قريب النفاذ يُحسب تلقائياً من تاريخ النفاذ', en: 'Near expiry is calculated automatically from the expiry date' },

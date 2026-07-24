@@ -30,6 +30,11 @@ describe('119 frontend — service layer', () => {
   it('the report library reads are organization-scoped', () => {
     expect(service).toContain(".eq('organization_id', organizationId)");
   });
+
+  it('120: the supply-source drill-down never re-derives a bucket total client-side — it only lists lots', () => {
+    expect(service).toContain("supabase.rpc('phoenix_supply_sources_detail'");
+    expect(service).not.toMatch(/reduce\(.*on_hand_quantity/s);
+  });
 });
 
 describe('119 frontend — screen', () => {
@@ -56,5 +61,15 @@ describe('119 frontend — screen', () => {
   it('an org-less profile sees the shared empty-scope state, not a broken query', () => {
     expect(screen).toContain('if (!activeOrgId)');
     expect(screen).toContain("t('no_org_scope', lang)");
+  });
+
+  it('120: the drill-down only fetches once expanded, and drills into the SAME bucket key the overview card shows', () => {
+    expect(screen).toContain("open ? getSupplySourcesDetail(orgId, bucket.key)");
+    expect(screen).toContain('function SupplySourceDrilldown(');
+  });
+
+  it('120: the drill-down XLSX export reuses the shared professional-export primitive, not a bespoke exporter', () => {
+    const drilldown = screen.slice(screen.indexOf('function SupplySourceDrilldown'));
+    expect(drilldown).toContain('exportProfessionalXlsx(exportConfig())');
   });
 });

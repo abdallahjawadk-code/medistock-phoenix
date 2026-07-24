@@ -1,7 +1,8 @@
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 
 /**
- * DECISION-INTELLIGENCE-REPORTS-119 — thin client over migration 119.
+ * DECISION-INTELLIGENCE-REPORTS-119/120 — thin client over migrations
+ * 119/120.
  *
  * Never computes classification or supply-source totals itself: both come
  * straight from phoenix_executive_overview (the canonical aggregate) or from
@@ -93,4 +94,33 @@ export async function listReportSnapshots(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as ReportSnapshotRow[];
+}
+
+export interface SupplySourceDetailRow {
+  source_table: string;
+  lot_id: string;
+  location_kind: 'warehouse' | 'outlet';
+  location_id: string;
+  location_name: string;
+  location_name_ar: string;
+  scientific_name: string;
+  trade_name: string | null;
+  batch_number: string | null;
+  expiry_date: string | null;
+  on_hand_quantity: number;
+  supply_bucket: string;
+}
+
+/** 120 — per-lot drill-down behind one supply-source bucket total. */
+export async function getSupplySourcesDetail(
+  organizationId: string,
+  supplyBucket?: string,
+): Promise<SupplySourceDetailRow[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase.rpc('phoenix_supply_sources_detail', {
+    p_organization_id: organizationId,
+    p_supply_bucket: supplyBucket ?? null,
+  });
+  if (error) throw error;
+  return (data ?? []) as SupplySourceDetailRow[];
 }
