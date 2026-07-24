@@ -1917,6 +1917,12 @@ export const T: Dict = {
   mv_doc_supply_dispatch: { ar: 'وصل تجهيز',                                     en: 'Supply Dispatch Receipt' },
   mv_doc_return_request:  { ar: 'طلب إرجاع مباشر',                              en: 'Direct Return Request' },
   mv_doc_return_shipment: { ar: 'وصل إرجاع',                                     en: 'Return Shipment Receipt' },
+  // PAPER-REFERENCE-CONTRACT-110 search-result kinds without an existing label:
+  // warehouse_dispatch reuses mv_doc_outlet_dispatch, outlet_return_request
+  // reuses mv_doc_return_request — only these three were genuinely missing.
+  mv_doc_warehouse_return_request:  { ar: 'طلب إرجاع (مؤسسة ← مركزي)',            en: 'Institution Return Request' },
+  mv_doc_stock_correction_request:  { ar: 'طلب تصحيح مخزون',                     en: 'Stock Correction Request' },
+  mv_doc_warehouse_stock_movement:  { ar: 'حركة مخزون مستودع',                   en: 'Warehouse Stock Movement' },
 
   // Mandatory, locked traceability header fields.
   mv_h_document_type:     { ar: 'نوع المستند',                                   en: 'Document type' },
