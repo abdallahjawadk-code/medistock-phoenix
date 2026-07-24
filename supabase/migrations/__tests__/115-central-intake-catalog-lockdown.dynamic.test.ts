@@ -114,7 +114,12 @@ run('118 — Pharmacy Department manual central intake (dynamic)', () => {
 
   it('rejects an optional catalog selection before any ledger mutation', async () => {
     const requestId = randomUUID();
-    await expect(asOfficer(c => receive(c, { request_id: requestId, central_item: ITEM })))
+    await expect(asOfficer(c => receive(c, {
+      request_id: requestId,
+      central_item: ITEM,
+      national: 'CAT-NC-118',
+      batch: 'CAT-B-118',
+    })))
       .rejects.toThrow(/central_catalog_selection_forbidden/);
     const n = await rig.asAdmin((c: any) => c.query(
       `SELECT count(*)::int AS n FROM warehouse_stock_movements WHERE reference_id=$1`,
