@@ -174,7 +174,13 @@ describe('no client-side document-number sequence exists', () => {
     // is its uuid, and the canonical document/official numbers it links to
     // (dispatch_number, return_number, official_number) are 100% untouched.
     // The ceiling moves to 111.
-    const beyond = migrations.filter(f => /^(11[1-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
+    // 111 (THRESHOLD-BATCH-APPLY-111) adds NO document numbering —
+    // phoenix_batch_upsert_inventory_threshold is a thin, validate-then-loop
+    // wrapper delegating every element to 092's UNCHANGED per-material
+    // phoenix_upsert_inventory_threshold; no new table, no sequence, no
+    // MOVEMENT document identity of any kind (thresholds are not movement
+    // documents). The ceiling moves to 112.
+    const beyond = migrations.filter(f => /^(11[2-9]|1[2-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
@@ -203,6 +209,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('108_phoenix_custody_chain_direct_write_lockdown.sql');
     expect(migrations).toContain('109_phoenix_public_schema_default_privileges_lockdown.sql');
     expect(migrations).toContain('110_phoenix_paper_reference_contract.sql');
+    expect(migrations).toContain('111_phoenix_threshold_batch_apply.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });
