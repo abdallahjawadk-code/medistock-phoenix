@@ -12,10 +12,10 @@ import { join, extname } from 'path';
  * patterns like `//evil.example`, `\\evil.example`, `/\evil.example`, or
  * `javascript:` URIs (including their URL-encoded forms).
  *
- * Investigation (2026-07-24, upgrade to react-router/react-router-dom@7.18.1):
- * this app does not use react-router for routing at all — it is a dependency
- * of the project but no source file imports from 'react-router' or
- * 'react-router-dom', and no `useNavigate`/`<Link to=`/`<Navigate to=` call
+ * Investigation (2026-07-24): this app does not use react-router for routing
+ * at all, so the unused react-router and react-router-dom dependencies were
+ * removed instead of retained as an unnecessary attack surface. No source file
+ * imports either package, and no `useNavigate`/`<Link to=`/`<Navigate to=` call
  * site exists anywhere in src/. The only redirect-adjacent browser APIs used
  * are `window.history.replaceState` (three call sites, all with a hardcoded
  * literal or `window.location.pathname` as the destination — never a value
@@ -63,17 +63,11 @@ const ATTACK_STRINGS = [
 ];
 
 describe('open-redirect guard: react-router / navigation surface', () => {
-  it('upgrades react-router and react-router-dom past the vulnerable range (>= 7.18.0)', () => {
+  it('does not carry unused react-router packages as an unnecessary attack surface', () => {
     const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
     for (const dep of ['react-router', 'react-router-dom']) {
-      const version = pkg.dependencies?.[dep];
-      expect(version, `${dep} must be a direct dependency`).toBeDefined();
-      const cleaned = String(version).replace(/^[\^~]/, '');
-      const [major, minor] = cleaned.split('.').map(Number);
-      const patched = major > 7 || (major === 7 && minor >= 18);
-      expect(patched, `${dep}@${version} must be >= 7.18.0 (patched)`).toBe(true);
-      // Pinned exact version, not left to drift via caret/tilde range.
-      expect(/^[\^~]/.test(String(version)), `${dep} must be pinned to an exact version`).toBe(false);
+      expect(pkg.dependencies?.[dep], `${dep} is unused and must stay absent`).toBeUndefined();
+      expect(pkg.devDependencies?.[dep], `${dep} is unused and must stay absent`).toBeUndefined();
     }
   });
 
