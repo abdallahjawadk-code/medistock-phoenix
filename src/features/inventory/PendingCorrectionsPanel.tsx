@@ -15,6 +15,9 @@ import {
   listPendingWarehouseCorrections, approveWarehouseStockCorrection, rejectWarehouseStockCorrection,
   classifyIntakeError,
 } from './warehouse-intake.service';
+import { getPaperReference, setPaperReference } from '@/features/movement/paper-reference.service';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
+import { useAsync } from '@/shared/lib/useAsync';
 
 /** A single scope's pending correction, normalized for shared rendering. */
 interface NormalizedCorrection {
@@ -187,6 +190,15 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
               </div>
             </div>
 
+            {/* PAPER-REFERENCE-CONTRACT-110: document_type 'stock_correction_request'
+                maps ONLY to phoenix_stock_correction_requests (the OUTLET
+                correction table) — phoenix_warehouse_correction_requests
+                (scope 'warehouse') is a different table 110 does not cover,
+                so this control is deliberately outlet-scope only. This panel
+                only ever lists PENDING rows, which is exactly 110's editable
+                window for this document type. */}
+            {row.scope === 'outlet' && <OutletCorrectionPaperRef lang={lang} correctionRequestId={row.id} />}
+
             {isOwnRequest ? (
               <p style={{ fontSize: '11.5px', color: 'var(--warn)', marginTop: '10px' }}>{t('cor_own_request_notice', lang)}</p>
             ) : rejectingId === row.id ? (
@@ -215,6 +227,50 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
           </PhoenixCard>
         );
       })}
+    </div>
+  );
+}
+
+function OutletCorrectionPaperRef({ lang, correctionRequestId }: { lang: 'ar' | 'en'; correctionRequestId: string }) {
+  const [reloadKey, setReloadKey] = useState(0);
+  const paperRef = useAsync(() => getPaperReference('stock_correction_request', correctionRequestId), [correctionRequestId, reloadKey]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}>
+      {editing ? (
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <PaperReferenceFields lang={lang} value={draft} onChange={setDraft} disabled={busy} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <PhoenixButton size="sm" loading={busy} disabled={draft.number.trim() === ''} onClick={async () => {
+              setBusy(true);
+              await setPaperReference({
+                documentType: 'stock_correction_request', documentId: correctionRequestId,
+                paperReferenceNumber: draft.number, paperReferenceDate: draft.date || null,
+                issuingAuthority: draft.authority || null,
+              });
+              setBusy(false);
+              setEditing(false);
+              setReloadKey(k => k + 1);
+            }}>{t('net_op_save', lang)}</PhoenixButton>
+            <PhoenixButton size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>{t('mv_cancel', lang)}</PhoenixButton>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: '11.5px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef.data)}</span>
+          <PhoenixButton size="sm" variant="ghost" onClick={() => {
+            setDraft({
+              number: paperRef.data?.paperReferenceNumber ?? '',
+              date: paperRef.data?.paperReferenceDate ?? '',
+              authority: paperRef.data?.issuingAuthority ?? '',
+            });
+            setEditing(true);
+          }}>{t('net_op_edit', lang)}</PhoenixButton>
+        </div>
+      )}
     </div>
   );
 }

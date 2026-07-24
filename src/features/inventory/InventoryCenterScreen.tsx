@@ -27,6 +27,8 @@ import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import { SourceBalancesPanel } from './SourceBalancesPanel';
+import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
+import { paperReferenceSummary } from '@/features/movement/ui/PaperReferenceFields';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
@@ -848,6 +850,14 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
     () => (activeBatchId ? getWarehouseStockMovements(activeBatchId) : Promise.resolve([])),
     [activeBatchId],
   );
+  // PAPER-REFERENCE-CONTRACT-110: one batched read for every movement row
+  // shown, never a per-row lookup (this list can be up to 100 rows deep —
+  // see getWarehouseStockMovements' own cap).
+  const movementIds = useMemo(() => (movements.data ?? []).map(m => m.id), [movements.data]);
+  const paperRefs = useAsync(
+    () => getPaperReferencesFor('warehouse_stock_movement', movementIds),
+    [movementIds.join(',')],
+  );
 
   return (
     <PhoenixCard>
@@ -874,6 +884,7 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
                   {' · '}{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
                   {m.actorNameSnapshot ? ` · ${m.actorNameSnapshot}` : ''}
                   {m.reason ? ` · ${m.reason}` : ''}
+                  {' · '}{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRefs.data?.get(m.id))}
                 </li>
               ))}
             </ul>

@@ -34,6 +34,8 @@ import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionInco
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { buildSupplyRequestReceipt } from '@/features/movement/receipt-source';
 import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
+import { getPaperReference, setPaperReference } from '@/features/movement/paper-reference.service';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
 
 /**
  * W077-COMPOSER — rollback switch for the forward create-authoring UX. When
@@ -879,6 +881,16 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
     if (res.ok) reload();
   };
 
+  // PAPER-REFERENCE-CONTRACT-110: no receipt document exists for this document
+  // type (warehouse_return_request is a routed institution↔central corridor
+  // distinct from outlet_return_request, which already carries its own
+  // receipt) — so this detail view carries the field directly, editable
+  // while still draft, read-only after (server-enforced regardless).
+  const paperRef = useAsync(() => getPaperReference('warehouse_return_request', request.id), [reloadKey]);
+  const [editingRef, setEditingRef] = useState(false);
+  const [refDraft, setRefDraft] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
+  const [refBusy, setRefBusy] = useState(false);
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -888,6 +900,42 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
         <span style={{ fontSize: '11.5px', color: 'var(--t2)' }}>
           {nameOf(whById.get(request.sourceWarehouseId), lang)} → {nameOf(whById.get(request.destinationWarehouseId), lang)}
         </span>
+      </div>
+
+      <div style={{ marginBottom: '10px' }}>
+        {editingRef ? (
+          <div style={{ display: 'grid', gap: '8px' }}>
+            <PaperReferenceFields lang={lang} value={refDraft} onChange={setRefDraft} disabled={refBusy} />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <PhoenixButton size="sm" loading={refBusy} disabled={refDraft.number.trim() === ''} onClick={async () => {
+                setRefBusy(true);
+                await setPaperReference({
+                  documentType: 'warehouse_return_request', documentId: request.id,
+                  paperReferenceNumber: refDraft.number, paperReferenceDate: refDraft.date || null,
+                  issuingAuthority: refDraft.authority || null,
+                });
+                setRefBusy(false);
+                setEditingRef(false);
+                reload();
+              }}>{t('net_op_save', lang)}</PhoenixButton>
+              <PhoenixButton size="sm" variant="ghost" disabled={refBusy} onClick={() => setEditingRef(false)}>{t('net_cancel', lang)}</PhoenixButton>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: '11.5px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef.data)}</span>
+            {isDraft && (
+              <PhoenixButton size="sm" variant="ghost" onClick={() => {
+                setRefDraft({
+                  number: paperRef.data?.paperReferenceNumber ?? '',
+                  date: paperRef.data?.paperReferenceDate ?? '',
+                  authority: paperRef.data?.issuingAuthority ?? '',
+                });
+                setEditingRef(true);
+              }}>{t('net_op_edit', lang)}</PhoenixButton>
+            )}
+          </div>
+        )}
       </div>
 
       <StatusLine status={status} />

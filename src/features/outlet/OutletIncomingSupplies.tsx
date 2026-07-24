@@ -37,6 +37,8 @@ import {
   getOutletDispatches, getDispatchLinesForDispatches, receiveOutletDispatchLine,
   type WarehouseDispatch, type WarehouseDispatchLine,
 } from './dispatch.service';
+import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
+import { paperReferenceSummary } from '@/features/movement/ui/PaperReferenceFields';
 
 type Lang = 'ar' | 'en';
 
@@ -116,6 +118,14 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
 
   const lines = useAsync(
     () => getDispatchLinesForDispatches(dispatchIds),
+    [dispatchIds.join(','), reloadKey],
+  );
+
+  // PAPER-REFERENCE-CONTRACT-110: one batched read for every visible dispatch,
+  // never a per-line lookup — this screen can list many lines across few
+  // parent dispatches.
+  const paperRefs = useAsync(
+    () => getPaperReferencesFor('warehouse_dispatch', dispatchIds),
     [dispatchIds.join(','), reloadKey],
   );
 
@@ -330,6 +340,9 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
                       {t('mv_h_source', lang)}: {dash(parent?.dispatchNumber)} ·{' '}
                       {t('mv_h_destination', lang)}: {outletName} ·{' '}
                       {t('mv_h_trace_key', lang)}: <code>{line.dispatchId}</code>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--t2)' }}>
+                      {t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRefs.data?.get(line.dispatchId))}
                     </div>
 
                     {eligibility.exclusions.length > 0 && (

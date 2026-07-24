@@ -35,6 +35,7 @@ import { CurrentMovementStatus } from './CurrentMovementStatus';
 import { getOutletStock, getOutletStockMovements, type OutletStockRow } from './outlet-stock.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
+import { getPaperReference } from '@/features/movement/paper-reference.service';
 
 type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -226,9 +227,10 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
   // request — never from the local draft. Missing/denied rows yield no document.
   const receipt = useAsync(async () => {
     if (!created) return null;
-    const [requests, lines] = await Promise.all([
+    const [requests, lines, paperReference] = await Promise.all([
       getOutletReturnRequests(distributionPointId),
       getOutletReturnRequestLines(created),
+      getPaperReference('outlet_return_request', created),
     ]);
     const request = requests.find(r => r.id === created);
     if (!request) return null;
@@ -236,6 +238,7 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
       request, lines,
       source: { organizationName: null, warehouseName: outletName },
       destination: { organizationName: null, warehouseName: null },
+      paperReference,
     });
   }, [created, distributionPointId]);
 

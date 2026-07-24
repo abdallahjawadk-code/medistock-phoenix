@@ -5,10 +5,34 @@ import {
   getUnreadNotificationCount, listNotifications, markAllNotificationsRead, markNotificationRead,
   type NotificationRow,
 } from '@/shared/supabase/services/notifications.service';
+import { getPaperReferencesFor, type PaperReference, type PaperReferenceDocumentType } from '@/features/movement/paper-reference.service';
+import { paperReferenceSummary } from '@/features/movement/ui/PaperReferenceFields';
 import { PhoenixIcon } from './PhoenixIcon';
 import { PhoenixLoadingState } from './PhoenixLoadingState';
 import { PhoenixErrorState } from './PhoenixErrorState';
 import { PhoenixEmptyState } from './PhoenixEmptyState';
+
+/**
+ * PAPER-REFERENCE-CONTRACT-110 — a notification's reference_type is the
+ * TRIGGERING TABLE NAME (082/099: TG_TABLE_NAME), which is plural and does
+ * not literally match 110's singular document_type vocabulary. Only these
+ * four map onto a document_type 110 actually covers; every other
+ * reference_type (warehouse_return_shipments, outlet_return_shipments,
+ * warehouse_transfer_requests, outlet_stock_movements,
+ * warehouse_quarantine_stock_movements, stocktakes, ...) is NOT a paper-
+ * tracked document and is deliberately left alone.
+ *
+ * stock_correction_request (phoenix_stock_correction_requests) is a genuine
+ * LIMITATION: 082/099 never attach a capture trigger to that table, so no
+ * notification ever carries a reference_id for it — there is nothing to look
+ * up here for that document type.
+ */
+const NOTIFICATION_REF_TYPE_TO_DOCUMENT_TYPE: Partial<Record<string, PaperReferenceDocumentType>> = {
+  warehouse_dispatches: 'warehouse_dispatch',
+  warehouse_return_requests: 'warehouse_return_request',
+  outlet_return_requests: 'outlet_return_request',
+  warehouse_stock_movements: 'warehouse_stock_movement',
+};
 
 /** Bilingual "N minutes/hours/days ago" — no shared relative-time utility
  *  exists in this codebase yet (checked before writing this), so this is a
@@ -41,7 +65,34 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paperRefs, setPaperRefs] = useState<Map<string, PaperReference>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * One batched query PER covered document type across the whole visible
+   * page — never one lookup per notification row. A notification whose
+   * reference_type isn't one of the four covered document types, or that
+   * carries no reference_id at all, is simply never looked up.
+   */
+  const loadPaperRefs = useCallback(async (rows: NotificationRow[]) => {
+    const byDocType = new Map<PaperReferenceDocumentType, string[]>();
+    for (const n of rows) {
+      const docType = n.referenceType ? NOTIFICATION_REF_TYPE_TO_DOCUMENT_TYPE[n.referenceType] : undefined;
+      if (!docType || !n.referenceId) continue;
+      const ids = byDocType.get(docType) ?? [];
+      ids.push(n.referenceId);
+      byDocType.set(docType, ids);
+    }
+    if (byDocType.size === 0) { setPaperRefs(new Map()); return; }
+    const merged = new Map<string, PaperReference>();
+    await Promise.all(Array.from(byDocType.entries()).map(async ([docType, ids]) => {
+      try {
+        const found = await getPaperReferencesFor(docType, ids);
+        found.forEach((v, k) => merged.set(`${docType}:${k}`, v));
+      } catch { /* best-effort enrichment; the notification itself still renders */ }
+    }));
+    setPaperRefs(merged);
+  }, []);
 
   const reloadUnreadCount = useCallback(() => {
     if (!profile) return;
@@ -71,13 +122,16 @@ export function NotificationBell() {
     setLoading(true);
     setError(null);
     listNotifications({ limit: 20 })
-      .then((page) => setNotifications(page.notifications))
+      .then((page) => {
+        setNotifications(page.notifications);
+        void loadPaperRefs(page.notifications);
+      })
       .catch((err: unknown) => {
         console.error('[phoenix] notification list load failed:', err);
         setError(err instanceof Error ? err.message : 'Unexpected error');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadPaperRefs]);
 
   useEffect(() => {
     if (open) loadList();
@@ -175,7 +229,10 @@ export function NotificationBell() {
             )}
             {!loading && !error && notifications && notifications.length > 0 && (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {notifications.map((n) => (
+                {notifications.map((n) => {
+                  const docType = n.referenceType ? NOTIFICATION_REF_TYPE_TO_DOCUMENT_TYPE[n.referenceType] : undefined;
+                  const paperRef = docType && n.referenceId ? paperRefs.get(`${docType}:${n.referenceId}`) : undefined;
+                  return (
                   <li key={n.id}>
                     <button
                       type="button"
@@ -199,9 +256,17 @@ export function NotificationBell() {
                         {n.reference && <span>{n.reference}</span>}
                         <span dir="ltr">{relativeTime(n.occurredAt, lang)}</span>
                       </span>
+                      {/* PAPER-REFERENCE-CONTRACT-110: only when actually recorded — most
+                          notifications carry no paper reference and must not show a "—". */}
+                      {paperRef?.paperReferenceNumber && (
+                        <span style={{ fontSize: 11.5, color: 'var(--muted, #8a93a6)' }}>
+                          {t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef)}
+                        </span>
+                      )}
                     </button>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>

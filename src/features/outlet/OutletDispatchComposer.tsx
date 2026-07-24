@@ -30,6 +30,8 @@ import { commitDraft, planRetry, type CommitResult, type CommitProgress } from '
 import { MovementComposerShell, type ComposerStep } from '@/features/movement/ui/MovementComposerShell';
 import { StockMaterialPicker } from '@/features/movement/ui/StockMaterialPicker';
 import { MovementLineTable } from '@/features/movement/ui/MovementLineTable';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
+import { setPaperReference } from '@/features/movement/paper-reference.service';
 import {
   createWarehouseDispatch, addDispatchLine, getWarehouseDispatchLines,
   getFefoAlternatives, type FefoBatch,
@@ -108,6 +110,10 @@ export function OutletDispatchComposer({
   const [outletId, setOutletId] = useState('');
   const [externalReference, setExternalReference] = useState('');
   const [notes, setNotes] = useState('');
+  // PAPER-REFERENCE-CONTRACT-110: optional third field-set, distinct from
+  // externalReference — set on the created dispatch only if the operator
+  // actually typed a number, never a required precondition to create.
+  const [paperRef, setPaperRef] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
 
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [stock, setStock] = useState<StockCandidate[]>([]);
@@ -247,6 +253,20 @@ export function OutletDispatchComposer({
       onProgress: setProgress,
     });
 
+    // The dispatch header exists (in 'draft') the instant createHeader
+    // succeeds, independent of how the lines land — so a paper reference is
+    // attached here even on a partial line failure, rather than only on full
+    // success. Best-effort: a failure here must never undo a created dispatch.
+    if (outcome.requestId && paperRef.number.trim() !== '') {
+      await setPaperReference({
+        documentType: 'warehouse_dispatch',
+        documentId: outcome.requestId,
+        paperReferenceNumber: paperRef.number,
+        paperReferenceDate: paperRef.date || null,
+        issuingAuthority: paperRef.authority || null,
+      }).catch(() => { /* best-effort; the dispatch itself is unaffected */ });
+    }
+
     setResult(outcome);
     setCommitting(false);
     setProgress(null);
@@ -343,6 +363,7 @@ export function OutletDispatchComposer({
           <PhoenixInput label={t('mv_external_reference', lang)} value={externalReference} onChange={e => setExternalReference(e.target.value)} />
           <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '-6px' }}>{t('mv_external_reference_hint', lang)}</p>
           <PhoenixInput label={t('inv_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
+          <PaperReferenceFields lang={lang} value={paperRef} onChange={setPaperRef} />
         </div>
       )}
 

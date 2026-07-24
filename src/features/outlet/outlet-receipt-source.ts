@@ -28,6 +28,8 @@ export function buildOutletReturnRequestReceipt(input: {
   lines: readonly OutletReturnRequestLine[];
   source: ReceiptPartyNames;
   destination: ReceiptPartyNames;
+  /** PAPER-REFERENCE-CONTRACT-110: optional — omitted callers render nothing extra. */
+  paperReference?: { paperReferenceNumber: string | null; paperReferenceDate: string | null; issuingAuthority: string | null } | null;
 }): ReceiptDocument {
   const lines: ReceiptLine[] = input.lines.map((l, i) => ({
     lineNumber: i + 1,
@@ -74,6 +76,9 @@ export function buildOutletReturnRequestReceipt(input: {
     watermark: requestWatermark(input.request.status),
     reprintedAt: null,
     lines,
+    paperReferenceNumber: input.paperReference?.paperReferenceNumber ?? null,
+    paperReferenceDate: input.paperReference?.paperReferenceDate ?? null,
+    issuingAuthority: input.paperReference?.issuingAuthority ?? null,
   };
 }
 

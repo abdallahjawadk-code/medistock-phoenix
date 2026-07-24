@@ -154,6 +154,21 @@ describe('receipt HTML', () => {
     expect(html).toContain('Al-Sadiq Hospital — Hospital Depot');
   });
 
+  it('PAPER-REFERENCE-CONTRACT-110: shows the paper reference only when the document carries one', () => {
+    const withoutRef = buildReceiptHtml({ document: doc(), selectedFields: selection, lang: 'en' });
+    expect(withoutRef).not.toContain('Paper reference number');
+
+    const withRef = buildReceiptHtml({
+      document: doc({ paperReferenceNumber: 'PR-2026-042', paperReferenceDate: '2026-06-01', issuingAuthority: 'وزارة الصحة' }),
+      selectedFields: selection, lang: 'en',
+    });
+    expect(withRef).toContain('Paper reference number');
+    expect(withRef).toContain('PR-2026-042');
+    expect(withRef).toContain('2026-06-01');
+    expect(withRef).toContain('وزارة الصحة');
+    expect(withRef).toContain(TRACE); // the uuid trace key stays canonical alongside it
+  });
+
   it('escapes every hostile value instead of emitting markup', () => {
     const hostile = '<img src=x onerror="alert(1)">';
     const html = buildReceiptHtml({
