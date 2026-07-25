@@ -270,7 +270,14 @@ describe('no client-side document-number sequence exists', () => {
     // nullable source_movement_id FK column linking a transfer line to its
     // own send movement -- a UUID foreign key, not a sequence or document
     // number of any kind. The ceiling moves to 128.
-    const beyond = migrations.filter(f => /^(12[8-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 128 (MOVEMENT-REASON-CODE-GROUP-C-WAREHOUSE-RETURN-128) adds NO
+    // document numbering either -- it propagates an ALREADY-EXISTING closed
+    // reason_code (warehouse_return_request_lines.reason_code, a 9-value
+    // vocabulary member) onto both the send and receive ledger rows, plus a
+    // nullable source_movement_id FK on warehouse_return_shipment_lines
+    // mirroring 127's Group B fix -- again a UUID foreign key, never a
+    // sequence or document number. The ceiling moves to 129.
+    const beyond = migrations.filter(f => /^(12[9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
