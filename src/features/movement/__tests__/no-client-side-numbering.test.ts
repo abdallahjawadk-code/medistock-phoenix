@@ -317,7 +317,17 @@ describe('no client-side document-number sequence exists', () => {
     // predecessor row id, never a sequence or document number). No ALTER
     // TABLE, no DROP FUNCTION, no signature change anywhere in 132. The
     // ceiling moves to 133.
-    const beyond = migrations.filter(f => /^(13[3-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 133 (MOVEMENT-REASON-CODE-GROUP-H-CORRECTION-APPROVAL-133) adds NO
+    // document numbering either -- phoenix_approve_outlet_stock_correction
+    // and phoenix_approve_warehouse_stock_correction each get a fixed
+    // reason_code='corrected' literal (not client-derived) and chain
+    // correlation_id/causation_id from the most recent PRIOR movement
+    // against the exact stock row being corrected (a real, queryable
+    // predecessor row id, never a sequence or document number). No ALTER
+    // TABLE, no DROP FUNCTION, no signature change, no GRANT anywhere in
+    // 133 -- the LAST of the 8 reason_code/correlation domain slices. The
+    // ceiling moves to 134.
+    const beyond = migrations.filter(f => /^(13[4-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
