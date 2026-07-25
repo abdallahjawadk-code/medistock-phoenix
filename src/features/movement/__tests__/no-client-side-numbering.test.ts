@@ -343,7 +343,15 @@ describe('no client-side document-number sequence exists', () => {
     // completeness guard discovered was never in the original audit of 20.
     // No sequence, no document number, nothing client-computed. The ceiling
     // moves to 136.
-    const beyond = migrations.filter(f => /^(13[6-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 136 (DISPENSE-WITH-CONTEXT-ATOMIC-136) adds NO document numbering
+    // either -- one closed-vocabulary column (patient_reference_type:
+    // chart/card/pass, a document KIND, never an allocated number) and an
+    // orchestration RPC that composes two already-reviewed writers. The
+    // patient reference NUMBER it records is an EXTERNAL, operator-read
+    // hospital document reference -- exactly the mv_external_reference
+    // category this guard already protects -- never a serial this system
+    // allocates. No sequence, nothing client-computed. Ceiling moves to 137.
+    const beyond = migrations.filter(f => /^(13[7-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
