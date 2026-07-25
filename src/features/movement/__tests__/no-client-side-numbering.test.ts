@@ -284,7 +284,18 @@ describe('no client-side document-number sequence exists', () => {
     // correlation_id, and population of the SAME source_movement_id
     // columns 127/128 already added (no new schema at all in this
     // migration). The ceiling moves to 130.
-    const beyond = migrations.filter(f => /^(1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 130 (MOVEMENT-REASON-CODE-GROUP-E-PROCUREMENT-130) adds NO document
+    // numbering either -- _phoenix_procurement_post_receipt_line gets a
+    // hardcoded 'received' reason_code and a fresh correlation_id (no
+    // signature change, an internal helper); phoenix_procurement_return_to_supplier
+    // gains one new mandatory-alongside-existing-reason p_reason_code
+    // parameter, CHECK-validated against the original 9-value quality/loss
+    // vocabulary, and chains correlation_id/causation_id from
+    // procurement_receipt_lines.movement_id -- a column that already
+    // existed before this migration (no ALTER TABLE anywhere in 130). No
+    // sequence, no client-computed identifier, no document/official number
+    // of any kind. The ceiling moves to 131.
+    const beyond = migrations.filter(f => /^(13[1-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
