@@ -63,7 +63,6 @@ describe('B) getDispenseContext maps to the RPC and treats "not recorded" as nul
 
   it('returns null (never throws) for movement_context_not_found', () => {
     const start = service.indexOf('export async function getDispenseContext');
-    const body = service.slice(start, service.indexOf('\n}', service.lastIndexOf('\n}', service.length)));
     expect(service.slice(start)).toContain('movement_context_not_found');
     expect(service.slice(start)).toMatch(/movement_context_not_found[\s\S]{0,20}return null/);
   });
