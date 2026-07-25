@@ -183,6 +183,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '120_phoenix_supply_sources_detail.sql',
   '121_phoenix_monthly_status_public_execute_lockdown.sql',
   '122_phoenix_movement_timeline_correction_coverage.sql',
+  '123_phoenix_movement_ledger_event_capture.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

@@ -232,7 +232,11 @@ describe('no client-side document-number sequence exists', () => {
     // numbering either — attaches an existing status-transition trigger to
     // two correction-request tables, no table, no sequence, no MOVEMENT
     // document identity. The ceiling moves to 123.
-    const beyond = migrations.filter(f => /^(12[3-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 123 (MOVEMENT-LEDGER-EVENT-CAPTURE-123) adds NO document numbering
+    // either — two new event-capture trigger functions attached to the
+    // quantity-movement ledgers and stocktakes, no document/sequence
+    // identity of any kind. The ceiling moves to 124.
+    const beyond = migrations.filter(f => /^(12[4-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
