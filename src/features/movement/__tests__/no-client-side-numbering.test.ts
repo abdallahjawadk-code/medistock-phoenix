@@ -295,7 +295,20 @@ describe('no client-side document-number sequence exists', () => {
     // existed before this migration (no ALTER TABLE anywhere in 130). No
     // sequence, no client-computed identifier, no document/official number
     // of any kind. The ceiling moves to 131.
-    const beyond = migrations.filter(f => /^(13[1-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 131 (MOVEMENT-REASON-CODE-GROUP-F-OUTLET-131) adds NO document
+    // numbering either -- phoenix_receive_outlet_dispatch_line and
+    // phoenix_count_outlet_stock each gain one new closed-vocabulary
+    // p_reason_code parameter (validated, no free text); phoenix_dispense_outlet_stock
+    // gets a hardcoded 'dispensed' reason_code; phoenix_send_outlet_return_shipment_line
+    // propagates an already-closed v_line.reason_code. Chaining uses
+    // dispatch_line_id and original_inbound_movement_id, both pre-existing
+    // columns -- no ALTER TABLE anywhere in 131. Also fixes
+    // phoenix_send_warehouse_dispatch (070, a genuine gap found while
+    // verifying this slice, not one of the 20 originally audited writers)
+    // with a hardcoded 'transferred' reason_code and a fresh correlation_id
+    // per dispatch line -- again no sequence, no document number, nothing
+    // client-computed. The ceiling moves to 132.
+    const beyond = migrations.filter(f => /^(13[2-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
