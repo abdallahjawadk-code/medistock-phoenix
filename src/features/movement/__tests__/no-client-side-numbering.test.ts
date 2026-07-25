@@ -254,7 +254,15 @@ describe('no client-side document-number sequence exists', () => {
     // generation counter, nothing client-computed (the DEFAULT is a fixed
     // literal, 'legacy_unclassified', not derived from any counter). The
     // ceiling moves to 126.
-    const beyond = migrations.filter(f => /^(12[6-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 126 (MOVEMENT-REASON-CODE-GROUP-A-WAREHOUSE-INTAKE-126) adds NO
+    // document numbering either -- it redefines the two Group A root-op
+    // writer RPCs to populate the already-closed reason_code column and a
+    // freshly-generated correlation_id (gen_random_uuid(), never a
+    // sequential counter). phoenix_apply_warehouse_stock_movement gains one
+    // new OPTIONAL p_reason_code parameter, itself CHECK-constrained to a
+    // closed vocabulary subset -- not a document/official number, not
+    // client-computed, not sequential. The ceiling moves to 127.
+    const beyond = migrations.filter(f => /^(12[7-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
