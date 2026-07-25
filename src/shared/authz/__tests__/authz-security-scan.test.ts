@@ -6,7 +6,8 @@
  * NEGATIVE ("no application code calls X") rather than a sample of positives.
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
+import { execSync } from 'child_process';
 import { join, extname, relative } from 'path';
 import { TRIGGER_ONLY_FUNCTIONS, SCOPED_RBAC_RPCS } from '../scoped-permissions';
 
@@ -253,6 +254,28 @@ describe('no SQL, migration or deployment surface is touched', () => {
       expect(readdirSync(dir).some(f => f.startsWith(n))).toBe(true);
     }
     // The protected untracked paths stay out of the authz layer's business.
-    expect(existsSync(join(PHOENIX, 'premium-preview.html'))).toBe(true);
+    //
+    // This used to assert existsSync(premium-preview.html) === true, which
+    // tested the FIXTURE rather than the security property. premium-preview.html
+    // is a CI-only guard fixture -- .github/workflows/ci.yml creates it empty
+    // ("install -m 600 /dev/null premium-preview.html") in its "Prepare CI-only
+    // local guard fixtures" step -- so the assertion could only ever hold on CI
+    // and failed on every clean local checkout, for reasons that had nothing to
+    // do with authz.
+    //
+    // The real property, and the one the other 31 guards in this repo assert,
+    // is that the path stays UNTRACKED: it must never be committed. That is
+    // environment-independent and strictly stronger than "a file is present" --
+    // an empty placeholder would have satisfied the old assertion while a
+    // genuine leak (the path becoming tracked) would have passed it too.
+    let status = '';
+    try {
+      status = execSync('git status --porcelain -- premium-preview.html', {
+        cwd: PHOENIX, encoding: 'utf8',
+      });
+    } catch { /* not a git checkout: nothing to assert */ }
+    for (const line of status.split(/\r?\n/).map(l => l.trim()).filter(Boolean)) {
+      expect(line.startsWith('??')).toBe(true);
+    }
   });
 });
