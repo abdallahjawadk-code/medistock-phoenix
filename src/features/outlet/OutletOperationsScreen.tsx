@@ -9,9 +9,15 @@
  *
  * Four tabs, each a window on canonical server truth:
  *   1. Incoming Supplies — receive 070 dispatches (OutletIncomingSupplies).
- *   2. Stock & Batches   — READ-ONLY on-hand, no balance editing anywhere.
+ *   2. Stock & Batches   — on-hand list. Two deliberate, server-adjudicated
+ *      quantity affordances live here and nowhere else: DISPENSE (136's
+ *      atomic dispense+beneficiary RPC) and a physical-count CORRECTION
+ *      (098's request/approve contract). Neither writes a balance from
+ *      React — both submit to a SECURITY DEFINER RPC that re-checks scope,
+ *      quantity and concurrency server-side.
  *   3. Returns           — compose an outlet → warehouse return (071 §A).
- *   4. Movement History  — READ-ONLY outlet ledger.
+ *   4. Movement History  — READ-ONLY outlet ledger, plus the 134 dispense
+ *      context recorded against each dispense row.
  *
  * No free-text material entry, no OCR, no manual balance change lives here.
  */
@@ -28,11 +34,13 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
+import { useOutletDispensePermission } from '@/features/inventory/useOutletDispensePermission';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
 import { OutletStockCorrectionModal } from './OutletStockCorrectionModal';
 import { DispenseContextDialog } from './DispenseContextDialog';
+import { DispenseComposerDialog } from './DispenseComposerDialog';
 import { DispenseContextViewer } from './DispenseContextViewer';
 import { CurrentMovementStatus } from './CurrentMovementStatus';
 import { getOutletStock, getOutletStockMovements, type OutletStockRow, type OutletMovementRow } from './outlet-stock.service';
@@ -149,9 +157,17 @@ export function OutletOperationsScreen() {
 }
 
 /**
- * Tab 2 — on-hand batches. Read-only for outlet operators: no operator control
- * can change a balance. The ONE deliberate exception is a physical-count
- * CORRECTION, shown per-lot only to actors holding the scoped `outlet_stock.count`
+ * Tab 2 — on-hand batches. No operator control changes a balance directly.
+ * Two deliberate, server-adjudicated exceptions live here:
+ *
+ *   * DISPENSE (136), shown per-lot only to actors holding BOTH scoped
+ *     outlet_stock.dispense AND movement_context.record on this outlet
+ *     (useOutletDispensePermission) — the composed act needs both, and both
+ *     are re-checked server-side. It calls the ATOMIC
+ *     phoenix_dispense_outlet_stock_with_context, never the bare dispense
+ *     RPC, so stock can never leave the outlet without a recorded
+ *     beneficiary.
+ *   * A physical-count CORRECTION, shown per-lot only to actors holding the scoped `outlet_stock.count`
  * permission on this outlet (useOutletCountPermission). Even then nothing is
  * written from React: the correction is submitted to the guarded canonical RPC
  * phoenix_count_outlet_stock_guarded (migration 086, via OutletStockCorrectionModal),
@@ -163,7 +179,10 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
   const stock = useAsync(() => getOutletStock(distributionPointId), [distributionPointId]);
   const countPerm = useOutletCountPermission(orgId, distributionPointId);
   const canCorrect = countPerm.data === true;
+  const dispensePerm = useOutletDispensePermission(orgId, distributionPointId);
+  const canDispense = dispensePerm.data === true;
   const [correctLot, setCorrectLot] = useState<OutletStockRow | null>(null);
+  const [dispenseLot, setDispenseLot] = useState<OutletStockRow | null>(null);
   const [correctionMessage, setCorrectionMessage] = useState<string | null>(null);
 
   if (stock.loading && !stock.data) return <PhoenixLoadingState />;
@@ -192,11 +211,18 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
                 </span>
               </div>
             </div>
-            {canCorrect && (
-              <PhoenixButton variant="ghost" size="sm" onClick={() => setCorrectLot(r)}>
-                {t('oc_correct_action', lang)}
-              </PhoenixButton>
-            )}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {canDispense && r.availableQuantity > 0 && (
+                <PhoenixButton variant="primary" size="sm" onClick={() => setDispenseLot(r)}>
+                  {t('dsp_action', lang)}
+                </PhoenixButton>
+              )}
+              {canCorrect && (
+                <PhoenixButton variant="ghost" size="sm" onClick={() => setCorrectLot(r)}>
+                  {t('oc_correct_action', lang)}
+                </PhoenixButton>
+              )}
+            </div>
           </div>
         </PhoenixCard>
       ))}
@@ -204,6 +230,20 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
       {correctionMessage && (
         <div style={{ fontSize: '12px', color: 'var(--ok)', textAlign: 'center' }}>{correctionMessage}</div>
       )}
+
+      <DispenseComposerDialog
+        open={dispenseLot !== null}
+        lot={dispenseLot}
+        lang={lang}
+        canDispense={canDispense}
+        onClose={() => setDispenseLot(null)}
+        onSuccess={() => {
+          setDispenseLot(null);
+          setCorrectionMessage(t('dsp_succeeded', lang));
+          setTimeout(() => setCorrectionMessage(null), 5000);
+          stock.reload();
+        }}
+      />
 
       <OutletStockCorrectionModal
         open={correctLot !== null}
