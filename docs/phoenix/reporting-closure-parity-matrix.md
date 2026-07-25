@@ -43,3 +43,41 @@ with zero cross-reuse and a genuinely isolated, RPC-driven write workflow.
   parity, live-vs-snapshot correctness, org/role scoping, RTL, UI states)
   have not yet been operationally re-verified against the current Production
   build — that verification is the next step.
+
+## SEQUENCING CORRECTION — PR #56 rescoped to Reporting Stabilization/Foundation
+
+**Do not complete movement-dependent reporting consolidation before the
+Unified Movements & Outlet Operations contract is finalized.** PR #56 is
+rescoped from "Reporting Closure" to a narrower **Reporting
+Stabilization/Foundation** checkpoint. No destructive consolidation, and no
+temporary/invented movement data model, around `item_availability_movements`
+or any movement-derived read path.
+
+### In scope for THIS checkpoint (movement-independent infrastructure)
+
+| Item | Why it's safe now |
+|---|---|
+| Custody Chain hook-order fix, Corrections crash fix (R01/R02) | Already merged to Production (PR #53→#54) — pure React lifecycle bug, no data-model dependency |
+| CSV/XLSX export + print infrastructure (`MobilePrintFallbackModal`, export builders, zero-row honesty fix R03) | Already merged to Production, re-verified operationally this session with real captured bytes — generic infra, not movement-shaped |
+| `ReportsTabErrorBoundary` | Pure React error containment, no data dependency |
+| Navigation between the 4 surfaces | Pure routing/UI |
+| Global Material Search (screen 9) | Availability-based (`item_availability`), not movement-ledger-based |
+| Reports screen 9: Summary / Low Stock / Missing / Comparison tabs | Availability/dashboard-metric based, not movement-ledger-based |
+| DIRC Executive Overview, Institution Status, Materials & Batches, Audit-Sensitive Actions, Supplementary Purchases tabs | Availability/procurement/audit based, not raw movement-ledger reads |
+| Ownership/parity matrix (this document) | Documentation only |
+
+### DEFERRED — movement-data-contract dependency (do not consolidate/rewire yet)
+
+| Item | Why it's deferred |
+|---|---|
+| **Stock Movements tab (DIRC)** — embeds `MovementReportSection` | Reads `item_availability_movements` directly; shape will change under the canonical ledger |
+| **Custody Chain tab (DIRC)** | `phoenix_movement_timeline` is movement-derived; canonical ledger will likely change its source/shape |
+| **Differences & Corrections tab (DIRC)** | Corrections are movement-adjacent; the canonical contract will define how corrections post to the ledger |
+| **Monthly Inventory Position (screen 20)** | The missing opening+movements=closing reconciliation is *exactly* what the canonical ledger must supply — do not build a temporary version |
+| **Status Center's Quantity Movement Report section** | Same `MovementReportSection` component as DIRC's Stock Movements tab |
+| **Patient/order/card/crash-cart context, movement-derived totals generally** | Not yet modeled anywhere in this codebase; explicitly reserved for the Unified Movements contract, not to be invented here |
+
+These deferred items keep their **current, already-Production-verified
+behavior** (including the genuine CSV/XLSX/print fixes, which are
+data-model-independent and stay intact) — they are frozen in place, not
+touched, until the canonical movement ledger exists to wire them to.
