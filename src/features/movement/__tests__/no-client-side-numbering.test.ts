@@ -335,7 +335,15 @@ describe('no client-side document-number sequence exists', () => {
     // -- request_id is only ever used for idempotency fingerprinting, the
     // same pattern as every writer RPC audited so far. The ceiling moves
     // to 135.
-    const beyond = migrations.filter(f => /^(13[5-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 135 (MOVEMENT-REASON-CODE-GROUP-I-OUTLET-RETURN-RECEIVE-135) adds NO
+    // document numbering either -- it adds ONE nullable FK column
+    // (outlet_return_shipment_lines.source_movement_id, a real movement row
+    // id, never a sequence) and wires reason_code + correlation/causation
+    // into phoenix_receive_outlet_return_shipment_line, the live writer the
+    // completeness guard discovered was never in the original audit of 20.
+    // No sequence, no document number, nothing client-computed. The ceiling
+    // moves to 136.
+    const beyond = migrations.filter(f => /^(13[6-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
