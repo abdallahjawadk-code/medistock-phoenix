@@ -327,7 +327,15 @@ describe('no client-side document-number sequence exists', () => {
     // TABLE, no DROP FUNCTION, no signature change, no GRANT anywhere in
     // 133 -- the LAST of the 8 reason_code/correlation domain slices. The
     // ceiling moves to 134.
-    const beyond = migrations.filter(f => /^(13[4-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 134 (MOVEMENT-DISPENSE-CONTEXT-134) adds a new table
+    // (phoenix_movement_dispense_context) whose primary key is
+    // gen_random_uuid() -- no sequence, no client-computed identifier, no
+    // document/official number of any kind. The three new RPCs
+    // (record/get/export) never accept a client-supplied id/number either
+    // -- request_id is only ever used for idempotency fingerprinting, the
+    // same pattern as every writer RPC audited so far. The ceiling moves
+    // to 135.
+    const beyond = migrations.filter(f => /^(13[5-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
