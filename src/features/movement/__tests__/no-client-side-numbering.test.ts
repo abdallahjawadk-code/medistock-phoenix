@@ -262,7 +262,15 @@ describe('no client-side document-number sequence exists', () => {
     // new OPTIONAL p_reason_code parameter, itself CHECK-constrained to a
     // closed vocabulary subset -- not a document/official number, not
     // client-computed, not sequential. The ceiling moves to 127.
-    const beyond = migrations.filter(f => /^(12[7-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 127 (MOVEMENT-REASON-CODE-GROUP-B-WAREHOUSE-TRANSFER-127) adds NO
+    // document numbering either -- it wires reason_code (hardcoded
+    // 'transferred'/'received', no client choice, no new parameter on
+    // either function) and correlation_id/causation_id chaining into the
+    // warehouse-to-warehouse transfer send/receive pair, plus a single
+    // nullable source_movement_id FK column linking a transfer line to its
+    // own send movement -- a UUID foreign key, not a sequence or document
+    // number of any kind. The ceiling moves to 128.
+    const beyond = migrations.filter(f => /^(12[8-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
