@@ -277,7 +277,14 @@ describe('no client-side document-number sequence exists', () => {
     // nullable source_movement_id FK on warehouse_return_shipment_lines
     // mirroring 127's Group B fix -- again a UUID foreign key, never a
     // sequence or document number. The ceiling moves to 129.
-    const beyond = migrations.filter(f => /^(12[9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 129 (MOVEMENT-REASON-CODE-GROUP-D-DIRECT-SUPPLY-129) adds NO document
+    // numbering either -- structural twin of 127/128's fixes applied to the
+    // direct (route-free) central<->institution send functions: hardcoded
+    // 'transferred' / propagated v_reqline.reason_code, fresh
+    // correlation_id, and population of the SAME source_movement_id
+    // columns 127/128 already added (no new schema at all in this
+    // migration). The ceiling moves to 130.
+    const beyond = migrations.filter(f => /^(1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
