@@ -236,7 +236,17 @@ describe('no client-side document-number sequence exists', () => {
     // either — two new event-capture trigger functions attached to the
     // quantity-movement ledgers and stocktakes, no document/sequence
     // identity of any kind. The ceiling moves to 124.
-    const beyond = migrations.filter(f => /^(12[4-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 124 (MOVEMENT-CONTRACT-CORRELATION-FIELDS-124) adds NO document
+    // numbering either — nullable occurred_at/correlation_id/causation_id
+    // columns on the three quantity ledgers plus quantity_before/
+    // quantity_after/correlation_id/causation_id on phoenix_movement_events,
+    // threaded through the existing capture trigger. No new sequence, no
+    // document/official-number identity of any kind (correlation_id and
+    // causation_id are cross-reference aids for tracing related events, not
+    // sequential document numbers, and are never client-computed — they pass
+    // through NULL until a writer RPC populates them). The ceiling moves to
+    // 125.
+    const beyond = migrations.filter(f => /^(12[5-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
