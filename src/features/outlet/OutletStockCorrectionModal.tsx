@@ -6,16 +6,20 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { correctOutletStock, classifyOutletCorrectionError, type OutletStockRow } from './outlet-stock.service';
 
 /**
- * CANONICAL-STOCK-CUTOVER — outlet-stock lot correction.
+ * SECOND-PERSON-CORRECTION-APPROVAL — outlet-stock lot correction.
  *
  * The ONLY outlet correction UI. It operates on a canonical outlet_stock LOT
- * (never item_availability, which is a read-only projection) through the guarded
- * RPC phoenix_count_outlet_stock_guarded (migration 086): idempotent, non-
- * negative, reservation-safe, reason-mandatory, outlet_stock.count-scoped, and
- * append-only. The lot's last-read generation is sent as expectedGeneration so a
- * stale correction fails closed with a conflict rather than overwriting a fresher
- * count — on conflict the operator must reload and re-count. Nothing is written
- * to a stock table from React; the server adjudicates.
+ * (never item_availability, which is a read-only projection) through the
+ * REQUEST RPC phoenix_request_outlet_stock_correction (migration 098):
+ * idempotent, non-negative, reservation-safe, reason-mandatory, outlet_stock.
+ * count-scoped, and append-only. A variance within the organization's
+ * configured threshold applies immediately; anything larger is queued as a
+ * PENDING request — outlet_stock is untouched until a DIFFERENT authorized
+ * person approves it (see PendingCorrectionsPanel). The lot's last-read
+ * generation is sent as expectedGeneration so a stale correction fails closed
+ * with a conflict rather than overwriting a fresher count — on conflict the
+ * operator must reload and re-count. Nothing is written to a stock table from
+ * React; the server adjudicates.
  */
 interface Props {
   open: boolean;
@@ -23,7 +27,9 @@ interface Props {
   lang: 'ar' | 'en';
   canCorrect: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  /** requiresApproval distinguishes "applied now" from "queued, pending a
+   *  second person" so the caller can show the right confirmation. */
+  onSuccess: (requiresApproval: boolean) => void;
 }
 
 export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClose, onSuccess }: Props) {
@@ -58,7 +64,7 @@ export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClos
     setError(null);
     if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
     try {
-      await correctOutletStock({
+      const result = await correctOutletStock({
         requestId: requestIdRef.current,
         outletStockId: lot!.id,
         countedQuantity: countedNum,
@@ -67,7 +73,7 @@ export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClos
         notes: notes.trim() || undefined,
       });
       requestIdRef.current = null;
-      onSuccess();
+      onSuccess(result.requiresApproval);
       resetAndClose();
     } catch (e) {
       const key = classifyOutletCorrectionError(e);
@@ -103,7 +109,8 @@ export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClos
         </div>
       </div>
 
-      <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '14px' }} dir="auto">{t('oc_correct_desc', lang)}</p>
+      <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">{t('oc_correct_desc', lang)}</p>
+      <p style={{ fontSize: '11.5px', color: 'var(--t3)', marginBottom: '14px' }} dir="auto">{t('oc_may_require_approval', lang)}</p>
 
       {!canCorrect ? (
         <p style={{ fontSize: '12.5px', color: 'var(--err)', textAlign: 'center' }}>{t('oc_no_permission', lang)}</p>

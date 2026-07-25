@@ -44,14 +44,14 @@ A Phoenix user account may exist in one of the following states:
 | Action | Allowed | Notes |
 |---|---|---|
 | Invite/create users in own organization | ✅ | Via `admin-create-user`; own org only; cannot create super_admin or institution_admin |
-| Assign roles (`warehouse_officer`, `port_officer`, `monthly_status_officer`, `viewer`) | ✅ | Own org only |
+| Assign roles (`warehouse_officer`, `outlet_officer`) | ✅ | Own org only |
 | Disable/enable users in own organization | ✅ Only with `users.disable` | Not granted by default; super_admin must explicitly grant `users.disable`. Cannot disable super_admin or institution_admin. |
 | Act on users outside own organization | ❌ | `CROSS_ORG_FORBIDDEN` |
 | Hard delete | ❌ | Blocked at Edge Function level |
 | Recycle accounts in own org | ⚠ Only with `users.recycle` | Not granted by default; super_admin must explicitly grant `users.recycle`. Cannot recycle super_admin or institution_admin. Target must be suspended. |
 | Correct name/email | ❌ | Must be done by super_admin |
 
-### warehouse_officer / port_officer / monthly_status_officer / viewer
+### warehouse_officer / outlet_officer / port_officer (legacy)
 
 | Action | Allowed |
 |---|---|

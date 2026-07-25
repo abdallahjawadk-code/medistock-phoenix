@@ -13,6 +13,7 @@
  *    matter which preset is chosen. Everything else is the operator's choice.
  */
 import type { MovementDocumentKind } from './movement-trace';
+import { displaySupplyType } from '@/shared/lib/supply-types';
 
 /** Watermark honesty: a document must never look more final than it is. */
 export type ReceiptWatermark = 'none' | 'draft' | 'partial' | 'cancelled' | 'reprint';
@@ -47,6 +48,8 @@ export interface ReceiptLine {
   currency: string | null;
   priceBasis: string | null;
   supplyType: string | null;
+  /** CANONICAL-SUPPLY-PROVENANCE: central | supplementary (purchases only). */
+  purchaseOrigin: string | null;
   notes: string | null;
   /** Return lines only — links back to the exact original supply line. */
   originalSupplyReference: string | null;
@@ -73,6 +76,18 @@ export interface ReceiptDocument {
   watermark: ReceiptWatermark;
   reprintedAt: string | null;
   lines: ReceiptLine[];
+  /**
+   * PAPER-REFERENCE-CONTRACT-110: the optional paper-trail reference
+   * (رقم/تاريخ الكتاب، الجهة المصدرة) for this document, when one has been
+   * recorded via phoenix_set_paper_reference. Purely additive display data —
+   * `traceKey` (the uuid) remains the canonical key. Optional so every
+   * EXISTING ReceiptDocument literal in this codebase keeps compiling
+   * unchanged; a caller that has not yet been wired to fetch the paper
+   * reference simply omits these and nothing renders.
+   */
+  paperReferenceNumber?: string | null;
+  paperReferenceDate?: string | null;
+  issuingAuthority?: string | null;
 }
 
 // ── field selector ───────────────────────────────────────────────────────────
@@ -202,7 +217,27 @@ export function orientationFor(selected: readonly ReceiptFieldKey[]): 'portrait'
 }
 
 /** The value a receipt cell should show. Never fabricates a missing field. */
+/**
+ * CANONICAL-SUPPLY-PROVENANCE: the user-facing supply source for a line —
+ * Aid / Kimadia / Central purchases / Supplementary purchases (bilingual).
+ * "Donations" never appears (legacy values map to Aid). Returns '—' when the
+ * source is unknown/legacy-unmappable so a document never invents a category.
+ */
+export function receiptSupplyLabel(line: ReceiptLine): string {
+  const canonical = displaySupplyType(line.supplyType);
+  if (canonical === 'aid') return 'Aid / مساعدات';
+  if (canonical === 'kimadia') return 'Kimadia / كيماديا';
+  if (canonical === 'purchase') {
+    return line.purchaseOrigin === 'supplementary'
+      ? 'Supplementary purchases / مشتريات فرعية'
+      : 'Central purchases / مشتريات مركزية';
+  }
+  return line.supplyType ? String(line.supplyType) : '—';
+}
+
 export function receiptCellValue(line: ReceiptLine, key: ReceiptFieldKey): string {
+  // The supply-type column shows the canonical provenance label + origin.
+  if (key === 'supplyType') return receiptSupplyLabel(line);
   const raw = (line as unknown as Record<string, unknown>)[key];
   if (raw === null || raw === undefined || raw === '') return '—';
   return String(raw);

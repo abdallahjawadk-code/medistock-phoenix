@@ -20,6 +20,7 @@ import { assessFieldConfidence, orderForReview, REQUIRED_CONFIRMATION_FIELDS } f
 import { OcrReviewWorkspace, type ReviewFieldModel, type ReviewWarning } from './OcrReviewWorkspace';
 import type { OcrLanguage, OcrProvider, OcrProgress, OcrDocumentResult } from './types';
 import { OcrCancelledError, OcrUnavailableError } from './types';
+import { displaySupplyType } from '@/shared/lib/supply-types';
 
 /**
  * PHARMA-OCR-A — the staged OCR intake flow.
@@ -335,8 +336,15 @@ export function OcrIntakeFlow({
 
   const quantityValue = Number(values.quantity);
   const quantityValid = Number.isInteger(quantityValue) && quantityValue > 0;
+  // The closed supply vocabulary is mandatory for every Pharmacy Department
+  // intake, including OCR-assisted review. Invalid/unmapped OCR text cannot
+  // reach preview and therefore cannot fail later at the writer.
+  const normalizedSupplyType = displaySupplyType(values.supplyType);
+  const supplyTypeValid = normalizedSupplyType !== null;
 
-  const canReachPreview = !hasBlockingWarning && outstandingConfirmations.length === 0 && quantityValid;
+  const canReachPreview =
+    !hasBlockingWarning && outstandingConfirmations.length === 0
+    && quantityValid && supplyTypeValid;
 
   // CANONICAL-INTEGRATION: the warehouse is a critical field, but unlike the
   // others it is NOT read from the document — it arrives already scope-checked
@@ -359,6 +367,8 @@ export function OcrIntakeFlow({
       // Absence is an explicit operator statement, exactly as in manual entry.
       hasNoNationalCode: !values.nationalCode,
       hasNoBatchNumber: !values.batchNumber,
+      // 118: OCR assists manual central intake; it never selects a catalog row.
+      centralItemId: null,
       tradeName: values.tradeName || null,
       concentration: values.concentration || null,
       dosageForm: values.dosageForm || null,
@@ -367,7 +377,10 @@ export function OcrIntakeFlow({
       batchNumber: values.batchNumber || null,
       expiryDate: values.expiryDate || null,
       unitPrice: values.unitPrice ? Number(values.unitPrice) : null,
-      supplyType: values.supplyType || null,
+      // 088: the wire value is the CLOSED vocabulary only. OCR text is coerced
+      // through the display mapping (donations → aid); unmappable → null.
+      supplyType: normalizedSupplyType,
+      purchaseOrigin: normalizedSupplyType === 'purchase' ? 'central' : null,
       sourceDocumentNumber: values.sourceDocumentNumber || null,
       // Entry method is recorded in the EXISTING free-text notes contract — no
       // schema field, no migration, no new column.

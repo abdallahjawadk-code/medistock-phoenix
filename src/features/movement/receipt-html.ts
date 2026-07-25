@@ -83,6 +83,14 @@ export function buildReceiptHtml({ document: doc, selectedFields, lang, qrDataUr
   if (isReturn && doc.originalSupplyTraceKey) {
     headerRows.push([t('mv_h_original_supply_reference', lang), doc.originalSupplyTraceKey]);
   }
+  // PAPER-REFERENCE-CONTRACT-110: shown only when a caller has fetched and
+  // attached one — additive, never replacing the trace key above. Matches
+  // receipt-xlsx.ts's identical rendering rule.
+  if (doc.paperReferenceNumber) {
+    headerRows.push([t('mv_h_paper_reference_number', lang), doc.paperReferenceNumber]);
+    headerRows.push([t('mv_h_paper_reference_date', lang), dash(doc.paperReferenceDate)]);
+    headerRows.push([t('mv_h_issuing_authority', lang), dash(doc.issuingAuthority)]);
+  }
   // Identity is shown only when RLS actually exposed it; never inferred.
   headerRows.push([
     t(isReturn ? 'mv_h_returned_by' : 'mv_h_dispatched_by', lang),

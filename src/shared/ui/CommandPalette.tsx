@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
@@ -49,7 +50,11 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
   // INSTITUTION-LOCAL-PROCUREMENT-087: ungated — the screen self-gates by warehouse scope.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
+  // MONTHLY-STATUS-REDESIGN-092: ungated — the screen self-gates by the scoped status_center.* keys.
+  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
   { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
+  // DECISION-INTELLIGENCE-REPORTS-119: ungated — the screen self-gates on reports.view.
+  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
   { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
 ];
@@ -129,13 +134,17 @@ export function CommandPalette({ onNavigate }: Props) {
   // assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
+  const instAccess = institutionsScreenAccess(role);
   const items = useMemo(
-    () => PALETTE_ITEMS.filter(i =>
+    () => PALETTE_ITEMS
+      .filter(i => i.screen !== 11 || instAccess !== false)
+      .map(i => i.screen === 11 && instAccess === 'own' ? { ...i, labelKey: 'nav_my_organization' } : i)
+      .filter(i =>
       (!i.superAdminOnly || role === 'super_admin') &&
       (i.screen !== 14 || canSeeUsers) &&
       (i.screen !== 17 || canSeeNetwork),
     ),
-    [canSeeUsers, canSeeNetwork, role],
+    [canSeeUsers, canSeeNetwork, role, instAccess],
   );
 
   const filtered = useMemo(() => {

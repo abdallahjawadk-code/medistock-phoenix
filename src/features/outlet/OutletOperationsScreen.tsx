@@ -35,8 +35,9 @@ import { CurrentMovementStatus } from './CurrentMovementStatus';
 import { getOutletStock, getOutletStockMovements, type OutletStockRow } from './outlet-stock.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
+import { getPaperReference } from '@/features/movement/paper-reference.service';
 
-type OutletTab = 'incoming' | 'stock' | 'returns' | 'history' | 'status';
+type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
 
 export function OutletOperationsScreen() {
@@ -75,12 +76,14 @@ export function OutletOperationsScreen() {
     return <div dir={dir}>{header}<PhoenixEmptyState icon="package" title={t('or_no_outlet_scope', lang)} description={t('empty_hint', lang)} /></div>;
   }
 
+  // MOVEMENT-TRACKING-MERGE: "movement history" and "movement status" are ONE
+  // tab — سجل وتتبع الحركة / Movement History & Tracking — the ledger list plus
+  // the 081/082 server-authoritative timeline tracker.
   const tabs: Array<{ id: OutletTab; labelKey: string }> = [
     { id: 'incoming', labelKey: 'or_tab_incoming' },
     { id: 'stock', labelKey: 'or_tab_stock' },
     { id: 'returns', labelKey: 'or_tab_returns' },
     { id: 'history', labelKey: 'or_tab_history' },
-    { id: 'status', labelKey: 'or_tab_status' },
   ];
 
   return (
@@ -131,9 +134,12 @@ export function OutletOperationsScreen() {
 
       {tab === 'returns' && <OutletReturnsTab distributionPointId={activeOutlet.id} outletName={outletName} lang={lang} />}
 
-      {tab === 'history' && <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />}
-
-      {tab === 'status' && <CurrentMovementStatus lang={lang} />}
+      {tab === 'history' && (
+        <div style={{ display: 'grid', gap: '18px' }}>
+          <CurrentMovementStatus lang={lang} />
+          <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />
+        </div>
+      )}
     </div>
   );
 }
@@ -154,6 +160,7 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
   const countPerm = useOutletCountPermission(orgId, distributionPointId);
   const canCorrect = countPerm.data === true;
   const [correctLot, setCorrectLot] = useState<OutletStockRow | null>(null);
+  const [correctionMessage, setCorrectionMessage] = useState<string | null>(null);
 
   if (stock.loading && !stock.data) return <PhoenixLoadingState />;
   const rows = stock.data ?? [];
@@ -190,13 +197,22 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
         </PhoenixCard>
       ))}
 
+      {correctionMessage && (
+        <div style={{ fontSize: '12px', color: 'var(--ok)', textAlign: 'center' }}>{correctionMessage}</div>
+      )}
+
       <OutletStockCorrectionModal
         open={correctLot !== null}
         lot={correctLot}
         lang={lang}
         canCorrect={canCorrect}
         onClose={() => setCorrectLot(null)}
-        onSuccess={() => { setCorrectLot(null); stock.reload(); }}
+        onSuccess={(requiresApproval) => {
+          setCorrectLot(null);
+          setCorrectionMessage(t(requiresApproval ? 'oc_submitted_for_approval' : 'oc_applied_immediately', lang));
+          setTimeout(() => setCorrectionMessage(null), 5000);
+          stock.reload();
+        }}
       />
     </div>
   );
@@ -211,9 +227,10 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
   // request — never from the local draft. Missing/denied rows yield no document.
   const receipt = useAsync(async () => {
     if (!created) return null;
-    const [requests, lines] = await Promise.all([
+    const [requests, lines, paperReference] = await Promise.all([
       getOutletReturnRequests(distributionPointId),
       getOutletReturnRequestLines(created),
+      getPaperReference('outlet_return_request', created),
     ]);
     const request = requests.find(r => r.id === created);
     if (!request) return null;
@@ -221,6 +238,7 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
       request, lines,
       source: { organizationName: null, warehouseName: outletName },
       destination: { organizationName: null, warehouseName: null },
+      paperReference,
     });
   }, [created, distributionPointId]);
 

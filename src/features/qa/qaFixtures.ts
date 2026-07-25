@@ -119,6 +119,46 @@ export function qaPersona(id: QaPersonaId): QaPersona {
   return QA_PERSONAS.find(p => p.id === id) ?? QA_PERSONAS[0];
 }
 
+/**
+ * FEFO-OVERRIDE-DIALOG-CAPTURE — a SMALL, EXPLICIT, harness-only permission
+ * overlay on top of `roleDefaults()`, additive per persona.
+ *
+ * The problem it solves: `InventoryCenterScreen`'s Dispatch tab is gated on
+ * `role === 'super_admin' || myPermissions.has('warehouse_dispatch.create')`,
+ * and in the harness `myPermissions` is exactly `roleDefaults(role)` (no live
+ * permission-matrix fetch) — `warehouse_dispatch.create` (a migration-066 key)
+ * is not in ANY non-super_admin fallback list, so without this overlay ONLY
+ * `super_admin` can ever reach the dispatch composer in QA mode at all. That
+ * makes it impossible to drive FefoOverrideDialog's "denied" branch through
+ * real interaction, because `useFefoOverridePermission` special-cases
+ * `role === 'super_admin'` to `true` unconditionally (matching the real RPC's
+ * super_admin bypass) — a super_admin persona can never exercise "no
+ * inventory.fefo_override" at all.
+ *
+ * This overlay grants `warehouse_officer_assigned` (already carrying a
+ * migration-062 warehouse assignment to `qa-wh-inst-a`, see qaScopes.ts) JUST
+ * `warehouse_dispatch.create`, so it can open the composer and reach the
+ * picker. It does NOT grant `inventory.fefo_override` — that permission is
+ * still resolved through `useFefoOverridePermission`'s own scoped RPC
+ * preflight (`supabaseRbacTransport.hasScopedPermission`, routed through the
+ * SAME installed fixture Supabase client every other QA read uses), and
+ * `phoenix_profile_has_scoped_permission` has no registered fixture, so the
+ * fixture client's `rpc()` fails closed to `QA_READONLY` exactly like any
+ * other unregistered RPC — the hook then returns `false`, denying the
+ * override affordance through the REAL denial code path, not a harness
+ * shortcut. `warehouse_officer_assigned` is therefore the "no permission"
+ * FEFO persona; `super_admin` (its bypass, no RPC involved) is the "with
+ * permission" one.
+ *
+ * Nothing here touches `roleDefaults()`, any RPC, RLS, or migration — this is
+ * additive fixture data read only by `buildQaAppState`, itself reachable only
+ * behind `visualQaEnabled` (see qaConfig.ts) and tree-shaken from production
+ * (tests/qa-harness-production-safety.test.ts).
+ */
+const QA_EXTRA_PERMISSIONS: Partial<Record<QaPersonaId, readonly string[]>> = {
+  warehouse_officer_assigned: ['warehouse_dispatch.create'],
+};
+
 interface BuildArgs {
   persona: QaPersona;
   lang: Lang;
@@ -158,7 +198,10 @@ export function buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId
     transport: createQaRbacTransport(),
     loadScopes: qaLoadScopes,
   });
-  const permissions = new Set(roleDefaults(persona.profile.role));
+  const permissions = new Set([
+    ...roleDefaults(persona.profile.role),
+    ...(QA_EXTRA_PERMISSIONS[persona.id] ?? []),
+  ]);
   authz.setContext({
     authenticated: true,
     profileId: persona.profile.id,

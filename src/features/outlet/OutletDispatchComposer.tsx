@@ -30,14 +30,57 @@ import { commitDraft, planRetry, type CommitResult, type CommitProgress } from '
 import { MovementComposerShell, type ComposerStep } from '@/features/movement/ui/MovementComposerShell';
 import { StockMaterialPicker } from '@/features/movement/ui/StockMaterialPicker';
 import { MovementLineTable } from '@/features/movement/ui/MovementLineTable';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
+import { setPaperReference } from '@/features/movement/paper-reference.service';
 import {
   createWarehouseDispatch, addDispatchLine, getWarehouseDispatchLines,
+  getFefoAlternatives, type FefoBatch,
 } from './dispatch.service';
+import { FefoOverrideDialog } from './FefoOverrideDialog';
+import { useFefoOverridePermission } from '@/features/inventory/useFefoOverridePermission';
+import { operationToken } from '@/shared/lib/operation-token';
+import { canonicalIntent } from '@/shared/lib/canonical-intent';
 
 const newKey = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+/**
+ * 106's server-side idempotency key for one add-line attempt, derived the
+ * SAME way every other stock mutation in this app derives its request id
+ * (operation-token.ts / stock-mutation-runner.ts) rather than minted fresh
+ * per call: stable across a retry of the identical attempt (same line,
+ * unchanged quantity/override), but a DIFFERENT value the instant the
+ * operator edits the quantity or the confirmed override reason — which 106's
+ * own conflict check (23505) would otherwise correctly reject as "same
+ * request id, different payload" if this derivation reused a stale token.
+ *
+ * `generation` is a constant 0: unlike a receive/send RPC that advances an
+ * existing row's server-tracked progress, add-line only ever CREATES a new
+ * row for a given draft line, so there is no canonical "already partially
+ * done" measure to fold in — planRetry (movement-commit.ts) is what excludes
+ * a line the server already confirmed from ever reaching this function again.
+ *
+ * Fails closed: if Web Crypto is unavailable, this throws
+ * (OperationTokenUnavailableError) rather than falling back to an unguarded
+ * call — the caller must not add a dispatch line it cannot safely retry.
+ */
+async function deriveDispatchLineRequestId(line: {
+  idempotencyKey: string; warehouseStockId: string; quantity: number;
+}, fefoOverride: boolean, overrideReason: string | null): Promise<string> {
+  return operationToken({
+    kind: 'outlet_dispatch_add_line',
+    entityId: line.idempotencyKey,
+    generation: 0,
+    intent: canonicalIntent({
+      warehouseStockId: line.warehouseStockId,
+      quantity: line.quantity,
+      fefoOverride,
+      overrideReason,
+    }),
+  });
+}
 
 const toCandidates = (batches: Awaited<ReturnType<typeof getWarehouseStock>>): StockCandidate[] =>
   batches.map(b => ({
@@ -61,12 +104,16 @@ interface Props {
 export function OutletDispatchComposer({
   sourceWarehouseId, sourceWarehouseName, outlets, onCancel, onCreated,
 }: Props) {
-  const { lang, dir } = useApp();
+  const { lang, dir, activeOrgId } = useApp();
 
   const [step, setStep] = useState<ComposerStep>('parties');
   const [outletId, setOutletId] = useState('');
   const [externalReference, setExternalReference] = useState('');
   const [notes, setNotes] = useState('');
+  // PAPER-REFERENCE-CONTRACT-110: optional third field-set, distinct from
+  // externalReference — set on the created dispatch only if the operator
+  // actually typed a number, never a required precondition to create.
+  const [paperRef, setPaperRef] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
 
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [stock, setStock] = useState<StockCandidate[]>([]);
@@ -77,6 +124,17 @@ export function OutletDispatchComposer({
   const [progress, setProgress] = useState<CommitProgress | null>(null);
   const [result, setResult] = useState<CommitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // FEFO-REASONED-OVERRIDE (097/102) — a non-earliest pick is never added
+  // silently. `fefoPrompt` holds the candidate awaiting a decision;
+  // `lineOverrides` records, per draft line (keyed by its stable
+  // idempotencyKey), the override reason actually confirmed — read back at
+  // commit time so addDispatchLine passes the SAME override it was granted
+  // for, never a fresh unaudited one.
+  const canOverrideFefo = useFefoOverridePermission(activeOrgId, sourceWarehouseId).data ?? false;
+  const [fefoPrompt, setFefoPrompt] = useState<{ candidate: StockCandidate; quantity: number; alternatives: FefoBatch[] } | null>(null);
+  const [lineOverrides, setLineOverrides] = useState<Record<string, string>>({});
+  const [fefoCheckBusy, setFefoCheckBusy] = useState(false);
 
   const loadStock = useCallback(async () => {
     if (!sourceWarehouseId) { setStock([]); return; }
@@ -96,6 +154,50 @@ export function OutletDispatchComposer({
   const confirmable = useMemo(() => draftIsConfirmable(lines, 'supply'), [lines]);
   const partiesComplete = Boolean(sourceWarehouseId && outletId);
   const outlet = outlets.find(o => o.id === outletId) ?? null;
+
+  /**
+   * Every pick is checked against 072's own FEFO order BEFORE it ever enters
+   * the draft. A compliant pick adds immediately (identical to before this
+   * feature existed); a non-compliant one opens FefoOverrideDialog and adds
+   * NOTHING until the operator explicitly decides — cancelling never adds
+   * the line.
+   */
+  const handlePick = async (candidate: StockCandidate, quantity: number) => {
+    if (!activeOrgId || fefoCheckBusy) return;
+    setFefoCheckBusy(true);
+    try {
+      const alternatives = await getFefoAlternatives(
+        activeOrgId, sourceWarehouseId, candidate.scientificName, candidate.nationalCode,
+      );
+      const earliest = alternatives[0] ?? null;
+      if (!earliest || earliest.stockId === candidate.warehouseStockId) {
+        setLines(previous => [...previous, draftLineFromStock(candidate, quantity, newKey())]);
+      } else {
+        setFefoPrompt({ candidate, quantity, alternatives });
+      }
+    } catch {
+      // A failed compliance READ must never fall through to a silent add —
+      // fail closed and let the operator retry the pick.
+      setError(t('err_generic', lang));
+    } finally {
+      setFefoCheckBusy(false);
+    }
+  };
+
+  const handleFefoConfirmOverride = (reason: string) => {
+    if (!fefoPrompt) return;
+    const key = newKey();
+    setLines(previous => [...previous, draftLineFromStock(fefoPrompt.candidate, fefoPrompt.quantity, key)]);
+    setLineOverrides(previous => ({ ...previous, [key]: reason }));
+    setFefoPrompt(null);
+  };
+
+  const handleFefoUseAlternative = (stockId: string) => {
+    if (!fefoPrompt) return;
+    const alt = stock.find(s => s.warehouseStockId === stockId);
+    if (alt) setLines(previous => [...previous, draftLineFromStock(alt, fefoPrompt.quantity, newKey())]);
+    setFefoPrompt(null);
+  };
 
   const enterReview = async () => {
     setStep('review');
@@ -122,13 +224,48 @@ export function OutletDispatchComposer({
         dispatchNumber: externalReference.trim(),
         notes: notes.trim() || null,
       }),
-      addLine: (dispatchId, line) => addDispatchLine({
-        dispatchId,
-        warehouseStockId: line.warehouseStockId as string,
-        quantity: line.quantity,
-      }),
+      addLine: async (dispatchId, line) => {
+        const fefoOverride = line.idempotencyKey in lineOverrides;
+        const overrideReason = lineOverrides[line.idempotencyKey] ?? null;
+        let requestId: string;
+        try {
+          requestId = await deriveDispatchLineRequestId(
+            { idempotencyKey: line.idempotencyKey, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity },
+            fefoOverride, overrideReason,
+          );
+        } catch {
+          // Fail closed, matching operation-token.ts's own rule: a line that
+          // cannot derive a stable retry key must not be added at all.
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addDispatchLine({
+          dispatchId,
+          warehouseStockId: line.warehouseStockId as string,
+          quantity: line.quantity,
+          // The SAME override reason confirmed at pick-time, never re-derived —
+          // a retry of this line must replay the identical decision, not ask
+          // the server to accept a fresh unaudited one.
+          fefoOverride,
+          overrideReason,
+          requestId,
+        });
+      },
       onProgress: setProgress,
     });
+
+    // The dispatch header exists (in 'draft') the instant createHeader
+    // succeeds, independent of how the lines land — so a paper reference is
+    // attached here even on a partial line failure, rather than only on full
+    // success. Best-effort: a failure here must never undo a created dispatch.
+    if (outcome.requestId && paperRef.number.trim() !== '') {
+      await setPaperReference({
+        documentType: 'warehouse_dispatch',
+        documentId: outcome.requestId,
+        paperReferenceNumber: paperRef.number,
+        paperReferenceDate: paperRef.date || null,
+        issuingAuthority: paperRef.authority || null,
+      }).catch(() => { /* best-effort; the dispatch itself is unaffected */ });
+    }
 
     setResult(outcome);
     setCommitting(false);
@@ -155,9 +292,23 @@ export function OutletDispatchComposer({
 
     const retried = await commitDraft(plan.toSend, {
       createHeader: () => Promise.resolve({ ok: true, data: { id: result.requestId as string } }),
-      addLine: (dispatchId, line) => addDispatchLine({
-        dispatchId, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity,
-      }),
+      addLine: async (dispatchId, line) => {
+        const fefoOverride = line.idempotencyKey in lineOverrides;
+        const overrideReason = lineOverrides[line.idempotencyKey] ?? null;
+        let requestId: string;
+        try {
+          requestId = await deriveDispatchLineRequestId(
+            { idempotencyKey: line.idempotencyKey, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity },
+            fefoOverride, overrideReason,
+          );
+        } catch {
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addDispatchLine({
+          dispatchId, warehouseStockId: line.warehouseStockId as string, quantity: line.quantity,
+          fefoOverride, overrideReason, requestId,
+        });
+      },
       onProgress: setProgress,
     });
 
@@ -212,6 +363,7 @@ export function OutletDispatchComposer({
           <PhoenixInput label={t('mv_external_reference', lang)} value={externalReference} onChange={e => setExternalReference(e.target.value)} />
           <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '-6px' }}>{t('mv_external_reference_hint', lang)}</p>
           <PhoenixInput label={t('inv_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
+          <PaperReferenceFields lang={lang} value={paperRef} onChange={setPaperRef} />
         </div>
       )}
 
@@ -220,10 +372,21 @@ export function OutletDispatchComposer({
           lang={lang}
           candidates={stock}
           usedStockIds={lines.map(l => l.warehouseStockId).filter((v): v is string => Boolean(v))}
-          loading={stockLoading}
-          onAdd={(candidate, quantity) => setLines(previous => [...previous, draftLineFromStock(candidate, quantity, newKey())])}
+          loading={stockLoading || fefoCheckBusy}
+          onAdd={(candidate, quantity) => void handlePick(candidate, quantity)}
         />
       )}
+
+      <FefoOverrideDialog
+        open={fefoPrompt !== null}
+        picked={fefoPrompt?.candidate ?? null}
+        alternatives={fefoPrompt?.alternatives ?? []}
+        canOverride={canOverrideFefo}
+        onCancel={() => setFefoPrompt(null)}
+        onConfirmOverride={handleFefoConfirmOverride}
+        onUseAlternative={handleFefoUseAlternative}
+        lang={lang}
+      />
 
       {step === 'review' && (
         <div style={{ display: 'grid', gap: '12px' }}>

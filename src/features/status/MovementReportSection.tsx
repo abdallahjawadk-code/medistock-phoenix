@@ -83,6 +83,12 @@ const btnStyle = {
   background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
 } as const;
 
+// R03-FIX: CSV/Print must stay enabled once loading completes, even for a
+// genuine zero-row result — a filtered "no movements" result is still a
+// real, exportable/printable report. Only loading (nothing to export yet)
+// or a load error (nothing trustworthy to export) disable the actions.
+const disabledBtnStyle = { ...btnStyle, opacity: 0.5, cursor: 'not-allowed' } as const;
+
 const th = { textAlign: 'start' as const, padding: '8px 8px', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' as const };
 const td = { padding: '7px 8px', fontSize: '11.5px', borderBottom: '1px solid var(--brd)', whiteSpace: 'nowrap' as const };
 
@@ -131,6 +137,9 @@ export function MovementReportSection() {
   );
 
   const rows = report.data ?? [];
+  // R03-FIX: disabled only while there's nothing loaded yet or the load
+  // failed — NOT while rows is legitimately empty after a successful load.
+  const reportActionsDisabled = report.loading || !!report.error;
 
   const summary = useMemo(() => {
     let totalAdd = 0, totalSubtract = 0, totalCorrection = 0, netDelta = 0;
@@ -213,7 +222,9 @@ export function MovementReportSection() {
   }
 
   function printReport() {
-    if (rows.length === 0) return;
+    // R03-FIX: a filtered result of zero rows is an honest, real report state
+    // (e.g. "no movements in this date range") — it must still print, showing
+    // the same metadata block and an empty table, not silently do nothing.
     // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: mobile/PWA/webview contexts
     // route to the in-app fallback modal instead of window.open/window.print
     // — those can switch to a native print UI or open an external tab,
@@ -280,10 +291,10 @@ export function MovementReportSection() {
         </div>
         <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {canExportCsv && (
-            <button onClick={exportCsv} disabled={rows.length === 0} aria-label={t('mvmt_report_export_csv', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('mvmt_report_export_csv', lang)}</button>
+            <button onClick={exportCsv} disabled={reportActionsDisabled} aria-disabled={reportActionsDisabled} aria-label={t('mvmt_report_export_csv', lang)} style={reportActionsDisabled ? disabledBtnStyle : btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('mvmt_report_export_csv', lang)}</button>
           )}
           {canPrint && (
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={reportActionsDisabled} aria-disabled={reportActionsDisabled} aria-label={t('sc_print_report', lang)} style={reportActionsDisabled ? disabledBtnStyle : btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
           )}
         </div>
       </div>

@@ -21,6 +21,8 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { commitDraft, type CommitResult, type CommitProgress } from '@/features/movement/movement-commit';
 import { MovementComposerShell, type ComposerStep } from '@/features/movement/ui/MovementComposerShell';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
+import { setPaperReference } from '@/features/movement/paper-reference.service';
 import { OutletReturnProvenancePicker } from './OutletReturnProvenancePicker';
 import {
   draftLineFromReturnable, validateOutletReturnDraft, outletReturnDraftConfirmable,
@@ -51,6 +53,8 @@ export function OutletReturnComposer({
   const [step, setStep] = useState<ComposerStep>('parties');
   const [externalReference, setExternalReference] = useState('');
   const [notes, setNotes] = useState('');
+  // PAPER-REFERENCE-CONTRACT-110: optional, distinct from externalReference.
+  const [paperRef, setPaperRef] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
 
   const [sources, setSources] = useState<OutletReturnableLine[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -114,6 +118,18 @@ export function OutletReturnComposer({
       }),
       onProgress: setProgress,
     });
+
+    // The return request header exists (in 'draft') the instant createHeader
+    // succeeds — attach the paper reference here regardless of line outcome.
+    if (outcome.requestId && paperRef.number.trim() !== '') {
+      await setPaperReference({
+        documentType: 'outlet_return_request',
+        documentId: outcome.requestId,
+        paperReferenceNumber: paperRef.number,
+        paperReferenceDate: paperRef.date || null,
+        issuingAuthority: paperRef.authority || null,
+      }).catch(() => { /* best-effort; the return request itself is unaffected */ });
+    }
 
     setResult(outcome);
     setCommitting(false);
@@ -198,6 +214,7 @@ export function OutletReturnComposer({
           />
           <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '-6px' }}>{t('mv_external_reference_hint', lang)}</p>
           <PhoenixInput label={t('inv_notes', lang)} value={notes} onChange={e => setNotes(e.target.value)} />
+          <PaperReferenceFields lang={lang} value={paperRef} onChange={setPaperRef} />
         </div>
       )}
 

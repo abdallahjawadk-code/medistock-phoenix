@@ -13,7 +13,7 @@ function line(over: Partial<ReceiptLine> = {}): ReceiptLine {
     expiryDate: '2027-06-30', requestedQuantity: 240, approvedQuantity: 240,
     movedQuantity: 240, receivedQuantity: null, onHandSnapshot: null,
     returnReason: null, disposition: null, custodyState: null,
-    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', supplyType: 'central',
+    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', purchaseOrigin: null, supplyType: 'central',
     notes: null, originalSupplyReference: null,
     ...over,
   };
@@ -58,11 +58,32 @@ describe('receipt workbook structure', () => {
     const joined = text.join(' | ');
     expect(joined).toContain('Supply Dispatch Receipt');
     expect(joined).toContain(TRACE);
-    expect(joined).toContain('External / operator reference');
+    expect(joined).toContain('Official letter / external document number — optional');
     expect(joined).toContain('OPS-77');
     expect(joined).toContain('Babil Health — Central Store');
     expect(joined).toContain('Al-Sadiq Hospital — Hospital Depot');
     expect(joined).toContain('Event date and time');
+  });
+
+  it('PAPER-REFERENCE-CONTRACT-110: shows the paper reference rows only when the document carries one', async () => {
+    const withoutRef = await buildReceiptWorkbook({ document: doc(), selectedFields: fieldsForPreset('compact', SUPPLY), lang: 'en' });
+    const textWithout: string[] = [];
+    withoutRef.getWorksheet('Summary')!.eachRow(row => row.eachCell(c => textWithout.push(cellText(c.value))));
+    expect(textWithout.join(' | ')).not.toContain('Paper reference number');
+
+    const withRef = await buildReceiptWorkbook({
+      document: doc({ paperReferenceNumber: 'PR-2026-042', paperReferenceDate: '2026-06-01', issuingAuthority: 'وزارة الصحة' }),
+      selectedFields: fieldsForPreset('compact', SUPPLY), lang: 'en',
+    });
+    const textWith: string[] = [];
+    withRef.getWorksheet('Summary')!.eachRow(row => row.eachCell(c => textWith.push(cellText(c.value))));
+    const joinedWith = textWith.join(' | ');
+    expect(joinedWith).toContain('Paper reference number');
+    expect(joinedWith).toContain('PR-2026-042');
+    expect(joinedWith).toContain('2026-06-01');
+    expect(joinedWith).toContain('وزارة الصحة');
+    // The uuid trace key remains present and canonical alongside the paper reference.
+    expect(joinedWith).toContain(TRACE);
   });
 
   it('the Material Lines sheet has exactly the selected columns', async () => {

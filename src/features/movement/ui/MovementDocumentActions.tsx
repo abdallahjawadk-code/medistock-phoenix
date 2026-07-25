@@ -115,6 +115,13 @@ export function MovementDocumentActions({ document: doc, lang, canSeePrices = fa
             ? <img src={qrUrl} alt={t('mv_h_trace_key', lang)} style={{ width: '220px', height: '220px' }} />
             : <code style={{ fontSize: '13px' }}>{shortTraceKey(doc.traceKey)}</code>}
           <code style={{ fontSize: '11px', color: 'var(--t2)', wordBreak: 'break-all', textAlign: 'center' }}>{doc.traceKey}</code>
+          {/* PAPER-REFERENCE-CONTRACT-110: informational text ONLY — never part
+              of the QR payload above, which stays namespace/kind/uuid only. */}
+          {doc.paperReferenceNumber && (
+            <p style={{ fontSize: '11px', color: 'var(--t2)', textAlign: 'center', margin: 0 }}>
+              {t('mv_h_paper_reference_number', lang)}: {doc.paperReferenceNumber}
+            </p>
+          )}
           <p style={{ fontSize: '11px', color: 'var(--t2)', textAlign: 'center', margin: 0 }}>
             {t('mv_external_reference_hint', lang)}
           </p>

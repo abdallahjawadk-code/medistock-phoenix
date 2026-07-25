@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
-import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 interface Props {
   onComplete: () => void;
@@ -87,14 +86,24 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
       </header>
 
-      {/* Approved issuance & supervision credits — the EXACT approved Arabic text,
-          verbatim per the authoritative handoff. Do not paraphrase either line.
-          Always rendered in Arabic (dir=rtl) regardless of the UI language. */}
+      {/* Approved issuance credit — the EXACT approved Arabic text, verbatim
+          per the authoritative handoff. Do not paraphrase.
+          STAGE1-SUPERVISION-ATTRIBUTION-A: the supervision credit line naming
+          the supervising pharmacist, and its divider rule, are reinstated here
+          on the welcome/splash experience by an explicit, later instruction
+          that supersedes PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A for this
+          surface only — the login screen stays without it. Both lines are
+          always rendered in Arabic (dir=rtl) regardless of the UI language,
+          so neither takes an i18n key and neither has an English
+          transliteration. The supervision line is deliberately subordinate:
+          smaller and dimmer than the issuance line (see
+          .nexus-welcome__credits-sup). */}
       <div className="nexus-welcome__credits" dir="rtl">
         <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
         <div className="nexus-welcome__credits-rule" aria-hidden="true" />
         <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
-        <MasarCopyrightSeal variant="credit" className="nexus-welcome__seal" />
+        {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
+            single seal lives in the authenticated shell footer. */}
       </div>
     </div>
   );

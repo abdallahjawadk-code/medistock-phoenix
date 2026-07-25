@@ -27,6 +27,9 @@ import {
   parseMovementStatusInput, resolveMovementStatus,
   type MovementStatus, type MovementStatusResult, type MovementStatusDeps,
 } from './movement-status';
+import { getMovementTimeline, type MovementTimeline } from '@/features/movement/movement-timeline.service';
+import { searchMovementDocuments, type TraceCandidate } from '@/features/movement/movement-search.service';
+import { SmartScanner, type ScanClassification } from '@/shared/materials/SmartScanner';
 
 type Lang = 'ar' | 'en';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
@@ -42,7 +45,7 @@ type ViewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
   | { phase: 'error' }
-  | { phase: 'result'; result: MovementStatusResult; fetchedAt: number };
+  | { phase: 'result'; result: MovementStatusResult; timeline: MovementTimeline | null; fetchedAt: number };
 
 interface Props {
   lang: Lang;
@@ -65,16 +68,94 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
   const [kindHint, setKindHint] = useState<MovementDocumentKind>('return_request');
   const [state, setState] = useState<ViewState>({ phase: 'idle' });
 
+  const [candidates, setCandidates] = useState<TraceCandidate[] | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+
+  /** SMART-SCANNER routing: movement QR -> lookup; establishment QR -> link;
+      barcode/unknown -> safe note. Nothing is created from a code. */
+  const onScanned = useCallback((scan: ScanClassification) => {
+    setScannerOpen(false);
+    setScanNote(null);
+    if (scan.kind === 'movement') {
+      setRaw(scan.id);
+      void lookupCandidate({ kind: scan.docKind, id: scan.id, number: null, externalReference: null, label: null, status: null });
+      return;
+    }
+    if (scan.kind === 'establishment') {
+      window.open(`/?qid=${encodeURIComponent(scan.qid)}`, '_blank', 'noopener');
+      return;
+    }
+    if (scan.kind === 'barcode') {
+      setRaw(scan.value);
+      void smartLookup();
+      return;
+    }
+    setScanNote(t('scan_unknown_code', lang));
+  }, [lang]);
+
+
+  /** SMART SEARCH: QR / UUID / official number / order-receipt number /
+      external reference — auto-detected; multiple hits are LISTED (external
+      refs are not unique), never auto-picked. */
+  const smartLookup = useCallback(async () => {
+    setCandidates(null);
+    setState({ phase: 'loading' });
+    try {
+      const found = await searchMovementDocuments(raw);
+      if (!found.ok) {
+        setState({ phase: 'result', result: { ok: false, reason: found.reason === 'invalid_input' ? 'invalid_input' : 'not_available' }, timeline: null, fetchedAt: Date.now() });
+        return;
+      }
+      if (found.candidates.length > 1) {
+        setCandidates(found.candidates);
+        setState({ phase: 'idle' });
+        return;
+      }
+      await lookupCandidate(found.candidates[0]);
+    } catch {
+      setState({ phase: 'error' });
+    }
+    // raw is the only live input; lookupCandidate is stable per deps.
+  }, [raw]); // lookupCandidate intentionally omitted (declared below, stable)
+
+  const lookupCandidate = useCallback(async (candidate: TraceCandidate) => {
+    setCandidates(null);
+    setState({ phase: 'loading' });
+    try {
+      const kind = (candidate.kind === 'return_request' || candidate.kind === 'return_shipment')
+        ? candidate.kind : undefined;
+      const [result, timeline] = await Promise.all([
+        kind
+          ? resolveMovementStatus({ kind, id: candidate.id }, deps)
+          : Promise.resolve({ ok: false, reason: 'unsupported_kind', kind: 'return_request' } as MovementStatusResult),
+        getMovementTimeline(candidate.id).catch(() => null),
+      ]);
+      setState({ phase: 'result', result, timeline, fetchedAt: Date.now() });
+    } catch {
+      setState({ phase: 'error' });
+    }
+  }, [deps]);
+
   const lookup = useCallback(async () => {
     const target = parseMovementStatusInput(raw, kindHint);
     if (!target) {
-      setState({ phase: 'result', result: { ok: false, reason: 'invalid_input' }, fetchedAt: Date.now() });
+      // Not a QR/UUID: route through the smart document search.
+      await smartLookup();
       return;
     }
     setState({ phase: 'loading' });
     try {
-      const result = await resolveMovementStatus(target, deps);
-      setState({ phase: 'result', result, fetchedAt: Date.now() });
+      // MOVEMENT-TRACKING-MERGE: the current status AND the full 081/082
+      // server-side timeline resolve together. The timeline RPC is org-scoped
+      // server-side and returns the SAME empty shape for unknown and
+      // unauthorized ids — no existence leak, no duplicated events (each event
+      // row is one append-only ledger/lifecycle record).
+      const [result, timeline] = await Promise.all([
+        resolveMovementStatus(target, deps),
+        getMovementTimeline(target.id).catch(() => null),
+      ]);
+      setState({ phase: 'result', result, timeline, fetchedAt: Date.now() });
     } catch {
       setState({ phase: 'error' });
     }
@@ -110,7 +191,8 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
               { value: 'return_shipment', label: t('or_kind_return_shipment', lang) },
             ]}
           />
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <PhoenixButton variant="ghost" onClick={() => setScannerOpen(o => !o)}>{t('scan_open', lang)}</PhoenixButton>
             <PhoenixButton disabled={!raw.trim() || state.phase === 'loading'} onClick={() => void lookup()} data-testid="movement-status-lookup">
               {t('or_status_lookup', lang)}
             </PhoenixButton>
@@ -121,7 +203,23 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
         </div>
       </PhoenixCard>
 
-      <p style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('or_status_timeline_note', lang)}</p>
+      {scannerOpen && <PhoenixCard><SmartScanner lang={lang} onScan={onScanned} onClose={() => setScannerOpen(false)} /></PhoenixCard>}
+      {scanNote && <p role="status" style={{ fontSize: '12px', color: 'var(--warn)' }} dir="auto">{scanNote}</p>}
+
+      {candidates && candidates.length > 1 && (
+        <PhoenixCard data-testid="movement-search-candidates">
+          <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '8px' }}>{t('or_search_multiple', lang)}</p>
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {candidates.map(candidate => (
+              <PhoenixButton key={candidate.id} variant="ghost" size="sm" onClick={() => void lookupCandidate(candidate)}>
+                <span dir="ltr">{candidate.number ?? candidate.id}</span>
+                {candidate.status ? ` · ${candidate.status}` : ''}
+                {candidate.externalReference ? ` · ${candidate.externalReference}` : ''}
+              </PhoenixButton>
+            ))}
+          </div>
+        </PhoenixCard>
+      )}
 
       {state.phase === 'loading' && <PhoenixLoadingState />}
       {state.phase === 'error' && (
@@ -145,7 +243,47 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
       {state.phase === 'result' && state.result.ok && (
         <StatusResult status={state.result.status} fetchedAt={state.fetchedAt} lang={lang} />
       )}
+
+      {/* The unified, ordered, server-authoritative timeline (081/082) — shown
+          for ANY resolvable trace id, including corridors the status card does
+          not cover yet. */}
+      {state.phase === 'result' && state.timeline && state.timeline.events.length > 0 && (
+        <TimelineResult timeline={state.timeline} lang={lang} />
+      )}
     </div>
+  );
+}
+
+function TimelineResult({ timeline, lang }: { timeline: MovementTimeline; lang: Lang }) {
+  return (
+    <PhoenixCard data-testid="movement-timeline">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <h4 style={{ fontSize: '13.5px', fontWeight: 700 }}>{t('or_timeline_title', lang)}</h4>
+        <PhoenixButton variant="ghost" size="sm" onClick={() => window.print()}>
+          {t('or_timeline_print', lang)}
+        </PhoenixButton>
+      </div>
+      <ol style={{ listStyle: 'none', marginTop: '10px', display: 'grid', gap: '8px' }}>
+        {timeline.events.map(e => (
+          <li key={e.eventId} style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '12px', borderInlineStart: '2px solid var(--p)', paddingInlineStart: '10px' }}>
+            <span dir="ltr" style={{ color: 'var(--t3)', whiteSpace: 'nowrap', fontSize: '11px' }}>
+              {new Date(e.occurredAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <strong>{dash(e.statusAfter)}</strong>
+              {e.materialLabel ? ` · ${e.materialLabel}` : ''}
+              {e.batchLabel ? ` (${e.batchLabel})` : ''}
+              {e.quantityDelta != null ? ` · ${e.quantityDelta > 0 ? '+' : ''}${e.quantityDelta}` : ''}
+              {e.actorName ? ` · ${e.actorName}` : ''}
+              {e.referenceLabel ? ` · ${e.referenceLabel}` : ''}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {!timeline.complete && timeline.completenessNote && (
+        <p style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '8px' }}>{timeline.completenessNote}</p>
+      )}
+    </PhoenixCard>
   );
 }
 

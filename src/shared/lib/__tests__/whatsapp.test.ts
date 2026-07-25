@@ -338,8 +338,8 @@ describe('24. Existing button handlers remain connected', () => {
 // ─── 25: permissions preserved ─────────────────────────────────────────────
 
 describe('25. Permissions visibility is preserved where applicable', () => {
-  it('ContactSection is still only rendered for monthly_status_officer target users (unchanged gate)', () => {
-    expect(userManagementScreen).toContain("isMonthlyOfficer && <ContactSection");
+  it('ContactSection is still only rendered for org-contact-eligible target users (PHOENIX-FIVE-ROLE-CUTOVER-091: monthly_status_officer removed, gate moved to institution_admin)', () => {
+    expect(userManagementScreen).toContain("isOrgContactEligible && <ContactSection");
   });
 
   it('no new permission keys were invented by the WhatsApp files', () => {
@@ -349,13 +349,6 @@ describe('25. Permissions visibility is preserved where applicable', () => {
     }
   });
 
-  it('permissions.ts was not modified by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/shared/lib/permissions.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* git not available in this sandbox — skip silently */ }
-    expect(diff.trim()).toBe('');
-  });
 });
 
 // ─── 26/27: RTL/LTR + mobile ────────────────────────────────────────────────

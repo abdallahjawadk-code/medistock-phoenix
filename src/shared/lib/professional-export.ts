@@ -27,6 +27,7 @@
  */
 
 import type ExcelJS from 'exceljs';
+import { displaySupplyType } from './supply-types';
 import {
   REPORT_BRAND,
   escHtml,
@@ -225,15 +226,28 @@ function loadExcelJS(): Promise<typeof ExcelJS> {
  */
 export async function buildProfessionalWorkbook<T>(config: ProfessionalExportConfig<T>): Promise<ExcelJS.Workbook> {
   const ExcelJSRuntime = await loadExcelJS();
-  const columns = sanitizedColumns(config);
-  const metaLines = buildMetaLines(config);
-  const isRtl = config.lang === 'ar';
-  const colCount = Math.max(columns.length, 1);
-
   const wb = new ExcelJSRuntime.Workbook();
   wb.creator = 'MediStock Phoenix';
   wb.created = config.generatedAt;
   wb.modified = config.generatedAt;
+  addProfessionalDataSheet(wb, config);
+  return wb;
+}
+
+/**
+ * Adds one data sheet (title/module/brand/metadata block + frozen,
+ * auto-filtered, bold/colored header + alternating-row data table) to an
+ * existing workbook, using the same styling as buildProfessionalWorkbook's
+ * single sheet. Extracted so a multi-sheet workbook (e.g. parent rows on one
+ * sheet, drill-down detail rows on another) can reuse the exact same
+ * per-sheet rendering without duplicating it — see
+ * buildMultiSheetProfessionalWorkbook.
+ */
+function addProfessionalDataSheet<T>(wb: ExcelJS.Workbook, config: ProfessionalExportConfig<T>): void {
+  const columns = sanitizedColumns(config);
+  const metaLines = buildMetaLines(config);
+  const isRtl = config.lang === 'ar';
+  const colCount = Math.max(columns.length, 1);
 
   const ws = wb.addWorksheet(safeSheetName(config.moduleName || config.reportTitle), {
     views: [{ rightToLeft: isRtl }],
@@ -317,8 +331,43 @@ export async function buildProfessionalWorkbook<T>(config: ProfessionalExportCon
 
   // Freeze everything above and including the header row so it stays visible while scrolling.
   ws.views = [{ rightToLeft: isRtl, state: 'frozen', ySplit: headerRow.number }];
+}
 
+/**
+ * Builds one workbook containing a data sheet per config, in order — e.g.
+ * parent rows on sheet 1, drill-down detail rows on sheet 2+. Each config's
+ * `moduleName` becomes its sheet name, so callers must give each a distinct
+ * `moduleName` (sanitizedColumns/safeSheetName already dedupe illegal
+ * characters and length, but not cross-sheet name collisions). Does not
+ * download anything — see exportProfessionalMultiSheetXlsx.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- each sheet's ProfessionalExportConfig<T> has its own row type; a heterogeneous array (e.g. orders + receipts + lines) needs type erasure at this boundary, same as procurement.service.ts's row mappers.
+export async function buildMultiSheetProfessionalWorkbook(configs: ProfessionalExportConfig<any>[]): Promise<ExcelJS.Workbook> {
+  const ExcelJSRuntime = await loadExcelJS();
+  const wb = new ExcelJSRuntime.Workbook();
+  const generatedAt = configs[0]?.generatedAt ?? new Date();
+  wb.creator = 'MediStock Phoenix';
+  wb.created = generatedAt;
+  wb.modified = generatedAt;
+  for (const config of configs) addProfessionalDataSheet(wb, config);
   return wb;
+}
+
+/**
+ * Builds a multi-sheet workbook via buildMultiSheetProfessionalWorkbook and
+ * downloads it as a true `.xlsx` file. Mirrors exportProfessionalXlsx's
+ * error-handling contract (returns false, never throws).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see buildMultiSheetProfessionalWorkbook above.
+export async function exportProfessionalMultiSheetXlsx(configs: ProfessionalExportConfig<any>[], fileNameBase: string): Promise<boolean> {
+  try {
+    const wb = await buildMultiSheetProfessionalWorkbook(configs);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    return await downloadBlob(buildStableFileName(fileNameBase, 'xlsx'), blob);
+  } catch {
+    return false;
+  }
 }
 
 async function downloadBlob(filename: string, blob: Blob): Promise<boolean> {
@@ -971,13 +1020,23 @@ const OUTLET_REPORT_COLUMNS: { key: OutletReportColumnKey; width: number; kind: 
 /** Extra Data Dictionary entries for the outlet-report-only "Supply Type"/"Removed" columns, plus a corrected Scope note (this report CAN include removed rows, unlike the main export). */
 const OUTLET_REPORT_DICTIONARY: { field: string; description: string }[] = [
   ...AVAIL_EXPORT_DICTIONARY.slice(0, -1), // drop the main export's "excludes removed materials" Scope line — replaced below
-  { field: OUTLET_REPORT_HEADERS.supplyType, description: 'Free-text supply/procurement category recorded for this material (e.g. purchases, Kimadia, donations, aid), if any. / تصنيف نصي حر لمصدر/طريقة تجهيز هذه المادة (مثل مشتريات، كيماديا، هبات، مساعدات)، إن وُجد.' },
+  { field: OUTLET_REPORT_HEADERS.supplyType, description: 'Canonical supply category recorded for this material: aid, purchases (central/supplementary) or Kimadia. / تصنيف التجهيز المعتمد لهذه المادة: مساعدات أو مشتريات (مركزية/فرعية) أو كيماديا.' },
   { field: OUTLET_REPORT_HEADERS.removed, description: 'Whether this material is currently active at the outlet or was intentionally removed (removed_at marker) — never a raw removed-by user id. / يوضح ما إذا كانت هذه المادة فعالة حالياً في المنفذ أو تمت إزالتها عمداً (علامة removed_at) — لا يعرض معرّف المستخدم الخام لمن قام بالإزالة.' },
   { field: 'Scope / النطاق', description: 'This is an outlet operations report: it includes removed materials only when the modal\'s "Removed status" filter is set to show them, and every such row is clearly labeled Removed above. / هذا تقرير تشغيلي للمنفذ: يتضمن المواد المُزالة فقط عند ضبط فلتر "حالة الإزالة" في النافذة لعرضها، ويتم وسم كل صف من هذا النوع بوضوح كمُزال أعلاه.' },
 ];
 
 function outletReportCellValue(row: OutletReportRow, key: OutletReportColumnKey): string | number | Date {
-  if (key === 'supplyType') return neutralizeFormulaValue(row.supplyType || '—');
+  if (key === 'supplyType') {
+    // CANONICAL-SUPPLY-PROVENANCE: exports carry the canonical bilingual
+    // category (donations never appear — legacy values map to aid); an
+    // unmappable legacy value falls back to its raw text.
+    const canonical = displaySupplyType(row.supplyType);
+    const label = canonical === 'aid' ? 'Aid / مساعدات'
+      : canonical === 'kimadia' ? 'Kimadia / كيماديا'
+      : canonical === 'purchase' ? 'Purchases / مشتريات'
+      : (row.supplyType || '—');
+    return neutralizeFormulaValue(label);
+  }
   if (key === 'removed') return neutralizeFormulaValue(row.removedLabel || '—');
   return availExportCellValue(row, key as AvailExportColumnDef['key']);
 }

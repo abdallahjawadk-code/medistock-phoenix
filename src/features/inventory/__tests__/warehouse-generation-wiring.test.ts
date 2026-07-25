@@ -319,13 +319,22 @@ describe('all three production call sites read fresh and pass a non-null generat
     // Manual form + adjustment row share the same touch() discipline…
     expect(screen).toContain('const touch = () => setRequestId(newRequestId());');
     expect(screen).toContain('/** A changed payload is a NEW logical attempt; only an unchanged retry replays. */');
-    // …and every payload onChange invokes it.
+    // …and every manually-entered payload field invokes it. Migration 118
+    // restores the Pharmacy Department's manual identity corridor and forbids
+    // an optional catalog selection.
     const intakeForm = screen.slice(screen.indexOf('function IntakeForm'), screen.indexOf('function StockList'));
     const handlers = intakeForm.match(/onChange=\{e => \{[^}]*\}\}/g) ?? [];
     expect(handlers.length).toBeGreaterThanOrEqual(15);
     for (const handler of handlers) expect(handler).toContain('touch();');
+    expect(intakeForm).toContain('centralItemId: null');
+    expect(intakeForm).toContain("purchaseOrigin: supplyType === 'purchase' ? 'central' : null");
+    expect(intakeForm).not.toContain('searchCentralItems');
+    expect(intakeForm).not.toContain('selectedItem');
     // OCR: editing a reviewed value re-keys the attempt too.
     const ocrEdit = ocr.slice(ocr.indexOf('const onChangeField'), ocr.indexOf('const onToggleConfirm'));
     expect(ocrEdit).toContain('setRequestId(newRequestId());');
+    expect(ocr).toContain('centralItemId: null');
+    expect(ocr).toContain("purchaseOrigin: normalizedSupplyType === 'purchase' ? 'central' : null");
+    expect(ocr).toContain('&& quantityValid && supplyTypeValid');
   });
 });

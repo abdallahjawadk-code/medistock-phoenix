@@ -30,6 +30,27 @@ export const QA_MUTATION_OUTCOMES: Record<string, unknown> = {
   phoenix_receive_outlet_return_shipment_line: { ok: true },
 };
 
+/**
+ * FEFO-REASON-REQUESTID-LIVE-PROOF — a single, ARGS-SCOPED synthetic success
+ * for `phoenix_create_warehouse_dispatch`, deliberately kept OUT of
+ * `QA_MUTATION_OUTCOMES` above.
+ *
+ * `phoenix_create_warehouse_dispatch` is intentionally NOT on the real-mutation
+ * allowlist — unlike the migration-071 outcomes above, it stays excluded for
+ * every OTHER call shape, so any other QA scenario driving OutletDispatchComposer
+ * still sees the ordinary QA_READONLY failure exactly as before. This constant
+ * exists ONLY so `qaFixtureClient.rpc` can recognise the ONE specific header
+ * (this warehouse → this outlet) the FEFO-override live-interaction proof
+ * drives, and answer THAT single shape with a fabricated header id — never a
+ * real write, never a blanket allow. See qaFixtureClient.ts for the args match.
+ */
+export const QA_FEFO_LIVE_PROOF_DISPATCH_HEADER = {
+  warehouseId: 'qa-wh-inst-a',
+  outletId: 'qa-outlet-1',
+  /** Obviously-synthetic fabricated id — never written anywhere. */
+  dispatchId: '0ff66666-0000-4000-8000-000000000001',
+};
+
 /** Exported so the scope-assignment fixtures bind to the SAME organization ids. */
 export const ORG_A = 'qa-org-a1';
 export const ORG_B = 'qa-org-b2';
@@ -147,6 +168,16 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // without any mutation. Columns match getWarehouseStock's select exactly.
   warehouse_stock: [
     { id: 'qa-ws-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', on_hand_quantity: 180, reserved_quantity: 20, available_quantity: 160, national_code: '1234567' },
+    // FEFO-OVERRIDE-DIALOG-CAPTURE: a SECOND Amoxicillin batch at the SAME
+    // warehouse, same national_code, with an EARLIER expiry than qa-ws-1 —
+    // the FEFO-compliant alternative. Picking qa-ws-1 (the later-expiry batch)
+    // in the dispatch composer's StockMaterialPicker is therefore a genuine
+    // non-earliest pick, and `OutletDispatchComposer.handlePick` opens
+    // FefoOverrideDialog for it exactly as the real 072/097 wiring would.
+    // Picking qa-ws-1b (this row) is FEFO-compliant and adds directly with no
+    // dialog. See `rpc:phoenix_inventory_fefo_batches` below for the paired
+    // fixture that answers `getFefoAlternatives` with both rows, earliest first.
+    { id: 'qa-ws-1b', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4470E', expiry_date: '2027-06-30', on_hand_quantity: 90, reserved_quantity: 10, available_quantity: 80, national_code: '1234567' },
     { id: 'qa-ws-2', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Omeprazole', batch_number: 'OMP5512', expiry_date: '2027-02-28', on_hand_quantity: 640, reserved_quantity: 0, available_quantity: 640, national_code: '2223334' },
     { id: 'qa-ws-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', on_hand_quantity: 42, reserved_quantity: 12, available_quantity: 30, national_code: null },
   ],
@@ -246,6 +277,27 @@ export const QA_FIXTURES: Record<string, unknown> = {
     ok: true, alerts: [], computed_at: '2026-07-20T09:00:00Z',
   },
 
+  // FEFO-OVERRIDE-DIALOG-CAPTURE — phoenix_inventory_fefo_batches (072) →
+  // FEFO-ordered eligible batches (expiry_date ASC NULLS LAST). Pairs with the
+  // two qa-ws-1 / qa-ws-1b Amoxicillin rows above so the dispatch composer's
+  // getFefoAlternatives (dispatch.service.ts) returns BOTH, earliest first —
+  // the exact shape OutletDispatchComposer.handlePick and FefoOverrideDialog
+  // need to render a real earliest-vs-picked comparison.
+  //
+  // LIMITATION (documented, not worked around): qaFixtureClient.rpc(name)
+  // resolves by RPC NAME ONLY — it does not read the call's arguments — so
+  // this fixture answers EVERY phoenix_inventory_fefo_batches call in a QA
+  // session identically, regardless of which material/warehouse was actually
+  // asked about. That is harmless for this capture (which deliberately drives
+  // ONLY the two Amoxicillin batches through the picker) but means picking any
+  // OTHER material in the same composer during a QA session would also
+  // (incorrectly, for that other material) open the override dialog against
+  // these two Amoxicillin rows. Scoped to this one fixture, dev/test only.
+  'rpc:phoenix_inventory_fefo_batches': [
+    { stock_id: 'qa-ws-1b', batch_number: 'B4470E', expiry_date: '2027-06-30', available_quantity: 80 },
+    { stock_id: 'qa-ws-1', batch_number: 'B4471X', expiry_date: '2028-01-31', available_quantity: 160 },
+  ],
+
   // ── INSTITUTION-LOCAL-PROCUREMENT-087 — Screen 19 fixtures ────────────────
   // Column names are the REAL snake_case DB columns the mapXxx() readers in
   // procurement.service.ts consume; the fixture client filters on the same
@@ -291,4 +343,98 @@ export const QA_FIXTURES: Record<string, unknown> = {
     { id: 'qa-pev-3', order_id: 'qa-po-received', event_type: 'approved', from_status: 'submitted', to_status: 'approved', actor_name: 'QA · مسؤول النظام', actor_role: 'super_admin', notes: null, created_at: '2026-07-08T10:00:00Z' },
     { id: 'qa-pev-4', order_id: 'qa-po-received', event_type: 'receipt_posted', from_status: 'approved', to_status: 'received', actor_name: 'QA · أمين مذخر', actor_role: 'warehouse_officer', notes: null, created_at: '2026-07-08T12:00:00Z' },
   ],
+
+  // ── Screen 12 — Status Center («مواقف») / Screen 9 — Reports & tracking ──
+  // getAvailabilityByOrg/getLowStockItems select a nested `distribution_points`
+  // / `local_items.central_items` shape (a real PostgREST embedded-relation
+  // response); the fixture client does no joins, so those nested objects must
+  // be literal on the row itself, matching exactly what the real query returns.
+  item_availability: [
+    {
+      id: 'qa-ia-1', organization_id: ORG_A, distribution_point_id: 'qa-outlet-1',
+      scientific_name: 'Amoxicillin', trade_name: null, dosage_form: 'Capsule', concentration: '500 mg', price: null,
+      quantity: 160, condition: 'available', batch_number: 'B4471X', national_code: '1234567', expiry_date: '2028-01-31',
+      notes: null, supply_type: null, updated_at: '2026-07-19T07:30:00Z',
+      removed_at: null, removal_reason: null,
+      distribution_points: { id: 'qa-outlet-1', name: 'QA · Emergency Outlet', name_ar: 'QA · منفذ الطوارئ', status: 'active' },
+      local_items: { id: 'qa-li-1', local_code: 'L-001', central_items: { id: 'qa-ci-amox', name: 'Amoxicillin', name_ar: 'أموكسيسيلين', unit: 'capsule', barcode: 'QA0000000001' } },
+    },
+    {
+      id: 'qa-ia-2', organization_id: ORG_A, distribution_point_id: 'qa-outlet-1',
+      scientific_name: 'Paracetamol', trade_name: null, dosage_form: 'Tablet', concentration: '500 mg', price: null,
+      quantity: 12, condition: 'low_stock', batch_number: null, national_code: null, expiry_date: '2026-09-30',
+      notes: null, supply_type: null, updated_at: '2026-07-17T12:00:00Z',
+      removed_at: null, removal_reason: null,
+      distribution_points: { id: 'qa-outlet-1', name: 'QA · Emergency Outlet', name_ar: 'QA · منفذ الطوارئ', status: 'active' },
+      local_items: { id: 'qa-li-2', local_code: 'L-002', central_items: { id: 'qa-ci-para-500', name: 'Paracetamol', name_ar: 'باراسيتامول', unit: 'tablet', barcode: 'QA0000000002' } },
+    },
+    {
+      id: 'qa-ia-3', organization_id: ORG_A, distribution_point_id: 'qa-outlet-2',
+      scientific_name: 'Ceftriaxone', trade_name: null, dosage_form: 'Vial', concentration: '1 g', price: null,
+      quantity: 0, condition: 'missing', batch_number: null, national_code: null, expiry_date: null,
+      notes: 'QA · نفدت الكمية', supply_type: null, updated_at: '2026-07-16T09:00:00Z',
+      removed_at: null, removal_reason: null,
+      distribution_points: { id: 'qa-outlet-2', name: 'QA · Pediatrics Outlet', name_ar: 'QA · منفذ الأطفال', status: 'active' },
+      local_items: { id: 'qa-li-3', local_code: 'L-003', central_items: { id: 'qa-ci-ceft', name: 'Ceftriaxone', name_ar: 'سيفترياكسون', unit: 'vial', barcode: 'QA0000000006' } },
+    },
+    {
+      id: 'qa-ia-4', organization_id: ORG_A, distribution_point_id: 'qa-outlet-1',
+      scientific_name: 'Omeprazole', trade_name: null, dosage_form: 'Capsule', concentration: '20 mg', price: null,
+      quantity: 70, condition: 'near_expiry', batch_number: 'OMP5512', national_code: '2223334', expiry_date: '2026-08-15',
+      notes: null, supply_type: null, updated_at: '2026-07-16T10:10:00Z',
+      removed_at: null, removal_reason: null,
+      distribution_points: { id: 'qa-outlet-1', name: 'QA · Emergency Outlet', name_ar: 'QA · منفذ الطوارئ', status: 'active' },
+      local_items: { id: 'qa-li-4', local_code: 'L-004', central_items: { id: 'qa-ci-omep', name: 'Omeprazole', name_ar: 'أوميبرازول', unit: 'capsule', barcode: 'QA0000000004' } },
+    },
+  ],
+
+  // ── Screen 20 — Monthly Stock Status («الموقف المخزني الشهري») ───────────
+  // getOpenMonthlyStatusReport (`.neq('status','locked')`, inert filter in the
+  // fixture client) and getLatestLockedMonthlyStatusReport (`.eq('status','locked')`,
+  // a REAL filter) both read this table — ordering the open report first lets
+  // the "open" read resolve to it, while the eq-filter always finds the locked
+  // row regardless of array position.
+  inventory_status_reports: [
+    { id: 'qa-msr-open', organization_id: ORG_A, status: 'submitted', version: 2, amendment_of: null, prepared_by: 'qa-user-2', prepared_at: '2026-07-20T07:00:00Z', submitted_by: 'qa-user-2', submitted_at: '2026-07-20T08:00:00Z', approved_by: null, approved_at: null, locked_at: null, returned_by: null, returned_at: null, return_reason: null, created_at: '2026-07-20T07:00:00Z', updated_at: '2026-07-20T08:00:00Z' },
+    { id: 'qa-msr-locked', organization_id: ORG_A, status: 'locked', version: 1, amendment_of: null, prepared_by: 'qa-user-2', prepared_at: '2026-06-20T07:00:00Z', submitted_by: 'qa-user-2', submitted_at: '2026-06-20T08:00:00Z', approved_by: 'qa-user-1', approved_at: '2026-06-20T10:00:00Z', locked_at: '2026-06-20T10:00:00Z', returned_by: null, returned_at: null, return_reason: null, created_at: '2026-06-20T07:00:00Z', updated_at: '2026-06-20T10:00:00Z' },
+  ],
+  inventory_status_report_lines: [
+    { id: 'qa-msl-1', report_id: 'qa-msr-open', scientific_name: 'Amoxicillin', national_code: '1234567', on_hand_qty: 180, reserved_qty: 20, in_transit_qty: 0, quarantine_qty: 0, central_qty: 640, supplementary_qty: 0, nearest_expiry_date: '2028-01-31', suggested_classification: 'available', classification: 'available', classification_reason: null, classification_overridden: false, stocktake_count_line_id: null, confirmed_missing: false, confirmed_by: null, confirmed_at: null },
+    { id: 'qa-msl-2', report_id: 'qa-msr-open', scientific_name: 'Paracetamol', national_code: null, on_hand_qty: 12, reserved_qty: 6, in_transit_qty: 0, quarantine_qty: 0, central_qty: 42, supplementary_qty: 0, nearest_expiry_date: '2026-09-30', suggested_classification: 'scarce', classification: null, classification_reason: null, classification_overridden: false, stocktake_count_line_id: null, confirmed_missing: false, confirmed_by: null, confirmed_at: null },
+    { id: 'qa-msl-3', report_id: 'qa-msr-open', scientific_name: 'Ceftriaxone', national_code: null, on_hand_qty: 0, reserved_qty: 0, in_transit_qty: 0, quarantine_qty: 0, central_qty: 0, supplementary_qty: 0, nearest_expiry_date: null, suggested_classification: 'scarce', classification: 'suspected_missing', classification_reason: 'QA · لم يُرصد أي مخزون', classification_overridden: false, stocktake_count_line_id: null, confirmed_missing: false, confirmed_by: null, confirmed_at: null },
+  ],
+
+  // ── Quarantine disposition (migration 099/105) — Screen 3 "الحجر الصحي" tab ─
+  warehouse_quarantine_stock: [
+    { id: 'qa-wq-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, national_code: null, expiry_date: '2026-09-30', quarantine_reason: 'QA · نقص عدد الوحدات عند الاستلام (شحنة مرتجعة جزئياً)', quantity: 2 },
+  ],
+
+  // ── Second-person correction approval (migration 098/101) — Screen 3
+  // "تصحيحات بانتظار الاعتماد" tab. proposed_by is a DIFFERENT profile than the
+  // approving super_admin persona, matching the real second-person constraint.
+  phoenix_stock_correction_requests: [
+    { id: 'qa-ocr-1', outlet_stock_id: 'qa-os-3', on_hand_before: 18, counted_quantity: 12, variance: -6, reason: 'QA · جرد فعلي أظهر نقصاً', notes: null, status: 'pending', proposed_by: 'qa-user-3', proposed_at: '2026-07-21T09:00:00Z' },
+  ],
+  phoenix_warehouse_correction_requests: [
+    { id: 'qa-wcr-1', warehouse_stock_id: 'qa-ws-3', on_hand_before: 42, new_quantity: 48, variance: 6, reason: 'QA · تصحيح بعد جرد المخزن', source_document_number: null, notes: null, status: 'pending', proposed_by: 'qa-user-2', proposed_at: '2026-07-21T10:00:00Z' },
+  ],
+
+  // ── Notification bell (migration 094/099) — read RPC fixtures ───────────
+  // The bell mounts inside PhoenixTopbar/PhoenixAppShell, so EVERY shell-based
+  // scene calls phoenix_notifications_unread_count on mount; without a
+  // fixture it logs a console.error on every captured cell.
+  'rpc:phoenix_notifications_unread_count': 2,
+  // event_type values must match the real dotted `table.status` vocabulary
+  // (see `notif_evt_*` keys in strings.ts) — anything else falls back through
+  // eventLabel() to the raw key text, which is exactly the kind of leaked-key
+  // defect this fixture should NOT manufacture.
+  'rpc:phoenix_notifications_list': {
+    ok: true,
+    notifications: [
+      { id: 'qa-notif-1', event_type: 'outlet_return_requests.submitted', occurred_at: '2026-07-20T08:00:00Z', actor_id: 'qa-user-2', actor_role: 'outlet_officer', actor_name: 'QA · أمين المنفذ', status: 'submitted', reference_type: 'outlet_return_request', reference_id: RR_SUBMITTED, reference: 'QA-RET-0001', is_read: false },
+      { id: 'qa-notif-2', event_type: 'procurement_orders.approved', occurred_at: '2026-07-13T11:00:00Z', actor_id: 'qa-user-1', actor_role: 'super_admin', actor_name: 'QA · مسؤول النظام', status: 'approved', reference_type: 'procurement_order', reference_id: 'qa-po-approved', reference: 'QA-PO-1003', is_read: false },
+      { id: 'qa-notif-3', event_type: 'inventory_status_reports.locked', occurred_at: '2026-06-20T10:00:00Z', actor_id: 'qa-user-1', actor_role: 'super_admin', actor_name: 'QA · مسؤول النظام', status: 'locked', reference_type: 'inventory_status_report', reference_id: 'qa-msr-locked', reference: null, is_read: true },
+    ],
+    next_cursor: null,
+  },
 };

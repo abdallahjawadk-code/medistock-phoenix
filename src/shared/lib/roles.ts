@@ -9,9 +9,7 @@ export type OfficialRole =
   | 'institution_admin'
   | 'central_warehouse_manager'
   | 'warehouse_officer'
-  | 'outlet_officer'
-  | 'monthly_status_officer'
-  | 'viewer';
+  | 'outlet_officer';
 
 /** The only roles offered in the official role dropdown, in display order. */
 export const OFFICIAL_ROLES: readonly OfficialRole[] = [
@@ -20,8 +18,6 @@ export const OFFICIAL_ROLES: readonly OfficialRole[] = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
-  'monthly_status_officer',
-  'viewer',
 ];
 
 /** Legacy admin role kept for compatibility — not an official dropdown option. */
@@ -56,8 +52,6 @@ export const OFFICIAL_ROLE_LABEL_KEY: Record<OfficialRole, string> = {
   central_warehouse_manager: 'orole_central_warehouse_manager',
   warehouse_officer:      'orole_warehouse_officer',
   outlet_officer:         'orole_outlet_officer',
-  monthly_status_officer: 'orole_monthly_status_officer',
-  viewer:                 'orole_viewer',
 };
 
 /**
@@ -83,20 +77,22 @@ export function isOfficialRole(role: string): role is OfficialRole {
  * Normalise any stored role to its AUTHORIZATION identity: an official role, the
  * legacy admin, or a hidden legacy role that keeps its own identity.
  *
- * Unknown values fall back to the safest role: viewer. Every recognised legacy
- * role round-trips literally; normalization never invents equivalence.
+ * Unknown values fall back to the safest role: outlet_officer, whose default
+ * permission set is empty (PHOENIX-FIVE-ROLE-CUTOVER-091 removed viewer, which
+ * held this fallback previously). Every recognised legacy role round-trips
+ * literally; normalization never invents equivalence.
  *
  * The stored DB value is never rewritten by this function; it only interprets.
  */
 export function normalizeRole(role: string | null | undefined): AuthorizationRole {
-  if (!role) return 'viewer';
+  if (!role) return 'outlet_officer';
   if (isOfficialRole(role)) return role;
   if (role === LEGACY_ADMIN_ROLE) return 'hospital_admin';
   // Before LEGACY_TO_OFFICIAL: a role that keeps its own identity must never be
   // resolved through an alias table.
   if (isLegacyAuthorizationRole(role)) return role;
   const mapped = LEGACY_TO_OFFICIAL[role];
-  return mapped ?? 'viewer';
+  return mapped ?? 'outlet_officer';
 }
 
 /**

@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { t } from '@/shared/i18n/strings';
+import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -22,6 +25,8 @@ import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
 import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
+import { MonthlyStatusScreen } from '@/features/status/MonthlyStatusScreen';
+import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
 /**
@@ -31,8 +36,14 @@ import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
  * QR route (App.tsx / PublicQrScreen). Moved verbatim out of App.tsx — no
  * auth/session/business logic changed, only the file it lives in.
  */
+/** ROLE-REORG-§5: a role-refused screen (e.g. non-admin hitting institutions). */
+function ForbiddenScreen() {
+  const { lang } = useApp();
+  return <PhoenixEmptyState icon="lock" title={t('access_forbidden_title', lang)} description={t('access_forbidden_hint', lang)} />;
+}
+
 export function AuthenticatedApp() {
-  const { authReady, session, signOut, passwordRecovery } = useApp();
+  const { authReady, session, signOut, passwordRecovery, role } = useApp();
   // PRODUCTION-READINESS-CLEANUP-A: the central dashboard (screen 2) was
   // removed from navigation and no longer renders; Status Center (screen 12)
   // is the real-data landing screen.
@@ -91,7 +102,14 @@ export function AuthenticatedApp() {
       case 8:  return <IntakeFrozenScreen onNavigate={setScreen} />;
       case 9:  return <ReportsScreen />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
-      case 11: return <InstitutionScreen />;
+      // ROLE-REORG-§5: institutions management is platform-admin exclusive; an
+      // institution admin gets the same route scoped to "My Organization". Any
+      // other role reaching this route directly is refused (403) — the server
+      // RLS is the real boundary; this stops a mis-typed URL from rendering.
+      case 11:
+        return institutionsScreenAccess(role) === false
+          ? <ForbiddenScreen />
+          : <InstitutionScreen />;
       case 12: return <StatusCenterScreen onNavigate={setScreen} />;
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;
@@ -105,6 +123,15 @@ export function AuthenticatedApp() {
       // approvals, receiving and supplier returns — scoped to assigned
       // institution warehouses (062), every write a guarded 087 RPC.
       case 19: return <LocalProcurementScreen />;
+      // MONTHLY-STATUS-REDESIGN-092: prepare/classify/confirm/submit/review/
+      // approve+lock the monthly institution material status — scoped to the
+      // status_center.* keys, every write a guarded 092 RPC.
+      case 20: return <MonthlyStatusScreen />;
+      // DECISION-INTELLIGENCE-REPORTS-119: live executive overview + an
+      // immutable official-report library — scoped to reports.view (062),
+      // every RPC (phoenix_executive_overview/phoenix_create_report_snapshot)
+      // re-checked server-side.
+      case 21: return <DecisionIntelligenceReportsScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;

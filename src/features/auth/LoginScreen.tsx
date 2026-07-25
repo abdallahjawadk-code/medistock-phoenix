@@ -4,7 +4,6 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { MasarCopyrightSeal } from '@/shared/ui/MasarCopyrightSeal';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -232,11 +231,14 @@ export function LoginScreen() {
             </>
           )}
 
-          <div className="premium-login__rights nexus-login__rights">
-            <MasarCopyrightSeal variant="credit" className="nexus-login__seal" />
-            <div dir="ltr">{t('login_rights_code', lang)}</div>
-            <span dir="auto">{t('login_supervision_line', lang)}</span>
-          </div>
+          {/* RIGHTS-SEAL-SCOPE: the MASAR seal is deliberately ABSENT from the
+              login screen — the single seal lives in the authenticated shell
+              footer.
+              PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the supervision-credit
+              line naming the supervising pharmacist, and its rights block,
+              have been intentionally removed from this screen — a later,
+              explicit product decision that supersedes the prior "stays"
+              note. */}
         </form>
       </main>
     </div>

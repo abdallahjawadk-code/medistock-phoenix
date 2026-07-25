@@ -335,9 +335,13 @@ describe('Edge Function admin-create-user: local credentials mode', () => {
     expect(inviteBlock).toContain("loginMode === 'email'");
   });
 
-  it('sets must_change_password true and login_mode on the profile for local accounts', () => {
-    expect(fn).toContain('profileRow.must_change_password = true');
-    expect(fn).toContain('login_mode: loginMode');
+  it('sets must_change_password true and login_mode on the profile for local accounts (via the contract)', () => {
+    // The profile row is now written by phoenix_provision_profile (migration
+    // 093); the Edge Function passes the login_mode through to it.
+    expect(fn).toContain('phoenix_provision_profile');
+    expect(fn).toContain('p_login_mode: loginMode');
+    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(mig).toContain("when p_login_mode = 'local' then true else false end");
   });
 
   it('never logs the temporary password', () => {
@@ -375,14 +379,18 @@ describe('Edge Function admin-recycle-user: local credentials mode', () => {
   });
 
   it('only calls generateLink for email-mode recycles', () => {
-    const block = fn.slice(fn.indexOf('Step 4: Password setup'));
+    const block = fn.slice(fn.indexOf('Step 4'));
     expect(block).toContain("loginMode === 'email'");
     expect(block).toContain('generateLink');
   });
 
-  it('sets must_change_password true and login_mode on the profile for local mode', () => {
-    expect(fn).toContain("must_change_password: loginMode === 'local'");
-    expect(fn).toContain('login_mode: loginMode');
+  it('sets must_change_password true and login_mode on the profile for local mode (via the contract)', () => {
+    // The profile transition is now performed by phoenix_recycle_apply
+    // (migration 093); the Edge Function passes the login_mode through to it.
+    expect(fn).toContain('phoenix_recycle_apply');
+    expect(fn).toContain('p_login_mode: loginMode');
+    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(mig).toContain("must_change_password = (p_login_mode = 'local')");
   });
 
   it('returns credential_mode + new_username + temporary_password_set (never the password itself)', () => {
@@ -401,10 +409,11 @@ describe('Edge Function admin-recycle-user: local credentials mode', () => {
     expect(fn).toContain('INVALID_CONFIRMATION');
   });
 
-  it('still requires target to be suspended and blocks self/super_admin recycling', () => {
-    expect(fn).toContain('TARGET_NOT_SUSPENDED');
-    expect(fn).toContain('SELF_ACTION_FORBIDDEN');
-    expect(fn).toContain('CANNOT_RECYCLE_SUPER_ADMIN');
+  it('still requires target to be suspended and blocks self/super_admin recycling (in the contract)', () => {
+    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(mig).toContain('TARGET_NOT_SUSPENDED');
+    expect(mig).toContain("'self_action'");
+    expect(mig).toContain("'cannot_recycle_super_admin'");
   });
 });
 

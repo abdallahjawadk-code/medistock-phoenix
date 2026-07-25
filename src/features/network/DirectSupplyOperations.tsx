@@ -9,6 +9,9 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { supabase } from '@/shared/supabase/client';
+import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
+import type { ResolvedMaterial } from '@/shared/materials/material-resolver.service';
 import {
   getAllWarehouses,
   createDirectTransferRequest, addTransferRequestLine, updateTransferRequestLine,
@@ -31,6 +34,8 @@ import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionInco
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { buildSupplyRequestReceipt } from '@/features/movement/receipt-source';
 import type { PartyOption } from '@/features/movement/ui/MovementPartySelector';
+import { getPaperReference, setPaperReference } from '@/features/movement/paper-reference.service';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
 
 /**
  * W077-COMPOSER — rollback switch for the forward create-authoring UX. When
@@ -438,6 +443,18 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
     [request, lines.data, orgNameById, whById, lang],
   );
 
+  // TRANSFER-REGULATORY-ACK state: per-request, reset on navigation.
+  const [regAck, setRegAck] = useState(false);
+  const recordAck = async (action: 'transfer.create_ack' | 'transfer.review_ack') => {
+    try {
+      await supabase.rpc('phoenix_record_regulatory_ack', {
+        p_entity_type: 'warehouse_transfer_request',
+        p_entity_id: request.id,
+        p_action: action,
+      });
+    } catch { /* best-effort audit record; the transfer RPC's own audit rows still capture the action */ }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -472,14 +489,37 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
         ))}
       </div>
 
-      {isSubmitted && (lines.data ?? []).length > 0 && (
+      {/* TRANSFER-REGULATORY-ACK: viewing needs nothing; CREATING (submit) or
+          APPROVING (review) requires the explicit confirmation below. The ack
+          is recorded in the audit trail (who/when) via
+          phoenix_record_regulatory_ack and is NEVER an automated ruling that
+          the transfer is permissible. */}
+      {((isDraft || isSubmitted) && (lines.data ?? []).length > 0) && (
+        <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: 'var(--r3)', background: 'var(--warn2)', border: '1px solid var(--warn)' }}>
+          <p style={{ fontSize: '11.5px', color: 'var(--warn)', marginBottom: '8px' }} dir="auto">{t('ts_regulatory_notice', lang)}</p>
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={regAck} onChange={e => setRegAck(e.target.checked)} data-testid="transfer-reg-ack" />
+            <span dir="auto">{t('ts_ack_checkbox', lang)}</span>
+          </label>
+          {!regAck && <p style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '5px' }}>{t('ts_ack_required', lang)}</p>}
+        </div>
+      )}
+
+      {isSubmitted && (lines.data ?? []).length > 0 && regAck && (
         <ReviewForm lang={lang} lines={lines.data ?? []}
-          onSubmit={(decisions) => reviewTransferRequest(request.id, decisions).then(r => set(r))} />
+          onSubmit={async (decisions) => {
+            await recordAck('transfer.review_ack');
+            return reviewTransferRequest(request.id, decisions).then(r => set(r));
+          }} />
       )}
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
         {isDraft && (lines.data ?? []).length > 0 && (
-          <PhoenixButton onClick={async () => set(await submitTransferRequest(request.id))}>{t('net_op_submit', lang)}</PhoenixButton>
+          <PhoenixButton disabled={!regAck} onClick={async () => {
+            if (!regAck) return;
+            await recordAck('transfer.create_ack');
+            set(await submitTransferRequest(request.id));
+          }}>{t('net_op_submit', lang)}</PhoenixButton>
         )}
         {(isDraft || isSubmitted) && (
           <CancelControl lang={lang} onCancel={(reason) => cancelTransferRequest(request.id, reason).then(set)} />
@@ -492,23 +532,44 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
 function AddForwardLineForm({ lang, requestId, onDone }: {
   lang: Lang; requestId: string; onDone: (r: RpcResult) => void;
 }) {
-  const [name, setName] = useState('');
+  // REGISTERED-MATERIAL-ONLY: a transfer line is composed from a resolver
+  // SELECTION, never from typed text. The selection carries the registered
+  // identity (central item / concentration / dosage / unit) into the line.
+  const [selected, setSelected] = useState<ResolvedMaterial | null>(null);
   const [qty, setQty] = useState('');
   const [busy, setBusy] = useState(false);
   const n = parseInt(qty, 10);
-  const canAdd = name.trim() !== '' && Number.isFinite(n) && n > 0 && !busy;
+  const canAdd = selected !== null && Number.isFinite(n) && n > 0 && !busy;
   return (
     <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
-      <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: '2fr 1fr auto', alignItems: 'end' }}>
-        <PhoenixInput label={t('net_op_scientific', lang)} value={name} onChange={e => setName(e.target.value)} />
-        <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
-        <PhoenixButton loading={busy} disabled={!canAdd} onClick={async () => {
-          setBusy(true);
-          const res = await addTransferRequestLine({ transferRequestId: requestId, scientificName: name.trim(), requestedQuantity: n });
-          setBusy(false);
-          if (res.ok) { setName(''); setQty(''); }
-          onDone(res);
-        }}>{t('net_op_add_line', lang)}</PhoenixButton>
+      <div style={{ display: 'grid', gap: '8px' }}>
+        {selected === null ? (
+          <PhoenixMaterialResolver lang={lang} onSelect={setSelected} />
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)' }}>
+            <strong dir="auto">{selected.scientificName}{selected.tradeName ? ` (${selected.tradeName})` : ''}</strong>
+            <PhoenixButton variant="ghost" size="sm" onClick={() => setSelected(null)}>✕</PhoenixButton>
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
+          <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
+          <PhoenixButton loading={busy} disabled={!canAdd} onClick={async () => {
+            if (!selected) return;
+            setBusy(true);
+            const res = await addTransferRequestLine({
+              transferRequestId: requestId,
+              scientificName: selected.scientificName,
+              requestedQuantity: n,
+              centralItemId: selected.centralItemId,
+              concentration: selected.concentration,
+              dosageForm: selected.dosageForm,
+              unit: selected.unit,
+            });
+            setBusy(false);
+            if (res.ok) { setSelected(null); setQty(''); }
+            onDone(res);
+          }}>{t('net_op_add_line', lang)}</PhoenixButton>
+        </div>
       </div>
     </PhoenixCard>
   );
@@ -820,6 +881,16 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
     if (res.ok) reload();
   };
 
+  // PAPER-REFERENCE-CONTRACT-110: no receipt document exists for this document
+  // type (warehouse_return_request is a routed institution↔central corridor
+  // distinct from outlet_return_request, which already carries its own
+  // receipt) — so this detail view carries the field directly, editable
+  // while still draft, read-only after (server-enforced regardless).
+  const paperRef = useAsync(() => getPaperReference('warehouse_return_request', request.id), [reloadKey]);
+  const [editingRef, setEditingRef] = useState(false);
+  const [refDraft, setRefDraft] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
+  const [refBusy, setRefBusy] = useState(false);
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -829,6 +900,42 @@ function ReturnDetail({ lang, request, whById, onBack, onStatus, status }: {
         <span style={{ fontSize: '11.5px', color: 'var(--t2)' }}>
           {nameOf(whById.get(request.sourceWarehouseId), lang)} → {nameOf(whById.get(request.destinationWarehouseId), lang)}
         </span>
+      </div>
+
+      <div style={{ marginBottom: '10px' }}>
+        {editingRef ? (
+          <div style={{ display: 'grid', gap: '8px' }}>
+            <PaperReferenceFields lang={lang} value={refDraft} onChange={setRefDraft} disabled={refBusy} />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <PhoenixButton size="sm" loading={refBusy} disabled={refDraft.number.trim() === ''} onClick={async () => {
+                setRefBusy(true);
+                await setPaperReference({
+                  documentType: 'warehouse_return_request', documentId: request.id,
+                  paperReferenceNumber: refDraft.number, paperReferenceDate: refDraft.date || null,
+                  issuingAuthority: refDraft.authority || null,
+                });
+                setRefBusy(false);
+                setEditingRef(false);
+                reload();
+              }}>{t('net_op_save', lang)}</PhoenixButton>
+              <PhoenixButton size="sm" variant="ghost" disabled={refBusy} onClick={() => setEditingRef(false)}>{t('net_cancel', lang)}</PhoenixButton>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: '11.5px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef.data)}</span>
+            {isDraft && (
+              <PhoenixButton size="sm" variant="ghost" onClick={() => {
+                setRefDraft({
+                  number: paperRef.data?.paperReferenceNumber ?? '',
+                  date: paperRef.data?.paperReferenceDate ?? '',
+                  authority: paperRef.data?.issuingAuthority ?? '',
+                });
+                setEditingRef(true);
+              }}>{t('net_op_edit', lang)}</PhoenixButton>
+            )}
+          </div>
+        )}
       </div>
 
       <StatusLine status={status} />

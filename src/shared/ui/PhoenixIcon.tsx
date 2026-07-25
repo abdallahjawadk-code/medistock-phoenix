@@ -41,6 +41,7 @@ export type PhoenixIconName =
   | 'pin'
   | 'medical'
   | 'recycle'
+  | 'bell'
   | 'bell-off'
   | 'fire'
   | 'camera'
@@ -148,6 +149,8 @@ function iconPaths(name: PhoenixIconName): ReactNode {
       return <P><path d="M12 3v18M8 6l8 12M16 6 8 18" /><circle cx="12" cy="12" r="9" /></P>;
     case 'recycle':
       return <P><path d="M7 19H5a2 2 0 0 1-1.7-3l2-3.5M9 5l1.7-3a2 2 0 0 1 3.4 0l1.6 2.8M17 19h2a2 2 0 0 0 1.7-3l-1-1.8" /><path d="m4.5 12.8 3 .5-1 3M9.5 4.6 8 7.4l3-.4M19.5 14.8l-3 .5 1.2 2.8" /></P>;
+    case 'bell':
+      return <P><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" /><path d="M10 21h4" /></P>;
     case 'bell-off':
       return <P><path d="M18 9a6 6 0 0 0-9-5.2M6 7c-.4 1-.6 2-.6 2 0 7-3 7-3 9h13M18 15h3c0-2-3-2-3-9M10 21h4" /><path d="m3 3 18 18" /></P>;
     case 'fire':

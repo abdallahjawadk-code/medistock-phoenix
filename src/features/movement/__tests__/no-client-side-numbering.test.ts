@@ -66,8 +66,8 @@ describe('no client-side document-number sequence exists', () => {
   it('operator-typed numbers are labelled as external references, not serials', () => {
     const strings = readFileSync(join(ROOT, 'src', 'shared', 'i18n', 'strings.ts'), 'utf8');
     expect(strings).toContain('mv_external_reference');
-    expect(strings).toMatch(/External \/ operator reference/);
-    expect(strings).toMatch(/مرجع خارجي/);
+    expect(strings).toContain('Official letter / external document number');
+    expect(strings).toContain('رقم الكتاب أو المستند الخارجي'); // UNIFIED-DOMAIN relabel
   });
 
   it('the migration proposal exists and is explicitly not applied', () => {
@@ -89,8 +89,178 @@ describe('no client-side document-number sequence exists', () => {
     // The movement corridor's request/transfer/return/shipment numbers remain
     // unallocated and the proposal remains unapplied. The ceiling moves with
     // each reviewed migration that adds no MOVEMENT numbering.
-    const beyond = migrations.filter(f => /^0*(08[8-9]|09\d|[1-9]\d{2,})/.test(f));
+    // 088 (canonical supply provenance) is reviewed and adds NO document
+    // numbering — provenance columns + identity only.
+    // 091 (PHOENIX-FIVE-ROLE-CUTOVER-091) is reviewed and adds NO document
+    // numbering — role/RLS/RPC cutover only.
+    // 092 (MONTHLY-STATUS-REDESIGN-092) is reviewed and adds NO document
+    // numbering — inventory_status_reports/lines/amendments + stocktakes are
+    // identified by uuid only, never a client- or server-numbered document
+    // string.
+    // 093 (SECURITY-ARCH-HARDENING-A) is reviewed and adds NO document
+    // numbering — account-lifecycle contract only (reservations keyed by
+    // profile uuid; no client- or server-numbered document string).
+    // 094 (CUSTODY-CHAIN-NOTIFICATIONS-094-A) is reviewed and adds NO document
+    // numbering — the notification feed and its dedupe_key reuse the SAME
+    // uuid ':' status text 082 already writes to phoenix_movement_events; no
+    // new sequence, no client- or server-numbered document string.
+    // 095 (RETURN-AVAILABILITY-CAP-095-A) adds NO document numbering — a
+    // quantity cap on an existing return-line RPC, identified by uuid only.
+    // 096 (BULK-RECEIVE-MATCHING-DISPATCH-LINES-096-A) adds NO document
+    // numbering — bulk delegation to 070's existing per-line RPC, no new
+    // document identity of any kind.
+    // 097 (FEFO-REASONED-OVERRIDE-097-A) adds NO document numbering — a
+    // permission + audit gate on an existing line-insert RPC.
+    // 098 (SECOND-PERSON-CORRECTION-APPROVAL-098-A) adds NO document
+    // numbering — phoenix_stock_correction_requests rows are identified by
+    // uuid only, never a client- or server-numbered document string.
+    // 099 (NOTIFICATION-WIRING-AND-QUARANTINE-DISPOSITION-099-A) adds NO
+    // document numbering — reuses 082's dedupe pattern and uuid identity
+    // throughout, including the new quarantine disposition RPCs.
+    // 100 (BULK-RECEIVE-REMAINING-CORRIDORS-100-A) adds NO document
+    // numbering — three thin iterate-and-delegate wrappers over the
+    // already-reviewed 068/069/071 single-line receive RPCs (088's current
+    // bodies); each line's derived request id is a deterministic uuid
+    // (md5 of bulk request id + line id), never a client- or server-numbered
+    // document string.
+    // 101 (WAREHOUSE-SECOND-PERSON-CORRECTION-APPROVAL-101-A) adds NO
+    // document numbering — mirrors 098's uuid-only correction-request
+    // identity (phoenix_warehouse_correction_requests rows are identified by
+    // uuid only).
+    // 102 (TRANSFER-SEND-FEFO-GUARDED-102-A) adds NO document numbering —
+    // a permission + audit gate delegating to 068/088's existing
+    // phoenix_send_warehouse_transfer_line, whose own request-id/fingerprint
+    // identity is untouched.
+    // 103 (INSTITUTION-WAREHOUSE-NO-DIRECT-ENTRY-103-A) adds NO document
+    // numbering — a warehouse_kind fail-closed check inserted into 065/088's
+    // existing phoenix_receive_warehouse_stock and 065's phoenix_apply_
+    // warehouse_stock_movement; both functions' request-id/fingerprint
+    // identity scheme is otherwise untouched.
+    // 104 (RETURN-QUARANTINE-INSERT-COLUMN-FIX-104-A) adds NO document
+    // numbering — a column/value alignment fix inside 069/071's existing
+    // quarantine-credit branches; no new identity of any kind, request-id/
+    // fingerprint scheme untouched.
+    // 105 (QUARANTINE-READ-POLICY-DISPOSITION-PARITY-105-A) adds NO document
+    // numbering — a pure RLS SELECT-policy widening, no RPC, no identity of
+    // any kind. The ceiling moves to 106.
+    // 106 (DISPATCH-LINE-IDEMPOTENCY-106-A) adds NO document numbering — an
+    // OPTIONAL p_request_id dedup layer over 097's phoenix_add_dispatch_line_
+    // fefo_guarded (a dedicated phoenix_dispatch_line_requests ledger keyed
+    // on a client-derived uuid request id, not a document/sequence number of
+    // any kind). The ceiling moves to 107.
+    // 107 (DISPATCH-LINE-REQUEST-ID-REQUIRED-107-A) adds NO document
+    // numbering — tightens 106's p_request_id from optional to REQUIRED (a
+    // fail-closed IF p_request_id IS NULL THEN RAISE guard as the first
+    // statement in the function body), same signature, same uuid-keyed
+    // phoenix_dispatch_line_requests dedup ledger, no document/sequence
+    // number of any kind introduced. The ceiling moves to 108.
+    // 108 (CUSTODY-CHAIN-DIRECT-WRITE-LOCKDOWN-108-A) adds NO document
+    // numbering — a pure REVOKE of INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/
+    // REFERENCES from authenticated/anon/PUBLIC on custody-chain tables
+    // (closing a TRUNCATE-grant gap every prior REVOKE missed); no RPC, no
+    // schema change, no identity of any kind. The ceiling moves to 109.
+    // 109 (PUBLIC-SCHEMA-DEFAULT-PRIVILEGES-LOCKDOWN-109) adds NO document
+    // numbering — pure ALTER DEFAULT PRIVILEGES statements closing the
+    // default-ACL root cause behind 108 (future tables/sequences/functions
+    // no longer inherit broad authenticated/anon/PUBLIC access); no RPC, no
+    // new table, no identity of any kind. The ceiling moves to 110.
+    // 110 (PAPER-REFERENCE-CONTRACT-110) adds NO document numbering —
+    // phoenix_paper_references.paper_reference_number is a deliberately
+    // OPTIONAL, operator-typed EXTERNAL reference (the paper document a real
+    // instruction traces back to), exactly like the pre-existing
+    // mv_external_reference field this same guard already protects — never
+    // an authoritative serial. Nothing in 110 allocates a client- or
+    // server-side sequence for a MOVEMENT document; the row's own identity
+    // is its uuid, and the canonical document/official numbers it links to
+    // (dispatch_number, return_number, official_number) are 100% untouched.
+    // The ceiling moves to 111.
+    // 111 (THRESHOLD-BATCH-APPLY-111) adds NO document numbering —
+    // phoenix_batch_upsert_inventory_threshold is a thin, validate-then-loop
+    // wrapper delegating every element to 092's UNCHANGED per-material
+    // phoenix_upsert_inventory_threshold; no new table, no sequence, no
+    // MOVEMENT document identity of any kind (thresholds are not movement
+    // documents). The ceiling moves to 112.
+    // 112 (STATUS-CLASSIFICATION-BOUNDARY-CORRECTION-112) adds NO document
+    // numbering — corrects the available/scarce/unavailable/surplus
+    // classification comparisons and widens two CHECK constraints on
+    // inventory_status_report_lines; no new table, no sequence, no MOVEMENT
+    // document identity of any kind (a classification value is not a
+    // document number). The ceiling moves to 113.
+    // 113 (MONTHLY-STATUS-DIRECT-WRITE-LOCKDOWN-113) adds NO document
+    // numbering — pure REVOKE/GRANT statements closing 092's unrevoked
+    // default-ACL grants on three tables plus PUBLIC's un-revoked EXECUTE on
+    // eleven RPCs; no new table, no sequence, no MOVEMENT document identity
+    // of any kind (a privilege grant is not a document number). The ceiling
+    // moves to 114.
+    // 114 (CENTRAL-ITEMS-CATALOG-DETAIL-114) adds NO document numbering —
+    // three nullable text columns on central_items (trade_name/concentration/
+    // dosage_form); no sequence, no MOVEMENT document identity of any kind.
+    // The ceiling moves to 115.
+    // 115 (CENTRAL-INTAKE-CATALOG-LOCKDOWN-115) adds NO document numbering —
+    // redefines phoenix_receive_warehouse_stock to require and derive
+    // identity from an existing central_items row; reuses 090's WR-/WA-
+    // official-number trigger unchanged, allocates no new sequence, no
+    // MOVEMENT document identity of any kind. The ceiling moves to 116.
+    // 116 (SUBPURCHASE-NATIONAL-CODE-116) adds NO document numbering — adds
+    // an optional p_national_code parameter to phoenix_subpurchase_direct_entry,
+    // threaded into the existing order/receipt line rows; the SP-/PR- number
+    // sequences it reuses are 089's/087's UNCHANGED server-owned allocators,
+    // no new sequence, no MOVEMENT document identity of any kind. The
+    // ceiling moves to 117.
+    // 117 (SUBPURCHASE-DUPLICATE-CANDIDATES-117) adds NO document numbering —
+    // a read-only advisory fuzzy-match RPC (phoenix_subpurchase_duplicate_candidates);
+    // no table, no sequence, no MOVEMENT document identity of any kind. The
+    // ceiling moves to 118.
+    // 118 (CENTRAL-INTAKE-MANUAL-IDENTITY-118) adds NO document numbering —
+    // it redefines the existing intake writer and preserves the unchanged
+    // 090 WR-/WA- server-owned allocator. The ceiling moves to 119.
+    // 119 (REPORT-SNAPSHOTS-AND-EXECUTIVE-OVERVIEW-119) adds a NEW document
+    // family (official report snapshots, RP-YYYY-nnnnnn) — not a MOVEMENT
+    // document, but numbered with the exact same safe discipline this guard
+    // exists to enforce: a REVOKEd sequence, stamped by a BEFORE INSERT
+    // trigger (090's pattern verbatim), never a client-supplied or
+    // client-computed number. The ceiling moves to 120.
+    // 120 (SUPPLY-SOURCES-DETAIL-120) adds NO document numbering — a
+    // read-only drill-down function over warehouse_stock/outlet_stock's
+    // existing rows; no table, no sequence, no MOVEMENT document identity
+    // of any kind. The ceiling moves to 121.
+    // 121 (MONTHLY-STATUS-PUBLIC-EXECUTE-LOCKDOWN-121) adds NO document
+    // numbering either — eleven idempotent REVOKE EXECUTE statements only, no
+    // table, no sequence, no MOVEMENT document identity. The ceiling moves to
+    // 122.
+    const beyond = migrations.filter(f => /^(12[2-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
+    // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
+    // DEFINER RPC) — exactly the safe direction; no client numbering exists.
+    expect(migrations).toContain('089_phoenix_subpurchase_direct_entry.sql');
+    // 090 stamps SERVER-side official numbers (WR-/WA- via a sequence inside a
+    // BEFORE INSERT trigger) — again the safe direction; no client numbering.
+    expect(migrations).toContain('090_phoenix_warehouse_receipt_official_number.sql');
+    expect(migrations).toContain('091_phoenix_five_role_cutover.sql');
+    expect(migrations).toContain('092_phoenix_monthly_status_redesign.sql');
+    expect(migrations).toContain('093_phoenix_super_admin_lifecycle_guard.sql');
+    expect(migrations).toContain('094_phoenix_custody_chain_notifications.sql');
+    expect(migrations).toContain('095_phoenix_return_availability_cap.sql');
+    expect(migrations).toContain('096_phoenix_bulk_receive_matching_dispatch_lines.sql');
+    expect(migrations).toContain('097_phoenix_fefo_reasoned_override.sql');
+    expect(migrations).toContain('098_phoenix_second_person_correction_approval.sql');
+    expect(migrations).toContain('099_phoenix_notification_wiring_and_quarantine_disposition.sql');
+    expect(migrations).toContain('100_phoenix_bulk_receive_remaining_corridors.sql');
+    expect(migrations).toContain('101_phoenix_warehouse_second_person_correction_approval.sql');
+    expect(migrations).toContain('102_phoenix_transfer_send_fefo_guarded.sql');
+    expect(migrations).toContain('103_phoenix_institution_warehouse_no_direct_entry.sql');
+    expect(migrations).toContain('104_phoenix_return_quarantine_insert_column_fix.sql');
+    expect(migrations).toContain('105_phoenix_quarantine_read_policy_disposition_parity.sql');
+    expect(migrations).toContain('106_phoenix_dispatch_line_idempotency.sql');
+    expect(migrations).toContain('107_phoenix_dispatch_line_request_id_required.sql');
+    expect(migrations).toContain('108_phoenix_custody_chain_direct_write_lockdown.sql');
+    expect(migrations).toContain('109_phoenix_public_schema_default_privileges_lockdown.sql');
+    expect(migrations).toContain('110_phoenix_paper_reference_contract.sql');
+    expect(migrations).toContain('111_phoenix_threshold_batch_apply.sql');
+    expect(migrations).toContain('112_phoenix_status_classification_boundary_correction.sql');
+    expect(migrations).toContain('113_phoenix_monthly_status_direct_write_lockdown.sql');
+    expect(migrations).toContain('118_phoenix_central_intake_manual_identity.sql');
     expect(migrations.some(f => /document_number|sequence/i.test(f))).toBe(false);
   });
 });

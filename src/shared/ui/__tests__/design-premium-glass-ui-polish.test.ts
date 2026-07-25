@@ -51,7 +51,7 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
     const expected: [number, string][] = [
       [3, 'InventoryCenterScreen'], [4, 'RegistryScreen'], [5, 'MeshScreen'], [6, 'QrScreen'],
       [7, 'HealthScreen'], [8, 'IntakeFrozenScreen'], [9, 'ReportsScreen'],
-      [10, 'MobileCommandScreen'], [11, 'InstitutionScreen'], [12, 'StatusCenterScreen'],
+      [10, 'MobileCommandScreen'], [12, 'StatusCenterScreen'],
       [13, 'InterInstitutionAlertsScreen'], [14, 'UserManagementScreen'],
       [15, 'MyAccountScreen'], [16, 'StatusEditorScreen'],
     ];
@@ -60,6 +60,19 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
       const idx = authenticatedApp.indexOf(`case ${num}:`);
       expect(authenticatedApp.slice(idx, idx + 80)).toContain(component);
     }
+  });
+
+  it('screen 11 still resolves to InstitutionScreen, now behind the §5 platform-admin route guard', () => {
+    // ROLE-REORG-§5: institutions management became platform-admin exclusive.
+    // The screen-number → component mapping is UNCHANGED (11 is still the
+    // institutions screen); it is now wrapped in a route guard that renders a
+    // 403 for any role institutionsScreenAccess() refuses, so the component
+    // name sits just past the original 80-char window.
+    const idx = authenticatedApp.indexOf('case 11:');
+    const block = authenticatedApp.slice(idx, idx + 160);
+    expect(block).toContain('institutionsScreenAccess(role)');
+    expect(block).toContain('ForbiddenScreen');
+    expect(block).toContain('InstitutionScreen');
   });
 
   it('the initial/default screen (Status Center, 12) is unchanged', () => {

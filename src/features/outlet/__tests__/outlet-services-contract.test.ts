@@ -15,7 +15,9 @@ const ret = read('outlet-return.service.ts');
 describe('070 dispatch service maps to the exact 070 RPCs', () => {
   const pairs: Array<[string, string]> = [
     ['createWarehouseDispatch', 'phoenix_create_warehouse_dispatch'],
-    ['addDispatchLine', 'phoenix_add_dispatch_line'],
+    // 097/102 FEFO enforcement: the real add-line RPC is the guarded wrapper,
+    // not the bare 070 RPC it delegates to internally.
+    ['addDispatchLine', 'phoenix_add_dispatch_line_fefo_guarded'],
     ['updateDispatchLineQuantity', 'phoenix_update_dispatch_line_quantity'],
     ['deleteDispatchLine', 'phoenix_delete_dispatch_line'],
     ['sendWarehouseDispatch', 'phoenix_send_warehouse_dispatch'],
@@ -30,7 +32,13 @@ describe('070 dispatch service maps to the exact 070 RPCs', () => {
   }
   it('add-line sources a CANONICAL warehouse_stock lot (p_warehouse_stock_id), never free text', () => {
     expect(dispatch).toMatch(/p_warehouse_stock_id: input\.warehouseStockId/);
-    expect(dispatch).not.toMatch(/p_scientific_name/);
+    // Scoped to addDispatchLine itself: getFefoAlternatives (097/102 support)
+    // legitimately takes a scientific_name as a READ-ONLY lookup key for
+    // showing FEFO alternatives — a fundamentally different thing from
+    // add-line accepting one as a material IDENTITY.
+    const start = dispatch.indexOf('export function addDispatchLine');
+    const body = dispatch.slice(start, dispatch.indexOf('\n}', start));
+    expect(body).not.toMatch(/p_scientific_name/);
   });
   it('send carries a fresh idempotency token', () => {
     expect(dispatch).toMatch(/p_request_id: input\.requestId/);

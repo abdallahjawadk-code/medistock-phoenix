@@ -18,7 +18,7 @@ function line(over: Partial<ReceiptLine> = {}): ReceiptLine {
     expiryDate: '2027-06-30', requestedQuantity: 240, approvedQuantity: 240,
     movedQuantity: 240, receivedQuantity: null, onHandSnapshot: null,
     returnReason: null, disposition: null, custodyState: null,
-    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', supplyType: 'central',
+    unitPrice: 1250, currency: 'IQD', priceBasis: 'invoice', purchaseOrigin: null, supplyType: 'central',
     notes: null, originalSupplyReference: null,
     ...over,
   };
@@ -143,7 +143,7 @@ describe('receipt HTML', () => {
 
   it('labels an operator-typed number as an external reference, never a serial', () => {
     const html = buildReceiptHtml({ document: doc(), selectedFields: selection, lang: 'en' });
-    expect(html).toContain('External / operator reference');
+    expect(html).toContain('Official letter / external document number — optional');
     expect(html).toContain('OPS-77');
     expect(html).not.toMatch(/official serial|serial number/i);
   });
@@ -152,6 +152,21 @@ describe('receipt HTML', () => {
     const html = buildReceiptHtml({ document: doc(), selectedFields: selection, lang: 'en' });
     expect(html).toContain('Babil Health — Central Store');
     expect(html).toContain('Al-Sadiq Hospital — Hospital Depot');
+  });
+
+  it('PAPER-REFERENCE-CONTRACT-110: shows the paper reference only when the document carries one', () => {
+    const withoutRef = buildReceiptHtml({ document: doc(), selectedFields: selection, lang: 'en' });
+    expect(withoutRef).not.toContain('Paper reference number');
+
+    const withRef = buildReceiptHtml({
+      document: doc({ paperReferenceNumber: 'PR-2026-042', paperReferenceDate: '2026-06-01', issuingAuthority: 'وزارة الصحة' }),
+      selectedFields: selection, lang: 'en',
+    });
+    expect(withRef).toContain('Paper reference number');
+    expect(withRef).toContain('PR-2026-042');
+    expect(withRef).toContain('2026-06-01');
+    expect(withRef).toContain('وزارة الصحة');
+    expect(withRef).toContain(TRACE); // the uuid trace key stays canonical alongside it
   });
 
   it('escapes every hostile value instead of emitting markup', () => {

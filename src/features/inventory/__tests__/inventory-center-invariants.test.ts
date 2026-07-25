@@ -159,15 +159,20 @@ describe('Retry invariant: a replayed submit cannot double-post', () => {
 });
 
 describe('Identity invariant: a blank field is never read as "none exists"', () => {
-  it('the operator must explicitly acknowledge an absent national code / batch number', () => {
-    expect(screen).toContain('hasNoNationalCode: noNationalCode');
+  it('the operator must explicitly acknowledge an absent batch number', () => {
     expect(screen).toContain('hasNoBatchNumber: noBatchNumber');
-    expect(screen).toContain("(noNationalCode ? nationalCode.trim() === '' : nationalCode.trim() !== '')");
-    expect(screen).toContain("(noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== '')");
+    expect(screen).toContain("noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== ''");
   });
 
-  it('the acknowledgement flags are required parameters, not optional', () => {
-    expect(service).toContain('hasNoNationalCode: boolean;');
+  it('118: Pharmacy Department identity is manual-only, never catalog-selected', () => {
+    expect(screen).toContain('centralItemId: null');
+    expect(screen).toContain('hasNoNationalCode: noNationalCode');
+    expect(screen).toContain("purchaseOrigin: supplyType === 'purchase' ? 'central' : null");
+    expect(screen).not.toContain('searchCentralItems');
+    expect(screen).not.toContain('selectedItem');
+  });
+
+  it('the batch acknowledgement flag is a required parameter, not optional', () => {
     expect(service).toContain('hasNoBatchNumber: boolean;');
   });
 

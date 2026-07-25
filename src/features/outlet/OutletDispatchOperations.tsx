@@ -18,6 +18,8 @@ import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
+import { getPaperReference, setPaperReference } from '@/features/movement/paper-reference.service';
+import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
 import { OutletDispatchComposer } from './OutletDispatchComposer';
 import {
   getWarehouseDispatches, getWarehouseDispatchLines, sendWarehouseDispatch, cancelWarehouseDispatch,
@@ -140,6 +142,18 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone }: {
   const lines = useAsync(() => (open ? getWarehouseDispatchLines(dispatch.id) : Promise.resolve([])), [open, dispatch.id]);
   const isDraft = dispatch.status === 'draft';
 
+  // PAPER-REFERENCE-CONTRACT-110: read-only once the dispatch has left draft
+  // (server enforces this too — phoenix_set_paper_reference itself refuses a
+  // non-draft edit); editable here while it hasn't.
+  const [paperRefReload, setPaperRefReload] = useState(0);
+  const paperRef = useAsync(
+    () => (open ? getPaperReference('warehouse_dispatch', dispatch.id) : Promise.resolve(null)),
+    [open, dispatch.id, paperRefReload],
+  );
+  const [editingRef, setEditingRef] = useState(false);
+  const [refDraft, setRefDraft] = useState<PaperReferenceValue>(EMPTY_PAPER_REFERENCE);
+  const [refBusy, setRefBusy] = useState(false);
+
   const send = async () => {
     // A dispatch leaves draft exactly once. While it is still draft the server
     // has not moved, so a retry after a lost response derives the same token
@@ -188,6 +202,43 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone }: {
               {l.receivedQuantity != null && <> · {t('mv_f_received_quantity', lang)} {l.receivedQuantity}</>}
             </div>
           ))}
+
+          {/* PAPER-REFERENCE-CONTRACT-110 — editable while still draft, read-only after. */}
+          <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid var(--brd)' }}>
+            {editingRef ? (
+              <div style={{ display: 'grid', gap: '8px' }}>
+                <PaperReferenceFields lang={lang} value={refDraft} onChange={setRefDraft} disabled={refBusy} />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <PhoenixButton size="sm" loading={refBusy} disabled={refDraft.number.trim() === ''} onClick={async () => {
+                    setRefBusy(true);
+                    await setPaperReference({
+                      documentType: 'warehouse_dispatch', documentId: dispatch.id,
+                      paperReferenceNumber: refDraft.number, paperReferenceDate: refDraft.date || null,
+                      issuingAuthority: refDraft.authority || null,
+                    });
+                    setRefBusy(false);
+                    setEditingRef(false);
+                    setPaperRefReload(k => k + 1);
+                  }}>{t('net_op_save', lang)}</PhoenixButton>
+                  <PhoenixButton size="sm" variant="ghost" disabled={refBusy} onClick={() => setEditingRef(false)}>{t('net_cancel', lang)}</PhoenixButton>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '11px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef.data)}</span>
+                {isDraft && (
+                  <PhoenixButton size="sm" variant="ghost" onClick={() => {
+                    setRefDraft({
+                      number: paperRef.data?.paperReferenceNumber ?? '',
+                      date: paperRef.data?.paperReferenceDate ?? '',
+                      authority: paperRef.data?.issuingAuthority ?? '',
+                    });
+                    setEditingRef(true);
+                  }}>{t('net_op_edit', lang)}</PhoenixButton>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </PhoenixCard>

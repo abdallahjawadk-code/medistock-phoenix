@@ -1,44 +1,23 @@
 // =============================================================================
 // MediStock Phoenix V2 — Edge Function: admin-create-user
 //
-// Secure server-side user creation. The service_role key lives ONLY here, in
-// the Deno edge runtime — it must NEVER appear in the frontend bundle.
+// Secure server-side user creation. The service_role key lives ONLY here.
 //
-// Deploy (manual, when ready):
-//   supabase functions deploy admin-create-user
-//   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...   (URL/ANON are provided)
+// SECURITY-ARCH-HARDENING-A (D1 + D2):
+//   The profile row is no longer written directly. After the Auth user is
+//   created, the profile is provisioned through phoenix_provision_profile
+//   (migration 093), called with the CALLER's JWT so the contract re-derives
+//   authority from auth.uid() and is the single source of truth for who may
+//   create which role in which organization. Authorization/existence denials
+//   return a generic REQUEST_DENIED (the real reason is logged server-side with
+//   the request's correlation id); if the contract denies, the orphan Auth user
+//   is rolled back. Input validation (role/username/password shape) stays here.
 //
-// Contract:
+// Contract (unchanged wire shape):
 //   POST { full_name, organization_id, role, login_mode, ... }  (Bearer = caller JWT)
-//   - Caller must be authenticated.
-//   - super_admin: may create any official role in any organization.
-//   - institution_admin: may create warehouse_officer/port_officer/
-//     monthly_status_officer/viewer in own org only (requires users.create).
-//   - Non-super: may create users ONLY if they hold users.create AND only in
-//     their own organization; may NOT create super_admin or institution_admin.
-//   - Only super_admin may create super_admin or institution_admin.
-//   - Official roles only.
-//
-//   login_mode = 'local' (default, LOCAL-CREDENTIALS-MODE-A):
-//     { username, temporary_password, contact_email? }
-//     - No real email required. Auth identifier is synthesized as
-//       <username>@local.medistock.invalid (never deliverable, never shown
-//       to the user as a contact address).
-//     - email_confirm is always true (no email to confirm/deliver).
-//     - No invite email is ever attempted for local accounts.
-//     - profiles.must_change_password is set true.
-//
-//   login_mode = 'email' (secondary/advanced, unchanged from prior behavior):
-//     { email, password? }
-//     - password provided → immediate-login mode (email_confirm true).
-//     - password absent → invite-email mode (email_confirm false).
-//
-//   Returns structured JSON; never leaks raw service errors.
 // =============================================================================
 
 // @ts-nocheck — Deno edge runtime types are not part of the app's tsconfig.
-// Updated: supports login_mode 'local' (username + temporary password) and
-// 'email' (password or invite). Local mode never depends on SMTP delivery.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOCAL_AUTH_DOMAIN = 'local.medistock.invalid';
@@ -50,13 +29,11 @@ const OFFICIAL_ROLES = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
-  'monthly_status_officer',
-  'viewer',
 ];
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-correlation-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -79,102 +56,78 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
-  // Caller-scoped client (RLS applies) — to resolve the caller identity.
+  const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
+
+  // Caller-scoped client → the provision RPC sees auth.uid() = the acting admin.
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
-  // Privileged client — server-only admin operations.
+  // Privileged client → Auth Admin user creation only.
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
   const { data: userData, error: userErr } = await caller.auth.getUser();
-  if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
-  const callerId = userData.user.id;
+  if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED', correlation_id: correlationId }, 401);
 
   let body: {
     full_name?: string; organization_id?: string; role?: string; login_mode?: string;
     username?: string; temporary_password?: string; contact_email?: string;
     email?: string; password?: string;
   };
-  try {
-    body = await req.json();
-  } catch {
-    return json({ ok: false, error: 'BAD_REQUEST' }, 400);
-  }
+  try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST', correlation_id: correlationId }, 400); }
 
   const fullName  = (body.full_name ?? '').trim();
   const orgId     = body.organization_id ?? null;
   const role      = body.role ?? '';
-  const loginMode = body.login_mode === 'email' ? 'email' : 'local'; // default: local
+  const loginMode = body.login_mode === 'email' ? 'email' : 'local';
 
-  if (!fullName || !orgId) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
-  if (!OFFICIAL_ROLES.includes(role)) return json({ ok: false, error: 'INVALID_ROLE' }, 400);
+  if (!fullName || !orgId) return json({ ok: false, error: 'MISSING_FIELDS', correlation_id: correlationId }, 400);
+  if (!OFFICIAL_ROLES.includes(role)) return json({ ok: false, error: 'INVALID_ROLE', correlation_id: correlationId }, 400);
 
-  // ── Resolve identity fields per mode ───────────────────────────────────────
+  // ── Resolve identity fields per mode (input validation only) ────────────────
   let username = '';
-  let temporaryPassword = ''; // never logged or stored in profile
+  let temporaryPassword = '';
   let contactEmail = '';
   let email = '';
-  let password = ''; // optional; not logged or stored in profile
+  let password = '';
 
   if (loginMode === 'local') {
     username = (body.username ?? '').trim().toLowerCase();
     temporaryPassword = (body.temporary_password ?? '').trim();
     contactEmail = (body.contact_email ?? '').trim();
-    if (!username || !temporaryPassword) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
-    if (!USERNAME_PATTERN.test(username)) return json({ ok: false, error: 'INVALID_USERNAME' }, 400);
-    if (temporaryPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+    if (!username || !temporaryPassword) return json({ ok: false, error: 'MISSING_FIELDS', correlation_id: correlationId }, 400);
+    if (!USERNAME_PATTERN.test(username)) return json({ ok: false, error: 'INVALID_USERNAME', correlation_id: correlationId }, 400);
+    if (temporaryPassword.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT', correlation_id: correlationId }, 400);
     email = `${username}@${LOCAL_AUTH_DOMAIN}`;
   } else {
     email = (body.email ?? '').trim();
     password = (body.password ?? '').trim();
-    if (!email) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
-  }
-
-  // Resolve caller profile (role + org) with the privileged client.
-  const { data: callerProfile } = await admin
-    .from('profiles')
-    .select('role, organization_id')
-    .eq('id', callerId)
-    .single();
-  if (!callerProfile) return json({ ok: false, error: 'ACTOR_PROFILE_NOT_FOUND' }, 403);
-
-  const isSuper = callerProfile.role === 'super_admin';
-
-  // Only super_admin may create platform, institution-admin, or central-
-  // warehouse-manager identities. Operational institution/outlet roles remain
-  // subject to users.create and the organization boundary below.
-  if (role === 'super_admin' && !isSuper) {
-    return json({ ok: false, error: 'CANNOT_CREATE_SUPER_ADMIN' }, 403);
-  }
-  if (role === 'institution_admin' && !isSuper) {
-    return json({ ok: false, error: 'CANNOT_CREATE_INSTITUTION_ADMIN' }, 403);
-  }
-  if (role === 'central_warehouse_manager' && !isSuper) {
-    return json({ ok: false, error: 'CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER' }, 403);
-  }
-
-  if (!isSuper) {
-    // Must hold users.create (effective permission) and stay in own org.
-    const { data: canCreate } = await admin.rpc('phoenix_profile_has_permission', {
-      p_profile_id: callerId,
-      p_key: 'users.create',
-    });
-    if (canCreate !== true) return json({ ok: false, error: 'INSUFFICIENT_PERMISSION' }, 403);
-    if (orgId !== callerProfile.organization_id) {
-      return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN' }, 403);
+    if (!email) return json({ ok: false, error: 'MISSING_FIELDS', correlation_id: correlationId }, 400);
+    if (body.password !== undefined && password.length > 0 && password.length < 8) {
+      return json({ ok: false, error: 'PASSWORD_TOO_SHORT', correlation_id: correlationId }, 400);
     }
   }
 
-  // passwordMode: local accounts always log in immediately (no email to confirm).
-  // Email-mode accounts use Mode 1 (password) or Mode 2 (invite) as before.
   const passwordMode = loginMode === 'local' || password.length >= 8;
-  if (loginMode === 'email' && body.password !== undefined && password.length > 0 && password.length < 8) {
-    // Password was supplied but is too short — reject before creating anything.
-    return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 400);
+
+  // Authority PRE-CHECK (reads only; no profile mutation). Create has no
+  // existence-oracle surface (there is no pre-existing target) and no
+  // last-super-admin invariant, so it keeps its distinct, actionable role
+  // messages for the admin UI. The authoritative gate is still server-side:
+  // phoenix_provision_profile re-verifies all of this before writing.
+  const { data: callerProfile } = await admin
+    .from('profiles').select('role, organization_id').eq('id', userData.user.id).single();
+  if (!callerProfile) return json({ ok: false, error: 'ACTOR_PROFILE_NOT_FOUND', correlation_id: correlationId }, 403);
+  const isSuper = callerProfile.role === 'super_admin';
+  if (role === 'super_admin' && !isSuper)              return json({ ok: false, error: 'CANNOT_CREATE_SUPER_ADMIN', correlation_id: correlationId }, 403);
+  if (role === 'institution_admin' && !isSuper)        return json({ ok: false, error: 'CANNOT_CREATE_INSTITUTION_ADMIN', correlation_id: correlationId }, 403);
+  if (role === 'central_warehouse_manager' && !isSuper) return json({ ok: false, error: 'CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER', correlation_id: correlationId }, 403);
+  if (!isSuper) {
+    const { data: canCreate } = await admin.rpc('phoenix_profile_has_permission', {
+      p_profile_id: userData.user.id, p_key: 'users.create',
+    });
+    if (canCreate !== true) return json({ ok: false, error: 'INSUFFICIENT_PERMISSION', correlation_id: correlationId }, 403);
+    if (orgId !== callerProfile.organization_id) return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN', correlation_id: correlationId }, 403);
   }
 
-  // Create the auth user.
-  // Local mode: email_confirm always true (synthetic email, nothing to confirm).
-  // Email Mode 1 (password provided): user can log in immediately; email auto-confirmed.
-  // Email Mode 2 (no password): email not confirmed; invite email attempted below.
+  // Create the Auth user first (so we have its id for the profile).
   const createParams: Record<string, unknown> = {
     email,
     email_confirm: passwordMode,
@@ -185,39 +138,41 @@ Deno.serve(async (req: Request) => {
 
   const { data: created, error: createErr } = await admin.auth.admin.createUser(createParams);
   if (createErr || !created?.user) {
-    // Do not leak raw provider errors to the UI.
-    return json({ ok: false, error: 'CREATE_AUTH_USER_FAILED' }, 400);
+    return json({ ok: false, error: 'CREATE_AUTH_USER_FAILED', correlation_id: correlationId }, 400);
   }
   const newId = created.user.id;
 
-  // Create / upsert the matching profile row (password never stored here).
-  const profileRow: Record<string, unknown> = {
-    id: newId, organization_id: orgId, full_name: fullName, role, status: 'active',
-    login_mode: loginMode,
-  };
-  if (loginMode === 'local') {
-    profileRow.username = username;
-    profileRow.contact_email = contactEmail || null;
-    profileRow.must_change_password = true;
-  }
-  const { error: profileErr } = await admin.from('profiles').upsert(profileRow);
-  if (profileErr) {
-    // Roll back the orphan auth user to keep state consistent.
+  // Provision the profile through the atomic contract (authority re-checked
+  // server-side). No direct profile write happens in this function.
+  const { data: prov, error: provErr } = await caller.rpc('phoenix_provision_profile', {
+    p_new_id: newId,
+    p_organization_id: orgId,
+    p_full_name: fullName,
+    p_role: role,
+    p_login_mode: loginMode,
+    p_username: loginMode === 'local' ? username : null,
+    p_contact_email: loginMode === 'local' ? (contactEmail || null) : null,
+    p_correlation_id: correlationId,
+  });
+  if (provErr || !prov?.ok) {
+    // Roll back the orphan Auth user so no half-provisioned identity survives.
     await admin.auth.admin.deleteUser(newId);
-    return json({ ok: false, error: 'CREATE_PROFILE_FAILED' }, 400);
+    const code = prov?.error ?? 'CREATE_PROFILE_FAILED';
+    const status = code === 'REQUEST_DENIED' ? 403 : 400;
+    return json({ ok: false, error: code, correlation_id: prov?.correlation_id ?? correlationId }, status);
   }
 
-  // Invite email only in email-mode Mode 2 (no password). Local accounts never
-  // get an invite — there is no deliverable mailbox to send it to.
+  // Invite email only in email-mode Mode 2 (no password).
   let invited = false;
   if (loginMode === 'email' && !passwordMode) {
     try {
       const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email);
       invited = !inviteErr;
-    } catch {
-      invited = false;
-    }
+    } catch { invited = false; }
   }
 
-  return json({ ok: true, user_id: newId, role, invited, password_mode: passwordMode, login_mode: loginMode });
+  return json({
+    ok: true, user_id: newId, role, invited, password_mode: passwordMode,
+    login_mode: loginMode, correlation_id: correlationId,
+  });
 });

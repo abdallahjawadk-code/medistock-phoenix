@@ -20,12 +20,22 @@ import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
+import { useQuarantinePermission } from './useQuarantinePermission';
+import { QuarantinePanel } from './QuarantinePanel';
+import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
+import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
+import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
+import { normalizedIncludes } from '@/shared/lib/search-normalize';
+import { SourceBalancesPanel } from './SourceBalancesPanel';
+import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
+import { paperReferenceSummary } from '@/features/movement/ui/PaperReferenceFields';
 import {
   receiveWarehouseStock, applyWarehouseStockMovement, getWarehouseStockMovements,
   getWarehouseReceiptLotGeneration, getWarehouseStockGeneration,
   newRequestId, classifyIntakeError, GENERATION_UNAVAILABLE_CODE,
   WAREHOUSE_ADJUSTMENT_TYPES, type WarehouseStockMovementType,
   type ReceiveWarehouseStockInput,
+  requestWarehouseStockCorrection,
 } from './warehouse-intake.service';
 
 /**
@@ -45,7 +55,7 @@ import {
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine' | 'corrections';
 
 export function InventoryCenterScreen() {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -78,6 +88,18 @@ export function InventoryCenterScreen() {
   const returnReceive = useReturnReceivePermission(activeOrgId, activeWarehouseId || null);
   const canReceiveReturns = returnReceive.data ?? false;
 
+  // QUARANTINE-DISPOSITION — gated on the exact scoped key 099's release/
+  // destroy RPCs check (warehouse_transfer.return_request on the quarantine
+  // row's own warehouse), matching 105's widened read policy.
+  const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
+  const canDisposeQuarantine = quarantinePerm.data ?? false;
+
+  // SECOND-PERSON-CORRECTION-APPROVAL — both keys are ORG-WIDE (never
+  // warehouse/outlet-scoped), matching phoenix_status_center_authorized.
+  const canApproveOutletCorrection = useApproveCorrectionPermission(activeOrgId, 'outlet_stock.approve_correction').data ?? false;
+  const canApproveWarehouseCorrection = useApproveCorrectionPermission(activeOrgId, 'warehouse_stock.approve_correction').data ?? false;
+  const canApproveAnyCorrection = canApproveOutletCorrection || canApproveWarehouseCorrection;
+
   const [tab, setTab] = useState<Tab>('intake');
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -101,6 +123,13 @@ export function InventoryCenterScreen() {
     return o ? (lang === 'ar' ? o.name_ar : o.name) : '';
   }, [orgs.data, activeOrgId, lang]);
   const activeWarehouseName = warehouseOptions.find(o => o.value === activeWarehouseId)?.label ?? '';
+  // CLOSED-CUSTODY-102-B: an institution warehouse receives ONLY from pharmacy-
+  // department (central) stores via the canonical transfer/return receive
+  // corridors — never by hand-typed or OCR-assisted entry. The server enforces
+  // this unconditionally (migration 103); this is the UX reflection of that
+  // same rule, not the authority for it.
+  const activeWarehouseKind = manageableWarehouses.find(w => w.id === activeWarehouseId)?.warehouseKind ?? null;
+  const isInstitutionWarehouse = activeWarehouseKind === 'institution';
   // Outlets belonging to the selected institution warehouse (parent link), and
   // within the officer's manageable scope — the only valid dispatch destinations.
   const outletsForWarehouse = useMemo(
@@ -194,6 +223,12 @@ export function InventoryCenterScreen() {
           // §071 — receiving outlet returns into this warehouse, for holders of
           // the scoped outlet_stock.return_receive permission on it.
           ...(canReceiveReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
+          // QUARANTINE-DISPOSITION — for holders of the scoped
+          // warehouse_transfer.return_request permission on it (099/105).
+          ...(canDisposeQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
+          // SECOND-PERSON-CORRECTION-APPROVAL — org-wide, for holders of
+          // outlet_stock.approve_correction and/or warehouse_stock.approve_correction (098/101).
+          ...(canApproveAnyCorrection ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -219,25 +254,38 @@ export function InventoryCenterScreen() {
       {!activeWarehouseId ? (
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
-        <IntakeTab
-          warehouseId={activeWarehouseId}
-          canSubmit={canAdjust}
-          lang={lang}
-          stock={stock.data ?? []}
-          onSuccess={afterWrite}
-          onError={showToast}
-          onConflictReload={reloadCanonicalStock}
-        />
+        isInstitutionWarehouse ? (
+          <PhoenixEmptyState
+            icon="🔒"
+            title={t('inv_institution_intake_blocked_title', lang)}
+            description={t('inv_institution_intake_blocked_description', lang)}
+          />
+        ) : (
+          <IntakeTab
+            warehouseId={activeWarehouseId}
+            canSubmit={canAdjust}
+            lang={lang}
+            stock={stock.data ?? []}
+            onSuccess={afterWrite}
+            onError={showToast}
+            onConflictReload={reloadCanonicalStock}
+          />
+        )
       ) : tab === 'stock' ? (
+        <div style={{ display: 'grid', gap: '12px' }}>
+        {/* SOURCE-BALANCES-PANEL (088): fail-closed readiness gate inside. */}
+        <SourceBalancesPanel warehouseId={activeWarehouseId} />
         <StockList
           state={stock}
           lang={lang}
           canAdjust={canAdjust}
           canCorrect={canCorrect}
+          isInstitutionWarehouse={isInstitutionWarehouse}
           onSuccess={afterWrite}
           onError={showToast}
           onConflictReload={reloadCanonicalStock}
         />
+        </div>
       ) : tab === 'incoming' && canReceive ? (
         <InstitutionIncomingSupplies
           destinationWarehouseId={activeWarehouseId}
@@ -259,6 +307,13 @@ export function InventoryCenterScreen() {
           warehouseName={activeWarehouseName}
           canReceive={canReceiveReturns}
           lang={lang}
+        />
+      ) : tab === 'quarantine' && canDisposeQuarantine ? (
+        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
+      ) : tab === 'corrections' && canApproveAnyCorrection ? (
+        <PendingCorrectionsPanel
+          canApproveOutlet={canApproveOutletCorrection}
+          canApproveWarehouse={canApproveWarehouseCorrection}
         />
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />
@@ -400,12 +455,13 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
 
   const qty = Number(quantity);
   const quantityValid = Number.isInteger(qty) && qty > 0;
+  const supplyTypeValid = supplyType !== '';
   // Mirrors migration 065's explicit_identity_flags_required / *_flag_mismatch
   // checks so the operator is told BEFORE a round trip. The RPC still enforces it.
   const identityResolved =
     (noNationalCode ? nationalCode.trim() === '' : nationalCode.trim() !== '')
     && (noBatchNumber ? batchNumber.trim() === '' : batchNumber.trim() !== '');
-  const formValid = scientificName.trim() !== '' && quantityValid && identityResolved;
+  const formValid = scientificName.trim() !== '' && quantityValid && identityResolved && supplyTypeValid;
 
   const reset = () => {
     setRequestId(newRequestId());
@@ -431,10 +487,11 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
       const base: Omit<ReceiveWarehouseStockInput, 'expectedGeneration'> = {
         requestId,
         warehouseId,
-        scientificName,
+        scientificName: scientificName.trim(),
         quantity: qty,
         hasNoNationalCode: noNationalCode,
         hasNoBatchNumber: noBatchNumber,
+        centralItemId: null,
         tradeName: tradeName.trim() || null,
         concentration: concentration.trim() || null,
         dosageForm: dosageForm.trim() || null,
@@ -443,7 +500,8 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
         batchNumber: batchNumber.trim() || null,
         expiryDate: expiryDate || null,
         unitPrice: unitPrice.trim() === '' ? null : Number(unitPrice),
-        supplyType: supplyType.trim() || null,
+        supplyType,
+        purchaseOrigin: supplyType === 'purchase' ? 'central' : null,
         sourceDocumentNumber: sourceDocument.trim() || null,
         notes: notes.trim() || null,
       };
@@ -472,6 +530,9 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
 
   return (
     <PhoenixCard>
+      <p style={{ fontSize: '12px', color: 'var(--t2)', margin: '0 0 12px' }}>
+        {t('inv_central_manual_note', lang)}
+      </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: '12px' }}>
         <PhoenixInput
           label={t('inv_scientific_name', lang)}
@@ -506,7 +567,30 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
         />
         <PhoenixInput label={t('inv_expiry_date', lang)} type="date" value={expiryDate} onChange={e => { setExpiryDate(e.target.value); touch(); }} />
         <PhoenixInput label={t('inv_unit_price', lang)} type="number" min={0} step="0.01" value={unitPrice} onChange={e => { setUnitPrice(e.target.value); touch(); }} />
-        <PhoenixInput label={t('inv_supply_type', lang)} value={supplyType} onChange={e => { setSupplyType(e.target.value); touch(); }} />
+        {/* CANONICAL-SUPPLY-PROVENANCE-088: CLOSED three-value vocabulary — never
+            free text. A 'purchase' at a pharmacy-department warehouse is saved
+            as a CENTRAL purchase server-side. */}
+        <div>
+          <PhoenixSelect
+            label={t('inv_supply_type', lang)}
+            value={supplyType}
+            onChange={e => { setSupplyType(e.target.value); touch(); }}
+            options={[
+              { value: '', label: '—' },
+              ...SUPPLY_TYPES.map(x => ({ value: x, label: t(supplyTypeLabelKey(x), lang) })),
+            ]}
+          />
+          {supplyType === 'purchase' && (
+            <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '4px' }}>
+              {t('st_purchase_central_note', lang)}
+            </p>
+          )}
+          {attempted && !supplyTypeValid && (
+            <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>
+              {t('inv_err_invalid', lang)}
+            </p>
+          )}
+        </div>
         <PhoenixInput label={t('inv_source_document', lang)} value={sourceDocument} onChange={e => { setSourceDocument(e.target.value); touch(); }} />
       </div>
 
@@ -554,19 +638,42 @@ interface StockListProps {
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
+  /** CLOSED-CUSTODY-102-B: institution warehouses may only ever be corrected
+   *  (second-person-approval-gated, migration 101), never freely add/subtract/
+   *  set_exact'd — that quantity must come from a canonical receive corridor. */
+  isInstitutionWarehouse: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
   /** 078 generation conflict — reload canonical stock; retry stays explicit. */
   onConflictReload: () => void;
 }
 
-function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: StockListProps) {
+function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: StockListProps) {
+  // MATERIAL-SMART-SEARCH: one normalized query over the four identity fields
+  // (scientific, trade, national code, batch) — AR/EN, hamza/taa/diacritic
+  // folding, case-insensitive; the query is NEVER treated as a new material.
+  const [query, setQuery] = useState('');
   if (state.loading) return <PhoenixLoadingState />;
-  const batches = state.data ?? [];
-  if (batches.length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
+  const batches = (state.data ?? []).filter(b =>
+    !query.trim()
+    || normalizedIncludes(b.scientificName ?? '', query)
+    || normalizedIncludes(b.nationalCode ?? '', query)
+    || normalizedIncludes(b.batchNumber ?? '', query));
+  if ((state.data ?? []).length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <input
+        type="search"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder={t('inv_stock_search', lang)}
+        aria-label={t('inv_stock_search', lang)}
+        className="premium-field"
+        dir="auto"
+        style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' }}
+      />
+      {batches.length === 0 && <PhoenixEmptyState icon="search" title={t('cc_palette_no_results', lang)} />}
       {batches.map(b => (
         <BatchRow
           key={b.id}
@@ -574,6 +681,7 @@ function StockList({ state, lang, canAdjust, canCorrect, onSuccess, onError, onC
           lang={lang}
           canAdjust={canAdjust}
           canCorrect={canCorrect}
+          isInstitutionWarehouse={isInstitutionWarehouse}
           onSuccess={onSuccess}
           onError={onError}
           onConflictReload={onConflictReload}
@@ -588,13 +696,14 @@ interface BatchRowProps {
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
+  isInstitutionWarehouse: boolean;
   onSuccess: (messageKey: string) => void;
   onError: (messageKey: string) => void;
   /** 078 generation conflict — reload canonical stock; retry stays explicit. */
   onConflictReload: () => void;
 }
 
-function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onConflictReload }: BatchRowProps) {
+function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
   const [movementType, setMovementType] = useState<WarehouseStockMovementType>('add');
@@ -609,9 +718,14 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onCo
 
   // 'correction' is only offered to warehouse_stock.correct holders; add/subtract
   // need warehouse_stock.adjust. The RPC picks the same key server-side.
-  const allowedTypes = WAREHOUSE_ADJUSTMENT_TYPES.filter(
-    x => (x === 'correction' ? canCorrect : canAdjust),
-  );
+  // CLOSED-CUSTODY-102-B: at an institution warehouse, add/subtract/set_exact
+  // would invent or erase quantity outside any canonical corridor — the server
+  // (migration 103) refuses them unconditionally there, so only 'correction'
+  // is ever offered for this batch's row.
+  const allowedTypes = WAREHOUSE_ADJUSTMENT_TYPES.filter(x => {
+    if (isInstitutionWarehouse && x !== 'correction') return false;
+    return x === 'correction' ? canCorrect : canAdjust;
+  });
 
   /** A changed payload is a NEW logical attempt; only an unchanged retry replays. */
   const touch = () => setRequestId(newRequestId());
@@ -627,6 +741,33 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, onSuccess, onError, onCo
         onError(classifyIntakeError(GENERATION_UNAVAILABLE_CODE));
         return;
       }
+
+      // SECOND-PERSON-CORRECTION-APPROVAL (101): 'correction' NEVER goes
+      // through the raw apply RPC directly — that would bypass the
+      // approval gate entirely. add/subtract keep the existing path (a
+      // different concept: recording physical movement, not adjudicating a
+      // discrepancy), and remain unreachable at institution warehouses
+      // regardless (103).
+      if (movementType === 'correction') {
+        const result = await requestWarehouseStockCorrection({
+          requestId,
+          warehouseStockId: batch.id,
+          newQuantity: amountNum,
+          reason: reason.trim(),
+          expectedGeneration: generation.generation,
+        });
+        if (result.ok) {
+          onSuccess(result.data?.requires_approval ? 'inv_correction_pending' : 'inv_movement_ok');
+          setRequestId(newRequestId());
+          setAmount(''); setReason(''); setOpen(false);
+        } else {
+          const errorKey = classifyIntakeError(result.error);
+          onError(errorKey);
+          if (errorKey === 'inv_err_generation_conflict') onConflictReload();
+        }
+        return;
+      }
+
       const result = await applyWarehouseStockMovement({
         requestId,
         warehouseStockId: batch.id,
@@ -720,6 +861,14 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
     () => (activeBatchId ? getWarehouseStockMovements(activeBatchId) : Promise.resolve([])),
     [activeBatchId],
   );
+  // PAPER-REFERENCE-CONTRACT-110: one batched read for every movement row
+  // shown, never a per-row lookup (this list can be up to 100 rows deep —
+  // see getWarehouseStockMovements' own cap).
+  const movementIds = useMemo(() => (movements.data ?? []).map(m => m.id), [movements.data]);
+  const paperRefs = useAsync(
+    () => getPaperReferencesFor('warehouse_stock_movement', movementIds),
+    [movementIds.join(',')],
+  );
 
   return (
     <PhoenixCard>
@@ -746,6 +895,7 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
                   {' · '}{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
                   {m.actorNameSnapshot ? ` · ${m.actorNameSnapshot}` : ''}
                   {m.reason ? ` · ${m.reason}` : ''}
+                  {' · '}{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRefs.data?.get(m.id))}
                 </li>
               ))}
             </ul>

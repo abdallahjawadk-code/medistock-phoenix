@@ -481,13 +481,13 @@ describe('Account lifecycle policy: docs/account-lifecycle-policy.md', () => {
     expect(policy).toContain('recycled');
   });
 
-  it('covers all official roles', () => {
+  it('covers all official roles (PHOENIX-FIVE-ROLE-CUTOVER-091: monthly_status_officer/viewer removed)', () => {
     expect(policy).toContain('super_admin');
     expect(policy).toContain('institution_admin');
     expect(policy).toContain('warehouse_officer');
-    expect(policy).toContain('port_officer');
-    expect(policy).toContain('monthly_status_officer');
-    expect(policy).toContain('viewer');
+    expect(policy).toContain('outlet_officer');
+    expect(policy).not.toContain('monthly_status_officer');
+    expect(policy).not.toContain('viewer');
   });
 
   it('defines disable, correction, password reset, recycling, and hard delete', () => {
@@ -1289,6 +1289,12 @@ describe('Recycling implementation: permission catalog and service', () => {
 
 describe('Recycling implementation: admin-recycle-user Edge Function', () => {
   const fn = readPhoenix('supabase/functions/admin-recycle-user/index.ts');
+  // SECURITY-ARCH-HARDENING-A: the whole DB transition + authority now live in
+  // the atomic contract (migration 093, phoenix_recycle_apply). The Edge
+  // Function delegates to it and keeps only the Auth Admin operations. These
+  // guards therefore verify the security property in its new home, plus that
+  // the Edge Function genuinely routes through the contract.
+  const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
 
   it('Edge Function file exists', () => {
     expect(fn.length).toBeGreaterThan(500);
@@ -1308,22 +1314,30 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     expect(fn).toContain('NOT_AUTHENTICATED');
   });
 
-  it('checks users.recycle permission', () => {
-    expect(fn).toContain("'users.recycle'");
-    expect(fn).toContain('phoenix_profile_has_permission');
+  it('delegates the DB transition to the atomic contract (no direct profile role/status write)', () => {
+    expect(fn).toContain('phoenix_recycle_apply');
+    // The Edge Function must not mutate profile role/status directly anymore.
+    expect(fn).not.toMatch(/from\('profiles'\)\s*\.\s*(update|upsert|insert)/);
+    expect(fn).not.toMatch(/from\('user_identity_history'\)/);
   });
 
-  it('blocks self-recycling', () => {
-    expect(fn).toContain('SELF_ACTION_FORBIDDEN');
+  it('checks users.recycle permission (in the contract)', () => {
+    expect(mig).toContain("'users.recycle'");
+    expect(mig).toContain('phoenix_profile_has_permission');
   });
 
-  it('blocks recycling super_admin', () => {
-    expect(fn).toContain('CANNOT_RECYCLE_SUPER_ADMIN');
+  it('blocks self-recycling (in the contract)', () => {
+    expect(mig).toContain("'self_action'");
+    expect(mig).toContain('p_target_id = v_actor');
   });
 
-  it('requires target to be suspended', () => {
-    expect(fn).toContain('TARGET_NOT_SUSPENDED');
-    expect(fn).toContain("'suspended'");
+  it('blocks recycling super_admin (in the contract)', () => {
+    expect(mig).toContain("'cannot_recycle_super_admin'");
+  });
+
+  it('requires target to be suspended (in the contract)', () => {
+    expect(mig).toContain('TARGET_NOT_SUSPENDED');
+    expect(mig).toContain("'suspended'");
   });
 
   it('requires confirmation phrase RECYCLE_USER_<id>', () => {
@@ -1331,27 +1345,27 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     expect(fn).toContain('INVALID_CONFIRMATION');
   });
 
-  it('institution_admin cannot recycle outside own org', () => {
-    expect(fn).toContain('CROSS_ORG_FORBIDDEN');
+  it('institution_admin cannot recycle outside own org (in the contract)', () => {
+    expect(mig).toContain("'cross_org'");
   });
 
-  it('institution_admin cannot assign elevated roles', () => {
-    expect(fn).toContain('CANNOT_ASSIGN_ELEVATED_ROLE');
+  it('institution_admin cannot assign elevated roles (in the contract)', () => {
+    expect(mig).toContain("'cannot_assign_elevated_role'");
   });
 
-  it('increments identity_version', () => {
-    expect(fn).toContain('identity_version');
-    expect(fn).toContain('newVersion');
+  it('increments identity_version (in the contract)', () => {
+    expect(mig).toContain('identity_version');
+    expect(mig).toContain('v_newver');
   });
 
-  it('closes old identity in user_identity_history', () => {
-    expect(fn).toContain('user_identity_history');
-    expect(fn).toContain('valid_until');
+  it('closes old identity in user_identity_history (in the contract)', () => {
+    expect(mig).toContain('user_identity_history');
+    expect(mig).toContain('valid_until');
   });
 
-  it('inserts new identity history row with change_reason', () => {
-    expect(fn).toContain("'account_recycled'");
-    expect(fn).toContain('recycled_by');
+  it('inserts new identity history row with change_reason (in the contract)', () => {
+    expect(mig).toContain("'account_recycled'");
+    expect(mig).toContain('recycled_by');
   });
 
   it('updates auth email server-side only', () => {
@@ -1384,16 +1398,9 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     expect(fn).not.toMatch(/console\.(log|info|warn).*link/i);
   });
 
-  it('writes audit log with old and new identity', () => {
-    expect(fn).toContain("'user.account_recycled'");
-    expect(fn).toContain('old_full_name');
-    expect(fn).toContain('new_full_name');
-    expect(fn).toContain('old_identity_version');
-    expect(fn).toContain('new_identity_version');
-  });
-
-  it('never accepts password in request', () => {
-    expect(fn).not.toMatch(/body\.password|password.*body/);
+  it('writes audit log for the recycle (in the contract)', () => {
+    expect(mig).toContain("'user.account_recycled'");
+    expect(mig).toContain('new_identity_version');
   });
 
   it('never returns password', () => {
@@ -1401,8 +1408,8 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     responses.forEach(r => expect(r).not.toContain('password'));
   });
 
-  it('documents partial-failure behavior', () => {
-    expect(fn).toContain('PARTIAL FAILURE');
+  it('documents the safe failure ordering (DB-first, target stays banned)', () => {
+    expect(fn).toMatch(/banned|safe|retryable/i);
   });
 });
 

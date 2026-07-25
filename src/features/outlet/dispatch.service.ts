@@ -23,7 +23,10 @@ export interface RpcResult<T = Record<string, unknown>> {
 function rpcErrorCode(message: string | undefined): string {
   if (!message) return 'unknown_error';
   const head = message.split(':', 1)[0]?.trim() ?? message;
-  return /^[A-Z0-9_]+$/.test(head) ? head : 'unknown_error';
+  // Accepts BOTH this corridor's historical 'CODE: message' uppercase
+  // convention and 065/097/102's bare lowercase_snake RAISE convention
+  // (e.g. 'fefo_override_required') — a strict widening, never narrower.
+  return /^[A-Za-z0-9_]+$/.test(head) ? head : 'unknown_error';
 }
 
 async function callRpc<T = Record<string, unknown>>(fn: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
@@ -196,15 +199,75 @@ export function createWarehouseDispatch(input: {
   });
 }
 
-/** Adds one line from a CANONICAL institution warehouse_stock lot (never free text). */
+/**
+ * Adds one line from a CANONICAL institution warehouse_stock lot (never free
+ * text). Calls 106's idempotency-wrapped 097/102 FEFO-guarded RPC — picking a
+ * non-earliest-expiry batch fails closed with 'fefo_override_required' unless
+ * `fefoOverride` is set together with a reason. This is the ONLY
+ * dispatch-line-add call site; FEFO enforcement is therefore active for every
+ * real caller, not just a server-side capability nothing in the UI actually
+ * reaches.
+ *
+ * `requestId` is REQUIRED (107 tightened 106's p_request_id from optional to
+ * mandatory server-side, closing the NULL bypass — omitting it now raises
+ * 'request_id_required' before any read or write). It MUST be derived via
+ * operation-token.ts (see OutletDispatchComposer), never minted fresh per
+ * call — that derivation is what makes a retry of the SAME logical add-line
+ * attempt replay the original result server-side instead of creating a
+ * second line, while an actual payload change (a different quantity, a
+ * different override reason) derives a DIFFERENT id and is correctly
+ * treated as a new request. The TS type is intentionally honest about this
+ * requirement (requestId: string, not requestId?: string) so a caller that
+ * forgets to derive one fails to compile, not just fails at the RPC.
+ */
 export function addDispatchLine(input: {
   dispatchId: string; warehouseStockId: string; quantity: number;
-}): Promise<RpcResult> {
-  return callRpc('phoenix_add_dispatch_line', {
+  fefoOverride?: boolean; overrideReason?: string | null; requestId: string;
+}): Promise<RpcResult<{ dispatch_line_id?: string; fefo_override_applied?: boolean }>> {
+  return callRpc('phoenix_add_dispatch_line_fefo_guarded', {
     p_dispatch_id: input.dispatchId,
     p_warehouse_stock_id: input.warehouseStockId,
     p_quantity: input.quantity,
+    p_fefo_override: input.fefoOverride ?? false,
+    p_override_reason: input.overrideReason ?? null,
+    p_request_id: input.requestId,
   });
+}
+
+export interface FefoBatch {
+  stockId: string;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  availableQuantity: number;
+}
+
+interface FefoBatchDbRow {
+  stock_id: string; batch_number: string | null; expiry_date: string | null; available_quantity: number;
+}
+
+/**
+ * Every eligible batch for this material at this warehouse, FEFO-ordered
+ * (072's own read: expiry_date ASC NULLS LAST, then id ASC — the SAME order
+ * 097/102's guard compares against). Read-only; used to show the operator
+ * WHY a pick was refused and what the earliest alternative actually is,
+ * never to pick automatically.
+ */
+export async function getFefoAlternatives(
+  organizationId: string, warehouseId: string, scientificName: string, nationalCode: string | null,
+): Promise<FefoBatch[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase.rpc('phoenix_inventory_fefo_batches', {
+    p_organization_id: organizationId,
+    p_scope_kind: 'warehouse',
+    p_scope_id: warehouseId,
+    p_scientific_name: scientificName,
+    p_national_code: nationalCode,
+  });
+  if (error) throw error;
+  return ((data as FefoBatchDbRow[] | null) ?? []).map(r => ({
+    stockId: r.stock_id, batchNumber: r.batch_number, expiryDate: r.expiry_date,
+    availableQuantity: r.available_quantity,
+  }));
 }
 
 export function updateDispatchLineQuantity(input: { dispatchLineId: string; quantity: number }): Promise<RpcResult> {

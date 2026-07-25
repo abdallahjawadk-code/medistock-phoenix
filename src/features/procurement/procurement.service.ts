@@ -181,7 +181,7 @@ function mapSupplier(r: any): SupplierRow {
   };
 }
 
-function mapOrder(r: any): OrderRow {
+export function mapOrder(r: any): OrderRow {
   return {
     id: r.id, organizationId: r.organization_id, warehouseId: r.warehouse_id,
     supplierId: r.supplier_id, orderNumber: r.order_number, status: r.status,
@@ -521,4 +521,47 @@ export function returnToSupplier(
       p_notes: notes ?? null,
       p_expected_generation: null,
     });
+}
+
+export interface DuplicateCandidate {
+  source: 'catalog' | 'existing_lot';
+  sourceId: string;
+  scientificName: string;
+  tradeName: string | null;
+  concentration: string | null;
+  dosageForm: string | null;
+  nationalCode: string | null;
+  similarityScore: number;
+}
+
+/**
+ * 117 — advisory-only (never blocking) fuzzy duplicate lookup for the
+ * supplementary-purchase entry screen. Returns [] on any error/empty term
+ * rather than surfacing a hard failure — this is a hint, not a gate.
+ */
+export async function getDuplicateCandidates(
+  warehouseId: string,
+  scientificName: string,
+  tradeName?: string | null,
+  nationalCode?: string | null,
+): Promise<DuplicateCandidate[]> {
+  if (!supabaseConfigured || scientificName.trim().length < 2) return [];
+  const { data, error } = await supabase.rpc('phoenix_subpurchase_duplicate_candidates', {
+    p_warehouse_id: warehouseId,
+    p_scientific_name: scientificName.trim(),
+    p_trade_name: tradeName?.trim() || null,
+    p_national_code: nationalCode?.trim() || null,
+    p_limit: 5,
+  });
+  if (error || !Array.isArray(data)) return [];
+  return (data as Array<Record<string, unknown>>).map(r => ({
+    source: r.source as 'catalog' | 'existing_lot',
+    sourceId: r.source_id as string,
+    scientificName: r.scientific_name as string,
+    tradeName: (r.trade_name as string | null) ?? null,
+    concentration: (r.concentration as string | null) ?? null,
+    dosageForm: (r.dosage_form as string | null) ?? null,
+    nationalCode: (r.national_code as string | null) ?? null,
+    similarityScore: Number(r.similarity_score ?? 0),
+  }));
 }

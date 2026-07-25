@@ -1,4 +1,5 @@
 import { useApp } from '@/app/AppContext';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
@@ -40,6 +41,11 @@ const ALL_NAV: {
   // Screen 19 is reachable on mobile too; the screen self-gates by 062
   // warehouse scope + the scoped local_procurement.* keys, re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
+  // MONTHLY-STATUS-REDESIGN-092: mirrors the desktop sidebar entry.
+  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
+  // DECISION-INTELLIGENCE-REPORTS-119: mirrors the desktop sidebar entry;
+  // the screen self-gates on reports.view.
+  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 
 // MOBILE-NAV-BRAND-POLISH-A: mirrors PhoenixSidebar's SECONDARY_ITEMS so the
@@ -133,6 +139,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
 
         <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
           {ALL_NAV
+            .filter(item => item.screen !== 11 || institutionsScreenAccess(role) !== false)
+            .map(item => item.screen === 11 && institutionsScreenAccess(role) === 'own'
+              ? { ...item, labelKey: 'nav_my_organization' } : item)
             .filter(item => !item.superAdminOnly || role === 'super_admin')
             .filter(item => !item.requiresUsersView || canSeeUsers)
             .filter(item => !item.requiresNetwork || canSeeNetwork)

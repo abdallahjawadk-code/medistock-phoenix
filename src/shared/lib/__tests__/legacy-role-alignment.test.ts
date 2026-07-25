@@ -1,19 +1,28 @@
 /**
  * RBAC-PHASE-2-STAGING-SHADOW-TELEMETRY-AND-LEGACY-ROLE-ALIGNMENT — Phase B.
+ * Updated for PHOENIX-FIVE-ROLE-CUTOVER-091.
  *
  * Every retained role keeps its own authorization identity and is never
  * resolved through a newer operational role.
  *
  * WHY THIS MATTERS, stated once: migration 010 seeded transfer_manager by
- * COPYING monthly_status_officer's defaults, so the two are identical today.
- * Migration 062 then diverged them — monthly_status_officer gained reports.view
- * and audit.view; transfer_manager gained neither and was explicitly denied the
- * other eight new keys. A frontend that resolves one role through the other
- * cannot represent that divergence, and would grant two denied permissions the
- * moment the new keys reach the catalog. Migration 066 repeats that boundary
- * for warehouse_manager, port_officer and point_operator: new warehouse/outlet
- * roles receive keys the retained roles are denied. These tests pin both halves:
- * today's fallback behavior is preserved and every inheritance channel is shut.
+ * COPYING monthly_status_officer's defaults at that time, so the two were
+ * identical then. Migration 062 then diverged them — monthly_status_officer
+ * gained reports.view and audit.view; transfer_manager gained neither and was
+ * explicitly denied the other eight new keys. transfer_manager's default set
+ * stayed a frozen COPY rather than a derived reference specifically so that
+ * divergence could happen without silently widening transfer_manager.
+ *
+ * Migration 091 then removed monthly_status_officer (and viewer) from the
+ * profiles_role_check constraint, role_permission_defaults, and every
+ * OfficialRole binding in the frontend — no role in the app can hold that
+ * identity anymore, and the value is no longer even a recognised
+ * AuthorizationRole. transfer_manager's frozen snapshot is untouched by that
+ * removal (it was always an independent copy, never a live reference), which
+ * is exactly why the safeguard mattered. These tests now pin: transfer_manager
+ * keeps its historical permissions unchanged, 'monthly_status_officer' and
+ * 'viewer' are unknown role strings that fail safe to the zero-permission
+ * fallback, and every inheritance channel stays shut.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -28,16 +37,10 @@ import { SCOPED_PERMISSION_KEYS } from '@/shared/authz/scoped-permissions';
 const NEW_062_KEYS = SCOPED_PERMISSION_KEYS.map(k => k.key);
 
 describe('B1. transfer_manager keeps its own authorization identity', () => {
-  it('normalizeRole does not rewrite it into monthly_status_officer', () => {
+  it('normalizeRole never rewrites it into any other role', () => {
     expect(normalizeRole('transfer_manager')).toBe('transfer_manager');
-    expect(normalizeRole('transfer_manager')).not.toBe('monthly_status_officer');
-  });
-
-  it('does not fall back to viewer, monthly_status_officer or super_admin', () => {
-    const n = normalizeRole('transfer_manager');
-    expect(n).not.toBe('viewer');
-    expect(n).not.toBe('monthly_status_officer');
-    expect(n).not.toBe('super_admin');
+    expect(normalizeRole('transfer_manager')).not.toBe('outlet_officer');
+    expect(normalizeRole('transfer_manager')).not.toBe('super_admin');
   });
 
   it('is not present in the legacy alias table — an alias claims equivalence', () => {
@@ -88,25 +91,19 @@ describe('B3. transfer_manager inherits no new 062 permission', () => {
   });
 
   it('specifically holds neither reports.view nor audit.view', () => {
-    // The two migration 062 grants monthly_status_officer and it does not.
     const d = roleDefaults('transfer_manager');
     expect(d.has('reports.view')).toBe(false);
     expect(d.has('audit.view')).toBe(false);
   });
 
-  it('gains nothing even if monthly_status_officer later gains the new keys', () => {
-    // The defence is structural: the list is a snapshot, not a reference. This
-    // asserts the source rather than the behavior, because the behavior only
-    // diverges AFTER someone edits the other list — which is exactly the moment
-    // the safeguard has to already be in place.
+  it('the frozen snapshot is a literal array, never a spread of another role', () => {
+    // The defence is structural: the list is a snapshot, not a reference.
     const src = readFileSync(join(__dirname, '../permissions.ts'), 'utf8');
     expect(src).toContain('const TRANSFER_MANAGER_LEGACY_DEFAULTS = [');
     expect(src).toMatch(
       /if \(n === 'transfer_manager'\)\s+return new Set\(TRANSFER_MANAGER_LEGACY_DEFAULTS\);/,
     );
-    // It must not be derived from the other role's list.
-    expect(src).not.toContain('TRANSFER_MANAGER_LEGACY_DEFAULTS = MONTHLY_STATUS_OFFICER_DEFAULTS');
-    expect(src).not.toContain('...MONTHLY_STATUS_OFFICER_DEFAULTS');
+    expect(src).not.toMatch(/TRANSFER_MANAGER_LEGACY_DEFAULTS\s*=\s*\.\.\./);
   });
 
   it('no retained role can inherit a 062 key', () => {
@@ -119,24 +116,12 @@ describe('B3. transfer_manager inherits no new 062 permission', () => {
   });
 
   it('an explicit override is still the only way to grant it a new key', () => {
-    // Overrides are a deliberate, audited administrative act; inheritance is not.
-    // This documents that the frozen list removes the accident, not the decision.
     const eff = effectivePermissions('transfer_manager', {});
     expect(eff.has('reports.view')).toBe(false);
   });
 });
 
-describe('B4. today\'s privileges are preserved — nothing is escalated or dropped', () => {
-  it('keeps the exact legacy set migration 010 copied from monthly_status_officer', () => {
-    // 010: `select 'transfer_manager', permission_key, allowed from
-    // role_permission_defaults where role = 'monthly_status_officer'`.
-    // Today the two must still agree on every PRE-062 key — this phase changes
-    // no privilege, it only stops the list from tracking future edits.
-    const tm = roleDefaults('transfer_manager');
-    const mso = roleDefaults('monthly_status_officer');
-    expect([...tm].sort()).toEqual([...mso].sort());
-  });
-
+describe('B4. transfer_manager\'s historical privileges are preserved unchanged', () => {
   it('still has alert acknowledge only, matching the committed lifecycle matrix', () => {
     const d = roleDefaults('transfer_manager');
     expect(d.has('inter_institution_alerts.acknowledge')).toBe(true);
@@ -145,7 +130,7 @@ describe('B4. today\'s privileges are preserved — nothing is escalated or drop
     expect(d.has('inter_institution_alerts.dismiss')).toBe(false);
   });
 
-  it('holds no permission it did not hold before this phase', () => {
+  it('holds exactly the frozen pre-091 permission set — the removal of monthly_status_officer did not touch this independent copy', () => {
     const d = roleDefaults('transfer_manager');
     expect([...d].sort()).toEqual([
       'availability.movements.view',
@@ -171,7 +156,8 @@ describe('B6. the authorization context preserves the original role', () => {
     // scoped helper looks the role up itself, and handing it a frontend
     // normalization would ask it about a different role than the one stored.
     expect(ctx).toContain('role:              profile?.role ?? null,');
-    // Specifically NOT the display role, whose fallback is 'viewer'.
+    // Specifically NOT the display role, whose unknown-role fallback is
+    // 'outlet_officer' (PHOENIX-FIVE-ROLE-CUTOVER-091 removed viewer).
     expect(ctx).not.toContain('role: normalizeRole(');
     expect(ctx).not.toContain("role:              role,");
   });
@@ -184,7 +170,7 @@ describe('B6. the authorization context preserves the original role', () => {
       organizationId: 'org-1', legacyPermissions: new Set(),
     });
     expect(svc.getContext().role).toBe('transfer_manager');
-    expect(svc.getContext().role).not.toBe('monthly_status_officer');
+    expect(svc.getContext().role).not.toBe('super_admin');
   });
 
   it('a legacy role is never enforced as super_admin by the pilot', async () => {
@@ -226,7 +212,6 @@ describe('B7. shadow diagnostics report the literal role without escalation', ()
     // A diagnostic that renamed the role would make the mismatch report unusable
     // for exactly the role this phase exists to disambiguate.
     expect(emitted[0].role).toBe('transfer_manager');
-    expect(emitted[0].role).not.toBe('monthly_status_officer');
     expect(emitted[0].role).not.toBe('super_admin');
   });
 });
@@ -243,31 +228,31 @@ describe('B5. unrelated roles are unchanged', () => {
     for (const r of OFFICIAL_ROLES) expect(normalizeRole(r)).toBe(r);
   });
 
-  it('unknown and empty roles still fall back to viewer', () => {
-    for (const r of ['nonsense', '', null, undefined]) {
-      expect(normalizeRole(r as string)).toBe('viewer');
+  it('unknown, empty, and removed (monthly_status_officer/viewer) roles fall back to the zero-permission outlet_officer, never to a privileged role', () => {
+    for (const r of ['nonsense', '', null, undefined, 'monthly_status_officer', 'viewer']) {
+      expect(normalizeRole(r as string)).toBe('outlet_officer');
     }
   });
 
-  it('monthly_status_officer itself is untouched', () => {
+  it('monthly_status_officer is no longer a distinct authorization identity', () => {
+    // PHOENIX-FIVE-ROLE-CUTOVER-091: removed with no successor mapping (its
+    // audited status_center/status_contacts keys go unheld by any role until
+    // Phase 1c's monthly-status redesign adds new scoped keys).
     const d = roleDefaults('monthly_status_officer');
-    expect(d.has('status_center.create')).toBe(true);
-    expect(d.has('inter_institution_alerts.acknowledge')).toBe(true);
-    expect(d.has('status_contacts.manage')).toBe(true);
+    expect(d.size).toBe(0);
   });
 
-  it('super_admin is not reachable from any legacy role', () => {
-    for (const r of ['transfer_manager', 'warehouse_manager', 'port_officer', 'point_operator', 'hospital_admin', 'nonsense']) {
+  it('super_admin is not reachable from any legacy or removed role', () => {
+    for (const r of [
+      'transfer_manager', 'warehouse_manager', 'port_officer', 'point_operator',
+      'hospital_admin', 'nonsense', 'monthly_status_officer', 'viewer',
+    ]) {
       expect(normalizeRole(r)).not.toBe('super_admin');
     }
   });
 });
 
-describe('B8. migration 066 operational roles are explicit and fail closed', () => {
-  const migration066 = readFileSync(
-    join(__dirname, '../../../../supabase/migrations/066_phoenix_inventory_network_expand.sql'),
-    'utf8',
-  );
+describe('B8. migration 066 legacy operational roles remain explicit and fail closed', () => {
   const strings = readFileSync(join(__dirname, '../../i18n/strings.ts'), 'utf8');
   const permissions = readFileSync(join(__dirname, '../permissions.ts'), 'utf8');
   const createUser = readFileSync(
@@ -279,18 +264,14 @@ describe('B8. migration 066 operational roles are explicit and fail closed', () 
     'utf8',
   );
 
-  it('offers the approved seven roles and retires port_officer from creation', () => {
+  it('offers exactly the five canonical roles (PHOENIX-FIVE-ROLE-CUTOVER-091)', () => {
     expect(OFFICIAL_ROLES).toEqual([
       'super_admin', 'institution_admin', 'central_warehouse_manager',
-      'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer',
+      'warehouse_officer', 'outlet_officer',
     ]);
     expect(OFFICIAL_ROLES).not.toContain('port_officer');
-  });
-
-  it('mirrors the role values accepted by migration 066', () => {
-    for (const role of [...OFFICIAL_ROLES, ...LEGACY_AUTHORIZATION_ROLES, 'hospital_admin']) {
-      expect(migration066).toContain(`'${role}'`);
-    }
+    expect(OFFICIAL_ROLES).not.toContain('monthly_status_officer');
+    expect(OFFICIAL_ROLES).not.toContain('viewer');
   });
 
   it('new roles have bilingual labels and literal authorization identity', () => {
@@ -298,6 +279,11 @@ describe('B8. migration 066 operational roles are explicit and fail closed', () 
     expect(normalizeRole('outlet_officer')).toBe('outlet_officer');
     expect(strings).toContain('orole_central_warehouse_manager:');
     expect(strings).toContain('orole_outlet_officer:');
+  });
+
+  it('no longer carries monthly_status_officer/viewer labels', () => {
+    expect(strings).not.toContain('orole_monthly_status_officer');
+    expect(strings).not.toContain('orole_viewer');
   });
 
   it('uses narrow offline fallbacks until the 066 catalog lands', () => {
@@ -310,7 +296,7 @@ describe('B8. migration 066 operational roles are explicit and fail closed', () 
     expect(permissions).not.toContain('...PORT_OFFICER_DEFAULTS');
   });
 
-  it('server allowlists accept the new roles and stop creating port_officer', () => {
+  it('server allowlists offer exactly the five canonical roles', () => {
     for (const source of [createUser, recycleUser]) {
       const allowlist = source.slice(
         source.indexOf('const OFFICIAL_ROLES'),
@@ -319,13 +305,22 @@ describe('B8. migration 066 operational roles are explicit and fail closed', () 
       expect(allowlist).toContain("'central_warehouse_manager'");
       expect(allowlist).toContain("'outlet_officer'");
       expect(allowlist).not.toContain("'port_officer'");
+      expect(allowlist).not.toContain("'monthly_status_officer'");
+      expect(allowlist).not.toContain("'viewer'");
     }
   });
 
   it('reserves central manager assignment for super_admin on both server paths', () => {
+    // create keeps its distinct pre-check message (no existence-oracle surface).
     expect(createUser).toContain("role === 'central_warehouse_manager' && !isSuper");
     expect(createUser).toContain('CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER');
-    expect(recycleUser).toContain("newRole === 'central_warehouse_manager'");
-    expect(recycleUser).toContain('CANNOT_ASSIGN_ELEVATED_ROLE');
+    // recycle now enforces the same rule inside the atomic contract (migration
+    // 093, phoenix_recycle_apply), which the Edge Function delegates to.
+    expect(recycleUser).toContain('phoenix_recycle_apply');
+    const mig = readFileSync(
+      join(__dirname, '../../../../supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql'),
+      'utf8');
+    expect(mig).toContain("p_new_role in ('super_admin','institution_admin','central_warehouse_manager')");
+    expect(mig).toContain("'cannot_assign_elevated_role'");
   });
 });

@@ -433,7 +433,7 @@ html body {
   }
 
   .nexus-shell .premium-command-trigger {
-    bottom: calc(var(--bnh) + var(--nx-seal-clearance, 46px) + 10px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(var(--bnh) + 12px + env(safe-area-inset-bottom, 0px)) !important;
     inset-inline-end: 14px !important;
   }
 
@@ -883,7 +883,14 @@ html body {
   line-height: 1.7;
 }
 
-[dir="rtl"] @keyframes nexus-ember-rise {
+/* PHASE3-LIVING-INTERFACE-A: this used to carry an invalid "[dir=\"rtl\"] "
+   selector prefix directly on an @keyframes rule (not valid CSS — a
+   keyframes block can't be scoped by an ancestor selector), which esbuild's
+   CSS minifier silently dropped at build time, so neither the login art
+   embers (line ~811) nor the welcome embers (line ~1994) ever animated in
+   the production bundle. Both consumers are already direction-agnostic
+   (translate3d is a physical, not logical, offset intentionally). */
+@keyframes nexus-ember-rise {
   0% { transform: translate3d(0, 0, 0) scale(.5); opacity: 0; }
   12% { opacity: .78; }
   100% { transform: translate3d(18px, -105vh, 0) scale(1.2); opacity: 0; }
@@ -1572,6 +1579,59 @@ html body {
   font-weight: 680;
 }
 
+
+/* ── PHARMACY-PULSE-LOADER — "نبض الصيدلة" ─────────────────────────────────── */
+.nexus-pulse {
+  display: inline-flex;
+  /* 300ms reveal delay: operations faster than that never show a loader. */
+  opacity: 0;
+  animation: nexus-pulse-reveal .01s linear .3s forwards;
+}
+.nexus-pulse--sm { vertical-align: middle; }
+@keyframes nexus-pulse-reveal { to { opacity: 1; } }
+.nexus-pulse__bowl { stroke: var(--gold, #DDBA63); }
+.nexus-pulse__serpent {
+  stroke: color-mix(in srgb, var(--gold, #DDBA63) 55%, var(--sec, #24C5AA));
+  stroke-dasharray: 64;
+  stroke-dashoffset: 64;
+  animation: nexus-pulse-coil 2.4s cubic-bezier(.45,.05,.35,.95) infinite;
+}
+.nexus-pulse__head {
+  fill: var(--sec, #24C5AA);
+  opacity: 0;
+  animation: nexus-pulse-head 2.4s linear infinite;
+}
+.nexus-pulse__halo {
+  stroke: color-mix(in srgb, var(--sec, #24C5AA) 60%, transparent);
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-origin: 50% 47%;
+  animation: nexus-pulse-halo 2.4s ease-out infinite;
+}
+@keyframes nexus-pulse-coil {
+  0% { stroke-dashoffset: 64; }
+  70% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes nexus-pulse-head {
+  0%, 62% { opacity: 0; }
+  72%, 100% { opacity: 1; }
+}
+@keyframes nexus-pulse-halo {
+  0%, 74% { opacity: 0; transform: scale(.6); }
+  84% { opacity: .55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+/* Reduced motion: static emblem with a gentle pulse only. */
+@media (prefers-reduced-motion: reduce) {
+  .nexus-pulse__serpent { animation: none; stroke-dashoffset: 0; }
+  .nexus-pulse__head { animation: none; opacity: 1; }
+  .nexus-pulse__halo { animation: nexus-pulse-halo-soft 3s ease-in-out infinite; }
+  @keyframes nexus-pulse-halo-soft { 0%,100% { opacity: 0; } 50% { opacity: .3; } }
+}
+/* Hidden pages pause the pulse entirely (marker set by PhoenixAppShell). */
+html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important; }
+
 .nexus-loading {
   display: flex;
   flex-direction: column;
@@ -1710,10 +1770,17 @@ html body {
 }
 
 /* When the real WebGL welcome is on screen, stop the duplicated CSS embers and
-   the extra glow so the GPU only pays for one particle system. */
-.nexus-welcome[data-webgl="on"] .nexus-welcome__particle,
-.nexus-welcome[data-webgl="on"] @media (prefers-reduced-motion: reduce) {
-  /* A static plate must never carry a parallax transform. */
+   the extra glow so the GPU only pays for one particle system.
+   PHASE3-LIVING-INTERFACE-A: this used to be one malformed rule (a selector
+   list ending in a bare "@media (...)" token, which is invalid CSS — no
+   browser parses a media query as part of a selector) so the reduced-motion
+   override below silently never applied. Split into two valid rules. */
+.nexus-welcome[data-webgl="on"] .nexus-welcome__particle {
+  display: none;
+}
+
+/* A static plate must never carry a parallax transform. */
+@media (prefers-reduced-motion: reduce) {
   [data-parallax="2d"] .nexus-login__plate {
     transform: none;
     transition: none;
@@ -2323,22 +2390,15 @@ html body {
   background: color-mix(in srgb, var(--nx-surface) 72%, transparent);
 }
 @media (max-width: 767px) {
+  /* RIGHTS-SEAL-IN-FLOW: the mobile seal is part of the page's normal flow
+     (end of the main scroller) — no fixed/sticky/absolute positioning. It can
+     never cover content and respects the device safe area via the scroller's
+     own padding. Aspect ratio preserved (no transforms). */
   .nexus-shell__brand {
-    position: fixed;
-    inset-inline: 0;
-    bottom: calc(var(--bnh, 64px) + 4px + env(safe-area-inset-bottom, 0px));
-    z-index: 5; /* above content, the bottom nav sits higher and is never covered */
     justify-content: center;
-    padding: 0;
-    border-top: 0;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--nx-line);
     background: transparent;
-    pointer-events: none;
-    /* MOBILE-SCROLL-OWNER-HOTFIX-A: shrink the pinned seal so the reserved
-       clearance band (--nx-seal-clearance) stays small; the seal itself is
-       inert and lives entirely inside the main scroller's bottom padding, so
-       it can never obscure a field or card. */
-    transform: scale(.78);
-    transform-origin: center bottom;
   }
 }
 /* Full-screen state surfaces: minimal seal below the state content. */

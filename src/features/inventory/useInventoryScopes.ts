@@ -27,6 +27,8 @@ export interface InventoryScopeOption {
   nameAr: string;
   /** Parent warehouse id for outlets. */
   warehouseId: string | null;
+  /** 'central' | 'institution' for a warehouse-kind option; null for an outlet. */
+  warehouseKind: 'central' | 'institution' | null;
 }
 
 export interface InventoryScopeCatalog {
@@ -43,11 +45,11 @@ export interface InventoryScopeCatalog {
 }
 
 function toWhOption(w: Warehouse): InventoryScopeOption {
-  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null };
+  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind };
 }
 
 function toOutletOption(p: DistributionPoint): InventoryScopeOption {
-  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId };
+  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null };
 }
 
 export function useInventoryScopes(

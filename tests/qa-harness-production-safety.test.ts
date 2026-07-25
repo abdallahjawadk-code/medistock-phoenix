@@ -81,11 +81,28 @@ describe('QA harness is excluded from production builds', () => {
     // with NODE_ENV=production, so we pin it here. VITE_ENABLE_VISUAL_QA=true
     // is the adversarial case: even with the opt-in flag on, a production build
     // must still strip the harness because import.meta.env.DEV is false.
-    execSync('npm run build', {
-      cwd: ROOT,
-      stdio: 'ignore',
-      env: { ...process.env, NODE_ENV: 'production', VITE_ENABLE_VISUAL_QA: 'true' },
-    });
+    try {
+      execSync('npm run build', {
+        cwd: ROOT,
+        stdio: 'pipe',
+        encoding: 'utf8',
+        env: { ...process.env, NODE_ENV: 'production', VITE_ENABLE_VISUAL_QA: 'true' },
+      });
+    } catch (error) {
+      const failure = error as {
+        status?: number | null;
+        stdout?: string | Buffer;
+        stderr?: string | Buffer;
+      };
+      throw new Error([
+        'QA production build failed.',
+        `status: ${failure.status ?? 'unknown'}`,
+        'STDOUT:',
+        String(failure.stdout ?? ''),
+        'STDERR:',
+        String(failure.stderr ?? ''),
+      ].join('\n'));
+    }
   }, 180_000);
 
   it('emits a dist/ bundle', () => {

@@ -59,14 +59,17 @@ export async function getOutletStock(distributionPointId: string): Promise<Outle
 }
 
 /**
- * CANONICAL-STOCK-CUTOVER (migration 086): correct one outlet_stock LOT's on-hand
- * quantity to an absolute counted value via the guarded RPC. This is the only
- * outlet correction path — it operates on canonical outlet_stock, never
- * item_availability (which is now a read-only projection). The RPC is idempotent
- * on requestId, non-negative, reservation-safe, reason-mandatory, outlet-scoped,
- * and writes an append-only 'correction' movement + audit row. expectedGeneration
- * (the lot's last-read generation) makes a stale correction fail closed with a
- * conflict rather than silently overwrite a fresher count.
+ * SECOND-PERSON-CORRECTION-APPROVAL (migration 098): correct one outlet_stock
+ * LOT's on-hand quantity to an absolute counted value via the REQUEST RPC —
+ * never the bare guarded RPC directly. `phoenix_request_outlet_stock_correction`
+ * applies immediately ONLY when the variance is within the organization's
+ * configured threshold (fail-closed default 0); any larger variance is queued
+ * as a pending request that a DIFFERENT authorized person must approve or
+ * reject — the proposer can never approve their own request, enforced
+ * server-side by profile identity, not role. This is still the only outlet
+ * correction entry point — it operates on canonical outlet_stock, never
+ * item_availability — and is idempotent on requestId, non-negative,
+ * reservation-safe, reason-mandatory, outlet-scoped.
  */
 export interface CorrectOutletStockInput {
   requestId: string;
@@ -80,16 +83,26 @@ export interface CorrectOutletStockInput {
 export interface CorrectOutletStockResult {
   ok: boolean;
   idempotentReplay: boolean;
-  outletStockId: string;
-  movementId: string;
-  quantityBefore: number;
-  quantityDelta: number;
-  quantityAfter: number;
+  /** true when this landed as a PENDING request awaiting a second person —
+   *  outlet_stock was NOT touched; false when it applied immediately
+   *  (variance within the org's configured threshold). */
+  requiresApproval: boolean;
+  /** Populated only when requiresApproval is true. */
+  correctionRequestId?: string;
+  status?: 'pending' | 'approved' | 'rejected';
+  variance?: number;
+  threshold?: number;
+  /** Populated only when the correction applied immediately. */
+  outletStockId?: string;
+  movementId?: string;
+  quantityBefore?: number;
+  quantityDelta?: number;
+  quantityAfter?: number;
 }
 
 export async function correctOutletStock(input: CorrectOutletStockInput): Promise<CorrectOutletStockResult> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
-  const { data, error } = await supabase.rpc('phoenix_count_outlet_stock_guarded', {
+  const { data, error } = await supabase.rpc('phoenix_request_outlet_stock_correction', {
     p_request_id:          input.requestId,
     p_outlet_stock_id:     input.outletStockId,
     p_counted_quantity:    input.countedQuantity,
@@ -99,12 +112,20 @@ export async function correctOutletStock(input: CorrectOutletStockInput): Promis
   });
   if (error) throw error;
   const r = data as {
-    ok: boolean; idempotent_replay: boolean; outlet_stock_id: string; movement_id: string;
-    quantity_before: number; quantity_delta: number; quantity_after: number;
+    ok: boolean; idempotent_replay?: boolean; requires_approval: boolean;
+    correction_request_id?: string; status?: 'pending' | 'approved' | 'rejected';
+    variance?: number; threshold?: number;
+    outlet_stock_id?: string; movement_id?: string;
+    quantity_before?: number; quantity_delta?: number; quantity_after?: number;
   };
   return {
     ok: r.ok,
-    idempotentReplay: r.idempotent_replay,
+    idempotentReplay: r.idempotent_replay ?? false,
+    requiresApproval: r.requires_approval,
+    correctionRequestId: r.correction_request_id,
+    status: r.status,
+    variance: r.variance,
+    threshold: r.threshold,
     outletStockId: r.outlet_stock_id,
     movementId: r.movement_id,
     quantityBefore: r.quantity_before,
@@ -114,9 +135,9 @@ export async function correctOutletStock(input: CorrectOutletStockInput): Promis
 }
 
 /**
- * Classify a phoenix_count_outlet_stock_guarded failure into an i18n string key.
- * 40001 generation conflict is the "reload and retry" case; the rest are the
- * 067/086 validation vocabulary.
+ * Classify a phoenix_request_outlet_stock_correction failure into an i18n
+ * string key. 40001 generation conflict is the "reload and retry" case; the
+ * rest are the 067/086/098 validation vocabulary.
  */
 export function classifyOutletCorrectionError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
@@ -126,6 +147,131 @@ export function classifyOutletCorrectionError(error: unknown): string {
   if (message.includes('counted_quantity_must_be_non_negative')) return 'outlet_correct_negative';
   if (message.includes('outlet_count_reason_required')) return 'outlet_correct_reason_required';
   if (message.includes('request_id_conflict')) return 'outlet_correct_request_conflict';
+  if (code === '42501' || /forbidden/.test(message)) return 'outlet_correct_forbidden';
+  return 'load_error';
+}
+
+// ─── Second-person approval — pending list + approve/reject (098) ───────────
+
+export interface PendingOutletCorrection {
+  id: string;
+  outletStockId: string;
+  onHandBefore: number;
+  countedQuantity: number;
+  variance: number;
+  reason: string;
+  notes: string | null;
+  proposedBy: string;
+  proposedByName: string | null;
+  proposedAt: string;
+  /** Enriched client-side from outlet_stock — the row may have moved since
+   *  the request was proposed, so this is read fresh, not snapshotted. */
+  scientificName: string | null;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  distributionPointId: string | null;
+  /** Server-owned generation of the underlying outlet_stock row RIGHT NOW —
+   *  read alongside the request so approve/reject can pass a live guard. */
+  currentGeneration: number | null;
+  currentOnHand: number | null;
+}
+
+interface PendingOutletCorrectionDbRow {
+  id: string; outlet_stock_id: string; on_hand_before: number; counted_quantity: number;
+  variance: number; reason: string; notes: string | null; proposed_by: string; proposed_at: string;
+}
+
+/** Every PENDING outlet correction request in the caller's organization (RLS-scoped). */
+export async function listPendingOutletCorrections(): Promise<PendingOutletCorrection[]> {
+  if (!supabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('phoenix_stock_correction_requests')
+    .select('id, outlet_stock_id, on_hand_before, counted_quantity, variance, reason, notes, proposed_by, proposed_at')
+    .eq('status', 'pending')
+    .order('proposed_at', { ascending: true });
+  if (error) throw error;
+  const rows = (data as unknown as PendingOutletCorrectionDbRow[] | null) ?? [];
+  if (rows.length === 0) return [];
+
+  const stockIds = Array.from(new Set(rows.map(r => r.outlet_stock_id)));
+  const proposerIds = Array.from(new Set(rows.map(r => r.proposed_by)));
+  const [{ data: stockRows, error: stockError }, { data: profileRows, error: profileError }] = await Promise.all([
+    supabase.from('outlet_stock')
+      .select('id, scientific_name, batch_number, expiry_date, distribution_point_id, on_hand_quantity, movement_seq')
+      .in('id', stockIds),
+    supabase.from('profiles').select('id, full_name').in('id', proposerIds),
+  ]);
+  if (stockError) throw stockError;
+  if (profileError) throw profileError;
+  interface StockLookupRow {
+    id: string; scientific_name: string | null; batch_number: string | null; expiry_date: string | null;
+    distribution_point_id: string | null; on_hand_quantity: number; movement_seq: number | string;
+  }
+  interface ProfileLookupRow { id: string; full_name: string | null }
+  const stockById = new Map((stockRows as StockLookupRow[] ?? []).map(s => [s.id, s]));
+  const nameById = new Map((profileRows as ProfileLookupRow[] ?? []).map(p => [p.id, p.full_name]));
+
+  return rows.map(r => {
+    const stock = stockById.get(r.outlet_stock_id);
+    return {
+      id: r.id, outletStockId: r.outlet_stock_id, onHandBefore: r.on_hand_before,
+      countedQuantity: r.counted_quantity, variance: r.variance, reason: r.reason, notes: r.notes,
+      proposedBy: r.proposed_by, proposedByName: nameById.get(r.proposed_by) ?? null, proposedAt: r.proposed_at,
+      scientificName: stock?.scientific_name ?? null, batchNumber: stock?.batch_number ?? null,
+      expiryDate: stock?.expiry_date ?? null, distributionPointId: stock?.distribution_point_id ?? null,
+      currentGeneration: stock ? Number(stock.movement_seq) : null,
+      currentOnHand: stock?.on_hand_quantity ?? null,
+    };
+  });
+}
+
+export interface CorrectionDecisionResult {
+  ok: boolean;
+  quantityBefore?: number;
+  quantityAfter?: number;
+}
+
+/** A DIFFERENT authorized person approves — applies the correction inline, server-side. */
+export async function approveOutletStockCorrection(
+  correctionRequestId: string, expectedGeneration: number | null,
+): Promise<CorrectionDecisionResult> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.rpc('phoenix_approve_outlet_stock_correction', {
+    p_correction_request_id: correctionRequestId,
+    p_expected_generation: expectedGeneration,
+  });
+  if (error) throw error;
+  const r = data as { ok: boolean; quantity_before?: number; quantity_after?: number };
+  return { ok: r.ok, quantityBefore: r.quantity_before, quantityAfter: r.quantity_after };
+}
+
+/** Rejects a pending request — no stock write of any kind. */
+export async function rejectOutletStockCorrection(
+  correctionRequestId: string, decisionReason: string,
+): Promise<{ ok: boolean }> {
+  if (!supabaseConfigured) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.rpc('phoenix_reject_outlet_stock_correction', {
+    p_correction_request_id: correctionRequestId,
+    p_decision_reason: decisionReason,
+  });
+  if (error) throw error;
+  return { ok: (data as { ok: boolean }).ok };
+}
+
+/**
+ * Classify an approve/reject failure. 'proposer_cannot_approve_own_correction'
+ * and 'forbidden_correction_approval' are both fail-closed authorization
+ * refusals, never a partial application.
+ */
+export function classifyCorrectionDecisionError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  const message = (error as { message?: string } | null)?.message ?? '';
+  if (code === '40001' || message.includes('outlet_stock_generation_conflict')) return 'outlet_correct_generation_conflict';
+  if (message.includes('proposer_cannot_approve_own_correction')) return 'correction_proposer_cannot_approve';
+  if (message.includes('forbidden_correction_approval')) return 'correction_forbidden_approval';
+  if (message.includes('correction_request_not_pending')) return 'correction_not_pending';
+  if (message.includes('correction_request_not_found')) return 'correction_not_found';
+  if (message.includes('decision_reason_required')) return 'correction_reason_required';
   if (code === '42501' || /forbidden/.test(message)) return 'outlet_correct_forbidden';
   return 'load_error';
 }

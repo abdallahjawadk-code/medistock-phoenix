@@ -73,6 +73,7 @@ export function buildSupplyRequestReceipt(input: {
     currency: null,
     priceBasis: null,
     supplyType: null,
+    purchaseOrigin: null,
     notes: l.notes,
     originalSupplyReference: null,
   }));
@@ -130,6 +131,7 @@ export function buildSupplyDispatchReceipt(input: {
     currency: l.currency,
     priceBasis: l.priceBasis,
     supplyType: l.supplyTypeText,
+    purchaseOrigin: (l as { purchaseOrigin?: string | null }).purchaseOrigin ?? null,
     notes: null,
     originalSupplyReference: l.transferRequestLineId,
   }));

@@ -64,17 +64,18 @@ describe('every required UI state is present', () => {
   });
 });
 
-describe('the historical-timeline limitation is stated plainly', () => {
-  it('shows the timeline-unavailable note', () => {
-    expect(view).toContain("t('or_status_timeline_note'");
-    const note = strings.split('\n').find(l => l.trimStart().startsWith('or_status_timeline_note:'));
-    expect(note).toMatch(/timeline is unavailable/i);
+describe('MOVEMENT-TRACKING-MERGE: the server-authoritative timeline is live', () => {
+  it('consumes the 081/082 phoenix_movement_timeline RPC and dropped the unavailable copy', () => {
+    expect(view).toContain('getMovementTimeline');
+    expect(view).not.toContain('or_status_timeline_note');
+    expect(strings).not.toContain('or_status_timeline_note');
   });
 });
 
 describe('the view is mounted and reachable in Screen 18', () => {
-  it('adds a status tab that renders CurrentMovementStatus', () => {
+  it('lives inside the merged Movement History & Tracking tab (no separate status tab)', () => {
     expect(screen).toContain('<CurrentMovementStatus');
-    expect(screen).toContain("{ id: 'status', labelKey: 'or_tab_status' }");
+    expect(screen).not.toContain("or_tab_status");
+    expect(screen).toContain("{ id: 'history', labelKey: 'or_tab_history' }");
   });
 });

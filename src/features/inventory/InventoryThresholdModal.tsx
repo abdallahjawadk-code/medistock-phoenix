@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -221,19 +222,21 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
           </div>
         )}
 
-        <PhoenixInput
-          label={t('inv_th_scientific_name', lang)}
-          value={scientificName}
-          onChange={e => setScientificName(e.target.value)}
-          disabled={identityLocked}
-          dir="auto"
-        />
-        <PhoenixInput
-          label={t('inv_th_national_code', lang)}
-          value={nationalCode}
-          onChange={e => setNationalCode(e.target.value)}
-          disabled={identityLocked}
-        />
+        {/* REGISTERED-MATERIAL-ONLY: identity comes from the unified resolver —
+            free text is a FILTER, never a new material. Editing an existing
+            threshold keeps its locked identity (no re-typing possible). */}
+        {!identityLocked && (
+          <PhoenixMaterialResolver
+            lang={lang}
+            onSelect={m => { setScientificName(m.scientificName); setNationalCode(m.nationalCode ?? ''); }}
+          />
+        )}
+        {(identityLocked || scientificName) && (
+          <div style={{ fontSize: '12px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--s2)', border: '1px solid var(--brd)' }} dir="auto">
+            <strong>{scientificName || '—'}</strong>
+            {nationalCode ? <span dir="ltr" style={{ color: 'var(--t2)' }}> · {nationalCode}</span> : null}
+          </div>
+        )}
 
         {identityLocked && (
           <div role="note" style={{ fontSize: '10.5px', color: 'var(--t2)' }} dir="auto">

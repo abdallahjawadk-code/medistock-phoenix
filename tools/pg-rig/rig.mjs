@@ -121,8 +121,47 @@ export async function buildRig({ upTo = Infinity, log = () => {} } = {}) {
     if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
     log(`applied ${f}`);
   }
+  // The migration-apply client is never needed again once the pool below
+  // exists — leaving it open leaked one idle connection per buildRig() call
+  // for that call's entire lifetime (the error path a few lines up already
+  // closed it; the success path did not). A leaked idle client with no
+  // 'error' listener gets forcibly terminated by the NEXT test file's own
+  // freshRigDb() -> DROP DATABASE ... WITH (FORCE), which — with no listener
+  // — surfaces as an uncaught exception in whatever suite happens to be
+  // running when that async socket event lands, producing nondeterministic
+  // cross-suite failures under a full serial *.dynamic.test.ts run.
+  await c.end();
 
   const pool = new pg.Pool({ connectionString: rigUrl(), max: 8 });
+  // node-postgres emits 'error' on the pool when an IDLE client is terminated
+  // by the backend rather than by us — exactly what happens to a lingering
+  // connection from a PRIOR suite's already-`rig.end()`-ed pool when the NEXT
+  // suite's freshRigDb() runs `DROP DATABASE ... WITH (FORCE)` a few ms later
+  // than the OS finishes tearing down that prior socket. Without a listener
+  // here, that benign, already-irrelevant error surfaces as an uncaught
+  // exception in whatever suite happens to be running at that moment (Node's
+  // documented behavior for an EventEmitter's unhandled 'error' event) —
+  // observed as nondeterministic cross-suite failures when running the full
+  // *.dynamic.test.ts battery serially. This is not a bug in the rig chain or
+  // in any individual suite; it is exactly the scenario node-postgres' own
+  // docs warn every Pool consumer to guard against.
+  //
+  // Only that ONE specific, expected shutdown/teardown signature is ignored —
+  // '57P01' (terminating connection due to administrator command, exactly
+  // what DROP DATABASE ... WITH (FORCE) sends) and the ECONNRESET/"Connection
+  // terminated unexpectedly" that immediately follows it on the same socket.
+  // Anything else (a real query error surfaced at the wrong layer, a genuine
+  // connectivity fault, an auth failure, ...) is NOT silently swallowed — it
+  // is re-thrown so it still fails the run loudly, matching the "no
+  // continue-on-error" requirement for this rig everywhere else.
+  pool.on('error', (err) => {
+    const benignTeardown =
+      err?.code === '57P01' ||
+      err?.code === 'ECONNRESET' ||
+      /terminating connection due to administrator command/i.test(err?.message ?? '') ||
+      /Connection terminated unexpectedly/i.test(err?.message ?? '');
+    if (!benignTeardown) throw err;
+  });
 
   // Run `fn` inside a txn impersonating `userId` as the authenticated role, so
   // in-function auth.uid() resolves and RLS is genuinely enforced (the role is
