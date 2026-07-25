@@ -308,7 +308,16 @@ describe('no client-side document-number sequence exists', () => {
     // with a hardcoded 'transferred' reason_code and a fresh correlation_id
     // per dispatch line -- again no sequence, no document number, nothing
     // client-computed. The ceiling moves to 132.
-    const beyond = migrations.filter(f => /^(13[2-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 132 (MOVEMENT-REASON-CODE-GROUP-G-QUARANTINE-132) adds NO document
+    // numbering either -- phoenix_release_quarantine_stock and
+    // phoenix_destroy_quarantine_stock each get reason_code wired from the
+    // already-locked v_q.quarantine_reason (no new parameter, no free-text
+    // mapping), and chain correlation_id/causation_id from the most recent
+    // PRIOR movement against the same quarantine lot (a real, queryable
+    // predecessor row id, never a sequence or document number). No ALTER
+    // TABLE, no DROP FUNCTION, no signature change anywhere in 132. The
+    // ceiling moves to 133.
+    const beyond = migrations.filter(f => /^(13[3-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

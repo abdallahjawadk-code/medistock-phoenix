@@ -192,6 +192,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '129_phoenix_movement_reason_code_group_d_direct_supply.sql',
   '130_phoenix_movement_reason_code_group_e_procurement.sql',
   '131_phoenix_movement_reason_code_group_f_outlet.sql',
+  '132_phoenix_movement_reason_code_group_g_quarantine.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
