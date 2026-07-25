@@ -27,12 +27,16 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
+import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
 import { OutletStockCorrectionModal } from './OutletStockCorrectionModal';
+import { DispenseContextDialog } from './DispenseContextDialog';
+import { DispenseContextViewer } from './DispenseContextViewer';
 import { CurrentMovementStatus } from './CurrentMovementStatus';
-import { getOutletStock, getOutletStockMovements, type OutletStockRow } from './outlet-stock.service';
+import { getOutletStock, getOutletStockMovements, type OutletStockRow, type OutletMovementRow } from './outlet-stock.service';
+import { getDispenseContext, type DispenseContext } from './dispense-context.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 import { getPaperReference } from '@/features/movement/paper-reference.service';
@@ -137,7 +141,7 @@ export function OutletOperationsScreen() {
       {tab === 'history' && (
         <div style={{ display: 'grid', gap: '18px' }}>
           <CurrentMovementStatus lang={lang} />
-          <OutletHistoryTab distributionPointId={activeOutlet.id} lang={lang} />
+          <OutletHistoryTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />
         </div>
       )}
     </div>
@@ -265,9 +269,22 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
   );
 }
 
-/** Tab 4 — read-only movement ledger. */
-function OutletHistoryTab({ distributionPointId, lang }: { distributionPointId: string; lang: 'ar' | 'en' }) {
+/**
+ * Tab 4 — read-only movement ledger. The ONE deliberate exception, exactly
+ * mirroring OutletStockTab's correction affordance: a 'dispense' row may
+ * carry a MOVEMENT-DISPENSE-CONTEXT (134) record — WHO/WHAT it was for. The
+ * action is shown only to actors holding the scoped movement_context.record
+ * permission on this outlet (useMovementContextRecordPermission); anyone
+ * else who can see the row still sees the recorded context (server-masked
+ * per their own view_sensitive standing), just not the record action.
+ */
+function OutletHistoryTab({ orgId, distributionPointId, lang }: { orgId: string | null; distributionPointId: string; lang: 'ar' | 'en' }) {
   const history = useAsync(() => getOutletStockMovements(distributionPointId), [distributionPointId]);
+  const contextPerm = useMovementContextRecordPermission(orgId, distributionPointId);
+  const canRecordContext = contextPerm.data === true;
+  const [contextMovement, setContextMovement] = useState<OutletMovementRow | null>(null);
+  const [contextReloadKey, setContextReloadKey] = useState(0);
+
   if (history.loading && !history.data) return <PhoenixLoadingState />;
   const rows = history.data ?? [];
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('or_history_none', lang)} />;
@@ -286,6 +303,15 @@ function OutletHistoryTab({ distributionPointId, lang }: { distributionPointId: 
                 {r.movementType} · {dash(r.actorName)} · {new Date(r.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
                 {r.reason ? ` · ${r.reason}` : ''}
               </div>
+              {r.movementType === 'dispense' && (
+                <DispenseContextSlot
+                  key={`${r.id}-${contextReloadKey}`}
+                  movementId={r.id}
+                  lang={lang}
+                  canRecord={canRecordContext}
+                  onRecordClick={() => setContextMovement(r)}
+                />
+              )}
             </div>
             <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>
               {r.onHandDelta >= 0 ? '+' : ''}{r.onHandDelta}
@@ -294,6 +320,39 @@ function OutletHistoryTab({ distributionPointId, lang }: { distributionPointId: 
           </div>
         </PhoenixCard>
       ))}
+
+      <DispenseContextDialog
+        open={contextMovement !== null}
+        movement={contextMovement}
+        lang={lang}
+        canRecord={canRecordContext}
+        onClose={() => setContextMovement(null)}
+        onSuccess={() => setContextReloadKey(k => k + 1)}
+      />
+    </div>
+  );
+}
+
+/** One movement row's dispense-context slot: fetches on mount, shows the
+ *  viewer if a context already exists, otherwise a "Record context" action
+ *  (only if the caller may record). Isolated per-row so a slow/failed
+ *  lookup for one movement never blocks the rest of the ledger. */
+function DispenseContextSlot({
+  movementId, lang, canRecord, onRecordClick,
+}: { movementId: string; lang: 'ar' | 'en'; canRecord: boolean; onRecordClick: () => void }) {
+  const ctx = useAsync(() => getDispenseContext(movementId), [movementId]);
+
+  if (ctx.loading) return null;
+  const context: DispenseContext | null = ctx.data;
+
+  if (context) return <DispenseContextViewer context={context} lang={lang} />;
+  if (!canRecord) return null;
+
+  return (
+    <div style={{ marginTop: '4px' }}>
+      <PhoenixButton variant="ghost" size="sm" onClick={onRecordClick}>
+        {t('dc_record_action', lang)}
+      </PhoenixButton>
     </div>
   );
 }
