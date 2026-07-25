@@ -148,21 +148,22 @@ describe('Login screen: technical badges removed', () => {
   });
 });
 
-describe('Login screen: professional rights block, supervision credit removed', () => {
+describe('Login screen: professional rights block, supervision credit login-side only', () => {
   // RIGHTS-SEAL-SCOPE: the MASAR seal must NEVER return to Login or Welcome —
   // the single seal lives in the shell footer only.
-  // PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A: the supervision-credit line and
-  // its login_supervision_line key were intentionally removed (a later,
-  // explicit product decision) — these assertions now guard the ABSENCE of
-  // that line/key instead of its presence, and must never be flipped back
-  // without an equally explicit instruction to reintroduce the credit.
-  it('does not render the removed supervision line, and still has NO MASAR seal', () => {
+  // STAGE1-SUPERVISION-ATTRIBUTION-A: PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A
+  // removed the supervision credit from BOTH surfaces. An explicit later
+  // instruction reinstated it on the WELCOME/splash surface only, so the split
+  // is now deliberate and each half is asserted separately:
+  //   - LOGIN screen + strings.ts: still no line, still no i18n key.
+  //   - WELCOME splash: renders the line (see the dedicated describe below).
+  it('keeps the supervision line off the LOGIN screen, and still has NO MASAR seal', () => {
     expect(loginScreen).not.toContain("t('login_supervision_line'");
+    expect(loginScreen).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
     expect(loginScreen).not.toContain('MasarCopyrightSeal');
     const welcome = readSrc('features/auth/PhoenixWelcomeExperience.tsx');
     expect(welcome).not.toContain('MasarCopyrightSeal');
-    expect(welcome).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
-    // The remaining approved issuer credit line stays verbatim.
+    // The approved issuer credit line stays verbatim.
     expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
     // Exactly ONE mounted seal remains: the shell footer.
     expect(appShell).toContain('<MasarCopyrightSeal');

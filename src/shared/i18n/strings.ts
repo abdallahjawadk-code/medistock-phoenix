@@ -26,7 +26,12 @@ export const T: Dict = {
      login/welcome flow per an explicit, later product decision — it
      superseded the prior "approved/verbatim/do not paraphrase" note that used
      to sit next to this key. Do not reintroduce the login_supervision_line
-     key or its copy. */
+     key or its copy.
+     STAGE1-SUPERVISION-ATTRIBUTION-A amends the above for the WELCOME/splash
+     surface only, where the line is reinstated. It is hard-coded Arabic there
+     (like the issuance credit beside it, which is also always Arabic whatever
+     the UI language), so this key stays removed and the LOGIN screen stays
+     without the line. */
 
   /* ── Mobile logout (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ── */
   auth_sign_out: { ar: 'تسجيل الخروج', en: 'Sign out' },
