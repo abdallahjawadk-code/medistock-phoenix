@@ -56,7 +56,9 @@
   },
   "overrides": {
     "exceljs": {
-      "uuid": "^11.1.1"
+      "uuid": "^11.1.1",
+      "archiver": "8.0.0",
+      "unzipper": "0.12.5"
     },
     "@typescript-eslint/typescript-estree": {
       "minimatch": {
