@@ -125,22 +125,24 @@ AS $tables$
     'outlet_return_shipments',
     'outlet_return_request_lines',
     'outlet_return_requests',
-    -- PROCUREMENT IS DELIBERATELY ABSENT FROM THIS LIST.
-    -- procurement_order_events is protected by a
-    -- `procurement_history_is_immutable` trigger: the product guarantees
-    -- procurement history can never be deleted, and procurement_orders
-    -- cannot be removed while those events reference them. Listing them
-    -- here would make purge fail loudly (proven by the lifecycle test), and
-    -- forcing it would mean defeating a real immutability guarantee. The
-    -- demo therefore does NOT seed procurement, so the dataset stays fully
-    -- reversible. Anything a future dataset does register in these tables is
-    -- reported by phoenix_demo_purge as executed:false rather than skipped.
+    -- Procurement history is immutable by product design (087's
+    -- `procurement_history_is_immutable`). Migration 141 adds a STRICTLY
+    -- SCOPED exemption: a row is deletable only when it is demo-marked,
+    -- manifest-owned, in a demo-created organization, and the delete
+    -- originates from phoenix_demo_purge running under its dedicated owner
+    -- role. Genuine procurement history remains permanently immutable.
+    'procurement_order_events',
+    'procurement_returns',
+    'procurement_receipt_lines',
+    'procurement_receipts',
+    'procurement_order_lines',
+    'procurement_orders',
     'inventory_status_report_lines',
     'inventory_status_reports',
-    -- Reporting artefacts. phoenix_report_snapshots is ALSO absent by
-    -- design: a `report_snapshot_is_immutable` trigger guarantees an issued
-    -- official report can never be deleted. Same reasoning as procurement —
-    -- a reversible dataset must not create one.
+    -- Reporting artefacts. phoenix_report_snapshots is immutable by design
+    -- (119) and is reachable only through 141's scoped exemption, on the
+    -- same six simultaneous conditions as procurement history.
+    'phoenix_report_snapshots',
     'audit_logs',
     'phoenix_notifications',
     -- Balances after every movement that references them.

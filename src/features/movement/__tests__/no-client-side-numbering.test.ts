@@ -370,7 +370,11 @@ describe('no client-side document-number sequence exists', () => {
     // an ownership manifest keyed by (dataset_key, table_name, row_id uuid)
     // plus register/summary/purge RPCs. No sequence, no document string.
     // Ceiling moves to 141.
-    const beyond = migrations.filter(f => /^(14[1-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 141 (PHOENIX-DEMO-IMMUTABLE-EXEMPTION-141) adds NO document numbering --
+    // a write-once demo marker column, a NOLOGIN owner role, a reviewed FK
+    // preflight and a scoped delete exemption. No sequence, no allocator.
+    // Ceiling moves to 142.
+    const beyond = migrations.filter(f => /^(14[2-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
