@@ -46,6 +46,7 @@ const results = [];
 function record(name, ok, detail) {
   results.push({ name, ok, detail: detail ?? '' });
   console.log(`${ok ? 'PASS' : 'FAIL'} — ${name}${detail ? ' — ' + detail : ''}`);
+  return ok;
 }
 
 async function launch() {
@@ -187,7 +188,16 @@ async function main() {
       await submit.click().catch(() => {});
       await settle(2000);
       const bodyText = await page.textContent('body') ?? '';
-      resultCheck(bodyText);
+      const alertText = await page.locator('[role="alert"]').allTextContents().catch(() => []);
+      const restSnippet = restCalls.filter(c => c.includes('dispense_outlet_stock_with_context')).slice(-2);
+      const ok = resultCheck(bodyText, { alertText, restSnippet });
+      if (!ok) {
+        console.log(`DIAGNOSTIC — ${materialSubstring} dispense: alert text=${JSON.stringify(alertText)} rest=${JSON.stringify(restSnippet)}`);
+      }
+      // Close the dialog regardless of outcome so a failed/errored submission
+      // never leaves a modal open blocking the next card's Dispense button.
+      await page.keyboard.press('Escape').catch(() => {});
+      await settle(300);
     }
 
     // PATIENT
