@@ -196,6 +196,8 @@ export function MovementReportSection() {
     { key: 'after',    label: t('mvmt_col_after', lang),    value: r => String(r.quantityAfter) },
     { key: 'actor',    label: t('mvmt_col_actor', lang),    value: actorLabel },
     { key: 'doc',      label: t('mvmt_col_document_ref', lang), value: r => r.sourceDocumentNumber || '—' },
+    { key: 'correlation', label: t('mvmt_col_correlation', lang), value: r => r.correlationId || '—' },
+    { key: 'causation',   label: t('mvmt_col_causation', lang),   value: r => r.causationId || '—' },
     { key: 'dispense',  label: t('mvmt_col_dispense_context', lang), value: r => r.hasDispenseContext ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
   ];
 

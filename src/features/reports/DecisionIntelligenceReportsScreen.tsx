@@ -54,7 +54,7 @@ import { getSuppliers, getReceipts, getReceiptLines, type OrderRow, type Receipt
 import { StatusBadge } from '@/features/procurement/OrderComposerPanel';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
-  getSupplySourcesDetail, checkSnapshotParity,
+  getSupplySourcesDetail, checkSnapshotParity, isDemoOrganization,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
 
@@ -720,6 +720,7 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
       { key: 'reason', label: t('lp_return_reason', lang), value: r => r.reason },
       { key: 'proposedBy', label: t('dir_col_proposed_by', lang), value: r => r.proposedByName ?? '—' },
       { key: 'proposedAt', label: t('dir_as_of', lang), value: r => r.proposedAt, ltr: true, dateColumn: 'datetime', excelValue: r => r.proposedAt },
+      { key: 'linkedMovement', label: t('dir_col_linked_movement', lang), value: r => r.appliedMovementId ?? '—', ltr: true },
     ];
     return {
       reportTitle: t('dir_tab_corrections', lang),
@@ -764,6 +765,7 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
               <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_status', lang)}</th>
               <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('lp_return_reason', lang)}</th>
               <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_paper_reference', lang)}</th>
+              <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_linked_movement', lang)}</th>
             </tr>
           </thead>
           <tbody>
@@ -777,6 +779,9 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
                 <td style={{ padding: '6px 8px' }}>{t('dir_correction_status_' + r.status, lang)}</td>
                 <td style={{ padding: '6px 8px' }} dir="auto">{r.reason}</td>
                 <td style={{ padding: '6px 8px' }} dir="ltr">{r.scope === 'outlet' ? (paperRefs.data?.get(r.id)?.paperReferenceNumber ?? '—') : '—'}</td>
+                <td style={{ padding: '6px 8px' }} dir="ltr" title={r.appliedMovementId ?? undefined}>
+                  {r.appliedMovementId ? r.appliedMovementId.slice(0, 8) : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1515,22 +1520,44 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
   );
 }
 
-function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
+export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
   const snapshots = useAsync(() => listReportSnapshots(orgId), [orgId]);
+  const demo = useAsync(() => isDemoOrganization(orgId), [orgId]);
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (snapshots.loading && !snapshots.data) return <PhoenixLoadingState />;
   if (snapshots.error) return <PhoenixErrorState message={snapshots.error} onRetry={snapshots.reload} />;
   const rows = snapshots.data ?? [];
+  const isDemo = demo.data === true;
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
 
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="dir-report-library">
+      {isDemo && (
+        <div
+          data-testid="dir-report-library-demo-watermark"
+          style={{
+            padding: '10px 14px', borderRadius: 'var(--r2)',
+            border: '1px solid var(--warn)', background: 'color-mix(in srgb, var(--warn) 12%, transparent)',
+            display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--warn)' }}>{t('demo_report_watermark', lang)}</span>
+          <span style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('demo_report_watermark_note', lang)}</span>
+        </div>
+      )}
       {rows.map((s: ReportSnapshotRow) => (
         <PhoenixCard key={s.id}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: '13px', fontWeight: 700 }} dir="ltr">{s.official_number}</div>
+              <div style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span dir="ltr">{s.official_number}</span>
+                {isDemo && (
+                  <span style={{ fontSize: '9.5px', fontWeight: 800, color: 'var(--warn)', border: '1px solid var(--warn)', borderRadius: '4px', padding: '1px 6px' }}>
+                    {t('demo_report_watermark', lang)}
+                  </span>
+                )}
+              </div>
               <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>
                 {t('dir_tab_' + (s.report_type === 'executive_overview' ? 'overview' : 'library'), lang)} ·{' '}
                 {dashName(s.created_by_name)} · {new Date(s.created_at).toLocaleString(lang === 'ar' ? 'ar' : 'en')}

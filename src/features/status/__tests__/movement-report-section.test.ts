@@ -184,8 +184,13 @@ describe('MovementReportSection: title, filters, summary, table, states', () => 
   });
 
   it('table includes all required canonical-contract columns', () => {
-    const REQUIRED = ['datetime', 'ledger', 'location', 'sci', 'conc', 'dosage', 'batch', 'type', 'reason', 'before', 'delta', 'after', 'actor', 'doc', 'dispense'];
+    const REQUIRED = ['datetime', 'ledger', 'location', 'sci', 'conc', 'dosage', 'batch', 'type', 'reason', 'before', 'delta', 'after', 'actor', 'doc', 'correlation', 'causation', 'dispense'];
     REQUIRED.forEach(key => expect(section).toContain(`key: '${key}'`));
+  });
+
+  it('surfaces correlation_id and causation_id — fetched by the service but previously never rendered', () => {
+    expect(section).toContain("r.correlationId || '—'");
+    expect(section).toContain("r.causationId || '—'");
   });
 
   it('delta display uses the stored signed quantityDelta as-is', () => {

@@ -387,7 +387,11 @@ describe('no client-side document-number sequence exists', () => {
     // numbering -- one narrow, additive DELETE exemption on
     // trg_guard_availability_source_kind (065) for the demo purger's
     // existing ownership boundary. No sequence, no allocator. Ceiling -> 145.
-    const beyond = migrations.filter(f => /^(14[5-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 145 (PHOENIX-DEMO-ORGANIZATION-WATERMARK-145) adds NO document
+    // numbering -- one read-only boolean RPC (is this organization id
+    // registered in the demo manifest?) for frontend watermarking. No
+    // sequence, no allocator, no document string. Ceiling -> 146.
+    const beyond = migrations.filter(f => /^(14[6-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
