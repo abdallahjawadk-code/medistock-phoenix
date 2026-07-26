@@ -366,7 +366,11 @@ describe('no client-side document-number sequence exists', () => {
     // either -- it only widens an existing read-only RPC's emitted JSON with
     // contract fields the ledgers already store. No table, sequence, or
     // allocator. Ceiling moves to 140.
-    const beyond = migrations.filter(f => /^(1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 140 (PHOENIX-DEMO-DATASET-MANIFEST-140) adds NO document numbering --
+    // an ownership manifest keyed by (dataset_key, table_name, row_id uuid)
+    // plus register/summary/purge RPCs. No sequence, no document string.
+    // Ceiling moves to 141.
+    const beyond = migrations.filter(f => /^(14[1-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
