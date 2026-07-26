@@ -374,7 +374,9 @@ describe('no client-side document-number sequence exists', () => {
     // a write-once demo marker column, a NOLOGIN owner role, a reviewed FK
     // preflight and a scoped delete exemption. No sequence, no allocator.
     // Ceiling moves to 142.
-    const beyond = migrations.filter(f => /^(14[2-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 142 (PHOENIX-DEMO-PROFILE-DETACH-142) adds NO document numbering --
+    // a write-once profile marker and a detach routine. Ceiling -> 143.
+    const beyond = migrations.filter(f => /^(14[3-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
