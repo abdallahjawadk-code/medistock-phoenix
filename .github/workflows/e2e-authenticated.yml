@@ -1,0 +1,237 @@
+name: E2E authenticated acceptance
+
+# PR #57 Phase 2 fallback: local Docker/Rancher Desktop container-runtime
+# recovery was exhausted in-session (both hit reproducible WSL2
+# init/bootstrap failures on that machine) — this workflow is the sanctioned
+# fallback, per explicit instruction: an ephemeral Supabase stack plus
+# authenticated Playwright-driven acceptance, with NO Production credentials
+# and NO Production data anywhere in this workflow.
+#
+# Every URL/key used here is `supabase start`'s own fixed local-dev output
+# (127.0.0.1, well-known demo keys) — never a repository secret, never the
+# Production project ref. tools/e2e-fixtures/seed.mjs and
+# tools/e2e-acceptance/run.mjs both hard-refuse to run against anything that
+# isn't a recognized local address.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/features/outlet/**'
+      - 'src/shared/authz/**'
+      - 'supabase/migrations/**'
+      - 'tools/e2e-fixtures/**'
+      - 'tools/e2e-acceptance/**'
+      - '.github/workflows/e2e-authenticated.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-authenticated-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authenticated-acceptance:
+    name: Authenticated browser acceptance (disposable local Supabase)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
+        with:
+          version: latest
+
+      - name: Exclude prepared-only cutover migrations (mirrors tools/pg-rig/rig.mjs's own PREPARED_ONLY_SKIP)
+        # 085_phoenix_revoke_manual_availability_writers.sql is deliberately
+        # fail-closed: it RAISEs unless an operator sets an explicit
+        # production-cutover attestation. `supabase start` has no equivalent
+        # skip mechanism (unlike tools/pg-rig/rig.mjs, which this same
+        # migration set already documents skipping for exactly this reason),
+        # so it would abort the entire migration replay and nothing past 084
+        # would exist. This ephemeral runner's checkout is discarded at job
+        # end, so moving the file out here has zero effect on the repository.
+        run: mkdir -p /tmp/prepared-only-skip && mv supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql /tmp/prepared-only-skip/
+
+      - name: Apply the migration-023 replay shim (mirrors tools/pg-rig/rig.mjs's shimSql — documented, already-proven, repo file never touched)
+        # 023_phoenix_live_profile_role_resolution_fix.sql's own verification
+        # DO block asserts on pg_policies.qual for dp_insert_perm, an INSERT
+        # policy whose predicate actually lives in pg_policies.with_check —
+        # qual is NULL there, so a genuinely fresh replay aborts with "VERIFY
+        # FAILED: dp_insert_perm policy missing from distribution_points".
+        # This is a pre-existing, already-documented defect in migration 023
+        # itself (predates PR #57; tools/pg-rig/rig.mjs's own top-of-file
+        # comment names it "the DR gap" and
+        # supabase/migrations/__tests__/dr-023-replay.dynamic.test.ts proves
+        # both that "023 as written aborts on a fresh replay (the DR gap is
+        # real)" and that this exact substitution — reading
+        # coalesce(qual, with_check) instead of qual — "replays cleanly" and
+        # "still catches a genuinely missing policy". Applied ONLY to this
+        # ephemeral runner's disposable checkout, exactly like the 085
+        # exclusion above — the committed repository file is never modified,
+        # per this repo's explicit policy (see rig.mjs's own comment: "the
+        # repository file 023 is never modified").
+        run: |
+          sed -i -E 's/SELECT[[:space:]]+qual[[:space:]]+INTO/SELECT coalesce(qual, with_check) INTO/gi' \
+            supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql
+
+      - name: Prepend the default-privileges bootstrap to migration 001 (mirrors tools/pg-rig/bootstrap.sql — must run BEFORE any CREATE TABLE, not after)
+        # This step used to APPEND these two ALTER DEFAULT PRIVILEGES
+        # statements to the end of 001, which only affects tables created
+        # AFTER that point (e.g. it correctly fixed migration 092's
+        # stocktakes). It does nothing for profiles/organizations/warehouses/
+        # distribution_points — created EARLIER, inside 001 itself — because
+        # ALTER DEFAULT PRIVILEGES only governs FUTURE object creation, never
+        # retroactively grants on existing objects. Confirmed by the actual
+        # browser-side error this produced: "permission denied for table
+        # profiles (SQLSTATE 42501), hint: GRANT SELECT ON public.profiles TO
+        # authenticated" — a genuine missing table-level GRANT (not RLS row
+        # filtering, which fails silently with an empty result instead).
+        # Fixed by PREPENDING instead, so it's in effect before 001's own
+        # first CREATE TABLE. Mirrors tools/pg-rig/bootstrap.sql's identical
+        # statements, applied to this ephemeral runner's disposable checkout
+        # only — the committed migration file is never modified.
+        run: |
+          {
+            echo "-- E2E-CI-ONLY (prepended to this ephemeral checkout's copy"
+            echo "-- of 001 only — never committed). Mirrors"
+            echo "-- tools/pg-rig/bootstrap.sql's identical statements, run"
+            echo "-- BEFORE any table exists so every table this repo's"
+            echo "-- migrations create — including 001's own — inherits it."
+            echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;"
+            echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;"
+            echo ""
+            cat supabase/migrations/001_phoenix_core_schema.sql
+          } > /tmp/001_prepended.sql
+          mv /tmp/001_prepended.sql supabase/migrations/001_phoenix_core_schema.sql
+
+      - name: Seed the pre-062 super_admin migration 062 requires to exist (mirrors tools/pg-rig/rig.mjs's SEED_AFTER_001)
+        # Migration 062 aborts if no super_admin profile exists yet — rig.mjs
+        # documents this exact requirement and seeds a fixed-UUID super_admin
+        # immediately after migration 001 creates the profiles table, for
+        # every fresh 001->latest replay it does. `supabase start` has no
+        # hook to run SQL between two specific migrations, and a SEPARATE
+        # migration file for this was tried first but does not work: the
+        # Supabase CLI requires a purely-numeric "<timestamp>_name.sql"
+        # filename and silently SKIPPED a "001z_..." file entirely (visible
+        # in an earlier run's log: "Skipping migration
+        # 001z_e2e_ci_seed_super_admin_for_062.sql... (file name must match
+        # pattern...)") — and no purely-numeric prefix can lexically sort
+        # between "001_" and "002_" anyway (any extra digit after "001"
+        # sorts BEFORE the "_" that follows "001" in the real file, since
+        # digits < '_' in ASCII). So instead this APPENDS the seed SQL
+        # directly onto the end of migration 001's own file content, in this
+        # ephemeral runner's disposable checkout only (never committed) —
+        # guarantees it runs in the same migration step as 001 itself, right
+        # after the profiles table exists, with no filename/ordering tricks.
+        run: |
+          cat >> supabase/migrations/001_phoenix_core_schema.sql <<'SQL'
+
+          -- E2E-CI-ONLY seed (appended to this ephemeral checkout's copy of
+          -- 001 only — never committed): a disposable synthetic super_admin
+          -- migration 062 requires to exist for a fresh replay to pass its
+          -- own verification. Mirrors tools/pg-rig/rig.mjs's SEED_AFTER_001.
+          INSERT INTO auth.users (id, email, raw_user_meta_data)
+          VALUES ('00000000-0000-0000-0000-e2ec105eeda1',
+                   'e2e-ci-seed-super-admin@phoenix.local',
+                   jsonb_build_object('full_name','E2E CI Seed Super Admin','role','super_admin'))
+          ON CONFLICT (id) DO NOTHING;
+          UPDATE public.profiles SET role='super_admin', status='active'
+           WHERE id='00000000-0000-0000-0000-e2ec105eeda1';
+          SQL
+
+      - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
+        run: supabase start
+
+      - name: Capture local Supabase connection info
+        id: sb
+        run: |
+          supabase status -o json > /tmp/sb-status.json
+          echo "supabase status JSON keys: $(node -pe "Object.keys(require('/tmp/sb-status.json')).join(', ')")"
+          {
+            echo "api_url=$(node -pe "require('/tmp/sb-status.json').API_URL")"
+            echo "anon_key=$(node -pe "require('/tmp/sb-status.json').ANON_KEY")"
+          } >> "$GITHUB_OUTPUT"
+          node -pe "require('/tmp/sb-status.json').SERVICE_ROLE_KEY" > /tmp/sb-service-role-key.txt
+          node -pe "require('/tmp/sb-status.json').DB_URL" > /tmp/sb-db-url.txt
+
+      - name: Confirm migration ceiling reached 136 (not silently short)
+        run: |
+          RESULT=$(node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: require('fs').readFileSync('/tmp/sb-db-url.txt', 'utf8').trim() });
+              await c.connect();
+              const r = await c.query(\"SELECT count(*)::int n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname = 'phoenix_dispense_outlet_stock_with_context'\");
+              await c.end();
+              console.log(r.rows[0].n);
+            })();
+          ")
+          if [ "$RESULT" != "1" ]; then
+            echo "::error::migration 136 (phoenix_dispense_outlet_stock_with_context) not found — supabase start did not reach the expected migration ceiling"
+            exit 1
+          fi
+          echo "Migration ceiling confirmed: 136 present."
+
+      - name: Seed disposable fixtures (orgs, real Auth users, outlet stock — never Production)
+        env:
+          SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
+          E2E_SEED_OUTPUT_PATH: e2e-seed.json
+        run: |
+          SUPABASE_SERVICE_ROLE_KEY="$(cat /tmp/sb-service-role-key.txt)"
+          DATABASE_URL="$(cat /tmp/sb-db-url.txt)"
+          export SUPABASE_SERVICE_ROLE_KEY DATABASE_URL
+          node tools/e2e-fixtures/seed.mjs
+
+      - name: Build production bundle against the local Supabase instance
+        env:
+          VITE_PHOENIX_SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
+          VITE_PHOENIX_SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+          VITE_PHOENIX_BATCH_IDENTITY_051_ENABLED: "true"
+          VITE_PHOENIX_SCOPED_RBAC_MODE: "off"
+        run: npm run build
+
+      - name: Serve the built app
+        run: |
+          npx vite preview --port 4173 --strictPort --host 127.0.0.1 > /tmp/vite-preview.log 2>&1 &
+          echo $! > /tmp/vite-preview.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173 >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4173 >/dev/null || { echo "::error::preview server never became ready"; cat /tmp/vite-preview.log; exit 1; }
+
+      - name: Run Phase 2 authenticated browser acceptance
+        run: node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
+
+      - name: Stop preview server
+        if: always()
+        run: kill "$(cat /tmp/vite-preview.pid)" 2>/dev/null || true
+
+      - name: Upload acceptance screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-authenticated-acceptance-evidence
+          path: docs/phoenix/e2e-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop local Supabase (disposable state — nothing persists)
+        if: always()
+        run: supabase stop --no-backup

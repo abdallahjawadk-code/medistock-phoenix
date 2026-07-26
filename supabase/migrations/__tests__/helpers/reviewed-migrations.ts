@@ -182,6 +182,22 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '119_phoenix_report_snapshots_and_executive_overview.sql',
   '120_phoenix_supply_sources_detail.sql',
   '121_phoenix_monthly_status_public_execute_lockdown.sql',
+  '122_phoenix_movement_timeline_correction_coverage.sql',
+  '123_phoenix_movement_ledger_event_capture.sql',
+  '124_phoenix_movement_contract_correlation_fields.sql',
+  '125_phoenix_movement_reason_code_vocabulary.sql',
+  '126_phoenix_movement_reason_code_group_a_warehouse_intake.sql',
+  '127_phoenix_movement_reason_code_group_b_warehouse_transfer.sql',
+  '128_phoenix_movement_reason_code_group_c_warehouse_return.sql',
+  '129_phoenix_movement_reason_code_group_d_direct_supply.sql',
+  '130_phoenix_movement_reason_code_group_e_procurement.sql',
+  '131_phoenix_movement_reason_code_group_f_outlet.sql',
+  '132_phoenix_movement_reason_code_group_g_quarantine.sql',
+  '133_phoenix_movement_reason_code_group_h_correction_approval.sql',
+  '134_phoenix_movement_dispense_context.sql',
+  '135_phoenix_movement_reason_code_group_i_outlet_return_receive.sql',
+  '136_phoenix_dispense_with_context_atomic.sql',
+  '137_phoenix_five_role_cutover_ports_view_gap.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

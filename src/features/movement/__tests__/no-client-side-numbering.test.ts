@@ -228,7 +228,137 @@ describe('no client-side document-number sequence exists', () => {
     // numbering either — eleven idempotent REVOKE EXECUTE statements only, no
     // table, no sequence, no MOVEMENT document identity. The ceiling moves to
     // 122.
-    const beyond = migrations.filter(f => /^(12[2-9]|1[3-9]\d|[2-9]\d\d)_/.test(f));
+    // 122 (MOVEMENT-TIMELINE-CORRECTION-COVERAGE-122) adds NO document
+    // numbering either — attaches an existing status-transition trigger to
+    // two correction-request tables, no table, no sequence, no MOVEMENT
+    // document identity. The ceiling moves to 123.
+    // 123 (MOVEMENT-LEDGER-EVENT-CAPTURE-123) adds NO document numbering
+    // either — two new event-capture trigger functions attached to the
+    // quantity-movement ledgers and stocktakes, no document/sequence
+    // identity of any kind. The ceiling moves to 124.
+    // 124 (MOVEMENT-CONTRACT-CORRELATION-FIELDS-124) adds NO document
+    // numbering either — nullable occurred_at/correlation_id/causation_id
+    // columns on the three quantity ledgers plus quantity_before/
+    // quantity_after/correlation_id/causation_id on phoenix_movement_events,
+    // threaded through the existing capture trigger. No new sequence, no
+    // document/official-number identity of any kind (correlation_id and
+    // causation_id are cross-reference aids for tracing related events, not
+    // sequential document numbers, and are never client-computed — they pass
+    // through NULL until a writer RPC populates them). The ceiling moves to
+    // 125.
+    // 125 (MOVEMENT-REASON-CODE-VOCABULARY-125) adds NO document numbering
+    // either — a closed-vocabulary reason_code column (CHECK-constrained to
+    // a fixed 16-value set) on the three quantity ledgers, schema-only, no
+    // RPC touched. reason_code is a category label, not a sequential or
+    // unique document/official number of any kind — no sequence, no
+    // generation counter, nothing client-computed (the DEFAULT is a fixed
+    // literal, 'legacy_unclassified', not derived from any counter). The
+    // ceiling moves to 126.
+    // 126 (MOVEMENT-REASON-CODE-GROUP-A-WAREHOUSE-INTAKE-126) adds NO
+    // document numbering either -- it redefines the two Group A root-op
+    // writer RPCs to populate the already-closed reason_code column and a
+    // freshly-generated correlation_id (gen_random_uuid(), never a
+    // sequential counter). phoenix_apply_warehouse_stock_movement gains one
+    // new OPTIONAL p_reason_code parameter, itself CHECK-constrained to a
+    // closed vocabulary subset -- not a document/official number, not
+    // client-computed, not sequential. The ceiling moves to 127.
+    // 127 (MOVEMENT-REASON-CODE-GROUP-B-WAREHOUSE-TRANSFER-127) adds NO
+    // document numbering either -- it wires reason_code (hardcoded
+    // 'transferred'/'received', no client choice, no new parameter on
+    // either function) and correlation_id/causation_id chaining into the
+    // warehouse-to-warehouse transfer send/receive pair, plus a single
+    // nullable source_movement_id FK column linking a transfer line to its
+    // own send movement -- a UUID foreign key, not a sequence or document
+    // number of any kind. The ceiling moves to 128.
+    // 128 (MOVEMENT-REASON-CODE-GROUP-C-WAREHOUSE-RETURN-128) adds NO
+    // document numbering either -- it propagates an ALREADY-EXISTING closed
+    // reason_code (warehouse_return_request_lines.reason_code, a 9-value
+    // vocabulary member) onto both the send and receive ledger rows, plus a
+    // nullable source_movement_id FK on warehouse_return_shipment_lines
+    // mirroring 127's Group B fix -- again a UUID foreign key, never a
+    // sequence or document number. The ceiling moves to 129.
+    // 129 (MOVEMENT-REASON-CODE-GROUP-D-DIRECT-SUPPLY-129) adds NO document
+    // numbering either -- structural twin of 127/128's fixes applied to the
+    // direct (route-free) central<->institution send functions: hardcoded
+    // 'transferred' / propagated v_reqline.reason_code, fresh
+    // correlation_id, and population of the SAME source_movement_id
+    // columns 127/128 already added (no new schema at all in this
+    // migration). The ceiling moves to 130.
+    // 130 (MOVEMENT-REASON-CODE-GROUP-E-PROCUREMENT-130) adds NO document
+    // numbering either -- _phoenix_procurement_post_receipt_line gets a
+    // hardcoded 'received' reason_code and a fresh correlation_id (no
+    // signature change, an internal helper); phoenix_procurement_return_to_supplier
+    // gains one new mandatory-alongside-existing-reason p_reason_code
+    // parameter, CHECK-validated against the original 9-value quality/loss
+    // vocabulary, and chains correlation_id/causation_id from
+    // procurement_receipt_lines.movement_id -- a column that already
+    // existed before this migration (no ALTER TABLE anywhere in 130). No
+    // sequence, no client-computed identifier, no document/official number
+    // of any kind. The ceiling moves to 131.
+    // 131 (MOVEMENT-REASON-CODE-GROUP-F-OUTLET-131) adds NO document
+    // numbering either -- phoenix_receive_outlet_dispatch_line and
+    // phoenix_count_outlet_stock each gain one new closed-vocabulary
+    // p_reason_code parameter (validated, no free text); phoenix_dispense_outlet_stock
+    // gets a hardcoded 'dispensed' reason_code; phoenix_send_outlet_return_shipment_line
+    // propagates an already-closed v_line.reason_code. Chaining uses
+    // dispatch_line_id and original_inbound_movement_id, both pre-existing
+    // columns -- no ALTER TABLE anywhere in 131. Also fixes
+    // phoenix_send_warehouse_dispatch (070, a genuine gap found while
+    // verifying this slice, not one of the 20 originally audited writers)
+    // with a hardcoded 'transferred' reason_code and a fresh correlation_id
+    // per dispatch line -- again no sequence, no document number, nothing
+    // client-computed. The ceiling moves to 132.
+    // 132 (MOVEMENT-REASON-CODE-GROUP-G-QUARANTINE-132) adds NO document
+    // numbering either -- phoenix_release_quarantine_stock and
+    // phoenix_destroy_quarantine_stock each get reason_code wired from the
+    // already-locked v_q.quarantine_reason (no new parameter, no free-text
+    // mapping), and chain correlation_id/causation_id from the most recent
+    // PRIOR movement against the same quarantine lot (a real, queryable
+    // predecessor row id, never a sequence or document number). No ALTER
+    // TABLE, no DROP FUNCTION, no signature change anywhere in 132. The
+    // ceiling moves to 133.
+    // 133 (MOVEMENT-REASON-CODE-GROUP-H-CORRECTION-APPROVAL-133) adds NO
+    // document numbering either -- phoenix_approve_outlet_stock_correction
+    // and phoenix_approve_warehouse_stock_correction each get a fixed
+    // reason_code='corrected' literal (not client-derived) and chain
+    // correlation_id/causation_id from the most recent PRIOR movement
+    // against the exact stock row being corrected (a real, queryable
+    // predecessor row id, never a sequence or document number). No ALTER
+    // TABLE, no DROP FUNCTION, no signature change, no GRANT anywhere in
+    // 133 -- the LAST of the 8 reason_code/correlation domain slices. The
+    // ceiling moves to 134.
+    // 134 (MOVEMENT-DISPENSE-CONTEXT-134) adds a new table
+    // (phoenix_movement_dispense_context) whose primary key is
+    // gen_random_uuid() -- no sequence, no client-computed identifier, no
+    // document/official number of any kind. The three new RPCs
+    // (record/get/export) never accept a client-supplied id/number either
+    // -- request_id is only ever used for idempotency fingerprinting, the
+    // same pattern as every writer RPC audited so far. The ceiling moves
+    // to 135.
+    // 135 (MOVEMENT-REASON-CODE-GROUP-I-OUTLET-RETURN-RECEIVE-135) adds NO
+    // document numbering either -- it adds ONE nullable FK column
+    // (outlet_return_shipment_lines.source_movement_id, a real movement row
+    // id, never a sequence) and wires reason_code + correlation/causation
+    // into phoenix_receive_outlet_return_shipment_line, the live writer the
+    // completeness guard discovered was never in the original audit of 20.
+    // No sequence, no document number, nothing client-computed. The ceiling
+    // moves to 136.
+    // 136 (DISPENSE-WITH-CONTEXT-ATOMIC-136) adds NO document numbering
+    // either -- one closed-vocabulary column (patient_reference_type:
+    // chart/card/pass, a document KIND, never an allocated number) and an
+    // orchestration RPC that composes two already-reviewed writers. The
+    // patient reference NUMBER it records is an EXTERNAL, operator-read
+    // hospital document reference -- exactly the mv_external_reference
+    // category this guard already protects -- never a serial this system
+    // allocates. No sequence, nothing client-computed. Ceiling moves to 137.
+    // 137 (FIVE-ROLE-CUTOVER-PORTS-VIEW-GAP-137) adds NO document numbering
+    // either -- it is a pure role_permission_defaults grant (ports.view for
+    // outlet_officer/central_warehouse_manager), the RBAC gap a real
+    // authenticated browser session found blocking Outlet Operations from
+    // ever resolving an outlet_officer's own scoped outlet. No new table,
+    // no sequence, no document/official number of any kind. Ceiling moves
+    // to 138.
+    const beyond = migrations.filter(f => /^(13[8-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

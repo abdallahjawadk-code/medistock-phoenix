@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -61,7 +62,29 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
 
   if (!open) return null;
 
-  return (
+  // PHOENIX-DIALOG-PORTAL-STACKING-FIX: a real, reproducible bug an
+  // authenticated E2E session found — .premium-main's own entrance
+  // animation (nexus-page-enter, animating opacity/transform/filter) forces
+  // a NEW CSS stacking context on each of .premium-main's direct children
+  // for the animation's ~0.4s duration (any element animating those
+  // properties does, per spec). A dialog rendered INLINE inside one of
+  // those children has its z-index:300 scoped to that temporary, isolated
+  // stacking context — it can't out-rank a LATER sibling of that same
+  // ancestor (e.g. the page's own copyright <footer>, which paints after
+  // the content wrapper in DOM order) using z-index alone, because that
+  // comparison never reaches the document root while the animation is
+  // active. Concretely: opening this dialog within ~0.4s of the underlying
+  // screen (re-)rendering could make its own page footer visually and
+  // POINTER-EVENTS-intercept on top of the dialog's own controls.
+  //
+  // Rendering via a portal straight to document.body removes the dialog
+  // from that DOM subtree entirely, so its stacking is never subject to
+  // any ancestor's transient animation — the standard, correct fix for
+  // this whole class of bug, and why virtually every modal implementation
+  // uses a portal. React context still propagates normally through a
+  // portal (it follows the component tree, not the DOM tree), so nothing
+  // any of this dialog's 22 real consumers rely on changes.
+  return createPortal(
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
       role="dialog"
@@ -94,6 +117,7 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
         <h2 id="dialog-title" style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px' }}>{title}</h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

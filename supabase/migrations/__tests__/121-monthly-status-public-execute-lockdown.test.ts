@@ -28,10 +28,14 @@ const PROTECTED_FUNCTIONS = [
 ];
 
 describe('121 is the next migration after 120, and 001-120 stay untouched', () => {
-  it('121 is the highest migration number in the repository', () => {
+  // MOVEMENT-TIMELINE-CORRECTION-COVERAGE-122: 122 is now the highest
+  // migration (this file only needs to prove 121 exists, not that it's the
+  // ceiling — the actual repo-wide ceiling is owned by
+  // reviewed-migration-manifest.test.ts's getMaximumReviewedMigrationNumber).
+  it('121 exists in the repository', () => {
     const files = readdirSync(MIGRATIONS_DIR).filter(f => /^\d{3}_.*\.sql$/.test(f));
     const numbers = files.map(f => parseInt(f.slice(0, 3), 10));
-    expect(Math.max(...numbers)).toBe(121);
+    expect(numbers).toContain(121);
   });
 
   it('113 (the migration this reconciles) is not modified by this change', () => {
