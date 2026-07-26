@@ -138,11 +138,15 @@ AS $tables$
     'warehouse_quarantine_stock',
     'warehouse_stock',
     'item_availability',
-    -- Master data last.
+    -- Master data last, still child-first.
     'suppliers',
+    -- profile_scope_assignments references distribution_points AND warehouses
+    -- with ON DELETE RESTRICT (psa_point_org_fk), so it MUST be cleared
+    -- before either of them. The seed/purge lifecycle proof caught this
+    -- ordering the hard way; the order below is the fixed one.
+    'profile_scope_assignments',
     'distribution_points',
     'warehouses',
-    'profile_scope_assignments',
     'organizations'
   ];
 $tables$;
