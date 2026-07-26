@@ -202,17 +202,26 @@ async function main() {
         await settle(300);
         return;
       }
-      // count=1 and enabled=true were just confirmed directly above, so a
-      // plain .click() timing out here (seen in an earlier run) means
-      // Playwright's own actionability wait (pointer-interception/stability
-      // checks) is the blocker, not a real disabled/missing button — force
-      // bypasses exactly that layer, which is safe since we already did the
-      // real check ourselves.
+      // count=1 and enabled=true were just confirmed directly above. A plain
+      // .click() timed out in one earlier run (30193586905); a coordinate-
+      // based force:true click completed without error in the next
+      // (87aa153) but STILL produced zero REST calls and zero alert text —
+      // meaning force:true's center-point click likely landed on an
+      // overlaying element, not the real button (force bypasses Playwright's
+      // pointer-interception check, so it can't tell you that's happening).
+      // element.click() below calls the native DOM method directly on the
+      // element reference itself — no coordinates, no hit-testing, so it
+      // cannot be intercepted by anything covering it on screen.
+      const elementFromPoint = await submit.evaluate(el => {
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return { isSameElement: top === el, topTag: top?.tagName, topClass: top?.className };
+      }).catch(e => ({ error: e.message }));
+      console.log(`DIAGNOSTIC — ${materialSubstring} elementFromPoint at button center:`, JSON.stringify(elementFromPoint));
       try {
-        await submit.scrollIntoViewIfNeeded().catch(() => {});
-        await submit.click({ force: true, timeout: 10000 });
+        await submit.evaluate(el => el.click());
       } catch (e) {
-        console.log(`DIAGNOSTIC — ${materialSubstring} forced click still failed: ${e.message}`);
+        console.log(`DIAGNOSTIC — ${materialSubstring} element.click() failed: ${e.message}`);
         await page.screenshot({ path: join(OUT_DIR, `diagnostic-${materialSubstring.replace(/\s+/g, '-')}-click-failed.png`) }).catch(() => {});
       }
       await settle(2000);
