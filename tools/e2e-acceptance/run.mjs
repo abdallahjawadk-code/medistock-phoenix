@@ -61,11 +61,22 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
   const page = await browser.newPage({ viewport });
   const consoleErrors = [];
   const failedRequests = [];
+  const restCalls = [];
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('pageerror', err => consoleErrors.push(String(err)));
   page.on('requestfailed', req => failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText}`));
-  page.on('response', res => { if (res.status() >= 500) failedRequests.push(`${res.status()} ${res.url()}`); });
-  return { page, consoleErrors, failedRequests };
+  page.on('response', res => {
+    if (res.status() >= 500) failedRequests.push(`${res.status()} ${res.url()}`);
+    // DIAGNOSTIC (temporary): capture every Supabase REST call's status +
+    // a body snippet. An RLS filter often returns HTTP 200 with an empty
+    // array, not an error — the >=500 check above would miss that entirely.
+    if (res.url().includes('/rest/v1/')) {
+      res.text().then(body => {
+        restCalls.push(`${res.status()} ${res.url().replace(/^.*\/rest\/v1\//, '')} -> ${body.slice(0, 300)}`);
+      }).catch(() => {});
+    }
+  });
+  return { page, consoleErrors, failedRequests, restCalls };
 }
 
 async function login(page, email, password) {
@@ -129,7 +140,7 @@ async function main() {
 
   // ── 1. outlet_officer A: login, dispense all 3 beneficiary types ─────────
   {
-    const { page, consoleErrors, failedRequests } = await freshPage(browser);
+    const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
     await login(page, seed.users.outletOfficerA.email, seed.password);
     const loggedIn = await page.locator('#login-email').count() === 0;
     record('outlet_officer A logs in successfully', loggedIn);
@@ -137,6 +148,15 @@ async function main() {
     await openOutletOperations(page);
     const onOutletOps = await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
     record('navigates to Outlet Operations and resolves the seeded outlet', onOutletOps);
+    if (!onOutletOps) {
+      await settle(1000); // let any in-flight response body reads finish
+      const bodySnippet = ((await page.textContent('body').catch(() => '')) ?? '').slice(0, 500);
+      console.log('DIAGNOSTIC — outlet did not resolve. Console errors so far:', JSON.stringify(consoleErrors));
+      console.log('DIAGNOSTIC — failed/5xx requests so far:', JSON.stringify(failedRequests));
+      console.log('DIAGNOSTIC — REST calls so far:\n' + restCalls.join('\n'));
+      console.log('DIAGNOSTIC — body text snippet:', bodySnippet);
+      await page.screenshot({ path: join(OUT_DIR, 'diagnostic-outlet-not-resolved.png') }).catch(() => {});
+    }
 
     const stockTab = page.getByText('Stock & Batches').or(page.getByText('المخزون والدفعات'));
     await stockTab.first().click().catch(() => {});
