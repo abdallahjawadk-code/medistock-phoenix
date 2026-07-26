@@ -68,6 +68,50 @@ jobs:
         # end, so moving the file out here has zero effect on the repository.
         run: mkdir -p /tmp/prepared-only-skip && mv supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql /tmp/prepared-only-skip/
 
+      - name: Apply the migration-023 replay shim (mirrors tools/pg-rig/rig.mjs's shimSql — documented, already-proven, repo file never touched)
+        # 023_phoenix_live_profile_role_resolution_fix.sql's own verification
+        # DO block asserts on pg_policies.qual for dp_insert_perm, an INSERT
+        # policy whose predicate actually lives in pg_policies.with_check —
+        # qual is NULL there, so a genuinely fresh replay aborts with "VERIFY
+        # FAILED: dp_insert_perm policy missing from distribution_points".
+        # This is a pre-existing, already-documented defect in migration 023
+        # itself (predates PR #57; tools/pg-rig/rig.mjs's own top-of-file
+        # comment names it "the DR gap" and
+        # supabase/migrations/__tests__/dr-023-replay.dynamic.test.ts proves
+        # both that "023 as written aborts on a fresh replay (the DR gap is
+        # real)" and that this exact substitution — reading
+        # coalesce(qual, with_check) instead of qual — "replays cleanly" and
+        # "still catches a genuinely missing policy". Applied ONLY to this
+        # ephemeral runner's disposable checkout, exactly like the 085
+        # exclusion above — the committed repository file is never modified,
+        # per this repo's explicit policy (see rig.mjs's own comment: "the
+        # repository file 023 is never modified").
+        run: |
+          sed -i -E 's/SELECT[[:space:]]+qual[[:space:]]+INTO/SELECT coalesce(qual, with_check) INTO/gi' \
+            supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql
+
+      - name: Seed the pre-062 super_admin migration 062 requires to exist (mirrors tools/pg-rig/rig.mjs's SEED_AFTER_001)
+        # Migration 062 aborts if no super_admin profile exists yet — rig.mjs
+        # documents this exact requirement and seeds a fixed-UUID super_admin
+        # immediately after migration 001 creates the profiles table, for
+        # every fresh 001->latest replay it does. `supabase start` has no
+        # hook to run SQL between two specific migrations, so this inserts a
+        # small seed file that sorts strictly between 001 and 002 by
+        # filename, applied only to this ephemeral runner's disposable
+        # checkout (never committed) — same disposable-fixture rule as
+        # tools/e2e-fixtures/seed.mjs's own users, just timed to run inside
+        # supabase start's own migration pass instead of after it.
+        run: |
+          cat > supabase/migrations/001z_e2e_ci_seed_super_admin_for_062.sql <<'SQL'
+          INSERT INTO auth.users (id, email, raw_user_meta_data)
+          VALUES ('00000000-0000-0000-0000-e2ec105eeda1',
+                   'e2e-ci-seed-super-admin@phoenix.local',
+                   jsonb_build_object('full_name','E2E CI Seed Super Admin','role','super_admin'))
+          ON CONFLICT (id) DO NOTHING;
+          UPDATE public.profiles SET role='super_admin', status='active'
+           WHERE id='00000000-0000-0000-0000-e2ec105eeda1';
+          SQL
+
       - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
         run: supabase start
 
