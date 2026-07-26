@@ -95,14 +95,27 @@ jobs:
         # documents this exact requirement and seeds a fixed-UUID super_admin
         # immediately after migration 001 creates the profiles table, for
         # every fresh 001->latest replay it does. `supabase start` has no
-        # hook to run SQL between two specific migrations, so this inserts a
-        # small seed file that sorts strictly between 001 and 002 by
-        # filename, applied only to this ephemeral runner's disposable
-        # checkout (never committed) — same disposable-fixture rule as
-        # tools/e2e-fixtures/seed.mjs's own users, just timed to run inside
-        # supabase start's own migration pass instead of after it.
+        # hook to run SQL between two specific migrations, and a SEPARATE
+        # migration file for this was tried first but does not work: the
+        # Supabase CLI requires a purely-numeric "<timestamp>_name.sql"
+        # filename and silently SKIPPED a "001z_..." file entirely (visible
+        # in the prior run's log: "Skipping migration
+        # 001z_e2e_ci_seed_super_admin_for_062.sql... (file name must match
+        # pattern...)") — and no purely-numeric prefix can lexically sort
+        # between "001_" and "002_" anyway (any extra digit after "001"
+        # sorts BEFORE the "_" that follows "001" in the real file, since
+        # digits < '_' in ASCII). So instead this APPENDS the same seed SQL
+        # directly onto the end of migration 001's own file content, in this
+        # ephemeral runner's disposable checkout only (never committed) —
+        # guarantees it runs in the same migration step as 001 itself, right
+        # after the profiles table exists, with no filename/ordering tricks.
         run: |
-          cat > supabase/migrations/001z_e2e_ci_seed_super_admin_for_062.sql <<'SQL'
+          cat >> supabase/migrations/001_phoenix_core_schema.sql <<'SQL'
+
+          -- E2E-CI-ONLY seed (appended to this ephemeral checkout's copy of
+          -- 001 only — never committed): a disposable synthetic super_admin
+          -- migration 062 requires to exist for a fresh replay to pass its
+          -- own verification. Mirrors tools/pg-rig/rig.mjs's SEED_AFTER_001.
           INSERT INTO auth.users (id, email, raw_user_meta_data)
           VALUES ('00000000-0000-0000-0000-e2ec105eeda1',
                    'e2e-ci-seed-super-admin@phoenix.local',
