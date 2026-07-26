@@ -373,14 +373,21 @@ export async function stocktakeAndCorrection(io, ctx, opts) {
   return created;
 }
 
-/** GROUP H — supplementary procurement: supplier → order → receipt → return. */
+/**
+ * GROUP H — supplementary procurement: supplier → order → receipt → return.
+ * 087's real permission matrix, post-091 cutover: institution_admin holds
+ * manage+approve, warehouse_officer holds manage+receive+return. decide_order
+ * additionally enforces separation of duty (submitted_by <> approver actor,
+ * whatever their role) — so submitter and approver must be genuinely
+ * different actors, never the same profile calling itself twice.
+ */
 export async function procurementCycle(io, ctx, opts) {
-  const { officer, orgId, warehouseId, key, seq } = opts;
+  const { submitter, approver, receiver, orgId, warehouseId, key, seq } = opts;
   const created = { suppliers: 0, orders: 0, receipts: 0, returns: 0 };
   let supplierId = null;
   let orderId = null;
 
-  await io.asUser(officer.id, async (c) => {
+  await io.asUser(submitter.id, async (c) => {
     const ex = await one(c, `SELECT id FROM procurement_suppliers WHERE organization_id=$1 AND name=$2`,
       [orgId, `مورد تجريبي ${seq}`]);
     if (ex) { supplierId = ex.id; return; }
@@ -392,7 +399,7 @@ export async function procurementCycle(io, ctx, opts) {
   }, { commit: true });
   if (!supplierId) return created;
 
-  await io.asUser(officer.id, async (c) => {
+  await io.asUser(submitter.id, async (c) => {
     const num = demoDocRef('PO', seq);
     const ex = await one(c, `SELECT id FROM procurement_orders WHERE order_number=$1`, [num]);
     if (ex) { orderId = ex.id; return; }
@@ -404,8 +411,8 @@ export async function procurementCycle(io, ctx, opts) {
   }, { commit: true });
   if (!orderId) return created;
 
-  await io.asUser(officer.id, async (c) => {
-    const st = await one(c, `SELECT status, generation FROM procurement_orders WHERE id=$1`, [orderId]);
+  await io.asUser(submitter.id, async (c) => {
+    const st = await one(c, `SELECT status, order_generation FROM procurement_orders WHERE id=$1`, [orderId]);
     if (st?.status !== 'draft') return;
     for (const [i, m] of opts.materials.entries()) {
       await c.query(
@@ -414,15 +421,23 @@ export async function procurementCycle(io, ctx, opts) {
         [orderId, m.scientificName, 20 + i, m.tradeName, m.concentration, m.dosageForm,
          `DEMO-PB-${seq}-${i}`, 'سطر شراء تجريبي']);
     }
-    const g = await one(c, `SELECT generation FROM procurement_orders WHERE id=$1`, [orderId]);
-    await c.query(`SELECT public.phoenix_procurement_submit_order($1,$2)`, [orderId, g.generation]);
-    const g2 = await one(c, `SELECT generation FROM procurement_orders WHERE id=$1`, [orderId]);
-    await c.query(`SELECT public.phoenix_procurement_decide_order($1,true,$2,$3)`,
-      [orderId, 'موافقة تجريبية', g2.generation]);
+    const g = await one(c, `SELECT order_generation FROM procurement_orders WHERE id=$1`, [orderId]);
+    await c.query(`SELECT public.phoenix_procurement_submit_order($1,$2)`, [orderId, g.order_generation]);
   }, { commit: true });
 
-  await io.asUser(officer.id, async (c) => {
-    const st = await one(c, `SELECT status, generation FROM procurement_orders WHERE id=$1`, [orderId]);
+  // A genuinely DIFFERENT actor decides — separation of duty is enforced by
+  // actor identity, not role, so the same institution_admin could never
+  // approve its own submission.
+  await io.asUser(approver.id, async (c) => {
+    const st = await one(c, `SELECT status, order_generation FROM procurement_orders WHERE id=$1`, [orderId]);
+    if (st?.status !== 'submitted') return;
+    await c.query(`SELECT public.phoenix_procurement_decide_order($1,true,$2,$3)`,
+      [orderId, 'موافقة تجريبية', st.order_generation]);
+  }, { commit: true });
+
+  // warehouse_officer receives (087: manage+receive+return, not approve).
+  await io.asUser(receiver.id, async (c) => {
+    const st = await one(c, `SELECT status, order_generation FROM procurement_orders WHERE id=$1`, [orderId]);
     if (!st || !['approved', 'partially_received'].includes(st.status)) return;
     const lines = await c.query(
       `SELECT id, ordered_quantity FROM procurement_order_lines WHERE order_id=$1`, [orderId]);
@@ -430,23 +445,23 @@ export async function procurementCycle(io, ctx, opts) {
     if (payload.length === 0) return;
     try {
       await c.query(`SELECT public.phoenix_procurement_receive_order($1,$2,$3::jsonb,$4,$5)`,
-        [demoRequestId(`${key}:recv`), orderId, j(payload), st.generation, 'استلام شراء تجريبي']);
+        [demoRequestId(`${key}:recv`), orderId, j(payload), st.order_generation, 'استلام شراء تجريبي']);
       created.receipts++;
     } catch { /* already received */ }
   }, { commit: true });
 
   // Supplier return on one received line.
-  await io.asUser(officer.id, async (c) => {
+  await io.asUser(receiver.id, async (c) => {
     const rl = await one(c,
-      `SELECT rl.id, o.generation FROM procurement_receipt_lines rl
+      `SELECT rl.id, o.order_generation FROM procurement_receipt_lines rl
          JOIN procurement_receipts r ON r.id = rl.receipt_id
          JOIN procurement_orders o ON o.id = r.order_id
-        WHERE o.id=$1 AND rl.received_quantity > 1 ORDER BY rl.id LIMIT 1`, [orderId]);
+        WHERE o.id=$1 AND rl.quantity > 1 ORDER BY rl.id LIMIT 1`, [orderId]);
     if (!rl) return;
     try {
       await c.query(
         `SELECT public.phoenix_procurement_return_to_supplier($1,$2,1,$3,$4,$5,$6)`,
-        [demoRequestId(`${key}:sret`), rl.id, 'مرتجع للمورد تجريبي', 'ملاحظة', rl.generation, 'damaged']);
+        [demoRequestId(`${key}:sret`), rl.id, 'مرتجع للمورد تجريبي', 'ملاحظة', rl.order_generation, 'damaged']);
       created.returns++;
     } catch { /* corridor decides */ }
   }, { commit: true });
@@ -455,26 +470,38 @@ export async function procurementCycle(io, ctx, opts) {
 }
 
 /** GROUP J — a full monthly inventory position cycle: prepare → classify →
- *  submit → approve+lock. Uses the real 092 workflow, never a shortcut. */
+ *  submit → approve+lock. Uses the real 092 three-role persona map, never a
+ *  shortcut: preparer=warehouse_officer, submitter=institution_admin,
+ *  approver=central_warehouse_manager — each the one role that genuinely
+ *  holds the permission for its step. */
 export async function monthlyPositionCycle(io, ctx, opts) {
-  const { preparer, approver, orgId } = opts;
+  const { preparer, submitter, approver, orgId } = opts;
   const created = { reports: 0, locked: 0 };
   let reportId = null;
+  let prepareFailed = false;
 
+  // A RAISE EXCEPTION inside phoenix_status_prepare_report aborts the whole
+  // Postgres transaction — every later statement on THIS SAME connection
+  // errors with "current transaction is aborted" until rollback. The
+  // fallback lookup must therefore run on a fresh connection/transaction,
+  // never on `c` after the catch.
   await io.asUser(preparer.id, async (c) => {
-    try {
-      const r = await one(c, `SELECT public.phoenix_status_prepare_report($1) AS r`, [orgId]);
-      reportId = r.r?.report_id ?? r.r?.id ?? r.r;
-      if (reportId) created.reports++;
-    } catch {
+    const r = await one(c, `SELECT public.phoenix_status_prepare_report($1) AS r`, [orgId]);
+    reportId = r.r?.report_id ?? r.r?.id ?? r.r;
+    if (reportId) created.reports++;
+  }, { commit: true }).catch(() => { prepareFailed = true; });
+
+  if (prepareFailed) {
+    await io.asAdmin(async (c) => {
       const ex = await one(c,
         `SELECT id FROM inventory_status_reports WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 1`,
         [orgId]);
       reportId = ex?.id ?? null;
-    }
-  }, { commit: true });
+    });
+  }
   if (!reportId) return created;
 
+  // warehouse_officer classifies (092: only this role holds classify_own).
   await io.asUser(preparer.id, async (c) => {
     const st = await one(c, `SELECT status FROM inventory_status_reports WHERE id=$1`, [reportId]);
     if (st?.status !== 'draft') return;
@@ -486,9 +513,16 @@ export async function monthlyPositionCycle(io, ctx, opts) {
         await c.query(`SELECT public.phoenix_status_classify_lines($1,$2::jsonb)`, [reportId, j(payload)]);
       } catch { /* classification vocabulary differs — corridor decides */ }
     }
+  }, { commit: true });
+
+  // institution_admin submits (092: only this role holds review_submit_own).
+  await io.asUser(submitter.id, async (c) => {
+    const st = await one(c, `SELECT status FROM inventory_status_reports WHERE id=$1`, [reportId]);
+    if (st?.status !== 'draft') return;
     try { await c.query(`SELECT public.phoenix_status_submit_report($1)`, [reportId]); } catch { /* */ }
   }, { commit: true });
 
+  // central_warehouse_manager approves + locks (092: approve_lock).
   await io.asUser(approver.id, async (c) => {
     const st = await one(c, `SELECT status FROM inventory_status_reports WHERE id=$1`, [reportId]);
     if (st?.status !== 'submitted') return;
@@ -501,16 +535,33 @@ export async function monthlyPositionCycle(io, ctx, opts) {
   return created;
 }
 
-/** GROUP I/K — transfer suggestions and an official report snapshot. */
+/** GROUP I/K — transfer suggestions, a representative reject, and an official report snapshot. */
 export async function suggestionsAndSnapshots(io, ctx, opts) {
   const { admin, orgId, key, includeSnapshots } = opts;
-  const created = { suggestions: 0, snapshots: 0 };
+  const created = { suggestions: 0, rejected: 0, snapshots: 0 };
 
   await io.asUser(admin.id, async (c) => {
     try {
       const r = await one(c, `SELECT public.phoenix_suggest_inventory_transfers($1) AS r`, [orgId]);
       created.suggestions = Array.isArray(r?.r) ? r.r.length : (r?.r?.count ?? 0);
     } catch { /* nothing to suggest */ }
+  }, { commit: true });
+
+  // Acceptance is structurally disabled (072: 'accepted' is unreachable for
+  // any writer, and the RPC always raises acceptance_disabled_recommendation_
+  // only) — reject is the one real corridor a demo scenario can exercise.
+  await io.asUser(admin.id, async (c) => {
+    try {
+      const open = await one(c,
+        `SELECT id FROM inventory_transfer_suggestions
+          WHERE (source_organization_id=$1 OR target_organization_id=$1) AND status='open'
+          ORDER BY id LIMIT 1`, [orgId]);
+      if (open?.id) {
+        await c.query(`SELECT public.phoenix_reject_inventory_transfer_suggestion($1,$2)`,
+          [open.id, 'لا حاجة تجريبية']);
+        created.rejected++;
+      }
+    } catch { /* no scoped permission on this suggestion's endpoints — corridor decides */ }
   }, { commit: true });
 
   if (includeSnapshots === true) await io.asUser(admin.id, async (c) => {

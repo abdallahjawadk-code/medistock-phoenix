@@ -11,7 +11,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 
 interface Props { onNavigate: (screen: number) => void; }
 
-export function MeshScreen({ onNavigate }: Props) {
+export function MeshScreen({ onNavigate: _onNavigate }: Props) {
   const { lang } = useApp();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const isMobile = window.innerWidth < 768;

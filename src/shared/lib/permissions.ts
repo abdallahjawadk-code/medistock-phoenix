@@ -124,22 +124,6 @@ const WAREHOUSE_OFFICER_DEFAULTS = [
   'inter_institution_alerts.resolve',
 ];
 
-// Legacy port officer: can update existing availability rows but NOT create new ones
-// (AVAILABILITY-PERMISSION-MATRIX-INTEGRATION-A). availability.manage is
-// intentionally NOT granted here — it would read as blanket create+update in
-// the UI. The RPC/RLS treat availability.create and availability.update as
-// the authoritative write permissions, independent of availability.manage.
-// AVAILABILITY-QUANTITY-MOVEMENT-DB-A: port_officer can add/subtract quantity
-// and view movement history only — no set_exact, no correction, no export/print.
-const PORT_OFFICER_DEFAULTS = [
-  'dashboard.view', 'organizations.view', 'ports.view', 'ports.edit',
-  'qr.view', 'availability.view', 'availability.update',
-  'status_center.view', 'exchange_alerts.view', 'inter_institution_alerts.view',
-  'availability.quantity.add', 'availability.quantity.subtract', 'availability.movements.view',
-  // FINAL-POLISH-PERMISSIONS-QR-A: migration 038 — port_officer: acknowledge only.
-  'inter_institution_alerts.acknowledge',
-];
-
 // Migration 066 introduced these roles after the legacy catalog above. Their
 // operational permissions are loaded from the database. The fallback stays
 // deliberately narrow until those 066 keys are surfaced by the permission-

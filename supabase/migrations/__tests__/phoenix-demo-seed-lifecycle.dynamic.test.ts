@@ -218,15 +218,20 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
     expect(dry.length).toBeGreaterThan(0);
     expect(dry.every(r => r.executed === false)).toBe(true);
     // Every purgeable table's dry-run count equals what the manifest owns.
+    // 'profiles' is never purgeable, and 'profiles:detached' /
+    // 'organizations'/'organizations:blocked' are synthetic outcome labels
+    // phoenix_demo_purge emits (142), not literal manifest table names — the
+    // summary has no row under those exact keys to compare against.
+    const SYNTHETIC = new Set(['profiles', 'profiles:detached', 'organizations', 'organizations:blocked']);
     for (const row of dry) {
-      if (row.table_name === 'profiles') continue;  // not purgeable
+      if (SYNTHETIC.has(row.table_name)) continue;
       expect(Number(row.affected)).toBe(countOf(before, row.table_name));
     }
     const after = await summary();
     expect(after).toEqual(before);
   });
 
-  it('8. purge --execute removes the demo dataset and leaves the real org and owner untouched', async () => {
+  it('8. purge --execute removes the demo dataset ENTIRELY, including organizations, and leaves the real org and owner untouched', async () => {
     const exec = await purge(false);
     expect(exec.some(r => r.executed === true)).toBe(true);
 
@@ -243,29 +248,52 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
         `SELECT count(*)::int AS n FROM warehouse_stock WHERE batch_number LIKE 'DEMO-B-%'`);
       expect(demoStock.rows[0].n).toBe(0);
 
-      // The demo ORGANIZATIONS are deliberately still present, and this is
-      // the 141 preflight behaving exactly as specified: demo profiles
-      // reference them, and profiles are never purgeable (140 excludes them
-      // so actor snapshots and the last-super-admin guard stay intact). An
-      // organization is deleted only when NOTHING references it, so a
-      // remaining profile correctly blocks its parent. The purge reports this
-      // as `organizations:blocked` rather than failing, and keeps the
-      // manifest entry so it stays resumable.
+      // 142: the seeder now marks every demo actor profile in the same
+      // transaction it registers ownership, so phoenix_demo_detach_profiles
+      // finds them, archives + unlinks them BEFORE the org preflight runs,
+      // and — with no other genuine blocker — the demo organizations
+      // themselves now delete completely rather than staying blocked.
       const demoOrgs = await c.query(
         `SELECT count(*)::int AS n FROM organizations WHERE code LIKE 'demo-org-%'`);
-      expect(demoOrgs.rows[0].n).toBeGreaterThan(0);
+      expect(demoOrgs.rows[0].n).toBe(0);
+
+      const detached = exec.find((r: any) => r.table_name === 'profiles:detached');
+      expect(detached).toBeDefined();
+      expect(detached.executed).toBe(true);
+      expect(Number(detached.affected)).toBeGreaterThan(0);
+
+      const orgsRow = exec.find((r: any) => r.table_name === 'organizations');
+      expect(orgsRow).toBeDefined();
+      expect(orgsRow.executed).toBe(true);
+      expect(Number(orgsRow.affected)).toBe(SCALE.institutions);
+
       const blocked = exec.find((r: any) => r.table_name === 'organizations:blocked');
-      expect(blocked).toBeDefined();
-      expect(blocked.executed).toBe(false);
+      expect(blocked).toBeUndefined();
+
+      // The detached profiles are TOMBSTONES, never deletions: archived,
+      // unlinked from any organization, identity preserved for historical
+      // audit attribution.
+      const tombstones = await c.query(
+        `SELECT p.status, p.disabled_at, p.organization_id FROM profiles p
+           JOIN phoenix_demo_manifest d
+             ON d.row_id = p.id AND d.table_name = 'profiles' AND d.dataset_key = $1`,
+        [DATASET_KEY]);
+      expect(tombstones.rows.length).toBeGreaterThan(0);
+      for (const row of tombstones.rows) {
+        expect(row.status).toBe('archived');
+        expect(row.disabled_at).not.toBeNull();
+        expect(row.organization_id).toBeNull();
+      }
     });
   }, 120000);
 
-  it('9. verification finds zero purgeable residue, and a clean reseed afterwards succeeds', async () => {
+  it('9. verification finds ZERO purgeable residue (organizations included), and a clean reseed afterwards succeeds', async () => {
     const s = await summary();
-    // Residue is limited to the blocked organizations described above --
-    // every other purgeable table is empty. Anything else would be a leak.
+    // profiles are excluded from `purgeable` by design (140/142: they are
+    // detached, never deleted) — every table that IS purgeable, including
+    // organizations, must now be fully empty. Any other residue is a leak.
     const residue = s.filter(r => r.purgeable === true);
-    expect(residue.every(r => r.table_name === 'organizations')).toBe(true);
+    expect(residue.length).toBe(0);
 
     const out = await seedDemoDataset(io, REAL_SA, SCALE);
     // Only the central warehouse (org 0) may receive direct intake (migration 103).
@@ -273,5 +301,21 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
     const after = await summary();
     expect(countOf(after, 'organizations')).toBe(SCALE.institutions);
     expect(countOf(after, 'warehouse_stock')).toBeGreaterThan(0);
+
+    // The reactivated demo profiles are attached to the fresh organizations
+    // again (reseed reuses the same deterministic ids), proving the tombstone
+    // was a temporary detachment, not a permanent loss of the actor.
+    await rig.asAdmin(async (c: any) => {
+      const reactivated = await c.query(
+        `SELECT p.status, p.organization_id FROM profiles p
+           JOIN phoenix_demo_manifest d
+             ON d.row_id = p.id AND d.table_name = 'profiles' AND d.dataset_key = $1`,
+        [DATASET_KEY]);
+      expect(reactivated.rows.length).toBeGreaterThan(0);
+      for (const row of reactivated.rows) {
+        expect(row.status).toBe('active');
+        expect(row.organization_id).not.toBeNull();
+      }
+    });
   }, 180000);
 });

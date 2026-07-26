@@ -32,6 +32,21 @@ const ORG_SCOPED = new Set([
   'phoenix_stock_correction_requests', 'phoenix_warehouse_correction_requests',
   'item_availability', 'item_availability_movements',
   'phoenix_movement_dispense_context', 'warehouse_transfer_requests',
+  // 119/141: official report snapshots. Without this the diff-capture would
+  // never register a seeded snapshot, leaving it permanently unowned residue.
+  'phoenix_report_snapshots',
+]);
+
+/**
+ * The 141/142 write-once-marker tables. A row here can never be purged
+ * (087/119's immutability triggers refuse it) unless it is also MARKED via
+ * phoenix_demo_mark_row, which is a separate step from manifest registration.
+ * Registering ownership alone is not enough for these seven tables.
+ */
+const MARKABLE_TABLES = new Set([
+  'procurement_orders', 'procurement_order_lines', 'procurement_order_events',
+  'procurement_receipts', 'procurement_receipt_lines', 'procurement_returns',
+  'phoenix_report_snapshots',
 ]);
 
 /**
@@ -113,6 +128,15 @@ export async function registerNewRows(io, superAdminId, orgIds, before, seedKey,
       for (const id of ids) {
         await c.query(`SELECT public.phoenix_demo_register($1,$2,$3,$4)`,
           [DATASET_KEY, table, id, seedKey]);
+        // Registration alone leaves an immutable-family row permanently
+        // unpurgeable (087/119's triggers gate DELETE on the write-once
+        // marker, not on manifest membership). Mark it in the same
+        // transaction so it converges to purgeable atomically with its
+        // registration — never a state where it is owned but unmarked.
+        if (MARKABLE_TABLES.has(table)) {
+          await c.query(`SELECT public.phoenix_demo_mark_row($1,$2,$3)`,
+            [DATASET_KEY, table, id]);
+        }
       }
     }
   }, { commit: true });

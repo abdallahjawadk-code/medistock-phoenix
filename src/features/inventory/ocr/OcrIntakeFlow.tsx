@@ -91,7 +91,7 @@ export function OcrIntakeFlow({
   const [progress, setProgress] = useState<OcrProgress | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [values, setValues] = useState<Partial<Record<PharmaFieldName, string>>>({});
-  const [originals, setOriginals] = useState<Partial<Record<PharmaFieldName, string>>>({});
+  const [, setOriginals] = useState<Partial<Record<PharmaFieldName, string>>>({});
   const [reviewFields, setReviewFields] = useState<ReviewFieldModel[]>([]);
   const [warnings, setWarnings] = useState<ReviewWarning[]>([]);
   const [confirmed, setConfirmed] = useState<Partial<Record<PharmaFieldName, boolean>>>({});

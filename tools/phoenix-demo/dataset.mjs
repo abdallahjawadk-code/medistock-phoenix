@@ -170,4 +170,9 @@ export const DEFAULT_SCALE = {
   batchesPerWarehouse: 80,
   dispensesPerOutlet: 6,
   months: 3,
+  // Safe by default: migration 141/142's write-once marker (wired through
+  // ownership.mjs's registerNewRows) makes every row these corridors create
+  // genuinely purgeable, so there is no residue reason left to gate them off.
+  includeProcurement: true,
+  includeSnapshots: true,
 };

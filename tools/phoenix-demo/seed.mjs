@@ -31,6 +31,16 @@ async function own(c, table, rowId, seedKey) {
     [DATASET_KEY, table, rowId, seedKey ?? null]);
 }
 
+/**
+ * Mark a row demo-owned under 141/142's write-once column. Required (in
+ * addition to `own`) for the seven immutable-family tables and for profiles
+ * — an unmarked row can never be purged/detached no matter how it is
+ * registered. Idempotent: a no-op once the marker is already set.
+ */
+async function mark(c, table, rowId) {
+  await c.query(`SELECT public.phoenix_demo_mark_row($1,$2,$3)`, [DATASET_KEY, table, rowId]);
+}
+
 /** True when the dataset already owns this row (drives idempotency). */
 async function owns(c, table, rowId) {
   const r = await c.query(
@@ -118,13 +128,19 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   }, { commit: true });
 
   // ── 3. Demo actors (master data; deactivated, never deleted, on purge) ───
-  // One warehouse officer and one outlet officer per institution, so every
-  // corridor call below is made by a role that genuinely holds the required
-  // permission — authorization results are never faked.
+  // One actor per relevant role per institution, so every corridor call below
+  // is made by a role that genuinely holds the required permission —
+  // authorization results are never faked. Monthly status (092) is a genuine
+  // three-role persona map — warehouse_officer prepares/classifies,
+  // institution_admin submits, central_warehouse_manager reviews/approves —
+  // so all five canonical roles (091) except super_admin need an actor here.
   const actors = [];
   await io.asAdmin(async (c) => {
     for (const w of warehouses) {
-      for (const [role, tag] of [['central_warehouse_manager', 'wo'], ['outlet_officer', 'oo']]) {
+      for (const [role, tag] of [
+        ['central_warehouse_manager', 'wo'], ['outlet_officer', 'oo'],
+        ['warehouse_officer', 'wof'], ['institution_admin', 'ia'],
+      ]) {
         const uid = demoUuid(`user:${tag}:${w.index}`);
         const email = `demo-${tag}-${w.index}@phoenix-demo.invalid`;
         const r = await c.query(
@@ -158,7 +174,13 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     }
   });
   await io.asUser(superAdminId, async (c) => {
-    for (const a of actors) await own(c, 'profiles', a.id, `user:${a.tag}:${a.index}`);
+    for (const a of actors) {
+      await own(c, 'profiles', a.id, `user:${a.tag}:${a.index}`);
+      // 142: without this mark, phoenix_demo_detach_profiles never selects
+      // these rows, so a demo organization stays blocked by its own actors
+      // forever — registration alone is not enough for profiles.
+      await mark(c, 'profiles', a.id);
+    }
     // Scope assignments reference distribution_points with ON DELETE RESTRICT,
     // so they MUST be demo-owned too — otherwise purge would be blocked by a
     // row it does not know it created. (The lifecycle proof caught exactly
@@ -172,6 +194,12 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   // ── 4. Central intake -> warehouse receipt, through the REAL RPC ─────────
   // phoenix_receive_warehouse_stock is idempotent on p_request_id, so a
   // re-seed replays to the same stock row and posts no second movement.
+  // audit_logs is captured by DIFF (not by following entity_id, which does
+  // not resolve back to warehouse_stock/movement ids for this RPC) — the
+  // lifecycle proof caught an org left permanently unpurgeable by exactly
+  // these unregistered rows.
+  const orgIdsForIntake = orgs.map(o => o.id);
+  const auditBefore = await snapshotIds(io, orgIdsForIntake, ['audit_logs']);
   const warehouseOfficers = actors.filter(a => a.tag === 'wo' && a.kind === 'central');
   const stockRows = [];
   for (const officer of warehouseOfficers) {
@@ -251,6 +279,11 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
       for (const row of ev.rows) await own(c, 'phoenix_movement_events', row.id, 'event:intake');
     }
   }, { commit: true });
+
+  // The intake RPC also writes its own audit_logs row per receive, whose
+  // entity_id does not resolve back to the stock/movement id it logged —
+  // diff-registration is the only reliable way to own it.
+  await registerNewRows(io, superAdminId, orgIdsForIntake, auditBefore, 'intake:audit', ['audit_logs']);
 
   // ── 5. Operational workflow groups, each through its REAL corridor ──────
   // Ownership is captured by diffing what appeared, scoped to the demo orgs,
@@ -366,22 +399,27 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     return { stocktakeAndCorrections: n };
   });
 
-  // H: supplementary procurement — DISABLED for the reversible dataset.
-  // procurement_order_events is immutable by product design
-  // (`procurement_history_is_immutable`), so anything seeded here could never
-  // be purged and would become permanent residue in Production. Enable only
-  // for a throwaway environment, never for a dataset that must be removable.
+  // H: supplementary procurement — safe by default. procurement_order_events
+  // and its siblings are immutable by product design
+  // (`procurement_history_is_immutable`), but registerNewRows marks every
+  // seeded row under 141's write-once column in the same transaction it
+  // registers ownership, so the rows converge to genuinely purgeable rather
+  // than becoming permanent residue. Set includeProcurement:false to skip.
   if (scale.includeProcurement === true) await runGroup('procurement', async () => {
     let n = 0;
     for (const w of instWarehouses) {
-      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
-      if (!officer) continue;
+      // 087's real matrix: institution_admin holds manage+approve, warehouse_
+      // officer holds manage+receive+return. decide_order additionally
+      // enforces separation of duty by ACTOR, so the approver is a genuinely
+      // different profile (super_admin — real permission, real bypass, never
+      // the submitting institution_admin approving itself).
+      const submitter = actors.find(a => a.tag === 'ia' && a.index === w.index);
+      const receiver = actors.find(a => a.tag === 'wof' && a.index === w.index);
+      if (!submitter || !receiver) continue;
       const materials = [0, 1, 2].map(k => materialName((w.index * 3 + k) % scale.materials));
       const r = await procurementCycle(io, {}, {
-        // local_procurement.manage/receive/return are held in full by
-        // super_admin; the five active roles split them, so the demo uses the
-        // one role genuinely authorized for the whole cycle.
-        officer: { id: superAdminId }, orgId: w.orgId, warehouseId: w.id, materials,
+        submitter, approver: { id: superAdminId }, receiver,
+        orgId: w.orgId, warehouseId: w.id, materials,
         key: `prc:${w.index}`, seq: w.index,
       });
       n += r.orders;
@@ -389,24 +427,48 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     return { procurementCycles: n };
   });
 
-  // J: monthly inventory position cycles.
+  // J: monthly inventory position cycles, looped to scale.months per org.
+  // 092's schema has no calendar-period column — history is the sequence of
+  // LOCKED reports ordered by locked_at, so "multiple historical months" is
+  // multiple sequential prepare->classify->submit->lock cycles, never a
+  // backdated timestamp. Idempotent: only tops up to scale.months per org,
+  // so a re-seed converges instead of growing the report count forever.
   await runGroup('monthly_position', async () => {
     let n = 0;
+    const targetMonths = scale.months ?? 1;
     for (const o of orgs) {
-      const officer = actors.find(a => a.tag === 'wo' && a.orgId === o.id);
-      if (!officer) continue;
-      const r = await monthlyPositionCycle(io, {}, {
-        preparer: officer, approver: { id: superAdminId }, orgId: o.id,
+      // The real 092 persona map, three distinct roles: warehouse_officer
+      // prepares+classifies, institution_admin submits, central_warehouse_
+      // manager reviews/approves+locks. Only warehouse_officer holds
+      // status_center.prepare_own — a central_warehouse_manager actor alone
+      // (the seeder's previous shape) can never pass that check.
+      const preparer = actors.find(a => a.tag === 'wof' && a.orgId === o.id);
+      const submitter = actors.find(a => a.tag === 'ia' && a.orgId === o.id);
+      const approver = actors.find(a => a.tag === 'wo' && a.orgId === o.id);
+      if (!preparer || !submitter || !approver) continue;
+      let existing = 0;
+      await io.asAdmin(async (c) => {
+        const r = await c.query(
+          `SELECT count(*)::int AS n FROM inventory_status_reports
+            WHERE organization_id=$1 AND status='locked'`, [o.id]);
+        existing = r.rows[0]?.n ?? 0;
       });
-      n += r.reports;
+      for (let m = existing; m < targetMonths; m++) {
+        const r = await monthlyPositionCycle(io, {}, {
+          preparer, submitter, approver, orgId: o.id,
+        });
+        n += r.reports;
+        if (r.locked === 0) break;   // couldn't lock this cycle — stop rather than spin
+      }
     }
     return { monthlyReports: n };
   });
 
-  // I: transfer suggestions. Official report SNAPSHOTS are excluded for the
-  // same reason as procurement — `report_snapshot_is_immutable` makes an
-  // issued snapshot permanent, so seeding one would leave unremovable
-  // residue. Enable only for a throwaway environment.
+  // I: transfer suggestions, plus a representative reject scenario.
+  // (072 disables acceptance structurally — 'accepted' is never a reachable
+  // status for any writer — so reject is the only real corridor to exercise.)
+  // Official report SNAPSHOTS are safe by default now (see procurement note
+  // above) via the same 141 marking mechanism.
   await runGroup('suggestions_snapshots', async () => {
     let n = 0;
     for (const o of orgs) {
