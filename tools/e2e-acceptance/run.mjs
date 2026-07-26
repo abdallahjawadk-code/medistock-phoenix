@@ -78,14 +78,32 @@ async function login(page, email, password) {
   await settle(1500);
 }
 
-async function openOutletOperations(page) {
-  await page.keyboard.press('Control+k');
-  await settle(400);
-  const search = page.locator('input[type="text"]').last();
-  await search.fill('Outlet Operations').catch(async () => { await search.fill('عمليات المنفذ'); });
-  await settle(400);
-  await page.keyboard.press('Enter');
-  await settle(1500);
+const NAV_LABEL = { en: 'Outlet Operations', ar: 'عمليات المنفذ' };
+
+/**
+ * Reaches Outlet Operations (screen 18) the way an operator does — desktop
+ * sidebar click or mobile drawer — mirroring
+ * scripts/phoenix-capture-outlet-corridor.mjs's own proven
+ * navigateToScreen18() exactly, rather than a keyboard-shortcut guess.
+ */
+async function openOutletOperations(page, { mobile = false } = {}) {
+  if (mobile) {
+    const trigger = page.locator('.premium-drawer-trigger').first();
+    await trigger.click();
+    await settle(400);
+    const item = page.locator('.premium-drawer-nav button', { hasText: NAV_LABEL.en }).or(
+      page.locator('.premium-drawer-nav button', { hasText: NAV_LABEL.ar }),
+    ).first();
+    await item.click();
+    await settle(900);
+  } else {
+    const item = page.locator('nav button.premium-nav-item', { hasText: NAV_LABEL.en }).or(
+      page.locator('nav button.premium-nav-item', { hasText: NAV_LABEL.ar }),
+    ).first();
+    await item.click();
+    await settle(900);
+  }
+  await settle(1200);
 }
 
 async function main() {
@@ -218,7 +236,7 @@ async function main() {
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
-    await openOutletOperations(page);
+    await openOutletOperations(page, { mobile: true });
     await settle(1000);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
     const bodyText = (await page.textContent('body')) ?? '';
