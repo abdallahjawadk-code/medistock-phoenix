@@ -94,6 +94,28 @@ async function login(page, email, password) {
   await settle(3000);
 }
 
+/**
+ * Sets a native <select>'s value by visible option label, via direct DOM
+ * manipulation + a dispatched 'change' event, instead of Playwright's own
+ * selectOption() (which does pointer/actionability hit-testing the same way
+ * .click() does — and this composer's own submit button proved that hit-
+ * testing can find the wrong topmost element at this dialog's coordinates;
+ * see the elementFromPoint diagnostic in dispenseFlow). A real 'change'
+ * event is what React's onChange handler actually listens for, so this
+ * reaches the same code path selectOption would have, just without the
+ * coordinate-based interaction layer that kept timing out here.
+ */
+async function selectByLabel(select, labels) {
+  const picked = await select.evaluate((el, candidateLabels) => {
+    const opt = Array.from(el.options).find(o => candidateLabels.includes(o.textContent?.trim()));
+    if (!opt) return null;
+    el.value = opt.value;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return opt.textContent;
+  }, labels);
+  if (!picked) throw new Error(`selectByLabel: none of [${labels.join(', ')}] found among this <select>'s options`);
+}
+
 const NAV_LABEL = { en: 'Outlet Operations', ar: 'عمليات المنفذ' };
 
 /**
@@ -249,7 +271,7 @@ async function main() {
     await dispenseFlow('E2E Amoxicillin', async () => {
       await page.fill('#dsp-qty', '5');
       const select = page.locator('select').filter({ hasText: 'Patient' }).first();
-      await select.selectOption({ label: 'Crash cart' }).catch(async () => { await select.selectOption({ label: 'عربة الطوارئ' }); });
+      await selectByLabel(select, ['Crash cart', 'عربة الطوارئ']);
       await settle(300);
       await page.fill('#dsp-cart', 'CART-42');
     }, (body) => record('CRASH_CART dispense succeeds', body.includes('Dispensed and beneficiary recorded') || body.includes('تم الصرف')));
@@ -258,7 +280,7 @@ async function main() {
     await dispenseFlow('E2E Ibuprofen', async () => {
       await page.fill('#dsp-qty', '5');
       const select = page.locator('select').filter({ hasText: 'Patient' }).first();
-      await select.selectOption({ label: 'Internal order' }).catch(async () => { await select.selectOption({ label: 'طلب داخلي' }); });
+      await selectByLabel(select, ['Internal order', 'طلب داخلي']);
       await settle(300);
       await page.fill('#dsp-order', 'ORDER-77');
     }, (body) => record('INTERNAL_ORDER dispense succeeds', body.includes('Dispensed and beneficiary recorded') || body.includes('تم الصرف')));
