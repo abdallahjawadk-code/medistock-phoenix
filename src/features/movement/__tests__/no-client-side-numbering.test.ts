@@ -351,7 +351,14 @@ describe('no client-side document-number sequence exists', () => {
     // hospital document reference -- exactly the mv_external_reference
     // category this guard already protects -- never a serial this system
     // allocates. No sequence, nothing client-computed. Ceiling moves to 137.
-    const beyond = migrations.filter(f => /^(13[7-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 137 (FIVE-ROLE-CUTOVER-PORTS-VIEW-GAP-137) adds NO document numbering
+    // either -- it is a pure role_permission_defaults grant (ports.view for
+    // outlet_officer/central_warehouse_manager), the RBAC gap a real
+    // authenticated browser session found blocking Outlet Operations from
+    // ever resolving an outlet_officer's own scoped outlet. No new table,
+    // no sequence, no document/official number of any kind. Ceiling moves
+    // to 138.
+    const beyond = migrations.filter(f => /^(13[8-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
