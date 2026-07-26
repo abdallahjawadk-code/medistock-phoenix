@@ -90,6 +90,36 @@ jobs:
           sed -i -E 's/SELECT[[:space:]]+qual[[:space:]]+INTO/SELECT coalesce(qual, with_check) INTO/gi' \
             supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql
 
+      - name: Prepend the default-privileges bootstrap to migration 001 (mirrors tools/pg-rig/bootstrap.sql — must run BEFORE any CREATE TABLE, not after)
+        # This step used to APPEND these two ALTER DEFAULT PRIVILEGES
+        # statements to the end of 001, which only affects tables created
+        # AFTER that point (e.g. it correctly fixed migration 092's
+        # stocktakes). It does nothing for profiles/organizations/warehouses/
+        # distribution_points — created EARLIER, inside 001 itself — because
+        # ALTER DEFAULT PRIVILEGES only governs FUTURE object creation, never
+        # retroactively grants on existing objects. Confirmed by the actual
+        # browser-side error this produced: "permission denied for table
+        # profiles (SQLSTATE 42501), hint: GRANT SELECT ON public.profiles TO
+        # authenticated" — a genuine missing table-level GRANT (not RLS row
+        # filtering, which fails silently with an empty result instead).
+        # Fixed by PREPENDING instead, so it's in effect before 001's own
+        # first CREATE TABLE. Mirrors tools/pg-rig/bootstrap.sql's identical
+        # statements, applied to this ephemeral runner's disposable checkout
+        # only — the committed migration file is never modified.
+        run: |
+          {
+            echo "-- E2E-CI-ONLY (prepended to this ephemeral checkout's copy"
+            echo "-- of 001 only — never committed). Mirrors"
+            echo "-- tools/pg-rig/bootstrap.sql's identical statements, run"
+            echo "-- BEFORE any table exists so every table this repo's"
+            echo "-- migrations create — including 001's own — inherits it."
+            echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;"
+            echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;"
+            echo ""
+            cat supabase/migrations/001_phoenix_core_schema.sql
+          } > /tmp/001_prepended.sql
+          mv /tmp/001_prepended.sql supabase/migrations/001_phoenix_core_schema.sql
+
       - name: Seed the pre-062 super_admin migration 062 requires to exist (mirrors tools/pg-rig/rig.mjs's SEED_AFTER_001)
         # Migration 062 aborts if no super_admin profile exists yet — rig.mjs
         # documents this exact requirement and seeds a fixed-UUID super_admin
@@ -99,34 +129,18 @@ jobs:
         # migration file for this was tried first but does not work: the
         # Supabase CLI requires a purely-numeric "<timestamp>_name.sql"
         # filename and silently SKIPPED a "001z_..." file entirely (visible
-        # in the prior run's log: "Skipping migration
+        # in an earlier run's log: "Skipping migration
         # 001z_e2e_ci_seed_super_admin_for_062.sql... (file name must match
         # pattern...)") — and no purely-numeric prefix can lexically sort
         # between "001_" and "002_" anyway (any extra digit after "001"
         # sorts BEFORE the "_" that follows "001" in the real file, since
-        # digits < '_' in ASCII). So instead this APPENDS the same seed SQL
+        # digits < '_' in ASCII). So instead this APPENDS the seed SQL
         # directly onto the end of migration 001's own file content, in this
         # ephemeral runner's disposable checkout only (never committed) —
         # guarantees it runs in the same migration step as 001 itself, right
         # after the profiles table exists, with no filename/ordering tricks.
         run: |
           cat >> supabase/migrations/001_phoenix_core_schema.sql <<'SQL'
-
-          -- E2E-CI-ONLY (appended to this ephemeral checkout's copy of 001
-          -- only — never committed). No migration in this repo ever sets
-          -- ALTER DEFAULT PRIVILEGES for the public schema itself (migration
-          -- 109 only narrows FUNCTIONS default privileges, later) — the
-          -- TABLES/SEQUENCES default-grant-to-authenticated that every
-          -- later migration's own "SELECT must remain granted" assertions
-          -- assume comes entirely from outside the migration chain. Mirrors
-          -- tools/pg-rig/bootstrap.sql's identical statements (that file's
-          -- own comment: "Supabase grants table/sequence/function privileges
-          -- to these roles by default ... Emulate that ... Set BEFORE the
-          -- migrations create their objects"). Idempotent/safe even if the
-          -- real local Supabase Postgres image already provides an
-          -- equivalent rule.
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;
 
           -- E2E-CI-ONLY seed (appended to this ephemeral checkout's copy of
           -- 001 only — never committed): a disposable synthetic super_admin
