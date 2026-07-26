@@ -86,7 +86,11 @@ async function login(page, email, password) {
   await page.fill('#login-password', password);
   await page.click('button[type="submit"]');
   await page.waitForSelector('#login-email', { state: 'detached', timeout: 20000 }).catch(() => {});
-  await settle(1500);
+  // AuthenticatedApp's own profile/session-restore fetch chain runs after
+  // the login form detaches — give it real time to mount the full shell
+  // (sidebar, nav) on a cold-started CI runner before anything tries to
+  // interact with it.
+  await settle(3000);
 }
 
 const NAV_LABEL = { en: 'Outlet Operations', ar: 'عمليات المنفذ' };
@@ -100,21 +104,27 @@ const NAV_LABEL = { en: 'Outlet Operations', ar: 'عمليات المنفذ' };
 async function openOutletOperations(page, { mobile = false } = {}) {
   if (mobile) {
     const trigger = page.locator('.premium-drawer-trigger').first();
+    await trigger.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    console.log('DIAGNOSTIC — drawer trigger count:', await trigger.count());
     await trigger.click();
     await settle(400);
     const item = page.locator('.premium-drawer-nav button', { hasText: NAV_LABEL.en }).or(
       page.locator('.premium-drawer-nav button', { hasText: NAV_LABEL.ar }),
     ).first();
+    console.log('DIAGNOSTIC — drawer nav item count:', await item.count());
     await item.click();
     await settle(900);
   } else {
     const item = page.locator('nav button.premium-nav-item', { hasText: NAV_LABEL.en }).or(
       page.locator('nav button.premium-nav-item', { hasText: NAV_LABEL.ar }),
     ).first();
+    await item.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    console.log('DIAGNOSTIC — sidebar nav item count:', await item.count(), 'url:', page.url());
     await item.click();
     await settle(900);
   }
   await settle(1200);
+  console.log('DIAGNOSTIC — post-navigation url:', page.url());
 }
 
 /**
