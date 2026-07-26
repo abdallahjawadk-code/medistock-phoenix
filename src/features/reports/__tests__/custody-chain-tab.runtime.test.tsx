@@ -30,6 +30,11 @@ vi.mock('../custody-chain.service', () => ({
   getMovementTimeline: (id: string) => getMovementTimeline(id),
 }));
 
+const getDispenseContext = vi.fn();
+vi.mock('@/features/outlet/dispense-context.service', () => ({
+  getDispenseContext: (movementId: string) => getDispenseContext(movementId),
+}));
+
 const getPaperReferencesFor = vi.fn(async (_documentType: string, _documentIds: readonly string[]) => new Map());
 vi.mock('@/features/movement/paper-reference.service', () => ({
   getPaperReferencesFor: (documentType: string, documentIds: readonly string[]) => getPaperReferencesFor(documentType, documentIds),
@@ -56,6 +61,25 @@ const TIMELINE: MovementTimelineResult = {
     actor_id: 'u1', actor_role: 'warehouse_officer', actor_name: 'Test Officer', status: 'sent',
     material: 'Paracetamol', batch: 'B1', quantity_delta: -10, reference_type: null,
     reference_id: null, reference: null, provenance: 'movement_events',
+    // MOVEMENT-TIMELINE-CONTRACT-FIELDS-139
+    reason_code: 'dispensed', quantity_before: 30, quantity_after: 20,
+    correlation_id: 'c0ffee00-0000-4000-8000-000000000001',
+    causation_id: 'ca05a710-0000-4000-8000-000000000002',
+    has_dispense_context: true,
+  }],
+};
+
+/** A derived_from_column event genuinely has no quantity/reason — the UI must
+ *  show that honestly rather than invent values. */
+const TIMELINE_DERIVED: MovementTimelineResult = {
+  ok: true, complete: false, completeness_note: 'partial',
+  events: [{
+    event_id: 'e2', event_type: 'dispatch_sent', occurred_at: '2026-07-20T00:00:00Z',
+    actor_id: 'u1', actor_role: null, actor_name: null, status: 'sent',
+    material: null, batch: null, quantity_delta: null, reference_type: 'warehouse_dispatch',
+    reference_id: 'd1', reference: 'DSP-0001', provenance: 'derived_from_column',
+    reason_code: null, quantity_before: null, quantity_after: null,
+    correlation_id: null, causation_id: null, has_dispense_context: false,
   }],
 };
 
@@ -140,5 +164,76 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     await waitFor(() => {
       expect(screen.getByText('network down')).toBeInTheDocument();
     });
+  });
+
+  it('139: a movement-row trace event surfaces reason code, before/delta/after, correlation and causation', async () => {
+    listCustodyDispatches.mockResolvedValue([DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+    getMovementTimeline.mockResolvedValue(TIMELINE);
+    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+
+    fireEvent.click(await screen.findByText('DSP-0001'));
+    const ev = await screen.findByTestId('custody-trace-event');
+    expect(ev.textContent).toContain('Dispensed');        // translated reason_code
+    expect(ev.textContent).toMatch(/30\s*→\s*20/);        // before → after
+    expect(ev.textContent).toContain('(-10)');             // signed delta
+    expect(ev.textContent).toContain('c0ffee00');          // correlation (short)
+    expect(ev.textContent).toContain('ca05a710');          // causation (short)
+    expect(ev.textContent).toContain('movement_events');   // provenance still shown
+  });
+
+  it('139: an event with no quantity/reason (derived_from_column) shows neither — absence is honest, never invented', async () => {
+    listCustodyDispatches.mockResolvedValue([DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+    getMovementTimeline.mockResolvedValue(TIMELINE_DERIVED);
+    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+
+    fireEvent.click(await screen.findByText('DSP-0001'));
+    const ev = await screen.findByTestId('custody-trace-event');
+    expect(ev.textContent).not.toMatch(/Reason code:/);
+    expect(ev.textContent).not.toMatch(/→\s*\d/);
+    expect(ev.textContent).toContain('derived_from_column');
+    // The document reference IS present and must still render.
+    expect(ev.textContent).toContain('DSP-0001');
+  });
+
+  it('139: has_dispense_context opens the MASKED drill-down via the existing RPC, and the trace itself never carries beneficiary detail', async () => {
+    listCustodyDispatches.mockResolvedValue([DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+    getMovementTimeline.mockResolvedValue(TIMELINE);
+    getDispenseContext.mockResolvedValue({
+      id: 'ctx1', movementId: 'e1', beneficiaryType: 'patient',
+      patientIdentifier: null, patientName: null, patientReferenceType: 'chart',
+      patientIdentityMasked: true, crashCartReference: null, internalOrderReference: null,
+      notes: null, recordedBy: 'u1', recordedAt: '2026-07-20T00:00:00Z',
+    });
+    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+
+    fireEvent.click(await screen.findByText('DSP-0001'));
+    const ev = await screen.findByTestId('custody-trace-event');
+    // No beneficiary detail is present in the trace payload rendering itself.
+    expect(ev.textContent).not.toMatch(/MRN|patient_identifier/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /Beneficiary . View/i }));
+    expect(getDispenseContext).toHaveBeenCalledWith('e1');
+    await waitFor(() => expect(screen.getByTestId('dispense-context-viewer')).toBeInTheDocument());
+    // Server said masked -> the viewer shows the masked indicator, never a value.
+    expect(screen.getByTestId('dispense-context-viewer').textContent).not.toMatch(/MRN/i);
+  });
+
+  it('139: an event WITHOUT a dispense context renders no drill-down affordance at all', async () => {
+    listCustodyDispatches.mockResolvedValue([DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+    getMovementTimeline.mockResolvedValue(TIMELINE_DERIVED);
+    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+
+    fireEvent.click(await screen.findByText('DSP-0001'));
+    await screen.findByTestId('custody-trace-event');
+    expect(screen.queryByRole('button', { name: /Beneficiary . View/i })).not.toBeInTheDocument();
+    expect(getDispenseContext).not.toHaveBeenCalled();
   });
 });

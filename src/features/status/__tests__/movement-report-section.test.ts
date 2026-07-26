@@ -26,6 +26,7 @@ const section      = readFileSync(sectionPath, 'utf8');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const service      = readSrc('features/reports/movement-ledger-report.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
+const labels       = readSrc('shared/lib/movement-labels.ts');
 const historyModal  = readSrc('features/status/MovementHistoryModal.tsx');
 
 // ============================================================================
@@ -138,9 +139,31 @@ describe('MovementReportSection: title, filters, summary, table, states', () => 
   });
 
   it('movement type filter offers the full union of warehouse/outlet/quarantine types plus an "all" option', () => {
+    // MOVEMENT-LABELS: the closed vocabularies live in ONE shared module now
+    // (src/shared/lib/movement-labels.ts), reused by both this section and the
+    // Custody Chain trace — the section imports the map rather than keeping a
+    // second copy of it.
     expect(section).toContain('MOVEMENT_TYPE_LABEL_KEY');
-    ['set_exact', 'add', 'subtract', 'correction', 'dispense', 'quarantine_receive'].forEach(v => expect(section).toContain(`${v}:`));
+    expect(section).toContain("from '@/shared/lib/movement-labels'");
+    ['set_exact', 'add', 'subtract', 'correction', 'dispense', 'quarantine_receive']
+      .forEach(v => expect(labels).toContain(`${v}:`));
     expect(section).toContain('mvmt_report_all_types');
+  });
+
+  it('the reason-code / movement-type / ledger-source vocabularies are NOT duplicated in the section', () => {
+    // A second local copy of any of these maps is exactly the duplication the
+    // reporting-closure parity matrix exists to prevent.
+    expect(section).not.toMatch(/const\s+REASON_CODE_LABEL_KEY\s*[:=]/);
+    expect(section).not.toMatch(/const\s+LEDGER_SOURCE_LABEL_KEY\s*[:=]/);
+    expect(section).not.toMatch(/const\s+MOVEMENT_TYPE_LABEL_KEY\s*[:=]/);
+  });
+
+  it('the shared label helpers never leak an i18n key for an unknown code', () => {
+    // t() returns the KEY for a missing entry, so the helpers must check
+    // membership explicitly and fall back to the raw stored code.
+    expect(labels).toContain('return key ? t(key, lang) : code;');
+    expect(labels).toContain('return key ? t(key, lang) : type;');
+    expect(labels).toContain('return key ? t(key, lang) : source;');
   });
 
   it('renders 5 summary cards: total, additions, subtractions, corrections, net delta', () => {

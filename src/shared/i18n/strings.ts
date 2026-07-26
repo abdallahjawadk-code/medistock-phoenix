@@ -661,6 +661,12 @@ export const T: Dict = {
     en: 'Prepare, review, approve and lock each institution’s monthly inventory position — its own official workflow with official numbering and immutable snapshots. Open the dedicated screen to act on it.',
   },
   dir_monthly_deeplink_cta: { ar: 'فتح الموقف المخزني الشهري',      en: 'Open Monthly Inventory Position' },
+  /* MOVEMENT-TIMELINE-CONTRACT-FIELDS-139 */
+  dir_col_correlation: { ar: 'معرّف الترابط',                       en: 'Correlation' },
+  dir_col_causation:   { ar: 'معرّف السببية',                        en: 'Causation' },
+  dir_col_quantity_before: { ar: 'الكمية قبل',                       en: 'Qty before' },
+  dir_col_quantity_after:  { ar: 'الكمية بعد',                       en: 'Qty after' },
+  dir_col_provenance:  { ar: 'مصدر الحدث',                           en: 'Provenance' },
   dir_open_in_status_center: { ar: 'فتح المصفوفة الحية في مركز المواقف', en: 'Open live matrix in Status Center' },
   dir_col_receipt_number: { ar: 'رقم الوصل',                       en: 'Receipt number' },
   dir_col_paper_reference: { ar: 'المرجع الورقي',                  en: 'Paper reference' },

@@ -12,6 +12,9 @@ import {
   type MovementLedgerSource,
 } from '@/features/reports/movement-ledger-report.service';
 import { getDispenseContext, type DispenseContext } from '@/features/outlet/dispense-context.service';
+import {
+  MOVEMENT_TYPE_LABEL_KEY, reasonCodeLabel, movementTypeLabel, ledgerSourceLabel,
+} from '@/shared/lib/movement-labels';
 import { DispenseContextViewer } from '@/features/outlet/DispenseContextViewer';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
@@ -39,49 +42,6 @@ import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
  * src/features/inventory/__tests__/legacy-availability-writer-audit.test.ts),
  * so nothing regresses by moving off it.
  */
-
-const MOVEMENT_TYPE_LABEL_KEY: Record<string, string> = {
-  set_exact: 'mvmt_set_exact',
-  add: 'mvmt_add',
-  subtract: 'mvmt_subtract',
-  correction: 'mvmt_correction',
-  reserve: 'mvmt_type_reserve',
-  release: 'mvmt_type_release',
-  dispatch_send: 'mvmt_type_dispatch_send',
-  dispatch_return: 'mvmt_type_dispatch_return',
-  dispatch_receive: 'mvmt_type_dispatch_receive',
-  dispense: 'mvmt_type_dispense',
-  return_send: 'mvmt_type_return_send',
-  quarantine_receive: 'mvmt_type_quarantine_receive',
-  quarantine_release: 'mvmt_type_quarantine_release',
-  quarantine_destroy: 'mvmt_type_quarantine_destroy',
-  quarantine_correction: 'mvmt_type_quarantine_correction',
-};
-
-const REASON_CODE_LABEL_KEY: Record<string, string> = {
-  received: 'mvmt_reason_received',
-  transferred: 'mvmt_reason_transferred',
-  dispensed: 'mvmt_reason_dispensed',
-  counted: 'mvmt_reason_counted',
-  corrected: 'mvmt_reason_corrected',
-  released: 'mvmt_reason_released',
-  excess: 'mvmt_reason_excess',
-  shipment_error: 'mvmt_reason_shipment_error',
-  near_expiry: 'mvmt_reason_near_expiry',
-  expired: 'mvmt_reason_expired',
-  damaged: 'mvmt_reason_damaged',
-  recalled: 'mvmt_reason_recalled',
-  quality_issue: 'mvmt_reason_quality_issue',
-  temperature_excursion: 'mvmt_reason_temperature_excursion',
-  other: 'mvmt_reason_other',
-  legacy_unclassified: 'mvmt_reason_legacy_unclassified',
-};
-
-const LEDGER_SOURCE_LABEL_KEY: Record<MovementLedgerSource, string> = {
-  warehouse: 'mvmt_ledger_warehouse',
-  outlet: 'mvmt_ledger_outlet',
-  quarantine: 'mvmt_ledger_quarantine',
-};
 
 // BUGFIX-REPORTS-DATES-PORT-CLEAR-A: columns whose values are digit/slash
 // text (dates, quantities) — must render dir="ltr" in RTL layout (on-screen
@@ -212,13 +172,9 @@ export function MovementReportSection() {
   const actorLabel = (r: MovementLedgerReportRow) =>
     (r.actorName || '—') + (r.actorRole ? ` (${r.actorRole})` : '');
 
-  const reasonLabel = (r: MovementLedgerReportRow) =>
-    REASON_CODE_LABEL_KEY[r.reasonCode] ? t(REASON_CODE_LABEL_KEY[r.reasonCode], lang) : r.reasonCode;
-
-  const typeLabel = (r: MovementLedgerReportRow) =>
-    MOVEMENT_TYPE_LABEL_KEY[r.movementType] ? t(MOVEMENT_TYPE_LABEL_KEY[r.movementType], lang) : r.movementType;
-
-  const ledgerLabel = (r: MovementLedgerReportRow) => t(LEDGER_SOURCE_LABEL_KEY[r.ledgerSource], lang);
+  const reasonLabel = (r: MovementLedgerReportRow) => reasonCodeLabel(r.reasonCode, lang);
+  const typeLabel = (r: MovementLedgerReportRow) => movementTypeLabel(r.movementType, lang);
+  const ledgerLabel = (r: MovementLedgerReportRow) => ledgerSourceLabel(r.ledgerSource, lang);
 
   // Shared column definitions for table / print / CSV — mirrors the pattern
   // already used by StatusCenterScreen's live availability report. The
@@ -249,8 +205,8 @@ export function MovementReportSection() {
     const parts: string[] = [];
     if (dateFrom) parts.push(`${t('mvmt_report_date_from', lang)}: ${dateFrom}`);
     if (dateTo) parts.push(`${t('mvmt_report_date_to', lang)}: ${dateTo}`);
-    if (ledgerSource) parts.push(`${t('mvmt_col_ledger_source', lang)}: ${t(LEDGER_SOURCE_LABEL_KEY[ledgerSource], lang)}`);
-    if (movementType) parts.push(`${t('mvmt_type_label', lang)}: ${MOVEMENT_TYPE_LABEL_KEY[movementType] ? t(MOVEMENT_TYPE_LABEL_KEY[movementType], lang) : movementType}`);
+    if (ledgerSource) parts.push(`${t('mvmt_col_ledger_source', lang)}: ${ledgerSourceLabel(ledgerSource, lang)}`);
+    if (movementType) parts.push(`${t('mvmt_type_label', lang)}: ${movementTypeLabel(movementType, lang)}`);
     if (locationId) {
       const p = locationOptions.find(x => x.id === locationId);
       if (p) parts.push(`${t('mvmt_col_location', lang)}: ${lang === 'ar' ? p.name_ar : p.name}`);

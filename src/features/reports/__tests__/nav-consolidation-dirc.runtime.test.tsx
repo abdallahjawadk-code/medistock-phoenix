@@ -59,7 +59,10 @@ const OVERVIEW: ExecutiveOverview = {
 };
 
 const INSTITUTIONS: InstitutionOverview[] = [
-  { id: 'inst1', name: 'Institution A', name_ar: 'مؤسسة أ', available: 40, low: 5, missing: 2 },
+  {
+    id: 'inst1', name: 'Institution A', name_ar: 'مؤسسة أ', code: 'inst-a',
+    status: 'active', city: 'بابل', available: 40, low: 5, missing: 2,
+  },
 ];
 
 describe('DIRC navigation consolidation (Phase 2)', () => {

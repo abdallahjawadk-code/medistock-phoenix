@@ -16,10 +16,15 @@
  * gap list and why (both need a dedicated org-wide read path this pass
  * didn't reach).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
+import { formatStableDateTime } from '@/shared/lib/date';
+import { getDispenseContext, type DispenseContext } from '@/features/outlet/dispense-context.service';
+import { DispenseContextViewer } from '@/features/outlet/DispenseContextViewer';
+import { reasonCodeLabel } from '@/shared/lib/movement-labels';
+import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
@@ -805,6 +810,12 @@ interface CustodyCombinedRow { id: string; kind: string; number: string; status:
 interface CustodyTraceEventRow {
   documentKind: string; documentNumber: string; eventType: string; status: string | null;
   occurredAt: string; actorName: string | null; material: string | null;
+  // MOVEMENT-TIMELINE-CONTRACT-FIELDS-139 — exported in exact parity with
+  // what the on-screen trace shows, from the same phoenix_movement_timeline
+  // rowset. No beneficiary detail: only whether a context exists.
+  reasonCode: string | null; quantityBefore: number | null; quantityDelta: number | null;
+  quantityAfter: number | null; correlationId: string | null; causationId: string | null;
+  reference: string | null; provenance: string; hasDispenseContext: boolean;
 }
 
 export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
@@ -820,6 +831,22 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
   const [traceError, setTraceError] = useState<string | null>(null);
   const [xlsxBusy, setXlsxBusy] = useState(false);
   const [fullXlsxBusy, setFullXlsxBusy] = useState(false);
+  // MOVEMENT-TIMELINE-CONTRACT-FIELDS-139: masked dispense-context drill-down.
+  // The timeline only ever tells us WHETHER a context exists; the beneficiary
+  // detail is fetched on demand through the existing masked RPC, so
+  // movement_context.view_sensitive stays the single source of truth.
+  const [contextForMovement, setContextForMovement] = useState<string | null>(null);
+  const [dispenseContext, setDispenseContext] = useState<DispenseContext | null>(null);
+  const [dispenseContextError, setDispenseContextError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!contextForMovement) { setDispenseContext(null); setDispenseContextError(null); return; }
+    let cancelled = false;
+    getDispenseContext(contextForMovement)
+      .then(ctx => { if (!cancelled) setDispenseContext(ctx); })
+      .catch(e => { if (!cancelled) setDispenseContextError((e as Error)?.message ?? 'load_error'); });
+    return () => { cancelled = true; };
+  }, [contextForMovement]);
 
   // `?? []` so these are stable, safely-typed arrays on EVERY render (including
   // the initial loading render) — required so the two paper-reference hooks
@@ -952,6 +979,15 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
           occurredAt: ev.occurred_at,
           actorName: ev.actor_name,
           material: ev.material,
+          reasonCode: ev.reason_code,
+          quantityBefore: ev.quantity_before,
+          quantityDelta: ev.quantity_delta,
+          quantityAfter: ev.quantity_after,
+          correlationId: ev.correlation_id,
+          causationId: ev.causation_id,
+          reference: ev.reference,
+          provenance: ev.provenance,
+          hasDispenseContext: ev.has_dispense_context,
         })),
       );
       const traceSheet = {
@@ -967,6 +1003,16 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
           { key: 'occurredAt', label: t('dir_as_of', lang), value: (r: CustodyTraceEventRow) => r.occurredAt, ltr: true, dateColumn: 'datetime', excelValue: (r: CustodyTraceEventRow) => r.occurredAt },
           { key: 'actor', label: t('dir_col_proposed_by', lang), value: (r: CustodyTraceEventRow) => r.actorName ?? '—' },
           { key: 'material', label: 'Material', value: (r: CustodyTraceEventRow) => r.material ?? '—' },
+          // 139 contract fields — same values, same rowset as the on-screen trace.
+          { key: 'reasonCode', label: t('mvmt_col_reason_code', lang), value: (r: CustodyTraceEventRow) => reasonCodeLabel(r.reasonCode, lang) },
+          { key: 'qtyBefore', label: t('dir_col_quantity_before', lang), value: (r: CustodyTraceEventRow) => r.quantityBefore === null ? '—' : String(r.quantityBefore), numeric: true, excelValue: (r: CustodyTraceEventRow) => r.quantityBefore ?? undefined },
+          { key: 'qtyDelta', label: t('mvmt_col_delta', lang), value: (r: CustodyTraceEventRow) => r.quantityDelta === null ? '—' : String(r.quantityDelta), numeric: true, excelValue: (r: CustodyTraceEventRow) => r.quantityDelta ?? undefined },
+          { key: 'qtyAfter', label: t('dir_col_quantity_after', lang), value: (r: CustodyTraceEventRow) => r.quantityAfter === null ? '—' : String(r.quantityAfter), numeric: true, excelValue: (r: CustodyTraceEventRow) => r.quantityAfter ?? undefined },
+          { key: 'reference', label: t('mvmt_col_document_ref', lang), value: (r: CustodyTraceEventRow) => r.reference ?? '—', ltr: true },
+          { key: 'correlation', label: t('dir_col_correlation', lang), value: (r: CustodyTraceEventRow) => r.correlationId ?? '—', ltr: true },
+          { key: 'causation', label: t('dir_col_causation', lang), value: (r: CustodyTraceEventRow) => r.causationId ?? '—', ltr: true },
+          { key: 'dispenseContext', label: t('mvmt_col_dispense_context', lang), value: (r: CustodyTraceEventRow) => r.hasDispenseContext ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
+          { key: 'provenance', label: t('dir_col_provenance', lang), value: (r: CustodyTraceEventRow) => r.provenance, ltr: true },
         ] as ProfessionalReportColumn<CustodyTraceEventRow>[],
         rows: eventRows,
         lang,
@@ -993,11 +1039,50 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
           {traceCache[id].events.length === 0
             ? <div style={{ color: 'var(--t2)' }}>{t('dir_library_empty', lang)}</div>
             : traceCache[id].events.map(ev => (
-              <div key={ev.event_id} style={{ borderTop: '1px solid var(--brd)', padding: '4px 0' }}>
-                <strong>{ev.event_type}</strong>{ev.status ? ` → ${ev.status}` : ''}
-                {' · '}{new Date(ev.occurred_at).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
-                {ev.actor_name ? ` · ${ev.actor_name}` : ''}
-                {ev.material ? ` · ${ev.material}` : ''}
+              <div key={ev.event_id} style={{ borderTop: '1px solid var(--brd)', padding: '5px 0' }} data-testid="custody-trace-event">
+                <div>
+                  <strong>{ev.event_type}</strong>{ev.status ? ` → ${ev.status}` : ''}
+                  {' · '}<span dir="ltr">{formatStableDateTime(ev.occurred_at, lang)}</span>
+                  {ev.actor_name ? ` · ${ev.actor_name}` : ''}
+                  {ev.material ? ` · ${ev.material}` : ''}
+                </div>
+                {/* MOVEMENT-TIMELINE-CONTRACT-FIELDS-139: the canonical
+                    contract detail. Every value is rendered only when the
+                    server actually returned it — a derived_from_column
+                    header transition genuinely has no quantity or reason,
+                    and that absence is shown honestly, never filled in. */}
+                <div style={{ color: 'var(--t2)', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
+                  {ev.reason_code && (
+                    <span>{t('mvmt_col_reason_code', lang)}: {reasonCodeLabel(ev.reason_code, lang)}</span>
+                  )}
+                  {ev.quantity_before !== null && ev.quantity_after !== null && (
+                    <span dir="ltr">
+                      {ev.quantity_before} → {ev.quantity_after}
+                      {ev.quantity_delta !== null ? ` (${ev.quantity_delta > 0 ? '+' : ''}${ev.quantity_delta})` : ''}
+                    </span>
+                  )}
+                  {ev.reference && <span dir="ltr">{t('mvmt_col_document_ref', lang)}: {ev.reference}</span>}
+                  {ev.correlation_id && (
+                    <span dir="ltr" title={ev.correlation_id}>
+                      {t('dir_col_correlation', lang)}: {ev.correlation_id.slice(0, 8)}
+                    </span>
+                  )}
+                  {ev.causation_id && (
+                    <span dir="ltr" title={ev.causation_id}>
+                      {t('dir_col_causation', lang)}: {ev.causation_id.slice(0, 8)}
+                    </span>
+                  )}
+                  {ev.has_dispense_context && (
+                    <button
+                      type="button"
+                      onClick={() => setContextForMovement(ev.event_id)}
+                      style={{ border: '1px solid var(--brd)', borderRadius: 'var(--r2)', background: 'var(--s)', color: 'var(--t)', cursor: 'pointer', fontSize: '10.5px', padding: '1px 6px' }}
+                    >
+                      {t('mvmt_col_dispense_context', lang)} · {t('mvmt_dispense_context_view', lang)}
+                    </button>
+                  )}
+                  <span style={{ color: 'var(--t3)' }}>{ev.provenance}</span>
+                </div>
               </div>
             ))}
         </>
@@ -1085,6 +1170,16 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
           </div>
         )}
       </PhoenixCard>
+
+      <PhoenixDialog
+        open={contextForMovement !== null}
+        onClose={() => setContextForMovement(null)}
+        title={t('mvmt_col_dispense_context', lang)}
+      >
+        {dispenseContextError && <PhoenixErrorState title={t('load_error', lang)} message={dispenseContextError} />}
+        {!dispenseContextError && !dispenseContext && <PhoenixLoadingState />}
+        {!dispenseContextError && dispenseContext && <DispenseContextViewer context={dispenseContext} lang={lang} />}
+      </PhoenixDialog>
     </div>
   );
 }
