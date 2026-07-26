@@ -85,9 +85,15 @@ async function main() {
       [WH_A, WH_B, ORG_A, ORG_B],
     );
     await client.query(
+      // point_type must be 'pharmacy' here, matching the outlet_stock rows
+      // seeded below: outlet_stock_dp_type_fk is a composite FK on
+      // (distribution_point_id, point_type) referencing
+      // distribution_points(id, point_type) — both sides must agree, exactly
+      // as 136-dispense-with-context-atomic.dynamic.test.ts's own seedLot()
+      // helper already does.
       `INSERT INTO distribution_points (id, warehouse_id, organization_id, name, name_ar, point_type, status)
-       VALUES ($1, $3, $5, 'E2E Outlet A', 'منفذ أ', 'dispensing', 'active'),
-              ($2, $4, $6, 'E2E Outlet B', 'منفذ ب', 'dispensing', 'active')
+       VALUES ($1, $3, $5, 'E2E Outlet A', 'منفذ أ', 'pharmacy', 'active'),
+              ($2, $4, $6, 'E2E Outlet B', 'منفذ ب', 'pharmacy', 'active')
        ON CONFLICT (id) DO NOTHING`,
       [DP_A, DP_B, WH_A, WH_B, ORG_A, ORG_B],
     );
