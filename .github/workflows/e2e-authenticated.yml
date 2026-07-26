@@ -194,7 +194,7 @@ jobs:
 
       - name: Serve the built app
         run: |
-          npx vite preview --port 4173 --strictPort > /tmp/vite-preview.log 2>&1 &
+          npx vite preview --port 4173 --strictPort --host 127.0.0.1 > /tmp/vite-preview.log 2>&1 &
           echo $! > /tmp/vite-preview.pid
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:4173 >/dev/null && break
