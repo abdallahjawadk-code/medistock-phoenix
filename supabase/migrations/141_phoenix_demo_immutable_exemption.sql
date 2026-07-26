@@ -190,9 +190,9 @@ LANGUAGE plpgsql
 SET search_path = public, pg_temp
 AS $immutable$
 BEGIN
-  -- The marking transition (NULL -> the one legal value) must pass, or the
-  -- row could never be marked at all. Everything else about the row must be
-  -- byte-identical, so this can never smuggle a content edit through.
+  -- 141 ADDITION 1: the write-once marking transition (NULL -> the one legal
+  -- value). Everything else about the row must be byte-identical, so this can
+  -- never smuggle a content edit through.
   IF TG_OP = 'UPDATE'
      AND current_setting('phoenix.demo_marking', true) = 'on'
      AND OLD.demo_dataset_id IS NULL
@@ -201,23 +201,23 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- 141 ADDITION 2: the narrow DELETE-only demo exemption.
   IF TG_OP = 'DELETE'
      AND public.phoenix_demo_row_is_purgeable(
            TG_TABLE_NAME, OLD.id, OLD.demo_dataset_id, OLD.organization_id) THEN
     RETURN OLD;
   END IF;
 
-  IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'procurement_receipts' THEN
-    IF NEW.id = OLD.id
-       AND to_jsonb(NEW) - 'movement_id' = to_jsonb(OLD) - 'movement_id'
-       AND OLD.movement_id IS NULL THEN
-      RETURN NEW;
-    END IF;
-  END IF;
+  -- ---- 087's ORIGINAL BODY BELOW, VERBATIM --------------------------------
+  -- The ONE sanctioned update: the write RPC stamps ledger pointers onto a
+  -- history row it created in the same transaction -- receipt lines get their
+  -- warehouse_stock_id + movement_id, returns get their movement_id. The
+  -- pointer may only be FILLED (NULL -> value), never changed afterwards.
   IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'procurement_receipt_lines' THEN
     IF NEW.id = OLD.id
-       AND to_jsonb(NEW) - 'movement_id' = to_jsonb(OLD) - 'movement_id'
-       AND OLD.movement_id IS NULL THEN
+       AND to_jsonb(NEW) - 'warehouse_stock_id' - 'movement_id'
+           = to_jsonb(OLD) - 'warehouse_stock_id' - 'movement_id'
+       AND OLD.warehouse_stock_id IS NULL AND OLD.movement_id IS NULL THEN
       RETURN NEW;
     END IF;
   END IF;
@@ -234,10 +234,13 @@ $immutable$;
 
 REVOKE ALL ON FUNCTION public.phoenix_procurement_forbid_mutation() FROM PUBLIC;
 
-DROP TRIGGER IF EXISTS procurement_order_events_immutable ON public.procurement_order_events;
-CREATE TRIGGER procurement_order_events_immutable
-  BEFORE UPDATE OR DELETE ON public.procurement_order_events
-  FOR EACH ROW EXECUTE FUNCTION public.phoenix_procurement_forbid_mutation();
+-- NOTE: procurement_order_events deliberately does NOT get an immutability
+-- trigger here. 087 never made that table immutable, and 141's job is to
+-- EXEMPT demo rows from existing guarantees -- never to extend immutability to
+-- a table that did not have it. Adding one broke a legitimate existing flow
+-- (117's sub-purchase duplicate-candidate test) and was reverted. The table is
+-- still purge-safe: it sits ahead of procurement_orders in the allow-list, so
+-- its rows are removed before the parent they RESTRICT.
 
 -- E. Official report snapshots (119).
 
