@@ -184,8 +184,25 @@ async function main() {
       if (!opened) return record(`dispense composer opens for ${materialSubstring}`, false, 'button not found/clickable');
       await settle(500);
       await fill();
+      // React's canSubmit (which disables the button) derives from state set
+      // by the fill() calls above — give it real time to catch up rather than
+      // racing a click against a still-disabled button (which Playwright
+      // refuses and this function used to swallow silently via .catch()).
       const submit = page.getByText('Confirm dispense').or(page.getByText('تأكيد الصرف')).first();
-      await submit.click().catch(() => {});
+      let enabled = false;
+      for (let i = 0; i < 10; i++) {
+        enabled = await submit.count() > 0 && !(await submit.first().isDisabled().catch(() => true));
+        if (enabled) break;
+        await settle(300);
+      }
+      console.log(`DIAGNOSTIC — ${materialSubstring} submit button: count=${await submit.count()} enabled=${enabled}`);
+      if (!enabled) {
+        record(`${materialSubstring} dispense composer submit button never became enabled`, false);
+        await page.keyboard.press('Escape').catch(() => {});
+        await settle(300);
+        return;
+      }
+      await submit.click();
       await settle(2000);
       const bodyText = await page.textContent('body') ?? '';
       const alertText = await page.locator('[role="alert"]').allTextContents().catch(() => []);
