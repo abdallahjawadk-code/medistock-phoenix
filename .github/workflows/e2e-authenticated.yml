@@ -112,6 +112,22 @@ jobs:
         run: |
           cat >> supabase/migrations/001_phoenix_core_schema.sql <<'SQL'
 
+          -- E2E-CI-ONLY (appended to this ephemeral checkout's copy of 001
+          -- only — never committed). No migration in this repo ever sets
+          -- ALTER DEFAULT PRIVILEGES for the public schema itself (migration
+          -- 109 only narrows FUNCTIONS default privileges, later) — the
+          -- TABLES/SEQUENCES default-grant-to-authenticated that every
+          -- later migration's own "SELECT must remain granted" assertions
+          -- assume comes entirely from outside the migration chain. Mirrors
+          -- tools/pg-rig/bootstrap.sql's identical statements (that file's
+          -- own comment: "Supabase grants table/sequence/function privileges
+          -- to these roles by default ... Emulate that ... Set BEFORE the
+          -- migrations create their objects"). Idempotent/safe even if the
+          -- real local Supabase Postgres image already provides an
+          -- equivalent rule.
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;
+
           -- E2E-CI-ONLY seed (appended to this ephemeral checkout's copy of
           -- 001 only — never committed): a disposable synthetic super_admin
           -- migration 062 requires to exist for a fresh replay to pass its
