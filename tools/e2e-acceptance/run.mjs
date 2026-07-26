@@ -165,6 +165,10 @@ async function main() {
       console.log('DIAGNOSTIC — failed/5xx requests so far:', JSON.stringify(failedRequests));
       console.log('DIAGNOSTIC — REST calls so far:\n' + restCalls.join('\n'));
       console.log('DIAGNOSTIC — body text snippet:', bodySnippet);
+      const htmlSnippet = (await page.content().catch(() => '')).slice(0, 3000);
+      console.log('DIAGNOSTIC — raw HTML snippet:\n' + htmlSnippet);
+      const h2 = await page.locator('h2').first().innerText().catch(e => `<error: ${e.message}>`);
+      console.log('DIAGNOSTIC — first h2 innerText:', h2);
       await page.screenshot({ path: join(OUT_DIR, 'diagnostic-outlet-not-resolved.png') }).catch(() => {});
     }
 
