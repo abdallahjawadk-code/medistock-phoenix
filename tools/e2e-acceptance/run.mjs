@@ -95,25 +95,24 @@ async function login(page, email, password) {
 }
 
 /**
- * Sets a native <select>'s value by visible option label, via direct DOM
- * manipulation + a dispatched 'change' event, instead of Playwright's own
- * selectOption() (which does pointer/actionability hit-testing the same way
- * .click() does — and this composer's own submit button proved that hit-
- * testing can find the wrong topmost element at this dialog's coordinates;
- * see the elementFromPoint diagnostic in dispenseFlow). A real 'change'
- * event is what React's onChange handler actually listens for, so this
- * reaches the same code path selectOption would have, just without the
- * coordinate-based interaction layer that kept timing out here.
+ * Sets a native <select>'s value by visible option label, via Playwright's
+ * own selectOption() — a real interaction going through the same
+ * actionability checks (visible, stable, enabled, receives events) a real
+ * user's pointer would be subject to. This is an operational acceptance
+ * test: no DOM-level bypass is acceptable here, even one that reaches
+ * React's onChange correctly — the interaction itself has to be real.
  */
 async function selectByLabel(select, labels) {
-  const picked = await select.evaluate((el, candidateLabels) => {
-    const opt = Array.from(el.options).find(o => candidateLabels.includes(o.textContent?.trim()));
-    if (!opt) return null;
-    el.value = opt.value;
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    return opt.textContent;
-  }, labels);
-  if (!picked) throw new Error(`selectByLabel: none of [${labels.join(', ')}] found among this <select>'s options`);
+  let lastError = null;
+  for (const label of labels) {
+    try {
+      await select.selectOption({ label }, { timeout: 10000 });
+      return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError ?? new Error(`selectByLabel: none of [${labels.join(', ')}] found among this <select>'s options`);
 }
 
 const NAV_LABEL = { en: 'Outlet Operations', ar: 'عمليات المنفذ' };
@@ -174,6 +173,12 @@ async function main() {
   // ── 1. outlet_officer A: login, dispense all 3 beneficiary types ─────────
   {
     const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
+    // Full Playwright trace (screenshots + DOM snapshots + network + actions
+    // per step) for this session, since it's the one that drives the
+    // dispense composer — saved as an artifact regardless of outcome so a
+    // failure here is always inspectable after the fact, not just from the
+    // console log.
+    await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
     await login(page, seed.users.outletOfficerA.email, seed.password);
     const loggedIn = await page.locator('#login-email').count() === 0;
     record('outlet_officer A logs in successfully', loggedIn);
@@ -239,27 +244,71 @@ async function main() {
         await settle(300);
         return;
       }
-      // count=1 and enabled=true were just confirmed directly above. A plain
-      // .click() timed out in one earlier run (30193586905); a coordinate-
-      // based force:true click completed without error in the next
-      // (87aa153) but STILL produced zero REST calls and zero alert text —
-      // meaning force:true's center-point click likely landed on an
-      // overlaying element, not the real button (force bypasses Playwright's
-      // pointer-interception check, so it can't tell you that's happening).
-      // element.click() below calls the native DOM method directly on the
-      // element reference itself — no coordinates, no hit-testing, so it
-      // cannot be intercepted by anything covering it on screen.
-      const elementFromPoint = await submit.evaluate(el => {
-        const r = el.getBoundingClientRect();
-        const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-        return { isSameElement: top === el, topTag: top?.tagName, topClass: top?.className };
-      }).catch(e => ({ error: e.message }));
-      console.log(`DIAGNOSTIC — ${materialSubstring} elementFromPoint at button center:`, JSON.stringify(elementFromPoint));
+
+      // Diagnose BEFORE acting: a trial click checks Playwright's full
+      // actionability chain (visible, stable, receives events, enabled)
+      // WITHOUT performing the click, so a failure here names the exact
+      // reason instead of just timing out. This must never be bypassed with
+      // force:true or a raw DOM el.click() — this is an operational
+      // acceptance test, and the click has to succeed exactly as it would
+      // for a real user, or the underlying cause (app defect, stray
+      // overlay, animation timing, or a selector targeting the wrong
+      // element) has to be found and fixed for real.
+      let trialError = null;
       try {
-        await submit.evaluate(el => el.click());
+        await submit.click({ trial: true, timeout: 5000 });
       } catch (e) {
-        console.log(`DIAGNOSTIC — ${materialSubstring} element.click() failed: ${e.message}`);
-        await page.screenshot({ path: join(OUT_DIR, `diagnostic-${materialSubstring.replace(/\s+/g, '-')}-click-failed.png`) }).catch(() => {});
+        trialError = e.message;
+      }
+
+      if (trialError) {
+        const diag = await submit.evaluate(el => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          const cx = r.x + r.width / 2;
+          const cy = r.y + r.height / 2;
+          const stack = document.elementsFromPoint(cx, cy).map(e2 => ({
+            tag: e2.tagName, id: e2.id || null, cls: e2.className || null,
+          }));
+          const overlays = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]'))
+            .map(o => {
+              const or = o.getBoundingClientRect();
+              const ocs = getComputedStyle(o);
+              return {
+                tag: o.tagName, role: o.getAttribute('role'), id: o.id || null,
+                rect: { x: or.x, y: or.y, w: or.width, h: or.height },
+                display: ocs.display, visibility: ocs.visibility, zIndex: ocs.zIndex, pointerEvents: ocs.pointerEvents,
+              };
+            });
+          return {
+            buttonRect: { x: r.x, y: r.y, w: r.width, h: r.height },
+            computed: {
+              display: cs.display, visibility: cs.visibility, pointerEvents: cs.pointerEvents,
+              zIndex: cs.zIndex, opacity: cs.opacity, transform: cs.transform,
+            },
+            disabled: el.disabled,
+            elementsAtCenter: stack,
+            openOverlays: overlays,
+          };
+        }).catch(e => ({ error: e.message }));
+        console.log(`DIAGNOSTIC — ${materialSubstring} trial click failed: ${trialError}`);
+        console.log(`DIAGNOSTIC — ${materialSubstring} full diagnostic:`, JSON.stringify(diag, null, 2));
+        await page.screenshot({ path: join(OUT_DIR, `diagnostic-${materialSubstring.replace(/\s+/g, '-')}-trial-click-failed.png`), fullPage: true }).catch(() => {});
+        const htmlSnippet = (await page.content().catch(() => '')).slice(0, 6000);
+        console.log(`DIAGNOSTIC — ${materialSubstring} DOM snapshot:\n${htmlSnippet}`);
+      }
+
+      // Only a real, non-forced click — exactly what a real user's pointer
+      // would do. If the trial above failed, this will fail the same way
+      // (and honestly), rather than being papered over.
+      try {
+        await submit.click({ timeout: 10000 });
+      } catch (e) {
+        record(`${materialSubstring} dispense composer submit click failed`, false, e.message);
+        await page.screenshot({ path: join(OUT_DIR, `diagnostic-${materialSubstring.replace(/\s+/g, '-')}-click-failed.png`), fullPage: true }).catch(() => {});
+        await page.keyboard.press('Escape').catch(() => {});
+        await settle(300);
+        return;
       }
       await settle(2000);
       const bodyText = await page.textContent('body') ?? '';
@@ -333,6 +382,7 @@ async function main() {
     record(`no console errors during outlet_officer A's session`, consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
     record(`no failed/5xx network requests during outlet_officer A's session`, failedRequests.length === 0, failedRequests.slice(0, 3).join(' | '));
     if (consoleErrors.length || failedRequests.length) allOk = false;
+    await page.context().tracing.stop({ path: join(OUT_DIR, 'outlet-officer-a-trace.zip') }).catch(() => {});
     await page.close();
   }
 
