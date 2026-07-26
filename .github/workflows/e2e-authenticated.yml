@@ -1,0 +1,155 @@
+name: E2E authenticated acceptance
+
+# PR #57 Phase 2 fallback: local Docker/Rancher Desktop container-runtime
+# recovery was exhausted in-session (both hit reproducible WSL2
+# init/bootstrap failures on that machine) — this workflow is the sanctioned
+# fallback, per explicit instruction: an ephemeral Supabase stack plus
+# authenticated Playwright-driven acceptance, with NO Production credentials
+# and NO Production data anywhere in this workflow.
+#
+# Every URL/key used here is `supabase start`'s own fixed local-dev output
+# (127.0.0.1, well-known demo keys) — never a repository secret, never the
+# Production project ref. tools/e2e-fixtures/seed.mjs and
+# tools/e2e-acceptance/run.mjs both hard-refuse to run against anything that
+# isn't a recognized local address.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/features/outlet/**'
+      - 'src/shared/authz/**'
+      - 'supabase/migrations/**'
+      - 'tools/e2e-fixtures/**'
+      - 'tools/e2e-acceptance/**'
+      - '.github/workflows/e2e-authenticated.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-authenticated-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authenticated-acceptance:
+    name: Authenticated browser acceptance (disposable local Supabase)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
+        with:
+          version: latest
+
+      - name: Exclude prepared-only cutover migrations (mirrors tools/pg-rig/rig.mjs's own PREPARED_ONLY_SKIP)
+        # 085_phoenix_revoke_manual_availability_writers.sql is deliberately
+        # fail-closed: it RAISEs unless an operator sets an explicit
+        # production-cutover attestation. `supabase start` has no equivalent
+        # skip mechanism (unlike tools/pg-rig/rig.mjs, which this same
+        # migration set already documents skipping for exactly this reason),
+        # so it would abort the entire migration replay and nothing past 084
+        # would exist. This ephemeral runner's checkout is discarded at job
+        # end, so moving the file out here has zero effect on the repository.
+        run: mkdir -p /tmp/prepared-only-skip && mv supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql /tmp/prepared-only-skip/
+
+      - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
+        run: supabase start
+
+      - name: Capture local Supabase connection info
+        id: sb
+        run: |
+          supabase status -o json > /tmp/sb-status.json
+          echo "supabase status JSON keys: $(node -pe "Object.keys(require('/tmp/sb-status.json')).join(', ')")"
+          {
+            echo "api_url=$(node -pe "require('/tmp/sb-status.json').API_URL")"
+            echo "anon_key=$(node -pe "require('/tmp/sb-status.json').ANON_KEY")"
+          } >> "$GITHUB_OUTPUT"
+          node -pe "require('/tmp/sb-status.json').SERVICE_ROLE_KEY" > /tmp/sb-service-role-key.txt
+          node -pe "require('/tmp/sb-status.json').DB_URL" > /tmp/sb-db-url.txt
+
+      - name: Confirm migration ceiling reached 136 (not silently short)
+        run: |
+          RESULT=$(node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: require('fs').readFileSync('/tmp/sb-db-url.txt', 'utf8').trim() });
+              await c.connect();
+              const r = await c.query(\"SELECT count(*)::int n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname = 'phoenix_dispense_outlet_stock_with_context'\");
+              await c.end();
+              console.log(r.rows[0].n);
+            })();
+          ")
+          if [ "$RESULT" != "1" ]; then
+            echo "::error::migration 136 (phoenix_dispense_outlet_stock_with_context) not found — supabase start did not reach the expected migration ceiling"
+            exit 1
+          fi
+          echo "Migration ceiling confirmed: 136 present."
+
+      - name: Seed disposable fixtures (orgs, real Auth users, outlet stock — never Production)
+        env:
+          SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
+        run: |
+          SUPABASE_SERVICE_ROLE_KEY="$(cat /tmp/sb-service-role-key.txt)"
+          DATABASE_URL="$(cat /tmp/sb-db-url.txt)"
+          export SUPABASE_SERVICE_ROLE_KEY DATABASE_URL
+          node tools/e2e-fixtures/seed.mjs | tee /tmp/e2e-seed-raw.log
+          # The script's last stdout block is the JSON fixture summary Playwright needs.
+          node -e "
+            const log = require('fs').readFileSync('/tmp/e2e-seed-raw.log', 'utf8');
+            const start = log.lastIndexOf('{');
+            require('fs').writeFileSync('e2e-seed.json', log.slice(start));
+          "
+
+      - name: Build production bundle against the local Supabase instance
+        env:
+          VITE_PHOENIX_SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
+          VITE_PHOENIX_SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+          VITE_PHOENIX_BATCH_IDENTITY_051_ENABLED: "true"
+          VITE_PHOENIX_SCOPED_RBAC_MODE: "off"
+        run: npm run build
+
+      - name: Serve the built app
+        run: |
+          npx vite preview --port 4173 --strictPort > /tmp/vite-preview.log 2>&1 &
+          echo $! > /tmp/vite-preview.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173 >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:4173 >/dev/null || { echo "::error::preview server never became ready"; cat /tmp/vite-preview.log; exit 1; }
+
+      - name: Run Phase 2 authenticated browser acceptance
+        run: node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
+
+      - name: Stop preview server
+        if: always()
+        run: kill "$(cat /tmp/vite-preview.pid)" 2>/dev/null || true
+
+      - name: Upload acceptance screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-authenticated-acceptance-evidence
+          path: docs/phoenix/e2e-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop local Supabase (disposable state — nothing persists)
+        if: always()
+        run: supabase stop --no-backup
