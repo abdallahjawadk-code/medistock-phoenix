@@ -184,8 +184,14 @@ run('141 demo immutable exemption — adversarial (dynamic)', () => {
   });
 
   it('a table outside the hardcoded allow-list cannot be marked', async () => {
+    // NOTE: 'profiles' became markable in migration 142 (demo profile
+    // detachment), so this uses a table that is still genuinely outside the
+    // list. 142's own suite covers the super_admin refusal for profiles.
     await rig.asUser(SA, async (c: any) => {
-      await expect(mark(c, 'profiles', SA)).rejects.toThrow(/table_not_demo_markable/);
+      await expect(mark(c, 'organizations', DEMO_ORG)).rejects.toThrow(/table_not_demo_markable/);
+    });
+    await rig.asUser(SA, async (c: any) => {
+      await expect(mark(c, 'warehouse_stock', randomUUID())).rejects.toThrow(/table_not_demo_markable/);
     });
   });
 
