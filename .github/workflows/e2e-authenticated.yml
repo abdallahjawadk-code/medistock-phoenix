@@ -104,17 +104,12 @@ jobs:
       - name: Seed disposable fixtures (orgs, real Auth users, outlet stock — never Production)
         env:
           SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
+          E2E_SEED_OUTPUT_PATH: e2e-seed.json
         run: |
           SUPABASE_SERVICE_ROLE_KEY="$(cat /tmp/sb-service-role-key.txt)"
           DATABASE_URL="$(cat /tmp/sb-db-url.txt)"
           export SUPABASE_SERVICE_ROLE_KEY DATABASE_URL
-          node tools/e2e-fixtures/seed.mjs | tee /tmp/e2e-seed-raw.log
-          # The script's last stdout block is the JSON fixture summary Playwright needs.
-          node -e "
-            const log = require('fs').readFileSync('/tmp/e2e-seed-raw.log', 'utf8');
-            const start = log.lastIndexOf('{');
-            require('fs').writeFileSync('e2e-seed.json', log.slice(start));
-          "
+          node tools/e2e-fixtures/seed.mjs
 
       - name: Build production bundle against the local Supabase instance
         env:

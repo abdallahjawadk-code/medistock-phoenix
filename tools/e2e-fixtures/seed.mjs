@@ -24,6 +24,7 @@
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -144,13 +145,21 @@ async function main() {
       console.log(`  lot: ${lot.scientific_name} qty=${lot.qty} id=${id}`);
     }
 
-    console.log('\nSeed complete.');
-    console.log(JSON.stringify({
+    const summary = {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
       password: FIXED_PASSWORD,
       lots: lotIds,
-    }, null, 2));
+    };
+
+    // The fixture password (a fixed, hardcoded, disposable synthetic test
+    // credential — not a real secret) still must not appear verbatim in CI
+    // job logs. It goes ONLY into the output file the acceptance script
+    // reads (never uploaded as an artifact); stdout gets a redacted echo.
+    const OUTPUT_PATH = process.env.E2E_SEED_OUTPUT_PATH || 'e2e-seed.json';
+    writeFileSync(OUTPUT_PATH, JSON.stringify(summary, null, 2));
+    console.log(`\nSeed complete. Fixture summary (password redacted) written to ${OUTPUT_PATH}:`);
+    console.log(JSON.stringify({ ...summary, password: '***REDACTED***' }, null, 2));
   } finally {
     client.release();
     await pool.end();
