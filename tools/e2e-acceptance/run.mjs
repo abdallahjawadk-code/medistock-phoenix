@@ -270,7 +270,12 @@ async function main() {
     // CRASH CART
     await dispenseFlow('E2E Amoxicillin', async () => {
       await page.fill('#dsp-qty', '5');
-      const select = page.locator('select').filter({ hasText: 'Patient' }).first();
+      // PhoenixSelect connects a real <label htmlFor> to the <select id> —
+      // getByLabel is Playwright's own robust locator for exactly this,
+      // unlike the hasText content filter this used to use (which made
+      // .evaluate() hang the full 30s timeout waiting for a match that
+      // apparently never resolved).
+      const select = page.getByLabel('Beneficiary type').or(page.getByLabel('نوع الجهة المستفيدة')).first();
       await selectByLabel(select, ['Crash cart', 'عربة الطوارئ']);
       await settle(300);
       await page.fill('#dsp-cart', 'CART-42');
@@ -279,7 +284,12 @@ async function main() {
     // INTERNAL ORDER
     await dispenseFlow('E2E Ibuprofen', async () => {
       await page.fill('#dsp-qty', '5');
-      const select = page.locator('select').filter({ hasText: 'Patient' }).first();
+      // PhoenixSelect connects a real <label htmlFor> to the <select id> —
+      // getByLabel is Playwright's own robust locator for exactly this,
+      // unlike the hasText content filter this used to use (which made
+      // .evaluate() hang the full 30s timeout waiting for a match that
+      // apparently never resolved).
+      const select = page.getByLabel('Beneficiary type').or(page.getByLabel('نوع الجهة المستفيدة')).first();
       await selectByLabel(select, ['Internal order', 'طلب داخلي']);
       await settle(300);
       await page.fill('#dsp-order', 'ORDER-77');
