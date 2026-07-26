@@ -85,6 +85,15 @@ const SUPPLY_TYPES = [
   { supplyType: 'purchase', purchaseOrigin: 'supplementary' },
 ];
 
+// central_intake_supplementary_origin_forbidden (089): direct warehouse
+// receipt (phoenix_receive_warehouse_stock) structurally refuses
+// purchase_origin='supplementary' — that origin exists ONLY through
+// phoenix_subpurchase_direct_entry, a separate corridor. materialName()'s
+// cyclic SUPPLY_TYPES assignment is fine for procurement (which never reads
+// supply_type/purchase_origin), but central intake must draw from this
+// narrower, intake-legal subset only.
+const CENTRAL_INTAKE_SUPPLY_TYPES = SUPPLY_TYPES.filter(s => s.purchaseOrigin !== 'supplementary');
+
 /**
  * Batch condition mix. The seeder derives real expiry dates and quantities
  * from these so every reporting classification (available / low / missing /
@@ -111,6 +120,15 @@ export function demoInt(key, min, max) {
 
 /** Deterministic pick from an array. */
 export const demoPick = (key, arr) => arr[demoInt(`pick:${key}`, 0, arr.length - 1)];
+
+/**
+ * Deterministic supply_type/purchase_origin for a DIRECT WAREHOUSE RECEIPT
+ * specifically — never 'purchase'/'supplementary', which
+ * phoenix_receive_warehouse_stock structurally refuses (089). Use this for
+ * central intake; materialName()'s own cyclic assignment is fine everywhere
+ * else (e.g. procurement, which never reads these fields).
+ */
+export const intakeSupply = (key) => demoPick(`intake-supply:${key}`, CENTRAL_INTAKE_SUPPLY_TYPES);
 
 /** Deterministic batch profile honouring the weights above. */
 export function demoBatchProfile(key) {

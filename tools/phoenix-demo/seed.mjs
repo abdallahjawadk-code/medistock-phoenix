@@ -16,7 +16,7 @@
 import {
   DATASET_KEY, demoUuid, demoRequestId, demoDocRef, demoInt, demoPick,
   demoBatchProfile, institutionName, outletName, materialName, beneficiary,
-  DEFAULT_SCALE,
+  intakeSupply, DEFAULT_SCALE,
 } from './dataset.mjs';
 import { snapshotIds, registerNewRows } from './ownership.mjs';
 import {
@@ -156,7 +156,12 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     }
     // Warehouse managers need an active WAREHOUSE scope assignment before the
     // guarded intake corridor will accept them (062 scope model).
-    for (const a of actors.filter(x => x.tag === 'wo')) {
+    // warehouse_officer is NOT an org-wide role (062: "operational roles MUST
+    // name the resource they are acting on") — it needs the identical
+    // assignment before warehouse_transfer.receive, outlet_stock.review_return
+    // /.return_receive or the quarantine RPCs will ever authorize it, even
+    // though its permission grants are org-scoped in role_permission_defaults.
+    for (const a of actors.filter(x => x.tag === 'wo' || x.tag === 'wof')) {
       await c.query(
         `INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, warehouse_id, is_active)
          VALUES ($1,$2,'warehouse',$3,true) ON CONFLICT DO NOTHING`,
@@ -208,6 +213,11 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
         const key = `stock:${officer.index}:${b}`;
         const materialIndex = demoInt(`${key}:mat`, 0, scale.materials - 1);
         const m = materialName(materialIndex);
+        // Direct receipt structurally forbids purchase_origin='supplementary'
+        // (089) — materialName()'s own cyclic supply_type/purchase_origin
+        // includes it (correct for procurement, wrong here), so intake draws
+        // from the narrower intake-legal subset instead.
+        const supply = intakeSupply(key);
         const profile = demoBatchProfile(key);
         const qty = demoInt(`${key}:qty`, profile.qty[0], profile.qty[1]);
         const expiry = demoInt(`${key}:exp`, profile.expiryDays[0], profile.expiryDays[1]);
@@ -242,7 +252,7 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
             demoRequestId(key), officer.warehouseId, m.scientificName, receiveQty,
             m.tradeName, m.concentration, m.dosageForm,
             `DEMO-B-${officer.index}-${b}`, demoDocRef('RCV', officer.index * 1000 + b),
-            m.supplyType, m.purchaseOrigin,
+            supply.supplyType, supply.purchaseOrigin,
           ]);
         const out = res.rows[0].r;
         if (out?.warehouse_stock_id) {
@@ -304,12 +314,25 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   };
 
   // B: central -> institution transfers (gives institutions real stock).
+  // Lots are drawn from the LARGEST central batches, not a blind sequential
+  // slice — BATCH_PROFILES weights most batches into low_stock/out_of_stock/
+  // near_expiry/expired ranges by design (so every reporting classification
+  // has real rows), so an index-order slice frequently handed an institution
+  // a batch of 1-9 units. After the transfer's own /3 split, that left
+  // on_hand_quantity too low to ever clear dispatch's >3 threshold — the
+  // downstream dispatch/dispense/return/quarantine corridors silently
+  // produced zero rows every run, at every scale, even though nothing
+  // errored.
+  const stockByQtyDesc = [...stockRows].sort((a, b) => b.qty - a.qty);
   await runGroup('transfer', async () => {
     const results = [];
     for (const [i, w] of instWarehouses.entries()) {
-      const instOfficer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      // 068: only warehouse_officer holds warehouse_transfer.receive
+      // (central_warehouse_manager holds .send, not .receive) — a real,
+      // unfaked authorization check, not a bypass.
+      const instOfficer = actors.find(a => a.tag === 'wof' && a.index === w.index);
       if (!centralOfficer || !instOfficer) continue;
-      const lots = stockRows.slice(i * 2, i * 2 + 2).map(s => ({
+      const lots = stockByQtyDesc.slice(i * 2, i * 2 + 2).map(s => ({
         stockId: s.id, scientificName: s.scientificName,
         qty: Math.max(1, Math.floor(s.qty / 3)), available: s.qty,
       }));
@@ -325,22 +348,29 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   });
 
   // A: institution warehouse -> outlet dispatch + outlet receipt (custody).
+  // 061: warehouse_dispatch.edit_draft (phoenix_add_dispatch_line) is held
+  // ONLY by warehouse_officer — central_warehouse_manager holds create/send/
+  // view/audit but not edit_draft, so it can open a dispatch but never add a
+  // line to it. warehouse_officer holds the whole set, so it drives the
+  // entire flow.
   await runGroup('dispatch', async () => {
     let n = 0;
     for (const w of instWarehouses) {
-      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      const officer = actors.find(a => a.tag === 'wof' && a.index === w.index);
       const oo = actors.find(a => a.tag === 'oo' && a.index === w.index);
       const dp = outlets.filter(o => o.orgId === w.orgId);
       if (!officer || !oo || dp.length === 0) continue;
-      let lots = [];
-      await io.asAdmin(async (c) => {
-        const r = await c.query(
-          `SELECT id, on_hand_quantity FROM warehouse_stock
-            WHERE warehouse_id=$1 AND on_hand_quantity > 3 ORDER BY id LIMIT 3`, [w.id]);
-        lots = r.rows.map(x => ({ stockId: x.id, qty: Math.max(1, Math.floor(x.on_hand_quantity / 2)) }));
-      });
-      if (lots.length === 0) continue;
       for (const [k, outlet] of dp.entries()) {
+        // Fresh lots per outlet — reusing the same stock rows across two
+        // dispatches would try to send the same units twice.
+        let lots = [];
+        await io.asAdmin(async (c) => {
+          const r = await c.query(
+            `SELECT id, on_hand_quantity FROM warehouse_stock
+              WHERE warehouse_id=$1 AND on_hand_quantity > 3 ORDER BY id LIMIT 3`, [w.id]);
+          lots = r.rows.map(x => ({ stockId: x.id, qty: Math.max(1, Math.floor(x.on_hand_quantity / 2)) }));
+        });
+        if (lots.length === 0) continue;
         await dispatchToOutlet(io, {}, {
           officer, outletOfficer: oo, warehouseId: w.id, outletId: outlet.id,
           lots, key: `dsp:${outlet.index}`, seq: outlet.index,
@@ -368,10 +398,13 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   });
 
   // D/E: returns, restock vs quarantine disposition, release and destruction.
+  // 069/071: review_return, return_receive and quarantine release/destroy
+  // (warehouse_transfer.return_request) are all held by warehouse_officer
+  // only — central_warehouse_manager holds none of them.
   await runGroup('returns_quarantine', async () => {
     let n = 0;
     for (const w of instWarehouses) {
-      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      const officer = actors.find(a => a.tag === 'wof' && a.index === w.index);
       const oo = actors.find(a => a.tag === 'oo' && a.index === w.index);
       const outlet = outlets.find(o => o.orgId === w.orgId);
       if (!officer || !oo || !outlet) continue;

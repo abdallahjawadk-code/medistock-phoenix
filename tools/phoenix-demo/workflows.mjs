@@ -108,10 +108,10 @@ export async function transferCentralToInstitution(io, ctx, opts) {
   await io.asUser(instOfficer.id, async (c) => {
     for (const [i, tid] of transferLineIds.entries()) {
       try {
-        const line = await one(c, `SELECT quantity FROM warehouse_transfer_lines WHERE id=$1`, [tid]);
+        const line = await one(c, `SELECT sent_quantity FROM warehouse_transfer_lines WHERE id=$1`, [tid]);
         if (!line) continue;
         await c.query(`SELECT public.phoenix_receive_warehouse_transfer_line($1,$2,$3,NULL,$4)`,
-          [demoRequestId(`${key}:recv:${i}`), tid, line.quantity, 'استلام تجريبي']);
+          [demoRequestId(`${key}:recv:${i}`), tid, line.sent_quantity, 'استلام تجريبي']);
         created.received++;
       } catch (e) { created.recvError = String(e?.message ?? e); }
     }
@@ -167,11 +167,15 @@ export async function dispatchToOutlet(io, ctx, opts) {
   // The OUTLET receives — this is the custody transition plus outlet stock.
   await io.asUser(outletOfficer.id, async (c) => {
     const lines = await c.query(
-      `SELECT id, quantity FROM warehouse_dispatch_lines WHERE dispatch_id=$1`, [dispatchId]);
+      `SELECT id, sent_quantity FROM warehouse_dispatch_lines WHERE dispatch_id=$1`, [dispatchId]);
     for (const [i, l] of lines.rows.entries()) {
       try {
-        await c.query(`SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,$3,NULL,$4,$5)`,
-          [demoRequestId(`${key}:recv:${i}`), l.id, l.quantity, 'استلام تجريبي', 'received']);
+        // reason_code is the CLOSED-vocabulary companion to a difference —
+        // 'received' is the RPC's own internal default on an exact match,
+        // not itself a member of the accepted list; passing it explicitly
+        // raises invalid_outlet_dispatch_receive_reason_code.
+        await c.query(`SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,$3,NULL,$4,NULL)`,
+          [demoRequestId(`${key}:recv:${i}`), l.id, l.sent_quantity, 'استلام تجريبي']);
         created.received++;
       } catch { /* already received */ }
     }
@@ -282,11 +286,11 @@ export async function outletReturnAndQuarantine(io, ctx, opts) {
     for (const [i, sid] of shipmentLineIds.entries()) {
       const disposition = i % 2 === 0 ? 'restock' : 'quarantine';
       try {
-        const line = await one(c, `SELECT quantity FROM outlet_return_shipment_lines WHERE id=$1`, [sid]);
+        const line = await one(c, `SELECT sent_quantity FROM outlet_return_shipment_lines WHERE id=$1`, [sid]);
         if (!line) continue;
         await c.query(
           `SELECT public.phoenix_receive_outlet_return_shipment_line($1,$2,$3,NULL,$4,$5)`,
-          [demoRequestId(`${key}:rrecv:${i}`), sid, line.quantity, 'استلام إرجاع تجريبي', disposition]);
+          [demoRequestId(`${key}:rrecv:${i}`), sid, line.sent_quantity, 'استلام إرجاع تجريبي', disposition]);
         created.received++;
       } catch { /* already received */ }
     }
