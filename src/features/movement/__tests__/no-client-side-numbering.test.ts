@@ -358,7 +358,11 @@ describe('no client-side document-number sequence exists', () => {
     // ever resolving an outlet_officer's own scoped outlet. No new table,
     // no sequence, no document/official number of any kind. Ceiling moves
     // to 138.
-    const beyond = migrations.filter(f => /^(13[8-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 138 (MOVEMENT-LEDGER-REPORT-138) adds NO document numbering either --
+    // it is a read-only, paginated SELECT-shaped RPC over the three existing
+    // ledgers plus a location-name join. No table, sequence, or allocator of
+    // any kind. Ceiling moves to 139.
+    const beyond = migrations.filter(f => /^(13[9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
