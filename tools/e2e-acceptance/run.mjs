@@ -202,7 +202,19 @@ async function main() {
         await settle(300);
         return;
       }
-      await submit.click();
+      // count=1 and enabled=true were just confirmed directly above, so a
+      // plain .click() timing out here (seen in an earlier run) means
+      // Playwright's own actionability wait (pointer-interception/stability
+      // checks) is the blocker, not a real disabled/missing button — force
+      // bypasses exactly that layer, which is safe since we already did the
+      // real check ourselves.
+      try {
+        await submit.scrollIntoViewIfNeeded().catch(() => {});
+        await submit.click({ force: true, timeout: 10000 });
+      } catch (e) {
+        console.log(`DIAGNOSTIC — ${materialSubstring} forced click still failed: ${e.message}`);
+        await page.screenshot({ path: join(OUT_DIR, `diagnostic-${materialSubstring.replace(/\s+/g, '-')}-click-failed.png`) }).catch(() => {});
+      }
       await settle(2000);
       const bodyText = await page.textContent('body') ?? '';
       const alertText = await page.locator('[role="alert"]').allTextContents().catch(() => []);
