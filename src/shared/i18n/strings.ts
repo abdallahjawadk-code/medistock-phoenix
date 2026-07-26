@@ -654,6 +654,14 @@ export const T: Dict = {
   dir_tab_custody:    { ar: 'سلسلة العهدة',                       en: 'Custody Chain' },
   dir_tab_supplementary: { ar: 'تتبّع المشتريات الفرعية',          en: 'Supplementary Purchases Traceability' },
   dir_export_full_with_detail: { ar: 'تصدير كامل (مع التفاصيل)',   en: 'Export full (with detail)' },
+  /* REPORTING-CLOSURE-FINAL Phase 2: navigation consolidation */
+  dir_tab_monthly:     { ar: 'الموقف المخزني الشهري',              en: 'Monthly Inventory Position' },
+  dir_monthly_deeplink_desc: {
+    ar: 'إعداد ومراجعة واعتماد وقفل الموقف المخزني الشهري لكل مؤسسة — سير عمل رسمي مستقل بترقيم رسمي ولقطات غير قابلة للتعديل. افتح الشاشة المخصصة لإتمام هذا الإجراء.',
+    en: 'Prepare, review, approve and lock each institution’s monthly inventory position — its own official workflow with official numbering and immutable snapshots. Open the dedicated screen to act on it.',
+  },
+  dir_monthly_deeplink_cta: { ar: 'فتح الموقف المخزني الشهري',      en: 'Open Monthly Inventory Position' },
+  dir_open_in_status_center: { ar: 'فتح المصفوفة الحية في مركز المواقف', en: 'Open live matrix in Status Center' },
   dir_col_receipt_number: { ar: 'رقم الوصل',                       en: 'Receipt number' },
   dir_col_paper_reference: { ar: 'المرجع الورقي',                  en: 'Paper reference' },
   dir_check_parity: { ar: 'مطابقة مع البيانات الحية',               en: 'Check parity vs. live' },

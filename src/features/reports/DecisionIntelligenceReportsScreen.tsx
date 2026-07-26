@@ -53,7 +53,7 @@ import {
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -61,7 +61,19 @@ const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementa
 interface BucketRow { label: string; value: number; }
 interface SupplyBucketRow extends BucketRow { key: string; }
 
-export function DecisionIntelligenceReportsScreen() {
+/**
+ * REPORTING-CLOSURE-FINAL Phase 2: navigation consolidation.
+ *
+ * onNavigate lets this screen deep-link into the two operational surfaces
+ * the reuse-first parity matrix (docs/phoenix/reporting-closure-final-parity-matrix.md)
+ * decided to KEEP standalone rather than fold in — screen 12 (Status
+ * Center, the canonical live-operations matrix) and screen 20 (Monthly
+ * Inventory Position, whose prepare->approve->lock workflow must not be
+ * duplicated or weakened here). Neither screen is deleted or made
+ * unreachable; this screen becomes the single coherent reporting entry
+ * point by linking to them instead of re-implementing their data layer.
+ */
+export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
   const { lang, dir, activeOrgId } = useApp();
   const [tab, setTab] = useState<Tab>('overview');
   const [toast, setToast] = useState<string | null>(null);
@@ -93,6 +105,7 @@ export function DecisionIntelligenceReportsScreen() {
     { id: 'supplementary', labelKey: 'dir_tab_supplementary' },
     { id: 'corrections', labelKey: 'dir_tab_corrections' },
     { id: 'audit', labelKey: 'dir_tab_audit' },
+    { id: 'monthly', labelKey: 'dir_tab_monthly' },
     { id: 'library', labelKey: 'dir_tab_library' },
   ];
 
@@ -134,6 +147,7 @@ export function DecisionIntelligenceReportsScreen() {
             lang={lang}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
+            onNavigate={onNavigate}
           />
         </ReportsTabErrorBoundary>
       )}
@@ -183,6 +197,11 @@ export function DecisionIntelligenceReportsScreen() {
       {tab === 'audit' && (
         <ReportsTabErrorBoundary key={`audit:${activeOrgId}`} lang={lang}>
           <div data-testid="audit-tab"><AuditLogSection /></div>
+        </ReportsTabErrorBoundary>
+      )}
+      {tab === 'monthly' && (
+        <ReportsTabErrorBoundary key={`monthly:${activeOrgId}`} lang={lang}>
+          <MonthlyPositionDeepLinkTab lang={lang} onNavigate={onNavigate} />
         </ReportsTabErrorBoundary>
       )}
       {tab === 'library' && (
@@ -1283,10 +1302,35 @@ function SupplementaryPurchaseDrilldown({ orderId, lang }: { orderId: string; la
   );
 }
 
-function InstitutionStatusTab({ lang, onToast, onMobilePrint }: {
+/**
+ * REPORTING-CLOSURE-FINAL Phase 2: deep-link only, never a second
+ * implementation of screen 20's prepare->review->approve->lock workflow.
+ * Monthly Inventory Position keeps its own official numbering, immutable
+ * locked snapshots and controlled-correction path entirely in
+ * MonthlyStatusScreen/monthly-status.service.ts — untouched by this tab.
+ */
+function MonthlyPositionDeepLinkTab({ lang, onNavigate }: {
+  lang: 'ar' | 'en';
+  onNavigate: (screen: number) => void;
+}) {
+  return (
+    <PhoenixCard padding="20px">
+      <div style={{ fontSize: '15px', fontWeight: 800, marginBottom: '8px' }}>{t('dir_tab_monthly', lang)}</div>
+      <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '16px', maxWidth: '560px' }}>
+        {t('dir_monthly_deeplink_desc', lang)}
+      </p>
+      <PhoenixButton onClick={() => onNavigate(20)}>
+        {t('dir_monthly_deeplink_cta', lang)}
+      </PhoenixButton>
+    </PhoenixCard>
+  );
+}
+
+function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
+  onNavigate: (screen: number) => void;
 }) {
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -1339,6 +1383,11 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint }: {
 
   return (
     <div style={{ display: 'grid', gap: '12px' }} data-testid="institution-status-tab">
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <PhoenixButton variant="ghost" onClick={() => onNavigate(12)}>
+          {t('dir_open_in_status_center', lang)}
+        </PhoenixButton>
+      </div>
       <PhoenixCard>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {rows.map(o => {

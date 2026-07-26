@@ -131,7 +131,7 @@ export function AuthenticatedApp() {
       // immutable official-report library — scoped to reports.view (062),
       // every RPC (phoenix_executive_overview/phoenix_create_report_snapshot)
       // re-checked server-side.
-      case 21: return <DecisionIntelligenceReportsScreen />;
+      case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to Status Center — the real-data landing screen.
       default: return <StatusCenterScreen onNavigate={setScreen} />;
