@@ -376,7 +376,18 @@ describe('no client-side document-number sequence exists', () => {
     // Ceiling moves to 142.
     // 142 (PHOENIX-DEMO-PROFILE-DETACH-142) adds NO document numbering --
     // a write-once profile marker and a detach routine. Ceiling -> 143.
-    const beyond = migrations.filter(f => /^(14[3-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 143 (PHOENIX-DEMO-PURGE-RESTRICT-VIOLATION-AND-ORDERING-143) adds NO
+    // document numbering -- it broadens phoenix_demo_purge's exception
+    // handling (foreign_key_violation OR restrict_violation, two SQLSTATEs
+    // Postgres raises for a blocked RESTRICT-FK delete) and reorders
+    // phoenix_demo_purgeable_tables() so every child precedes a RESTRICT-FK
+    // parent it references. No sequence, no allocator, no document string.
+    // Ceiling -> 144.
+    // 144 (PHOENIX-DEMO-AVAILABILITY-PURGE-EXEMPTION-144) adds NO document
+    // numbering -- one narrow, additive DELETE exemption on
+    // trg_guard_availability_source_kind (065) for the demo purger's
+    // existing ownership boundary. No sequence, no allocator. Ceiling -> 145.
+    const beyond = migrations.filter(f => /^(14[5-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
