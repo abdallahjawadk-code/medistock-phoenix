@@ -30,6 +30,13 @@ const run = rigAvailable() ? describe : describe.skip;
 const REAL_ORG = '00000000-0000-0000-0000-0000000d0001';
 const REAL_SA = '00000000-0000-0000-0000-0000000d0401';
 
+/** The closed reason_code vocabulary from migration 125. */
+const VOCAB = [
+  'received', 'transferred', 'dispensed', 'counted', 'corrected', 'released',
+  'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged', 'recalled',
+  'quality_issue', 'temperature_excursion', 'other', 'legacy_unclassified',
+];
+
 const SCALE = { institutions: 2, outletsPerInstitution: 2, materials: 20, batchesPerWarehouse: 6 };
 
 run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
@@ -86,7 +93,12 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
     expect(countOf(s, 'organizations')).toBe(SCALE.institutions);
     expect(countOf(s, 'warehouse_stock')).toBeGreaterThan(0);
     expect(countOf(s, 'warehouse_stock_movements')).toBeGreaterThan(0);
-  }, 180000);
+
+    // Surface what each workflow group actually produced, so a silently
+    // skipped corridor is visible rather than passing as a green no-op.
+    // eslint-disable-next-line no-console
+    console.log('WORKFLOW GROUPS:', JSON.stringify(out.workflow, null, 1));
+  }, 300000);
 
   it('2. the movements were POSTED by the RPC, not inserted — each carries a real actor, reason_code and reconciling quantities', async () => {
     await rig.asAdmin(async (c: any) => {
@@ -102,8 +114,10 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
         expect(row.on_hand_before + row.on_hand_delta).toBe(row.on_hand_after);
         expect(row.actor_id).not.toBeNull();          // a real authenticated actor
         expect(row.actor_role).not.toBeNull();
-        expect(row.reason_code).toBe('received');     // set by the RPC, not by us
-        expect(row.source_document_number).toMatch(/^DEMO-RCV-/);
+        // Set by the corridor RPC, never by the seeder. Several workflow
+        // groups now post movements, so the assertion is that every code is
+        // inside the closed 125 vocabulary — not that they are all intake.
+        expect(VOCAB).toContain(row.reason_code);
       }
     });
   });
@@ -165,7 +179,7 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
       expect(r.rows.length).toBeGreaterThan(0);
       expect(Number(r.rows[0].total_count)).toBeGreaterThan(0);
       for (const row of r.rows) {
-        expect(row.reason_code).toBe('received');
+        expect(VOCAB).toContain(row.reason_code);
         expect(row.quantity_before + row.quantity_delta).toBe(row.quantity_after);
       }
     });

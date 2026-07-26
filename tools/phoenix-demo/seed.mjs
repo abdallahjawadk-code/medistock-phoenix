@@ -18,6 +18,12 @@ import {
   demoBatchProfile, institutionName, outletName, materialName, beneficiary,
   DEFAULT_SCALE,
 } from './dataset.mjs';
+import { snapshotIds, registerNewRows } from './ownership.mjs';
+import {
+  transferCentralToInstitution, dispatchToOutlet, dispenseFromOutlet,
+  outletReturnAndQuarantine, stocktakeAndCorrection, procurementCycle,
+  monthlyPositionCycle, suggestionsAndSnapshots,
+} from './workflows.mjs';
 
 /** Register a row as demo-owned. Must run inside the same actor session. */
 async function own(c, table, rowId, seedKey) {
@@ -246,5 +252,172 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     }
   }, { commit: true });
 
-  return { scale, counts, orgs, warehouses, outlets, actors, stockRows };
+  // ── 5. Operational workflow groups, each through its REAL corridor ──────
+  // Ownership is captured by diffing what appeared, scoped to the demo orgs,
+  // so every row a corridor wrote (headers, lines, ledger, events, audit) is
+  // registered — not merely whatever the RPC happened to return.
+  const orgIds = orgs.map(o => o.id);
+  const centralOfficer = actors.find(a => a.tag === 'wo' && a.kind === 'central');
+  const instWarehouses = warehouses.filter(w => w.kind === 'institution');
+  const workflow = {};
+
+  const runGroup = async (name, fn) => {
+    const before = await snapshotIds(io, orgIds);
+    let out = {};
+    try { out = await fn(); } catch (e) { out = { error: String(e?.message ?? e) }; }
+    const owned = await registerNewRows(io, superAdminId, orgIds, before, name);
+    workflow[name] = { ...out, owned };
+    return out;
+  };
+
+  // B: central -> institution transfers (gives institutions real stock).
+  await runGroup('transfer', async () => {
+    const results = [];
+    for (const [i, w] of instWarehouses.entries()) {
+      const instOfficer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      if (!centralOfficer || !instOfficer) continue;
+      const lots = stockRows.slice(i * 2, i * 2 + 2).map(s => ({
+        stockId: s.id, scientificName: s.scientificName,
+        qty: Math.max(1, Math.floor(s.qty / 3)), available: s.qty,
+      }));
+      if (lots.length === 0) continue;
+      results.push(await transferCentralToInstitution(io, {}, {
+        centralOfficer, instOfficer, reviewerId: superAdminId,
+        centralWarehouseId: centralOfficer.warehouseId,
+        instOrgId: w.orgId, instWarehouseId: w.id, lots,
+        key: `trf:${w.index}`, seq: w.index,
+      }));
+    }
+    return { groups: results.length };
+  });
+
+  // A: institution warehouse -> outlet dispatch + outlet receipt (custody).
+  await runGroup('dispatch', async () => {
+    let n = 0;
+    for (const w of instWarehouses) {
+      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      const oo = actors.find(a => a.tag === 'oo' && a.index === w.index);
+      const dp = outlets.filter(o => o.orgId === w.orgId);
+      if (!officer || !oo || dp.length === 0) continue;
+      let lots = [];
+      await io.asAdmin(async (c) => {
+        const r = await c.query(
+          `SELECT id, on_hand_quantity FROM warehouse_stock
+            WHERE warehouse_id=$1 AND on_hand_quantity > 3 ORDER BY id LIMIT 3`, [w.id]);
+        lots = r.rows.map(x => ({ stockId: x.id, qty: Math.max(1, Math.floor(x.on_hand_quantity / 2)) }));
+      });
+      if (lots.length === 0) continue;
+      for (const [k, outlet] of dp.entries()) {
+        await dispatchToOutlet(io, {}, {
+          officer, outletOfficer: oo, warehouseId: w.id, outletId: outlet.id,
+          lots, key: `dsp:${outlet.index}`, seq: outlet.index,
+        });
+        n++;
+        if (k >= 1) break;   // two outlets per institution is enough coverage
+      }
+    }
+    return { dispatched: n };
+  });
+
+  // C: the three dispense beneficiary types.
+  await runGroup('dispense', async () => {
+    let n = 0;
+    for (const outlet of outlets) {
+      const oo = actors.find(a => a.tag === 'oo' && a.orgId === outlet.orgId);
+      if (!oo) continue;
+      const r = await dispenseFromOutlet(io, {}, {
+        outletOfficer: oo, outletId: outlet.id,
+        key: `dis:${outlet.index}`, count: scale.dispensesPerOutlet ?? 6,
+      });
+      n += r.dispenses;
+    }
+    return { dispenses: n };
+  });
+
+  // D/E: returns, restock vs quarantine disposition, release and destruction.
+  await runGroup('returns_quarantine', async () => {
+    let n = 0;
+    for (const w of instWarehouses) {
+      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      const oo = actors.find(a => a.tag === 'oo' && a.index === w.index);
+      const outlet = outlets.find(o => o.orgId === w.orgId);
+      if (!officer || !oo || !outlet) continue;
+      const r = await outletReturnAndQuarantine(io, {}, {
+        outletOfficer: oo, instOfficer: officer, outletId: outlet.id,
+        warehouseId: w.id, key: `ret:${w.index}`, seq: w.index,
+      });
+      n += r.requests;
+    }
+    return { returnCycles: n };
+  });
+
+  // F/G: stocktake with a real discrepancy, then a second-person correction.
+  await runGroup('stocktake_correction', async () => {
+    let n = 0;
+    for (const w of warehouses) {
+      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      if (!officer) continue;
+      const r = await stocktakeAndCorrection(io, {}, {
+        officer, approver: { id: superAdminId }, orgId: w.orgId,
+        warehouseId: w.id, key: `stk:${w.index}`,
+      });
+      n += r.stocktakes + r.corrections;
+    }
+    return { stocktakeAndCorrections: n };
+  });
+
+  // H: supplementary procurement — DISABLED for the reversible dataset.
+  // procurement_order_events is immutable by product design
+  // (`procurement_history_is_immutable`), so anything seeded here could never
+  // be purged and would become permanent residue in Production. Enable only
+  // for a throwaway environment, never for a dataset that must be removable.
+  if (scale.includeProcurement === true) await runGroup('procurement', async () => {
+    let n = 0;
+    for (const w of instWarehouses) {
+      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      if (!officer) continue;
+      const materials = [0, 1, 2].map(k => materialName((w.index * 3 + k) % scale.materials));
+      const r = await procurementCycle(io, {}, {
+        // local_procurement.manage/receive/return are held in full by
+        // super_admin; the five active roles split them, so the demo uses the
+        // one role genuinely authorized for the whole cycle.
+        officer: { id: superAdminId }, orgId: w.orgId, warehouseId: w.id, materials,
+        key: `prc:${w.index}`, seq: w.index,
+      });
+      n += r.orders;
+    }
+    return { procurementCycles: n };
+  });
+
+  // J: monthly inventory position cycles.
+  await runGroup('monthly_position', async () => {
+    let n = 0;
+    for (const o of orgs) {
+      const officer = actors.find(a => a.tag === 'wo' && a.orgId === o.id);
+      if (!officer) continue;
+      const r = await monthlyPositionCycle(io, {}, {
+        preparer: officer, approver: { id: superAdminId }, orgId: o.id,
+      });
+      n += r.reports;
+    }
+    return { monthlyReports: n };
+  });
+
+  // I: transfer suggestions. Official report SNAPSHOTS are excluded for the
+  // same reason as procurement — `report_snapshot_is_immutable` makes an
+  // issued snapshot permanent, so seeding one would leave unremovable
+  // residue. Enable only for a throwaway environment.
+  await runGroup('suggestions_snapshots', async () => {
+    let n = 0;
+    for (const o of orgs) {
+      const r = await suggestionsAndSnapshots(io, {}, {
+        admin: { id: superAdminId }, orgId: o.id, key: `sug:${o.index}`,
+        includeSnapshots: scale.includeSnapshots === true,
+      });
+      n += r.snapshots;
+    }
+    return { snapshots: n };
+  });
+
+  return { scale, counts, workflow, orgs, warehouses, outlets, actors, stockRows };
 }

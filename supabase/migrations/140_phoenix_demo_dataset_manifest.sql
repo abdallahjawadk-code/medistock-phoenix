@@ -117,29 +117,41 @@ AS $tables$
     'phoenix_stock_correction_requests',
     'phoenix_warehouse_correction_requests',
     -- Corridor lines before their headers.
+    'warehouse_transfer_lines',
+    'warehouse_transfers',
     'warehouse_dispatch_lines',
     'warehouse_dispatches',
     'outlet_return_shipment_lines',
     'outlet_return_shipments',
     'outlet_return_request_lines',
     'outlet_return_requests',
-    'procurement_receipt_lines',
-    'procurement_receipts',
-    'procurement_order_lines',
-    'procurement_orders',
+    -- PROCUREMENT IS DELIBERATELY ABSENT FROM THIS LIST.
+    -- procurement_order_events is protected by a
+    -- `procurement_history_is_immutable` trigger: the product guarantees
+    -- procurement history can never be deleted, and procurement_orders
+    -- cannot be removed while those events reference them. Listing them
+    -- here would make purge fail loudly (proven by the lifecycle test), and
+    -- forcing it would mean defeating a real immutability guarantee. The
+    -- demo therefore does NOT seed procurement, so the dataset stays fully
+    -- reversible. Anything a future dataset does register in these tables is
+    -- reported by phoenix_demo_purge as executed:false rather than skipped.
     'inventory_status_report_lines',
     'inventory_status_reports',
-    -- Reporting artefacts.
-    'phoenix_report_snapshots',
+    -- Reporting artefacts. phoenix_report_snapshots is ALSO absent by
+    -- design: a `report_snapshot_is_immutable` trigger guarantees an issued
+    -- official report can never be deleted. Same reasoning as procurement —
+    -- a reversible dataset must not create one.
     'audit_logs',
-    'notifications',
+    'phoenix_notifications',
     -- Balances after every movement that references them.
     'outlet_stock',
     'warehouse_quarantine_stock',
     'warehouse_stock',
     'item_availability',
+    'warehouse_transfer_request_lines',
+    'warehouse_transfer_requests',
     -- Master data last, still child-first.
-    'suppliers',
+    'procurement_suppliers',
     -- profile_scope_assignments references distribution_points AND warehouses
     -- with ON DELETE RESTRICT (psa_point_org_fk), so it MUST be cleared
     -- before either of them. The seed/purge lifecycle proof caught this
