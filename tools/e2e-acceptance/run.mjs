@@ -106,6 +106,23 @@ async function openOutletOperations(page, { mobile = false } = {}) {
   await settle(1200);
 }
 
+/**
+ * Outlet resolution goes through an async scope-fetch chain
+ * (useInventoryScopes -> manageableOutlets) that can genuinely take longer
+ * than a fixed settle() on a cold-started CI runner (fresh Postgres, fresh
+ * PostgREST schema cache). Polls up to `timeoutMs` instead of guessing a
+ * fixed delay.
+ */
+async function waitForText(page, substrings, timeoutMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const body = (await page.textContent('body').catch(() => '')) ?? '';
+    if (substrings.some(s => body.includes(s))) return true;
+    await settle(500);
+  }
+  return false;
+}
+
 async function main() {
   const browser = await launch();
   let allOk = true;
@@ -118,13 +135,12 @@ async function main() {
     record('outlet_officer A logs in successfully', loggedIn);
 
     await openOutletOperations(page);
-    const onOutletOps = (await page.textContent('body'))?.includes('E2E Outlet A')
-      || (await page.textContent('body'))?.includes('منفذ أ');
-    record('navigates to Outlet Operations and resolves the seeded outlet', !!onOutletOps);
+    const onOutletOps = await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
+    record('navigates to Outlet Operations and resolves the seeded outlet', onOutletOps);
 
     const stockTab = page.getByText('Stock & Batches').or(page.getByText('المخزون والدفعات'));
     await stockTab.first().click().catch(() => {});
-    await settle(1000);
+    await waitForText(page, ['E2E Paracetamol', 'E2E Amoxicillin', 'E2E Ibuprofen']);
 
     async function dispenseFlow(materialSubstring, fill, resultCheck) {
       const card = page.locator('div', { hasText: materialSubstring }).first();
@@ -192,10 +208,10 @@ async function main() {
     const { page, consoleErrors } = await freshPage(browser);
     await login(page, seed.users.institutionAdminA.email, seed.password);
     await openOutletOperations(page);
-    await settle(500);
+    await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
     const stockTab = page.getByText('Stock & Batches').or(page.getByText('المخزون والدفعات'));
     await stockTab.first().click().catch(() => {});
-    await settle(1000);
+    await waitForText(page, ['E2E Paracetamol', 'E2E Amoxicillin', 'E2E Ibuprofen']);
     const body = await page.textContent('body') ?? '';
     const hasDispenseButton = body.includes('Dispense') && !body.includes('Confirm dispense');
     // institution_admin holds view_sensitive/export_sensitive, not outlet_stock.dispense — the
@@ -210,7 +226,10 @@ async function main() {
     const { page, consoleErrors } = await freshPage(browser);
     await login(page, seed.users.outletOfficerB.email, seed.password);
     await openOutletOperations(page);
-    await settle(1000);
+    // outlet_officer B should resolve THEIR OWN org's outlet (E2E Outlet B) —
+    // wait for that positive signal (own outlet resolves fine) before
+    // asserting the negative (org A's outlet/stock never appear).
+    await waitForText(page, ['E2E Outlet B', 'منفذ ب']);
     const body = await page.textContent('body') ?? '';
     const seesOrgAOutlet = body.includes('E2E Outlet A') || body.includes('منفذ أ');
     const seesOrgAStock = body.includes('E2E Paracetamol') || body.includes('E2E Amoxicillin');
@@ -237,7 +256,7 @@ async function main() {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
     await openOutletOperations(page, { mobile: true });
-    await settle(1000);
+    await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
     const bodyText = (await page.textContent('body')) ?? '';
     record('mobile viewport: no horizontal overflow', !overflow);
