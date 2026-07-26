@@ -1,27 +1,36 @@
 /**
  * @vitest-environment jsdom
  *
- * REPORTING-RUNTIME-RECOVERY R03 — genuine component/runtime test for
- * MovementReportSection's CSV export and Print, proving the ACTUAL fixed
- * behavior: once loading completes, a genuine zero-row filtered result is
- * still exportable/printable (not silently disabled/no-op), while the
- * loading state itself correctly disables both actions, and permission
- * gates still hide them entirely when the caller lacks the grant.
+ * REPORTING-RUNTIME-RECOVERY R03 + MOVEMENT-LEDGER-REPORT-138 — genuine
+ * component/runtime test for MovementReportSection's CSV export and Print,
+ * proving the ACTUAL fixed behavior against the canonical
+ * phoenix_movement_ledger_report-backed data path: once loading completes, a
+ * genuine zero-row filtered result is still exportable/printable (not
+ * silently disabled/no-op), while the loading state itself correctly
+ * disables both actions, and permission gates still hide them entirely when
+ * the caller lacks the grant.
  */
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { MovementReportSection } from '../MovementReportSection';
-import type { AvailabilityMovementReportRecord } from '@/shared/supabase/services/availability.service';
+import type { MovementLedgerReportResult } from '@/features/reports/movement-ledger-report.service';
 
 const getPointsByOrg = vi.fn(async (_orgId: string) => []);
+const getWarehouses = vi.fn(async (_orgId: string) => []);
 vi.mock('@/shared/supabase/services/warehouses.service', () => ({
   getPointsByOrg: (orgId: string) => getPointsByOrg(orgId),
+  getWarehouses: (orgId: string) => getWarehouses(orgId),
 }));
 
-const getAvailabilityMovementsReport = vi.fn<() => Promise<AvailabilityMovementReportRecord[]>>();
-vi.mock('@/shared/supabase/services/availability.service', () => ({
-  getAvailabilityMovementsReport: () => getAvailabilityMovementsReport(),
+const getMovementLedgerReport = vi.fn<() => Promise<MovementLedgerReportResult>>();
+vi.mock('@/features/reports/movement-ledger-report.service', () => ({
+  getMovementLedgerReport: () => getMovementLedgerReport(),
+}));
+
+const getDispenseContext = vi.fn();
+vi.mock('@/features/outlet/dispense-context.service', () => ({
+  getDispenseContext: (movementId: string) => getDispenseContext(movementId),
 }));
 
 // jsdom does not implement URL.createObjectURL/revokeObjectURL at all — the
@@ -41,30 +50,50 @@ vi.mock('@/shared/ui/MobilePrintFallbackModal', () => ({
     open ? <div data-testid="mobile-print-modal">{html}</div> : null,
 }));
 
-let permissions = new Set(['availability.movements.view', 'availability.movements.export', 'availability.movements.print']);
+let permissions = new Set(['status_center.view', 'availability.movements.export', 'availability.movements.print']);
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({ lang: 'en', activeOrgId: 'org1', myPermissions: permissions }),
 }));
 
-const ROW: AvailabilityMovementReportRecord = {
-  id: 'm1', movementType: 'add', quantityBefore: 10, quantityDelta: 5, quantityAfter: 15,
-  reason: 'restock', notes: null, actorNameSnapshot: 'Officer A', actorEmailSnapshot: null,
-  actorRoleSnapshot: 'warehouse_officer', createdAt: '2026-07-20T00:00:00Z',
-  scientificName: 'Paracetamol', tradeName: null, concentration: null, dosageForm: null,
-  distributionPointId: 'dp1', distributionPointName: 'Port A', distributionPointNameAr: null,
+const ROW = {
+  ledgerSource: 'warehouse' as const,
+  movementId: 'm1',
+  occurredAt: '2026-07-20T00:00:00Z',
+  movementType: 'add',
+  reasonCode: 'received',
+  quantityBefore: 10,
+  quantityDelta: 5,
+  quantityAfter: 15,
+  scientificName: 'Paracetamol',
+  concentration: null,
+  dosageForm: null,
+  batchNumber: null,
+  locationId: 'wh1',
+  locationName: 'Warehouse A',
+  locationNameAr: null,
+  actorId: 'u1',
+  actorRole: 'warehouse_officer',
+  actorName: 'Officer A',
+  referenceType: null,
+  referenceId: null,
+  sourceDocumentNumber: null,
+  correlationId: null,
+  causationId: null,
+  hasDispenseContext: false,
 };
 
 describe('MovementReportSection — CSV export and Print (runtime, not source-scan)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getPointsByOrg.mockResolvedValue([]);
+    getWarehouses.mockResolvedValue([]);
     mobileContext = false;
-    permissions = new Set(['availability.movements.view', 'availability.movements.export', 'availability.movements.print']);
+    permissions = new Set(['status_center.view', 'availability.movements.export', 'availability.movements.print']);
   });
   afterEach(cleanup);
 
   it('R03: CSV/Print are DISABLED while the report is still loading', async () => {
-    getAvailabilityMovementsReport.mockReturnValue(new Promise(() => {})); // never resolves during this test
+    getMovementLedgerReport.mockReturnValue(new Promise(() => {})); // never resolves during this test
     render(<MovementReportSection />);
 
     const csvBtn = await screen.findByRole('button', { name: /export csv/i });
@@ -75,7 +104,7 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
 
   it('R03: CSV export is ENABLED and produces a real download with correct metadata for a genuine ZERO-row result', async () => {
-    getAvailabilityMovementsReport.mockResolvedValue([]);
+    getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     render(<MovementReportSection />);
 
     const csvBtn = await screen.findByRole('button', { name: /export csv/i });
@@ -115,7 +144,7 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
 
   it('R03: Print (desktop) is ENABLED and actually opens the print window for a genuine ZERO-row result', async () => {
-    getAvailabilityMovementsReport.mockResolvedValue([]);
+    getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     mobileContext = false;
     render(<MovementReportSection />);
 
@@ -139,7 +168,7 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
 
   it('R03: Print (mobile context) routes to the in-app fallback modal for a genuine ZERO-row result, never window.print directly', async () => {
-    getAvailabilityMovementsReport.mockResolvedValue([]);
+    getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     mobileContext = true;
     render(<MovementReportSection />);
 
@@ -157,7 +186,7 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
 
   it('shows a visible popup-blocked message instead of failing silently when window.open returns null', async () => {
-    getAvailabilityMovementsReport.mockResolvedValue([]);
+    getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     mobileContext = false;
     render(<MovementReportSection />);
 
@@ -175,7 +204,7 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
 
   it('CSV export works and Print opens for a NON-empty result too (regression coverage, not just the zero-row edge case)', async () => {
-    getAvailabilityMovementsReport.mockResolvedValue([ROW]);
+    getMovementLedgerReport.mockResolvedValue({ rows: [ROW], totalCount: 1 });
     render(<MovementReportSection />);
 
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
@@ -198,9 +227,38 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
     vi.restoreAllMocks();
   });
 
+  it('a movement with a recorded dispense context shows a "View" affordance that opens the masked drill-down', async () => {
+    getMovementLedgerReport.mockResolvedValue({
+      rows: [{ ...ROW, ledgerSource: 'outlet', movementId: 'm2', hasDispenseContext: true }],
+      totalCount: 1,
+    });
+    getDispenseContext.mockResolvedValue({
+      id: 'ctx1', movementId: 'm2', beneficiaryType: 'crash_cart',
+      patientIdentifier: null, patientName: null, patientReferenceType: null,
+      patientIdentityMasked: false, crashCartReference: 'CART-1', internalOrderReference: null,
+      notes: null, recordedBy: 'u1', recordedAt: '2026-07-20T00:00:00Z',
+    });
+    render(<MovementReportSection />);
+
+    const viewBtn = await screen.findByRole('button', { name: /view/i });
+    fireEvent.click(viewBtn);
+
+    expect(getDispenseContext).toHaveBeenCalledWith('m2');
+    await waitFor(() => expect(screen.getByTestId('dispense-context-viewer')).toBeInTheDocument());
+    expect(screen.getByTestId('dispense-context-viewer').textContent).toContain('CART-1');
+  });
+
+  it('a movement with no recorded dispense context shows a plain dash, no drill-down button', async () => {
+    getMovementLedgerReport.mockResolvedValue({ rows: [ROW], totalCount: 1 }); // hasDispenseContext: false
+    render(<MovementReportSection />);
+
+    await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /view/i })).not.toBeInTheDocument();
+  });
+
   it('permission gating: CSV/Print buttons are entirely absent without the export/print grants (not just disabled)', async () => {
-    permissions = new Set(['availability.movements.view']); // view only, no export/print
-    getAvailabilityMovementsReport.mockResolvedValue([]);
+    permissions = new Set(['status_center.view']); // view only, no export/print
+    getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     render(<MovementReportSection />);
 
     await waitFor(() => expect(screen.queryByText('loading', { exact: false })).not.toBeInTheDocument());
