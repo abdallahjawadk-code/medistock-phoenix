@@ -386,7 +386,17 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Disabled: this is a devtool logging/observability aggregator (Logflare)
+# with zero functional relevance to any application behavior this repo's
+# tests exercise (tools/e2e-acceptance/run.mjs and tools/e2e-fixtures/
+# seed.mjs never reference it), and it is the most commonly cited cause of
+# `supabase start` health-check timeouts/container teardowns in CI --
+# exactly the "Stopping containers..." / "unexpected EOF" failure this
+# repo's own E2E workflow started hitting once migration application ran
+# long enough to reach that timeout window. Disabling it removes an
+# entire slow-starting, unnecessary-for-testing service rather than
+# masking a symptom.
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
