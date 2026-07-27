@@ -156,7 +156,90 @@ jobs:
           SQL
 
       - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
-        run: supabase start
+        run: supabase start --ignore-health-check
+
+      - name: Verify required services are actually ready (bounded gate; fails the job if not)
+        # --ignore-health-check prevents the CLI from tearing down the whole
+        # disposable stack when a non-required service probe is slow. This
+        # gate independently proves every service used by the E2E suite is
+        # genuinely reachable and fails the job if any never becomes ready.
+        run: |
+          set -u
+          supabase status -o json > /tmp/sb-status-gate.json
+          API_URL="$(node -pe "require('/tmp/sb-status-gate.json').API_URL")"
+          DB_URL="$(node -pe "require('/tmp/sb-status-gate.json').DB_URL")"
+          ANON_KEY="$(node -pe "require('/tmp/sb-status-gate.json').ANON_KEY")"
+
+          DB_READY=0
+          AUTH_READY=0
+          REST_READY=0
+          DEADLINE=$((SECONDS + 240))
+
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            if [ "$DB_READY" -ne 1 ]; then
+              if DATABASE_URL="$DB_URL" node -e "
+                const { Client } = require('pg');
+                (async () => {
+                  const c = new Client({ connectionString: process.env.DATABASE_URL });
+                  await c.connect();
+                  await c.query('SELECT 1');
+                  await c.end();
+                })().catch(() => process.exit(1));
+              " 2>/dev/null; then
+                DB_READY=1
+                echo "PostgreSQL: ready."
+              fi
+            fi
+
+            if [ "$AUTH_READY" -ne 1 ]; then
+              code="$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/auth/v1/health" 2>/dev/null || true)"
+              if echo "$code" | grep -qE '^2'; then
+                AUTH_READY=1
+                echo "Auth endpoint: ready (HTTP $code)."
+              fi
+            fi
+
+            if [ "$REST_READY" -ne 1 ]; then
+              code="$(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $ANON_KEY" "$API_URL/rest/v1/" 2>/dev/null || true)"
+              if echo "$code" | grep -qE '^2'; then
+                REST_READY=1
+                echo "PostgREST endpoint: ready (HTTP $code)."
+              fi
+            fi
+
+            if [ "$DB_READY" -eq 1 ] && [ "$AUTH_READY" -eq 1 ] && [ "$REST_READY" -eq 1 ]; then
+              echo "All required services ready."
+              exit 0
+            fi
+
+            sleep 3
+          done
+
+          echo "::error::Required services did not become ready within the bounded wait (db_ready=$DB_READY, auth_ready=$AUTH_READY, rest_ready=$REST_READY). Collecting diagnostics."
+
+          echo "--- supabase status (redacted) ---"
+          node -e "
+            const s = require('/tmp/sb-status-gate.json');
+            for (const k of Object.keys(s)) {
+              if (/URL|KEY/i.test(k)) {
+                console.log(k + ': [REDACTED]');
+              } else {
+                console.log(k + ': ' + s[k]);
+              }
+            }
+          "
+
+          echo "--- docker ps -a ---"
+          docker ps -a
+
+          echo "--- container logs (last 200 lines each; secrets redacted) ---"
+          for c in $(docker ps -a --format '{{.Names}}' | grep '^supabase_'); do
+            echo "== $c =="
+            docker logs --tail 200 "$c" 2>&1 |
+              sed -E 's#(postgres(ql)?://)[^ ]*#\1[REDACTED]#g; s/(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/[REDACTED-JWT]/g'
+          done
+
+          exit 1
 
       - name: Capture local Supabase connection info
         id: sb
