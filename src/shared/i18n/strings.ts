@@ -672,7 +672,7 @@ export const T: Dict = {
   dir_col_quantity_before: { ar: 'الكمية قبل',                       en: 'Qty before' },
   dir_col_quantity_after:  { ar: 'الكمية بعد',                       en: 'Qty after' },
   dir_col_provenance:  { ar: 'مصدر الحدث',                           en: 'Provenance' },
-  dir_open_in_status_center: { ar: 'فتح المصفوفة الحية في مركز المواقف', en: 'Open live matrix in Status Center' },
+  dir_open_materials_tab: { ar: 'فتح المصفوفة الحية في المواد والدفعات', en: 'Open live matrix in Materials & Batches' },
   dir_col_receipt_number: { ar: 'رقم الوصل',                       en: 'Receipt number' },
   dir_col_paper_reference: { ar: 'المرجع الورقي',                  en: 'Paper reference' },
   dir_col_linked_movement: { ar: 'الحركة المرتبطة',                 en: 'Linked movement' },

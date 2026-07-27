@@ -1,20 +1,22 @@
 /**
- * DECISION-INTELLIGENCE-REPORTS-119/120 — Screen 21.
+ * DECISION-INTELLIGENCE-REPORTS-119/120 / REPORTING-UNIFICATION — Screen 21,
+ * «مركز التقارير والمواقف»: the single canonical reporting/status shell.
  *
- * Executive Overview (119) with a 120 per-lot supply-source drill-down, an
- * Institution Status tab, a Materials & Batches tab (item_availability's
- * already-computed condition + expiry-risk.ts's already-computed tier — no
- * new classification math), a Stock Movements tab and an Audit-Sensitive
- * Actions tab (both PURE embeds of StatusCenterScreen's/ReportsScreen's
- * existing self-contained components), a Differences & Corrections tab
- * (reads the existing second-person-approval tables' full history, RLS
- * already permits it), and an Official Report Library of immutable,
- * server-numbered snapshots.
+ * Eleven tabs, each reusing the most complete existing component/service
+ * rather than reimplementing it: Executive Overview (119, with a 120
+ * per-lot supply-source drill-down), Institution Status, Materials &
+ * Batches (the former Status Center's entire live-operations view, moved
+ * here verbatim), Stock Movements, Custody Chain, Differences &
+ * Corrections, Supplementary Purchases, Monthly Position (the former
+ * screen 20's full prepare/classify/submit/approve+lock/amend cycle,
+ * moved here verbatim), Audit & Sensitive Actions, the Official Report
+ * Library, and (super_admin only) Global Material Search (the former
+ * ReportsScreen's unique content).
  *
- * Custody-chain lifecycle reporting and supplementary-purchase traceability
- * are NOT built in this increment — see the PR description for the current
- * gap list and why (both need a dedicated org-wide read path this pass
- * didn't reach).
+ * Screens 9 (Reports), 12 (Status Center) and 20 (Monthly Position) all
+ * now redirect here via AuthenticatedApp.tsx's `initialTab` prop — see
+ * docs/phoenix/proposals/unified-reporting-status-center-equivalence.md
+ * for the full per-section equivalence matrix that justified each move.
  */
 import { useEffect, useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
@@ -97,18 +99,6 @@ const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementa
 interface BucketRow { label: string; value: number; }
 interface SupplyBucketRow extends BucketRow { key: string; }
 
-/**
- * REPORTING-CLOSURE-FINAL Phase 2: navigation consolidation.
- *
- * onNavigate lets this screen deep-link into the two operational surfaces
- * the reuse-first parity matrix (docs/phoenix/reporting-closure-final-parity-matrix.md)
- * decided to KEEP standalone rather than fold in — screen 12 (Status
- * Center, the canonical live-operations matrix) and screen 20 (Monthly
- * Inventory Position, whose prepare->approve->lock workflow must not be
- * duplicated or weakened here). Neither screen is deleted or made
- * unreachable; this screen becomes the single coherent reporting entry
- * point by linking to them instead of re-implementing their data layer.
- */
 /**
  * REPORTING-UNIFICATION: initialTab lets the old screen numbers (9, 12, 20)
  * redirect straight to the tab that now owns their content, instead of
@@ -199,7 +189,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, initialTab }: {
             lang={lang}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
-            onNavigate={onNavigate}
+            onOpenMaterials={() => setTab('materials')}
           />
         </ReportsTabErrorBoundary>
       )}
@@ -2575,11 +2565,11 @@ function MonthlyPositionTab({ orgId, lang, role, onToast }: {
   );
 }
 
-function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
+function InstitutionStatusTab({ lang, onToast, onMobilePrint, onOpenMaterials }: {
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
-  onNavigate: (screen: number) => void;
+  onOpenMaterials: () => void;
 }) {
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -2633,8 +2623,8 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
   return (
     <div style={{ display: 'grid', gap: '12px' }} data-testid="institution-status-tab">
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <PhoenixButton variant="ghost" onClick={() => onNavigate(12)}>
-          {t('dir_open_in_status_center', lang)}
+        <PhoenixButton variant="ghost" onClick={onOpenMaterials}>
+          {t('dir_open_materials_tab', lang)}
         </PhoenixButton>
       </div>
       <PhoenixCard>

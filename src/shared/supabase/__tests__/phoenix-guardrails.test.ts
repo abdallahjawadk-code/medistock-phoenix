@@ -1023,6 +1023,21 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     expect(content).not.toContain('actor_identity_version');
   });
 
+  // REPORTING-UNIFICATION: StatusCenterScreen.tsx's entire live-operations
+  // view (including this same read-only "Last Updated By" display) moved
+  // verbatim into DecisionIntelligenceReportsScreen.tsx's Materials & Batches
+  // tab. Same carve-out reasoning, same field, same read-only guarantee.
+  it('features/reports/DecisionIntelligenceReportsScreen.tsx only READS actor_name_snapshot (display use), never writes it', () => {
+    const content = readSrc('features/reports/DecisionIntelligenceReportsScreen.tsx');
+    expect(content).not.toMatch(/p_actor_name_snapshot\s*:/);
+    expect(content).not.toMatch(/\.insert\([^)]*actor_name_snapshot/s);
+    expect(content).not.toMatch(/\.rpc\([^)]*actor_name_snapshot/s);
+    expect(content).not.toContain('actor_email_snapshot');
+    expect(content).not.toContain('actor_role_snapshot');
+    expect(content).not.toContain('actor_org_snapshot');
+    expect(content).not.toContain('actor_identity_version');
+  });
+
   it('features/inventory/warehouse-intake.service.ts only READS actor_name_snapshot, never passes any snapshot field to a write', () => {
     const content = readSrc('features/inventory/warehouse-intake.service.ts');
     // The only permitted occurrence is the read-only ledger SELECT projection.
@@ -1045,6 +1060,9 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
       .filter(path => !path.endsWith(join('services', 'availability.service.ts')))
       .filter(path => !path.endsWith(join('alerts', 'inter-org-alert-lifecycle.service.ts')))
       .filter(path => !path.endsWith(join('status', 'StatusCenterScreen.tsx')))
+      // REPORTING-UNIFICATION: same read-only display, moved verbatim into
+      // the unified shell — see the dedicated assertion above.
+      .filter(path => !path.endsWith(join('reports', 'DecisionIntelligenceReportsScreen.tsx')))
       // PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A: the outlet report modal
       // reads r.actor_name_snapshot from the SAME already-fetched rows
       // StatusCenterScreen.tsx passes it (getAvailabilityByOrg's existing

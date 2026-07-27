@@ -64,7 +64,7 @@ vi.mock('@/features/reports/GlobalMaterialSearchPanel', () => ({ GlobalMaterialS
 
 const getOpenMonthlyStatusReport = vi.fn();
 const getLatestLockedMonthlyStatusReport = vi.fn();
-const getMonthlyStatusLines = vi.fn<() => Promise<MonthlyStatusLine[]>>();
+const getMonthlyStatusLines = vi.fn<(...args: unknown[]) => Promise<MonthlyStatusLine[]>>();
 vi.mock('@/shared/supabase/services/monthly-status.service', () => ({
   getOpenMonthlyStatusReport: (...args: unknown[]) => getOpenMonthlyStatusReport(...args),
   getLatestLockedMonthlyStatusReport: (...args: unknown[]) => getLatestLockedMonthlyStatusReport(...args),

@@ -22,10 +22,12 @@ const app             = readSrc('app/App.tsx');
 // QR-BUNDLE-CODE-SPLIT-A: screen-case routing moved into its own lazy chunk.
 const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
 
-// Reports is no longer part of this legacy-hidden list: the authenticated
-// smoke test for the super-admin global material search restored a guarded
-// desktop entry. The original legacy pages remain hidden exactly as before.
-const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor'];
+// REPORTING-UNIFICATION: nav_reports and nav_status_center no longer exist
+// as distinct nav entries at all — both screens (9 and 12) were consolidated
+// into the single unified reporting/status shell (nav_decision_reports,
+// screen 21). They're listed here alongside the original legacy-hidden
+// pages since, from the nav's perspective, they are now equally absent.
+const HIDDEN_KEYS = ['nav_qr_audit', 'nav_reg', 'nav_status_editor', 'nav_reports', 'nav_status_center'];
 
 // ============================================================================
 // 1. Desktop sidebar no longer lists the hidden nav items
@@ -46,7 +48,9 @@ describe('Desktop sidebar hides legacy pages', () => {
   it('NAV_ITEMS still contains the core unaffected pages', () => {
     // nav_editor is restored (RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A) — see
     // nav-availability-editor-hide.test.ts for the full corrected-intent tests.
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    // nav_status_center is intentionally excluded here: REPORTING-UNIFICATION
+    // consolidated it into nav_decision_reports (screen 21) — see section 4.
+    ['nav_institutions', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -81,7 +85,9 @@ describe('Mobile drawer hides legacy pages', () => {
     // nav_editor is restored (RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A).
     // nav_intake is intentionally excluded here — it is the page the owner
     // actually wants hidden; see nav-availability-editor-hide.test.ts.
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    // nav_status_center is intentionally excluded here: REPORTING-UNIFICATION
+    // consolidated it into nav_decision_reports (screen 21) — see section 4.
+    ['nav_institutions', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });
@@ -99,22 +105,31 @@ describe('Mobile bottom nav does not reintroduce legacy pages', () => {
 });
 
 // ============================================================================
-// 4. Reports is restored to desktop/mobile navigation for super_admin only.
+// 4. REPORTING-UNIFICATION: exactly one unified entry, no scoped nav_reports.
 // ============================================================================
+//
+// Superseded phase: nav_reports used to be a separate, super-admin-scoped
+// sidebar/drawer entry pointing at ReportsScreen.tsx (screen 9). The
+// Unified Reporting & Status Center Closure mission explicitly retired
+// that duplication — Reports' unique content (Global Material Search,
+// among others) now lives inside the single nav_decision_reports entry
+// (screen 21) as tabs, gated internally by role, not by a second nav item.
 
-describe('Reports has scoped entries without reopening legacy pages', () => {
-  it('nav_reports is present and guarded in desktop NAV_ITEMS', () => {
+describe('Reports/Status Center have exactly one unified entry, not scoped duplicates', () => {
+  it('nav_decision_reports is the sole reporting/status entry in desktop NAV_ITEMS', () => {
     const navBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const ROLE_MAP'));
-    expect(navBlock).toContain("'nav_reports'");
-    expect(navBlock).toContain('superAdminOnly: true');
-    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
+    expect(navBlock).toContain("'nav_decision_reports'");
+    expect(navBlock).not.toContain("'nav_reports'");
+    expect(navBlock).not.toContain("'nav_status_center'");
+    expect((navBlock.match(/screen:\s*21/g) ?? []).length).toBe(1);
   });
 
-  it('nav_reports is present and guarded in mobile ALL_NAV', () => {
+  it('nav_decision_reports is the sole reporting/status entry in mobile ALL_NAV', () => {
     const drawerBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
-    expect(drawerBlock).toContain("'nav_reports'");
-    expect(drawerBlock).toContain('superAdminOnly: true');
-    expect(mobileDrawer).toContain("!item.superAdminOnly || role === 'super_admin'");
+    expect(drawerBlock).toContain("'nav_decision_reports'");
+    expect(drawerBlock).not.toContain("'nav_reports'");
+    expect(drawerBlock).not.toContain("'nav_status_center'");
+    expect((drawerBlock.match(/screen:\s*21/g) ?? []).length).toBe(1);
   });
 });
 
@@ -141,9 +156,12 @@ describe('App.tsx retains all screen cases for hidden-nav pages (routes not remo
     expect(authenticatedApp).toMatch(/case 16:\s*return <StatusEditorScreen \/>/);
   });
 
-  it('imports and renders ReportsScreen on case 9', () => {
-    expect(authenticatedApp).toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
-    expect(authenticatedApp).toMatch(/case 9:\s*return <ReportsScreen \/>/);
+  it('REPORTING-UNIFICATION: case 9 now redirects into the unified shell (screen 21) instead of rendering ReportsScreen', () => {
+    // ReportsScreen.tsx's unique content was proven equivalent and migrated
+    // (see docs/phoenix/proposals/unified-reporting-status-center-equivalence.md)
+    // — this is a real route retirement, not merely a hidden nav item.
+    expect(authenticatedApp).not.toContain("import { ReportsScreen } from '@/features/reports/ReportsScreen'");
+    expect(authenticatedApp).toMatch(/case 9:\s*return <DecisionIntelligenceReportsScreen[^>]*initialTab="overview"/);
   });
 });
 
