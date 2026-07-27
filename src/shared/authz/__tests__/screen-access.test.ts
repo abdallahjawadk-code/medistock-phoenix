@@ -42,7 +42,7 @@ describe('authenticated landing is role-safe and session-scoped', () => {
     }
   });
 
-  it('waits for the real profile and never reuses another profile's navigation state', () => {
+  it('waits for the real profile and never reuses navigation from another profile', () => {
     const app = read('app/AuthenticatedApp.tsx');
     expect(app).toContain('if (!profile) {');
     expect(app).toContain('navigation?.profileId === profile.id');
