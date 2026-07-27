@@ -13,9 +13,11 @@ name: Production PHOENIX_DEMO_V1 (manual, gated)
 #   * The triggering commit SHA and branch must match caller-supplied
 #     inputs exactly, or the job fails before touching Production.
 #   * `mode` is a closed enum (preflight / dry_run_migrate /
-#     migrate_and_seed) — there is no free-text SQL input, no arbitrary
-#     project-ref input, no dataset-id input (PHOENIX_DEMO_V1 is a literal
-#     inside the scripts this workflow calls, never a workflow input).
+#     migrate_and_seed / verify_seeded_data) — there is no free-text SQL
+#     input, no arbitrary project-ref input, no dataset-id input
+#     (PHOENIX_DEMO_V1 is a literal inside the scripts this workflow calls,
+#     never a workflow input). verify_seeded_data is read-only, like
+#     preflight -- it only counts rows, never mutates.
 #   * No purge mode exists in this workflow at all.
 #   * The Production connection string is read ONLY via
 #     secrets.PHOENIX_PRODUCTION_DATABASE_URL, passed to child processes as
@@ -30,13 +32,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'preflight (read-only) | dry_run_migrate (preview only, no writes) | migrate_and_seed (applies migrations + seeds PHOENIX_DEMO_V1)'
+        description: 'preflight (read-only) | dry_run_migrate (preview only, no writes) | migrate_and_seed (applies migrations + seeds PHOENIX_DEMO_V1) | verify_seeded_data (read-only, counts real rows behind the manifest)'
         required: true
         type: choice
         options:
           - preflight
           - dry_run_migrate
           - migrate_and_seed
+          - verify_seeded_data
       confirm_sha:
         description: 'Exact commit SHA you intend this run to operate on (must equal the SHA this workflow actually runs at)'
         required: true
@@ -117,3 +120,10 @@ jobs:
         env:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
         run: node tools/phoenix-demo/seed-prod.mjs
+
+      # ── verify_seeded_data only: read-only, independent of the above. ────
+      - name: Verify seeded demo rows genuinely exist (table names + counts only, no row content)
+        if: inputs.mode == 'verify_seeded_data'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: node tools/phoenix-demo/verify-seeded-data.mjs
