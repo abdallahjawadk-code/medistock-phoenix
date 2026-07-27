@@ -57,7 +57,7 @@ describe('1-2. Create-user UI is a real edge-function call, not a fake/stubbed s
     const formStart = screen.indexOf('function CreateUserForm');
     const form = screen.slice(formStart, screen.indexOf('function DisableConfirmModal'));
     expect(form).toContain('if (res.edgeMissing)');
-    expect(form).toContain("setError(t('um_edge_disabled', lang))");
+    expect(form).toContain("setError(withSupportRef(t('um_edge_disabled', lang), lang, res.correlationId))");
   });
 });
 
