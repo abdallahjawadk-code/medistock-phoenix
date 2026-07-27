@@ -14,10 +14,8 @@ import { MeshScreen } from '@/features/mesh/MeshScreen';
 import { QrScreen } from '@/features/qr/QrScreen';
 import { HealthScreen } from '@/features/health/HealthScreen';
 import { IntakeFrozenScreen } from '@/features/health/IntakeFrozenScreen';
-import { ReportsScreen } from '@/features/reports/ReportsScreen';
 import { MobileCommandScreen } from '@/features/mesh/MobileCommandScreen';
 import { InstitutionScreen } from '@/features/institutions/InstitutionScreen';
-import { StatusCenterScreen } from '@/features/status/StatusCenterScreen';
 import { InterInstitutionAlertsScreen } from '@/features/alerts/InterInstitutionAlertsScreen';
 import { UserManagementScreen } from '@/features/users/UserManagementScreen';
 import { MyAccountScreen } from '@/features/account/MyAccountScreen';
@@ -25,7 +23,6 @@ import { StatusEditorScreen } from '@/features/status/StatusEditorScreen';
 import { NetworkManagementScreen } from '@/features/network/NetworkManagementScreen';
 import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
-import { MonthlyStatusScreen } from '@/features/status/MonthlyStatusScreen';
 import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 
@@ -44,10 +41,12 @@ function ForbiddenScreen() {
 
 export function AuthenticatedApp() {
   const { authReady, session, signOut, passwordRecovery, role } = useApp();
-  // PRODUCTION-READINESS-CLEANUP-A: the central dashboard (screen 2) was
-  // removed from navigation and no longer renders; Status Center (screen 12)
-  // is the real-data landing screen.
-  const [screen, setScreen] = useState(12);
+  // REPORTING-UNIFICATION: the unified "مركز التقارير والمواقف" (screen 21,
+  // DecisionIntelligenceReportsScreen) is now the real-data landing screen,
+  // replacing Status Center (screen 12) directly. Screens 9/12/20 no longer
+  // render their own components — see the switch below — they redirect to
+  // screen 21 on the matching tab.
+  const [screen, setScreen] = useState(21);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
@@ -100,7 +99,12 @@ export function AuthenticatedApp() {
       case 6:  return <QrScreen />;
       case 7:  return <HealthScreen />;
       case 8:  return <IntakeFrozenScreen onNavigate={setScreen} />;
-      case 9:  return <ReportsScreen />;
+      // REPORTING-UNIFICATION: screen 9 (Reports) is retired — its Summary
+      // tab is a subset of Overview's classification_counts, its
+      // Comparison tab is redundant with Institution Status (same RPC), its
+      // Global Material Search and Audit tabs both moved into screen 21
+      // verbatim. Redirects to Overview, the closest single equivalent.
+      case 9:  return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="overview" />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
       // ROLE-REORG-§5: institutions management is platform-admin exclusive; an
       // institution admin gets the same route scoped to "My Organization". Any
@@ -110,7 +114,13 @@ export function AuthenticatedApp() {
         return institutionsScreenAccess(role) === false
           ? <ForbiddenScreen />
           : <InstitutionScreen />;
-      case 12: return <StatusCenterScreen onNavigate={setScreen} />;
+      // REPORTING-UNIFICATION: screen 12 (Status Center) is retired — its
+      // entire live-operations view (filters, row actions, quick actions,
+      // alerts, activity feed) moved verbatim into screen 21's Materials &
+      // Batches tab. Redirects there directly, not to Overview, since that
+      // tab is the exact 1:1 continuation of what this screen number used
+      // to show.
+      case 12: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="materials" />;
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;
@@ -123,18 +133,25 @@ export function AuthenticatedApp() {
       // approvals, receiving and supplier returns — scoped to assigned
       // institution warehouses (062), every write a guarded 087 RPC.
       case 19: return <LocalProcurementScreen />;
-      // MONTHLY-STATUS-REDESIGN-092: prepare/classify/confirm/submit/review/
-      // approve+lock the monthly institution material status — scoped to the
-      // status_center.* keys, every write a guarded 092 RPC.
-      case 20: return <MonthlyStatusScreen />;
-      // DECISION-INTELLIGENCE-REPORTS-119: live executive overview + an
-      // immutable official-report library — scoped to reports.view (062),
-      // every RPC (phoenix_executive_overview/phoenix_create_report_snapshot)
-      // re-checked server-side.
+      // REPORTING-UNIFICATION: screen 20 (Monthly Position) is retired —
+      // its full prepare->classify/stocktake->submit->approve+lock->amend
+      // workflow moved verbatim into screen 21's Monthly Position tab
+      // (every RPC in monthly-status.service.ts, every role gate,
+      // unchanged). Redirects there directly, the exact 1:1 continuation.
+      case 20: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="monthly" />;
+      // DECISION-INTELLIGENCE-REPORTS-119/REPORTING-UNIFICATION: «مركز
+      // التقارير والمواقف» — the single unified reporting/status shell.
+      // Executive overview, live institution position, materials &
+      // batches (the former Status Center), stock movements, custody
+      // chain, differences & corrections, supplementary procurement,
+      // monthly position (the former screen 20), audit/sensitive-action
+      // log, the official report library, and (super_admin only) global
+      // material search — every RPC re-checked server-side, every
+      // permission gate unchanged from its original screen.
       case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} />;
       // Central dashboard (former screen 2) and any unknown screen number
-      // safely redirect to Status Center — the real-data landing screen.
-      default: return <StatusCenterScreen onNavigate={setScreen} />;
+      // safely redirect to the unified shell — the real-data landing screen.
+      default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} />;
     }
   };
 
@@ -150,7 +167,7 @@ export function AuthenticatedApp() {
         }
         setWelcomeCompletedFor(null);
         void signOut();
-        setScreen(12);
+        setScreen(21);
       }}
     >
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this

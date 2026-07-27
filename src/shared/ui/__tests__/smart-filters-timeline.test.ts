@@ -35,9 +35,9 @@ describe('1. App screen map / routes unchanged', () => {
     }
   });
 
-  it('unknown/default screens still redirect to Status Center', () => {
+  it('unknown/default screens redirect to the unified reporting/status shell (REPORTING-UNIFICATION retired the separate Status Center route)', () => {
     const defaultIdx = authenticatedApp.indexOf('default:');
-    expect(authenticatedApp.slice(defaultIdx, defaultIdx + 80)).toContain('StatusCenterScreen');
+    expect(authenticatedApp.slice(defaultIdx, defaultIdx + 100)).toContain('DecisionIntelligenceReportsScreen');
   });
 });
 

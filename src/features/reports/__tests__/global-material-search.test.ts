@@ -13,8 +13,14 @@ const exporter = readFileSync(
   new URL('../global-material-export.ts', import.meta.url),
   'utf8',
 );
-const reports = readFileSync(
-  new URL('../ReportsScreen.tsx', import.meta.url),
+// REPORTING-UNIFICATION: Global Material Search moved from ReportsScreen.tsx
+// (screen 9, now retired) into DecisionIntelligenceReportsScreen.tsx (screen
+// 21) as tab 11 — same panel component, same internal gate, mounted from a
+// new location. The nav-reachability test below now checks the unified
+// shell's single entry instead of a dedicated screen-9 entry, since there
+// is no separate "Reports" nav item to reach it through anymore.
+const dirc = readFileSync(
+  new URL('../DecisionIntelligenceReportsScreen.tsx', import.meta.url),
   'utf8',
 );
 const sidebar = readFileSync(
@@ -28,17 +34,15 @@ const mobileDrawer = readFileSync(
 
 describe('super-admin global material search boundary', () => {
   it('renders the tab and panel only for super_admin', () => {
-    expect(reports).toContain("role === 'super_admin'");
-    expect(reports).toContain("tab === 'global' && role === 'super_admin'");
+    expect(dirc).toContain("role === 'super_admin'");
+    expect(dirc).toContain("tab === 'global' && role === 'super_admin'");
     expect(panel).toContain("if (role !== 'super_admin') return null");
   });
 
-  it('keeps Reports reachable from desktop and mobile navigation for super_admin only', () => {
+  it('keeps the unified reporting/status shell (which owns global material search) reachable from desktop and mobile navigation', () => {
     [sidebar, mobileDrawer].forEach(source => {
-      expect(source).toContain("screen: 9");
-      expect(source).toContain("labelKey: 'nav_reports'");
-      expect(source).toContain('superAdminOnly: true');
-      expect(source).toContain("!item.superAdminOnly || role === 'super_admin'");
+      expect(source).toContain("screen: 21");
+      expect(source).toContain("labelKey: 'nav_decision_reports'");
     });
   });
 

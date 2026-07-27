@@ -43,12 +43,12 @@ describe('Mobile bottom nav: "More / المزيد" item removed', () => {
     expect(bottomNav).not.toMatch(/aria-label="More"/);
   });
 
-  it('BOTTOM_NAV array itself still has 4 core pages (nav_status_center replaced the removed central dashboard)', () => {
+  it('BOTTOM_NAV array itself still has 4 core pages (nav_decision_reports replaced the removed central dashboard; REPORTING-UNIFICATION later replaced nav_status_center with the same unified entry)', () => {
     const bottomNavBlock = bottomNav.slice(
       bottomNav.indexOf('const BOTTOM_NAV'),
       bottomNav.indexOf('interface Props'),
     );
-    ['nav_status_center', 'nav_editor', 'nav_institutions', 'nav_inter_alerts']
+    ['nav_decision_reports', 'nav_editor', 'nav_institutions', 'nav_inter_alerts']
       .forEach(key => expect(bottomNavBlock).toContain(`'${key}'`));
   });
 
@@ -112,8 +112,10 @@ describe('Mobile drawer mirrors the desktop sidebar page set', () => {
   const secondaryItemsBlock = sidebar.slice(sidebar.indexOf('const SECONDARY_ITEMS'));
 
   it('drawer ALL_NAV contains every primary desktop NAV_ITEMS label key', () => {
-    // nav_reports removed from this mirror-check (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — hidden from both surfaces now, see nav-reports-hide.test.ts.
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users', 'nav_editor']
+    // nav_reports and nav_status_center both retired (REPORTING-UNIFICATION):
+    // consolidated into the single nav_decision_reports entry — see
+    // nav-legacy-pages-hide.test.ts section 4.
+    ['nav_institutions', 'nav_decision_reports', 'nav_inter_alerts', 'nav_users', 'nav_editor']
       .forEach(key => {
         expect(navItemsBlock).toContain(`'${key}'`);
         expect(allNavBlock).toContain(`'${key}'`);

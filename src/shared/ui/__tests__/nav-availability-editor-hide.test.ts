@@ -58,8 +58,9 @@ describe('Desktop sidebar: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('NAV_ITEMS still contains the other required-visible pages', () => {
-    // nav_reports was removed from this list (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — it is now hidden from nav; see section 12 below.
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users']
+    // nav_reports and nav_status_center both retired (REPORTING-UNIFICATION),
+    // consolidated into nav_decision_reports — see section 12 below.
+    ['nav_institutions', 'nav_decision_reports', 'nav_inter_alerts', 'nav_users']
       .forEach(key => expect(navItemsBlock).toContain(`'${key}'`));
   });
 
@@ -95,8 +96,9 @@ describe('Mobile drawer: nav_editor visible, nav_intake hidden', () => {
   });
 
   it('ALL_NAV still contains the other required-visible pages', () => {
-    // nav_reports was removed from this list (PHASE2-HIDE-REPORTS-MOVE-AUDIT-TO-STATUS-CENTER-A) — it is now hidden from nav; see section 12 below.
-    ['nav_institutions', 'nav_status_center', 'nav_inter_alerts', 'nav_users']
+    // nav_reports and nav_status_center both retired (REPORTING-UNIFICATION),
+    // consolidated into nav_decision_reports — see section 12 below.
+    ['nav_institutions', 'nav_decision_reports', 'nav_inter_alerts', 'nav_users']
       .forEach(key => expect(allNavBlock).toContain(`'${key}'`));
   });
 });
@@ -119,8 +121,8 @@ describe('Mobile bottom nav: nav_editor visible', () => {
     expect(bottomNavBlock).not.toContain("'nav_intake'");
   });
 
-  it('BOTTOM_NAV still contains nav_status_center, nav_institutions, and nav_inter_alerts', () => {
-    ['nav_status_center', 'nav_institutions', 'nav_inter_alerts']
+  it('BOTTOM_NAV still contains nav_decision_reports, nav_institutions, and nav_inter_alerts', () => {
+    ['nav_decision_reports', 'nav_institutions', 'nav_inter_alerts']
       .forEach(key => expect(bottomNavBlock).toContain(`'${key}'`));
   });
 });
@@ -296,36 +298,23 @@ describe('No SQL/migration changes for this restore/hide task', () => {
 });
 
 // ============================================================================
-// 11. Status Center remains visible
+// 11/12. REPORTING-UNIFICATION: Status Center and Reports no longer have
+// their own nav entries — both are consolidated into the single unified
+// nav_decision_reports entry (screen 21). Superseded sections 11/12 kept as
+// one section proving the unified entry, not a regression to zero entries.
 // ============================================================================
 
-describe('Status Center remains visible', () => {
-  it('nav_status_center is present in the desktop sidebar', () => {
-    expect(sidebar).toContain("'nav_status_center'");
+describe('Reporting/status navigation is a single unified entry (Status Center and Reports both consolidated)', () => {
+  it('nav_decision_reports is present in the desktop sidebar; nav_status_center/nav_reports are not', () => {
+    expect(sidebar).toContain("'nav_decision_reports'");
+    expect(sidebar).not.toContain("'nav_status_center'");
+    expect(sidebar).not.toContain("'nav_reports'");
   });
 
-  it('nav_status_center is present in the mobile drawer', () => {
-    expect(mobileDrawer).toContain("'nav_status_center'");
-  });
-});
-
-// ============================================================================
-// 12. Reports is restored to desktop and mobile navigation for super_admin only.
-// ============================================================================
-
-describe('Reports is reachable only through super-admin navigation entries', () => {
-  it('nav_reports is present and marked superAdminOnly in desktop NAV_ITEMS', () => {
-    const navItemsBlock = sidebar.slice(sidebar.indexOf('const NAV_ITEMS'), sidebar.indexOf('const SECONDARY_ITEMS'));
-    expect(navItemsBlock).toContain("'nav_reports'");
-    expect(navItemsBlock).toContain('superAdminOnly: true');
-    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
-  });
-
-  it('nav_reports is present and marked superAdminOnly in mobile ALL_NAV', () => {
-    const allNavBlock = mobileDrawer.slice(mobileDrawer.indexOf('const ALL_NAV'), mobileDrawer.indexOf('interface Props'));
-    expect(allNavBlock).toContain("'nav_reports'");
-    expect(allNavBlock).toContain('superAdminOnly: true');
-    expect(mobileDrawer).toContain("!item.superAdminOnly || role === 'super_admin'");
+  it('nav_decision_reports is present in the mobile drawer; nav_status_center/nav_reports are not', () => {
+    expect(mobileDrawer).toContain("'nav_decision_reports'");
+    expect(mobileDrawer).not.toContain("'nav_status_center'");
+    expect(mobileDrawer).not.toContain("'nav_reports'");
   });
 });
 

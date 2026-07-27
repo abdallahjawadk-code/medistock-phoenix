@@ -633,6 +633,7 @@ export const T: Dict = {
   dir_tab_overview:   { ar: 'النظرة التنفيذية',                  en: 'Executive Overview' },
   dir_tab_institutions: { ar: 'حالة المؤسسات',                    en: 'Institution Status' },
   dir_tab_library:    { ar: 'مكتبة التقارير الرسمية',             en: 'Official Report Library' },
+  dir_tab_global:     { ar: 'البحث الشامل عن مادة',                en: 'Global Material Search' },
   dir_as_of:          { ar: 'اعتبارًا من',                        en: 'As of' },
   dir_materials_tracked: { ar: 'المواد المتابَعة',                en: 'Materials tracked' },
   dir_col_indicator:  { ar: 'المؤشر',                             en: 'Indicator' },
@@ -671,7 +672,7 @@ export const T: Dict = {
   dir_col_quantity_before: { ar: 'الكمية قبل',                       en: 'Qty before' },
   dir_col_quantity_after:  { ar: 'الكمية بعد',                       en: 'Qty after' },
   dir_col_provenance:  { ar: 'مصدر الحدث',                           en: 'Provenance' },
-  dir_open_in_status_center: { ar: 'فتح المصفوفة الحية في مركز المواقف', en: 'Open live matrix in Status Center' },
+  dir_open_materials_tab: { ar: 'فتح المصفوفة الحية في المواد والدفعات', en: 'Open live matrix in Materials & Batches' },
   dir_col_receipt_number: { ar: 'رقم الوصل',                       en: 'Receipt number' },
   dir_col_paper_reference: { ar: 'المرجع الورقي',                  en: 'Paper reference' },
   dir_col_linked_movement: { ar: 'الحركة المرتبطة',                 en: 'Linked movement' },
@@ -2511,7 +2512,11 @@ export const T: Dict = {
 
   /* ── MONTHLY-STATUS-REDESIGN-092 — Screen 20, الموقف المخزني الشهري ── */
   nav_monthly_status:     { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
-  nav_decision_reports:   { ar: 'مركز التقارير والذكاء القراري',                  en: 'Decision Intelligence Reports' },
+  // REPORTING-UNIFICATION: this is now the single menu entry for the unified
+  // shell (formerly split across nav_reports/nav_status_center/
+  // nav_monthly_status/this key) — renamed to match, per the explicit
+  // consolidation requirement.
+  nav_decision_reports:   { ar: 'مركز التقارير والمواقف',                       en: 'Reporting & Status Center' },
   mst_title:              { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
   mst_sub:                { ar: 'القائمة الموحدة لمواد المذخر والمنافذ التابعة — إعداد، تصنيف، مراجعة واعتماد', en: 'Unified warehouse + outlet material list — prepare, classify, review and approve' },
   mst_no_open_report:     { ar: 'لا يوجد تقرير مفتوح حاليًا',                     en: 'No open report right now' },

@@ -48,10 +48,13 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
     // features/inventory/__tests__/inventory-center-invariants.test.ts. Every
     // other screen number → component mapping is unchanged, which is what this
     // guard exists to protect.
+    // REPORTING-UNIFICATION: screens 9 (Reports) and 12 (Status Center) now
+    // redirect into DecisionIntelligenceReportsScreen (screen 21) instead of
+    // rendering their own component — a real route retirement, not a rename.
     const expected: [number, string][] = [
       [3, 'InventoryCenterScreen'], [4, 'RegistryScreen'], [5, 'MeshScreen'], [6, 'QrScreen'],
-      [7, 'HealthScreen'], [8, 'IntakeFrozenScreen'], [9, 'ReportsScreen'],
-      [10, 'MobileCommandScreen'], [12, 'StatusCenterScreen'],
+      [7, 'HealthScreen'], [8, 'IntakeFrozenScreen'], [9, 'DecisionIntelligenceReportsScreen'],
+      [10, 'MobileCommandScreen'], [12, 'DecisionIntelligenceReportsScreen'],
       [13, 'InterInstitutionAlertsScreen'], [14, 'UserManagementScreen'],
       [15, 'MyAccountScreen'], [16, 'StatusEditorScreen'],
     ];
@@ -75,8 +78,8 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
     expect(block).toContain('InstitutionScreen');
   });
 
-  it('the initial/default screen (Status Center, 12) is unchanged', () => {
-    expect(authenticatedApp).toContain('useState(12)');
+  it('the initial/default screen is the unified reporting/status shell (21) — REPORTING-UNIFICATION moved off Status Center (12)', () => {
+    expect(authenticatedApp).toContain('useState(21)');
   });
 });
 

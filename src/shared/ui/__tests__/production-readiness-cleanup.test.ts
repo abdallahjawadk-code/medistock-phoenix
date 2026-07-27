@@ -42,15 +42,18 @@ describe('Central dashboard removed from navigation', () => {
     expect(authenticatedApp).not.toMatch(/case 2:/);
   });
 
-  it('unknown/removed screen numbers (including the former screen 2) redirect to Status Center', () => {
+  it('unknown/removed screen numbers (including the former screen 2) redirect to the unified reporting/status shell', () => {
+    // REPORTING-UNIFICATION: Status Center itself (screen 12) is now also a
+    // redirect into DecisionIntelligenceReportsScreen (screen 21) — the
+    // canonical fallback landing point moved with it.
     const defaultIdx = authenticatedApp.indexOf('default:');
-    const around = authenticatedApp.slice(defaultIdx, defaultIdx + 80);
-    expect(around).toContain('StatusCenterScreen');
+    const around = authenticatedApp.slice(defaultIdx, defaultIdx + 100);
+    expect(around).toContain('DecisionIntelligenceReportsScreen');
   });
 
-  it('the initial screen and post-logout screen are Status Center (12), not the removed dashboard (2)', () => {
-    expect(authenticatedApp).toContain('useState(12)');
-    expect(authenticatedApp).toContain('setScreen(12)');
+  it('the initial screen and post-logout screen are the unified shell (21), not the removed dashboard (2) or the retired Status Center (12)', () => {
+    expect(authenticatedApp).toContain('useState(21)');
+    expect(authenticatedApp).toContain('setScreen(21)');
     expect(authenticatedApp).not.toContain('useState(2)');
     expect(authenticatedApp).not.toContain('setScreen(2)');
   });
@@ -65,10 +68,10 @@ describe('Central dashboard removed from navigation', () => {
     expect(block).not.toContain("'nav_dash'");
   });
 
-  it('mobile bottom nav no longer contains nav_dash (replaced by nav_status_center)', () => {
+  it('mobile bottom nav no longer contains nav_dash (replaced by the unified nav_decision_reports entry)', () => {
     const block = bottomNav.slice(bottomNav.indexOf('const BOTTOM_NAV'), bottomNav.indexOf('interface Props'));
     expect(block).not.toContain("'nav_dash'");
-    expect(block).toContain("'nav_status_center'");
+    expect(block).toContain("'nav_decision_reports'");
   });
 
   it('PhoenixAppShell screen-title map no longer maps screen 2 to nav_dash', () => {
@@ -77,8 +80,8 @@ describe('Central dashboard removed from navigation', () => {
     expect(block).not.toContain("'nav_dash'");
   });
 
-  it('PhoenixAppShell falls back to nav_status_center for unmapped screens', () => {
-    expect(shell).toContain("?? 'nav_status_center'");
+  it('PhoenixAppShell falls back to nav_decision_reports for unmapped screens', () => {
+    expect(shell).toContain("?? 'nav_decision_reports'");
   });
 });
 

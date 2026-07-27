@@ -39,24 +39,25 @@ describe('1. App screen map / routes unchanged', () => {
     }
   });
 
-  it('initial screen and post-logout screen remain Status Center (12)', () => {
-    expect(authenticatedApp).toContain('useState(12)');
-    expect(authenticatedApp).toContain('setScreen(12)');
+  it('initial screen and post-logout screen are the unified reporting/status shell (21) — REPORTING-UNIFICATION retired Status Center (12) as a distinct landing screen', () => {
+    expect(authenticatedApp).toContain('useState(21)');
+    expect(authenticatedApp).toContain('setScreen(21)');
   });
 
-  it('unknown/default screens still redirect to Status Center', () => {
+  it('unknown/default screens redirect to the unified reporting/status shell', () => {
     const defaultIdx = authenticatedApp.indexOf('default:');
-    expect(authenticatedApp.slice(defaultIdx, defaultIdx + 80)).toContain('StatusCenterScreen');
+    expect(authenticatedApp.slice(defaultIdx, defaultIdx + 100)).toContain('DecisionIntelligenceReportsScreen');
   });
 });
 
 describe('2. Existing navigation targets unchanged', () => {
   it('sidebar/drawer/bottom-nav screen numbers are untouched', () => {
     expect(sidebar).toContain('screen: 11');
-    expect(sidebar).toContain('screen: 12');
+    // REPORTING-UNIFICATION: screen 12 (Status Center) no longer has its own
+    // nav entry — it redirects into screen 21's Materials & Batches tab.
     expect(sidebar).toContain('screen: 14');
     expect(drawer).toContain('screen: 11');
-    expect(bottomNav).toContain('screen: 12');
+    expect(bottomNav).toContain('screen: 21');
   });
 
   it('CommandPalette and QuickActionGrid only ever call the passed-in onNavigate — no new navigation mechanism', () => {

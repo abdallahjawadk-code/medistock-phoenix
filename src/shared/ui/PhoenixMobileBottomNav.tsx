@@ -4,8 +4,13 @@ import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
 // RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A: nav_editor is intentionally
 // visible while the frozen intake screen remains hidden from navigation.
+// REPORTING-UNIFICATION: points at the unified shell (screen 21) directly
+// rather than the retired screen 12 — same content either way (12 redirects
+// to 21's materials tab), but using 21 here keeps the active-state highlight
+// correct for any other in-app navigation that already uses the canonical
+// screen number.
 const BOTTOM_NAV: { screen: number; icon: PhoenixIconName; labelKey: string }[] = [
-  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
+  { screen: 21, icon: 'status', labelKey: 'nav_decision_reports' },
   { screen: 3, icon: 'editor', labelKey: 'nav_editor' },
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },

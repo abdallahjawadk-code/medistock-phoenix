@@ -1,32 +1,39 @@
 /**
- * DECISION-INTELLIGENCE-REPORTS-119/120 — Screen 21.
+ * DECISION-INTELLIGENCE-REPORTS-119/120 / REPORTING-UNIFICATION — Screen 21,
+ * «مركز التقارير والمواقف»: the single canonical reporting/status shell.
  *
- * Executive Overview (119) with a 120 per-lot supply-source drill-down, an
- * Institution Status tab, a Materials & Batches tab (item_availability's
- * already-computed condition + expiry-risk.ts's already-computed tier — no
- * new classification math), a Stock Movements tab and an Audit-Sensitive
- * Actions tab (both PURE embeds of StatusCenterScreen's/ReportsScreen's
- * existing self-contained components), a Differences & Corrections tab
- * (reads the existing second-person-approval tables' full history, RLS
- * already permits it), and an Official Report Library of immutable,
- * server-numbered snapshots.
+ * Eleven tabs, each reusing the most complete existing component/service
+ * rather than reimplementing it: Executive Overview (119, with a 120
+ * per-lot supply-source drill-down), Institution Status, Materials &
+ * Batches (the former Status Center's entire live-operations view, moved
+ * here verbatim), Stock Movements, Custody Chain, Differences &
+ * Corrections, Supplementary Purchases, Monthly Position (the former
+ * screen 20's full prepare/classify/submit/approve+lock/amend cycle,
+ * moved here verbatim), Audit & Sensitive Actions, the Official Report
+ * Library, and (super_admin only) Global Material Search (the former
+ * ReportsScreen's unique content).
  *
- * Custody-chain lifecycle reporting and supplementary-purchase traceability
- * are NOT built in this increment — see the PR description for the current
- * gap list and why (both need a dedicated org-wide read path this pass
- * didn't reach).
+ * Screens 9 (Reports), 12 (Status Center) and 20 (Monthly Position) all
+ * now redirect here via AuthenticatedApp.tsx's `initialTab` prop — see
+ * docs/phoenix/proposals/unified-reporting-status-center-equivalence.md
+ * for the full per-section equivalence matrix that justified each move.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
-import { formatStableDateTime } from '@/shared/lib/date';
+import { formatStableDateTime, formatStableDate } from '@/shared/lib/date';
+import { normalizeRole } from '@/shared/lib/roles';
+import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { getDispenseContext, type DispenseContext } from '@/features/outlet/dispense-context.service';
 import { DispenseContextViewer } from '@/features/outlet/DispenseContextViewer';
 import { reasonCodeLabel } from '@/shared/lib/movement-labels';
 import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
+import { PhoenixInput } from '@/shared/ui/PhoenixInput';
+import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -35,13 +42,31 @@ import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 import {
   exportProfessionalXlsx, exportProfessionalMultiSheetXlsx, triggerProfessionalPrint,
+  exportAvailabilityXlsx, type AvailabilityExportRow,
   type ProfessionalReportColumn,
 } from '@/shared/lib/professional-export';
 import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
 import { getAvailabilityByOrg } from '@/shared/supabase/services/availability.service';
-import { getExpiryRiskTier, getExpiryRiskLabel } from '@/shared/lib/expiry-risk';
+import { getExpiryRiskTier, getExpiryRiskLabel, getExpiryRiskTone } from '@/shared/lib/expiry-risk';
+import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
+import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import type { CanonicalStatus } from '@/shared/lib/status/canonical';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { ExpiryRiskBadge } from '@/shared/ui/ExpiryRiskBadge';
+import { AvailabilityStockCorrectionModal, type AvailabilityCorrectionRow } from '@/features/status/AvailabilityStockCorrectionModal';
+import { ReactivateMaterialModal, REACTIVATE_PERMISSION_KEYS, type ReactivateRow } from '@/features/status/ReactivateMaterialModal';
+import { MovementHistoryModal, type MovementHistoryRow } from '@/features/status/MovementHistoryModal';
+import { computeInternalAlerts } from '@/features/status/internalAlerts';
+import { InternalAlertsSection } from '@/features/status/InternalAlertsSection';
+import { OutletMaterialGroups } from '@/features/status/OutletMaterialGroups';
+import { OutletAvailabilityReportModal } from '@/features/status/OutletAvailabilityReportModal';
+import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
+import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
+import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
+import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementReportSection } from '@/features/status/MovementReportSection';
 import { AuditLogSection } from './AuditLogSection';
+import { GlobalMaterialSearchPanel } from './GlobalMaterialSearchPanel';
 import { ReportsTabErrorBoundary } from './ReportsTabErrorBoundary';
 import { listCorrectionHistory, type CorrectionHistoryRow } from './differences-corrections.service';
 import {
@@ -53,12 +78,20 @@ import { getPaperReferencesFor } from '@/features/movement/paper-reference.servi
 import { getSuppliers, getReceipts, getReceiptLines, type OrderRow, type ReceiptRow, type ReceiptLineRow } from '@/features/procurement/procurement.service';
 import { StatusBadge } from '@/features/procurement/OrderComposerPanel';
 import {
+  getOpenMonthlyStatusReport, getLatestLockedMonthlyStatusReport, getMonthlyStatusLines,
+  prepareMonthlyStatusReport, classifyMonthlyStatusLines, confirmSuspectedMissing,
+  submitMonthlyStatusReport, returnMonthlyStatusReportForClarification,
+  approveLockMonthlyStatusReport, createMonthlyStatusAmendment,
+  recordStocktake, getStocktakeCountLines,
+  type MonthlyStatusLine, type MaterialClassification, type StocktakeCountLine,
+} from '@/shared/supabase/services/monthly-status.service';
+import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
   getSupplySourcesDetail, checkSnapshotParity, isDemoOrganization,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library' | 'global';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -67,20 +100,19 @@ interface BucketRow { label: string; value: number; }
 interface SupplyBucketRow extends BucketRow { key: string; }
 
 /**
- * REPORTING-CLOSURE-FINAL Phase 2: navigation consolidation.
- *
- * onNavigate lets this screen deep-link into the two operational surfaces
- * the reuse-first parity matrix (docs/phoenix/reporting-closure-final-parity-matrix.md)
- * decided to KEEP standalone rather than fold in — screen 12 (Status
- * Center, the canonical live-operations matrix) and screen 20 (Monthly
- * Inventory Position, whose prepare->approve->lock workflow must not be
- * duplicated or weakened here). Neither screen is deleted or made
- * unreachable; this screen becomes the single coherent reporting entry
- * point by linking to them instead of re-implementing their data layer.
+ * REPORTING-UNIFICATION: initialTab lets the old screen numbers (9, 12, 20)
+ * redirect straight to the tab that now owns their content, instead of
+ * always landing on Overview -- screen 12 (Status Center) opens on
+ * 'materials', screen 20 (Monthly Position) opens on 'monthly'. Once here,
+ * the tab bar behaves exactly as it always has; this only affects the
+ * FIRST render for a given navigation.
  */
-export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
-  const { lang, dir, activeOrgId } = useApp();
-  const [tab, setTab] = useState<Tab>('overview');
+export function DecisionIntelligenceReportsScreen({ onNavigate, initialTab }: {
+  onNavigate: (screen: number) => void;
+  initialTab?: Tab;
+}) {
+  const { lang, dir, activeOrgId, role, myPermissions } = useApp();
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [toast, setToast] = useState<string | null>(null);
   const [mobilePrint, setMobilePrint] = useState<{ html: string; title: string; fileNameBase: string } | null>(null);
 
@@ -112,6 +144,11 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
     { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'monthly', labelKey: 'dir_tab_monthly' },
     { id: 'library', labelKey: 'dir_tab_library' },
+    // REPORTING-UNIFICATION: moved verbatim from ReportsScreen.tsx (screen
+    // 9), which gated this tab identically -- role === 'super_admin' at the
+    // tab-visibility level, with GlobalMaterialSearchPanel's own internal
+    // check as defense-in-depth, unchanged.
+    ...(role === 'super_admin' ? [{ id: 'global' as Tab, labelKey: 'dir_tab_global' }] : []),
   ];
 
   return (
@@ -152,7 +189,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
             lang={lang}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
-            onNavigate={onNavigate}
+            onOpenMaterials={() => setTab('materials')}
           />
         </ReportsTabErrorBoundary>
       )}
@@ -161,8 +198,11 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
           <MaterialsAndBatchesTab
             orgId={activeOrgId}
             lang={lang}
+            role={role}
+            myPermissions={myPermissions}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
+            onNavigate={onNavigate}
           />
         </ReportsTabErrorBoundary>
       )}
@@ -206,12 +246,17 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
       )}
       {tab === 'monthly' && (
         <ReportsTabErrorBoundary key={`monthly:${activeOrgId}`} lang={lang}>
-          <MonthlyPositionDeepLinkTab lang={lang} onNavigate={onNavigate} />
+          <MonthlyPositionTab orgId={activeOrgId} lang={lang} role={role} onToast={showToast} />
         </ReportsTabErrorBoundary>
       )}
       {tab === 'library' && (
         <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
           <ReportLibraryTab orgId={activeOrgId} lang={lang} />
+        </ReportsTabErrorBoundary>
+      )}
+      {tab === 'global' && role === 'super_admin' && (
+        <ReportsTabErrorBoundary key={`global:${activeOrgId}`} lang={lang}>
+          <div data-testid="global-search-tab"><GlobalMaterialSearchPanel /></div>
         </ReportsTabErrorBoundary>
       )}
 
@@ -535,136 +580,851 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
  * non-super_admin caller to their own organization's row.
  */
 
-interface MaterialAvailRow {
+/** The 6 canonical statuses summarized/filtered in the live report. */
+const CANONICAL_STATUSES: CanonicalStatus[] = [
+  'available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired',
+];
+
+/** Badge variant per canonical effective status (UI only). */
+const CANON_VARIANT: Record<CanonicalStatus, 'ok' | 'warn' | 'err' | 'neutral'> = {
+  available: 'ok', surplus: 'ok', low_stock: 'warn', near_expiry: 'warn', missing: 'err', expired: 'err',
+};
+
+const LTR_COLUMN_KEYS = new Set(['expiry', 'updated']);
+const RECENTLY_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type QuantityFilter = 'all' | 'has_quantity' | 'zero_quantity';
+type PriceFilterMode =
+  | 'all'
+  | 'no_entered_price'
+  | 'has_entered_price'
+  | 'entered_price_less_than'
+  | 'entered_price_greater_than'
+  | 'entered_price_between';
+
+function parsePriceInput(v: string): number | null {
+  const trimmed = v.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+type SupplyCategory = 'purchases' | 'kimadia' | 'aid';
+
+const SUPPLY_CATEGORIES: { value: SupplyCategory; labelKey: string }[] = [
+  { value: 'aid',       labelKey: 'sc_supply_aid' },
+  { value: 'purchases', labelKey: 'sc_supply_purchases' },
+  { value: 'kimadia',   labelKey: 'sc_supply_kimadia' },
+];
+
+function normalizeSupplyType(v?: string | null): SupplyCategory | null {
+  if (!v) return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('kimadia') || s.includes('كيماديا') || s.includes('كماديا')) return 'kimadia';
+  if (s.includes('purchase') || s.includes('local_procurement') || s.includes('مشتر') || s.includes('شراء')) return 'purchases';
+  if (s.includes('donation') || s.includes('تبرع') || s.includes('منح')) return 'aid';
+  if (s.includes('aid') || s.includes('مساعد') || s.includes('إغاث') || s.includes('اغاث') || s.startsWith('هب')) return 'aid';
+  return null;
+}
+
+const STOCK_CORRECTION_VISIBILITY_KEYS = [
+  'availability.quantity.set',
+  'availability.quantity.add',
+  'availability.quantity.subtract',
+  'availability.quantity.correct',
+];
+
+/**
+ * A live item_availability row enriched with derived fields by the service
+ * layer, matching StatusCenterScreen's own LiveAvailRow shape exactly.
+ */
+interface LiveAvailRow {
   id: string;
   scientific_name: string | null;
   trade_name: string | null;
+  dosage_form: string | null;
+  concentration: string | null;
   quantity: number;
   condition: string | null;
-  batch_number: string | null;
   expiry_date: string | null;
   supply_type: string | null;
-  distribution_points: { id: string; name: string; name_ar: string } | null;
+  updated_at: string | null;
+  raw_condition?: string;
+  effective_status?: CanonicalStatus;
+  expiry_bucket?: string | null;
+  distribution_points: { id: string; name: string; name_ar: string; status?: string } | null;
+  batch_number?: string | null;
+  notes?: string | null;
+  actor_name_snapshot?: string | null;
+  removed_at?: string | null;
+  removal_reason?: string | null;
+  national_code?: string | null;
+  price?: number | null;
+}
+
+function effOf(r: LiveAvailRow): CanonicalStatus {
+  return (r.effective_status ?? r.condition ?? 'available') as CanonicalStatus;
+}
+
+function dpNameOf(r: LiveAvailRow, lang: 'ar' | 'en'): string {
+  const dp = r.distribution_points;
+  if (!dp) return '—';
+  return lang === 'ar' ? (dp.name_ar || dp.name) : dp.name;
+}
+
+function removalReasonLabel(reason: string | null | undefined, lang: 'ar' | 'en'): string {
+  if (reason === 'removed_from_outlet') return t('sc_removal_reason_removed_from_outlet', lang);
+  if (reason === 'clear_port_availability') return t('sc_removal_reason_clear_port_availability', lang);
+  return t('sc_removal_reason_unknown', lang);
+}
+
+function expiryDisplay(r: LiveAvailRow, lang: 'ar' | 'en'): string {
+  if (r.expiry_date) return formatStableDate(r.expiry_date, lang);
+  if (r.expiry_bucket) return t('cond_' + (r.expiry_bucket === 'expired' ? 'expired' : 'near_expiry'), lang);
+  return '—';
+}
+
+function priceDisplay(price: number | null | undefined): string {
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return '—';
+  return price.toFixed(2);
+}
+
+const materialsFieldStyle = {
+  padding: '8px 12px', borderRadius: 'var(--r2)',
+  border: '1px solid var(--brd)', background: 'var(--s)',
+  color: 'var(--t)', fontSize: '13px',
+} as const;
+
+function escHtmlMaterials(s: string): string {
+  return s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const AVAIL_EXPORT_CONDITION_LABELS: Record<CanonicalStatus, string> = {
+  available:   'Available / متوفر',
+  low_stock:   'Low Stock / منخفض',
+  missing:     'Missing / مفقود',
+  surplus:     'Surplus / فائض',
+  near_expiry: 'Near Expiry / قريب الانتهاء',
+  expired:     'Expired / منتهي الصلاحية',
+};
+
+function daysUntilExpiry(expiryDate: string | null, now: Date = new Date()): number | null {
+  if (!expiryDate) return null;
+  const d = new Date(expiryDate);
+  if (isNaN(d.getTime())) return null;
+  const dateOnly = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  return Math.round((dateOnly(d).getTime() - dateOnly(now).getTime()) / 86_400_000);
 }
 
 /**
- * Materials & Batches — closes BOTH "materials_and_statuses" and
- * "batches_expiry_and_FEFO" from the SAME data source (item_availability
- * already carries condition, batch_number and expiry_date together — a
- * second query would just be a filtered view of the first). Reuses
- * getAvailabilityByOrg (StatusCenterScreen's own source) for the
- * already-computed condition and expiry-risk.ts's already-computed tier —
- * no classification math lives in this screen.
+ * REPORTING-UNIFICATION: real migration of screen 12 (Status Center)'s
+ * entire live-operations view, moved verbatim from the former
+ * StatusCenterScreen.tsx (not a reimplementation) -- every filter (status,
+ * supply, search, quantity, recently-updated, entered-price), every row
+ * action (correct stock, reactivate, movement history) and its modal, the
+ * outlet-grouped view, quick actions, internal alerts, recent activity,
+ * XLSX export, print, and the Inventory Intelligence panel are unchanged.
+ * This supersedes the former, much simpler read-only Materials & Batches
+ * tab (MaterialAvailRow-based) entirely -- that version was a strict
+ * subset of this one.
+ *
+ * The <MovementReportSection /> embed that StatusCenterScreen.tsx also had
+ * is deliberately NOT duplicated here -- it already has its own canonical
+ * home in this shell's "movements" tab, and mounting it twice would just
+ * show the same report in two tabs at once.
  */
-function MaterialsAndBatchesTab({ orgId, lang, onToast, onMobilePrint }: {
+function MaterialsAndBatchesTab({ orgId, lang, role, myPermissions, onToast, onMobilePrint, onNavigate }: {
   orgId: string; lang: 'ar' | 'en';
+  role: string | null;
+  myPermissions: Set<string>;
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
+  onNavigate: (screen: number) => void;
 }) {
-  const records = useAsync(() => getAvailabilityByOrg(orgId), [orgId]);
+  const [filterStatus, setFilterStatus] = useState<CanonicalStatus | ''>('');
+  const [filterSupply, setFilterSupply] = useState<SupplyCategory | ''>('');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'outlet'>('table');
+  const [reportOutlet, setReportOutlet] = useState<{ id: string; name: string; nameAr: string } | null>(null);
+  const [quantityFilter, setQuantityFilter] = useState<QuantityFilter>('all');
+  const [recentOnly, setRecentOnly] = useState(false);
+  const [priceFilterMode, setPriceFilterMode] = useState<PriceFilterMode>('all');
+  const [priceValue, setPriceValue] = useState('');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+
+  const canCorrectStock = STOCK_CORRECTION_VISIBILITY_KEYS.some(key => myPermissions.has(key));
+  const [correctRow, setCorrectRow] = useState<AvailabilityCorrectionRow | null>(null);
+
+  const canReactivate = REACTIVATE_PERMISSION_KEYS.every(key => myPermissions.has(key));
+  const [reactivateRow, setReactivateRow] = useState<ReactivateRow | null>(null);
+
+  const canViewMovementHistory = myPermissions.has('availability.movements.view');
+  const [historyRow, setHistoryRow] = useState<MovementHistoryRow | null>(null);
+
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
-  if (records.loading && !records.data) return <PhoenixLoadingState />;
-  if (records.error) return <PhoenixErrorState message={records.error} onRetry={records.reload} />;
-  const all = (records.data ?? []) as unknown as MaterialAvailRow[];
-  const rows = search.trim()
-    ? all.filter(r => (r.scientific_name ?? '').toLowerCase().includes(search.trim().toLowerCase())
-      || (r.trade_name ?? '').toLowerCase().includes(search.trim().toLowerCase())
-      || (r.batch_number ?? '').toLowerCase().includes(search.trim().toLowerCase()))
-    : all;
+  const live = useAsync(() => getAvailabilityByOrg(orgId), [orgId]);
+  const orgs = useAsync(() => getOrganizations(), []);
 
-  function exportConfig() {
-    const columns: ProfessionalReportColumn<MaterialAvailRow>[] = [
-      { key: 'sci', label: t('avail_scientific_name', lang), value: r => r.scientific_name ?? '—' },
-      { key: 'trade', label: t('inv_trade_name', lang), value: r => r.trade_name ?? '—' },
-      { key: 'point', label: t('dir_col_location', lang), value: r => (r.distribution_points ? (lang === 'ar' ? r.distribution_points.name_ar : r.distribution_points.name) : '—') },
-      { key: 'qty', label: t('qty', lang), value: r => String(r.quantity ?? 0), numeric: true, excelValue: r => r.quantity ?? 0 },
-      { key: 'status', label: t('avail_material_status', lang), value: r => (r.condition ? t('cond_' + r.condition, lang) : '—') },
-      { key: 'batch', label: t('batch_no', lang), value: r => r.batch_number ?? '—', ltr: true },
-      { key: 'expiry', label: t('expiry', lang), value: r => r.expiry_date ?? '—', ltr: true, dateColumn: 'date', excelValue: r => r.expiry_date },
-      { key: 'expiryRisk', label: t('expiry_risk_column', lang), value: r => getExpiryRiskLabel(getExpiryRiskTier(r.expiry_date), lang) },
-      { key: 'supply', label: t('avail_supply_type', lang), value: r => r.supply_type ?? '—' },
+  const orgName = useMemo(() => {
+    const o = (orgs.data ?? []).find(x => x.id === orgId);
+    if (!o) return '';
+    return lang === 'ar' ? (o.name_ar || o.name) : (o.name || o.name_ar);
+  }, [orgs.data, orgId, lang]);
+
+  const allRows = (live.data ?? []) as unknown as LiveAvailRow[];
+
+  const rows = useMemo(() => {
+    let list = allRows;
+    if (filterStatus !== 'missing') {
+      list = list.filter(r => !(r.quantity === 0 && r.condition === 'missing'));
+    }
+    list = list.filter(r => !r.distribution_points?.status || r.distribution_points.status === 'active');
+    if (filterStatus) list = list.filter(r => effOf(r) === filterStatus);
+    if (filterSupply) list = list.filter(r => normalizeSupplyType(r.supply_type) === filterSupply);
+    if (quantityFilter === 'has_quantity') list = list.filter(r => r.quantity > 0);
+    if (quantityFilter === 'zero_quantity') list = list.filter(r => r.quantity === 0);
+    if (recentOnly) {
+      const cutoff = Date.now() - RECENTLY_UPDATED_WINDOW_MS;
+      list = list.filter(r => !!r.updated_at && new Date(r.updated_at).getTime() >= cutoff);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(r =>
+        (r.scientific_name ?? '').toLowerCase().includes(q) ||
+        (r.trade_name ?? '').toLowerCase().includes(q) ||
+        (r.concentration ?? '').toLowerCase().includes(q) ||
+        (r.dosage_form ?? '').toLowerCase().includes(q) ||
+        (r.distribution_points?.name ?? '').toLowerCase().includes(q) ||
+        (r.distribution_points?.name_ar ?? '').includes(search.trim())
+      );
+    }
+    if (priceFilterMode === 'no_entered_price') {
+      list = list.filter(r => !(typeof r.price === 'number' && r.price > 0));
+    } else if (priceFilterMode === 'has_entered_price') {
+      list = list.filter(r => typeof r.price === 'number' && r.price > 0);
+    } else if (priceFilterMode === 'entered_price_less_than') {
+      const threshold = parsePriceInput(priceValue);
+      if (threshold !== null) list = list.filter(r => typeof r.price === 'number' && r.price < threshold);
+    } else if (priceFilterMode === 'entered_price_greater_than') {
+      const threshold = parsePriceInput(priceValue);
+      if (threshold !== null) list = list.filter(r => typeof r.price === 'number' && r.price > threshold);
+    } else if (priceFilterMode === 'entered_price_between') {
+      const min = parsePriceInput(priceMin);
+      const max = parsePriceInput(priceMax);
+      if (min === null || max === null || min > max) {
+        list = [];
+      } else {
+        list = list.filter(r => typeof r.price === 'number' && r.price >= min && r.price <= max);
+      }
+    }
+    return list;
+  }, [allRows, filterStatus, filterSupply, search, quantityFilter, recentOnly, priceFilterMode, priceValue, priceMin, priceMax]);
+
+  const priceValueInvalid = useMemo(
+    () => (priceFilterMode === 'entered_price_less_than' || priceFilterMode === 'entered_price_greater_than')
+      && priceValue.trim() !== '' && parsePriceInput(priceValue) === null,
+    [priceFilterMode, priceValue],
+  );
+  const priceRangeInvalid = useMemo(() => {
+    if (priceFilterMode !== 'entered_price_between') return false;
+    const min = parsePriceInput(priceMin);
+    const max = parsePriceInput(priceMax);
+    return min === null || max === null || min > max;
+  }, [priceFilterMode, priceMin, priceMax]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const s of CANONICAL_STATUSES) c[s] = 0;
+    for (const r of rows) { const s = effOf(r); c[s] = (c[s] ?? 0) + 1; }
+    return c;
+  }, [rows]);
+
+  const outletOptions = useMemo(() => {
+    const byPoint = new Map<string, { id: string; name: string; nameAr: string; count: number }>();
+    for (const r of rows) {
+      const dp = r.distribution_points;
+      if (!dp) continue;
+      if (!byPoint.has(dp.id)) byPoint.set(dp.id, { id: dp.id, name: dp.name, nameAr: dp.name_ar, count: 0 });
+      byPoint.get(dp.id)!.count++;
+    }
+    return Array.from(byPoint.values()).sort((a, b) => (lang === 'ar' ? a.nameAr : a.name).localeCompare(lang === 'ar' ? b.nameAr : b.name));
+  }, [rows, lang]);
+
+  const internalAlerts = useMemo(() => computeInternalAlerts(allRows), [allRows]);
+
+  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
+  const quickActions: QuickAction[] = useMemo(() => {
+    const actions: QuickAction[] = [
+      { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
+      { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
+      { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
+      { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
     ];
-    return {
-      reportTitle: t('dir_tab_materials', lang),
-      generatedAt: new Date(),
-      filtersSummary: search.trim() ? `${t('search', lang)}: ${search.trim()}` : t('sc_all', lang),
-      columns,
-      rows,
-      lang,
-      fileNameBase: 'medistock-materials-batches',
-      emptyMessage: t('se_no_records', lang),
-      footerText: t('report_footer_generated_by', lang),
-      labels: {
-        generatedAt: t('sc_generated_at', lang),
-        filtersSummary: t('sc_selected_filters', lang),
-        rowCount: t('sc_total_rows', lang),
-      },
-    };
+    if (canSeeUsers) actions.splice(1, 0, { screen: 14, icon: 'users', labelKey: 'nav_users' });
+    return actions;
+  }, [canSeeUsers]);
+
+  const activityEntries: ActivityFeedEntry[] = useMemo(() => {
+    return [...allRows]
+      .filter(r => r.updated_at)
+      .sort((a, b) => new Date(b.updated_at as string).getTime() - new Date(a.updated_at as string).getTime())
+      .slice(0, 5)
+      .map(r => ({
+        id: r.id,
+        title: (lang === 'ar' ? r.scientific_name : r.trade_name || r.scientific_name) || r.trade_name || r.scientific_name || '—',
+        subtitle: `${dpNameOf(r, lang)} · ${t('cond_' + effOf(r), lang)}`,
+        timestamp: formatStableDate(r.updated_at, lang),
+      }));
+  }, [allRows, lang]);
+
+  const generatedAt = () => formatStableDateTime(new Date(), lang);
+
+  const selectedFiltersText = useMemo(() => {
+    const parts: string[] = [];
+    if (filterStatus) parts.push(`${t('sc_effective_status', lang)}: ${t('cond_' + filterStatus, lang)}`);
+    if (filterSupply) parts.push(`${t('avail_supply_type', lang)}: ${t('sc_supply_' + filterSupply, lang)}`);
+    if (quantityFilter === 'has_quantity') parts.push(t('sf_has_quantity', lang));
+    if (quantityFilter === 'zero_quantity') parts.push(t('sf_zero_quantity', lang));
+    if (recentOnly) parts.push(t('sf_recently_updated', lang));
+    if (search.trim()) parts.push(`${t('search', lang)}: ${search.trim()}`);
+    if (priceFilterMode === 'no_entered_price') parts.push(t('sc_price_filter_no_entered', lang));
+    else if (priceFilterMode === 'has_entered_price') parts.push(t('sc_price_filter_has_entered', lang));
+    else if (priceFilterMode === 'entered_price_less_than') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_less_than', lang)} ${priceValue.trim()}`);
+    else if (priceFilterMode === 'entered_price_greater_than') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_greater_than', lang)} ${priceValue.trim()}`);
+    else if (priceFilterMode === 'entered_price_between') parts.push(`${t('sc_entered_price', lang)} ${t('sc_price_filter_between', lang)} ${priceMin.trim()}–${priceMax.trim()}`);
+    return parts.length ? parts.join(' · ') : t('sc_all', lang);
+  }, [filterStatus, filterSupply, quantityFilter, recentOnly, search, priceFilterMode, priceValue, priceMin, priceMax, lang]);
+
+  const smartFilterChips: SmartFilterChipItem[] = [
+    {
+      key: 'all', labelKey: 'sc_all', icon: 'search',
+      active: filterStatus === '' && quantityFilter === 'all' && !recentOnly,
+      onClick: () => { setFilterStatus(''); setQuantityFilter('all'); setRecentOnly(false); },
+    },
+    {
+      key: 'available', labelKey: 'cond_available', icon: 'check',
+      active: filterStatus === 'available',
+      onClick: () => setFilterStatus(prev => (prev === 'available' ? '' : 'available')),
+    },
+    {
+      key: 'low_stock', labelKey: 'cond_low_stock', icon: 'warning',
+      active: filterStatus === 'low_stock',
+      onClick: () => setFilterStatus(prev => (prev === 'low_stock' ? '' : 'low_stock')),
+    },
+    {
+      key: 'missing', labelKey: 'cond_missing', icon: 'close',
+      active: filterStatus === 'missing',
+      onClick: () => setFilterStatus(prev => (prev === 'missing' ? '' : 'missing')),
+    },
+    {
+      key: 'near_expiry', labelKey: 'cond_near_expiry', icon: 'clock',
+      active: filterStatus === 'near_expiry',
+      onClick: () => setFilterStatus(prev => (prev === 'near_expiry' ? '' : 'near_expiry')),
+    },
+    {
+      key: 'expired', labelKey: 'cond_expired', icon: 'ban',
+      active: filterStatus === 'expired',
+      onClick: () => setFilterStatus(prev => (prev === 'expired' ? '' : 'expired')),
+    },
+    {
+      key: 'has_quantity', labelKey: 'sf_has_quantity', icon: 'package',
+      active: quantityFilter === 'has_quantity',
+      onClick: () => setQuantityFilter(prev => (prev === 'has_quantity' ? 'all' : 'has_quantity')),
+    },
+    {
+      key: 'zero_quantity', labelKey: 'sf_zero_quantity', icon: 'info',
+      active: quantityFilter === 'zero_quantity',
+      onClick: () => setQuantityFilter(prev => (prev === 'zero_quantity' ? 'all' : 'zero_quantity')),
+    },
+    {
+      key: 'recently_updated', labelKey: 'sf_recently_updated', icon: 'refresh',
+      active: recentOnly,
+      onClick: () => setRecentOnly(prev => !prev),
+    },
+  ];
+
+  const columns: { key: string; label: string; value: (r: LiveAvailRow) => string }[] = [
+    { key: 'org',     label: t('sc_lm_org', lang),          value: () => orgName || '—' },
+    { key: 'port',    label: t('sc_lm_port', lang),         value: r => dpNameOf(r, lang) },
+    { key: 'sci',     label: t('avail_scientific_name', lang), value: r => r.scientific_name || '—' },
+    { key: 'trade',   label: t('avail_trade_name', lang),   value: r => r.trade_name || '—' },
+    { key: 'conc',    label: t('avail_concentration', lang),value: r => r.concentration || '—' },
+    { key: 'dosage',  label: t('avail_dosage_form', lang),  value: r => r.dosage_form || '—' },
+    { key: 'qty',     label: t('qty', lang),                value: r => String(r.quantity ?? 0) },
+    { key: 'price',   label: t('sc_entered_price', lang),   value: r => priceDisplay(r.price) },
+    { key: 'supply',  label: t('avail_supply_type', lang),  value: r => r.supply_type || '—' },
+    { key: 'raw',     label: t('sc_raw_condition', lang),   value: r => r.condition ? t('cond_' + r.condition, lang) : '—' },
+    { key: 'eff',     label: t('sc_effective_status', lang),value: r => t('cond_' + effOf(r), lang) },
+    { key: 'expiry',  label: t('expiry', lang),             value: r => expiryDisplay(r, lang) },
+    { key: 'bucket',  label: t('sc_expiry_bucket', lang),   value: r => r.expiry_bucket || '—' },
+    { key: 'updated', label: t('last_upd', lang),    value: r => formatStableDate(r.updated_at, lang) },
+  ];
+
+  function buildReportHtml(): string {
+    const dir = lang === 'ar' ? 'rtl' : 'ltr';
+    const countsLine = CANONICAL_STATUSES.map(s => `${t('cond_' + s, lang)}: ${counts[s]}`).join(' · ');
+    const headCells = columns.map(c => `<th>${escHtmlMaterials(c.label)}</th>`).join('');
+    const bodyRows = rows.map(r =>
+      '<tr>' + columns.map(c => `<td${LTR_COLUMN_KEYS.has(c.key) ? ' dir="ltr"' : ''}>${escHtmlMaterials(c.value(r))}</td>`).join('') + '</tr>'
+    ).join('');
+    return `<!doctype html><html dir="${dir}" lang="${lang}"><head><meta charset="utf-8">
+<title>${escHtmlMaterials(t('sc_report_title', lang))}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  body { font-family: ${lang === 'ar' ? "'Segoe UI', Tahoma, Arial" : 'Arial, sans-serif'}; color: #111; direction: ${dir}; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .brand { font-size: 11px; color: #555; margin-bottom: 10px; }
+  .meta { font-size: 11px; color: #333; margin: 2px 0; }
+  .meta .val { unicode-bidi: isolate; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 10.5px; }
+  th, td { border: 1px solid #999; padding: 4px 6px; text-align: ${lang === 'ar' ? 'right' : 'left'}; white-space: nowrap; }
+  th { background: #eee; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+</style></head><body>
+  <h1>${escHtmlMaterials(t('sc_report_title', lang))}</h1>
+  <div class="brand">MediStock-Babil / MASAR Health Network</div>
+  ${orgName ? `<div class="meta">${escHtmlMaterials(t('sc_lm_org', lang))}: ${escHtmlMaterials(orgName)}</div>` : ''}
+  <div class="meta">${escHtmlMaterials(t('sc_selected_filters', lang))}: ${escHtmlMaterials(selectedFiltersText)}</div>
+  <div class="meta">${escHtmlMaterials(t('sc_generated_at', lang))}: <span class="val" dir="ltr">${escHtmlMaterials(generatedAt())}</span></div>
+  <div class="meta">${escHtmlMaterials(t('sc_total_rows', lang))}: ${rows.length}</div>
+  <div class="meta">${escHtmlMaterials(countsLine)}</div>
+  <div class="footer">${escHtmlMaterials(t('report_footer_generated_by', lang))}</div>
+  <table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+</body></html>`;
+  }
+
+  function printReport() {
+    if (rows.length === 0) return;
+    if (isLikelyMobilePrintContext()) {
+      onMobilePrint(buildReportHtml());
+      return;
+    }
+    const win = window.open('', '_blank');
+    if (!win) {
+      onToast(t('print_popup_blocked', lang));
+      return;
+    }
+    win.document.write(buildReportHtml());
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
   }
 
   async function exportXlsx() {
     if (xlsxBusy) return;
     setXlsxBusy(true);
-    try { await exportProfessionalXlsx(exportConfig()); } finally { setXlsxBusy(false); }
+    try {
+      const exportRows: AvailabilityExportRow[] = rows
+        .filter(r => r.removed_at == null)
+        .map((r, i) => {
+          const status = effOf(r);
+          const tier = getExpiryRiskTier(r.expiry_date);
+          return {
+            no: i + 1,
+            institution: orgName || '—',
+            outlet: dpNameOf(r, lang),
+            scientificName: r.scientific_name || '—',
+            tradeName: r.trade_name || '—',
+            dosageForm: r.dosage_form || '—',
+            concentration: r.concentration || '—',
+            batchNumber: r.batch_number || '—',
+            quantity: r.quantity ?? 0,
+            enteredPrice: typeof r.price === 'number' ? r.price : null,
+            conditionKey: status,
+            conditionLabel: AVAIL_EXPORT_CONDITION_LABELS[status] ?? status,
+            expiryDate: r.expiry_date ? new Date(r.expiry_date) : null,
+            daysToExpiry: daysUntilExpiry(r.expiry_date),
+            expiryRiskLabel: `${getExpiryRiskLabel(tier, 'en')} / ${getExpiryRiskLabel(tier, 'ar')}`,
+            lastUpdatedBy: r.actor_name_snapshot || '—',
+            lastUpdatedAt: r.updated_at ? new Date(r.updated_at) : null,
+            notes: r.notes || '—',
+          };
+        });
+
+      const safeOrg = orgName.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40);
+      const ok = await exportAvailabilityXlsx({
+        reportTitle: t('sc_report_title', lang),
+        generatedAt: new Date(),
+        lang,
+        fileNameBase: `medistock-status${safeOrg ? '-' + safeOrg : ''}`,
+        filtersSummary: selectedFiltersText,
+        footerText: t('report_footer_generated_by', lang),
+        emptyMessage: t('se_no_records', lang),
+        conditionLabels: AVAIL_EXPORT_CONDITION_LABELS,
+        rows: exportRows,
+      });
+      if (!ok) onToast(t('csv_export_failed', lang));
+    } catch {
+      onToast(t('csv_export_failed', lang));
+    } finally {
+      setXlsxBusy(false);
+    }
   }
 
-  function printReport() {
-    const { ok, mobileHtml } = triggerProfessionalPrint(exportConfig());
-    if (mobileHtml !== undefined) { onMobilePrint(mobileHtml); return; }
-    if (!ok) onToast(t('print_popup_blocked', lang));
+  function handleMovementSuccess() {
+    onToast(t('mvmt_success', lang));
+    live.reload();
   }
+
+  function handleReactivateSuccess() {
+    onToast(t('sc_reactivate_success', lang));
+    live.reload();
+  }
+
+  const btnStyle = {
+    padding: '9px 14px', minHeight: '38px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)',
+    background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+  } as const;
+
+  const th = { textAlign: 'start' as const, padding: '8px 8px', fontSize: '11px', fontWeight: 700, color: 'var(--t2)', borderBottom: '2px solid var(--brd)', whiteSpace: 'nowrap' as const };
+  const td = { padding: '7px 8px', fontSize: '11.5px', borderBottom: '1px solid var(--brd)', whiteSpace: 'nowrap' as const };
 
   return (
-    <div style={{ display: 'grid', gap: '10px' }} data-testid="materials-batches-tab">
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          type="search"
-          placeholder={t('search', lang)}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px', minWidth: '200px' }}
-        />
-        <PhoenixButton variant="ghost" size="sm" onClick={() => void exportXlsx()} loading={xlsxBusy}>
-          {t('mv_export_xlsx', lang)}
-        </PhoenixButton>
-        <PhoenixButton variant="ghost" size="sm" onClick={printReport}>
-          {t('se_print', lang)}
-        </PhoenixButton>
+    <div data-testid="materials-batches-tab">
+      <div style={{ marginBottom: '16px' }}>
+        <h3 className="premium-section-header" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>{t('quick', lang)}</h3>
+        <p style={{ fontSize: '11px', color: 'var(--t2)', marginBottom: '10px' }}>{t('cc_quick_actions_sub', lang)}</p>
+        <QuickActionGrid actions={quickActions} onNavigate={onNavigate} />
       </div>
-      {rows.length === 0 ? (
-        <PhoenixEmptyState icon="package" title={t('se_no_records', lang)} />
-      ) : (
+
+      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <PhoenixIcon name="info" size={15} inline /> {t('sc_no_exchange', lang)}
+      </div>
+
+      <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '16px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="clipboard" size={16} inline /> {t('sc_report_title', lang)}</span>
+          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ok)', background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--rpill)', padding: '1px 8px' }}>LIVE</span>
+        </div>
+        <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+          {orgName && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="hospital" size={13} inline /> {orgName}</span>}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><PhoenixIcon name="clock" size={13} inline /> {t('sc_generated_at', lang)}: {generatedAt()}</span>
+          <span>Σ {t('sc_total_rows', lang)}: {rows.length}</span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          {CANONICAL_STATUSES.map(s => (
+            <div key={s} style={{ flex: '1 1 90px', minWidth: '90px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 10px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>{counts[s]}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('cond_' + s, lang)}</div>
+            </div>
+          ))}
+        </div>
+      </PhoenixCard>
+
+      {!live.loading && !live.error && <InternalAlertsSection matches={internalAlerts} />}
+
+      <div style={{ marginBottom: '16px' }}>
+        <h3 className="premium-section-header" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>{t('cc_activity_title', lang)}</h3>
+        {!live.loading && !live.error && <CommandCenterActivityFeed entries={activityEntries} />}
+      </div>
+
+      <PhoenixCard padding="14px" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as CanonicalStatus | '')} style={{ ...materialsFieldStyle, minWidth: '150px', appearance: 'none', cursor: 'pointer' }} aria-label={t('sc_effective_status', lang)}>
+            <option value="">{t('sc_all_statuses', lang)}</option>
+            {CANONICAL_STATUSES.map(s => <option key={s} value={s}>{t('cond_' + s, lang)}</option>)}
+          </select>
+
+          <select value={filterSupply} onChange={e => setFilterSupply(e.target.value as SupplyCategory | '')} style={{ ...materialsFieldStyle, minWidth: '150px', appearance: 'none', cursor: 'pointer' }} aria-label={t('avail_supply_type', lang)}>
+            <option value="">{t('sc_all_supply_types', lang)}</option>
+            {SUPPLY_CATEGORIES.map(c => <option key={c.value} value={c.value}>{t(c.labelKey, lang)}</option>)}
+          </select>
+
+          <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...materialsFieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
+
+          <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
+            <button onClick={() => void exportXlsx()} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="reports" size={14} inline /> {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}</button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '12px' }}>
+          <SmartFilterChips items={smartFilterChips} ariaLabel={t('sf_group_label', lang)} />
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+          <button
+            onClick={() => setViewMode('table')}
+            style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
+          >
+            <PhoenixIcon name="clipboard" size={14} inline /> {t('sc_view_table', lang)}
+          </button>
+          <button
+            onClick={() => setViewMode('outlet')}
+            style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
+          >
+            <PhoenixIcon name="outlet" size={14} inline /> {t('sc_view_outlet', lang)}
+          </button>
+        </div>
+
+        {viewMode === 'outlet' && (
+          <div style={{ marginTop: '10px' }}>
+            <select
+              value=""
+              onChange={e => {
+                const id = e.target.value;
+                if (!id) return;
+                const o = outletOptions.find(x => x.id === id);
+                if (o) setReportOutlet({ id: o.id, name: o.name, nameAr: o.nameAr });
+              }}
+              style={{ ...materialsFieldStyle, minWidth: '220px', appearance: 'none', cursor: 'pointer' }}
+              aria-label={t('sc_outlet_report_select', lang)}
+            >
+              <option value="">{t('sc_outlet_report_select', lang)}</option>
+              {outletOptions.map(o => (
+                <option key={o.id} value={o.id}>
+                  {(lang === 'ar' ? o.nameAr : o.name) || '—'} ({o.count} {t('sc_outlet_items_count', lang)})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+          <button onClick={() => setFilterSupply('')} style={{ ...btnStyle, padding: '5px 12px', background: filterSupply === '' ? 'var(--p2)' : 'var(--s)', color: filterSupply === '' ? 'var(--pd)' : 'var(--t)' }}>{t('sc_all_supply_types', lang)}</button>
+          {SUPPLY_CATEGORIES.map(c => (
+            <button key={c.value} onClick={() => setFilterSupply(c.value)} style={{ ...btnStyle, padding: '5px 12px', background: filterSupply === c.value ? 'var(--p2)' : 'var(--s)', color: filterSupply === c.value ? 'var(--pd)' : 'var(--t)' }}>
+              {t(c.labelKey, lang)}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            <select
+              value={priceFilterMode}
+              onChange={e => setPriceFilterMode(e.target.value as PriceFilterMode)}
+              style={{ ...materialsFieldStyle, minWidth: '170px', appearance: 'none', cursor: 'pointer' }}
+              aria-label={t('sc_price_filter_label', lang)}
+            >
+              <option value="all">{t('sc_price_filter_all', lang)}</option>
+              <option value="no_entered_price">{t('sc_price_filter_no_entered', lang)}</option>
+              <option value="has_entered_price">{t('sc_price_filter_has_entered', lang)}</option>
+              <option value="entered_price_less_than">{t('sc_price_filter_less_than', lang)}</option>
+              <option value="entered_price_greater_than">{t('sc_price_filter_greater_than', lang)}</option>
+              <option value="entered_price_between">{t('sc_price_filter_between', lang)}</option>
+            </select>
+
+            {(priceFilterMode === 'entered_price_less_than' || priceFilterMode === 'entered_price_greater_than') && (
+              <input
+                type="number" min="0" step="0.01" dir="ltr"
+                value={priceValue}
+                onChange={e => setPriceValue(e.target.value)}
+                placeholder={t('sc_price_value_ph', lang)}
+                aria-label={t('sc_price_value_ph', lang)}
+                style={{ ...materialsFieldStyle, minWidth: '120px' }}
+              />
+            )}
+
+            {priceFilterMode === 'entered_price_between' && (
+              <>
+                <input
+                  type="number" min="0" step="0.01" dir="ltr"
+                  value={priceMin}
+                  onChange={e => setPriceMin(e.target.value)}
+                  placeholder={t('sc_price_min_ph', lang)}
+                  aria-label={t('sc_price_min_ph', lang)}
+                  style={{ ...materialsFieldStyle, minWidth: '100px' }}
+                />
+                <input
+                  type="number" min="0" step="0.01" dir="ltr"
+                  value={priceMax}
+                  onChange={e => setPriceMax(e.target.value)}
+                  placeholder={t('sc_price_max_ph', lang)}
+                  aria-label={t('sc_price_max_ph', lang)}
+                  style={{ ...materialsFieldStyle, minWidth: '100px' }}
+                />
+              </>
+            )}
+          </div>
+          {priceValueInvalid && (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginTop: '6px' }}>{t('sc_price_invalid', lang)}</div>
+          )}
+          {priceRangeInvalid && (
+            <div style={{ fontSize: '11px', color: 'var(--err)', marginTop: '6px' }}>{t('sc_price_range_invalid', lang)}</div>
+          )}
+        </div>
+
+        <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '10px' }}>
+          {t('sc_selected_filters', lang)}: {selectedFiltersText}
+        </div>
+      </PhoenixCard>
+
+      {live.loading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {!live.loading && live.error && (
+        <PhoenixErrorState title={t('load_error', lang)} message={live.error} onRetry={live.reload} />
+      )}
+      {!live.loading && !live.error && rows.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--t2)', fontSize: '13px' }}>
+          {allRows.length === 0 ? t('sc_live_empty', lang) : t('sc_no_match', lang)}
+        </div>
+      )}
+      {!live.loading && !live.error && rows.length > 0 && viewMode === 'outlet' && (
+        <OutletMaterialGroups rows={rows} />
+      )}
+      {!live.loading && !live.error && rows.length > 0 && viewMode === 'table' && (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('avail_scientific_name', lang)}</th>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('dir_col_location', lang)}</th>
-                <th style={{ textAlign: 'end', padding: '6px 8px' }}>{t('qty', lang)}</th>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('avail_material_status', lang)}</th>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('batch_no', lang)}</th>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('expiry', lang)}</th>
-                <th style={{ textAlign: 'start', padding: '6px 8px' }}>{t('expiry_risk_column', lang)}</th>
+                <th style={th}>{t('sc_lm_port', lang)}</th>
+                <th style={th}>{t('avail_scientific_name', lang)}</th>
+                <th style={th}>{t('avail_trade_name', lang)}</th>
+                <th style={th}>{t('avail_concentration', lang)}</th>
+                <th style={th}>{t('avail_dosage_form', lang)}</th>
+                <th style={th}>{t('qty', lang)}</th>
+                <th style={th}>{t('sc_entered_price', lang)}</th>
+                <th style={th}>{t('avail_supply_type', lang)}</th>
+                <th style={th}>{t('sc_raw_condition', lang)}</th>
+                <th style={th}>{t('sc_effective_status', lang)}</th>
+                <th style={th}>{t('sc_removed_badge', lang)}</th>
+                <th style={th}>{t('expiry', lang)}</th>
+                <th style={th}>{t('last_upd', lang)}</th>
+                {(canCorrectStock || canReactivate || canViewMovementHistory) && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
-                <tr key={r.id} style={{ borderTop: '1px solid var(--brd)' }}>
-                  <td style={{ padding: '6px 8px' }} dir="auto">{r.scientific_name}{r.trade_name ? ` (${r.trade_name})` : ''}</td>
-                  <td style={{ padding: '6px 8px' }} dir="auto">{r.distribution_points ? (lang === 'ar' ? r.distribution_points.name_ar : r.distribution_points.name) : '—'}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'end' }}>{r.quantity}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
-                  <td style={{ padding: '6px 8px' }} dir="ltr">{r.batch_number ?? '—'}</td>
-                  <td style={{ padding: '6px 8px' }} dir="ltr">{r.expiry_date ?? '—'}</td>
-                  <td style={{ padding: '6px 8px' }}>{getExpiryRiskLabel(getExpiryRiskTier(r.expiry_date), lang)}</td>
-                </tr>
-              ))}
+              {rows.map(r => {
+                const eff = effOf(r);
+                const isRemoved = r.removed_at != null;
+                return (
+                  <tr key={r.id}>
+                    <td style={td} dir="auto">{dpNameOf(r, lang)}</td>
+                    <td style={td} dir="auto">{r.scientific_name || '—'}</td>
+                    <td style={td} dir="auto">{r.trade_name || '—'}</td>
+                    <td style={td} dir="auto">{r.concentration || '—'}</td>
+                    <td style={td} dir="auto">{r.dosage_form || '—'}</td>
+                    <td style={td}>{r.quantity}</td>
+                    <td style={td} dir="ltr">{priceDisplay(r.price)}</td>
+                    <td style={td} dir="auto">{r.supply_type || '—'}</td>
+                    <td style={td}>{r.condition ? t('cond_' + r.condition, lang) : '—'}</td>
+                    <td style={td}><PhoenixStatusBadge variant={CANON_VARIANT[eff] ?? 'neutral'} label={t('cond_' + eff, lang)} /></td>
+                    <td style={td}>
+                      {isRemoved ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <PhoenixStatusBadge variant="err" icon="ban" label={t('sc_removed_badge', lang)} />
+                          <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
+                            {removalReasonLabel(r.removal_reason, lang)}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="ltr">
+                            {t('sc_removed_at_label', lang)}: {formatStableDate(r.removed_at, lang)}
+                          </span>
+                          {r.actor_name_snapshot && (
+                            <span style={{ fontSize: '10px', color: 'var(--t2)' }} dir="auto">
+                              {t('sc_last_action_by', lang)}: {r.actor_name_snapshot}
+                            </span>
+                          )}
+                        </div>
+                      ) : '—'}
+                    </td>
+                    <td style={td} dir="ltr">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                        <span>{expiryDisplay(r, lang)}</span>
+                        <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
+                      </div>
+                    </td>
+                    <td style={td} dir="ltr">{formatStableDate(r.updated_at, lang)}</td>
+                    {(canCorrectStock || canReactivate || canViewMovementHistory) && (
+                      <td style={td}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
+                          {isRemoved ? (
+                            canReactivate && (
+                              <button
+                                onClick={() => setReactivateRow(r as unknown as ReactivateRow)}
+                                aria-label={t('sc_reactivate_action', lang)}
+                                style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--ok)', background: 'var(--s)', color: 'var(--ok)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                ↩ {t('sc_reactivate_action', lang)}
+                              </button>
+                            )
+                          ) : (
+                            canCorrectStock && (
+                              <button
+                                onClick={() => setCorrectRow(r as unknown as AvailabilityCorrectionRow)}
+                                aria-label={t('sc_correct_stock_action', lang)}
+                                style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                <PhoenixIcon name="editor" size={12} inline /> {t('sc_correct_stock_action', lang)}
+                              </button>
+                            )
+                          )}
+                          {canViewMovementHistory && (
+                            <button
+                              onClick={() => setHistoryRow(r)}
+                              aria-label={t('mvmt_history_action', lang)}
+                              style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              <PhoenixIcon name="clock" size={12} inline /> {t('mvmt_history_action', lang)}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
+
+      <AvailabilityStockCorrectionModal
+        open={correctRow !== null}
+        row={correctRow}
+        orgId={orgId}
+        lang={lang}
+        onClose={() => setCorrectRow(null)}
+        onCorrected={handleMovementSuccess}
+      />
+      <ReactivateMaterialModal
+        open={reactivateRow !== null}
+        row={reactivateRow}
+        lang={lang}
+        myPermissions={myPermissions}
+        onClose={() => setReactivateRow(null)}
+        onSuccess={handleReactivateSuccess}
+      />
+      <MovementHistoryModal
+        open={historyRow !== null}
+        row={historyRow}
+        lang={lang}
+        onClose={() => setHistoryRow(null)}
+      />
+      <OutletAvailabilityReportModal
+        open={reportOutlet !== null}
+        onClose={() => setReportOutlet(null)}
+        outletId={reportOutlet?.id ?? null}
+        outletName={reportOutlet ? (lang === 'ar' ? (reportOutlet.nameAr || reportOutlet.name) : (reportOutlet.name || reportOutlet.nameAr)) : ''}
+        institutionName={orgName}
+        lang={lang}
+        rows={rows}
+      />
+
+      <div style={{ marginTop: '28px' }}>
+        <InventoryIntelligencePanel />
+      </div>
+
+      <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="refresh" size={15} inline /> {t('material_exchange_center', lang)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '3px', opacity: 0.85 }}>{t('duplicate_exchange_moved_notice', lang)}</div>
+        </div>
+        <button
+          onClick={() => onNavigate(13)}
+          style={{ padding: '8px 16px', borderRadius: 'var(--r2)', border: 'none', background: 'var(--p)', color: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          {t('open_exchange_center', lang)} →
+        </button>
+      </div>
     </div>
   );
 }
@@ -706,7 +1466,11 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
   // to early-return past this point.
   if (history.loading && !history.data) return <PhoenixLoadingState />;
   if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
+  // Wrapped in the same data-testid as the loaded-content return below —
+  // an empty result is a legitimate, fully-rendered state, not a blank
+  // page, and must be provable as such by anything keying off this tab's
+  // root (see all-tabs-mount.runtime.test.tsx).
+  if (rows.length === 0) return <div data-testid="corrections-history-tab"><PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /></div>;
 
   function exportConfig() {
     const columns: ProfessionalReportColumn<CorrectionHistoryRow>[] = [
@@ -1223,7 +1987,9 @@ function SupplementaryPurchasesTab({ orgId, lang, onToast, onMobilePrint }: {
   if (orders.loading && !orders.data) return <PhoenixLoadingState />;
   if (orders.error) return <PhoenixErrorState message={orders.error} onRetry={orders.reload} />;
   const rows = orders.data ?? [];
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="supplementary-purchases-tab"><PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} /></div>;
 
   function ordersSheetConfig(moduleName: string) {
     const columns: ProfessionalReportColumn<OrderRow>[] = [
@@ -1402,35 +2168,414 @@ function SupplementaryPurchaseDrilldown({ orderId, lang }: { orderId: string; la
   );
 }
 
+const MST_CLASSIFICATION_LABEL_KEY: Record<MaterialClassification, string> = {
+  available: 'mst_class_available',
+  unavailable: 'mst_class_unavailable',
+  scarce: 'mst_class_scarce',
+  surplus: 'mst_class_surplus',
+  suspected_missing: 'mst_class_suspected_missing',
+};
+const MST_CLASSIFICATION_VARIANT: Record<MaterialClassification, 'ok' | 'warn' | 'err' | 'neutral'> = {
+  // 'unavailable' is a plain zero-balance fact, distinct from the ERROR-toned
+  // suspected_missing (which requires stocktake evidence + confirmation) —
+  // rendered as a warning, never conflated with the missing/error state.
+  available: 'ok', unavailable: 'warn', scarce: 'warn', surplus: 'ok', suspected_missing: 'err',
+};
+
 /**
- * REPORTING-CLOSURE-FINAL Phase 2: deep-link only, never a second
- * implementation of screen 20's prepare->review->approve->lock workflow.
- * Monthly Inventory Position keeps its own official numbering, immutable
- * locked snapshots and controlled-correction path entirely in
- * MonthlyStatusScreen/monthly-status.service.ts — untouched by this tab.
+ * REPORTING-UNIFICATION: real migration of screen 20's full
+ * prepare->classify/stocktake->submit->approve+lock/return->amend workflow,
+ * moved verbatim from the former MonthlyStatusScreen.tsx (not a
+ * reimplementation) — every RPC call, role gate, and UI state is unchanged.
+ * Uses the shared onToast rather than its own toast state, since this now
+ * lives inside a shell that already renders one toast for every tab.
  */
-function MonthlyPositionDeepLinkTab({ lang, onNavigate }: {
+function MonthlyPositionTab({ orgId, lang, role, onToast }: {
+  orgId: string;
   lang: 'ar' | 'en';
-  onNavigate: (screen: number) => void;
+  role: string | null;
+  onToast: (msg: string) => void;
 }) {
+  const normalizedRole = normalizeRole(role ?? '');
+
+  const canPrepare  = normalizedRole === 'warehouse_officer' || normalizedRole === 'super_admin';
+  const canClassify = canPrepare;
+  const canSubmit   = normalizedRole === 'institution_admin' || normalizedRole === 'super_admin';
+  const canReview   = normalizedRole === 'central_warehouse_manager' || normalizedRole === 'super_admin';
+
+  const scopes = useInventoryScopes(orgId);
+  const [busy, setBusy] = useState(false);
+
+  const reportState = useAsync(() => getOpenMonthlyStatusReport(orgId), [orgId]);
+  const report = reportState.data;
+
+  const lockedState = useAsync(() => getLatestLockedMonthlyStatusReport(orgId), [orgId]);
+
+  const linesState = useAsync(
+    () => (report ? getMonthlyStatusLines(report.id) : Promise.resolve([])),
+    [report?.id],
+  );
+  const lines = linesState.data ?? [];
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkClassification, setBulkClassification] = useState<MaterialClassification>('available');
+  const [bulkReason, setBulkReason] = useState('');
+  const [returnReason, setReturnReason] = useState('');
+  const [amendReason, setAmendReason] = useState('');
+
+  // Stocktake mini-form (WO records evidence before classifying suspected_missing).
+  const [stkScopeKind, setStkScopeKind] = useState<'warehouse' | 'outlet'>('warehouse');
+  const [stkScopeId, setStkScopeId] = useState('');
+  const [stkCounts, setStkCounts] = useState<Record<string, string>>({}); // line.id -> counted qty text
+  const [lastStocktakeId, setLastStocktakeId] = useState<string | null>(null);
+  const stocktakeLinesState = useAsync(
+    () => (lastStocktakeId ? getStocktakeCountLines(lastStocktakeId) : Promise.resolve<StocktakeCountLine[]>([])),
+    [lastStocktakeId],
+  );
+
+  const scopeOptions = stkScopeKind === 'warehouse' ? scopes.data?.manageableWarehouses ?? [] : scopes.data?.manageableOutlets ?? [];
+
+  async function onPrepare() {
+    setBusy(true);
+    try {
+      await prepareMonthlyStatusReport(orgId);
+      reportState.reload();
+      linesState.reload();
+      onToast(t('mst_prepared', lang));
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onRecordStocktake() {
+    if (!stkScopeId) return;
+    const stkLines = lines
+      .filter(l => selected.has(l.id) && stkCounts[l.id] !== undefined && stkCounts[l.id] !== '')
+      .map(l => ({ scientific_name: l.scientific_name, national_code: l.national_code, counted_qty: Number(stkCounts[l.id]) }));
+    if (stkLines.length === 0) { onToast(t('mst_stocktake_no_lines', lang)); return; }
+    setBusy(true);
+    try {
+      const res = await recordStocktake({ organizationId: orgId, scopeKind: stkScopeKind, scopeId: stkScopeId, lines: stkLines });
+      setLastStocktakeId(res.stocktake_id);
+      onToast(t('mst_stocktake_recorded', lang));
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  function stocktakeLineFor(line: MonthlyStatusLine): StocktakeCountLine | undefined {
+    return (stocktakeLinesState.data ?? []).find(
+      s => s.scientific_name.toLowerCase() === line.scientific_name.toLowerCase()
+        && (s.national_code ?? '') === (line.national_code ?? ''),
+    );
+  }
+
+  async function onApplyBulkClassification() {
+    if (!report || selected.size === 0) return;
+    const payload = [...selected].map(lineId => {
+      const line = lines.find(l => l.id === lineId)!;
+      const evidence = bulkClassification === 'suspected_missing' ? stocktakeLineFor(line) : undefined;
+      return {
+        line_id: lineId,
+        classification: bulkClassification,
+        reason: bulkReason || null,
+        stocktake_count_line_id: evidence?.id ?? null,
+      };
+    });
+    setBusy(true);
+    try {
+      const res = await classifyMonthlyStatusLines(report.id, payload);
+      onToast(t('mst_classified', lang).replace('{n}', String(res.classified)));
+      setSelected(new Set());
+      setBulkReason('');
+      linesState.reload();
+      reportState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onConfirmMissing(lineId: string) {
+    setBusy(true);
+    try {
+      const res = await confirmSuspectedMissing(lineId);
+      onToast(res.confirmed ? t('mst_confirmed', lang) : t('mst_confirm_pending_second', lang));
+      linesState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onSubmit() {
+    if (!report) return;
+    setBusy(true);
+    try {
+      await submitMonthlyStatusReport(report.id);
+      onToast(t('mst_submitted', lang));
+      reportState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onReturn() {
+    if (!report || !returnReason.trim()) return;
+    setBusy(true);
+    try {
+      await returnMonthlyStatusReportForClarification(report.id, returnReason.trim());
+      onToast(t('mst_returned', lang));
+      setReturnReason('');
+      reportState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onApproveLock() {
+    if (!report) return;
+    setBusy(true);
+    try {
+      await approveLockMonthlyStatusReport(report.id);
+      onToast(t('mst_locked', lang));
+      reportState.reload();
+      lockedState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function onAmend() {
+    const locked = lockedState.data;
+    if (!locked || !amendReason.trim()) return;
+    setBusy(true);
+    try {
+      await createMonthlyStatusAmendment(locked.id, amendReason.trim());
+      onToast(t('mst_amended', lang));
+      setAmendReason('');
+      reportState.reload();
+    } catch (e) { onToast((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  const editable = report && (report.status === 'draft' || report.status === 'returned');
+  const allClassified = lines.length > 0 && lines.every(l => l.classification !== null);
+  const anyUnconfirmedMissing = lines.some(l => l.classification === 'suspected_missing' && !l.confirmed_missing);
+
   return (
-    <PhoenixCard padding="20px">
-      <div style={{ fontSize: '15px', fontWeight: 800, marginBottom: '8px' }}>{t('dir_tab_monthly', lang)}</div>
-      <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '16px', maxWidth: '560px' }}>
-        {t('dir_monthly_deeplink_desc', lang)}
-      </p>
-      <PhoenixButton onClick={() => onNavigate(20)}>
-        {t('dir_monthly_deeplink_cta', lang)}
-      </PhoenixButton>
-    </PhoenixCard>
+    <div data-testid="monthly-position-tab" style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
+      {reportState.loading && <PhoenixLoadingState />}
+
+      {!reportState.loading && !report && (
+        <PhoenixCard padding="16px">
+          <PhoenixEmptyState icon="clipboard" title={t('mst_no_open_report', lang)} description={t('mst_no_open_report_desc', lang)} />
+          {canPrepare && (
+            <div style={{ marginTop: '12px' }}>
+              <PhoenixButton onClick={onPrepare} disabled={busy}>{t('mst_prepare_action', lang)}</PhoenixButton>
+            </div>
+          )}
+        </PhoenixCard>
+      )}
+
+      {report && (
+        <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <PhoenixStatusBadge
+                variant={report.status === 'locked' ? 'ok' : report.status === 'returned' ? 'warn' : 'neutral'}
+                label={t(`mst_status_${report.status}`, lang)}
+              />
+              <span style={{ fontSize: '11.5px', color: 'var(--t2)' }} dir="ltr">v{report.version}</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {canPrepare && editable && (
+                <PhoenixButton variant="secondary" size="sm" onClick={onPrepare} disabled={busy}>{t('mst_refresh_action', lang)}</PhoenixButton>
+              )}
+              {canSubmit && editable && (
+                <PhoenixButton size="sm" onClick={onSubmit} disabled={busy || !allClassified || anyUnconfirmedMissing}>
+                  {t('mst_submit_action', lang)}
+                </PhoenixButton>
+              )}
+              {canReview && report.status === 'submitted' && (
+                <PhoenixButton size="sm" onClick={onApproveLock} disabled={busy}>{t('mst_approve_lock_action', lang)}</PhoenixButton>
+              )}
+            </div>
+          </div>
+          {report.status === 'returned' && report.return_reason && (
+            <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--warn)' }}>
+              {t('mst_return_reason_label', lang)}: {report.return_reason}
+            </div>
+          )}
+          {canReview && report.status === 'submitted' && (
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <PhoenixInput
+                label={t('mst_return_reason_placeholder', lang)}
+                value={returnReason}
+                onChange={e => setReturnReason(e.target.value)}
+                dir="auto"
+              />
+              <PhoenixButton variant="secondary" size="sm" onClick={onReturn} disabled={busy || !returnReason.trim()}>
+                {t('mst_return_action', lang)}
+              </PhoenixButton>
+            </div>
+          )}
+          {!allClassified && lines.length > 0 && (
+            <p style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--t2)' }}>{t('mst_unclassified_warning', lang)}</p>
+          )}
+          {anyUnconfirmedMissing && (
+            <p style={{ marginTop: '4px', fontSize: '11.5px', color: 'var(--err)' }}>{t('mst_unconfirmed_missing_warning', lang)}</p>
+          )}
+        </PhoenixCard>
+      )}
+
+      {report && canPrepare && editable && (
+        <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>{t('mst_stocktake_title', lang)}</h3>
+          <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '10px' }}>{t('mst_stocktake_desc', lang)}</p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <PhoenixSelect
+              label={t('mst_scope_kind', lang)}
+              value={stkScopeKind}
+              onChange={e => { setStkScopeKind(e.target.value as 'warehouse' | 'outlet'); setStkScopeId(''); }}
+              options={[
+                { value: 'warehouse', label: t('mst_scope_warehouse', lang) },
+                { value: 'outlet', label: t('mst_scope_outlet', lang) },
+              ]}
+            />
+            <PhoenixSelect
+              label={t('mst_scope_target', lang)}
+              value={stkScopeId}
+              onChange={e => setStkScopeId(e.target.value)}
+              options={[{ value: '', label: '—' }, ...scopeOptions.map(o => ({ value: o.id, label: lang === 'ar' ? o.nameAr || o.name : o.name }))]}
+            />
+          </div>
+          <p style={{ fontSize: '11px', color: 'var(--t2)', marginBottom: '6px' }}>{t('mst_stocktake_select_hint', lang)}</p>
+          <PhoenixButton variant="secondary" size="sm" onClick={onRecordStocktake} disabled={busy || !stkScopeId}>
+            {t('mst_stocktake_record_action', lang)}
+          </PhoenixButton>
+        </PhoenixCard>
+      )}
+
+      {report && lines.length > 0 && (
+        <PhoenixCard padding="0" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--brd)' }}>
+                {canClassify && editable && <th style={{ padding: '10px' }} />}
+                <th style={{ padding: '10px', textAlign: 'start' }}>{t('mst_col_material', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'end' }}>{t('mst_col_on_hand', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'end' }}>{t('mst_col_central', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'end' }}>{t('mst_col_supplementary', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>{t('mst_col_expiry', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>{t('mst_col_suggested', lang)}</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>{t('mst_col_classification', lang)}</th>
+                <th style={{ padding: '10px' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map(line => {
+                const tier = getExpiryRiskTier(line.nearest_expiry_date);
+                const stk = stocktakeLineFor(line);
+                return (
+                  <tr key={line.id} style={{ borderBottom: '1px solid var(--brd)' }}>
+                    {canClassify && editable && (
+                      <td style={{ padding: '10px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(line.id)}
+                          onChange={e => {
+                            const next = new Set(selected);
+                            if (e.target.checked) next.add(line.id); else next.delete(line.id);
+                            setSelected(next);
+                          }}
+                        />
+                      </td>
+                    )}
+                    <td style={{ padding: '10px' }} dir="auto">{line.scientific_name}</td>
+                    <td style={{ padding: '10px', textAlign: 'end' }} dir="ltr">{line.on_hand_qty}</td>
+                    <td style={{ padding: '10px', textAlign: 'end' }} dir="ltr">{line.central_qty}</td>
+                    <td style={{ padding: '10px', textAlign: 'end' }} dir="ltr">{line.supplementary_qty}</td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      {line.nearest_expiry_date ? (
+                        <PhoenixStatusBadge variant={getExpiryRiskTone(tier) as 'ok'|'warn'|'err'|'neutral'} label={getExpiryRiskLabel(tier, lang)} />
+                      ) : '—'}
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      <PhoenixStatusBadge variant={MST_CLASSIFICATION_VARIANT[line.suggested_classification]} label={t(MST_CLASSIFICATION_LABEL_KEY[line.suggested_classification], lang)} />
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      {line.classification ? (
+                        <PhoenixStatusBadge variant={MST_CLASSIFICATION_VARIANT[line.classification]} label={t(MST_CLASSIFICATION_LABEL_KEY[line.classification], lang)} />
+                      ) : <span style={{ color: 'var(--t2)' }}>{t('mst_unclassified', lang)}</span>}
+                      {line.classification === 'suspected_missing' && (
+                        <div style={{ fontSize: '10.5px', marginTop: '4px', color: line.confirmed_missing ? 'var(--ok)' : 'var(--warn)' }}>
+                          {line.confirmed_missing ? t('mst_confirmed_badge', lang) : t('mst_pending_confirmation_badge', lang)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      {canClassify && editable && line.classification === 'suspected_missing' && !line.confirmed_missing && (
+                        <PhoenixButton variant="secondary" size="sm" onClick={() => onConfirmMissing(line.id)} disabled={busy}>
+                          {t('mst_confirm_action', lang)}
+                        </PhoenixButton>
+                      )}
+                      {editable && (
+                        <input
+                          type="number"
+                          placeholder={t('mst_counted_qty_placeholder', lang)}
+                          value={stkCounts[line.id] ?? ''}
+                          onChange={e => setStkCounts({ ...stkCounts, [line.id]: e.target.value })}
+                          style={{ width: '70px', marginInlineStart: '6px' }}
+                          dir="ltr"
+                        />
+                      )}
+                      {stk && <div style={{ fontSize: '10px', color: 'var(--t2)' }} dir="ltr">Δ{stk.variance}</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </PhoenixCard>
+      )}
+
+      {report && canClassify && editable && selected.size > 0 && (
+        <PhoenixCard padding="16px" style={{ marginTop: '16px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>
+            {t('mst_bulk_title', lang).replace('{n}', String(selected.size))}
+          </h3>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <PhoenixSelect
+              label={t('mst_col_classification', lang)}
+              value={bulkClassification}
+              onChange={e => setBulkClassification(e.target.value as MaterialClassification)}
+              options={(['available', 'unavailable', 'scarce', 'surplus', 'suspected_missing'] as MaterialClassification[])
+                .map(c => ({ value: c, label: t(MST_CLASSIFICATION_LABEL_KEY[c], lang) }))}
+            />
+            <PhoenixInput label={t('mst_reason_placeholder', lang)} value={bulkReason} onChange={e => setBulkReason(e.target.value)} dir="auto" />
+            <PhoenixButton onClick={onApplyBulkClassification} disabled={busy}>{t('mst_apply_action', lang)}</PhoenixButton>
+          </div>
+          {bulkClassification === 'suspected_missing' && (
+            <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '6px' }}>{t('mst_suspected_missing_hint', lang)}</p>
+          )}
+        </PhoenixCard>
+      )}
+
+      {canReview && lockedState.data && (
+        <PhoenixCard padding="16px" style={{ marginTop: '16px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('mst_amend_title', lang)}</h3>
+          <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '8px' }}>
+            {t('mst_amend_desc', lang)} ({formatStableDate(lockedState.data.locked_at, lang)})
+          </p>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <PhoenixInput label={t('mst_reason_placeholder', lang)} value={amendReason} onChange={e => setAmendReason(e.target.value)} dir="auto" />
+            <PhoenixButton variant="secondary" size="sm" onClick={onAmend} disabled={busy || !amendReason.trim()}>
+              {t('mst_amend_action', lang)}
+            </PhoenixButton>
+          </div>
+        </PhoenixCard>
+      )}
+    </div>
   );
 }
 
-function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
+function InstitutionStatusTab({ lang, onToast, onMobilePrint, onOpenMaterials }: {
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
-  onNavigate: (screen: number) => void;
+  onOpenMaterials: () => void;
 }) {
   const overview = useAsync(() => getInstitutionOverviews(), []);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -1438,7 +2583,9 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
   if (overview.loading && !overview.data) return <PhoenixLoadingState />;
   if (overview.error) return <PhoenixErrorState message={overview.error} onRetry={overview.reload} />;
   const rows = overview.data ?? [];
-  if (rows.length === 0) return <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="institution-status-tab"><PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} /></div>;
 
   function exportConfig() {
     const columns: ProfessionalReportColumn<InstitutionOverview>[] = [
@@ -1484,8 +2631,8 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onNavigate }: {
   return (
     <div style={{ display: 'grid', gap: '12px' }} data-testid="institution-status-tab">
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <PhoenixButton variant="ghost" onClick={() => onNavigate(12)}>
-          {t('dir_open_in_status_center', lang)}
+        <PhoenixButton variant="ghost" onClick={onOpenMaterials}>
+          {t('dir_open_materials_tab', lang)}
         </PhoenixButton>
       </div>
       <PhoenixCard>
@@ -1529,7 +2676,9 @@ export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 
   if (snapshots.error) return <PhoenixErrorState message={snapshots.error} onRetry={snapshots.reload} />;
   const rows = snapshots.data ?? [];
   const isDemo = demo.data === true;
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="dir-report-library"><PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /></div>;
 
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="dir-report-library">

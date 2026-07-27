@@ -1,16 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * REPORTING-UNIFICATION — navigation consolidation, proven at runtime (not
- * just source-scan): DIRC's Institution Status tab still links to the
- * Materials & Batches tab context for the live matrix (superseding the old
- * "open in Status Center" cross-screen navigation, since Status Center's
- * content now lives inside this same shell), and DIRC's Monthly Position
- * tab must render the REAL prepare->classify->submit->approve+lock workflow
- * -- not a deep-link CTA to a separate screen. This directly replaces the
- * old test file of the same name, which asserted the opposite (a deep-link
- * CTA and nothing else) -- that contract is exactly what the unification
- * removes.
+ * REPORTING-UNIFICATION — mission requirement: every one of the unified
+ * shell's 11 tabs must open without a blank page or a React hook-order
+ * error. Individual tabs already have dedicated runtime coverage
+ * (custody-chain-tab, corrections-history-tab, report-library-demo-
+ * watermark, nav-consolidation-dirc for materials/monthly); this file is
+ * the one place that mounts DecisionIntelligenceReportsScreen ONCE and
+ * clicks through the entire tab bar in sequence — overview, institutions,
+ * materials, movements, custody, supplementary, corrections, audit,
+ * monthly, library, and (super_admin only) global — proving the whole
+ * shell survives a full sweep, not just each tab in isolation.
  */
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -105,63 +105,71 @@ const INSTITUTIONS: InstitutionOverview[] = [
   },
 ];
 
-describe('DIRC navigation consolidation (Reporting Unification)', () => {
+// Every tab id → the labelKey text the tab button renders (English, per the
+// mocked lang: 'en') and the data-testid its content root uses.
+const TAB_SWEEP: Array<{ name: RegExp; testId: string }> = [
+  { name: /^Executive Overview$/, testId: 'executive-overview-tab' },
+  { name: /^Institution Status$/, testId: 'institution-status-tab' },
+  { name: /^Materials & Batches$/, testId: 'materials-batches-tab' },
+  { name: /^Stock Movements$/, testId: 'movements-tab' },
+  { name: /^Custody Chain$/, testId: 'custody-chain-tab' },
+  { name: /Supplementary Purchases Traceability/, testId: 'supplementary-purchases-tab' },
+  { name: /^Differences & Corrections$/, testId: 'corrections-history-tab' },
+  { name: /^Audit-Sensitive Actions$/, testId: 'audit-tab' },
+  { name: /^Monthly Inventory Position$/, testId: 'monthly-position-tab' },
+  { name: /^Official Report Library$/, testId: 'dir-report-library' },
+  { name: /^Global Material Search$/, testId: 'global-search-tab' },
+];
+
+describe('DIRC — full 11-tab sweep (REPORTING-UNIFICATION mission requirement)', () => {
   afterEach(cleanup);
 
-  it('the Monthly Position tab renders the REAL workflow (prepare action), not a deep-link CTA to a separate screen', async () => {
+  it('every tab opens cleanly: no blank page, no error-boundary fallback, no console.error', async () => {
     getExecutiveOverview.mockResolvedValue(OVERVIEW);
     getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
     getOpenMonthlyStatusReport.mockResolvedValue(null);
     getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
     getMonthlyStatusLines.mockResolvedValue([]);
-    const onNavigate = vi.fn();
-    render(<DecisionIntelligenceReportsScreen onNavigate={onNavigate} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /monthly/i }));
-    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
+    const consoleErrors: unknown[][] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args) => { consoleErrors.push(args); });
 
-    // There must be NO "open monthly inventory position" deep-link CTA
-    // anywhere -- that was the old, now-removed contract.
-    expect(screen.queryByRole('button', { name: /open monthly inventory position/i })).not.toBeInTheDocument();
-    // onNavigate must never be called just from opening this tab -- it's
-    // real content now, not a redirect.
-    expect(onNavigate).not.toHaveBeenCalledWith(20);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+
+    // Executive Overview is the default tab — already mounted; assert it
+    // before clicking anything else.
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
+
+    for (const { name, testId } of TAB_SWEEP) {
+      fireEvent.click(screen.getByRole('tab', { name }));
+      await waitFor(() => expect(screen.getByTestId(testId)).toBeInTheDocument());
+      // The error boundary's fallback text must never appear — it would mean
+      // this tab's content threw during render instead of actually mounting.
+      expect(screen.queryByText(/This section could not be displayed/i)).not.toBeInTheDocument();
+    }
+
+    // React logs a distinct, very specific message when hook order changes
+    // between renders — the exact class of bug a source-scan test cannot
+    // catch. Assert it never fired across the whole sweep.
+    const hookOrderViolation = consoleErrors.some(args =>
+      args.some(a => typeof a === 'string' && /Rendered (more|fewer) hooks than during the previous render/i.test(a)));
+    expect(hookOrderViolation).toBe(false);
+
+    spy.mockRestore();
   });
 
-  it('opening the Monthly Position tab with no open report shows the real empty state and (for a preparing role) a genuine Prepare action, calling the real service, not onNavigate', async () => {
+  it('the tab bar exposes exactly the 11 required sections, in the mission-specified order, for a super_admin', async () => {
     getExecutiveOverview.mockResolvedValue(OVERVIEW);
     getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
-    getOpenMonthlyStatusReport.mockResolvedValue(null);
-    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
-    getMonthlyStatusLines.mockResolvedValue([]);
-    const onNavigate = vi.fn();
-    render(<DecisionIntelligenceReportsScreen onNavigate={onNavigate} />);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('tab', { name: /monthly/i }));
-    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
-
-    // role is 'super_admin' in this mock, which canPrepare covers.
-    const prepareButton = await screen.findByRole('button', { name: /prepare/i });
-    expect(prepareButton).toBeInTheDocument();
-    expect(onNavigate).not.toHaveBeenCalled();
-  });
-
-  it('DIRC accepts an initialTab prop so an old screen redirect can land directly on Materials & Batches', async () => {
-    getExecutiveOverview.mockResolvedValue(OVERVIEW);
-    getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
-    render(<DecisionIntelligenceReportsScreen onNavigate={() => {}} initialTab="materials" />);
-
-    await waitFor(() => expect(screen.getByTestId('materials-batches-tab')).toBeInTheDocument());
-    // The overview tab's own content must NOT be the one shown by default.
-    expect(screen.queryByText(/materials_tracked/i)).not.toBeInTheDocument();
-  });
-
-  it('DIRC accepts an initialTab prop so an old screen redirect can land directly on Monthly Position', async () => {
-    getOpenMonthlyStatusReport.mockResolvedValue(null);
-    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
-    getMonthlyStatusLines.mockResolvedValue([]);
-    render(<DecisionIntelligenceReportsScreen onNavigate={() => {}} initialTab="monthly" />);
-
-    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
+    const tabs = screen.getAllByRole('tab').map(el => el.textContent);
+    expect(tabs).toEqual([
+      'Executive Overview', 'Institution Status', 'Materials & Batches', 'Stock Movements',
+      'Custody Chain', 'Supplementary Purchases Traceability', 'Differences & Corrections',
+      'Audit-Sensitive Actions', 'Monthly Inventory Position', 'Official Report Library',
+      'Global Material Search',
+    ]);
   });
 });
