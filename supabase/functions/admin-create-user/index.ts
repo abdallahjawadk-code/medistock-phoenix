@@ -3,15 +3,16 @@
 //
 // Secure server-side user creation. The service_role key lives ONLY here.
 //
-// SECURITY-ARCH-HARDENING-A (D1 + D2):
-//   The profile row is no longer written directly. After the Auth user is
-//   created, the profile is provisioned through phoenix_provision_profile
-//   (migration 093), called with the CALLER's JWT so the contract re-derives
-//   authority from auth.uid() and is the single source of truth for who may
-//   create which role in which organization. Authorization/existence denials
-//   return a generic REQUEST_DENIED (the real reason is logged server-side with
-//   the request's correlation id); if the contract denies, the orphan Auth user
-//   is rolled back. Input validation (role/username/password shape) stays here.
+// SECURE-USER-PROVISIONING-146:
+//   After Auth Admin creates a user, the auth trigger creates a fail-closed
+//   outlet_officer placeholder. The profile is then converted exactly once by
+//   phoenix_admin_provision_profile (migration 146), called with service_role.
+//   The database contract re-derives the acting administrator's status, role,
+//   permissions and organization scope, and accepts only a fresh placeholder
+//   bound to an unguessable Auth app-metadata nonce. The legacy authenticated
+//   UPSERT contract is revoked. If provisioning is denied, the orphan Auth user
+//   is rolled back and rollback failure is surfaced with a correlation id.
+//   Input validation (role/username/password shape) remains here.
 //
 // Contract (unchanged wire shape):
 //   POST { full_name, organization_id, role, login_mode, ... }  (Bearer = caller JWT)
@@ -22,6 +23,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOCAL_AUTH_DOMAIN = 'local.medistock.invalid';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const OFFICIAL_ROLES = [
   'super_admin',
@@ -56,11 +59,16 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
-  const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
+  const suppliedCorrelationId = (req.headers.get('x-correlation-id') ?? '').trim();
+  const correlationId = UUID_PATTERN.test(suppliedCorrelationId)
+    ? suppliedCorrelationId
+    : crypto.randomUUID();
+  const provisioningNonce = crypto.randomUUID();
 
-  // Caller-scoped client → the provision RPC sees auth.uid() = the acting admin.
+  // Caller-scoped client → verifies the presented JWT belongs to a real user.
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
-  // Privileged client → Auth Admin user creation only.
+  // Privileged client → Auth Admin operations + the service-only provisioning
+  // contract. The service key is never sent to the browser.
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
   const { data: userData, error: userErr } = await caller.auth.getUser();
@@ -107,23 +115,38 @@ Deno.serve(async (req: Request) => {
 
   const passwordMode = loginMode === 'local' || password.length >= 8;
 
-  // Authority PRE-CHECK (reads only; no profile mutation). Create has no
-  // existence-oracle surface (there is no pre-existing target) and no
-  // last-super-admin invariant, so it keeps its distinct, actionable role
-  // messages for the admin UI. The authoritative gate is still server-side:
-  // phoenix_provision_profile re-verifies all of this before writing.
+  // Authority PRE-CHECK (reads only; no profile mutation). The authoritative
+  // gate is still the database contract, which repeats every check.
   const { data: callerProfile } = await admin
-    .from('profiles').select('role, organization_id').eq('id', userData.user.id).single();
+    .from('profiles')
+    .select('role, organization_id, status')
+    .eq('id', userData.user.id)
+    .single();
   if (!callerProfile) return json({ ok: false, error: 'ACTOR_PROFILE_NOT_FOUND', correlation_id: correlationId }, 403);
+  if (callerProfile.status !== 'active') {
+    return json({ ok: false, error: 'ACTOR_NOT_ACTIVE', correlation_id: correlationId }, 403);
+  }
   const isSuper = callerProfile.role === 'super_admin';
+  const isInstitutionAdmin = callerProfile.role === 'institution_admin';
+  if (!isSuper && !isInstitutionAdmin) {
+    return json({ ok: false, error: 'INSUFFICIENT_PERMISSION', correlation_id: correlationId }, 403);
+  }
   if (role === 'super_admin' && !isSuper)              return json({ ok: false, error: 'CANNOT_CREATE_SUPER_ADMIN', correlation_id: correlationId }, 403);
   if (role === 'institution_admin' && !isSuper)        return json({ ok: false, error: 'CANNOT_CREATE_INSTITUTION_ADMIN', correlation_id: correlationId }, 403);
   if (role === 'central_warehouse_manager' && !isSuper) return json({ ok: false, error: 'CANNOT_CREATE_CENTRAL_WAREHOUSE_MANAGER', correlation_id: correlationId }, 403);
   if (!isSuper) {
-    const { data: canCreate } = await admin.rpc('phoenix_profile_has_permission', {
-      p_profile_id: userData.user.id, p_key: 'users.create',
-    });
-    if (canCreate !== true) return json({ ok: false, error: 'INSUFFICIENT_PERMISSION', correlation_id: correlationId }, 403);
+    const [{ data: canCreate, error: createPermissionError }, { data: canAssign, error: assignPermissionError }] =
+      await Promise.all([
+        admin.rpc('phoenix_profile_has_permission', {
+          p_profile_id: userData.user.id, p_key: 'users.create',
+        }),
+        admin.rpc('phoenix_profile_has_permission', {
+          p_profile_id: userData.user.id, p_key: 'users.assign_role',
+        }),
+      ]);
+    if (createPermissionError || assignPermissionError || canCreate !== true || canAssign !== true) {
+      return json({ ok: false, error: 'INSUFFICIENT_PERMISSION', correlation_id: correlationId }, 403);
+    }
     if (orgId !== callerProfile.organization_id) return json({ ok: false, error: 'CROSS_ORG_FORBIDDEN', correlation_id: correlationId }, 403);
   }
 
@@ -132,6 +155,10 @@ Deno.serve(async (req: Request) => {
     email,
     email_confirm: passwordMode,
     user_metadata: { full_name: fullName },
+    app_metadata: {
+      phoenix_provisioning_nonce: provisioningNonce,
+      phoenix_provisioning_actor_id: userData.user.id,
+    },
   };
   if (loginMode === 'local') createParams.password = temporaryPassword;
   else if (passwordMode) createParams.password = password;
@@ -142,10 +169,12 @@ Deno.serve(async (req: Request) => {
   }
   const newId = created.user.id;
 
-  // Provision the profile through the atomic contract (authority re-checked
-  // server-side). No direct profile write happens in this function.
-  const { data: prov, error: provErr } = await caller.rpc('phoenix_provision_profile', {
+  // Convert only the fresh auth-trigger placeholder through the service-only
+  // atomic contract. No direct profile write happens in this function.
+  const { data: prov, error: provErr } = await admin.rpc('phoenix_admin_provision_profile', {
+    p_actor_id: userData.user.id,
     p_new_id: newId,
+    p_provisioning_nonce: provisioningNonce,
     p_organization_id: orgId,
     p_full_name: fullName,
     p_role: role,
@@ -156,7 +185,20 @@ Deno.serve(async (req: Request) => {
   });
   if (provErr || !prov?.ok) {
     // Roll back the orphan Auth user so no half-provisioned identity survives.
-    await admin.auth.admin.deleteUser(newId);
+    const { error: rollbackErr } = await admin.auth.admin.deleteUser(newId);
+    if (rollbackErr) {
+      // Never log the password, email or service key. The correlation id lets
+      // an operator find the Auth row through its provisioning app metadata.
+      console.error(JSON.stringify({
+        event: 'admin-create-user.rollback-failed',
+        correlation_id: correlationId,
+      }));
+      return json({
+        ok: false,
+        error: 'ROLLBACK_FAILED',
+        correlation_id: correlationId,
+      }, 500);
+    }
     const code = prov?.error ?? 'CREATE_PROFILE_FAILED';
     const status = code === 'REQUEST_DENIED' ? 403 : 400;
     return json({ ok: false, error: code, correlation_id: prov?.correlation_id ?? correlationId }, status);

@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { institutionsScreenAccess, isPlatformAdmin, isInstitutionAdmin } from '../screen-access';
+import { institutionsScreenAccess, isPlatformAdmin, isInstitutionAdmin, roleLandingScreen } from '../screen-access';
 import { canAssignRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared/lib/types';
 
 const SRC = join(__dirname, '../../../');
@@ -30,6 +30,26 @@ describe('institutions page access is platform-admin exclusive', () => {
     for (const role of ['central_warehouse_manager', 'warehouse_officer', 'outlet_officer', 'monthly_status_officer', 'viewer', '']) {
       expect(institutionsScreenAccess(role), role).toBe(false);
     }
+  });
+});
+
+describe('authenticated landing is role-safe and session-scoped', () => {
+  it('lands outlet officers in Outlet Operations instead of privileged reports', () => {
+    expect(roleLandingScreen('outlet_officer')).toBe(18);
+    expect(roleLandingScreen(undefined)).toBe(18);
+    for (const role of ['super_admin', 'institution_admin', 'central_warehouse_manager', 'warehouse_officer']) {
+      expect(roleLandingScreen(role), role).toBe(21);
+    }
+  });
+
+  it('waits for the real profile and never reuses navigation from another profile', () => {
+    const app = read('app/AuthenticatedApp.tsx');
+    expect(app).toContain('if (!profile) {');
+    expect(app).toContain('navigation?.profileId === profile.id');
+    expect(app).toContain('roleLandingScreen(profile.role)');
+    expect(app).toContain('setNavigation({ profileId: profile.id, screen: nextScreen })');
+    expect(app).toContain('setNavigation(null);');
+    expect(app).not.toContain('const [screen, setScreen] = useState(21);');
   });
 });
 

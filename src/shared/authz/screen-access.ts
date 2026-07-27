@@ -41,3 +41,12 @@ export function institutionsScreenAccess(role: string | null | undefined): 'dire
   if (isInstitutionAdmin(role)) return 'own';
   return false;
 }
+
+/**
+ * Choose the first authorized operational surface without granting any new
+ * permission. Unknown roles normalize to the least-privileged outlet identity,
+ * so a missing or stale role can never default into the reports surface.
+ */
+export function roleLandingScreen(role: string | null | undefined): number {
+  return normalizeRole(role ?? '') === 'outlet_officer' ? 18 : 21;
+}

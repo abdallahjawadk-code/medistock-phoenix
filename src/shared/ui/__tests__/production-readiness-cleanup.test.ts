@@ -51,9 +51,9 @@ describe('Central dashboard removed from navigation', () => {
     expect(around).toContain('DecisionIntelligenceReportsScreen');
   });
 
-  it('the initial screen and post-logout screen are the unified shell (21), not the removed dashboard (2) or the retired Status Center (12)', () => {
-    expect(authenticatedApp).toContain('useState(21)');
-    expect(authenticatedApp).toContain('setScreen(21)');
+  it('the initial screen is role-safe and logout clears navigation instead of returning to removed screens 2/12', () => {
+    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
+    expect(authenticatedApp).toContain('setNavigation(null)');
     expect(authenticatedApp).not.toContain('useState(2)');
     expect(authenticatedApp).not.toContain('setScreen(2)');
   });

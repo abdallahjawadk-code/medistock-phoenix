@@ -819,7 +819,12 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         else if (res.error === 'CROSS_ORG_FORBIDDEN')        msg = t('um_cannot_create_outside_org', lang);
         else if (res.error === 'PASSWORD_TOO_SHORT')         msg = t('um_password_too_short', lang);
         else if (res.error === 'INVALID_USERNAME')           msg = t('um_username_invalid', lang);
-        else if (res.error === 'CREATE_PROFILE_FAILED' || res.error === 'CREATE_AUTH_USER_FAILED') msg = t('um_create_failed', lang);
+        else if (['REQUEST_DENIED', 'INSUFFICIENT_PERMISSION', 'ACTOR_NOT_ACTIVE', 'ACTOR_PROFILE_NOT_FOUND'].includes(res.error ?? '')) {
+          msg = t('um_request_denied', lang);
+        }
+        else if (['CREATE_PROFILE_FAILED', 'CREATE_AUTH_USER_FAILED', 'ROLLBACK_FAILED'].includes(res.error ?? '')) {
+          msg = t('um_create_failed', lang);
+        }
         else msg = `${t('um_edge_rejected', lang)} · ${res.error ?? ''}`;
         setError(withSupportRef(msg, lang, res.correlationId));
         return;
@@ -828,7 +833,11 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
       onToast(t('um_created_local', lang));
       onCreated();
     } catch {
-      setError(t('um_edge_disabled', lang));
+      // createUserViaEdge already classifies genuine transport/route absence
+      // as EDGE_NOT_DEPLOYED. Anything escaping that boundary is an
+      // unexpected UI/runtime failure and must never be misreported as a
+      // missing deployment.
+      setError(t('um_unknown_error', lang));
     } finally {
       setBusy(false);
     }
