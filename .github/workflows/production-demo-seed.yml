@@ -1,0 +1,100 @@
+name: Production PHOENIX_DEMO_V1 (manual, gated)
+
+# ============================================================================
+# Manually-triggered, narrowly-scoped pipeline for the ONE thing this
+# workflow may ever do: apply the accepted, contiguous migration set to
+# Production and seed the isolated PHOENIX_DEMO_V1 dataset through the
+# real, already-tested seedDemoDataset() corridors.
+#
+# HARD CONSTRAINTS, enforced in-job (not just by convention):
+#   * workflow_dispatch ONLY — no push/pull_request/schedule trigger can
+#     ever reach this file. Manual dispatch already requires repository
+#     write access.
+#   * The triggering commit SHA and branch must match caller-supplied
+#     inputs exactly, or the job fails before touching Production.
+#   * `mode` is a closed enum (preflight / dry_run_migrate /
+#     migrate_and_seed) — there is no free-text SQL input, no arbitrary
+#     project-ref input, no dataset-id input (PHOENIX_DEMO_V1 is a literal
+#     inside the scripts this workflow calls, never a workflow input).
+#   * No purge mode exists in this workflow at all.
+#   * The Production connection string is read ONLY via
+#     secrets.PHOENIX_PRODUCTION_DATABASE_URL, passed to child processes as
+#     an env var, NEVER echoed, NEVER interpolated into a shell -c string,
+#     NEVER passed as a CLI argument (which would appear in `ps`/logs). No
+#     step in this file uses `set -x`, `echo $PHOENIX_PRODUCTION_DATABASE_URL`,
+#     or writes it to a file.
+#   * `preflight` always runs first, every mode, before anything mutating.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'preflight (read-only) | dry_run_migrate (preview only, no writes) | migrate_and_seed (applies migrations + seeds PHOENIX_DEMO_V1)'
+        required: true
+        type: choice
+        options:
+          - preflight
+          - dry_run_migrate
+          - migrate_and_seed
+      confirm_sha:
+        description: 'Exact commit SHA you intend this run to operate on (must equal the SHA this workflow actually runs at)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-demo-seed
+  cancel-in-progress: false
+
+env:
+  ACCEPTED_MIGRATION_CEILING: '145'
+  ALLOWED_REF_NAMES: 'feat/phoenix-reporting-closure-final master'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify triggering SHA matches confirm_sha input
+        run: |
+          if [ "${{ github.sha }}" != "${{ inputs.confirm_sha }}" ]; then
+            echo "::error::SHA mismatch: this run is at ${{ github.sha }}, but confirm_sha=${{ inputs.confirm_sha }}. Refusing to proceed against an unintended commit."
+            exit 1
+          fi
+
+      - name: Verify triggering ref is an allowed branch
+        run: |
+          ok=0
+          for allowed in $ALLOWED_REF_NAMES; do
+            if [ "${{ github.ref_name }}" = "$allowed" ]; then ok=1; fi
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Ref '${{ github.ref_name }}' is not in the allowed list ($ALLOWED_REF_NAMES). Refusing to run."
+            exit 1
+          fi
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Preflight: ALWAYS runs, read-only, every mode. ──────────────────
+      - name: Preflight (read-only — migration contiguity, no unexpected data)
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: node tools/phoenix-demo/prod-preflight.mjs
+
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
+        if: inputs.mode == 'dry_run_migrate' || inputs.mode == 'migrate_and_seed'
+
+      - name: Migration preview (dry-run — prints planned statements, writes nothing)
+        if: inputs.mode == 'dry_run_migrate' || inputs.mode == 'migrate_and_seed'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --dry-run
