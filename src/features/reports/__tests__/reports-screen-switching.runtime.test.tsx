@@ -93,7 +93,7 @@ function TwoSurfaceHarness({ initial }: { initial: 9 | 21 }) {
         <button onClick={() => setScreenNum(21)}>Executive Reports</button>
       </div>
       {screenNum === 9 && <ReportsScreen />}
-      {screenNum === 21 && <DecisionIntelligenceReportsScreen />}
+      {screenNum === 21 && <DecisionIntelligenceReportsScreen onNavigate={() => {}} />}
     </div>
   );
 }

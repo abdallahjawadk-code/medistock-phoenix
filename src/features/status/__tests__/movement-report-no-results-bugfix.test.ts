@@ -192,14 +192,14 @@ describe('escapePostgrestIlikeValue: safe PostgREST .or() interpolation', () => 
 // 4. Refresh behavior
 // ============================================================================
 
-describe('MovementReportSection: reload behavior', () => {
+describe('MovementReportSection: reload behavior (MOVEMENT-LEDGER-REPORT-138)', () => {
   it('the report re-queries whenever any filter or the active org changes (useAsync dependency array)', () => {
-    const depsMatch = section.match(/\[canViewReport, activeOrgId, dateFrom, dateTo, movementType, pointId, materialSearch, actorSearch\]/);
+    const depsMatch = section.match(/\[canViewReport, activeOrgId, dateFrom, dateTo, ledgerSource, movementType, locationId, materialSearch, actorSearch\]/);
     expect(depsMatch).not.toBeNull();
   });
 
   it('a missing activeOrgId short-circuits to an empty result instead of querying with undefined', () => {
-    expect(section).toMatch(/\(canViewReport && activeOrgId\)\s*\n?\s*\?\s*getAvailabilityMovementsReport/);
+    expect(section).toMatch(/\(canViewReport && activeOrgId\)\s*\n?\s*\?\s*getMovementLedgerReport/);
   });
 
   it('an error state exposes reload() so the user (or a retry) can refresh', () => {

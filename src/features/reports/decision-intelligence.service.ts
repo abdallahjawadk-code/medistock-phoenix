@@ -51,6 +51,24 @@ export async function getExecutiveOverview(organizationId: string): Promise<Exec
   return data as ExecutiveOverview;
 }
 
+/**
+ * PHOENIX-DEMO-ORGANIZATION-WATERMARK-145 — whether an organization belongs
+ * to the PHOENIX_DEMO_V1 dataset, so a report/snapshot derived from it can be
+ * visibly watermarked ("تجريبي — غير رسمي") rather than presented as an
+ * official record. Fails closed to `false` on any error — an ordinary
+ * (non-demo) organization must never be misclassified as demo, but a genuine
+ * demo org that briefly fails this check just loses its watermark rather
+ * than breaking the report.
+ */
+export async function isDemoOrganization(organizationId: string | null | undefined): Promise<boolean> {
+  if (!supabaseConfigured || !organizationId) return false;
+  const { data, error } = await supabase.rpc('phoenix_is_demo_organization', {
+    p_organization_id: organizationId,
+  });
+  if (error) return false;
+  return data === true;
+}
+
 export interface CreateSnapshotResult {
   ok: boolean;
   idempotent_replay: boolean;

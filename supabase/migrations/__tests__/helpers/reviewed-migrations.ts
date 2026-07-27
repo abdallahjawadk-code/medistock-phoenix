@@ -198,6 +198,14 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '135_phoenix_movement_reason_code_group_i_outlet_return_receive.sql',
   '136_phoenix_dispense_with_context_atomic.sql',
   '137_phoenix_five_role_cutover_ports_view_gap.sql',
+  '138_phoenix_movement_ledger_report.sql',
+  '139_phoenix_movement_timeline_contract_fields.sql',
+  '140_phoenix_demo_dataset_manifest.sql',
+  '141_phoenix_demo_immutable_exemption.sql',
+  '142_phoenix_demo_profile_detach.sql',
+  '143_phoenix_demo_purge_restrict_violation_and_ordering.sql',
+  '144_phoenix_demo_availability_purge_exemption.sql',
+  '145_phoenix_demo_organization_watermark.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

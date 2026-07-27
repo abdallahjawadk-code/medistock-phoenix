@@ -76,8 +76,8 @@ describe('MovementReportSection: print popup-blocked handling', () => {
 
 describe('MovementReportSection: stable date rendering', () => {
   it('the datetime column value uses formatStableDateTime, not toLocaleString', () => {
-    expect(movementReport).toContain('value: r => formatStableDateTime(r.createdAt, lang)');
-    expect(movementReport).not.toMatch(/r\.createdAt.*toLocaleString/);
+    expect(movementReport).toContain('value: r => formatStableDateTime(r.occurredAt, lang)');
+    expect(movementReport).not.toMatch(/r\.occurredAt.*toLocaleString/);
   });
 
   it('generatedAt uses formatStableDateTime, not toLocaleString', () => {

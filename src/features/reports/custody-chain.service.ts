@@ -38,6 +38,22 @@ export interface MovementTimelineEvent {
   reference_id: string | null;
   reference: string | null;
   provenance: string;
+  /**
+   * MOVEMENT-TIMELINE-CONTRACT-FIELDS-139 — additive Unified Movements
+   * contract fields. Nullable by design, and honestly so: a
+   * derived_from_column event (a corridor header transition) has no
+   * quantity or reason at all, and the event_ledger envelope never carried
+   * reason_code. The UI must render '—' for those rather than invent a value.
+   */
+  reason_code: string | null;
+  quantity_before: number | null;
+  quantity_after: number | null;
+  correlation_id: string | null;
+  causation_id: string | null;
+  /** true only for an outlet movement with a recorded beneficiary. The
+   *  beneficiary itself is NEVER in this payload — call getDispenseContext()
+   *  for the masked detail. */
+  has_dispense_context: boolean;
 }
 
 export interface MovementTimelineResult {

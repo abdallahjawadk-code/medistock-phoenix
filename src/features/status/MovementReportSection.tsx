@@ -1,47 +1,47 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
 import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
-import { getPointsByOrg } from '@/shared/supabase/services/warehouses.service';
+import { getPointsByOrg, getWarehouses } from '@/shared/supabase/services/warehouses.service';
 import {
-  getAvailabilityMovementsReport,
-  type AvailabilityMovementReportRecord,
-  type AvailabilityMovementType,
-} from '@/shared/supabase/services/availability.service';
+  getMovementLedgerReport,
+  type MovementLedgerReportRow,
+  type MovementLedgerSource,
+} from '@/features/reports/movement-ledger-report.service';
+import { getDispenseContext, type DispenseContext } from '@/features/outlet/dispense-context.service';
+import {
+  MOVEMENT_TYPE_LABEL_KEY, reasonCodeLabel, movementTypeLabel, ledgerSourceLabel,
+} from '@/shared/lib/movement-labels';
+import { DispenseContextViewer } from '@/features/outlet/DispenseContextViewer';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 
 /**
- * AVAILABILITY-MOVEMENT-REPORTS-PRINT-A
+ * MOVEMENT-LEDGER-REPORT-138
  *
- * Read-only, filterable "Quantity Movement Report" section for Status Center.
- * Loads via getAvailabilityMovementsReport — a plain PostgREST SELECT against
- * item_availability_movements (migration 033). This component NEVER writes:
- * no supabase.rpc, no insert/update/delete. Visibility of the whole section
- * and of the Export CSV / Print actions is UX-only — avail_mvmt_select_perm
- * RLS independently re-enforces org scope + availability.movements.view on
- * every read regardless of what is shown here.
+ * Read-only, filterable "Quantity Movement Report" section for Status Center
+ * (and embedded verbatim by the Decision Intelligence Reporting Center's
+ * Stock Movements tab — this is the ONE shared implementation, not a
+ * duplicate). Loads via getMovementLedgerReport(), which calls the canonical
+ * phoenix_movement_ledger_report RPC over the three live Unified Movements
+ * ledgers. This component NEVER writes: no insert/update/delete anywhere in
+ * this file. Visibility of the whole section and of the Export CSV / Print
+ * actions is UX-only — the RPC independently re-enforces org scope +
+ * status_center.view on every read regardless of what is shown here.
+ *
+ * Supersedes the legacy getAvailabilityMovementsReport() path
+ * (item_availability_movements, migration 033) — that table's sole writer
+ * has zero production call sites (see
+ * src/features/inventory/__tests__/legacy-availability-writer-audit.test.ts),
+ * so nothing regresses by moving off it.
  */
-
-const MOVEMENT_TYPE_OPTIONS: { value: AvailabilityMovementType; labelKey: string }[] = [
-  { value: 'set_exact',  labelKey: 'mvmt_set_exact' },
-  { value: 'add',        labelKey: 'mvmt_add' },
-  { value: 'subtract',   labelKey: 'mvmt_subtract' },
-  { value: 'correction', labelKey: 'mvmt_correction' },
-];
-
-const MOVEMENT_TYPE_LABEL_KEY: Record<AvailabilityMovementType, string> = {
-  set_exact: 'mvmt_set_exact',
-  add: 'mvmt_add',
-  subtract: 'mvmt_subtract',
-  correction: 'mvmt_correction',
-};
 
 // BUGFIX-REPORTS-DATES-PORT-CLEAR-A: columns whose values are digit/slash
 // text (dates, quantities) — must render dir="ltr" in RTL layout (on-screen
@@ -49,10 +49,7 @@ const MOVEMENT_TYPE_LABEL_KEY: Record<AvailabilityMovementType, string> = {
 // reorder the separated groups.
 const LTR_COLUMN_KEYS = new Set(['datetime', 'before', 'delta', 'after']);
 
-function formatDelta(type: AvailabilityMovementType, delta: number): string {
-  if (type === 'add') return `+${Math.abs(delta)}`;
-  if (type === 'subtract') return `-${Math.abs(delta)}`;
-  // set_exact / correction: display the stored signed delta as-is, never recomputed.
+function formatDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : String(delta);
 }
 
@@ -95,20 +92,24 @@ const td = { padding: '7px 8px', fontSize: '11.5px', borderBottom: '1px solid va
 export function MovementReportSection() {
   const { lang, activeOrgId, myPermissions } = useApp();
 
-  const canViewReport = myPermissions.has('availability.movements.view');
+  const canViewReport = myPermissions.has('status_center.view');
   const canExportCsv  = myPermissions.has('availability.movements.export');
   const canPrint      = myPermissions.has('availability.movements.print');
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [movementType, setMovementType] = useState<AvailabilityMovementType | ''>('');
-  const [pointId, setPointId] = useState('');
+  const [ledgerSource, setLedgerSource] = useState<MovementLedgerSource | ''>('');
+  const [movementType, setMovementType] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [materialSearch, setMaterialSearch] = useState('');
   const [actorSearch, setActorSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling window.open/window.print directly.
   const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
+  const [drillDownMovementId, setDrillDownMovementId] = useState<string | null>(null);
+  const [drillDownContext, setDrillDownContext] = useState<DispenseContext | null>(null);
+  const [drillDownError, setDrillDownError] = useState<string | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -119,24 +120,37 @@ export function MovementReportSection() {
     () => (canViewReport && activeOrgId) ? getPointsByOrg(activeOrgId) : Promise.resolve([]),
     [canViewReport, activeOrgId],
   );
+  const warehouses = useAsync(
+    () => (canViewReport && activeOrgId) ? getWarehouses(activeOrgId) : Promise.resolve([]),
+    [canViewReport, activeOrgId],
+  );
 
-  const report = useAsync<AvailabilityMovementReportRecord[]>(
+  const locationOptions = useMemo(() => {
+    const wh = (warehouses.data ?? []).map(w => ({ id: w.id, name: w.name, name_ar: w.name_ar, kind: 'warehouse' as const }));
+    const dp = (points.data ?? []).map(p => ({ id: p.id, name: p.name, name_ar: p.name_ar, kind: 'outlet' as const }));
+    if (ledgerSource === 'warehouse' || ledgerSource === 'quarantine') return wh;
+    if (ledgerSource === 'outlet') return dp;
+    return [...wh, ...dp];
+  }, [warehouses.data, points.data, ledgerSource]);
+
+  const report = useAsync(
     () => (canViewReport && activeOrgId)
-      ? getAvailabilityMovementsReport({
+      ? getMovementLedgerReport({
           organizationId: activeOrgId,
-          dateFrom: dateFrom || undefined,
-          dateTo: dateTo || undefined,
+          from: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
+          to: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined,
+          ledgerSource: ledgerSource || undefined,
           movementType: movementType || undefined,
-          distributionPointId: pointId || undefined,
+          locationId: locationId || undefined,
           materialSearch: materialSearch || undefined,
           actorSearch: actorSearch || undefined,
           limit: 200,
         })
-      : Promise.resolve([]),
-    [canViewReport, activeOrgId, dateFrom, dateTo, movementType, pointId, materialSearch, actorSearch],
+      : Promise.resolve({ rows: [], totalCount: 0 }),
+    [canViewReport, activeOrgId, dateFrom, dateTo, ledgerSource, movementType, locationId, materialSearch, actorSearch],
   );
 
-  const rows = report.data ?? [];
+  const rows = report.data?.rows ?? [];
   // R03-FIX: disabled only while there's nothing loaded yet or the load
   // failed — NOT while rows is legitimately empty after a successful load.
   const reportActionsDisabled = report.loading || !!report.error;
@@ -144,36 +158,47 @@ export function MovementReportSection() {
   const summary = useMemo(() => {
     let totalAdd = 0, totalSubtract = 0, totalCorrection = 0, netDelta = 0;
     for (const m of rows) {
-      if (m.movementType === 'add') totalAdd++;
-      else if (m.movementType === 'subtract') totalSubtract++;
-      else if (m.movementType === 'correction') totalCorrection++;
+      if (m.quantityDelta > 0) totalAdd++;
+      else if (m.quantityDelta < 0) totalSubtract++;
+      if (m.movementType === 'correction' || m.movementType === 'quarantine_correction') totalCorrection++;
       netDelta += m.quantityDelta;
     }
     return { total: rows.length, totalAdd, totalSubtract, totalCorrection, netDelta };
   }, [rows]);
 
-  const dpLabel = (r: AvailabilityMovementReportRecord) =>
-    lang === 'ar' ? (r.distributionPointNameAr || r.distributionPointName || '—') : (r.distributionPointName || r.distributionPointNameAr || '—');
+  const locationLabel = (r: MovementLedgerReportRow) =>
+    lang === 'ar' ? (r.locationNameAr || r.locationName || '—') : (r.locationName || r.locationNameAr || '—');
 
-  const actorLabel = (r: AvailabilityMovementReportRecord) =>
-    (r.actorNameSnapshot || r.actorEmailSnapshot || '—') + (r.actorRoleSnapshot ? ` (${r.actorRoleSnapshot})` : '');
+  const actorLabel = (r: MovementLedgerReportRow) =>
+    (r.actorName || '—') + (r.actorRole ? ` (${r.actorRole})` : '');
+
+  const reasonLabel = (r: MovementLedgerReportRow) => reasonCodeLabel(r.reasonCode, lang);
+  const typeLabel = (r: MovementLedgerReportRow) => movementTypeLabel(r.movementType, lang);
+  const ledgerLabel = (r: MovementLedgerReportRow) => ledgerSourceLabel(r.ledgerSource, lang);
 
   // Shared column definitions for table / print / CSV — mirrors the pattern
-  // already used by StatusCenterScreen's live availability report.
-  const columns: { key: string; label: string; value: (r: AvailabilityMovementReportRecord) => string }[] = [
-    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => formatStableDateTime(r.createdAt, lang) },
-    { key: 'point',    label: t('sc_lm_port', lang),        value: dpLabel },
+  // already used by StatusCenterScreen's live availability report. The
+  // dispense-context column is TEXT-ONLY here (Recorded/—) so CSV/print stay
+  // in exact parity with the live table; the clickable "View" affordance is
+  // rendered separately, only in the on-screen table.
+  const columns: { key: string; label: string; value: (r: MovementLedgerReportRow) => string }[] = [
+    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => formatStableDateTime(r.occurredAt, lang) },
+    { key: 'ledger',   label: t('mvmt_col_ledger_source', lang), value: ledgerLabel },
+    { key: 'location', label: t('mvmt_col_location', lang), value: locationLabel },
     { key: 'sci',      label: t('avail_scientific_name', lang), value: r => r.scientificName || '—' },
-    { key: 'trade',    label: t('avail_trade_name', lang), value: r => r.tradeName || '—' },
     { key: 'conc',     label: t('avail_concentration', lang), value: r => r.concentration || '—' },
     { key: 'dosage',   label: t('avail_dosage_form', lang), value: r => r.dosageForm || '—' },
-    { key: 'type',     label: t('mvmt_col_type', lang),     value: r => t(MOVEMENT_TYPE_LABEL_KEY[r.movementType], lang) },
+    { key: 'batch',    label: t('mv_f_batch_number', lang), value: r => r.batchNumber || '—' },
+    { key: 'type',     label: t('mvmt_col_type', lang),     value: typeLabel },
+    { key: 'reason',   label: t('mvmt_col_reason_code', lang), value: reasonLabel },
     { key: 'before',   label: t('mvmt_col_before', lang),   value: r => String(r.quantityBefore) },
-    { key: 'delta',    label: t('mvmt_col_delta', lang),    value: r => formatDelta(r.movementType, r.quantityDelta) },
+    { key: 'delta',    label: t('mvmt_col_delta', lang),    value: r => formatDelta(r.quantityDelta) },
     { key: 'after',    label: t('mvmt_col_after', lang),    value: r => String(r.quantityAfter) },
     { key: 'actor',    label: t('mvmt_col_actor', lang),    value: actorLabel },
-    { key: 'reason',   label: t('mvmt_col_reason', lang),   value: r => r.reason || '—' },
-    { key: 'notes',    label: t('mvmt_col_notes', lang),    value: r => r.notes || '—' },
+    { key: 'doc',      label: t('mvmt_col_document_ref', lang), value: r => r.sourceDocumentNumber || '—' },
+    { key: 'correlation', label: t('mvmt_col_correlation', lang), value: r => r.correlationId || '—' },
+    { key: 'causation',   label: t('mvmt_col_causation', lang),   value: r => r.causationId || '—' },
+    { key: 'dispense',  label: t('mvmt_col_dispense_context', lang), value: r => r.hasDispenseContext ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
   ];
 
   const generatedAt = () => formatStableDateTime(new Date(), lang);
@@ -182,15 +207,16 @@ export function MovementReportSection() {
     const parts: string[] = [];
     if (dateFrom) parts.push(`${t('mvmt_report_date_from', lang)}: ${dateFrom}`);
     if (dateTo) parts.push(`${t('mvmt_report_date_to', lang)}: ${dateTo}`);
-    if (movementType) parts.push(`${t('mvmt_type_label', lang)}: ${t(MOVEMENT_TYPE_LABEL_KEY[movementType], lang)}`);
-    if (pointId) {
-      const p = (points.data ?? []).find(x => x.id === pointId);
-      if (p) parts.push(`${t('sc_lm_port', lang)}: ${lang === 'ar' ? p.name_ar : p.name}`);
+    if (ledgerSource) parts.push(`${t('mvmt_col_ledger_source', lang)}: ${ledgerSourceLabel(ledgerSource, lang)}`);
+    if (movementType) parts.push(`${t('mvmt_type_label', lang)}: ${movementTypeLabel(movementType, lang)}`);
+    if (locationId) {
+      const p = locationOptions.find(x => x.id === locationId);
+      if (p) parts.push(`${t('mvmt_col_location', lang)}: ${lang === 'ar' ? p.name_ar : p.name}`);
     }
     if (materialSearch.trim()) parts.push(`${t('avail_scientific_name', lang)}: ${materialSearch.trim()}`);
     if (actorSearch.trim()) parts.push(`${t('mvmt_col_actor', lang)}: ${actorSearch.trim()}`);
     return parts.length ? parts.join(' · ') : t('sc_all', lang);
-  }, [dateFrom, dateTo, movementType, pointId, materialSearch, actorSearch, points.data, lang]);
+  }, [dateFrom, dateTo, ledgerSource, movementType, locationId, materialSearch, actorSearch, locationOptions, lang]);
 
   function buildReportHtml(): string {
     const dir = lang === 'ar' ? 'rtl' : 'ltr';
@@ -277,6 +303,15 @@ export function MovementReportSection() {
     }
   }
 
+  useEffect(() => {
+    if (!drillDownMovementId) { setDrillDownContext(null); setDrillDownError(null); return; }
+    let cancelled = false;
+    getDispenseContext(drillDownMovementId)
+      .then(ctx => { if (!cancelled) setDrillDownContext(ctx); })
+      .catch(e => { if (!cancelled) setDrillDownError((e as Error)?.message ?? 'load_error'); });
+    return () => { cancelled = true; };
+  }, [drillDownMovementId]);
+
   if (!canViewReport) return null;
 
   return (
@@ -316,17 +351,26 @@ export function MovementReportSection() {
               <input id="mr-date-to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={fieldStyle} />
             </div>
             <div>
-              <label htmlFor="mr-type" style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>{t('mvmt_type_label', lang)}</label>
-              <select id="mr-type" value={movementType} onChange={e => setMovementType(e.target.value as AvailabilityMovementType | '')} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer', minWidth: '140px' }}>
-                <option value="">{t('mvmt_report_all_types', lang)}</option>
-                {MOVEMENT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(o.labelKey, lang)}</option>)}
+              <label htmlFor="mr-ledger" style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>{t('mvmt_col_ledger_source', lang)}</label>
+              <select id="mr-ledger" value={ledgerSource} onChange={e => { setLedgerSource(e.target.value as MovementLedgerSource | ''); setLocationId(''); }} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer', minWidth: '140px' }}>
+                <option value="">{t('mvmt_ledger_all', lang)}</option>
+                <option value="warehouse">{t('mvmt_ledger_warehouse', lang)}</option>
+                <option value="outlet">{t('mvmt_ledger_outlet', lang)}</option>
+                <option value="quarantine">{t('mvmt_ledger_quarantine', lang)}</option>
               </select>
             </div>
             <div>
-              <label htmlFor="mr-point" style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>{t('sc_lm_port', lang)}</label>
-              <select id="mr-point" value={pointId} onChange={e => setPointId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer', minWidth: '140px' }}>
-                <option value="">{t('se_all_ports', lang)}</option>
-                {(points.data ?? []).map(p => <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name}</option>)}
+              <label htmlFor="mr-type" style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>{t('mvmt_type_label', lang)}</label>
+              <select id="mr-type" value={movementType} onChange={e => setMovementType(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer', minWidth: '140px' }}>
+                <option value="">{t('mvmt_report_all_types', lang)}</option>
+                {Object.entries(MOVEMENT_TYPE_LABEL_KEY).map(([value, labelKey]) => <option key={value} value={value}>{t(labelKey, lang)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="mr-location" style={{ display: 'block', fontSize: '10.5px', color: 'var(--t2)', marginBottom: '4px' }}>{t('mvmt_col_location', lang)}</label>
+              <select id="mr-location" value={locationId} onChange={e => setLocationId(e.target.value)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer', minWidth: '140px' }}>
+                <option value="">{t('mvmt_report_all_locations', lang)}</option>
+                {locationOptions.map(p => <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name}</option>)}
               </select>
             </div>
             <div style={{ flex: 1, minWidth: '150px' }}>
@@ -373,8 +417,26 @@ export function MovementReportSection() {
                 </thead>
                 <tbody>
                   {rows.map(r => (
-                    <tr key={r.id}>
-                      {columns.map(c => <td key={c.key} style={td} dir={LTR_COLUMN_KEYS.has(c.key) ? 'ltr' : 'auto'}>{c.value(r)}</td>)}
+                    <tr key={r.movementId}>
+                      {columns.map(c => (
+                        c.key === 'dispense' ? (
+                          <td key={c.key} style={td}>
+                            {r.hasDispenseContext ? (
+                              <button
+                                onClick={() => setDrillDownMovementId(r.movementId)}
+                                style={{ ...btnStyle, padding: '4px 8px', minHeight: 'unset', fontSize: '10.5px' }}
+                                aria-label={t('mvmt_dispense_context_view', lang)}
+                              >
+                                {t('mvmt_dispense_context_yes', lang)} · {t('mvmt_dispense_context_view', lang)}
+                              </button>
+                            ) : (
+                              <span dir="auto">{t('mvmt_dispense_context_no', lang)}</span>
+                            )}
+                          </td>
+                        ) : (
+                          <td key={c.key} style={td} dir={LTR_COLUMN_KEYS.has(c.key) ? 'ltr' : 'auto'}>{c.value(r)}</td>
+                        )
+                      ))}
                     </tr>
                   ))}
                 </tbody>
@@ -392,6 +454,15 @@ export function MovementReportSection() {
         lang={lang}
         onClose={() => setMobilePrintHtml(null)}
       />
+      <PhoenixDialog
+        open={drillDownMovementId !== null}
+        onClose={() => setDrillDownMovementId(null)}
+        title={t('mvmt_col_dispense_context', lang)}
+      >
+        {drillDownError && <PhoenixErrorState title={t('load_error', lang)} message={drillDownError} />}
+        {!drillDownError && !drillDownContext && <PhoenixLoadingState label={t('loading', lang)} />}
+        {!drillDownError && drillDownContext && <DispenseContextViewer context={drillDownContext} lang={lang} />}
+      </PhoenixDialog>
     </PhoenixCard>
   );
 }

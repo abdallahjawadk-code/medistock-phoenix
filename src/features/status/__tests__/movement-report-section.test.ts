@@ -24,8 +24,9 @@ const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 const sectionPath  = join(SRC, 'features/status/MovementReportSection.tsx');
 const section      = readFileSync(sectionPath, 'utf8');
 const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
-const service      = readSrc('shared/supabase/services/availability.service.ts');
+const service      = readSrc('features/reports/movement-ledger-report.service.ts');
 const strings      = readSrc('shared/i18n/strings.ts');
+const labels       = readSrc('shared/lib/movement-labels.ts');
 const historyModal  = readSrc('features/status/MovementHistoryModal.tsx');
 
 // ============================================================================
@@ -39,8 +40,8 @@ describe('Quantity Movement Report: permission gating', () => {
     expect(statusCenter).toContain('<MovementReportSection');
   });
 
-  it('the whole section is gated on availability.movements.view', () => {
-    expect(section).toContain("myPermissions.has('availability.movements.view')");
+  it('the whole section is gated on status_center.view (MOVEMENT-LEDGER-REPORT-138)', () => {
+    expect(section).toContain("myPermissions.has('status_center.view')");
     expect(section).toMatch(/if \(!canViewReport\) return null;/);
   });
 
@@ -59,75 +60,52 @@ describe('Quantity Movement Report: permission gating', () => {
 // 2. Service query
 // ============================================================================
 
-describe('getAvailabilityMovementsReport: read-only, filterable service query', () => {
-  const fnStart = service.indexOf('export async function getAvailabilityMovementsReport');
-  const fnBody = service.slice(fnStart, service.indexOf('\nexport async function getLowStockItems'));
+describe('getMovementLedgerReport: canonical, paginated RPC-backed service query (migration 138)', () => {
+  const fnStart = service.indexOf('export async function getMovementLedgerReport');
+  const fnBody = service.slice(fnStart);
 
-  it('exists and queries item_availability_movements via SELECT', () => {
+  it('exists and calls the canonical phoenix_movement_ledger_report RPC', () => {
     expect(fnStart).toBeGreaterThan(-1);
-    expect(fnBody).toMatch(/\.from\('item_availability_movements'\)/);
+    expect(fnBody).toContain("supabase.rpc('phoenix_movement_ledger_report'");
   });
 
-  it('scopes by organization_id', () => {
-    expect(fnBody).toContain(".eq('organization_id', filters.organizationId)");
+  it('passes organization_id, date range, ledger source, movement type, location and search filters', () => {
+    expect(fnBody).toContain('p_organization_id: filters.organizationId');
+    expect(fnBody).toContain('p_from: filters.from');
+    expect(fnBody).toContain('p_to: filters.to');
+    expect(fnBody).toContain('p_ledger_source: filters.ledgerSource');
+    expect(fnBody).toContain('p_movement_type: filters.movementType');
+    expect(fnBody).toContain('p_location_id: filters.locationId');
+    expect(fnBody).toContain('p_material_search:');
+    expect(fnBody).toContain('p_actor_search:');
   });
 
-  it('filters by date range (gte/lte on created_at)', () => {
-    expect(fnBody).toMatch(/\.gte\('created_at',/);
-    expect(fnBody).toMatch(/\.lte\('created_at',/);
+  it('passes pagination (limit/offset), defaulting limit to 50 — server clamps to 200', () => {
+    expect(fnBody).toContain('p_limit: filters.limit ?? 50');
+    expect(fnBody).toContain('p_offset: filters.offset ?? 0');
   });
 
-  it('filters by movement_type', () => {
-    expect(fnBody).toMatch(/\.eq\('movement_type', filters\.movementType\)/);
+  it('returns typed camelCase rows plus an honest totalCount (not just the page size)', () => {
+    expect(service).toContain('export interface MovementLedgerReportRow');
+    expect(service).toContain('export interface MovementLedgerReportResult');
+    expect(service).toContain('rows: MovementLedgerReportRow[]');
+    expect(service).toContain('totalCount: number');
+    expect(fnBody).toContain('hasDispenseContext: r.has_dispense_context');
   });
 
-  it('filters by distribution_point_id when provided', () => {
-    expect(fnBody).toMatch(/\.eq\('distribution_point_id', filters\.distributionPointId\)/);
-  });
-
-  it('supports material search across scientific_name/trade_name/concentration/dosage_form', () => {
-    expect(fnBody).toMatch(/scientific_name\.ilike/);
-    expect(fnBody).toMatch(/trade_name\.ilike/);
-    expect(fnBody).toMatch(/concentration\.ilike/);
-    expect(fnBody).toMatch(/dosage_form\.ilike/);
-  });
-
-  it('supports actor search across actor_name_snapshot/actor_email_snapshot', () => {
-    expect(fnBody).toMatch(/actor_name_snapshot\.ilike/);
-    expect(fnBody).toMatch(/actor_email_snapshot\.ilike/);
-  });
-
-  it('orders by created_at descending', () => {
-    expect(fnBody).toMatch(/\.order\('created_at',\s*\{\s*ascending:\s*false\s*\}\)/);
-  });
-
-  it('applies a limit, defaulting to 200', () => {
-    expect(fnBody).toMatch(/\.limit\(filters\.limit \?\? 200\)/);
-  });
-
-  it('returns typed camelCase records extending AvailabilityMovementRecord', () => {
-    expect(service).toContain('export interface AvailabilityMovementReportRecord extends AvailabilityMovementRecord');
-    expect(service).toContain('scientificName:');
-    expect(service).toContain('tradeName:');
-    expect(service).toContain('distributionPointId:');
-    expect(service).toContain('distributionPointName:');
-  });
-
-  it('is a plain SELECT — no RPC call, no write', () => {
-    expect(fnBody).not.toContain('.rpc(');
-    expect(fnBody).not.toMatch(/\.insert\(/);
-    expect(fnBody).not.toMatch(/\.update\(/);
-    expect(fnBody).not.toMatch(/\.delete\(/);
+  it('never fetches dispense-beneficiary detail itself — only a hasDispenseContext flag', () => {
+    expect(service).not.toMatch(/patient_identifier|patient_name|crash_cart_reference|internal_order_reference/);
+    expect(service).not.toContain('phoenix_get_movement_dispense_context');
   });
 
   it('does not use service_role or auth.admin', () => {
-    expect(fnBody).not.toContain('service_role');
-    expect(fnBody).not.toMatch(/auth\.admin/);
+    expect(service).not.toContain('service_role');
+    expect(service).not.toMatch(/auth\.admin/);
   });
 
-  it('short-circuits to [] when Supabase is not configured', () => {
+  it('short-circuits to an empty result when Supabase is not configured', () => {
     const head = service.slice(fnStart, fnStart + 400);
-    expect(head).toContain('if (!supabaseConfigured) return [];');
+    expect(head).toContain("if (!supabaseConfigured) return { rows: [], totalCount: 0 };");
   });
 });
 
@@ -143,19 +121,49 @@ describe('MovementReportSection: title, filters, summary, table, states', () => 
     expect(line).toContain('تقرير حركات الكمية');
   });
 
-  it('renders date range, movement type, distribution point, material and actor filters', () => {
+  it('renders date range, ledger source, movement type, location, material and actor filters', () => {
     expect(section).toContain('mr-date-from');
     expect(section).toContain('mr-date-to');
+    expect(section).toContain('mr-ledger');
     expect(section).toContain('mr-type');
-    expect(section).toContain('mr-point');
+    expect(section).toContain('mr-location');
     expect(section).toContain('mr-material');
     expect(section).toContain('mr-actor');
   });
 
-  it('movement type filter offers all 4 types plus an "all" option', () => {
-    expect(section).toContain('MOVEMENT_TYPE_OPTIONS');
-    ['set_exact', 'add', 'subtract', 'correction'].forEach(v => expect(section).toContain(`value: '${v}'`));
+  it('ledger source filter offers warehouse/outlet/quarantine plus an "all" option', () => {
+    expect(section).toContain("<option value=\"warehouse\">");
+    expect(section).toContain("<option value=\"outlet\">");
+    expect(section).toContain("<option value=\"quarantine\">");
+    expect(section).toContain('mvmt_ledger_all');
+  });
+
+  it('movement type filter offers the full union of warehouse/outlet/quarantine types plus an "all" option', () => {
+    // MOVEMENT-LABELS: the closed vocabularies live in ONE shared module now
+    // (src/shared/lib/movement-labels.ts), reused by both this section and the
+    // Custody Chain trace — the section imports the map rather than keeping a
+    // second copy of it.
+    expect(section).toContain('MOVEMENT_TYPE_LABEL_KEY');
+    expect(section).toContain("from '@/shared/lib/movement-labels'");
+    ['set_exact', 'add', 'subtract', 'correction', 'dispense', 'quarantine_receive']
+      .forEach(v => expect(labels).toContain(`${v}:`));
     expect(section).toContain('mvmt_report_all_types');
+  });
+
+  it('the reason-code / movement-type / ledger-source vocabularies are NOT duplicated in the section', () => {
+    // A second local copy of any of these maps is exactly the duplication the
+    // reporting-closure parity matrix exists to prevent.
+    expect(section).not.toMatch(/const\s+REASON_CODE_LABEL_KEY\s*[:=]/);
+    expect(section).not.toMatch(/const\s+LEDGER_SOURCE_LABEL_KEY\s*[:=]/);
+    expect(section).not.toMatch(/const\s+MOVEMENT_TYPE_LABEL_KEY\s*[:=]/);
+  });
+
+  it('the shared label helpers never leak an i18n key for an unknown code', () => {
+    // t() returns the KEY for a missing entry, so the helpers must check
+    // membership explicitly and fall back to the raw stored code.
+    expect(labels).toContain('return key ? t(key, lang) : code;');
+    expect(labels).toContain('return key ? t(key, lang) : type;');
+    expect(labels).toContain('return key ? t(key, lang) : source;');
   });
 
   it('renders 5 summary cards: total, additions, subtractions, corrections, net delta', () => {
@@ -166,33 +174,38 @@ describe('MovementReportSection: title, filters, summary, table, states', () => 
     expect(section).toContain('mvmt_report_summary_net');
   });
 
-  it('summary counts are derived from the loaded rows, not recomputed from before/after', () => {
-    const summaryBlock = section.slice(section.indexOf('const summary = useMemo'), section.indexOf('const dpLabel'));
-    expect(summaryBlock).toContain("m.movementType === 'add'");
-    expect(summaryBlock).toContain("m.movementType === 'subtract'");
-    expect(summaryBlock).toContain("m.movementType === 'correction'");
+  it('summary counts are derived from the loaded rows quantityDelta sign, not recomputed from before/after', () => {
+    const summaryBlock = section.slice(section.indexOf('const summary = useMemo'), section.indexOf('const locationLabel'));
+    expect(summaryBlock).toContain('m.quantityDelta > 0) totalAdd++');
+    expect(summaryBlock).toContain('m.quantityDelta < 0) totalSubtract++');
+    expect(summaryBlock).toMatch(/m\.movementType === 'correction'/);
     expect(summaryBlock).toContain('netDelta += m.quantityDelta');
     expect(summaryBlock).not.toMatch(/quantityAfter\s*-\s*quantityBefore/);
   });
 
-  it('table includes all required columns', () => {
-    const REQUIRED = ['datetime', 'point', 'sci', 'trade', 'conc', 'dosage', 'type', 'before', 'delta', 'after', 'actor', 'reason', 'notes'];
+  it('table includes all required canonical-contract columns', () => {
+    const REQUIRED = ['datetime', 'ledger', 'location', 'sci', 'conc', 'dosage', 'batch', 'type', 'reason', 'before', 'delta', 'after', 'actor', 'doc', 'correlation', 'causation', 'dispense'];
     REQUIRED.forEach(key => expect(section).toContain(`key: '${key}'`));
   });
 
-  it('delta display: add is +N, subtract is -N, others use the stored signed delta', () => {
+  it('surfaces correlation_id and causation_id — fetched by the service but previously never rendered', () => {
+    expect(section).toContain("r.correlationId || '—'");
+    expect(section).toContain("r.causationId || '—'");
+  });
+
+  it('delta display uses the stored signed quantityDelta as-is', () => {
     const fnBody = section.slice(section.indexOf('function formatDelta'), section.indexOf('function escHtml'));
-    expect(fnBody).toMatch(/type === 'add'[\s\S]*?`\+\$\{/);
-    expect(fnBody).toMatch(/type === 'subtract'[\s\S]*?`-\$\{/);
+    expect(fnBody).toMatch(/delta > 0 \? `\+\$\{delta\}` : String\(delta\)/);
     expect(fnBody).not.toMatch(/quantityAfter\s*-\s*quantityBefore/);
   });
 
-  it('displays actor, reason, and notes columns', () => {
+  it('displays actor, reason code, document reference, and dispense-context columns', () => {
     expect(section).toContain('const actorLabel');
-    expect(section).toContain('r.actorNameSnapshot');
-    expect(section).toContain('r.actorRoleSnapshot');
-    expect(section).toContain('r.reason ||');
-    expect(section).toContain('r.notes ||');
+    expect(section).toContain('r.actorName');
+    expect(section).toContain('r.actorRole');
+    expect(section).toContain('const reasonLabel');
+    expect(section).toContain('r.sourceDocumentNumber ||');
+    expect(section).toContain('r.hasDispenseContext');
   });
 
   it('handles loading state', () => {

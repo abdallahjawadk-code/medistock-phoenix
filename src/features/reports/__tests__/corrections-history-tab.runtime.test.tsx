@@ -28,12 +28,14 @@ const OUTLET_ROW: CorrectionHistoryRow = {
   batchNumber: 'B1', onHandBefore: 30, afterOrProposed: 27, variance: -3,
   reason: 'stocktake shortfall', decisionReason: null, proposedByName: 'Officer A',
   proposedAt: '2026-07-20T00:00:00Z', decidedAt: null,
+  appliedMovementId: null, // no movement posted while pending
 };
 const WAREHOUSE_ROW: CorrectionHistoryRow = {
   id: 'c2', scope: 'warehouse', status: 'approved', scientificName: 'Amoxicillin',
   batchNumber: 'B2', onHandBefore: 100, afterOrProposed: 95, variance: -5,
   reason: 'damaged units', decisionReason: 'confirmed', proposedByName: 'Officer B',
   proposedAt: '2026-07-19T00:00:00Z', decidedAt: '2026-07-19T12:00:00Z',
+  appliedMovementId: 'a1b2c3d4-0000-0000-0000-000000000001',
 };
 
 const noop = () => {};
@@ -67,6 +69,19 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
       expect(screen.queryByTestId('corrections-history-tab')).not.toBeInTheDocument();
     });
     expect(getPaperReferencesFor).toHaveBeenCalledWith('stock_correction_request', []);
+  });
+
+  it('shows the linked movement id (truncated, full value on hover) for an approved correction, and a dash while pending', async () => {
+    listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
+
+    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+
+    await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
+    const linked = screen.getByTitle(WAREHOUSE_ROW.appliedMovementId!);
+    expect(linked).toHaveTextContent(WAREHOUSE_ROW.appliedMovementId!.slice(0, 8));
+    // The pending row's cell has no appliedMovementId, so no title-bearing
+    // cell exists for it — only one such cell should be present.
+    expect(screen.getAllByTitle(WAREHOUSE_ROW.appliedMovementId!)).toHaveLength(1);
   });
 
   it('only fetches paper references for outlet-scope rows, never warehouse-scope (110 does not cover warehouse corrections)', async () => {

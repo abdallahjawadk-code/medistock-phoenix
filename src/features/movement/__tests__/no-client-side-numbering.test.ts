@@ -358,7 +358,40 @@ describe('no client-side document-number sequence exists', () => {
     // ever resolving an outlet_officer's own scoped outlet. No new table,
     // no sequence, no document/official number of any kind. Ceiling moves
     // to 138.
-    const beyond = migrations.filter(f => /^(13[8-9]|1[4-9]\d|[2-9]\d\d)_/.test(f));
+    // 138 (MOVEMENT-LEDGER-REPORT-138) adds NO document numbering either --
+    // it is a read-only, paginated SELECT-shaped RPC over the three existing
+    // ledgers plus a location-name join. No table, sequence, or allocator of
+    // any kind. Ceiling moves to 139.
+    // 139 (MOVEMENT-TIMELINE-CONTRACT-FIELDS-139) adds NO document numbering
+    // either -- it only widens an existing read-only RPC's emitted JSON with
+    // contract fields the ledgers already store. No table, sequence, or
+    // allocator. Ceiling moves to 140.
+    // 140 (PHOENIX-DEMO-DATASET-MANIFEST-140) adds NO document numbering --
+    // an ownership manifest keyed by (dataset_key, table_name, row_id uuid)
+    // plus register/summary/purge RPCs. No sequence, no document string.
+    // Ceiling moves to 141.
+    // 141 (PHOENIX-DEMO-IMMUTABLE-EXEMPTION-141) adds NO document numbering --
+    // a write-once demo marker column, a NOLOGIN owner role, a reviewed FK
+    // preflight and a scoped delete exemption. No sequence, no allocator.
+    // Ceiling moves to 142.
+    // 142 (PHOENIX-DEMO-PROFILE-DETACH-142) adds NO document numbering --
+    // a write-once profile marker and a detach routine. Ceiling -> 143.
+    // 143 (PHOENIX-DEMO-PURGE-RESTRICT-VIOLATION-AND-ORDERING-143) adds NO
+    // document numbering -- it broadens phoenix_demo_purge's exception
+    // handling (foreign_key_violation OR restrict_violation, two SQLSTATEs
+    // Postgres raises for a blocked RESTRICT-FK delete) and reorders
+    // phoenix_demo_purgeable_tables() so every child precedes a RESTRICT-FK
+    // parent it references. No sequence, no allocator, no document string.
+    // Ceiling -> 144.
+    // 144 (PHOENIX-DEMO-AVAILABILITY-PURGE-EXEMPTION-144) adds NO document
+    // numbering -- one narrow, additive DELETE exemption on
+    // trg_guard_availability_source_kind (065) for the demo purger's
+    // existing ownership boundary. No sequence, no allocator. Ceiling -> 145.
+    // 145 (PHOENIX-DEMO-ORGANIZATION-WATERMARK-145) adds NO document
+    // numbering -- one read-only boolean RPC (is this organization id
+    // registered in the demo manifest?) for frontend watermarking. No
+    // sequence, no allocator, no document string. Ceiling -> 146.
+    const beyond = migrations.filter(f => /^(14[6-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY

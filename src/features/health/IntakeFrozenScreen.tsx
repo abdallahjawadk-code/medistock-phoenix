@@ -13,7 +13,7 @@ const BLOCKED: { icon: PhoenixIconName; label: string }[] = [
 
 interface Props { onNavigate: (screen: number) => void; }
 
-export function IntakeFrozenScreen({ onNavigate }: Props) {
+export function IntakeFrozenScreen({ onNavigate: _onNavigate }: Props) {
   const { lang } = useApp();
 
   return (
