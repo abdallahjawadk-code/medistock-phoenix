@@ -39,9 +39,9 @@ describe('1. App screen map / routes unchanged', () => {
     }
   });
 
-  it('initial screen and post-logout screen are the unified reporting/status shell (21) — REPORTING-UNIFICATION retired Status Center (12) as a distinct landing screen', () => {
-    expect(authenticatedApp).toContain('useState(21)');
-    expect(authenticatedApp).toContain('setScreen(21)');
+  it('derives a role-safe landing and clears profile navigation on logout', () => {
+    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
+    expect(authenticatedApp).toContain('setNavigation(null)');
   });
 
   it('unknown/default screens redirect to the unified reporting/status shell', () => {
