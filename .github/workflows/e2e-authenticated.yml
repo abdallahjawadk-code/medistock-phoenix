@@ -68,6 +68,27 @@ jobs:
         # end, so moving the file out here has zero effect on the repository.
         run: mkdir -p /tmp/prepared-only-skip && mv supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql /tmp/prepared-only-skip/
 
+      - name: "DIAGNOSTIC ONLY (temporary): exclude 141-145 from auto-replay to isolate 141"
+        # --debug on the full `supabase start` sequence produced no usable
+        # evidence: GitHub's log-streaming pipeline stalled on the debug
+        # trace's volume before ever reaching migration 141, and the job was
+        # killed by its own 30-minute timeout instead of surfacing a real
+        # error. This isolates 141 instead of tracing everything: `supabase
+        # start` (below) applies 001-140 normally and stops there. 142-145
+        # depend on objects 141 creates, so they're excluded alongside it to
+        # avoid an unrelated missing-object error. A later, separate step
+        # applies 141 alone via raw psql, so whatever error Postgres actually
+        # returns is visible directly, without --debug's volume problem. This
+        # whole step (and the matching psql-apply step below) is reverted
+        # once the real cause is fixed and the full replay is restored.
+        run: |
+          mkdir -p /tmp/diagnostic-141-skip
+          mv supabase/migrations/141_phoenix_demo_immutable_exemption.sql /tmp/diagnostic-141-skip/
+          mv supabase/migrations/142_phoenix_demo_profile_detach.sql /tmp/diagnostic-141-skip/
+          mv supabase/migrations/143_phoenix_demo_purge_restrict_violation_and_ordering.sql /tmp/diagnostic-141-skip/
+          mv supabase/migrations/144_phoenix_demo_availability_purge_exemption.sql /tmp/diagnostic-141-skip/
+          mv supabase/migrations/145_phoenix_demo_organization_watermark.sql /tmp/diagnostic-141-skip/
+
       - name: Apply the migration-023 replay shim (mirrors tools/pg-rig/rig.mjs's shimSql — documented, already-proven, repo file never touched)
         # 023_phoenix_live_profile_role_resolution_fix.sql's own verification
         # DO block asserts on pg_policies.qual for dp_insert_perm, an INSERT
@@ -156,7 +177,7 @@ jobs:
           SQL
 
       - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
-        run: supabase start --ignore-health-check --debug
+        run: supabase start --ignore-health-check
 
       - name: Verify required services are actually ready (bounded gate; fails the job if not)
         # --ignore-health-check prevents the CLI from tearing down the whole
@@ -252,6 +273,21 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           node -pe "require('/tmp/sb-status.json').SERVICE_ROLE_KEY" > /tmp/sb-service-role-key.txt
           node -pe "require('/tmp/sb-status.json').DB_URL" > /tmp/sb-db-url.txt
+
+      - name: "DIAGNOSTIC ONLY (temporary): apply migration 141 alone via raw psql, capture the real error"
+        # Bypasses the Supabase CLI's own Go-based extended-query-protocol
+        # migration applier entirely (Parse/Bind/Execute per statement, per
+        # the earlier --debug trace) in favor of plain psql's simple-query
+        # protocol, against the exact same PostgreSQL 17 instance. -v
+        # ON_ERROR_STOP=1 makes psql exit non-zero and print the real
+        # SQLSTATE/DETAIL/CONTEXT on failure -- that failure is expected to
+        # fail this step and the job, surfacing genuine evidence instead of
+        # "unexpected EOF". If it unexpectedly SUCCEEDS here, that itself is
+        # evidence: the SQL is fine, and the defect is in how the CLI's own
+        # applier sends it, not in migration 141's content.
+        run: |
+          DATABASE_URL="$(cat /tmp/sb-db-url.txt)"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/diagnostic-141-skip/141_phoenix_demo_immutable_exemption.sql
 
       - name: Confirm migration ceiling reached 136 (not silently short)
         run: |
