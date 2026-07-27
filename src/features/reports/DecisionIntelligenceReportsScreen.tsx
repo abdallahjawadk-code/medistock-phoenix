@@ -64,6 +64,7 @@ import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFil
 import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementReportSection } from '@/features/status/MovementReportSection';
 import { AuditLogSection } from './AuditLogSection';
+import { GlobalMaterialSearchPanel } from './GlobalMaterialSearchPanel';
 import { ReportsTabErrorBoundary } from './ReportsTabErrorBoundary';
 import { listCorrectionHistory, type CorrectionHistoryRow } from './differences-corrections.service';
 import {
@@ -88,7 +89,7 @@ import {
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
 
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library';
+type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library' | 'global';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -142,6 +143,11 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
     { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'monthly', labelKey: 'dir_tab_monthly' },
     { id: 'library', labelKey: 'dir_tab_library' },
+    // REPORTING-UNIFICATION: moved verbatim from ReportsScreen.tsx (screen
+    // 9), which gated this tab identically -- role === 'super_admin' at the
+    // tab-visibility level, with GlobalMaterialSearchPanel's own internal
+    // check as defense-in-depth, unchanged.
+    ...(role === 'super_admin' ? [{ id: 'global' as Tab, labelKey: 'dir_tab_global' }] : []),
   ];
 
   return (
@@ -245,6 +251,11 @@ export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: 
       {tab === 'library' && (
         <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
           <ReportLibraryTab orgId={activeOrgId} lang={lang} />
+        </ReportsTabErrorBoundary>
+      )}
+      {tab === 'global' && role === 'super_admin' && (
+        <ReportsTabErrorBoundary key={`global:${activeOrgId}`} lang={lang}>
+          <div data-testid="global-search-tab"><GlobalMaterialSearchPanel /></div>
         </ReportsTabErrorBoundary>
       )}
 

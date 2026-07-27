@@ -633,6 +633,7 @@ export const T: Dict = {
   dir_tab_overview:   { ar: 'النظرة التنفيذية',                  en: 'Executive Overview' },
   dir_tab_institutions: { ar: 'حالة المؤسسات',                    en: 'Institution Status' },
   dir_tab_library:    { ar: 'مكتبة التقارير الرسمية',             en: 'Official Report Library' },
+  dir_tab_global:     { ar: 'البحث الشامل عن مادة',                en: 'Global Material Search' },
   dir_as_of:          { ar: 'اعتبارًا من',                        en: 'As of' },
   dir_materials_tracked: { ar: 'المواد المتابَعة',                en: 'Materials tracked' },
   dir_col_indicator:  { ar: 'المؤشر',                             en: 'Indicator' },
