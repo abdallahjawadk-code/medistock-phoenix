@@ -109,9 +109,20 @@ interface SupplyBucketRow extends BucketRow { key: string; }
  * unreachable; this screen becomes the single coherent reporting entry
  * point by linking to them instead of re-implementing their data layer.
  */
-export function DecisionIntelligenceReportsScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
+/**
+ * REPORTING-UNIFICATION: initialTab lets the old screen numbers (9, 12, 20)
+ * redirect straight to the tab that now owns their content, instead of
+ * always landing on Overview -- screen 12 (Status Center) opens on
+ * 'materials', screen 20 (Monthly Position) opens on 'monthly'. Once here,
+ * the tab bar behaves exactly as it always has; this only affects the
+ * FIRST render for a given navigation.
+ */
+export function DecisionIntelligenceReportsScreen({ onNavigate, initialTab }: {
+  onNavigate: (screen: number) => void;
+  initialTab?: Tab;
+}) {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [toast, setToast] = useState<string | null>(null);
   const [mobilePrint, setMobilePrint] = useState<{ html: string; title: string; fileNameBase: string } | null>(null);
 

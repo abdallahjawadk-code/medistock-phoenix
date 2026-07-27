@@ -2512,7 +2512,11 @@ export const T: Dict = {
 
   /* ── MONTHLY-STATUS-REDESIGN-092 — Screen 20, الموقف المخزني الشهري ── */
   nav_monthly_status:     { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
-  nav_decision_reports:   { ar: 'مركز التقارير والذكاء القراري',                  en: 'Decision Intelligence Reports' },
+  // REPORTING-UNIFICATION: this is now the single menu entry for the unified
+  // shell (formerly split across nav_reports/nav_status_center/
+  // nav_monthly_status/this key) — renamed to match, per the explicit
+  // consolidation requirement.
+  nav_decision_reports:   { ar: 'مركز التقارير والمواقف',                       en: 'Reporting & Status Center' },
   mst_title:              { ar: 'الموقف المخزني الشهري',                          en: 'Monthly Stock Status' },
   mst_sub:                { ar: 'القائمة الموحدة لمواد المذخر والمنافذ التابعة — إعداد، تصنيف، مراجعة واعتماد', en: 'Unified warehouse + outlet material list — prepare, classify, review and approve' },
   mst_no_open_report:     { ar: 'لا يوجد تقرير مفتوح حاليًا',                     en: 'No open report right now' },

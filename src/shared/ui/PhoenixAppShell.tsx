@@ -11,25 +11,29 @@ import { MasarCopyrightSeal } from './MasarCopyrightSeal';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
-// longer has an entry — App.tsx redirects it to Status Center, so the
-// fallback below (nav_status_center) already covers it correctly.
+// longer has an entry — App.tsx redirects it to the unified shell, so the
+// fallback below (nav_decision_reports) already covers it correctly.
+// REPORTING-UNIFICATION: screens 9, 12, and 20 are retired and now redirect
+// to screen 21's unified shell on the matching tab (see AuthenticatedApp.tsx)
+// — the topbar title follows, showing the same unified name rather than the
+// old per-screen labels, since the content shown is the same shell.
 const SCREEN_TITLE_KEYS: Record<number, string> = {
   3: 'nav_editor', 4: 'nav_reg', 5: 'nav_mesh',
-  6: 'nav_qr', 7: 'nav_health', 8: 'nav_intake', 9: 'nav_reports', 10: 'nav_mobile',
-  11: 'nav_institutions', 12: 'nav_status_center', 13: 'nav_inter_alerts',
+  6: 'nav_qr', 7: 'nav_health', 8: 'nav_intake', 9: 'nav_decision_reports', 10: 'nav_mobile',
+  11: 'nav_institutions', 12: 'nav_decision_reports', 13: 'nav_inter_alerts',
   14: 'nav_users',
   15: 'nav_my_account',
   16: 'nav_status_editor',
   17: 'nav_network',
   // Screen 18 (Outlet Operations). Without this entry the topbar falls back to
-  // nav_status_center, so the corridor rendered "Status Center" above an Outlet
-  // Operations page — caught by the outlet-corridor visual evidence capture.
+  // nav_decision_reports, so the corridor rendered the wrong title above an
+  // Outlet Operations page — caught by the outlet-corridor visual evidence capture.
   18: 'nav_outlet_ops',
   // Screen 19 (Local Procurement, migration 087).
   19: 'nav_local_procurement',
-  // Screen 20 (Monthly Status, migration 092).
-  20: 'nav_monthly_status',
-  // Screen 21 (Decision Intelligence Reports, migration 119).
+  // Screen 20 (Monthly Status, migration 092) — retired, redirects to screen 21.
+  20: 'nav_decision_reports',
+  // Screen 21: the unified "مركز التقارير والمواقف" shell.
   21: 'nav_decision_reports',
 };
 
@@ -85,7 +89,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
     };
   }, []);
 
-  const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_status_center', lang);
+  const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);
 
   return (
     <div dir={dir} className="premium-shell nexus-shell" style={{

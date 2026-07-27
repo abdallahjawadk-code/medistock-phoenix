@@ -31,16 +31,17 @@ interface NavItem {
 // longer lists it. Its route (screen 8 — IntakeFrozenScreen) remains fully
 // wired in App.tsx; only the sidebar entry point was removed.
 // PRODUCTION-READINESS-CLEANUP-A: nav_dash (screen 2, the central dashboard)
-// was removed here — App.tsx now redirects screen 2 to Status Center
-// (screen 12, nav_status_center below), the real-data landing screen.
-// SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A: ReportsScreen remains available
-// at screen 9, and its global material search is a super_admin-only feature.
-// Restore the sidebar entry for super_admin only; other roles retain the
-// Phase-2 navigation surface and Audit Log remains in Status Center.
+// was removed here — App.tsx now redirects screen 2 to the unified shell
+// (screen 21, nav_decision_reports below), the real-data landing screen.
+// REPORTING-UNIFICATION: this used to be four separate entries — nav_reports
+// (screen 9, super_admin only), nav_status_center (screen 12),
+// nav_monthly_status (screen 20), and nav_decision_reports (screen 21).
+// All four screens' content is now one unified shell reached through this
+// single entry; the old screen numbers still work (App.tsx redirects each
+// to the matching tab) for anything that still deep-links to them by
+// number, but there is exactly one menu entry point.
 const NAV_ITEMS: NavItem[] = [
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions', institutionsGate: true },
-  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
-  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
   { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
@@ -53,15 +54,10 @@ const NAV_ITEMS: NavItem[] = [
   // self-gates by 062 warehouse assignments plus the scoped local_procurement.*
   // keys, and every action is re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
-  // MONTHLY-STATUS-REDESIGN-092: ungated like nav_editor — the screen
-  // self-gates by the scoped status_center.* keys (prepare_own/classify_own/
-  // confirm_missing/review_submit_own/review_all/return_for_clarification/
-  // approve_lock), re-checked server-side by every RPC.
-  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
-  // DECISION-INTELLIGENCE-REPORTS-119: ungated like nav_editor — the screen
-  // self-gates on reports.view (already-seeded 062 key), re-checked
-  // server-side by every RPC (phoenix_executive_overview/
-  // phoenix_create_report_snapshot).
+  // DECISION-INTELLIGENCE-REPORTS-119/REPORTING-UNIFICATION: ungated like
+  // nav_editor — the screen self-gates on reports.view (already-seeded 062
+  // key) plus each moved-in section's own original gate (e.g. Monthly
+  // Position's status_center.* keys), re-checked server-side by every RPC.
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 

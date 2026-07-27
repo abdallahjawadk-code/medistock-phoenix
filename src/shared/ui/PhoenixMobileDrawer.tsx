@@ -13,9 +13,11 @@ import { PhoenixMark } from './PhoenixMark';
 // page (nav_intake, screen 8) hidden, which is why it no longer appears
 // below. Its route (screen 8 — IntakeFrozenScreen) remains fully wired in
 // App.tsx; only the drawer entry point was removed.
-// SUPER-ADMIN-GLOBAL-MATERIAL-SEARCH-NAV-A: ReportsScreen is restored here
-// for super_admin only so its responsive global material search is reachable
-// on phones as well as desktop. Other roles retain the Phase-2 nav surface.
+// REPORTING-UNIFICATION: mirrors the desktop sidebar's single entry — the
+// former nav_reports (screen 9, super_admin only)/nav_status_center (screen
+// 12)/nav_monthly_status (screen 20)/nav_decision_reports (screen 21) are
+// now one entry; the screen self-gates on reports.view plus each moved-in
+// section's own original gate, re-checked server-side by every RPC.
 const ALL_NAV: {
   screen: number;
   icon: PhoenixIconName;
@@ -28,8 +30,6 @@ const ALL_NAV: {
   requiresNetwork?: boolean;
 }[] = [
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
-  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
-  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
   { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
@@ -41,10 +41,6 @@ const ALL_NAV: {
   // Screen 19 is reachable on mobile too; the screen self-gates by 062
   // warehouse scope + the scoped local_procurement.* keys, re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
-  // MONTHLY-STATUS-REDESIGN-092: mirrors the desktop sidebar entry.
-  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
-  // DECISION-INTELLIGENCE-REPORTS-119: mirrors the desktop sidebar entry;
-  // the screen self-gates on reports.view.
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 

@@ -39,8 +39,12 @@ interface PaletteItem {
 // (PhoenixSidebar.tsx, PhoenixMobileDrawer.tsx), plus the QR screen — its
 // route (screen 6) remains fully wired in App.tsx even though it was
 // deliberately hidden from the primary nav (UI-LEGACY-PAGES-NAV-HIDE-A).
+// REPORTING-UNIFICATION: the former nav_status_center (screen 12)/
+// nav_monthly_status (screen 20)/nav_reports (screen 9, super_admin only)
+// entries are now the single nav_decision_reports (screen 21) entry below —
+// the screen self-gates on reports.view plus each moved-in section's own
+// original gate, re-checked server-side by every RPC.
 const PALETTE_ITEMS: PaletteItem[] = [
-  { screen: 12, icon: 'status', labelKey: 'nav_status_center' },
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: 'users', labelKey: 'nav_users' },
@@ -50,10 +54,6 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
   // INSTITUTION-LOCAL-PROCUREMENT-087: ungated — the screen self-gates by warehouse scope.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
-  // MONTHLY-STATUS-REDESIGN-092: ungated — the screen self-gates by the scoped status_center.* keys.
-  { screen: 20, icon: 'clipboard', labelKey: 'nav_monthly_status' },
-  { screen: 9,  icon: 'reports', labelKey: 'nav_reports', superAdminOnly: true },
-  // DECISION-INTELLIGENCE-REPORTS-119: ungated — the screen self-gates on reports.view.
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
   { screen: 15, icon: 'account', labelKey: 'nav_my_account' },
