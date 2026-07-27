@@ -156,7 +156,7 @@ jobs:
           SQL
 
       - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
-        run: supabase start --ignore-health-check
+        run: supabase start --ignore-health-check --debug
 
       - name: Verify required services are actually ready (bounded gate; fails the job if not)
         # --ignore-health-check prevents the CLI from tearing down the whole
