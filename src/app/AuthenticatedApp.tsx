@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { institutionsScreenAccess, roleLandingScreen } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -40,13 +40,11 @@ function ForbiddenScreen() {
 }
 
 export function AuthenticatedApp() {
-  const { authReady, session, signOut, passwordRecovery, role } = useApp();
-  // REPORTING-UNIFICATION: the unified "مركز التقارير والمواقف" (screen 21,
-  // DecisionIntelligenceReportsScreen) is now the real-data landing screen,
-  // replacing Status Center (screen 12) directly. Screens 9/12/20 no longer
-  // render their own components — see the switch below — they redirect to
-  // screen 21 on the matching tab.
-  const [screen, setScreen] = useState(21);
+  const { authReady, session, profile, signOut, passwordRecovery, role } = useApp();
+  // Keep explicit navigation scoped to the profile that created it. A later
+  // session on the same workstation must derive its own role-safe landing
+  // instead of inheriting the previous user's screen.
+  const [navigation, setNavigation] = useState<{ profileId: string; screen: number } | null>(null);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
@@ -86,6 +84,21 @@ export function AuthenticatedApp() {
       />
     );
   }
+
+  // onAuthChange publishes the session before its async profile read finishes.
+  // Do not render any role-sensitive screen from AppContext's display fallback:
+  // wait for the real profile, then synchronously select the safe landing so
+  // outlet_officer never mounts the reports screen, even for one frame.
+  if (!profile) {
+    return <PhoenixLoadingState fullScreen />;
+  }
+
+  const screen = navigation?.profileId === profile.id
+    ? navigation.screen
+    : roleLandingScreen(profile.role);
+  const setScreen = (nextScreen: number) => {
+    setNavigation({ profileId: profile.id, screen: nextScreen });
+  };
 
   const screenContent = () => {
     switch (screen) {
@@ -167,7 +180,7 @@ export function AuthenticatedApp() {
         }
         setWelcomeCompletedFor(null);
         void signOut();
-        setScreen(21);
+        setNavigation(null);
       }}
     >
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
