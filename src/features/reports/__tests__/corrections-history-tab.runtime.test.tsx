@@ -9,7 +9,7 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { CorrectionsHistoryTab } from '../DecisionIntelligenceReportsScreen';
 import type { CorrectionHistoryRow } from '../differences-corrections.service';
 
@@ -22,6 +22,16 @@ const getPaperReferencesFor = vi.fn(async (_documentType: string, _documentIds: 
 vi.mock('@/features/movement/paper-reference.service', () => ({
   getPaperReferencesFor: (documentType: string, documentIds: readonly string[]) => getPaperReferencesFor(documentType, documentIds),
 }));
+
+// REPORTING-UNIFICATION: mission requirement — prove export/print carry
+// REAL row content, not just that the button exists/was clicked. Captures
+// the exact config the tab hands to the shared export module.
+const exportProfessionalXlsx = vi.fn(async () => true);
+const triggerProfessionalPrint = vi.fn(() => ({ ok: true, mobileHtml: undefined as string | undefined }));
+vi.mock('@/shared/lib/professional-export', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/shared/lib/professional-export')>();
+  return { ...actual, exportProfessionalXlsx: (...a: unknown[]) => exportProfessionalXlsx(...a), triggerProfessionalPrint: (...a: unknown[]) => triggerProfessionalPrint(...a) };
+});
 
 const OUTLET_ROW: CorrectionHistoryRow = {
   id: 'c1', scope: 'outlet', status: 'pending', scientificName: 'Paracetamol',
@@ -101,5 +111,41 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
     await waitFor(() => {
       expect(screen.getByText('load failed')).toBeInTheDocument();
     });
+  });
+});
+
+describe('CorrectionsHistoryTab — export/print carry REAL row content (not just a button click)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPaperReferencesFor.mockResolvedValue(new Map());
+  });
+  afterEach(cleanup);
+
+  it('Export Excel hands the real, currently-loaded rows to the shared export module — actual material names and variances, not an empty/stub config', async () => {
+    listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
+    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Excel' }));
+    await waitFor(() => expect(exportProfessionalXlsx).toHaveBeenCalledTimes(1));
+
+    const config = exportProfessionalXlsx.mock.calls[0][0] as { rows: CorrectionHistoryRow[]; fileNameBase: string };
+    expect(config.rows).toHaveLength(2);
+    expect(config.rows.map(r => r.scientificName)).toEqual(['Paracetamol', 'Amoxicillin']);
+    expect(config.rows.map(r => r.variance)).toEqual([-3, -5]);
+    expect(config.fileNameBase).toBe('medistock-differences-corrections');
+  });
+
+  it('Print hands the same real rows to the shared print trigger', async () => {
+    listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
+    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(triggerProfessionalPrint).toHaveBeenCalledTimes(1);
+
+    const config = triggerProfessionalPrint.mock.calls[0][0] as { rows: CorrectionHistoryRow[] };
+    expect(config.rows).toHaveLength(2);
+    expect(config.rows.map(r => r.batchNumber)).toEqual(['B1', 'B2']);
   });
 });
