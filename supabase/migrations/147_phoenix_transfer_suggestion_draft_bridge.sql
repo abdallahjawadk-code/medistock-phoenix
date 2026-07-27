@@ -482,7 +482,7 @@ BEGIN
     v_return_request_id := (v_create_result->>'return_request_id')::uuid;
     PERFORM public.phoenix_add_outlet_return_request_line(
       v_return_request_id, v_s.provenance_dispatch_line_id, v_eligible,
-      'inventory_suggestion_bridge', NULL);
+      'excess', 'Auto-drafted from inventory suggestion ' || v_s.id::text);
 
   ELSE
     RAISE EXCEPTION 'unsupported_route_kind: %', v_s.route_kind;
