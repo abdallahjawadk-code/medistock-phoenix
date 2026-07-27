@@ -1,11 +1,14 @@
 /**
- * MONTHLY-STATUS-REDESIGN-092 — frontend wiring.
+ * MONTHLY-STATUS-REDESIGN-092 / REPORTING-UNIFICATION — frontend wiring.
  *
- * Static checks only (no live database): navigation reaches screen 20 from
- * every surface, the service layer calls the EXACT RPC names migration 092
- * defines (drift here would silently break the workspace against a real
- * database while every other test still passes), and the screen never
- * writes the new tables directly.
+ * Static checks only (no live database): the full prepare/classify/submit/
+ * approve+lock/amend workflow now lives inside the unified reporting/status
+ * shell (DecisionIntelligenceReportsScreen.tsx, as MonthlyPositionTab) —
+ * screen 20 is a redirect to it, not a separate rendered screen. The
+ * service layer calls the EXACT RPC names migration 092 defines (drift
+ * here would silently break the workspace against a real database while
+ * every other test still passes), and the screen never writes the new
+ * tables directly.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -18,31 +21,28 @@ const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 
 const migration092 = readPhoenix('supabase/migrations/092_phoenix_monthly_status_redesign.sql');
 const service = readSrc('shared/supabase/services/monthly-status.service.ts');
-const screen = readSrc('features/status/MonthlyStatusScreen.tsx');
+const dirc = readSrc('features/reports/DecisionIntelligenceReportsScreen.tsx');
 
-describe('Navigation reaches screen 20 from every surface', () => {
-  it('AuthenticatedApp routes screen 20 to MonthlyStatusScreen', () => {
+describe('Screen 20 redirects to the unified shell\'s Monthly Position tab', () => {
+  it('AuthenticatedApp redirects screen 20 to the unified shell with initialTab="monthly", not a standalone screen', () => {
     const app = readSrc('app/AuthenticatedApp.tsx');
-    expect(app).toContain('MonthlyStatusScreen');
-    expect(app).toMatch(/case 20:\s*return <MonthlyStatusScreen/);
+    expect(app).not.toContain('MonthlyStatusScreen');
+    expect(app).toMatch(/case 20:\s*return <DecisionIntelligenceReportsScreen[^>]*initialTab="monthly"/);
   });
 
-  it('sidebar, drawer and palette all expose screen 20', () => {
+  it('sidebar, drawer and palette expose the single unified entry (screen 21), not a dedicated screen 20 item', () => {
     for (const rel of ['shared/ui/PhoenixSidebar.tsx', 'shared/ui/PhoenixMobileDrawer.tsx', 'shared/ui/CommandPalette.tsx']) {
       const src = readSrc(rel);
-      expect(src, rel).toContain('screen: 20');
-      expect(src, rel).toContain('nav_monthly_status');
+      expect(src, rel).not.toContain('screen: 20');
+      expect(src, rel).toContain('screen: 21');
+      expect(src, rel).toContain("labelKey: 'nav_decision_reports'");
     }
   });
 
-  it('PhoenixAppShell maps screen 20 to its own title, not a fallback', () => {
+  it('PhoenixAppShell maps screen 20 to the same unified title as screen 21, since both render the same shell', () => {
     const shell = readSrc('shared/ui/PhoenixAppShell.tsx');
-    expect(shell).toMatch(/20:\s*'nav_monthly_status'/);
-  });
-
-  it('nav_monthly_status has bilingual i18n strings', () => {
-    const strings = readSrc('shared/i18n/strings.ts');
-    expect(strings).toContain('nav_monthly_status:');
+    expect(shell).toMatch(/20:\s*'nav_decision_reports'/);
+    expect(shell).toMatch(/21:\s*'nav_decision_reports'/);
   });
 });
 
@@ -79,32 +79,32 @@ describe('The service layer never writes the new tables directly', () => {
   });
 });
 
-describe('The screen gates actions by role, mirroring the server, and reuses expiry-risk.ts', () => {
+describe('The unified shell gates Monthly Position actions by role, mirroring the server, and reuses expiry-risk.ts', () => {
   it('imports normalizeRole and computes per-persona action flags', () => {
-    expect(screen).toContain("import { normalizeRole } from '@/shared/lib/roles'");
-    expect(screen).toContain('warehouse_officer');
-    expect(screen).toContain('institution_admin');
-    expect(screen).toContain('central_warehouse_manager');
+    expect(dirc).toContain("import { normalizeRole } from '@/shared/lib/roles'");
+    expect(dirc).toContain('warehouse_officer');
+    expect(dirc).toContain('institution_admin');
+    expect(dirc).toContain('central_warehouse_manager');
   });
 
   it('reuses the existing expiry-risk tier classifier rather than reimplementing it', () => {
-    expect(screen).toContain("from '@/shared/lib/expiry-risk'");
-    expect(screen).toContain('getExpiryRiskTier(line.nearest_expiry_date)');
+    expect(dirc).toContain("from '@/shared/lib/expiry-risk'");
+    expect(dirc).toContain('getExpiryRiskTier(line.nearest_expiry_date)');
   });
 
   it('bulk classify sends the reason and stocktake evidence id, never invents a classification client-side beyond what the server validates', () => {
-    expect(screen).toContain('classifyMonthlyStatusLines');
-    expect(screen).toContain('stocktake_count_line_id');
+    expect(dirc).toContain('classifyMonthlyStatusLines');
+    expect(dirc).toContain('stocktake_count_line_id');
   });
 
   it('submit is disabled while unclassified or unconfirmed-missing lines remain (client-side mirror of the server guard)', () => {
-    expect(screen).toContain('allClassified');
-    expect(screen).toContain('anyUnconfirmedMissing');
-    expect(screen).toMatch(/disabled=\{busy \|\| !allClassified \|\| anyUnconfirmedMissing\}/);
+    expect(dirc).toContain('allClassified');
+    expect(dirc).toContain('anyUnconfirmedMissing');
+    expect(dirc).toMatch(/disabled=\{busy \|\| !allClassified \|\| anyUnconfirmedMissing\}/);
   });
 
-  it('no service_role or auth.admin in the screen', () => {
-    expect(screen).not.toContain('service_role');
-    expect(screen).not.toContain('auth.admin');
+  it('no service_role or auth.admin in the unified shell', () => {
+    expect(dirc).not.toContain('service_role');
+    expect(dirc).not.toContain('auth.admin');
   });
 });

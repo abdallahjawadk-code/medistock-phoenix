@@ -1,13 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * REPORTING-CLOSURE-FINAL Phase 2 — navigation consolidation, proven at
- * runtime (not just source-scan): DIRC's Institution Status tab must link
- * to Status Center (screen 12) instead of duplicating its live matrix, and
- * DIRC must gain a Monthly Position tab that deep-links to screen 20
- * without reimplementing its prepare->approve->lock workflow. Both are
- * pure navigation — this test proves onNavigate is called with the exact
- * screen number, nothing more.
+ * REPORTING-UNIFICATION — navigation consolidation, proven at runtime (not
+ * just source-scan): DIRC's Institution Status tab still links to the
+ * Materials & Batches tab context for the live matrix (superseding the old
+ * "open in Status Center" cross-screen navigation, since Status Center's
+ * content now lives inside this same shell), and DIRC's Monthly Position
+ * tab must render the REAL prepare->classify->submit->approve+lock workflow
+ * -- not a deep-link CTA to a separate screen. This directly replaces the
+ * old test file of the same name, which asserted the opposite (a deep-link
+ * CTA and nothing else) -- that contract is exactly what the unification
+ * removes.
  */
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -15,6 +18,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { DecisionIntelligenceReportsScreen } from '../DecisionIntelligenceReportsScreen';
 import type { InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
 import type { ExecutiveOverview } from '../decision-intelligence.service';
+import type { MonthlyStatusLine } from '@/shared/supabase/services/monthly-status.service';
 
 const getInstitutionOverviews = vi.fn<() => Promise<InstitutionOverview[]>>();
 vi.mock('@/shared/supabase/services/dashboard.service', () => ({
@@ -22,6 +26,9 @@ vi.mock('@/shared/supabase/services/dashboard.service', () => ({
 }));
 vi.mock('@/shared/supabase/services/availability.service', () => ({
   getAvailabilityByOrg: async (_orgId: string) => [] as unknown[],
+}));
+vi.mock('@/shared/supabase/services/organizations.service', () => ({
+  getOrganizations: async () => [{ id: 'org1', name: 'Institution A', name_ar: 'مؤسسة أ' }],
 }));
 vi.mock('../AuditLogSection', () => ({ AuditLogSection: () => <div data-testid="audit-log-stub" /> }));
 const getExecutiveOverview = vi.fn<() => Promise<ExecutiveOverview>>();
@@ -32,6 +39,7 @@ vi.mock('../decision-intelligence.service', () => ({
   newRequestId: () => 'req-1',
   getSupplySourcesDetail: async () => [],
   checkSnapshotParity: vi.fn(),
+  isDemoOrganization: async () => false,
 }));
 vi.mock('../custody-chain.service', () => ({
   listCustodyDispatches: async () => [],
@@ -44,10 +52,42 @@ vi.mock('../differences-corrections.service', () => ({ listCorrectionHistory: as
 vi.mock('@/features/movement/paper-reference.service', () => ({ getPaperReferencesFor: async () => new Map() }));
 vi.mock('@/features/procurement/procurement.service', () => ({ getSuppliers: async () => [], getReceipts: async () => [], getReceiptLines: async () => [] }));
 vi.mock('@/features/status/MovementReportSection', () => ({ MovementReportSection: () => <div data-testid="movement-report-stub" /> }));
+vi.mock('@/features/status/AvailabilityStockCorrectionModal', () => ({ AvailabilityStockCorrectionModal: () => null }));
+vi.mock('@/features/status/ReactivateMaterialModal', () => ({ ReactivateMaterialModal: () => null, REACTIVATE_PERMISSION_KEYS: ['availability.update'] }));
+vi.mock('@/features/status/MovementHistoryModal', () => ({ MovementHistoryModal: () => null }));
+vi.mock('@/features/status/internalAlerts', () => ({ computeInternalAlerts: () => [] }));
+vi.mock('@/features/status/InternalAlertsSection', () => ({ InternalAlertsSection: () => <div data-testid="internal-alerts-stub" /> }));
+vi.mock('@/features/status/OutletMaterialGroups', () => ({ OutletMaterialGroups: () => null }));
+vi.mock('@/features/status/OutletAvailabilityReportModal', () => ({ OutletAvailabilityReportModal: () => null }));
+vi.mock('@/features/inventory/InventoryIntelligencePanel', () => ({ InventoryIntelligencePanel: () => <div data-testid="inventory-intelligence-stub" /> }));
+vi.mock('@/features/reports/GlobalMaterialSearchPanel', () => ({ GlobalMaterialSearchPanel: () => <div data-testid="global-search-stub" /> }));
+
+const getOpenMonthlyStatusReport = vi.fn();
+const getLatestLockedMonthlyStatusReport = vi.fn();
+const getMonthlyStatusLines = vi.fn<() => Promise<MonthlyStatusLine[]>>();
+vi.mock('@/shared/supabase/services/monthly-status.service', () => ({
+  getOpenMonthlyStatusReport: (...args: unknown[]) => getOpenMonthlyStatusReport(...args),
+  getLatestLockedMonthlyStatusReport: (...args: unknown[]) => getLatestLockedMonthlyStatusReport(...args),
+  getMonthlyStatusLines: (...args: unknown[]) => getMonthlyStatusLines(...args),
+  prepareMonthlyStatusReport: vi.fn(),
+  classifyMonthlyStatusLines: vi.fn(),
+  confirmSuspectedMissing: vi.fn(),
+  submitMonthlyStatusReport: vi.fn(),
+  returnMonthlyStatusReportForClarification: vi.fn(),
+  approveLockMonthlyStatusReport: vi.fn(),
+  createMonthlyStatusAmendment: vi.fn(),
+  recordStocktake: vi.fn(),
+  getStocktakeCountLines: async () => [],
+}));
+
+vi.mock('@/features/inventory/useInventoryScopes', () => ({
+  useInventoryScopes: () => ({ data: { manageableWarehouses: [], manageableOutlets: [] } }),
+}));
 
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({
     lang: 'en', dir: 'ltr', activeOrgId: 'org1', role: 'super_admin',
+    myPermissions: new Set<string>(),
     authz: { getContext: () => ({ authenticated: false }) },
   }),
 }));
@@ -65,47 +105,63 @@ const INSTITUTIONS: InstitutionOverview[] = [
   },
 ];
 
-describe('DIRC navigation consolidation (Phase 2)', () => {
+describe('DIRC navigation consolidation (Reporting Unification)', () => {
   afterEach(cleanup);
 
-  it('Institution Status tab renders a link that navigates to Status Center (screen 12), not a second live matrix', async () => {
+  it('the Monthly Position tab renders the REAL workflow (prepare action), not a deep-link CTA to a separate screen', async () => {
     getExecutiveOverview.mockResolvedValue(OVERVIEW);
     getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
+    getOpenMonthlyStatusReport.mockResolvedValue(null);
+    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
+    getMonthlyStatusLines.mockResolvedValue([]);
     const onNavigate = vi.fn();
     render(<DecisionIntelligenceReportsScreen onNavigate={onNavigate} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /institution status/i }));
-    await waitFor(() => expect(screen.getByTestId('institution-status-tab')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: /monthly/i }));
+    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
 
-    const link = screen.getByRole('button', { name: /open live matrix in status center/i });
-    fireEvent.click(link);
-    expect(onNavigate).toHaveBeenCalledWith(12);
+    // There must be NO "open monthly inventory position" deep-link CTA
+    // anywhere -- that was the old, now-removed contract.
+    expect(screen.queryByRole('button', { name: /open monthly inventory position/i })).not.toBeInTheDocument();
+    // onNavigate must never be called just from opening this tab -- it's
+    // real content now, not a redirect.
+    expect(onNavigate).not.toHaveBeenCalledWith(20);
   });
 
-  it('a Monthly Position tab exists and deep-links to screen 20 without duplicating its workflow', async () => {
+  it('opening the Monthly Position tab with no open report shows the real empty state and (for a preparing role) a genuine Prepare action, calling the real service, not onNavigate', async () => {
     getExecutiveOverview.mockResolvedValue(OVERVIEW);
     getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
+    getOpenMonthlyStatusReport.mockResolvedValue(null);
+    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
+    getMonthlyStatusLines.mockResolvedValue([]);
     const onNavigate = vi.fn();
     render(<DecisionIntelligenceReportsScreen onNavigate={onNavigate} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /monthly inventory position/i }));
-    const cta = await screen.findByRole('button', { name: /open monthly inventory position/i });
-    fireEvent.click(cta);
-    expect(onNavigate).toHaveBeenCalledWith(20);
+    fireEvent.click(screen.getByRole('tab', { name: /monthly/i }));
+    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
+
+    // role is 'super_admin' in this mock, which canPrepare covers.
+    const prepareButton = await screen.findByRole('button', { name: /prepare/i });
+    expect(prepareButton).toBeInTheDocument();
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it('the Monthly Position tab renders exactly one action control (the deep-link CTA), no interactive workflow controls of its own', async () => {
+  it('DIRC accepts an initialTab prop so an old screen redirect can land directly on Materials & Batches', async () => {
     getExecutiveOverview.mockResolvedValue(OVERVIEW);
     getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
-    render(<DecisionIntelligenceReportsScreen onNavigate={() => {}} />);
+    render(<DecisionIntelligenceReportsScreen onNavigate={() => {}} initialTab="materials" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: /monthly inventory position/i }));
-    await screen.findByRole('button', { name: /open monthly inventory position/i });
-    // Elements with role="tab" are excluded from the "button" accessible
-    // role, so this only counts real action controls — no
-    // prepare/classify/submit/approve buttons duplicated here.
-    const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(1);
-    expect(buttons[0]).toHaveTextContent(/open monthly inventory position/i);
+    await waitFor(() => expect(screen.getByTestId('materials-batches-tab')).toBeInTheDocument());
+    // The overview tab's own content must NOT be the one shown by default.
+    expect(screen.queryByText(/materials_tracked/i)).not.toBeInTheDocument();
+  });
+
+  it('DIRC accepts an initialTab prop so an old screen redirect can land directly on Monthly Position', async () => {
+    getOpenMonthlyStatusReport.mockResolvedValue(null);
+    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
+    getMonthlyStatusLines.mockResolvedValue([]);
+    render(<DecisionIntelligenceReportsScreen onNavigate={() => {}} initialTab="monthly" />);
+
+    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
   });
 });
