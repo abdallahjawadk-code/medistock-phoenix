@@ -94,14 +94,27 @@ allowed_cidrs_v6 = ["::/0"]
 # enabled = true
 
 [realtime]
-enabled = true
+# Disabled for local CI only (E2E authenticated acceptance): grepping
+# tools/e2e-fixtures, tools/e2e-acceptance, and every migration finds zero
+# use of realtime subscriptions in this workflow's path. This repo's config
+# is exclusively consumed by that one workflow's `supabase start` (no other
+# script or CI job calls it) -- disabling here has no effect anywhere else.
+# Trimming this container is part of reducing the local stack's aggregate
+# memory footprint after `supabase start --ignore-health-check` proved the
+# CI teardown ("Stopping containers..." / "unexpected EOF" mid-migration)
+# is NOT a health-check-timing issue -- the flag made zero observed
+# difference, consistent with an OOM-kill of the db container instead.
+enabled = false
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
 # ip_version = "IPv6"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
 # max_header_length = 4096
 
 [studio]
-enabled = true
+# Disabled for local CI only: this E2E workflow never opens Supabase Studio
+# (http://127.0.0.1:54323), and it's one of the heavier containers in the
+# stack (a full Next.js app).
+enabled = false
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
@@ -122,7 +135,12 @@ port = 54324
 # sender_name = "Admin"
 
 [storage]
-enabled = true
+# Disabled for local CI only, same reasoning as [realtime] above: no
+# migration references storage.buckets/storage.objects, and neither
+# e2e-fixtures nor e2e-acceptance touch file storage. Also stops the
+# imgproxy container, which only exists to serve storage's image
+# transforms.
+enabled = false
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
@@ -395,7 +413,13 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Disabled for local CI only. A prior isolated test of disabling only this
+# service showed no measurable effect on the container-teardown failure --
+# expected under the OOM-kill hypothesis, since removing one of twelve
+# containers alone doesn't meaningfully shift aggregate memory pressure.
+# Kept disabled here as part of a combined reduction (with realtime,
+# storage, imgproxy, edge_runtime, studio) rather than re-tested alone.
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
