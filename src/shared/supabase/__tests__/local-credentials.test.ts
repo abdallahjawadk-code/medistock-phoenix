@@ -336,12 +336,12 @@ describe('Edge Function admin-create-user: local credentials mode', () => {
   });
 
   it('sets must_change_password true and login_mode on the profile for local accounts (via the contract)', () => {
-    // The profile row is now written by phoenix_provision_profile (migration
-    // 093); the Edge Function passes the login_mode through to it.
-    expect(fn).toContain('phoenix_provision_profile');
+    // The profile row is converted exactly once by the service-only migration
+    // 146 contract; the Edge Function passes login_mode through to that RPC.
+    expect(fn).toContain('phoenix_admin_provision_profile');
     expect(fn).toContain('p_login_mode: loginMode');
-    const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
-    expect(mig).toContain("when p_login_mode = 'local' then true else false end");
+    const mig146 = readPhoenix('supabase/migrations/146_phoenix_secure_user_provisioning.sql');
+    expect(mig146).toContain("must_change_password = (p_login_mode = 'local')");
   });
 
   it('never logs the temporary password', () => {
