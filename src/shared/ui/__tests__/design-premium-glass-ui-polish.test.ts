@@ -78,8 +78,8 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
     expect(block).toContain('InstitutionScreen');
   });
 
-  it('the initial/default screen is the unified reporting/status shell (21) — REPORTING-UNIFICATION moved off Status Center (12)', () => {
-    expect(authenticatedApp).toContain('useState(21)');
+  it('the initial/default screen is derived from the authenticated profile role', () => {
+    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
   });
 });
 
