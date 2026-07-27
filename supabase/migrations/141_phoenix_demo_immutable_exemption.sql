@@ -100,7 +100,21 @@ BEGIN
 END;
 $role$;
 
-GRANT USAGE ON SCHEMA public TO phoenix_demo_purger;
+-- CREATE (not just USAGE) is required here, not because phoenix_demo_purger
+-- ever creates anything -- phoenix_demo_purge only ever SELECTs and DELETEs
+-- -- but because PostgreSQL's own ownership-transfer rule requires the new
+-- owner of an object to hold CREATE privilege on that object's schema (in
+-- addition to the applying role's own membership in the new owner, already
+-- established above). Without it, the ALTER FUNCTION ... OWNER TO statements
+-- below fail with "permission denied for schema public" -- confirmed via the
+-- same isolated psql replay against Supabase's real local PostgreSQL 17
+-- stack that found this migration's earlier CURRENT_USER crash. This is a
+-- schema-level object-creation privilege, not a role-level attribute --
+-- phoenix_demo_purger still never gains SUPERUSER/BYPASSRLS/CREATEROLE/
+-- CREATEDB/REPLICATION (asserted in this migration's own verify block
+-- below), and remains completely unreachable by any application-facing
+-- role.
+GRANT USAGE, CREATE ON SCHEMA public TO phoenix_demo_purger;
 -- phoenix_demo_purge re-validates auth.uid() and phoenix_my_role() inside its
 -- own body, so the owning role needs to resolve those. This grants schema
 -- traversal only -- no table privileges in auth are granted anywhere.
