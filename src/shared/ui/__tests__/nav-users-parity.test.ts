@@ -58,15 +58,20 @@ describe('C) the command palette already gated Users (unchanged)', () => {
   });
 });
 
-describe('D) Reports stays super_admin-only across surfaces (no regression)', () => {
-  it('sidebar keeps nav_reports superAdminOnly', () => {
-    expect(sidebar).toContain("labelKey: 'nav_reports', superAdminOnly: true");
+// REPORTING-UNIFICATION: nav_reports no longer exists as its own nav entry —
+// Reports' unique content (including super_admin-only global material
+// search) moved into the single nav_decision_reports entry (screen 21) as a
+// tab, gated internally by role rather than at the nav-item level. The
+// superAdminOnly mechanism itself is preserved (still used by the `filter`
+// predicates below) even though no top-level item currently sets it.
+describe('D) Reports/global search gating moved inside the unified shell (no separate superAdminOnly nav entry)', () => {
+  it('sidebar/drawer/palette no longer mark any item superAdminOnly (Reports consolidated away)', () => {
+    [sidebar, drawer, palette].forEach(src => expect(src).not.toContain('superAdminOnly: true'));
   });
-  it('drawer keeps nav_reports superAdminOnly', () => {
-    expect(drawer).toContain("labelKey: 'nav_reports', superAdminOnly: true");
-  });
-  it('palette keeps nav_reports superAdminOnly', () => {
-    expect(palette).toContain('superAdminOnly: true');
+  it('the superAdminOnly filter mechanism itself is preserved, ready for reuse', () => {
+    expect(sidebar).toContain("!item.superAdminOnly || role === 'super_admin'");
+    expect(drawer).toContain("!item.superAdminOnly || role === 'super_admin'");
+    expect(palette).toContain("!i.superAdminOnly || role === 'super_admin'");
   });
 });
 
