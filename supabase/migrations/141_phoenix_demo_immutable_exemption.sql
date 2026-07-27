@@ -62,6 +62,27 @@ BEGIN
 END;
 $role$;
 
+-- ALTER FUNCTION ... OWNER TO requires the CURRENT connecting role to either
+-- be a literal Postgres superuser or hold membership in the target role.
+-- Supabase's own "postgres" role is deliberately NOT a literal superuser
+-- (true on the real platform, and `supabase start`'s local stack
+-- intentionally mirrors it) -- only a self-hosted raw Postgres superuser
+-- connection has unconditional SET ROLE to any role, which is why this
+-- migration's ownership transfer below only ever worked against a
+-- disposable rig connected as a genuine superuser and failed everywhere
+-- closer to production shape with "must be able to SET ROLE
+-- phoenix_demo_purger" (42501). Granting membership here -- to whichever
+-- role is APPLYING this migration, never to authenticated/anon/
+-- service_role, verified below and in this migration's own verify block --
+-- is exactly what a normal admin/deploy role needs to manage this object's
+-- ownership, now and in 142/143 which both re-assert it. This does not
+-- weaken the ownership boundary: current_user = 'phoenix_demo_purger' is
+-- still unreachable from any application-facing role, and whoever applies
+-- migrations already has unrestricted authority over this database in
+-- every other respect. No SUPERUSER/BYPASSRLS is granted anywhere, and
+-- phoenix_demo_purger itself remains NOLOGIN/NOINHERIT.
+GRANT phoenix_demo_purger TO CURRENT_USER;
+
 GRANT USAGE ON SCHEMA public TO phoenix_demo_purger;
 -- phoenix_demo_purge re-validates auth.uid() and phoenix_my_role() inside its
 -- own body, so the owning role needs to resolve those. This grants schema
@@ -840,16 +861,36 @@ DECLARE
   v_src text;
   v_n   integer;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='phoenix_demo_purger' AND NOT rolcanlogin) THEN
-    RAISE EXCEPTION '141 VERIFY FAILED: phoenix_demo_purger must exist and be NOLOGIN';
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='phoenix_demo_purger' AND rolcanlogin = false AND rolinherit = false) THEN
+    RAISE EXCEPTION '141 VERIFY FAILED: phoenix_demo_purger must exist and be NOLOGIN/NOINHERIT';
   END IF;
 
   SELECT count(*) INTO v_n FROM pg_auth_members m
     JOIN pg_roles r ON r.oid = m.roleid
     JOIN pg_roles g ON g.oid = m.member
-   WHERE r.rolname = 'phoenix_demo_purger' AND g.rolname IN ('authenticated','anon');
+   WHERE r.rolname = 'phoenix_demo_purger' AND g.rolname IN ('authenticated','anon','service_role');
   IF v_n <> 0 THEN
-    RAISE EXCEPTION '141 VERIFY FAILED: authenticated/anon must not be members of phoenix_demo_purger';
+    RAISE EXCEPTION '141 VERIFY FAILED: authenticated/anon/service_role must not be members of phoenix_demo_purger';
+  END IF;
+
+  -- The migration-applying role must now be a member -- this is the exact
+  -- fix: without it, the ALTER FUNCTION ... OWNER TO below is what fails
+  -- with "must be able to SET ROLE phoenix_demo_purger" against any
+  -- connecting role that is not a literal Postgres superuser (Supabase's
+  -- own "postgres" role included).
+  IF NOT pg_has_role(current_user, 'phoenix_demo_purger', 'member') THEN
+    RAISE EXCEPTION '141 VERIFY FAILED: the migration-applying role must hold membership in phoenix_demo_purger (the ownership-transfer fix did not take effect)';
+  END IF;
+
+  -- phoenix_demo_purger itself must never have been granted anything
+  -- broader than schema traversal + the narrow object grants this
+  -- migration issues elsewhere -- no SUPERUSER/BYPASSRLS/CREATEROLE, ever.
+  IF EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = 'phoenix_demo_purger'
+       AND (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication)
+  ) THEN
+    RAISE EXCEPTION '141 VERIFY FAILED: phoenix_demo_purger must never hold SUPERUSER/BYPASSRLS/CREATEROLE/CREATEDB/REPLICATION';
   END IF;
 
   IF (SELECT pg_get_userbyid(proowner) FROM pg_proc
