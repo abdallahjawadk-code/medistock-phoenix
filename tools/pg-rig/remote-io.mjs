@@ -33,8 +33,31 @@ export async function buildRemoteIo({ connectionString, maxConnections = 4 } = {
     throw new Error('buildRemoteIo: connectionString is required (read it from an env var, never a literal)');
   }
 
+  // Recent pg-connection-string versions (matching this repo's pg@8.22)
+  // treat a URL-embedded `sslmode=require`/`prefer`/`verify-ca` -- exactly
+  // what Supabase's own copied connection strings carry -- as an ALIAS for
+  // `verify-full` (full certificate chain + hostname verification), which
+  // silently overrides the `ssl` object passed below and fails against
+  // Supabase's pooler cert with "self-signed certificate in certificate
+  // chain". Stripping any `ssl`-prefixed query params from the string
+  // itself (never touching user/password/host) makes the explicit `ssl`
+  // option below the only source of truth. Errors are still redacted
+  // against the ORIGINAL connectionString everywhere below, since that is
+  // what could actually leak.
+  let sanitizedConnectionString = connectionString;
+  try {
+    const u = new URL(connectionString);
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^ssl/i.test(key)) u.searchParams.delete(key);
+    }
+    sanitizedConnectionString = u.toString();
+  } catch {
+    // Not a parseable URL -- leave untouched, pg's own parser will surface
+    // whatever error is appropriate, redacted as usual below.
+  }
+
   const pool = new pg.Pool({
-    connectionString,
+    connectionString: sanitizedConnectionString,
     max: maxConnections,
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
