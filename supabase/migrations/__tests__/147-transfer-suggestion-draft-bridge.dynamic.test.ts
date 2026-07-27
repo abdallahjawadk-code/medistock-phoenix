@@ -510,7 +510,9 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
         `SELECT * FROM outlet_return_request_lines WHERE return_request_id=$1`,
         [result.outlet_return_request_id],
       )).rows[0];
-      expect(line.dispatch_line_id).toBe(dispatchLineId);
+      expect(line.original_dispatch_line_id).toBe(dispatchLineId);
+      expect(line.reason_code).toBe('excess');
+      expect(line.reason_text).toBe(`Auto-drafted from inventory suggestion ${suggestionId}`);
       expect(line.requested_quantity).toBe(30);
 
       // Creating the draft reserves nothing and moves no stock. Real custody
