@@ -86,22 +86,45 @@ async function main() {
   }
 
   console.log('\n=== 3. Business-activity snapshot ===');
+  // The threshold below exists to catch UNEXPECTED genuine clinical growth
+  // -- counting this mission's own deliberately-seeded demo organizations/
+  // movements against it is a false alarm by construction (they grow by
+  // design every time this workflow's migrate_and_seed mode runs), not a
+  // signal. Excludes rows registered in phoenix_demo_manifest for
+  // PHOENIX_DEMO_V1's organizations, queried directly (not through
+  // phoenix_is_demo_organization(), which requires auth.uid() and would
+  // raise not_authenticated on this script's unauthenticated admin
+  // connection -- this asAdmin connection reads the same manifest table
+  // that RPC's own body reads, just without that RPC's caller-context
+  // requirement, appropriate for a backend diagnostic script).
+  let manifestTableExistsForFilter = false;
+  await io.asAdmin(async (c) => {
+    const t = await c.query(`SELECT to_regclass('public.phoenix_demo_manifest') AS reg`);
+    manifestTableExistsForFilter = t.rows[0].reg !== null;
+  });
+  const demoOrgIdsSubquery = manifestTableExistsForFilter
+    ? `(SELECT row_id FROM public.phoenix_demo_manifest WHERE dataset_key = '${DATASET}' AND table_name = 'organizations')`
+    : `(SELECT NULL::uuid WHERE false)`; // pre-140 Production: no demo mechanism exists yet, nothing to exclude
+  const demoOrgFilter = `organization_id NOT IN ${demoOrgIdsSubquery}`;
+  const demoOrgFilterDirect = `id NOT IN ${demoOrgIdsSubquery}`;
+
   const counts = {};
   await io.asAdmin(async (c) => {
     for (const [key, sql] of Object.entries({
-      organizations: `SELECT count(*)::int AS n FROM organizations`,
+      organizations: `SELECT count(*)::int AS n FROM organizations WHERE ${demoOrgFilterDirect}`,
+      organizations_total_incl_demo: `SELECT count(*)::int AS n FROM organizations`,
       warehouses: `SELECT count(*)::int AS n FROM warehouses`,
       distribution_points: `SELECT count(*)::int AS n FROM distribution_points`,
       profiles_non_super_admin: `SELECT count(*)::int AS n FROM profiles WHERE role <> 'super_admin'`,
-      warehouse_stock_movements: `SELECT count(*)::int AS n FROM warehouse_stock_movements`,
-      outlet_stock_movements: `SELECT count(*)::int AS n FROM outlet_stock_movements`,
+      warehouse_stock_movements: `SELECT count(*)::int AS n FROM warehouse_stock_movements WHERE ${demoOrgFilter}`,
+      outlet_stock_movements: `SELECT count(*)::int AS n FROM outlet_stock_movements WHERE ${demoOrgFilter}`,
     })) {
       try {
         const r = await c.query(sql);
         counts[key] = r.rows[0].n;
       } catch { counts[key] = null; } // table may not exist yet if migrations aren't fully applied
     }
-    const orgRows = await c.query(`SELECT name, code FROM organizations ORDER BY created_at LIMIT 20`);
+    const orgRows = await c.query(`SELECT name, code FROM organizations WHERE ${demoOrgFilterDirect} ORDER BY created_at LIMIT 20`);
     counts._organizationNames = orgRows.rows.map(r => `${r.name} (${r.code})`);
   });
   console.log(JSON.stringify(counts, null, 2));
