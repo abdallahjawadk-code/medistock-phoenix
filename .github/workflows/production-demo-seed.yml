@@ -98,3 +98,22 @@ jobs:
         env:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
         run: supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --dry-run
+
+      # ── migrate_and_seed only, past this point. ──────────────────────────
+      - name: Apply accepted migrations to Production
+        if: inputs.mode == 'migrate_and_seed'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL"
+
+      - name: Confirm Production migration history reaches the accepted ceiling, no gaps
+        if: inputs.mode == 'migrate_and_seed'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: node tools/phoenix-demo/verify-migration-ceiling.mjs
+
+      - name: Seed PHOENIX_DEMO_V1 (runs twice internally to prove idempotency)
+        if: inputs.mode == 'migrate_and_seed'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: node tools/phoenix-demo/seed-prod.mjs
