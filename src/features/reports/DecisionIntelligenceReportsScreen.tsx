@@ -1466,7 +1466,11 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
   // to early-return past this point.
   if (history.loading && !history.data) return <PhoenixLoadingState />;
   if (history.error) return <PhoenixErrorState message={history.error} onRetry={history.reload} />;
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
+  // Wrapped in the same data-testid as the loaded-content return below —
+  // an empty result is a legitimate, fully-rendered state, not a blank
+  // page, and must be provable as such by anything keying off this tab's
+  // root (see all-tabs-mount.runtime.test.tsx).
+  if (rows.length === 0) return <div data-testid="corrections-history-tab"><PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /></div>;
 
   function exportConfig() {
     const columns: ProfessionalReportColumn<CorrectionHistoryRow>[] = [
@@ -1983,7 +1987,9 @@ function SupplementaryPurchasesTab({ orgId, lang, onToast, onMobilePrint }: {
   if (orders.loading && !orders.data) return <PhoenixLoadingState />;
   if (orders.error) return <PhoenixErrorState message={orders.error} onRetry={orders.reload} />;
   const rows = orders.data ?? [];
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="supplementary-purchases-tab"><PhoenixEmptyState icon="package" title={t('lp_history_none', lang)} /></div>;
 
   function ordersSheetConfig(moduleName: string) {
     const columns: ProfessionalReportColumn<OrderRow>[] = [
@@ -2577,7 +2583,9 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onOpenMaterials }:
   if (overview.loading && !overview.data) return <PhoenixLoadingState />;
   if (overview.error) return <PhoenixErrorState message={overview.error} onRetry={overview.reload} />;
   const rows = overview.data ?? [];
-  if (rows.length === 0) return <PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="institution-status-tab"><PhoenixEmptyState icon="hospital" title={t('empty_orgs', lang)} /></div>;
 
   function exportConfig() {
     const columns: ProfessionalReportColumn<InstitutionOverview>[] = [
@@ -2668,7 +2676,9 @@ export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 
   if (snapshots.error) return <PhoenixErrorState message={snapshots.error} onRetry={snapshots.reload} />;
   const rows = snapshots.data ?? [];
   const isDemo = demo.data === true;
-  if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />;
+  // Wrapped in the tab's own data-testid — see the corrections tab above
+  // for why an empty result must still be provable as non-blank content.
+  if (rows.length === 0) return <div data-testid="dir-report-library"><PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /></div>;
 
   return (
     <div style={{ display: 'grid', gap: '10px' }} data-testid="dir-report-library">
