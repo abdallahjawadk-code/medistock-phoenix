@@ -68,19 +68,22 @@ async function main() {
     }
     const mismatches = results.filter((r) => !r.match);
 
-    console.log(`\n=== 3. Demo organizations: names/markers redacted, count + is_demo flag only ===`);
+    console.log(`\n=== 3. Demo organizations: names/markers redacted, count only ===`);
+    // Queries phoenix_demo_manifest directly rather than through
+    // phoenix_is_demo_organization(), which requires auth.uid() and would
+    // raise not_authenticated on this script's unauthenticated admin
+    // connection (same fix already applied to prod-preflight.mjs).
     let orgCheck;
     await io.asAdmin(async (c) => {
       const r = await c.query(
-        `SELECT count(*)::int n,
-                count(*) FILTER (WHERE public.phoenix_is_demo_organization(o.id)) AS flagged_demo
+        `SELECT count(*)::int n
            FROM public.organizations o
            JOIN public.phoenix_demo_manifest m
              ON m.dataset_key = $1 AND m.table_name = 'organizations' AND m.row_id = o.id`,
         [DATASET_KEY]);
       orgCheck = r.rows[0];
     });
-    console.log(`  organizations present: ${orgCheck.n}, phoenix_is_demo_organization()=true: ${orgCheck.flagged_demo}`);
+    console.log(`  organizations present and registered as demo-owned: ${orgCheck.n}`);
 
     console.log(`\n=== SUMMARY ===`);
     if (mismatches.length > 0) {
