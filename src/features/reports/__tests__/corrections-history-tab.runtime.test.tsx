@@ -26,8 +26,8 @@ vi.mock('@/features/movement/paper-reference.service', () => ({
 // REPORTING-UNIFICATION: mission requirement — prove export/print carry
 // REAL row content, not just that the button exists/was clicked. Captures
 // the exact config the tab hands to the shared export module.
-const exportProfessionalXlsx = vi.fn(async () => true);
-const triggerProfessionalPrint = vi.fn(() => ({ ok: true, mobileHtml: undefined as string | undefined }));
+const exportProfessionalXlsx = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+const triggerProfessionalPrint = vi.fn<(...args: unknown[]) => { ok: boolean; mobileHtml: string | undefined }>(() => ({ ok: true, mobileHtml: undefined }));
 vi.mock('@/shared/lib/professional-export', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/shared/lib/professional-export')>();
   return { ...actual, exportProfessionalXlsx: (...a: unknown[]) => exportProfessionalXlsx(...a), triggerProfessionalPrint: (...a: unknown[]) => triggerProfessionalPrint(...a) };
