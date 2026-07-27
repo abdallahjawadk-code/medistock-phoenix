@@ -13,7 +13,7 @@ import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 import { getExpiryRiskLabel, getExpiryRiskTone, type ExpiryRiskTier } from '@/shared/lib/expiry-risk';
 import {
-  getLiveInterInstitutionAlertsWithState,
+  getLiveInterInstitutionAlertsPage,
   updateInterOrgAlertState,
   reopenInterOrgAlert,
   getInterOrgAlertEvents,
@@ -248,7 +248,13 @@ export function InterInstitutionAlertsScreen() {
   const [groupMode, setGroupMode] = useState<GroupMode>('none');
   const [sortMode, setSortMode] = useState<SortMode>('default');
 
-  const result = useAsync(() => getLiveInterInstitutionAlertsWithState(200), []);
+  // REVIEWER FIX (Phase 2): real server-side pagination — the screen summary
+  // is never silently built on just the first 200 rows. Page size chosen to
+  // keep card lists scannable; total_count always reflects the full,
+  // server-computed set (up to the feed's own 500-row safety ceiling).
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
+  const result = useAsync(() => getLiveInterInstitutionAlertsPage(PAGE_SIZE, page * PAGE_SIZE), [page]);
   const [action, setAction] = useState<{ alert: LiveInterInstitutionAlertWithState; to: AlertLifecycleStatus } | null>(null);
   const [historyAlert, setHistoryAlert] = useState<LiveInterInstitutionAlertWithState | null>(null);
 
@@ -256,6 +262,8 @@ export function InterInstitutionAlertsScreen() {
   const rpcError = result.data?.error;
   const forbidden = rpcError === 'FORBIDDEN';
   const allAlerts = result.data?.alerts ?? [];
+  const totalCount = result.data?.totalCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   // UX-ALERTS-LIVE-WHATSAPP-CONTACT-WIRING-A: contact phones now come
   // straight off each alert row (alert.sourceContactPhone/targetContactPhone),
@@ -264,7 +272,12 @@ export function InterInstitutionAlertsScreen() {
   // organization_status_contacts query, so no RLS dependency and no risk of
   // reintroducing the unstable-dependency freeze the old lookup effect had.
 
-  const summaryTotal = allAlerts.length;
+  // REVIEWER FIX (Phase 2): the total tile now reflects the server-computed
+  // total across ALL pages (result.data.totalCount), not just the current
+  // page's row count — the other breakdown tiles below remain current-page
+  // counts (labeled as such) since a full cross-page breakdown would need a
+  // separate aggregate RPC, out of scope for this pass.
+  const summaryTotal = totalCount;
   const summaryHigh = allAlerts.filter(a => a.severity === 'high').length;
   const summarySurplus = allAlerts.filter(a => a.alertType === 'surplus_to_shortage').length;
   const summaryNearExpiry = allAlerts.filter(a => a.alertType === 'near_expiry_to_shortage').length;
@@ -348,8 +361,14 @@ export function InterInstitutionAlertsScreen() {
       </div>
 
       {/* No auto-transfer disclaimer */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '8px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <PhoenixIcon name="info" size={15} inline /> {t('iia_no_transfer', lang)}
+      </div>
+      {/* REVIEWER FIX: this screen's alerts are always the peer-institution,
+          no-execution-corridor discovery layer — a permanent, honest note,
+          never silently omitted. */}
+      <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '11.5px', color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: '8px' }} dir="auto">
+        <PhoenixIcon name="info" size={15} inline /> {t('lia_not_executable_note', lang)}
       </div>
 
       {/* Summary cards */}
@@ -560,6 +579,17 @@ export function InterInstitutionAlertsScreen() {
           </div>
         )
       )}
+      {/* REVIEWER FIX (Phase 2): real server-side pagination with an honest
+          total — never a silent first-200 truncation. */}
+      {!result.loading && !result.error && ok && totalCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginTop: '18px', fontSize: '11.5px', color: 'var(--t2)' }}>
+          <ActionButton disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))} label={t('lia_page_prev', lang)} />
+          <span dir="ltr">
+            {t('lia_page_label', lang)} {page + 1} / {pageCount} · {t('lia_page_total', lang)}: {totalCount}
+          </span>
+          <ActionButton disabled={page + 1 >= pageCount} onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} label={t('lia_page_next', lang)} />
+        </div>
+      )}
       <LifecycleActionDialog
         action={action}
         lang={lang}
@@ -636,6 +666,10 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
           />
           <PhoenixStatusBadge variant="neutral" label={t(ALERT_TYPE_LABEL_KEY[a.alertType], lang)} />
           <PhoenixStatusBadge variant={severityVariant} label={t(severityLabelKey, lang)} />
+          {/* REVIEWER FIX: no live execution corridor exists between two peer
+              institutions — this is a permanent, honest label on every
+              discovery-layer alert, never omitted. */}
+          <PhoenixStatusBadge variant="neutral" label={t('lia_not_executable_badge', lang)} />
         </div>
       </div>
 
@@ -726,7 +760,12 @@ function AlertCard({ a, lang, canTransition, onAction, onHistory, activeOrgId, i
                 sourceInstitution: orgName(a.sourceOrganizationName, a.sourceOrganizationNameAr, lang),
                 targetInstitution: orgName(a.targetOrganizationName, a.targetOrganizationNameAr, lang),
                 outlet: tgtPoint,
+                // This screen (migration 036) is a discovery/coordination layer
+                // only — it never computes a real transfer quantity, so
+                // sourceQuantity is always labeled explicitly as a raw balance,
+                // never as a ready transfer amount (reviewer fix, Phase 3).
                 quantity: a.sourceQuantity > 0 ? a.sourceQuantity : undefined,
+                quantityLabel: 'balance',
                 expiryDate: a.alertType === 'near_expiry_to_shortage' ? a.sourceExpiryDate : undefined,
                 lastUpdate: new Date(a.computedAt).toLocaleString(lang === 'ar' ? 'ar' : 'en'),
                 context: 'alert',
