@@ -54,14 +54,6 @@ $precond$;
 -- phoenix_demo_purge so current_user inside it is a value no application
 -- role can produce.
 
-DO $role$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'phoenix_demo_purger') THEN
-    CREATE ROLE phoenix_demo_purger NOLOGIN NOINHERIT;
-  END IF;
-END;
-$role$;
-
 -- ALTER FUNCTION ... OWNER TO requires the CURRENT connecting role to either
 -- be a literal Postgres superuser or hold membership in the target role.
 -- Supabase's own "postgres" role is deliberately NOT a literal superuser
@@ -81,7 +73,32 @@ $role$;
 -- migrations already has unrestricted authority over this database in
 -- every other respect. No SUPERUSER/BYPASSRLS is granted anywhere, and
 -- phoenix_demo_purger itself remains NOLOGIN/NOINHERIT.
-GRANT phoenix_demo_purger TO CURRENT_USER;
+--
+-- A bare `GRANT phoenix_demo_purger TO CURRENT_USER;`, issued as its own
+-- top-level statement right after the CREATE ROLE above, crashed the
+-- PostgreSQL 17 backend outright under `supabase start`'s real local stack
+-- ("server closed the connection unexpectedly" / "connection to server was
+-- lost" -- confirmed via a raw `psql -v ON_ERROR_STOP=1` replay against
+-- that exact instance, isolated from every other migration, pointing at
+-- this exact statement). That is a backend crash, not a SQL error --
+-- unrelated to any security property, and not reproduced by this session's
+-- own disposable rig (a genuine Postgres superuser connection never takes
+-- this code path in the first place). The fix below is a mechanical
+-- rewrite only: resolve current_user to an explicit role name first, and
+-- issue the GRANT via dynamic EXECUTE inside the same DO block that
+-- creates the role, instead of a separate bare statement using the
+-- CURRENT_USER pseudo-role-specification. The target role, the grantee,
+-- and every other property are unchanged.
+DO $role$
+DECLARE
+  v_applying_role text := current_user;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'phoenix_demo_purger') THEN
+    CREATE ROLE phoenix_demo_purger NOLOGIN NOINHERIT;
+  END IF;
+  EXECUTE format('GRANT phoenix_demo_purger TO %I', v_applying_role);
+END;
+$role$;
 
 GRANT USAGE ON SCHEMA public TO phoenix_demo_purger;
 -- phoenix_demo_purge re-validates auth.uid() and phoenix_my_role() inside its
