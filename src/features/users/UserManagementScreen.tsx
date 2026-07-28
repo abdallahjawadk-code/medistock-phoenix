@@ -1333,6 +1333,12 @@ function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
         setError(withSupportRef(t('um_last_super_admin', lang), lang, res.correlationId));
       } else if (res.error === 'INVALID_CONFIRMATION') {
         setError(withSupportRef(t('um_delete_confirmation_mismatch', lang), lang, res.correlationId));
+      } else if (res.error === 'USER_HAS_OPERATIONAL_HISTORY') {
+        // Deletion is only ever for a genuinely unused account. Never
+        // downgrade this to a generic failure or EDGE_NOT_DEPLOYED-style
+        // message — it is a specific, actionable outcome pointing the admin
+        // at disable/recycle instead.
+        setError(withSupportRef(t('um_delete_has_history', lang), lang, res.correlationId));
       } else if (res.error === 'REQUEST_DENIED') {
         setError(withSupportRef(t('um_request_denied', lang), lang, res.correlationId));
       } else if (res.error === 'LIFECYCLE_IN_PROGRESS') {
@@ -1362,6 +1368,7 @@ function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
 
         <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
 <PhoenixIcon name="warning" size={13} inline /> {t('um_delete_confirm_q', lang)}
+          <p style={{ margin: '6px 0 0 0' }}>{t('um_delete_unused_only', lang)}</p>
         </div>
 
         <div style={{ marginBottom: '14px' }}>

@@ -14,8 +14,16 @@ const MIGRATION = readFileSync(
   join(__dirname, '../../../../supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql'),
   'utf8',
 );
+const MIGRATION_148 = readFileSync(
+  join(__dirname, '../../../../supabase/migrations/148_phoenix_secure_user_delete_history_guard.sql'),
+  'utf8',
+);
 const SCREEN = readFileSync(
   join(__dirname, '../../../features/users/UserManagementScreen.tsx'),
+  'utf8',
+);
+const STRINGS = readFileSync(
+  join(__dirname, '../../i18n/strings.ts'),
   'utf8',
 );
 const SERVICE = readFileSync(
@@ -128,5 +136,84 @@ describe('admin-user-lifecycle / admin-recycle-user secure lifecycle contract (S
       "export async function deleteUserViaEdge(targetUserId: string, confirmation: string): Promise<LifecycleResult> {",
     );
     expect(SERVICE).toContain("invokeLifecycle({ action: 'delete', target_user_id: targetUserId, confirmation });");
+  });
+});
+
+describe('SECURE-USER-DELETE-HISTORY-GUARD-148: hard delete requires zero operational history', () => {
+  it('the Edge Function maps USER_HAS_OPERATIONAL_HISTORY to a distinct 409, not folded into REQUEST_DENIED', () => {
+    expect(SOURCE).toContain("case 'USER_HAS_OPERATIONAL_HISTORY': return 409;");
+  });
+
+  it('migration 148 extends phoenix_lifecycle_reserve rather than editing 093', () => {
+    // 093 itself must remain byte-identical to its original delete-branch shape —
+    // this migration only ever CREATE OR REPLACEs the function in a NEW file.
+    expect(MIGRATION).not.toContain('USER_HAS_OPERATIONAL_HISTORY');
+    expect(MIGRATION_148).toContain('create or replace function public.phoenix_lifecycle_reserve(');
+    expect(MIGRATION_148).toContain("'USER_HAS_OPERATIONAL_HISTORY'");
+  });
+
+  it('the history check runs inside reserve(), gated to the delete action, before any reservation is persisted', () => {
+    const blockIdx = MIGRATION_148.indexOf("if p_action = 'delete' then");
+    const historyCheckIdx = MIGRATION_148.indexOf('phoenix_profile_operational_blockers(p_target_id)');
+    const reservationInsertIdx = MIGRATION_148.indexOf('insert into public.profile_lifecycle_reservations');
+    expect(blockIdx).toBeGreaterThan(-1);
+    expect(historyCheckIdx).toBeGreaterThan(blockIdx);
+    expect(reservationInsertIdx).toBeGreaterThan(historyCheckIdx);
+  });
+
+  it('phoenix_profile_operational_blockers is an internal-only helper, never directly callable by a client role', () => {
+    expect(MIGRATION_148).toContain(
+      'revoke all on function public.phoenix_profile_operational_blockers(uuid) from authenticated;',
+    );
+    expect(MIGRATION_148).toContain(
+      'revoke all on function public.phoenix_profile_operational_blockers(uuid) from anon;',
+    );
+    expect(MIGRATION_148).not.toMatch(
+      /grant execute on function public\.phoenix_profile_operational_blockers\(uuid\) to (authenticated|anon|public)/,
+    );
+  });
+
+  it('phoenix_lifecycle_reserve keeps its exact prior grant (authenticated only)', () => {
+    expect(MIGRATION_148).toContain(
+      'grant execute on function public.phoenix_lifecycle_reserve(uuid,text,uuid) to authenticated;',
+    );
+    expect(MIGRATION_148).not.toMatch(
+      /grant execute on function public\.phoenix_lifecycle_reserve\(uuid,text,uuid\) to (anon|public)/,
+    );
+  });
+
+  it('a brand-new, never-used account is never blocked by identity/permission-admin bookkeeping alone', () => {
+    // Explicitly excluded from the blocker enumeration — see the migration's
+    // own header for the full rationale. Checked as "never queried as a
+    // blocker source", not as a banned substring, since the header comment
+    // legitimately names these tables to explain the exclusion.
+    for (const excludedTable of [
+      'audit_logs', 'phoenix_notifications', 'phoenix_notification_reads',
+      'profile_permission_overrides', 'profile_scope_assignments',
+      'user_identity_history', 'profile_lifecycle_reservations',
+    ]) {
+      expect(MIGRATION_148).not.toContain(`to_regclass('public.${excludedTable}')`);
+    }
+  });
+
+  it('the frontend shows the specific, translated message and never downgrades it to a generic or EDGE_NOT_DEPLOYED error', () => {
+    const modal = SCREEN.slice(SCREEN.indexOf('function DeleteConfirmModal('));
+    expect(modal).toContain("res.error === 'USER_HAS_OPERATIONAL_HISTORY'");
+    expect(modal).toContain("t('um_delete_has_history', lang)");
+    // The specific branch must be reachable before the generic fallback in
+    // source order (the general `else` must come after it).
+    const specificIdx = modal.indexOf("res.error === 'USER_HAS_OPERATIONAL_HISTORY'");
+    const genericIdx = modal.lastIndexOf('} else {');
+    expect(genericIdx).toBeGreaterThan(specificIdx);
+  });
+
+  it('the modal clarifies delete is only for genuinely unused accounts', () => {
+    const modal = SCREEN.slice(SCREEN.indexOf('function DeleteConfirmModal('));
+    expect(modal).toContain("t('um_delete_unused_only', lang)");
+  });
+
+  it('um_delete_has_history and um_delete_unused_only have non-empty Arabic and English text', () => {
+    expect(STRINGS).toMatch(/um_delete_has_history:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'/);
+    expect(STRINGS).toMatch(/um_delete_unused_only:\s*\{\s*ar:\s*'[^']+',\s*en:\s*'[^']+'/);
   });
 });

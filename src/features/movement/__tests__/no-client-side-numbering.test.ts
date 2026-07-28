@@ -395,7 +395,17 @@ describe('no client-side document-number sequence exists', () => {
     // replaces an authenticated profile UPSERT with a service-only,
     // nonce-bound, UPDATE-only account-provisioning contract. No sequence,
     // allocator, or document string. Ceiling -> 147.
-    const beyond = migrations.filter(f => /^(14[7-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 147 is deliberately absent from this repo line -- it belongs to the
+    // separate, still-unmerged PR #68 (feat/phoenix-transfer-suggestions-
+    // production), which already committed 147_phoenix_transfer_suggestion_
+    // draft_bridge.sql on its own branch. This repo's line registers 148
+    // instead to avoid a numbering collision once both PRs merge.
+    // 148 (SECURE-USER-DELETE-HISTORY-GUARD-148) adds NO document numbering
+    // -- it extends phoenix_lifecycle_reserve with an operational-history
+    // check (EXISTS across movement/request/approval tables) before allowing
+    // a hard delete. No sequence, allocator, or document string of any kind.
+    // Ceiling -> 148 (149 is next, 147 stays permanently skipped here).
+    const beyond = migrations.filter(f => /^(149|1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
