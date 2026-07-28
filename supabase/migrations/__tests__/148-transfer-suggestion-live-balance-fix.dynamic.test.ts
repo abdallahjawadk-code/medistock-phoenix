@@ -39,7 +39,7 @@ run('LIVE-BALANCE-FIX-148 — draft creation re-verifies against live stock/thre
   let rig: Rig;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 148 });
+    rig = await buildRig({ upTo: 149 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
         ('${ORG_C}','Central','مركزي','p148lb-c'),

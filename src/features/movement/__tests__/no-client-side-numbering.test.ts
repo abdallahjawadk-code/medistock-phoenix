@@ -408,8 +408,13 @@ describe('no client-side document-number sequence exists', () => {
     // parameters 068/070/071 already require from a human caller; no new
     // sequence, no server-side allocator, no client-computed identifier of
     // any kind is introduced by this migration. Ceiling -> 149.
-    const beyond = migrations.filter(f => /^(149|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 149 (INVENTORY-SUGGESTION-LINEAGE-COMMITMENTS-149) adds lineage and
+    // derived commitment accounting around those same existing transfer
+    // documents. It introduces no sequence, allocator, or document number.
+    // Ceiling -> 150.
+    const beyond = migrations.filter(f => /^(1[5-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

@@ -1,6 +1,8 @@
 /**
  * TRANSFER-SUGGESTION-DRAFT-BRIDGE-148 — DYNAMIC operational acceptance
- * against a real disposable Postgres with 001->148 applied in order.
+ * against a real disposable Postgres with the current 001->149 chain applied
+ * in order. The original 148 bridge acceptance remains the regression contract
+ * while 149 adds explicit line lineage to every returned draft.
  *
  * Proves, through the real RPCs exactly as the app will call them (never
  * hand-written INSERTs into the guarded tables):
@@ -41,7 +43,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 148 });
+    rig = await buildRig({ upTo: 149 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
         ('${ORG_C}','Central','مركزي','p148-c'),('${ORG_I}','Institution','مؤسسة','p148-i')
@@ -153,6 +155,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
     expect(result.ok).toBe(true);
     expect(result.route_kind).toBe('central_to_institution');
     expect(result.warehouse_transfer_request_id).toBeTruthy();
+    expect(result.warehouse_transfer_request_line_id).toBeTruthy();
     // headroom (100-10 reserved -20 target_max = 70) vs deficit (50-5=45) vs batch(90) -> 45
     expect(result.quantity).toBe(45);
 
@@ -160,6 +163,9 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       const s = (await c.query(`SELECT * FROM inventory_transfer_suggestions WHERE id=$1`, [suggestionId])).rows[0];
       expect(s.status).toBe('accepted');
       expect(s.draft_warehouse_transfer_request_id).toBe(result.warehouse_transfer_request_id);
+      expect(s.draft_warehouse_transfer_request_line_id).toBe(result.warehouse_transfer_request_line_id);
+      expect(s.lineage_version).toBe(1);
+      expect(s.lineage_state).toBe('linked');
       expect(s.draft_warehouse_dispatch_id).toBeNull();
       expect(s.draft_outlet_return_request_id).toBeNull();
       expect(s.draft_document_number).toBe('DOC-148-HAPPY-1');
@@ -171,6 +177,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
 
       const line = (await c.query(`SELECT * FROM warehouse_transfer_request_lines WHERE transfer_request_id=$1`, [result.warehouse_transfer_request_id])).rows[0];
       expect(line.requested_quantity).toBe(45);
+      expect(line.id).toBe(result.warehouse_transfer_request_line_id);
 
       // Drafting never touches stock balances.
       const after = (await c.query(`SELECT on_hand_quantity, reserved_quantity FROM warehouse_stock WHERE id=$1`, [srcStockId])).rows[0];
@@ -195,6 +202,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       expect(replay.ok).toBe(true);
       expect(replay.idempotent_replay).toBe(true);
       expect(replay.warehouse_transfer_request_id).toBe(first.warehouse_transfer_request_id);
+      expect(replay.warehouse_transfer_request_line_id).toBe(first.warehouse_transfer_request_line_id);
     }, { commit: true });
 
     // A different actor is refused outright, not silently re-drafted.
@@ -375,6 +383,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
     expect(result.ok).toBe(true);
     expect(result.route_kind).toBe('warehouse_to_outlet');
     expect(result.warehouse_dispatch_id).toBeTruthy();
+    expect(result.warehouse_dispatch_line_id).toBeTruthy();
 
     await rig.asAdmin(async (c: any) => {
       const dispatch = (await c.query(`SELECT * FROM warehouse_dispatches WHERE id=$1`, [result.warehouse_dispatch_id])).rows[0];
@@ -383,6 +392,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       expect(dispatch.destination_distribution_point_id).toBe(DP_I);
       const line = (await c.query(`SELECT * FROM warehouse_dispatch_lines WHERE dispatch_id=$1`, [result.warehouse_dispatch_id])).rows[0];
       expect(line.warehouse_stock_id).toBe(srcStockId);
+      expect(line.id).toBe(result.warehouse_dispatch_line_id);
     });
   });
 
@@ -486,6 +496,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
     expect(result.ok).toBe(true);
     expect(result.route_kind).toBe('outlet_to_warehouse');
     expect(result.outlet_return_request_id).toBeTruthy();
+    expect(result.outlet_return_request_line_id).toBeTruthy();
     // outlet headroom 50-20, warehouse deficit 60-30, provenance returnable 50.
     expect(result.quantity).toBe(30);
 
@@ -496,6 +507,9 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       )).rows[0];
       expect(suggestion.status).toBe('accepted');
       expect(suggestion.draft_outlet_return_request_id).toBe(result.outlet_return_request_id);
+      expect(suggestion.draft_outlet_return_request_line_id).toBe(result.outlet_return_request_line_id);
+      expect(suggestion.lineage_version).toBe(1);
+      expect(suggestion.lineage_state).toBe('linked');
       expect(suggestion.draft_warehouse_transfer_request_id).toBeNull();
       expect(suggestion.draft_warehouse_dispatch_id).toBeNull();
 
@@ -511,6 +525,7 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
         [result.outlet_return_request_id],
       )).rows[0];
       expect(line.original_dispatch_line_id).toBe(dispatchLineId);
+      expect(line.id).toBe(result.outlet_return_request_line_id);
       expect(line.reason_code).toBe('excess');
       expect(line.reason_text).toBe(`Auto-drafted from inventory suggestion ${suggestionId}`);
       expect(line.requested_quantity).toBe(30);
@@ -527,6 +542,180 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       )).rows[0];
       expect(afterOutlet).toEqual(beforeOutlet);
       expect(afterWarehouse).toEqual(beforeWarehouse);
+    });
+  });
+
+  it('derives central commitments from the live linked line and closes them before line deletion', async () => {
+    const { suggestionId, sci } = await seedCentralToInstitutionPair('line-edit-delete');
+    let draft: any;
+    await rig.asUser(IA_C, async (c: any) => {
+      draft = (await c.query(
+        `SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`,
+        [suggestionId, 'DOC-149-LINE-DELETE'],
+      )).rows[0].r;
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      let commitment = (await c.query(
+        `SELECT * FROM public.phoenix_inventory_suggestion_commitments($1)`,
+        [suggestionId],
+      )).rows[0];
+      expect(commitment.source_commitment).toBe(45);
+      expect(commitment.target_commitment).toBe(45);
+      expect(commitment.truth_source).toBe('draft_line');
+    });
+
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_update_warehouse_transfer_request_line($1,$2,NULL)`,
+        [draft.warehouse_transfer_request_line_id, 20],
+      );
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      const commitment = (await c.query(
+        `SELECT * FROM public.phoenix_inventory_suggestion_commitments($1)`,
+        [suggestionId],
+      )).rows[0];
+      expect(commitment.source_commitment).toBe(20);
+      expect(commitment.target_commitment).toBe(20);
+      expect(commitment.batch_commitment).toBe(20);
+    });
+
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_delete_warehouse_transfer_request_line($1)`,
+        [draft.warehouse_transfer_request_line_id],
+      );
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      const suggestion = (await c.query(
+        `SELECT lineage_state, commitment_closed_reason,
+                draft_warehouse_transfer_request_line_id
+           FROM inventory_transfer_suggestions WHERE id=$1`,
+        [suggestionId],
+      )).rows[0];
+      expect(suggestion.lineage_state).toBe('line_deleted');
+      expect(suggestion.commitment_closed_reason).toBe('line_deleted');
+      expect(suggestion.draft_warehouse_transfer_request_line_id).toBeNull();
+      const commitment = (await c.query(
+        `SELECT * FROM public.phoenix_inventory_suggestion_commitments($1)`,
+        [suggestionId],
+      )).rows[0];
+      expect(commitment.source_commitment).toBe(0);
+      expect(commitment.target_commitment).toBe(0);
+      expect(commitment.is_active).toBe(false);
+    });
+
+    let originalKey = '';
+    await rig.asAdmin(async (c: any) => {
+      originalKey = (await c.query(
+        `SELECT suggestion_key FROM inventory_transfer_suggestions WHERE id=$1`,
+        [suggestionId],
+      )).rows[0].suggestion_key;
+    });
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_suggest_cross_org_inventory_transfer($1,$2,$3,$4,$5,NULL)`,
+        [ORG_C, WH_C, ORG_I, WH_I, sci],
+      );
+    }, { commit: true });
+    await rig.asAdmin(async (c: any) => {
+      const nextCycle = await c.query(
+        `SELECT id, suggestion_key
+           FROM inventory_transfer_suggestions
+          WHERE suggestion_key=$1 AND status='open'`,
+        [originalKey],
+      );
+      expect(nextCycle.rows).toHaveLength(1);
+      expect(nextCycle.rows[0].id).not.toBe(suggestionId);
+    });
+  });
+
+  it('moves only the sent portion from source commitment to in-transit target custody', async () => {
+    const { suggestionId, srcStockId } = await seedCentralToInstitutionPair('partial-send');
+    let draft: any;
+    await rig.asUser(IA_C, async (c: any) => {
+      draft = (await c.query(
+        `SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`,
+        [suggestionId, 'DOC-149-PARTIAL-SEND'],
+      )).rows[0].r;
+    }, { commit: true });
+
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_submit_warehouse_transfer_request($1)`,
+        [draft.warehouse_transfer_request_id],
+      );
+      await c.query(
+        `SELECT public.phoenix_review_warehouse_transfer_request(
+           $1, jsonb_build_array(jsonb_build_object(
+             'line_id',$2::text,'approved_quantity',30)))`,
+        [draft.warehouse_transfer_request_id, draft.warehouse_transfer_request_line_id],
+      );
+    }, { commit: true });
+
+    await expect(
+      rig.asUser(rig.superAdminId, async (c: any) => {
+        await c.query(
+          `SELECT public.phoenix_send_direct_warehouse_transfer_line(
+             $1,$2,$3,10,$4,$5,$6,NULL)`,
+          [
+            randomUUID(),
+            draft.warehouse_transfer_request_id,
+            randomUUID(),
+            'TR-149-WRONG-STOCK',
+            draft.warehouse_transfer_request_line_id,
+            'DOC-149-WRONG-STOCK',
+          ],
+        );
+      }, { commit: true }),
+    ).rejects.toThrow(/suggestion_source_stock_mismatch/);
+
+    let transferLineId = '';
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      const sent = await c.query(
+        `SELECT public.phoenix_send_direct_warehouse_transfer_line(
+           $1,$2,$3,10,$4,$5,$6,NULL) AS r`,
+        [
+          randomUUID(),
+          draft.warehouse_transfer_request_id,
+          srcStockId,
+          'TR-149-PARTIAL',
+          draft.warehouse_transfer_request_line_id,
+          'DOC-149-PARTIAL',
+        ],
+      );
+      transferLineId = sent.rows[0].r.transfer_line_id;
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      const commitment = (await c.query(
+        `SELECT * FROM public.phoenix_inventory_suggestion_commitments($1)`,
+        [suggestionId],
+      )).rows[0];
+      expect(commitment.source_commitment).toBe(20);
+      expect(commitment.target_commitment).toBe(30);
+      expect(commitment.batch_commitment).toBe(20);
+      expect(commitment.truth_source).toBe('draft_and_in_transit');
+    });
+
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_receive_warehouse_transfer_line($1,$2,7,$3,NULL)`,
+        [randomUUID(), transferLineId, 'count_difference'],
+      );
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      const commitment = (await c.query(
+        `SELECT * FROM public.phoenix_inventory_suggestion_commitments($1)`,
+        [suggestionId],
+      )).rows[0];
+      expect(commitment.source_commitment).toBe(20);
+      expect(commitment.target_commitment).toBe(20);
+      expect(commitment.truth_source).toBe('draft_line');
     });
   });
 

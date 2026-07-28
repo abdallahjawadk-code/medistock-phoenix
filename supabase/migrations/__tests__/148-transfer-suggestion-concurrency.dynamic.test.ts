@@ -17,7 +17,7 @@ run('148 / 4B transfer-suggestion concurrency', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 148 });
+    rig = await buildRig({ upTo: 149 });
     await rig.asAdmin(async (c: any) => {
       await c.query(
         `INSERT INTO organizations (id,name,name_ar,code)

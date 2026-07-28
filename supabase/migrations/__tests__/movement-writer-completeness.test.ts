@@ -133,6 +133,27 @@ const finalDefs: Map<string, { file: string; body: string }> = (() => {
   return acc;
 })();
 
+/**
+ * Migration 149 wraps selected public writers with a pre-lock capsule and
+ * parks their byte-preserved movement implementation under a private delegate.
+ * For contract discovery the two functions are one writer: the public wrapper
+ * owns the callable identity/lock prelude and the private delegate owns the
+ * ledger mutation. Compose both bodies and remove the implementation detail so
+ * neither side can evade the existing completeness checks.
+ */
+for (const writer of REVIEWED_MOVEMENT_WRITERS) {
+  const wrapper = finalDefs.get(writer.fn);
+  const delegateName =
+    `_phoenix_149_delegate_${writer.fn.replace(/^phoenix_/, '')}`;
+  const delegate = finalDefs.get(delegateName);
+  if (!wrapper || !delegate) continue;
+  finalDefs.set(writer.fn, {
+    file: wrapper.file,
+    body: `${wrapper.body}\n${delegate.body}`,
+  });
+  finalDefs.delete(delegateName);
+}
+
 const latestWriters: Map<string, FoundFn> = (() => {
   const acc = new Map<string, FoundFn>();
   for (const [fn, { file, body }] of finalDefs) {

@@ -42,14 +42,26 @@ run('movement-writer completeness — dynamic (pg_proc is the source of truth)',
     await rig.asAdmin(async (c: any) => {
       const all = [...CONTRACT_LEDGERS, ...NON_CONTRACT_LEDGERS];
       const res = await c.query(
-        `SELECT p.proname,
-                pg_get_function_identity_arguments(p.oid) AS args,
-                p.prosecdef,
+        `SELECT CASE
+                  WHEN p.proname LIKE '_phoenix_149_delegate_%'
+                    THEN 'phoenix_' || regexp_replace(
+                      p.proname, '^_phoenix_149_delegate_', '')
+                  ELSE p.proname
+                END AS proname,
+                pg_get_function_identity_arguments(COALESCE(wrapper.oid, p.oid)) AS args,
+                COALESCE(wrapper.prosecdef, p.prosecdef) AS prosecdef,
                 (SELECT string_agg(l, ',' ORDER BY l) FROM unnest($1::text[]) l
                    WHERE p.prosrc ~* ('INSERT\\s+INTO\\s+(public\\.)?' || l || '\\M')) AS ledgers,
-                p.proconfig AS config,
-                array_to_string(p.proacl, ' ') AS acl
+                COALESCE(wrapper.proconfig, p.proconfig) AS config,
+                array_to_string(COALESCE(wrapper.proacl, p.proacl), ' ') AS acl
            FROM pg_proc p
+           LEFT JOIN pg_proc wrapper
+             ON p.proname LIKE '_phoenix_149_delegate_%'
+            AND wrapper.pronamespace = p.pronamespace
+            AND wrapper.proname = 'phoenix_' || regexp_replace(
+                  p.proname, '^_phoenix_149_delegate_', '')
+            AND pg_get_function_identity_arguments(wrapper.oid)
+                = pg_get_function_identity_arguments(p.oid)
           WHERE p.pronamespace = 'public'::regnamespace
             AND p.prokind = 'f'
             AND EXISTS (SELECT 1 FROM unnest($1::text[]) l
@@ -202,11 +214,15 @@ run('movement-writer completeness — dynamic (pg_proc is the source of truth)',
     await rig.asAdmin(async (c: any) => {
       for (const w of REVIEWED_MOVEMENT_WRITERS) {
         const r = await c.query(
-          `SELECT p.prosrc ~* 'reason_code' AS rc,
-                  p.prosrc ~* 'correlation_id' AS corr,
-                  p.prosrc ~* 'causation_id' AS caus
+          `SELECT bool_or(p.prosrc ~* 'reason_code') AS rc,
+                  bool_or(p.prosrc ~* 'correlation_id') AS corr,
+                  bool_or(p.prosrc ~* 'causation_id') AS caus
              FROM pg_proc p
-            WHERE p.proname=$1 AND p.pronamespace='public'::regnamespace`,
+            WHERE p.proname IN (
+                    $1::text,
+                    '_phoenix_149_delegate_' || regexp_replace(
+                      $1::text, '^phoenix_', ''))
+              AND p.pronamespace='public'::regnamespace`,
           [w.fn],
         );
         expect(r.rows[0].rc, `${w.fn} reason_code`).toBe(true);
@@ -221,11 +237,13 @@ run('movement-writer completeness — dynamic (pg_proc is the source of truth)',
   it('the Group I writer found by this guard is genuinely fixed in the live database', async () => {
     await rig.asAdmin(async (c: any) => {
       const r = await c.query(
-        `SELECT p.prosrc ~* 'reason_code' AS rc,
-                p.prosrc ~* 'correlation_id' AS corr,
-                p.prosrc ~* 'causation_id' AS caus
+        `SELECT bool_or(p.prosrc ~* 'reason_code') AS rc,
+                bool_or(p.prosrc ~* 'correlation_id') AS corr,
+                bool_or(p.prosrc ~* 'causation_id') AS caus
            FROM pg_proc p
-          WHERE p.proname='phoenix_receive_outlet_return_shipment_line'
+          WHERE p.proname IN (
+                  'phoenix_receive_outlet_return_shipment_line',
+                  '_phoenix_149_delegate_receive_outlet_return_shipment_line')
             AND p.pronamespace='public'::regnamespace`,
       );
       expect(r.rows[0]).toEqual({ rc: true, corr: true, caus: true });

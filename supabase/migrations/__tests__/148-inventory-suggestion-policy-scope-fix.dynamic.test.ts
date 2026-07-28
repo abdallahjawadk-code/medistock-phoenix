@@ -55,7 +55,7 @@ run('CROSS-ORG-IDOR-148-FIX — phoenix_upsert_inventory_suggestion_policy is or
   let ROOT: string;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 148 });
+    rig = await buildRig({ upTo: 149 });
     ROOT = rig.superAdminId;
 
     await rig.asAdmin(async (c) => {

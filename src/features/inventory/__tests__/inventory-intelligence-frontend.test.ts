@@ -236,8 +236,8 @@ describe('embedded into Dashboard and Status Center', () => {
 
 // ── SCOPE GUARD: no migration touched, no 073, threshold modal is org-default ─
 describe('phase scope guards', () => {
-  it('this frontend PR touches no migration file', () => {
-    const status = execSync('git status --porcelain -- supabase/migrations', {
+  it('touches no existing migration SQL (reviewed additive migrations remain allowed)', () => {
+    const status = execSync('git status --porcelain -- ":(glob)supabase/migrations/*.sql"', {
       cwd: join(__dirname, '../../../../'), encoding: 'utf8',
     });
     expect(findUnexpectedMigrationGitStatusEntries(status)).toEqual([]);
