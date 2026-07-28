@@ -1,6 +1,6 @@
 // =============================================================================
-// Dynamic regression coverage for migration 148 (SECURE-USER-DELETE-HISTORY-
-// GUARD-148), driven against a real disposable Postgres rig — not source-scan.
+// Dynamic regression coverage for migration 147 (SECURE-USER-DELETE-HISTORY-
+// GUARD-147), driven against a real disposable Postgres rig — not source-scan.
 //
 // Proves, against a real database:
 //   1. A brand-new, never-used account can still be hard-deleted (profile +
@@ -27,31 +27,31 @@ import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 const run = rigAvailable() ? describe : describe.skip;
 
-const ORG_A = '14800000-0000-4000-8000-00000000000a';
+const ORG_A = '14700000-0000-4000-8000-00000000000a';
 
-const UNUSED_TARGET   = '14800000-0000-4000-8000-000000000001';
-const HISTORY_TARGET  = '14800000-0000-4000-8000-000000000002';
-const RECYCLE_TARGET  = '14800000-0000-4000-8000-000000000003';
-const INST_ADMIN      = '14800000-0000-4000-8000-000000000004';
+const UNUSED_TARGET   = '14700000-0000-4000-8000-000000000001';
+const HISTORY_TARGET  = '14700000-0000-4000-8000-000000000002';
+const RECYCLE_TARGET  = '14700000-0000-4000-8000-000000000003';
+const INST_ADMIN      = '14700000-0000-4000-8000-000000000004';
 
-const WAREHOUSE_ID    = '14800000-0000-4000-8000-000000000100';
-const STOCK_HISTORY   = '14800000-0000-4000-8000-000000000200';
-const STOCK_RECYCLE   = '14800000-0000-4000-8000-000000000201';
+const WAREHOUSE_ID    = '14700000-0000-4000-8000-000000000100';
+const STOCK_HISTORY   = '14700000-0000-4000-8000-000000000200';
+const STOCK_RECYCLE   = '14700000-0000-4000-8000-000000000201';
 
 type Rig = Awaited<ReturnType<typeof buildRig>>;
 
-run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HISTORY-GUARD-148)', () => {
+run('migration 147 — secure user delete history guard (SECURE-USER-DELETE-HISTORY-GUARD-147)', () => {
   let rig: Rig;
   let ROOT: string;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 148 });
+    rig = await buildRig({ upTo: 147 });
     ROOT = rig.superAdminId;
 
     await rig.asAdmin(async (c) => {
       await c.query(
         `insert into public.organizations (id, name, name_ar, code, status)
-         values ($1, 'Delete Guard Org', 'مؤسسة اختبار الحذف', 'del-148-a', 'active')
+         values ($1, 'Delete Guard Org', 'مؤسسة اختبار الحذف', 'del-147-a', 'active')
          on conflict (id) do nothing`,
         [ORG_A],
       );
@@ -77,10 +77,10 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
         );
       }
 
-      await seedProfile(UNUSED_TARGET, 'unused-148@rig.local', 'Unused Target', 'outlet_officer');
-      await seedProfile(HISTORY_TARGET, 'history-148@rig.local', 'History Target', 'outlet_officer');
-      await seedProfile(RECYCLE_TARGET, 'recycle-148@rig.local', 'Old Officer', 'outlet_officer');
-      await seedProfile(INST_ADMIN, 'inst-admin-148@rig.local', 'Institution Admin', 'institution_admin');
+      await seedProfile(UNUSED_TARGET, 'unused-147@rig.local', 'Unused Target', 'outlet_officer');
+      await seedProfile(HISTORY_TARGET, 'history-147@rig.local', 'History Target', 'outlet_officer');
+      await seedProfile(RECYCLE_TARGET, 'recycle-147@rig.local', 'Old Officer', 'outlet_officer');
+      await seedProfile(INST_ADMIN, 'inst-admin-147@rig.local', 'Institution Admin', 'institution_admin');
     });
   }, 300_000);
 
@@ -158,7 +158,7 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
 
   it('an account with a real warehouse movement is refused with USER_HAS_OPERATIONAL_HISTORY, and nothing is mutated', async () => {
     await insertMovement({
-      id: '14800000-0000-4000-8000-000000000300',
+      id: '14700000-0000-4000-8000-000000000300',
       stockId: STOCK_HISTORY,
       actorId: HISTORY_TARGET,
       actorName: 'History Target',
@@ -191,7 +191,7 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
     const movement = await rig.asAdmin(async (c) => {
       const r = await c.query(
         `select actor_id, actor_name, actor_role from public.warehouse_stock_movements where id = $1`,
-        ['14800000-0000-4000-8000-000000000300'],
+        ['14700000-0000-4000-8000-000000000300'],
       );
       return r.rows[0];
     });
@@ -242,7 +242,7 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
       const r = await c.query(
         `select actor_id, actor_name, actor_role from public.phoenix_movement_ledger_report($1)
          where movement_id = $2`,
-        [ORG_A, '14800000-0000-4000-8000-000000000300'],
+        [ORG_A, '14700000-0000-4000-8000-000000000300'],
       );
       return r.rows[0];
     }, { commit: false });
@@ -264,7 +264,7 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
     ));
 
     await insertMovement({
-      id: '14800000-0000-4000-8000-000000000301',
+      id: '14700000-0000-4000-8000-000000000301',
       stockId: STOCK_RECYCLE,
       actorId: RECYCLE_TARGET,
       actorName: 'Old Officer',
@@ -290,7 +290,7 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
 
     // A post-recycle movement, carrying the NEW identity.
     await insertMovement({
-      id: '14800000-0000-4000-8000-000000000302',
+      id: '14700000-0000-4000-8000-000000000302',
       stockId: STOCK_RECYCLE,
       actorId: RECYCLE_TARGET,
       actorName: 'New Officer',
@@ -315,14 +315,14 @@ run('migration 148 — secure user delete history guard (SECURE-USER-DELETE-HIST
         `select movement_id, actor_name from public.phoenix_movement_ledger_report($1)
          where movement_id = any($2::uuid[])
          order by actor_name`,
-        [ORG_A, ['14800000-0000-4000-8000-000000000301', '14800000-0000-4000-8000-000000000302']],
+        [ORG_A, ['14700000-0000-4000-8000-000000000301', '14700000-0000-4000-8000-000000000302']],
       );
       return r.rows;
     }, { commit: false });
     // Ordered by actor_name: 'New Officer' sorts before 'Old Officer'.
     expect(report).toEqual([
-      { movement_id: '14800000-0000-4000-8000-000000000302', actor_name: 'New Officer' },
-      { movement_id: '14800000-0000-4000-8000-000000000301', actor_name: 'Old Officer' },
+      { movement_id: '14700000-0000-4000-8000-000000000302', actor_name: 'New Officer' },
+      { movement_id: '14700000-0000-4000-8000-000000000301', actor_name: 'Old Officer' },
     ]);
   });
 

@@ -22,9 +22,9 @@
 //   is recorded server-side in the RLS-protected audit_logs with the same
 //   correlation id the client already stamps on the request.
 //
-// SECURE-USER-DELETE-HISTORY-GUARD-148:
+// SECURE-USER-DELETE-HISTORY-GUARD-147:
 //   A hard-delete additionally requires zero operational history. Migration
-//   148 extends phoenix_lifecycle_reserve so a delete against a profile with
+//   147 extends phoenix_lifecycle_reserve so a delete against a profile with
 //   any warehouse/outlet movement, transfer/return/procurement request,
 //   approval, custody-chain action, or availability edit is refused with the
 //   distinct, user-facing USER_HAS_OPERATIONAL_HISTORY (not folded into

@@ -14,8 +14,8 @@ const MIGRATION = readFileSync(
   join(__dirname, '../../../../supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql'),
   'utf8',
 );
-const MIGRATION_148 = readFileSync(
-  join(__dirname, '../../../../supabase/migrations/148_phoenix_secure_user_delete_history_guard.sql'),
+const MIGRATION_147 = readFileSync(
+  join(__dirname, '../../../../supabase/migrations/147_phoenix_secure_user_delete_history_guard.sql'),
   'utf8',
 );
 const SCREEN = readFileSync(
@@ -139,45 +139,45 @@ describe('admin-user-lifecycle / admin-recycle-user secure lifecycle contract (S
   });
 });
 
-describe('SECURE-USER-DELETE-HISTORY-GUARD-148: hard delete requires zero operational history', () => {
+describe('SECURE-USER-DELETE-HISTORY-GUARD-147: hard delete requires zero operational history', () => {
   it('the Edge Function maps USER_HAS_OPERATIONAL_HISTORY to a distinct 409, not folded into REQUEST_DENIED', () => {
     expect(SOURCE).toContain("case 'USER_HAS_OPERATIONAL_HISTORY': return 409;");
   });
 
-  it('migration 148 extends phoenix_lifecycle_reserve rather than editing 093', () => {
+  it('migration 147 extends phoenix_lifecycle_reserve rather than editing 093', () => {
     // 093 itself must remain byte-identical to its original delete-branch shape —
     // this migration only ever CREATE OR REPLACEs the function in a NEW file.
     expect(MIGRATION).not.toContain('USER_HAS_OPERATIONAL_HISTORY');
-    expect(MIGRATION_148).toContain('create or replace function public.phoenix_lifecycle_reserve(');
-    expect(MIGRATION_148).toContain("'USER_HAS_OPERATIONAL_HISTORY'");
+    expect(MIGRATION_147).toContain('create or replace function public.phoenix_lifecycle_reserve(');
+    expect(MIGRATION_147).toContain("'USER_HAS_OPERATIONAL_HISTORY'");
   });
 
   it('the history check runs inside reserve(), gated to the delete action, before any reservation is persisted', () => {
-    const blockIdx = MIGRATION_148.indexOf("if p_action = 'delete' then");
-    const historyCheckIdx = MIGRATION_148.indexOf('phoenix_profile_operational_blockers(p_target_id)');
-    const reservationInsertIdx = MIGRATION_148.indexOf('insert into public.profile_lifecycle_reservations');
+    const blockIdx = MIGRATION_147.indexOf("if p_action = 'delete' then");
+    const historyCheckIdx = MIGRATION_147.indexOf('phoenix_profile_operational_blockers(p_target_id)');
+    const reservationInsertIdx = MIGRATION_147.indexOf('insert into public.profile_lifecycle_reservations');
     expect(blockIdx).toBeGreaterThan(-1);
     expect(historyCheckIdx).toBeGreaterThan(blockIdx);
     expect(reservationInsertIdx).toBeGreaterThan(historyCheckIdx);
   });
 
   it('phoenix_profile_operational_blockers is an internal-only helper, never directly callable by a client role', () => {
-    expect(MIGRATION_148).toContain(
+    expect(MIGRATION_147).toContain(
       'revoke all on function public.phoenix_profile_operational_blockers(uuid) from authenticated;',
     );
-    expect(MIGRATION_148).toContain(
+    expect(MIGRATION_147).toContain(
       'revoke all on function public.phoenix_profile_operational_blockers(uuid) from anon;',
     );
-    expect(MIGRATION_148).not.toMatch(
+    expect(MIGRATION_147).not.toMatch(
       /grant execute on function public\.phoenix_profile_operational_blockers\(uuid\) to (authenticated|anon|public)/,
     );
   });
 
   it('phoenix_lifecycle_reserve keeps its exact prior grant (authenticated only)', () => {
-    expect(MIGRATION_148).toContain(
+    expect(MIGRATION_147).toContain(
       'grant execute on function public.phoenix_lifecycle_reserve(uuid,text,uuid) to authenticated;',
     );
-    expect(MIGRATION_148).not.toMatch(
+    expect(MIGRATION_147).not.toMatch(
       /grant execute on function public\.phoenix_lifecycle_reserve\(uuid,text,uuid\) to (anon|public)/,
     );
   });
@@ -192,7 +192,7 @@ describe('SECURE-USER-DELETE-HISTORY-GUARD-148: hard delete requires zero operat
       'profile_permission_overrides', 'profile_scope_assignments',
       'user_identity_history', 'profile_lifecycle_reservations',
     ]) {
-      expect(MIGRATION_148).not.toContain(`to_regclass('public.${excludedTable}')`);
+      expect(MIGRATION_147).not.toContain(`to_regclass('public.${excludedTable}')`);
     }
   });
 

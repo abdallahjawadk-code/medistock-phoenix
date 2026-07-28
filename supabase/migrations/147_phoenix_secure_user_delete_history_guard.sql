@@ -1,18 +1,21 @@
 -- =============================================================================
--- 148_phoenix_secure_user_delete_history_guard.sql
+-- 147_phoenix_secure_user_delete_history_guard.sql
 -- MediStock Phoenix V2
 --
--- WHY 148, NOT 147
--- -----------------
--- `master`'s reviewed ceiling is 146. Migration 147 is NOT free, however: the
--- separate, still-unmerged PR #68 (branch feat/phoenix-transfer-suggestions-
--- production) already has 147_phoenix_transfer_suggestion_draft_bridge.sql
--- committed on its own branch. Reusing 147 here would collide the moment both
--- PRs land. This migration is therefore numbered 148 and is append-only: it
--- does not edit 093 (or any other applied migration) — it lays a NEW
--- CREATE OR REPLACE on top of the one existing function whose behavior must
--- change (phoenix_lifecycle_reserve), exactly the same evolution pattern 146
--- already used for phoenix_provision_profile/phoenix_admin_provision_profile.
+-- WHY 147
+-- -------
+-- `master`'s reviewed ceiling is 146, and PR #68 (branch feat/phoenix-
+-- transfer-suggestions-production, which separately committed its own
+-- 147_phoenix_transfer_suggestion_draft_bridge.sql) is still unmerged — that
+-- number is not yet occupied on `master`'s actual history, so this PR takes
+-- the genuine next number, 147. When PR #68 resumes, its own migration must
+-- be renumbered against whatever `master`'s ceiling is at that time
+-- (expected to become 148 once this PR merges first). This migration is
+-- append-only: it does not edit 093 (or any other applied migration) — it
+-- lays a NEW CREATE OR REPLACE on top of the one existing function whose
+-- behavior must change (phoenix_lifecycle_reserve), exactly the same
+-- evolution pattern 146 already used for phoenix_provision_profile/
+-- phoenix_admin_provision_profile.
 --
 -- WHY THIS MIGRATION EXISTS
 -- -------------------------
@@ -322,7 +325,7 @@ end;
 $blockers$;
 
 comment on function public.phoenix_profile_operational_blockers(uuid) is
-  'SECURE-USER-DELETE-HISTORY-GUARD-148: enumerates every operational table '
+  'SECURE-USER-DELETE-HISTORY-GUARD-147: enumerates every operational table '
   'row still referencing a profile id, by actor/creator/approver/reviewer/etc. '
   'column. Internal helper for phoenix_lifecycle_reserve''s delete gate only — '
   'not directly callable by any client role.';
@@ -415,7 +418,7 @@ begin
     end if;
   end if;
 
-  -- SECURE-USER-DELETE-HISTORY-GUARD-148: hard-delete additionally requires
+  -- SECURE-USER-DELETE-HISTORY-GUARD-147: hard-delete additionally requires
   -- zero operational history. This is the authoritative, re-verified-at-
   -- delete-time gate — it runs under the SAME advisory lock as every other
   -- check above and BEFORE the target is ever flipped to 'suspended', so no
@@ -480,32 +483,32 @@ begin
   select p.prosecdef, p.proconfig into v_is_definer, v_config
   from pg_proc p where p.oid = v_blockers_oid;
   assert v_is_definer,
-    'VERIFY FAILED (148): phoenix_profile_operational_blockers must be SECURITY DEFINER';
+    'VERIFY FAILED (147): phoenix_profile_operational_blockers must be SECURITY DEFINER';
   assert 'search_path=public, pg_temp' = any(v_config),
-    'VERIFY FAILED (148): phoenix_profile_operational_blockers search_path is not pinned';
+    'VERIFY FAILED (147): phoenix_profile_operational_blockers search_path is not pinned';
   assert not has_function_privilege('authenticated', v_blockers_oid, 'EXECUTE'),
-    'VERIFY FAILED (148): authenticated can directly execute phoenix_profile_operational_blockers';
+    'VERIFY FAILED (147): authenticated can directly execute phoenix_profile_operational_blockers';
   assert not has_function_privilege('anon', v_blockers_oid, 'EXECUTE'),
-    'VERIFY FAILED (148): anon can execute phoenix_profile_operational_blockers';
+    'VERIFY FAILED (147): anon can execute phoenix_profile_operational_blockers';
   assert not exists (
     select 1 from pg_proc p
     cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where p.oid = v_blockers_oid and a.grantee = 0 and a.privilege_type = 'EXECUTE'
-  ), 'VERIFY FAILED (148): PUBLIC can execute phoenix_profile_operational_blockers';
+  ), 'VERIFY FAILED (147): PUBLIC can execute phoenix_profile_operational_blockers';
 
   select p.prosecdef, p.proconfig into v_is_definer, v_config
   from pg_proc p where p.oid = v_reserve_oid;
   assert v_is_definer,
-    'VERIFY FAILED (148): phoenix_lifecycle_reserve must remain SECURITY DEFINER';
+    'VERIFY FAILED (147): phoenix_lifecycle_reserve must remain SECURITY DEFINER';
   assert 'search_path=public, pg_temp' = any(v_config),
-    'VERIFY FAILED (148): phoenix_lifecycle_reserve search_path is not pinned';
+    'VERIFY FAILED (147): phoenix_lifecycle_reserve search_path is not pinned';
   assert has_function_privilege('authenticated', v_reserve_oid, 'EXECUTE'),
-    'VERIFY FAILED (148): authenticated must still be able to execute phoenix_lifecycle_reserve';
+    'VERIFY FAILED (147): authenticated must still be able to execute phoenix_lifecycle_reserve';
   assert not has_function_privilege('anon', v_reserve_oid, 'EXECUTE'),
-    'VERIFY FAILED (148): anon must not execute phoenix_lifecycle_reserve';
+    'VERIFY FAILED (147): anon must not execute phoenix_lifecycle_reserve';
 
   raise notice
-    'SECURE-USER-DELETE-HISTORY-GUARD-148 verified: operational-history gate active on hard delete.';
+    'SECURE-USER-DELETE-HISTORY-GUARD-147 verified: operational-history gate active on hard delete.';
 end;
 $$;
 
