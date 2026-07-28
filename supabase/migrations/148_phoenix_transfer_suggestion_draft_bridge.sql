@@ -272,7 +272,36 @@ REVOKE ALL ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid, i
 GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid, integer) TO authenticated;
 
 -- ============================================================================
--- 2b. _phoenix_live_suggestion_scope_position — LIVE-BALANCE-FIX-148.
+-- 2b. 4B canonical resource-lock guardian.
+--
+-- Every caller supplies its complete logical resource set before taking a
+-- conflicting stock/threshold/provenance row lock. Sorting is centralized so
+-- no caller can accidentally turn A->B / B->A into opposite lock orders.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public._phoenix_lock_inventory_resources(p_keys text[])
+RETURNS void
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_key text;
+BEGIN
+  FOR v_key IN
+    SELECT DISTINCT btrim(k)
+    FROM unnest(COALESCE(p_keys, ARRAY[]::text[])) AS u(k)
+    WHERE NULLIF(btrim(k), '') IS NOT NULL
+    ORDER BY btrim(k)
+  LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended(v_key, 0));
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_lock_inventory_resources(text[]) FROM PUBLIC, anon, authenticated;
+
+-- ============================================================================
+-- 2c. _phoenix_live_suggestion_scope_position — LIVE-BALANCE-FIX-148.
 --
 --     LIVE re-derivation of a single (organization, scope, material, code)
 --     position's available quantity and effective threshold, locking every
@@ -302,7 +331,12 @@ GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid
 --         and is_active, else the organization-default (scope_id IS NULL)
 --         row — verbatim 072's "ORDER BY (scope_id IS NOT NULL) DESC" rule.
 --
---     Locking: every contributing stock row, and every candidate threshold
+--     Locking: the bridge first takes canonical advisory resources and
+--     pre-locks both scope anchors plus all currently matching stock rows in
+--     one global order. The scope-row FOR UPDATE locks conflict with the FK
+--     KEY SHARE check of a concurrent stock INSERT, covering a missing row or
+--     a newly arriving batch without relying on a nonexistent predicate lock.
+--     Every contributing stock row, and every candidate threshold
 --     row (at most the scope-specific one and the org-default one, per
 --     inventory_thresholds_identity_uniq), is locked in a deterministic
 --     order via a PL/pgSQL "FOR r IN SELECT ... FOR UPDATE LOOP" cursor —
@@ -310,10 +344,10 @@ GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid
 --     same query, so the sum is only accumulated as each row is locked, and
 --     the caller never sees a value until every contributing row is locked.
 --
---     CONCURRENCY SCOPE — documented, not solved here: these locks protect
---     Draft-creation against Draft-creation only. Unifying them with the
---     SEND/RECEIVE movement RPCs' own row locks and with threshold-upsert
---     is explicitly deferred to a later phase.
+--     Threshold INSERT/UPDATE is serialized by the shared inv_threshold key
+--     installed below. Existing stock writers remain unchanged: updates
+--     serialize on their stock row and inserts serialize on the locked scope
+--     anchor through the existing composite FK.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public._phoenix_live_suggestion_scope_position(
   p_organization_id uuid,
@@ -438,6 +472,538 @@ $$;
 REVOKE ALL ON FUNCTION public._phoenix_live_suggestion_scope_position(uuid, text, uuid, text, text) FROM PUBLIC, anon, authenticated;
 
 -- ============================================================================
+-- 2d. Threshold writers join the same broad material resource before their
+-- first conflicting row lock. The key deliberately covers org-default and
+-- scope-specific rows plus coded and wildcard rows.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.phoenix_upsert_inventory_threshold(
+  p_organization_id  uuid,
+  p_scope_kind       text,
+  p_scope_id         uuid,
+  p_scientific_name  text,
+  p_national_code    text DEFAULT NULL,
+  p_reorder_point    integer DEFAULT NULL,
+  p_target_max       integer DEFAULT NULL,
+  p_near_expiry_days integer DEFAULT NULL,
+  p_is_active        boolean DEFAULT true
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_name  text := NULLIF(btrim(p_scientific_name), '');
+  v_code  text := NULLIF(btrim(p_national_code), '');
+  v_id    uuid;
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+  IF p_scope_kind NOT IN ('warehouse', 'outlet') THEN RAISE EXCEPTION 'invalid_scope_kind'; END IF;
+  IF v_name IS NULL THEN RAISE EXCEPTION 'scientific_name_required'; END IF;
+  IF p_near_expiry_days IS NOT NULL AND (p_near_expiry_days < 1 OR p_near_expiry_days > 270) THEN
+    RAISE EXCEPTION 'near_expiry_days_out_of_range';
+  END IF;
+  IF p_scope_id IS NOT NULL
+     AND public.phoenix_inventory_scope_org(p_scope_kind, p_scope_id) IS DISTINCT FROM p_organization_id THEN
+    RAISE EXCEPTION 'scope_not_in_organization';
+  END IF;
+  IF NOT (
+    public.phoenix_my_role() = 'super_admin'
+    OR (p_scope_id IS NOT NULL AND p_scope_kind = 'warehouse' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.manage_thresholds', p_organization_id, p_scope_id, NULL))
+    OR (p_scope_id IS NOT NULL AND p_scope_kind = 'outlet' AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.manage_thresholds', p_organization_id, NULL, p_scope_id))
+    OR (p_scope_id IS NULL AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.manage_thresholds', p_organization_id, NULL, NULL))
+    OR (p_scope_id IS NULL AND public.phoenix_my_role() = 'central_warehouse_manager'
+        AND public.phoenix_my_org() = p_organization_id
+        AND public.phoenix_profile_has_permission(v_actor, 'inventory.manage_thresholds'))
+  ) THEN RAISE EXCEPTION 'not_authorized_inventory_manage_thresholds'; END IF;
+
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    'inv_threshold:' || p_organization_id::text || ':' || p_scope_kind || ':' || lower(v_name)
+  ]);
+
+  INSERT INTO public.inventory_signal_thresholds AS t (
+    organization_id, scope_kind, scope_id, scientific_name, national_code,
+    reorder_point, target_max, near_expiry_days, is_active, created_by, updated_by
+  ) VALUES (
+    p_organization_id, p_scope_kind, p_scope_id, v_name, v_code,
+    p_reorder_point, p_target_max, p_near_expiry_days, COALESCE(p_is_active, true), v_actor, v_actor
+  )
+  ON CONFLICT (organization_id, scope_kind,
+               COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid),
+               lower(scientific_name), COALESCE(national_code, ''))
+  DO UPDATE SET
+    reorder_point = EXCLUDED.reorder_point, target_max = EXCLUDED.target_max,
+    near_expiry_days = EXCLUDED.near_expiry_days, is_active = EXCLUDED.is_active,
+    updated_by = v_actor, updated_at = now()
+  RETURNING id INTO v_id;
+
+  INSERT INTO public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
+  VALUES (p_organization_id, v_actor, public.phoenix_my_role(), 'update', 'inventory_signal_threshold', v_id,
+          p_scope_kind || ':' || v_name,
+          jsonb_build_object('reorder_point', p_reorder_point, 'target_max', p_target_max,
+                             'near_expiry_days', p_near_expiry_days, 'is_active', COALESCE(p_is_active, true)));
+
+  RETURN jsonb_build_object('id', v_id, 'organization_id', p_organization_id, 'scope_kind', p_scope_kind);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_upsert_inventory_threshold(uuid, text, uuid, text, text, integer, integer, integer, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_threshold(uuid, text, uuid, text, text, integer, integer, integer, boolean) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.phoenix_set_inventory_threshold_planning(
+  p_threshold_id   uuid,
+  p_safety_stock   integer DEFAULT NULL,
+  p_lead_time_days integer DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_row   public.inventory_signal_thresholds%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+  IF p_safety_stock IS NOT NULL AND p_safety_stock < 0 THEN RAISE EXCEPTION 'invalid_safety_stock'; END IF;
+  IF p_lead_time_days IS NOT NULL AND p_lead_time_days < 0 THEN RAISE EXCEPTION 'invalid_lead_time_days'; END IF;
+
+  SELECT * INTO v_row FROM public.inventory_signal_thresholds WHERE id = p_threshold_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'threshold_not_found'; END IF;
+
+  IF NOT (
+    public.phoenix_my_role() = 'super_admin'
+    OR (v_row.scope_id IS NOT NULL AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.manage_thresholds', v_row.organization_id,
+          CASE WHEN v_row.scope_kind = 'warehouse' THEN v_row.scope_id END,
+          CASE WHEN v_row.scope_kind = 'outlet' THEN v_row.scope_id END))
+    OR (v_row.scope_id IS NULL AND public.phoenix_profile_has_scoped_permission(
+          v_actor, 'inventory.manage_thresholds', v_row.organization_id, NULL, NULL))
+    OR (v_row.scope_id IS NULL AND public.phoenix_my_role() = 'central_warehouse_manager'
+        AND public.phoenix_my_org() = v_row.organization_id
+        AND public.phoenix_profile_has_permission(v_actor, 'inventory.manage_thresholds'))
+  ) THEN RAISE EXCEPTION 'not_authorized_inventory_manage_thresholds'; END IF;
+
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    'inv_threshold:' || v_row.organization_id::text || ':' || v_row.scope_kind || ':'
+      || lower(btrim(v_row.scientific_name))
+  ]);
+
+  UPDATE public.inventory_signal_thresholds
+  SET safety_stock = p_safety_stock, lead_time_days = p_lead_time_days,
+      updated_by = v_actor, updated_at = now()
+  WHERE id = p_threshold_id;
+
+  RETURN jsonb_build_object('ok', true, 'threshold_id', p_threshold_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_set_inventory_threshold_planning(uuid, integer, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_set_inventory_threshold_planning(uuid, integer, integer) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.phoenix_batch_upsert_inventory_threshold(
+  p_organization_id uuid,
+  p_scope_kind      text,
+  p_scope_id        uuid,
+  p_items           jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_item        jsonb;
+  v_result      jsonb;
+  v_results     jsonb := '[]'::jsonb;
+  v_result_by_ord jsonb[] := ARRAY[]::jsonb[];
+  v_keys        text[];
+  v_ord         integer;
+  v_n           integer := 0;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'items_required';
+  END IF;
+  IF jsonb_array_length(p_items) > 200 THEN
+    RAISE EXCEPTION 'batch_too_large' USING DETAIL = 'max 200 materials per batch call';
+  END IF;
+
+  SELECT array_agg(DISTINCT
+           'inv_threshold:' || p_organization_id::text || ':' || p_scope_kind || ':'
+             || lower(btrim(elem ->> 'scientific_name'))
+           ORDER BY
+           'inv_threshold:' || p_organization_id::text || ':' || p_scope_kind || ':'
+             || lower(btrim(elem ->> 'scientific_name')))
+    INTO v_keys
+  FROM jsonb_array_elements(p_items) AS x(elem);
+  PERFORM public._phoenix_lock_inventory_resources(v_keys);
+
+  -- Apply in canonical material/code order, but preserve the JSON result in
+  -- the caller's original order through the ordinal-indexed result array.
+  FOR v_item, v_ord IN
+    SELECT elem, ord::integer
+    FROM jsonb_array_elements(p_items) WITH ORDINALITY AS x(elem, ord)
+    ORDER BY lower(btrim(elem ->> 'scientific_name')),
+             COALESCE(NULLIF(btrim(elem ->> 'national_code'), ''), ''),
+             ord
+  LOOP
+    v_result := public.phoenix_upsert_inventory_threshold(
+      p_organization_id,
+      p_scope_kind,
+      p_scope_id,
+      v_item ->> 'scientific_name',
+      v_item ->> 'national_code',
+      NULLIF(v_item ->> 'reorder_point', '')::integer,
+      NULLIF(v_item ->> 'target_max', '')::integer,
+      NULLIF(v_item ->> 'near_expiry_days', '')::integer,
+      COALESCE((v_item ->> 'is_active')::boolean, true)
+    );
+    v_result_by_ord[v_ord] := v_result;
+    v_n := v_n + 1;
+  END LOOP;
+
+  FOREACH v_result IN ARRAY v_result_by_ord LOOP
+    v_results := v_results || jsonb_build_array(v_result);
+  END LOOP;
+
+  RETURN jsonb_build_object('ok', true, 'applied', v_n, 'results', v_results);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_batch_upsert_inventory_threshold(uuid, text, uuid, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_batch_upsert_inventory_threshold(uuid, text, uuid, jsonb) TO authenticated;
+
+-- ============================================================================
+-- 2e. Outlet-return provenance joins the common resource before document,
+-- provenance and stock rows. The business/permission/JSON contract is the
+-- latest 095 definition; only the leading advisory lock is new.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.phoenix_add_outlet_return_request_line(
+  p_return_request_id            uuid,
+  p_original_dispatch_line_id    uuid DEFAULT NULL,
+  p_requested_quantity           integer DEFAULT NULL,
+  p_reason_code                  text DEFAULT NULL,
+  p_reason_text                  text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor        uuid := auth.uid();
+  v_actor_role   text;
+  v_request      public.outlet_return_requests%ROWTYPE;
+  v_dispatch     public.warehouse_dispatch_lines%ROWTYPE;
+  v_movement     public.outlet_stock_movements%ROWTYPE;
+  v_stock        public.outlet_stock%ROWTYPE;
+  v_reason_text  text := NULLIF(btrim(p_reason_text), '');
+  v_line         public.outlet_return_request_lines%ROWTYPE;
+  v_cap          integer;
+  v_available    integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_return_request_id IS NULL THEN
+    RAISE EXCEPTION 'return_request_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_original_dispatch_line_id IS NULL THEN
+    RAISE EXCEPTION 'original_dispatch_line_id_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_requested_quantity IS NULL OR p_requested_quantity <= 0 THEN
+    RAISE EXCEPTION 'requested_quantity_must_be_positive' USING ERRCODE = '23514';
+  END IF;
+  IF p_reason_code IS NULL OR p_reason_code NOT IN (
+    'excess', 'shipment_error', 'near_expiry', 'expired', 'damaged',
+    'recalled', 'quality_issue', 'temperature_excursion', 'other'
+  ) THEN
+    RAISE EXCEPTION 'invalid_reason_code' USING ERRCODE = '23514';
+  END IF;
+
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    'inv_provline:' || p_original_dispatch_line_id::text
+  ]);
+
+  SELECT * INTO v_request
+  FROM public.outlet_return_requests WHERE id = p_return_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_request.status <> 'draft' THEN
+    RAISE EXCEPTION 'return_request_not_editable' USING ERRCODE = '23514';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'outlet_stock.return_request', v_request.source_organization_id,
+    NULL, v_request.distribution_point_id
+  ) THEN
+    RAISE EXCEPTION 'forbidden_outlet_return_request' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_dispatch
+  FROM public.warehouse_dispatch_lines WHERE id = p_original_dispatch_line_id FOR UPDATE;
+  IF NOT FOUND OR v_dispatch.organization_id <> v_request.source_organization_id THEN
+    RAISE EXCEPTION 'original_dispatch_line_not_found' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_dispatch.status NOT IN ('accepted', 'accepted_with_difference')
+     OR v_dispatch.resulting_outlet_stock_id IS NULL THEN
+    RAISE EXCEPTION 'original_dispatch_line_not_a_completed_receipt' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_stock
+  FROM public.outlet_stock WHERE id = v_dispatch.resulting_outlet_stock_id FOR UPDATE;
+  IF NOT FOUND OR v_stock.distribution_point_id <> v_request.distribution_point_id THEN
+    RAISE EXCEPTION 'original_dispatch_line_not_at_this_outlet' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_movement
+  FROM public.outlet_stock_movements
+  WHERE dispatch_line_id = v_dispatch.id
+    AND movement_type = 'dispatch_receive'
+    AND outlet_stock_id = v_stock.id
+    AND organization_id = v_request.source_organization_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_receive_movement_not_found_for_line' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_dispatch.scientific_name IS DISTINCT FROM v_stock.scientific_name
+     OR COALESCE(v_dispatch.concentration,'') IS DISTINCT FROM COALESCE(v_stock.concentration,'')
+     OR COALESCE(v_dispatch.dosage_form,'')   IS DISTINCT FROM COALESCE(v_stock.dosage_form,'')
+     OR COALESCE(v_dispatch.national_code,'') IS DISTINCT FROM COALESCE(v_stock.national_code,'')
+     OR COALESCE(v_dispatch.batch_number,'')  IS DISTINCT FROM COALESCE(v_stock.batch_number,'')
+     OR COALESCE(v_dispatch.internal_batch_reference,'') IS DISTINCT FROM COALESCE(v_stock.internal_batch_reference,'')
+     OR v_dispatch.expiry_date IS DISTINCT FROM v_stock.expiry_date THEN
+    RAISE EXCEPTION 'provenance_material_batch_expiry_mismatch' USING ERRCODE = '23514';
+  END IF;
+
+  v_cap := COALESCE(v_dispatch.received_quantity, 0) - v_dispatch.returned_quantity;
+  IF p_requested_quantity > v_cap THEN
+    RAISE EXCEPTION 'requested_quantity_exceeds_returnable_cap' USING ERRCODE = '23514';
+  END IF;
+
+  v_available := COALESCE(v_stock.on_hand_quantity, 0) - COALESCE(v_stock.reserved_quantity, 0);
+  IF p_requested_quantity > v_available THEN
+    RAISE EXCEPTION 'requested_quantity_exceeds_current_availability' USING ERRCODE = '23514',
+      DETAIL = format('requested %s, currently available %s (on_hand - reserved)',
+                       p_requested_quantity, v_available);
+  END IF;
+
+  INSERT INTO public.outlet_return_request_lines (
+    return_request_id, source_organization_id,
+    original_dispatch_line_id, original_inbound_movement_id,
+    original_inbound_movement_type, source_outlet_stock_id,
+    scientific_name, concentration, dosage_form, unit, national_code,
+    batch_number, internal_batch_reference, expiry_date,
+    reason_code, reason_text, requested_quantity
+  ) VALUES (
+    p_return_request_id, v_request.source_organization_id,
+    v_dispatch.id, v_movement.id,
+    'dispatch_receive', v_stock.id,
+    v_stock.scientific_name, v_stock.concentration, v_stock.dosage_form, v_stock.unit,
+    v_stock.national_code, v_stock.batch_number, v_stock.internal_batch_reference, v_stock.expiry_date,
+    p_reason_code, v_reason_text, p_requested_quantity
+  )
+  RETURNING * INTO v_line;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
+  ) VALUES (
+    v_request.source_organization_id, v_actor, v_actor_role,
+    'outlet_stock.return_line_added', 'outlet_return_request_lines', v_line.id, v_line.scientific_name,
+    jsonb_build_object(
+      'return_request_id', p_return_request_id,
+      'original_dispatch_line_id', v_dispatch.id,
+      'original_inbound_movement_id', v_movement.id,
+      'source_outlet_stock_id', v_stock.id,
+      'reason_code', p_reason_code,
+      'requested_quantity', p_requested_quantity
+    )
+  );
+
+  RETURN jsonb_build_object('ok', true, 'return_request_line_id', v_line.id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_add_outlet_return_request_line(uuid, uuid, integer, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_add_outlet_return_request_line(uuid, uuid, integer, text, text) TO authenticated;
+
+-- ============================================================================
+-- 2f. Suggestion guard: provenance advisory/row precedes stock advisory/row.
+-- Legal suggestion writers already hold inv_suggest org locks before DML.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_suggestion_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_corridor_write     boolean;
+  v_qty_write          boolean;
+  v_conservation_write boolean;
+  v_reopen             boolean;
+  v_available          integer;
+  v_committed          integer;
+  v_committed_line     integer;
+  v_returnable         integer;
+BEGIN
+  v_reopen := (TG_OP = 'UPDATE')
+    AND NEW.status IN ('open', 'accepted')
+    AND NEW.status IS DISTINCT FROM OLD.status;
+  v_corridor_write := (TG_OP = 'INSERT') OR v_reopen OR (
+       NEW.source_scope_kind IS DISTINCT FROM OLD.source_scope_kind
+    OR NEW.source_scope_id IS DISTINCT FROM OLD.source_scope_id
+    OR NEW.target_scope_kind IS DISTINCT FROM OLD.target_scope_kind
+    OR NEW.target_scope_id IS DISTINCT FROM OLD.target_scope_id
+    OR NEW.route_kind IS DISTINCT FROM OLD.route_kind
+    OR NEW.source_organization_id IS DISTINCT FROM OLD.source_organization_id
+    OR NEW.target_organization_id IS DISTINCT FROM OLD.target_organization_id
+    OR NEW.source_stock_id IS DISTINCT FROM OLD.source_stock_id
+    OR NEW.scientific_name IS DISTINCT FROM OLD.scientific_name
+    OR NEW.national_code IS DISTINCT FROM OLD.national_code
+    OR NEW.provenance_dispatch_line_id IS DISTINCT FROM OLD.provenance_dispatch_line_id
+    OR NEW.provenance_inbound_movement_id IS DISTINCT FROM OLD.provenance_inbound_movement_id
+  );
+  v_qty_write := (TG_OP = 'INSERT')
+    OR (NEW.suggested_quantity IS DISTINCT FROM OLD.suggested_quantity);
+  v_conservation_write := v_corridor_write OR v_qty_write;
+
+  IF public.phoenix_inventory_scope_org(NEW.source_scope_kind, NEW.source_scope_id)
+     IS DISTINCT FROM NEW.source_organization_id THEN
+    RAISE EXCEPTION 'guard_072_source_scope_not_in_source_organization';
+  END IF;
+  IF public.phoenix_inventory_scope_org(NEW.target_scope_kind, NEW.target_scope_id)
+     IS DISTINCT FROM NEW.target_organization_id THEN
+    RAISE EXCEPTION 'guard_072_target_scope_not_in_target_organization';
+  END IF;
+
+  IF v_corridor_write THEN
+    IF NEW.route_kind = 'warehouse_to_outlet' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = NEW.target_scope_id
+          AND dp.warehouse_id = NEW.source_scope_id
+          AND dp.organization_id = NEW.source_organization_id
+      ) THEN RAISE EXCEPTION 'guard_072_no_warehouse_outlet_pairing'; END IF;
+    ELSIF NEW.route_kind = 'outlet_to_warehouse' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.distribution_points dp
+        WHERE dp.id = NEW.source_scope_id
+          AND dp.warehouse_id = NEW.target_scope_id
+          AND dp.organization_id = NEW.source_organization_id
+      ) THEN RAISE EXCEPTION 'guard_072_no_outlet_warehouse_pairing'; END IF;
+    ELSIF NEW.route_kind = 'central_to_institution' THEN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM public.warehouses sw
+        JOIN public.warehouses tw ON tw.id = NEW.target_scope_id
+        WHERE sw.id = NEW.source_scope_id
+          AND sw.warehouse_kind = 'central' AND sw.status = 'active'
+          AND sw.organization_id = NEW.source_organization_id
+          AND tw.warehouse_kind = 'institution' AND tw.status = 'active'
+          AND tw.organization_id = NEW.target_organization_id
+      ) THEN RAISE EXCEPTION 'guard_072_no_active_central_institution_pairing'; END IF;
+    ELSE
+      RAISE EXCEPTION 'guard_072_invalid_route_kind';
+    END IF;
+  END IF;
+
+  IF v_conservation_write AND NEW.status IN ('open', 'accepted') THEN
+    IF NEW.route_kind = 'outlet_to_warehouse' THEN
+      PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+        'inv_provline:' || NEW.provenance_dispatch_line_id::text,
+        'inv_stock:' || NEW.source_stock_id::text
+      ]);
+      SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
+        INTO v_returnable
+      FROM public.warehouse_dispatch_lines wdl
+      WHERE wdl.id = NEW.provenance_dispatch_line_id
+        AND wdl.status IN ('accepted', 'accepted_with_difference')
+      FOR SHARE;
+      IF v_returnable IS NULL THEN
+        RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
+      END IF;
+    ELSE
+      PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+        'inv_stock:' || NEW.source_stock_id::text
+      ]);
+    END IF;
+
+    IF NEW.source_scope_kind = 'warehouse' THEN
+      SELECT ws.available_quantity INTO v_available
+      FROM public.warehouse_stock ws
+      WHERE ws.id = NEW.source_stock_id
+        AND ws.warehouse_id = NEW.source_scope_id
+        AND ws.organization_id = NEW.source_organization_id
+        AND lower(ws.scientific_name) = lower(NEW.scientific_name)
+        AND (NEW.national_code IS NULL OR ws.national_code = NEW.national_code)
+        AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+      FOR SHARE;
+    ELSE
+      SELECT os.available_quantity INTO v_available
+      FROM public.outlet_stock os
+      WHERE os.id = NEW.source_stock_id
+        AND os.distribution_point_id = NEW.source_scope_id
+        AND os.organization_id = NEW.source_organization_id
+        AND lower(os.scientific_name) = lower(NEW.scientific_name)
+        AND (NEW.national_code IS NULL OR os.national_code = NEW.national_code)
+        AND (os.expiry_date IS NULL OR os.expiry_date >= current_date)
+      FOR SHARE;
+    END IF;
+    IF v_available IS NULL THEN
+      RAISE EXCEPTION 'guard_072_source_stock_row_mismatch';
+    END IF;
+
+    SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.source_stock_id = NEW.source_stock_id
+      AND s.status IN ('open', 'accepted')
+      AND s.id <> NEW.id;
+    IF v_committed + NEW.suggested_quantity > v_available THEN
+      RAISE EXCEPTION 'guard_072_batch_oversubscribed';
+    END IF;
+
+    IF NEW.route_kind = 'outlet_to_warehouse' THEN
+      SELECT COALESCE(SUM(s.suggested_quantity), 0) INTO v_committed_line
+      FROM public.inventory_transfer_suggestions s
+      WHERE s.provenance_dispatch_line_id = NEW.provenance_dispatch_line_id
+        AND s.status IN ('open', 'accepted')
+        AND s.id <> NEW.id;
+      IF v_committed_line + NEW.suggested_quantity > v_returnable THEN
+        RAISE EXCEPTION 'guard_072_exceeds_returnable_quantity';
+      END IF;
+    END IF;
+  END IF;
+
+  IF NEW.exchange_request_id IS NOT NULL
+     AND (TG_OP = 'INSERT'
+          OR NEW.exchange_request_id IS DISTINCT FROM OLD.exchange_request_id
+          OR v_corridor_write) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.inter_org_exchange_requests x
+      WHERE x.id = NEW.exchange_request_id
+        AND x.source_organization_id = NEW.source_organization_id
+        AND x.target_organization_id = NEW.target_organization_id
+        AND lower(x.scientific_name) = lower(NEW.scientific_name)
+    ) THEN RAISE EXCEPTION 'guard_072_exchange_request_mismatch'; END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS inventory_suggestion_guard ON public.inventory_transfer_suggestions;
+CREATE TRIGGER inventory_suggestion_guard
+  BEFORE INSERT OR UPDATE ON public.inventory_transfer_suggestions
+  FOR EACH ROW EXECUTE FUNCTION public.phoenix_inventory_suggestion_guard();
+
+-- ============================================================================
 -- 3. THE BRIDGE — one suggestion, full re-verification, one real draft.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_create_transfer_draft_from_suggestion(
@@ -453,9 +1019,13 @@ DECLARE
   v_actor               uuid := auth.uid();
   v_doc                 text := NULLIF(btrim(p_document_number), '');
   v_s                   public.inventory_transfer_suggestions%ROWTYPE;
+  v_initial_source_org  uuid;
+  v_initial_target_org  uuid;
   v_policy_minutes      integer;
   v_src_key             text;
   v_tgt_key             text;
+  v_src_threshold_key   text;
+  v_tgt_threshold_key   text;
   v_lock_a              text;
   v_lock_b              text;
   v_src_pos             record;
@@ -476,12 +1046,34 @@ DECLARE
   v_request_id          uuid;
   v_dispatch_id         uuid;
   v_return_request_id   uuid;
+  r                     record;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   IF v_doc IS NULL THEN RAISE EXCEPTION 'document_number_required'; END IF;
 
+  -- Read only enough identity to join the same inv_suggest lock domain used
+  -- by both legal suggestion generators. Direct table writes are REVOKEd.
+  SELECT * INTO v_s FROM public.inventory_transfer_suggestions WHERE id = p_suggestion_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
+  v_initial_source_org := v_s.source_organization_id;
+  v_initial_target_org := v_s.target_organization_id;
+
+  v_lock_a := LEAST(v_initial_source_org::text, v_initial_target_org::text);
+  v_lock_b := GREATEST(v_initial_source_org::text, v_initial_target_org::text);
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    'inv_suggest:' || v_lock_a,
+    'inv_suggest:' || v_lock_b
+  ]);
+
+  -- Re-read under the row lock only after joining the generator lock domain.
+  -- A corridor identity change between the optimistic read and this lock is
+  -- failed closed; the caller can retry from the new stable identity.
   SELECT * INTO v_s FROM public.inventory_transfer_suggestions WHERE id = p_suggestion_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
+  IF v_s.source_organization_id IS DISTINCT FROM v_initial_source_org
+     OR v_s.target_organization_id IS DISTINCT FROM v_initial_target_org THEN
+    RAISE EXCEPTION 'suggestion_changed_retry';
+  END IF;
 
   -- Idempotent replay: the SAME actor re-submitting an already-drafted
   -- suggestion (e.g. after a client-side timeout on an already-committed
@@ -524,24 +1116,111 @@ BEGIN
     RAISE EXCEPTION 'suggestion_stale_revalidate_required';
   END IF;
 
-  -- Deterministic advisory-lock pair for THIS suggestion's two LIVE
-  -- positions (source scope+material, target scope+material) — protects
-  -- Draft-creation against Draft-creation ONLY. Unifying this with the
-  -- SEND/RECEIVE movement RPCs' own row locks and with threshold-upsert is
-  -- explicitly deferred to a later phase (see
-  -- _phoenix_live_suggestion_scope_position's header above). Sorted
-  -- (LEAST/GREATEST) so two suggestions naming the same pair from either
-  -- direction can never deadlock against each other.
-  v_src_key := 'src:' || v_s.source_organization_id::text || ':' || v_s.source_scope_kind || ':'
-               || v_s.source_scope_id::text || ':' || lower(v_s.scientific_name) || ':'
-               || COALESCE(v_s.national_code, '');
-  v_tgt_key := 'tgt:' || v_s.target_organization_id::text || ':' || v_s.target_scope_kind || ':'
-               || v_s.target_scope_id::text || ':' || lower(v_s.scientific_name) || ':'
-               || COALESCE(v_s.national_code, '');
-  v_lock_a := LEAST(v_src_key, v_tgt_key);
-  v_lock_b := GREATEST(v_src_key, v_tgt_key);
-  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggestion_draft:' || v_lock_a, 0));
-  PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggestion_draft:' || v_lock_b, 0));
+  -- Canonical, direction-neutral position keys. There is deliberately no
+  -- src:/tgt: component: the same physical position receives the same key in
+  -- either direction. Threshold keys intentionally omit scope_id and code so
+  -- default/specific and coded/wildcard changes share one material guardian.
+  v_src_key := 'inv_position:' || v_s.source_organization_id::text || ':'
+               || v_s.source_scope_kind || ':' || v_s.source_scope_id::text || ':'
+               || lower(btrim(v_s.scientific_name)) || ':'
+               || COALESCE(NULLIF(btrim(v_s.national_code), ''), '*');
+  v_tgt_key := 'inv_position:' || v_s.target_organization_id::text || ':'
+               || v_s.target_scope_kind || ':' || v_s.target_scope_id::text || ':'
+               || lower(btrim(v_s.scientific_name)) || ':'
+               || COALESCE(NULLIF(btrim(v_s.national_code), ''), '*');
+  v_src_threshold_key := 'inv_threshold:' || v_s.source_organization_id::text || ':'
+                         || v_s.source_scope_kind || ':' || lower(btrim(v_s.scientific_name));
+  v_tgt_threshold_key := 'inv_threshold:' || v_s.target_organization_id::text || ':'
+                         || v_s.target_scope_kind || ':' || lower(btrim(v_s.scientific_name));
+
+  -- Provenance is the first shared outlet-return resource. The add-line RPC
+  -- and the guard below take this exact key before provenance/stock rows.
+  IF v_s.route_kind = 'outlet_to_warehouse' THEN
+    PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+      'inv_provline:' || v_s.provenance_dispatch_line_id::text
+    ]);
+  END IF;
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    v_src_key, v_tgt_key, v_src_threshold_key, v_tgt_threshold_key
+  ]);
+
+  -- Lock provenance before stock, matching phoenix_add_outlet_return_request_line.
+  IF v_s.route_kind = 'outlet_to_warehouse' THEN
+    PERFORM 1
+    FROM public.warehouse_dispatch_lines wdl
+    WHERE wdl.id = v_s.provenance_dispatch_line_id
+    FOR SHARE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'suggestion_no_longer_available: provenance_gone';
+    END IF;
+  END IF;
+
+  -- Scope anchors are direction-neutral gap guardians. A concurrent stock
+  -- INSERT must take KEY SHARE on the same parent through the existing
+  -- composite FK; FOR UPDATE therefore serializes the missing-row/new-batch
+  -- case before either side takes a stock row lock.
+  FOR r IN
+    SELECT *
+    FROM (VALUES
+      (v_s.source_scope_kind, v_s.source_scope_id, v_s.source_organization_id),
+      (v_s.target_scope_kind, v_s.target_scope_id, v_s.target_organization_id)
+    ) AS x(scope_kind, scope_id, organization_id)
+    ORDER BY scope_kind, scope_id
+  LOOP
+    IF r.scope_kind = 'warehouse' THEN
+      PERFORM 1 FROM public.warehouses w
+      WHERE w.id = r.scope_id AND w.organization_id = r.organization_id
+      FOR UPDATE;
+    ELSE
+      PERFORM 1 FROM public.distribution_points dp
+      WHERE dp.id = r.scope_id AND dp.organization_id = r.organization_id
+      FOR UPDATE;
+    END IF;
+    IF NOT FOUND THEN RAISE EXCEPTION 'scope_not_in_organization'; END IF;
+  END LOOP;
+
+  -- Pre-lock every currently relevant stock row across BOTH positions in one
+  -- global order. The later live helper re-locks these rows reentrantly while
+  -- applying its unchanged coded/wildcard aggregation rule.
+  FOR r IN
+    SELECT q.stock_kind, q.stock_id
+    FROM (
+      SELECT 'warehouse'::text AS stock_kind, ws.id AS stock_id
+      FROM public.warehouse_stock ws
+      WHERE lower(ws.scientific_name) = lower(btrim(v_s.scientific_name))
+        AND (v_s.national_code IS NULL OR ws.national_code IS NOT DISTINCT FROM v_s.national_code)
+        AND (
+          (v_s.source_scope_kind = 'warehouse'
+           AND ws.organization_id = v_s.source_organization_id
+           AND ws.warehouse_id = v_s.source_scope_id)
+          OR
+          (v_s.target_scope_kind = 'warehouse'
+           AND ws.organization_id = v_s.target_organization_id
+           AND ws.warehouse_id = v_s.target_scope_id)
+        )
+      UNION ALL
+      SELECT 'outlet'::text AS stock_kind, os.id AS stock_id
+      FROM public.outlet_stock os
+      WHERE lower(os.scientific_name) = lower(btrim(v_s.scientific_name))
+        AND (v_s.national_code IS NULL OR os.national_code IS NOT DISTINCT FROM v_s.national_code)
+        AND (
+          (v_s.source_scope_kind = 'outlet'
+           AND os.organization_id = v_s.source_organization_id
+           AND os.distribution_point_id = v_s.source_scope_id)
+          OR
+          (v_s.target_scope_kind = 'outlet'
+           AND os.organization_id = v_s.target_organization_id
+           AND os.distribution_point_id = v_s.target_scope_id)
+        )
+    ) q
+    ORDER BY q.stock_kind, q.stock_id
+  LOOP
+    IF r.stock_kind = 'warehouse' THEN
+      PERFORM 1 FROM public.warehouse_stock ws WHERE ws.id = r.stock_id FOR UPDATE;
+    ELSE
+      PERFORM 1 FROM public.outlet_stock os WHERE os.id = r.stock_id FOR UPDATE;
+    END IF;
+  END LOOP;
 
   -- ── FULL re-verification, LIVE — CROSS-ORG-IDOR-148-FIX sibling ──────────
   -- headroom/deficit are now derived from warehouse_stock/outlet_stock +
@@ -815,10 +1494,18 @@ BEGIN
   IF to_regprocedure('public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)') IS NULL THEN
     RAISE EXCEPTION 'ABORT 148: _phoenix_live_suggestion_scope_position was not created.';
   END IF;
+  IF to_regprocedure('public._phoenix_lock_inventory_resources(text[])') IS NULL THEN
+    RAISE EXCEPTION 'ABORT 148: _phoenix_lock_inventory_resources was not created.';
+  END IF;
   IF has_function_privilege('anon', 'public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'ABORT 148: _phoenix_live_suggestion_scope_position is directly callable by anon/authenticated.';
+  END IF;
+  IF has_function_privilege('anon', 'public._phoenix_lock_inventory_resources(text[])', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public._phoenix_lock_inventory_resources(text[])', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'ABORT 148: _phoenix_lock_inventory_resources is directly callable by anon/authenticated.';
   END IF;
 END;
 $selfcheck$;
