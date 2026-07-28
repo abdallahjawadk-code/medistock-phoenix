@@ -205,13 +205,17 @@ describe('9-11. Rotate temporary password: confirmation, one-time display, no pe
   });
 });
 
-describe('12. Hard delete remains hidden/unavailable in the UI', () => {
-  it('no delete-user button or DeleteConfirmModal is rendered', () => {
-    expect(screen).not.toContain('<DeleteConfirmModal');
-    expect(screen).not.toContain('function DeleteConfirmModal');
-    expect(screen).not.toContain('deleteUserViaEdge(');
+describe('12. Hard delete is exposed, gated to super_admin and never self (SECURE-USER-LIFECYCLE-PRODUCTION-A)', () => {
+  it('DeleteConfirmModal is rendered and wired to deleteUserViaEdge', () => {
+    expect(screen).toContain('<DeleteConfirmModal');
+    expect(screen).toContain('function DeleteConfirmModal');
+    expect(screen).toContain('deleteUserViaEdge(');
   });
-  it('the service function still exists server-side-safely for a future phase, but is unused by the UI', () => {
+  it('the confirmation phrase requires the exact target user id', () => {
+    expect(screen).toContain('DELETE_USER_${user.id}');
+    expect(screen).toContain('confirm === expectedConfirm && !busy');
+  });
+  it('the service function is exported and used by the UI', () => {
     expect(usersService).toContain('export async function deleteUserViaEdge');
   });
 });
@@ -265,6 +269,19 @@ describe('18. Mobile: user-management action buttons remain reachable', () => {
     const rowStart = screen.indexOf("isSuper && !isSelf && (");
     const row = screen.slice(rowStart, rowStart + 400);
     expect(row).toContain("flexWrap: 'wrap'");
+  });
+  it('the delete button sits inside that same wrapping, RTL-safe action row for both statuses', () => {
+    const rowStart = screen.indexOf("isSuper && !isSelf && (");
+    const rowEnd = screen.indexOf('\n                )}', rowStart);
+    const row = screen.slice(rowStart, rowEnd);
+    const deleteButtonCount = (row.match(/setDeleteTarget\(u\)/g) ?? []).length;
+    expect(deleteButtonCount).toBe(2); // once for the suspended branch, once for active
+  });
+  it('the delete modal uses dir="auto" text and the shared PhoenixCard/PhoenixButton components (RTL + touch-safe by construction)', () => {
+    const modal = screen.slice(screen.indexOf('function DeleteConfirmModal('));
+    expect(modal).toContain('dir="auto"');
+    expect(modal).toContain('<PhoenixCard');
+    expect(modal).toContain('<PhoenixButton');
   });
 });
 
