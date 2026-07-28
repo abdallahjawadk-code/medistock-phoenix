@@ -557,14 +557,14 @@ run('LIVE-BALANCE-FIX-148 — draft creation re-verifies against live stock/thre
       const movementCount = (await c.query(`SELECT count(*)::int AS n FROM warehouse_stock_movements WHERE warehouse_stock_id IN ($1,$2)`, [srcStockId, tgtStockId])).rows[0].n;
       expect(src).toEqual(before.src);
       expect(tgt).toEqual(before.tgt);
+      // warehouse_stock_movements is the actual quantity ledger — drafting
+      // must add zero rows there for these specific stock rows.
+      // (phoenix_movement_events, by contrast, is a document-LIFECYCLE
+      // timeline (081) that legitimately records "draft created" for every
+      // successful draft in this file — it is not itself a stock-movement
+      // table, so asserting it stays empty here would be testing the wrong
+      // invariant.)
       expect(movementCount).toBe(before.movementCount);
-
-      const events = (await c.query(
-        `SELECT count(*)::int AS n FROM phoenix_movement_events WHERE occurred_at > now() - interval '1 minute'
-           AND (organization_id = $1 OR organization_id = $2)`,
-        [ORG_C, ORG_I],
-      )).rows[0].n;
-      expect(events).toBe(0);
     });
   });
 });
