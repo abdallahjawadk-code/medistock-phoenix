@@ -65,7 +65,7 @@ export function useInventoryTransferSuggestions(
  * recommendation as needing live re-validation before action.
  *
  * maxAgeMs MUST come from the org's actual inventory_suggestion_policy
- * (migration 147) — getInventorySuggestionPolicy(orgId), falling back to the
+ * (migration 148) — getInventorySuggestionPolicy(orgId), falling back to the
  * documented 30-minute default — never a client-only literal, so the UI's
  * "stale" display can never disagree with what
  * phoenix_create_transfer_draft_from_suggestion will actually accept.

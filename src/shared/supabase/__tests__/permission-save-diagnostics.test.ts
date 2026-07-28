@@ -224,9 +224,10 @@ describe('Permission-save diagnostic fix: global guardrails still hold', () => {
     expect(screen).not.toMatch(/auth\.admin/);
   });
 
-  it('hard delete button is still not rendered', () => {
-    expect(screen).not.toContain('deleteTarget');
-    expect(screen).not.toContain('um_delete_user_action');
+  it('hard delete button is rendered, gated to super_admin and never self', () => {
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('isSuper && !isSelf');
   });
 
   it('Data Reset still absent', () => {

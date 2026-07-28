@@ -1,13 +1,13 @@
 /**
- * TRANSFER-SUGGESTION-DRAFT-BRIDGE-147 — report isolation (Phase 4).
+ * TRANSFER-SUGGESTION-DRAFT-BRIDGE-148 — report isolation (Phase 4).
  *
  * Static source guards proving the reviewer's report-correction requirements
  * hold, without needing a live database for every check:
  *   - custody chain excludes draft-status dispatches/return requests —
  *     custody begins at the real send/dispatch event, never at draft
- *     creation (a 147-created draft included).
+ *     creation (a 148-created draft included).
  *   - the movement ledger report (138) and the monthly status report (092)
- *     never reference inventory_transfer_suggestions or any of the 147
+ *     never reference inventory_transfer_suggestions or any of the 148
  *     draft-linkage columns — a suggestion/draft can never double-count
  *     into the canonical movement ledger or the monthly balance.
  */
@@ -43,7 +43,7 @@ describe('custody chain excludes drafts (Phase 4 reviewer fix)', () => {
 });
 
 describe('movement ledger report (138) never sources from suggestion/draft tables', () => {
-  it('migration 138 does not reference inventory_transfer_suggestions or any 147 draft column', () => {
+  it('migration 138 does not reference inventory_transfer_suggestions or any 148 draft column', () => {
     expect(movementLedgerMigration).not.toMatch(FORBIDDEN_REFS);
   });
 
@@ -56,7 +56,7 @@ describe('movement ledger report (138) never sources from suggestion/draft table
 });
 
 describe('monthly status report (092) never sources from suggestion/draft tables', () => {
-  it('phoenix_status_prepare_report does not reference inventory_transfer_suggestions or any 147 draft column', () => {
+  it('phoenix_status_prepare_report does not reference inventory_transfer_suggestions or any 148 draft column', () => {
     const fnStart = monthlyStatusMigration.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_status_prepare_report');
     expect(fnStart).toBeGreaterThan(-1);
     const fnEnd = monthlyStatusMigration.indexOf('\n$$;', fnStart);

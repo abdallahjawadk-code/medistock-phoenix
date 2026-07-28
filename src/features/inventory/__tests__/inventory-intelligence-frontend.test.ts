@@ -108,7 +108,7 @@ describe('permission gating uses the correct inventory.* keys', () => {
 
   it('reject is shown only behind act_on_suggestions (canAct)', () => {
     // the reject control block is guarded by canAct. Window widened (400->700,
-    // migration 147) to span the sibling "create draft" button now rendered
+    // migration 148) to span the sibling "create draft" button now rendered
     // in the same canAct-gated block — both remain narrow, per-suggestion,
     // never a generic/bulk action.
     expect(panel).toMatch(/canAct &&[\s\S]{0,700}inv_action_reject/);
@@ -180,7 +180,7 @@ describe('all required UI states are present', () => {
     expect(panel).toMatch(/inv_denied/);
   });
   it('panel surfaces stale recommendations via isSuggestionStale + a stale note', () => {
-    // 147: maxAgeMs now comes from the org's real inventory_suggestion_policy
+    // 148: maxAgeMs now comes from the org's real inventory_suggestion_policy
     // (getInventorySuggestionPolicy), never a client-only literal — see
     // useInventoryIntelligence.ts's isSuggestionStale doc comment.
     expect(panel).toMatch(/isSuggestionStale\(s, stalenessMaxAgeMs\)/);

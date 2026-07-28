@@ -1,6 +1,6 @@
 /**
- * TRANSFER-SUGGESTION-DRAFT-BRIDGE-147 — DYNAMIC operational acceptance
- * against a real disposable Postgres with 001->147 applied in order.
+ * TRANSFER-SUGGESTION-DRAFT-BRIDGE-148 — DYNAMIC operational acceptance
+ * against a real disposable Postgres with 001->148 applied in order.
  *
  * Proves, through the real RPCs exactly as the app will call them (never
  * hand-written INSERTs into the guarded tables):
@@ -26,35 +26,35 @@ import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 const run = rigAvailable() ? describe : describe.skip;
 
-const ORG_C = '00000000-0000-0000-0000-000000147001'; // central org
-const ORG_I = '00000000-0000-0000-0000-000000147002'; // institution org
-const WH_C = '00000000-0000-0000-0000-000000147101';  // central warehouse
-const WH_I = '00000000-0000-0000-0000-000000147102';  // institution warehouse
-const DP_I = '00000000-0000-0000-0000-000000147301';  // institution outlet, paired to WH_I
+const ORG_C = '00000000-0000-0000-0000-000000148001'; // central org
+const ORG_I = '00000000-0000-0000-0000-000000148002'; // institution org
+const WH_C = '00000000-0000-0000-0000-000000148101';  // central warehouse
+const WH_I = '00000000-0000-0000-0000-000000148102';  // institution warehouse
+const DP_I = '00000000-0000-0000-0000-000000148301';  // institution outlet, paired to WH_I
 
-const IA_C = '00000000-0000-0000-0000-000000147401'; // institution_admin, ORG_C — has BOTH real gates
-const IA_C_NO_ROUTE = '00000000-0000-0000-0000-000000147402'; // institution_admin, ORG_C — queue gate only
+const IA_C = '00000000-0000-0000-0000-000000148401'; // institution_admin, ORG_C — has BOTH real gates
+const IA_C_NO_ROUTE = '00000000-0000-0000-0000-000000148402'; // institution_admin, ORG_C — queue gate only
 
-const MED = 'Transfer Bridge Test Med 147';
+const MED = 'Transfer Bridge Test Med 148';
 
-run('147 transfer suggestion draft bridge — operational acceptance (dynamic)', () => {
+run('148 transfer suggestion draft bridge — operational acceptance (dynamic)', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 147 });
+    rig = await buildRig({ upTo: 148 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG_C}','Central','مركزي','p147-c'),('${ORG_I}','Institution','مؤسسة','p147-i')
+        ('${ORG_C}','Central','مركزي','p148-c'),('${ORG_I}','Institution','مؤسسة','p148-i')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
-        ('${WH_C}','${ORG_C}','Central WH','مخزن مركزي','active','central','p147-wc'),
-        ('${WH_I}','${ORG_I}','Institution WH','مخزن مؤسسة','active','institution','p147-wi')
+        ('${WH_C}','${ORG_C}','Central WH','مخزن مركزي','active','central','p148-wc'),
+        ('${WH_I}','${ORG_I}','Institution WH','مخزن مؤسسة','active','institution','p148-wi')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO distribution_points (id,warehouse_id,organization_id,name,name_ar,point_type,status)
         VALUES ('${DP_I}','${WH_I}','${ORG_I}','Outlet I','منفذ مؤسسة','pharmacy','active')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO auth.users (id,email) VALUES
-        ('${IA_C}','p147-iac@rig'),('${IA_C_NO_ROUTE}','p147-iacnr@rig')
+        ('${IA_C}','p148-iac@rig'),('${IA_C_NO_ROUTE}','p148-iacnr@rig')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_C}' WHERE id='${IA_C}';`);
       await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_C}' WHERE id='${IA_C_NO_ROUTE}';`);
@@ -85,14 +85,14 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
          VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,100,$6,1)`,
-        [srcStockId, ORG_C, WH_C, sci, `B147-${suffix}-src`, opts.sourceReserved ?? 10],
+        [srcStockId, ORG_C, WH_C, sci, `B148-${suffix}-src`, opts.sourceReserved ?? 10],
       );
       await c.query(
         `INSERT INTO warehouse_stock (id, organization_id, warehouse_id, scientific_name,
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
          VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,5,0,1)`,
-        [tgtStockId, ORG_I, WH_I, sci, `B147-${suffix}-tgt`],
+        [tgtStockId, ORG_I, WH_I, sci, `B148-${suffix}-tgt`],
       );
       await c.query(
         `INSERT INTO inventory_signal_thresholds (organization_id, scope_kind, scope_id, scientific_name, target_max, is_active)
@@ -145,7 +145,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     await rig.asUser(IA_C, async (c: any) => {
       const r = await c.query(
         `SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`,
-        [suggestionId, 'DOC-147-HAPPY-1'],
+        [suggestionId, 'DOC-148-HAPPY-1'],
       );
       result = r.rows[0].r;
     }, { commit: true });
@@ -162,7 +162,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
       expect(s.draft_warehouse_transfer_request_id).toBe(result.warehouse_transfer_request_id);
       expect(s.draft_warehouse_dispatch_id).toBeNull();
       expect(s.draft_outlet_return_request_id).toBeNull();
-      expect(s.draft_document_number).toBe('DOC-147-HAPPY-1');
+      expect(s.draft_document_number).toBe('DOC-148-HAPPY-1');
 
       const wtr = (await c.query(`SELECT * FROM warehouse_transfer_requests WHERE id=$1`, [result.warehouse_transfer_request_id])).rows[0];
       expect(wtr.status).toBe('draft');
@@ -183,14 +183,14 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     const { suggestionId } = await seedCentralToInstitutionPair('idem');
     let first: any;
     await rig.asUser(IA_C, async (c: any) => {
-      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-IDEM-1']);
+      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-IDEM-1']);
       first = r.rows[0].r;
     }, { commit: true });
     expect(first.ok).toBe(true);
 
     // Same actor retries — idempotent replay, same result, no error, no second document.
     await rig.asUser(IA_C, async (c: any) => {
-      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-IDEM-1']);
+      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-IDEM-1']);
       const replay = r.rows[0].r;
       expect(replay.ok).toBe(true);
       expect(replay.idempotent_replay).toBe(true);
@@ -200,7 +200,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     // A different actor is refused outright, not silently re-drafted.
     await expect(
       rig.asUser(IA_C_NO_ROUTE, async (c: any) => {
-        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-IDEM-2']);
+        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-IDEM-2']);
       }, { commit: true }),
     ).rejects.toThrow(/suggestion_already_drafted/);
   });
@@ -209,7 +209,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     const { suggestionId } = await seedCentralToInstitutionPair('noroute');
     await expect(
       rig.asUser(IA_C_NO_ROUTE, async (c: any) => {
-        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-NOROUTE']);
+        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-NOROUTE']);
       }, { commit: true }),
     ).rejects.toThrow(/forbidden|not_authorized/);
 
@@ -228,7 +228,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     // Default policy (30 min, no override row) refuses it.
     await expect(
       rig.asUser(IA_C, async (c: any) => {
-        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-STALE-1']);
+        await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-STALE-1']);
       }, { commit: true }),
     ).rejects.toThrow(/suggestion_stale_revalidate_required/);
 
@@ -240,7 +240,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     }, { commit: true });
 
     await rig.asUser(IA_C, async (c: any) => {
-      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-STALE-2']);
+      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-STALE-2']);
       expect(r.rows[0].r.ok).toBe(true);
     }, { commit: true });
   });
@@ -250,8 +250,8 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     const srcStockId = randomUUID();
     const tgtStockId1 = randomUUID();
     const tgtStockId2 = randomUUID();
-    const org2 = '00000000-0000-0000-0000-000000147903';
-    const wh2 = '00000000-0000-0000-0000-000000147904';
+    const org2 = '00000000-0000-0000-0000-000000148903';
+    const wh2 = '00000000-0000-0000-0000-000000148904';
     await rig.asAdmin(async (c: any) => {
       // A tight batch: only 15 available after target_max (100 on_hand, target_max 85).
       await c.query(
@@ -259,7 +259,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
          VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,100,0,1)`,
-        [srcStockId, ORG_C, WH_C, sci, 'B147-conserve-src'],
+        [srcStockId, ORG_C, WH_C, sci, 'B148-conserve-src'],
       );
       await c.query(
         `INSERT INTO inventory_signal_thresholds (organization_id, scope_kind, scope_id, scientific_name, target_max, is_active)
@@ -267,15 +267,15 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
         [ORG_C, WH_C, sci],
       );
       // Two SEPARATE institution orgs, each wanting more than half the 15 headroom.
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,'Org2','مؤسسة2','p147-org2') ON CONFLICT (id) DO NOTHING;`, [org2]);
-      await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES ($1,$2,'WH2','مخزن2','active','institution','p147-wh2') ON CONFLICT (id) DO NOTHING;`, [wh2, org2]);
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,'Org2','مؤسسة2','p148-org2') ON CONFLICT (id) DO NOTHING;`, [org2]);
+      await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES ($1,$2,'WH2','مخزن2','active','institution','p148-wh2') ON CONFLICT (id) DO NOTHING;`, [wh2, org2]);
       for (const [stockId, org, wh, tag] of [[tgtStockId1, ORG_I, WH_I, 'a'], [tgtStockId2, org2, wh2, 'b']] as const) {
         await c.query(
           `INSERT INTO warehouse_stock (id, organization_id, warehouse_id, scientific_name,
              has_no_national_code, has_no_batch_number, batch_number, expiry_date,
              on_hand_quantity, reserved_quantity, movement_seq)
            VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,0,0,1)`,
-          [stockId, org, wh, sci, `B147-conserve-tgt-${tag}`],
+          [stockId, org, wh, sci, `B148-conserve-tgt-${tag}`],
         );
         await c.query(
           `INSERT INTO inventory_signal_thresholds (organization_id, scope_kind, scope_id, scientific_name, reorder_point, is_active)
@@ -314,7 +314,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     let totalDrafted = 0;
     for (const id of ids) {
       await rig.asUser(IA_C, async (c: any) => {
-        const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [id, `DOC-147-CONS-${id.slice(-4)}`]);
+        const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [id, `DOC-148-CONS-${id.slice(-4)}`]);
         const res = r.rows[0].r;
         if (res.ok) totalDrafted += res.quantity;
       }, { commit: true }).catch(() => { /* second may legitimately be refused once headroom is gone */ });
@@ -331,7 +331,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
          VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,60,0,1)`,
-        [srcStockId, ORG_I, WH_I, sci, 'B147-dispatch-src'],
+        [srcStockId, ORG_I, WH_I, sci, 'B148-dispatch-src'],
       );
       await c.query(
         `INSERT INTO inventory_signal_thresholds (organization_id, scope_kind, scope_id, scientific_name, target_max, is_active)
@@ -368,7 +368,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
       // permission (warehouse_dispatch.create is enforced inside the callee).
     });
     await rig.asUser(rig.superAdminId, async (c: any) => {
-      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-147-DISPATCH-1']);
+      const r = await c.query(`SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`, [suggestionId, 'DOC-148-DISPATCH-1']);
       result = r.rows[0].r;
     }, { commit: true });
 
@@ -398,7 +398,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
          VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,80,0,1)`,
-        [warehouseStockId, ORG_I, WH_I, sci, 'B147-return-src'],
+        [warehouseStockId, ORG_I, WH_I, sci, 'B148-return-src'],
       );
     });
 
@@ -408,7 +408,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const dispatch = await c.query(
         `SELECT public.phoenix_create_warehouse_dispatch($1,$2,$3,NULL,NULL,NULL) AS r`,
-        [WH_I, DP_I, 'DOC-147-PROVENANCE-DISPATCH'],
+        [WH_I, DP_I, 'DOC-148-PROVENANCE-DISPATCH'],
       );
       const dispatchId = dispatch.rows[0].r.dispatch_id;
       const line = await c.query(
@@ -478,7 +478,7 @@ run('147 transfer suggestion draft bridge — operational acceptance (dynamic)',
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const drafted = await c.query(
         `SELECT public.phoenix_create_transfer_draft_from_suggestion($1,$2) AS r`,
-        [suggestionId, 'DOC-147-OUTLET-RETURN-1'],
+        [suggestionId, 'DOC-148-OUTLET-RETURN-1'],
       );
       result = drafted.rows[0].r;
     }, { commit: true });

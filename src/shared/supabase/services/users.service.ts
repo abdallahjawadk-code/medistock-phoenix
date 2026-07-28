@@ -603,7 +603,9 @@ export async function rotatePasswordViaEdge(targetUserId: string, newPassword: s
 
 /**
  * Hard-delete a user from auth and profiles (cascade).
- * confirmation must equal 'DELETE_USER_<target-email>' (built by UI, verified server-side).
+ * confirmation must equal 'DELETE_USER_<target-user-id>' (built by UI from data
+ * already visible in the user list, never the target's Auth email; verified
+ * server-side after authorization passes).
  */
 export async function deleteUserViaEdge(targetUserId: string, confirmation: string): Promise<LifecycleResult> {
   return invokeLifecycle({ action: 'delete', target_user_id: targetUserId, confirmation });

@@ -1130,13 +1130,17 @@ export const T: Dict = {
   um_suspended:          { ar: 'موقوف',              en: 'Suspended' },
   um_disable_confirm_q:  { ar: 'هل تريد تعطيل هذا المستخدم؟ لن يتمكن من تسجيل الدخول حتى تعيد تفعيله.', en: 'Disable this user? They will be unable to log in until you re-enable them.' },
   um_delete_confirm_q:   { ar: 'الحذف النهائي يزيل حساب الدخول من Supabase Auth وقد لا يمكن التراجع عنه.', en: 'Permanent deletion removes the login account from Supabase Auth and may not be reversible.' },
-  um_delete_type_confirm:{ ar: 'اكتب DELETE للتأكيد', en: 'Type DELETE to confirm' },
+  um_delete_type_confirm:{ ar: 'اكتب عبارة التأكيد التالية حرفياً', en: 'Type the confirmation phrase below exactly' },
   um_cannot_delete_self: { ar: 'لا يمكن حذف حسابك الخاص',     en: 'You cannot delete your own account' },
   um_user_disabled:      { ar: 'تم تعطيل المستخدم بنجاح',      en: 'User disabled successfully' },
   um_user_enabled:       { ar: 'تم تفعيل المستخدم بنجاح',       en: 'User enabled successfully' },
   um_user_deleted:       { ar: 'تم حذف المستخدم بنجاح',         en: 'User deleted successfully' },
   um_lifecycle_failed:   { ar: 'فشلت العملية. حاول مجدداً.',     en: 'Operation failed. Please try again.' },
   um_last_super_admin:   { ar: 'لا يمكن حذف أو تعطيل مدير المنصة الوحيد', en: 'Cannot delete or disable the last platform administrator' },
+  um_delete_confirmation_mismatch: { ar: 'عبارة التأكيد غير مطابقة. أعد المحاولة.', en: 'The confirmation phrase does not match. Please try again.' },
+  um_lifecycle_in_progress: { ar: 'توجد عملية أخرى قيد التنفيذ على هذا الحساب. حاول مجدداً بعد قليل.', en: 'Another operation is already in progress on this account. Please try again shortly.' },
+  um_delete_has_history: { ar: 'لا يمكن حذف هذا المستخدم لارتباطه بحركات أو سجلات تاريخية. استخدم تعطيل الحساب أو تدويره بدلًا من الحذف.', en: 'This user cannot be deleted because they are linked to historical operations or records. Use disable or recycle account instead.' },
+  um_delete_unused_only: { ar: 'الحذف النهائي متاح فقط للحسابات التي لم تُنفّذ أي عملية بعد. إن كان الحساب مستخدَمًا، سيرفضه الخادم تلقائيًا.', en: 'Permanent deletion is available only for accounts that have never performed any operation. If the account has been used, the server will refuse it automatically.' },
 
   /* Password rotation (USER-MANAGEMENT-CREATE-DELETE-ROTATE-FIX-A) */
   um_rotate_password:            { ar: 'إعادة تعيين كلمة المرور المؤقتة', en: 'Reset temporary password' },

@@ -518,10 +518,11 @@ describe('Local credentials feature: global guardrails still hold', () => {
     files.forEach(path => expect(readFile(path)).not.toMatch(/auth\.admin/));
   });
 
-  it('hard delete button is still not rendered', () => {
+  it('hard delete button is rendered, gated to super_admin and never self', () => {
     const screen = readSrc('features/users/UserManagementScreen.tsx');
-    expect(screen).not.toContain('deleteTarget');
-    expect(screen).not.toContain('um_delete_user_action');
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('isSuper && !isSelf');
   });
 
   it('Data Reset, OCR/Excel/DocIntel imports remain absent', () => {

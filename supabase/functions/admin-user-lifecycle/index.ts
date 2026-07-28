@@ -22,6 +22,18 @@
 //   is recorded server-side in the RLS-protected audit_logs with the same
 //   correlation id the client already stamps on the request.
 //
+// SECURE-USER-DELETE-HISTORY-GUARD-147:
+//   A hard-delete additionally requires zero operational history. Migration
+//   147 extends phoenix_lifecycle_reserve so a delete against a profile with
+//   any warehouse/outlet movement, transfer/return/procurement request,
+//   approval, custody-chain action, or availability edit is refused with the
+//   distinct, user-facing USER_HAS_OPERATIONAL_HISTORY (not folded into
+//   REQUEST_DENIED — "has activity" is not a sensitive fact). A brand-new,
+//   never-used account remains deletable. This check is authoritative and
+//   re-verified inside the same atomic, advisory-locked reserve() call this
+//   Edge Function already relies on — no client-side confirmation phrase can
+//   bypass it.
+//
 // Contract (unchanged wire shape):
 //   POST { action, target_user_id, confirmation?, new_password? }  (Bearer = caller JWT)
 //   action ∈ { disable, enable, rotate_password, delete }
@@ -53,6 +65,7 @@ function statusForCode(code: string): number {
     case 'REQUEST_DENIED': return 403;
     case 'LAST_SUPER_ADMIN': return 403;
     case 'LIFECYCLE_IN_PROGRESS': return 409;
+    case 'USER_HAS_OPERATIONAL_HISTORY': return 409;
     case 'INVALID_ACTION': return 400;
     default: return 400;
   }
@@ -175,12 +188,12 @@ Deno.serve(async (req: Request) => {
     if (!rv?.ok) return rpcDenied(rv ?? {});
     const targetRole = rv.target_role ?? null;
 
-    // Confirmation string must equal DELETE_USER_<email>. The email lookup and
-    // check happen AFTER reserve so target existence stays behind the generic
-    // gate; a mismatch compensates the reservation back to active.
-    const { data: targetAuthData } = await admin.auth.admin.getUserById(targetId);
-    const targetEmail = targetAuthData?.user?.email ?? '';
-    if (confirmation !== `DELETE_USER_${targetEmail}`) {
+    // Confirmation string must equal DELETE_USER_<target-user-id> — the id is
+    // already visible to the caller in the user list, so this never requires
+    // exposing the target's Auth email to build a valid confirmation. The
+    // check happens AFTER reserve so target existence stays behind the
+    // generic gate; a mismatch compensates the reservation back to active.
+    if (confirmation !== `DELETE_USER_${targetId}`) {
       await caller.rpc('phoenix_lifecycle_compensate', { p_target_id: targetId, p_correlation_id: correlationId });
       return json({ ok: false, error: 'INVALID_CONFIRMATION', correlation_id: correlationId }, 400);
     }

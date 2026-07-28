@@ -19,7 +19,7 @@ import { supabase, supabaseConfigured } from '@/shared/supabase/client';
  *     SCOPED permission server-side, so the UI's permission gates are a
  *     convenience only — never the security boundary.
  *
- * DRAFT, NOT ACCEPT/EXECUTE (migration 147). A suggestion is a RECOMMENDATION
+ * DRAFT, NOT ACCEPT/EXECUTE (migration 148). A suggestion is a RECOMMENDATION
  * until `createTransferDraftFromSuggestion` succeeds — that call never moves
  * stock itself. It re-verifies live eligibility server-side and, only if a
  * real corridor permission also allows it (not just inventory.act_on_

@@ -1,5 +1,5 @@
 /**
- * TRANSFER-SUGGESTION-DRAFT-BRIDGE-147 — canonical report/export parity.
+ * TRANSFER-SUGGESTION-DRAFT-BRIDGE-148 — canonical report/export parity.
  *
  * A suggestion and its draft document are planning state, not inventory
  * movement. This test locks the boundary through every reader-facing surface:

@@ -1,5 +1,5 @@
 -- =============================================================================
--- MediStock Phoenix — Migration 147: Transfer Suggestion Draft Bridge
+-- MediStock Phoenix — Migration 148: Transfer Suggestion Draft Bridge
 -- MANUAL APPLY ONLY. DO NOT use `npx supabase db push` or any automated runner.
 -- Apply after 145. Forward-only — no applied migration is edited.
 -- =============================================================================
@@ -116,12 +116,12 @@ COMMENT ON COLUMN public.inventory_transfer_suggestions.draft_outlet_return_requ
   'Set only when route_kind=outlet_to_warehouse and status=accepted. Real FK — '
   'proves an outlet_return_requests draft exists; never a bare id.';
 COMMENT ON COLUMN public.inventory_transfer_suggestions.accepted_at IS
-  '147: timestamps when phoenix_create_transfer_draft_from_suggestion created a '
+  '148: timestamps when phoenix_create_transfer_draft_from_suggestion created a '
   'real draft document in the corridor matching route_kind — NOT an execution, '
   'acceptance, or stock movement. The stock movement happens later, only via the '
   'draft document''s own send/receive RPCs.';
 COMMENT ON COLUMN public.inventory_transfer_suggestions.accepted_by IS
-  '147: actor who created the draft document (see accepted_at). Reserved column '
+  '148: actor who created the draft document (see accepted_at). Reserved column '
   'name kept from 072 for schema stability; semantics documented here.';
 
 -- Drop the Round-5 total prohibition — replaced below by a narrower rule that
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_suggestion_policy (
 );
 
 COMMENT ON TABLE public.inventory_suggestion_policy IS
-  '147: per-organization override of how long a suggestion''s last_validated_at '
+  '148: per-organization override of how long a suggestion''s last_validated_at '
   'may age before phoenix_create_transfer_draft_from_suggestion refuses it and '
   'requires re-validation. No row = 30-minute documented default.';
 
@@ -583,27 +583,27 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_draft_fk_matches_route_chk'
   ) THEN
-    RAISE EXCEPTION 'ABORT 147: inventory_suggestions_draft_fk_matches_route_chk was not created.';
+    RAISE EXCEPTION 'ABORT 148: inventory_suggestions_draft_fk_matches_route_chk was not created.';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'inventory_suggestions_no_accept_chk'
   ) THEN
-    RAISE EXCEPTION 'ABORT 147: inventory_suggestions_no_accept_chk was not dropped.';
+    RAISE EXCEPTION 'ABORT 148: inventory_suggestions_no_accept_chk was not dropped.';
   END IF;
   IF to_regprocedure('public.phoenix_accept_inventory_transfer_suggestion(uuid)') IS NOT NULL THEN
-    RAISE EXCEPTION 'ABORT 147: the old accept stub still exists.';
+    RAISE EXCEPTION 'ABORT 148: the old accept stub still exists.';
   END IF;
   IF to_regprocedure('public.phoenix_create_transfer_draft_from_suggestion(uuid,text)') IS NULL THEN
-    RAISE EXCEPTION 'ABORT 147: phoenix_create_transfer_draft_from_suggestion was not created.';
+    RAISE EXCEPTION 'ABORT 148: phoenix_create_transfer_draft_from_suggestion was not created.';
   END IF;
   IF to_regprocedure('public.phoenix_get_live_inter_institution_alerts_with_state_page(integer,integer)') IS NULL THEN
-    RAISE EXCEPTION 'ABORT 147: the paginated alerts RPC was not created.';
+    RAISE EXCEPTION 'ABORT 148: the paginated alerts RPC was not created.';
   END IF;
   IF to_regclass('public.inventory_suggestion_policy') IS NULL THEN
-    RAISE EXCEPTION 'ABORT 147: inventory_suggestion_policy was not created.';
+    RAISE EXCEPTION 'ABORT 148: inventory_suggestion_policy was not created.';
   END IF;
   IF has_table_privilege('anon', 'public.inventory_suggestion_policy', 'SELECT') THEN
-    RAISE EXCEPTION 'ABORT 147: anon can read inventory_suggestion_policy.';
+    RAISE EXCEPTION 'ABORT 148: anon can read inventory_suggestion_policy.';
   END IF;
 END;
 $selfcheck$;
