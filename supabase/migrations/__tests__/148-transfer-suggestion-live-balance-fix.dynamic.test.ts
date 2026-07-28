@@ -80,7 +80,7 @@ run('LIVE-BALANCE-FIX-148 — draft creation re-verifies against live stock/thre
         `INSERT INTO warehouse_stock (id, organization_id, warehouse_id, scientific_name,
            has_no_national_code, has_no_batch_number, batch_number, expiry_date,
            on_hand_quantity, reserved_quantity, movement_seq)
-         VALUES ($1,$2,$3,$4,true,false,$5,current_date+$6,$7,$8,1)`,
+         VALUES ($1,$2,$3,$4,true,false,$5,current_date+($6)::int,$7,$8,1)`,
         [srcStockId, ORG_C, WH_C, sci, opts.batchNumber ?? `B148LB-${sci}-src`,
          opts.expiryDaysFromNow ?? 365, opts.sourceOnHand, opts.sourceReserved ?? 0],
       );
