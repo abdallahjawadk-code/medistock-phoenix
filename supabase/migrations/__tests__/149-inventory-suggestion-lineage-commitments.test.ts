@@ -41,9 +41,17 @@ describe('149 inventory suggestion lineage and derived commitments', () => {
     expect(normalized).toContain("commitment_closed_reason = 'line_deleted'");
   });
 
-  it('backfills only an unambiguous single line and never picks an arbitrary line', () => {
-    expect(normalized.match(/having count\(\*\) = 1/g)).toHaveLength(3);
-    expect(normalized).toContain('(array_agg(id order by id))[1]');
+  it('backfills only semantically proven line identity and never guesses from cardinality alone', () => {
+    expect(normalized).toContain('phoenix_dispatch_line_requests');
+    expect(normalized).toContain('request_id = s.id');
+    expect(normalized).toContain('warehouse_stock_id = s.source_stock_id');
+    expect(normalized).toContain('original_dispatch_line_id = s.provenance_dispatch_line_id');
+    expect(normalized).toContain('source_outlet_stock_id = s.source_stock_id');
+    expect(normalized.match(/lower\(btrim\([^)]*scientific_name[^)]*\)\)/g)?.length ?? 0)
+      .toBeGreaterThanOrEqual(3);
+    expect(normalized).not.toMatch(
+      /from public\.warehouse_dispatch_lines\s+group by dispatch_id\s+having count\(\*\) = 1/i,
+    );
     expect(normalized).not.toMatch(/\blimit\s+1\b[\s\S]{0,80}draft_\w+_line_id/i);
   });
 
@@ -119,6 +127,20 @@ describe('149 inventory suggestion lineage and derived commitments', () => {
     expect(normalized).toContain('order by s.id for update');
     expect(normalized).toContain('public._phoenix_lock_linked_suggestions');
     expect(normalized).toContain('_phoenix_149_delegate_');
+  });
+
+  it('rejects quantity increases on linked central and dispatch lines after the suggestion prelock', () => {
+    expect(normalized.match(
+      /v_linked_count\s*:=\s*public\._phoenix_lock_linked_suggestions/g,
+    )).toHaveLength(2);
+    expect(normalized).toContain('suggestion_linked_quantity_increase_requires_regeneration');
+    expect(normalized.match(/errcode\s*=\s*'23514'/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(normalized).toMatch(
+      /select requested_quantity[\s\S]*if p_requested_quantity > v_current_quantity/i,
+    );
+    expect(normalized).toMatch(
+      /select sent_quantity[\s\S]*if p_quantity > v_current_quantity/i,
+    );
   });
 
   it('closes a linked commitment before deleting its line', () => {

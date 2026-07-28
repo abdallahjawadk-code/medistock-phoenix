@@ -96,12 +96,36 @@ ALTER TABLE public.inventory_transfer_suggestions
       AND commitment_closed_reason = 'line_deleted')
   );
 
--- Only deterministic one-line historical documents are linked. Ambiguous
--- documents remain conservative legacy_unresolved; no line id is guessed.
-WITH unique_lines AS (
-  SELECT transfer_request_id, (array_agg(id ORDER BY id))[1] AS line_id
-  FROM public.warehouse_transfer_request_lines
-  GROUP BY transfer_request_id
+-- Historical linkage is semantic, never cardinality-only. A head with one
+-- unrelated line is not evidence. Missing source identity, conflicting
+-- identity, or multiple plausible candidates remains legacy_unresolved.
+WITH candidates AS (
+  SELECT s.id AS suggestion_id, l.id AS line_id
+  FROM public.inventory_transfer_suggestions s
+  JOIN public.warehouse_transfer_request_lines l
+    ON l.transfer_request_id = s.draft_warehouse_transfer_request_id
+  JOIN public.warehouse_stock ws
+    ON ws.id = s.source_stock_id
+   AND ws.organization_id = s.source_organization_id
+   AND ws.warehouse_id = s.source_scope_id
+  WHERE s.status = 'accepted'
+    AND s.route_kind = 'central_to_institution'
+    AND lower(btrim(l.scientific_name)) = lower(btrim(s.scientific_name))
+    AND lower(btrim(ws.scientific_name)) = lower(btrim(s.scientific_name))
+    AND (s.national_code IS NULL
+         OR ws.national_code IS NOT DISTINCT FROM s.national_code)
+    AND l.central_item_id IS NOT DISTINCT FROM ws.central_item_id
+    AND (ws.concentration IS NULL
+         OR lower(btrim(l.concentration)) = lower(btrim(ws.concentration)))
+    AND (ws.dosage_form IS NULL
+         OR lower(btrim(l.dosage_form)) = lower(btrim(ws.dosage_form)))
+    AND (ws.unit IS NULL
+         OR lower(btrim(l.unit)) = lower(btrim(ws.unit)))
+),
+unique_lines AS (
+  SELECT suggestion_id, (array_agg(line_id ORDER BY line_id))[1] AS line_id
+  FROM candidates
+  GROUP BY suggestion_id
   HAVING count(*) = 1
 )
 UPDATE public.inventory_transfer_suggestions s
@@ -109,14 +133,35 @@ SET draft_warehouse_transfer_request_line_id = u.line_id,
     lineage_version = 1,
     lineage_state = 'linked'
 FROM unique_lines u
-WHERE s.status = 'accepted'
-  AND s.route_kind = 'central_to_institution'
-  AND s.draft_warehouse_transfer_request_id = u.transfer_request_id;
+WHERE s.id = u.suggestion_id;
 
-WITH unique_lines AS (
-  SELECT dispatch_id, (array_agg(id ORDER BY id))[1] AS line_id
-  FROM public.warehouse_dispatch_lines
-  GROUP BY dispatch_id
+WITH candidates AS (
+  SELECT s.id AS suggestion_id, l.id AS line_id
+  FROM public.inventory_transfer_suggestions s
+  JOIN public.phoenix_dispatch_line_requests r
+    ON r.request_id = s.id
+   AND r.dispatch_id = s.draft_warehouse_dispatch_id
+   AND r.dispatch_line_id IS NOT NULL
+  JOIN public.warehouse_dispatch_lines l
+    ON l.id = r.dispatch_line_id
+   AND l.dispatch_id = s.draft_warehouse_dispatch_id
+  JOIN public.warehouse_stock ws
+    ON ws.id = s.source_stock_id
+   AND ws.organization_id = s.source_organization_id
+   AND ws.warehouse_id = s.source_scope_id
+  WHERE s.status = 'accepted'
+    AND s.route_kind = 'warehouse_to_outlet'
+    AND l.warehouse_stock_id = s.source_stock_id
+    AND lower(btrim(l.scientific_name)) = lower(btrim(s.scientific_name))
+    AND lower(btrim(ws.scientific_name)) = lower(btrim(s.scientific_name))
+    AND l.national_code IS NOT DISTINCT FROM s.national_code
+    AND ws.national_code IS NOT DISTINCT FROM s.national_code
+    AND l.central_item_id IS NOT DISTINCT FROM ws.central_item_id
+),
+unique_lines AS (
+  SELECT suggestion_id, (array_agg(line_id ORDER BY line_id))[1] AS line_id
+  FROM candidates
+  GROUP BY suggestion_id
   HAVING count(*) = 1
 )
 UPDATE public.inventory_transfer_suggestions s
@@ -124,14 +169,33 @@ SET draft_warehouse_dispatch_line_id = u.line_id,
     lineage_version = 1,
     lineage_state = 'linked'
 FROM unique_lines u
-WHERE s.status = 'accepted'
-  AND s.route_kind = 'warehouse_to_outlet'
-  AND s.draft_warehouse_dispatch_id = u.dispatch_id;
+WHERE s.id = u.suggestion_id;
 
-WITH unique_lines AS (
-  SELECT return_request_id, (array_agg(id ORDER BY id))[1] AS line_id
-  FROM public.outlet_return_request_lines
-  GROUP BY return_request_id
+WITH candidates AS (
+  SELECT s.id AS suggestion_id, l.id AS line_id
+  FROM public.inventory_transfer_suggestions s
+  JOIN public.outlet_return_request_lines l
+    ON l.return_request_id = s.draft_outlet_return_request_id
+   AND l.original_dispatch_line_id = s.provenance_dispatch_line_id
+   AND l.original_inbound_movement_id = s.provenance_inbound_movement_id
+   AND l.source_outlet_stock_id = s.source_stock_id
+  JOIN public.outlet_stock os
+    ON os.id = s.source_stock_id
+   AND os.organization_id = s.source_organization_id
+   AND os.distribution_point_id = s.source_scope_id
+  WHERE s.status = 'accepted'
+    AND s.route_kind = 'outlet_to_warehouse'
+    AND lower(btrim(l.scientific_name)) = lower(btrim(s.scientific_name))
+    AND lower(btrim(os.scientific_name)) = lower(btrim(s.scientific_name))
+    AND (s.national_code IS NULL
+         OR l.national_code IS NOT DISTINCT FROM s.national_code)
+    AND (s.national_code IS NULL
+         OR os.national_code IS NOT DISTINCT FROM s.national_code)
+),
+unique_lines AS (
+  SELECT suggestion_id, (array_agg(line_id ORDER BY line_id))[1] AS line_id
+  FROM candidates
+  GROUP BY suggestion_id
   HAVING count(*) = 1
 )
 UPDATE public.inventory_transfer_suggestions s
@@ -139,9 +203,7 @@ SET draft_outlet_return_request_line_id = u.line_id,
     lineage_version = 1,
     lineage_state = 'linked'
 FROM unique_lines u
-WHERE s.status = 'accepted'
-  AND s.route_kind = 'outlet_to_warehouse'
-  AND s.draft_outlet_return_request_id = u.return_request_id;
+WHERE s.id = u.suggestion_id;
 
 -- A legacy document is zero only when its header proves a safely terminal
 -- pre-custody outcome. Fulfilled/sent documents are not classified terminal
@@ -1728,9 +1790,29 @@ CREATE FUNCTION public.phoenix_update_warehouse_transfer_request_line(
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_linked_count integer;
+  v_current_quantity integer;
 BEGIN
-  PERFORM public._phoenix_lock_linked_suggestions(
+  v_linked_count := public._phoenix_lock_linked_suggestions(
     'central_line', p_transfer_request_line_id, false);
+  IF v_linked_count > 0 AND EXISTS (
+    SELECT 1
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.status = 'accepted'
+      AND s.lineage_version = 1
+      AND s.lineage_state = 'linked'
+      AND s.draft_warehouse_transfer_request_line_id = p_transfer_request_line_id
+  ) THEN
+    SELECT requested_quantity
+      INTO v_current_quantity
+    FROM public.warehouse_transfer_request_lines
+    WHERE id = p_transfer_request_line_id;
+    IF p_requested_quantity > v_current_quantity THEN
+      RAISE EXCEPTION 'suggestion_linked_quantity_increase_requires_regeneration'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
   RETURN public._phoenix_149_delegate_update_warehouse_transfer_request_line(
     p_transfer_request_line_id, p_requested_quantity, p_notes);
 END;
@@ -1842,9 +1924,29 @@ CREATE FUNCTION public.phoenix_update_dispatch_line_quantity(
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_linked_count integer;
+  v_current_quantity integer;
 BEGIN
-  PERFORM public._phoenix_lock_linked_suggestions(
+  v_linked_count := public._phoenix_lock_linked_suggestions(
     'dispatch_line', p_dispatch_line_id, false);
+  IF v_linked_count > 0 AND EXISTS (
+    SELECT 1
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.status = 'accepted'
+      AND s.lineage_version = 1
+      AND s.lineage_state = 'linked'
+      AND s.draft_warehouse_dispatch_line_id = p_dispatch_line_id
+  ) THEN
+    SELECT sent_quantity
+      INTO v_current_quantity
+    FROM public.warehouse_dispatch_lines
+    WHERE id = p_dispatch_line_id;
+    IF p_quantity > v_current_quantity THEN
+      RAISE EXCEPTION 'suggestion_linked_quantity_increase_requires_regeneration'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
   RETURN public._phoenix_149_delegate_update_dispatch_line_quantity(
     p_dispatch_line_id, p_quantity);
 END;

@@ -394,6 +394,104 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       expect(line.warehouse_stock_id).toBe(srcStockId);
       expect(line.id).toBe(result.warehouse_dispatch_line_id);
     });
+
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      await c.query(
+        `SELECT public.phoenix_update_dispatch_line_quantity($1,$2)`,
+        [result.warehouse_dispatch_line_id, 10],
+      );
+    }, { commit: true });
+
+    await expect(
+      rig.asUser(rig.superAdminId, async (c: any) => {
+        await c.query(
+          `SELECT public.phoenix_update_dispatch_line_quantity($1,$2)`,
+          [result.warehouse_dispatch_line_id, 15],
+        );
+      }, { commit: true }),
+    ).rejects.toThrow(/suggestion_linked_quantity_increase_requires_regeneration/);
+
+    await rig.asAdmin(async (c: any) => {
+      const line = (await c.query(
+        `SELECT sent_quantity FROM warehouse_dispatch_lines WHERE id=$1`,
+        [result.warehouse_dispatch_line_id],
+      )).rows[0];
+      const stock = (await c.query(
+        `SELECT on_hand_quantity, reserved_quantity FROM warehouse_stock WHERE id=$1`,
+        [srcStockId],
+      )).rows[0];
+      expect(line.sent_quantity).toBe(10);
+      expect(stock).toEqual({ on_hand_quantity: 60, reserved_quantity: 0 });
+    });
+  });
+
+  it('preserves quantity increases for manual unlinked central and dispatch lines', async () => {
+    const sci = `${MED} manual-unlinked`;
+    const centralStockId = randomUUID();
+    const dispatchStockId = randomUUID();
+    await rig.asAdmin(async (c: any) => {
+      for (const [id, org, wh, batch] of [
+        [centralStockId, ORG_C, WH_C, 'B149-manual-central'],
+        [dispatchStockId, ORG_I, WH_I, 'B149-manual-dispatch'],
+      ]) {
+        await c.query(
+          `INSERT INTO warehouse_stock (
+             id, organization_id, warehouse_id, scientific_name,
+             has_no_national_code, has_no_batch_number, batch_number,
+             expiry_date, on_hand_quantity, reserved_quantity, movement_seq
+           ) VALUES ($1,$2,$3,$4,true,false,$5,current_date+365,100,0,1)`,
+          [id, org, wh, sci, batch],
+        );
+      }
+    });
+
+    let centralLineId = '';
+    let dispatchLineId = '';
+    await rig.asUser(rig.superAdminId, async (c: any) => {
+      const head = (await c.query(
+        `SELECT public.phoenix_create_direct_warehouse_transfer_request(
+           $1,$2,$3,$4,NULL) AS r`,
+        [WH_C, ORG_I, WH_I, 'DOC-149-MANUAL-CENTRAL'],
+      )).rows[0].r;
+      const line = (await c.query(
+        `SELECT public.phoenix_add_warehouse_transfer_request_line(
+           $1,$2,$3,NULL,NULL,NULL,NULL,NULL) AS r`,
+        [head.transfer_request_id, sci, 10],
+      )).rows[0].r;
+      centralLineId = line.transfer_request_line_id;
+      await c.query(
+        `SELECT public.phoenix_update_warehouse_transfer_request_line($1,$2,NULL)`,
+        [centralLineId, 15],
+      );
+
+      const dispatch = (await c.query(
+        `SELECT public.phoenix_create_warehouse_dispatch($1,$2,$3,NULL,NULL,NULL) AS r`,
+        [WH_I, DP_I, 'DOC-149-MANUAL-DISPATCH'],
+      )).rows[0].r;
+      const dispatchLine = (await c.query(
+        `SELECT public.phoenix_add_dispatch_line_fefo_guarded(
+           $1,$2,$3,false,NULL,$4) AS r`,
+        [dispatch.dispatch_id, dispatchStockId, 10, randomUUID()],
+      )).rows[0].r;
+      dispatchLineId = dispatchLine.dispatch_line_id;
+      await c.query(
+        `SELECT public.phoenix_update_dispatch_line_quantity($1,$2)`,
+        [dispatchLineId, 15],
+      );
+    }, { commit: true });
+
+    await rig.asAdmin(async (c: any) => {
+      const central = (await c.query(
+        `SELECT requested_quantity FROM warehouse_transfer_request_lines WHERE id=$1`,
+        [centralLineId],
+      )).rows[0];
+      const dispatch = (await c.query(
+        `SELECT sent_quantity FROM warehouse_dispatch_lines WHERE id=$1`,
+        [dispatchLineId],
+      )).rows[0];
+      expect(central.requested_quantity).toBe(15);
+      expect(dispatch.sent_quantity).toBe(15);
+    });
   });
 
   it('drafts an outlet_to_warehouse suggestion into a real outlet_return_request with provenance preserved', async () => {
@@ -546,7 +644,8 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
   });
 
   it('derives central commitments from the live linked line and closes them before line deletion', async () => {
-    const { suggestionId, sci } = await seedCentralToInstitutionPair('line-edit-delete');
+    const { suggestionId, srcStockId, sci } =
+      await seedCentralToInstitutionPair('line-edit-delete');
     let draft: any;
     await rig.asUser(IA_C, async (c: any) => {
       draft = (await c.query(
@@ -580,6 +679,32 @@ run('148 transfer suggestion draft bridge — operational acceptance (dynamic)',
       expect(commitment.source_commitment).toBe(20);
       expect(commitment.target_commitment).toBe(20);
       expect(commitment.batch_commitment).toBe(20);
+    });
+
+    await expect(
+      rig.asUser(rig.superAdminId, async (c: any) => {
+        await c.query(
+          `SELECT public.phoenix_update_warehouse_transfer_request_line($1,$2,NULL)`,
+          [draft.warehouse_transfer_request_line_id, 30],
+        );
+      }, { commit: true }),
+    ).rejects.toThrow(/suggestion_linked_quantity_increase_requires_regeneration/);
+
+    await rig.asAdmin(async (c: any) => {
+      const line = (await c.query(
+        `SELECT requested_quantity
+           FROM warehouse_transfer_request_lines
+          WHERE id=$1`,
+        [draft.warehouse_transfer_request_line_id],
+      )).rows[0];
+      const stock = (await c.query(
+        `SELECT on_hand_quantity, reserved_quantity
+           FROM warehouse_stock
+          WHERE id=$1`,
+        [srcStockId],
+      )).rows[0];
+      expect(line.requested_quantity).toBe(20);
+      expect(stock).toEqual({ on_hand_quantity: 100, reserved_quantity: 10 });
     });
 
     await rig.asUser(rig.superAdminId, async (c: any) => {
