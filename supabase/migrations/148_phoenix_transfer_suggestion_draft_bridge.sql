@@ -272,6 +272,172 @@ REVOKE ALL ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid, i
 GRANT EXECUTE ON FUNCTION public.phoenix_upsert_inventory_suggestion_policy(uuid, integer) TO authenticated;
 
 -- ============================================================================
+-- 2b. _phoenix_live_suggestion_scope_position — LIVE-BALANCE-FIX-148.
+--
+--     LIVE re-derivation of a single (organization, scope, material, code)
+--     position's available quantity and effective threshold, locking every
+--     contributing row so the caller's transaction can rely on the returned
+--     numbers until it commits.
+--
+--     Internal only (REVOKEd from PUBLIC/anon/authenticated below — called
+--     exclusively from phoenix_create_transfer_draft_from_suggestion). Its
+--     own SECURITY DEFINER context already carries every privilege this
+--     helper needs, so SECURITY INVOKER is sufficient — no elevation beyond
+--     what the caller already has is required.
+--
+--     Mirrors phoenix_recompute_inventory_alerts' (072) OWN eligibility and
+--     threshold-resolution rules EXACTLY, re-scoped to one known position
+--     instead of the whole organization — this is a narrow re-derivation of
+--     an EXISTING rule, not a new movement/decision engine:
+--       * live_available is SUM(available_quantity) over EVERY matching row.
+--         072's own quantity-signal aggregate (_stock/_agg) does not exclude
+--         expired batches either; this function does not invent a stricter
+--         rule than the one it replaces as the source of truth.
+--       * a CODED position (p_national_code IS NOT NULL) measures exactly
+--         that code's rows.
+--       * a WILDCARD position (p_national_code IS NULL) measures every code
+--         of the material EXCEPT codes covered by their own coded threshold
+--         — verbatim 072's _pos/tot wildcard-exclusion rule.
+--       * the effective threshold is the scope-specific row if one exists
+--         and is_active, else the organization-default (scope_id IS NULL)
+--         row — verbatim 072's "ORDER BY (scope_id IS NOT NULL) DESC" rule.
+--
+--     Locking: every contributing stock row, and every candidate threshold
+--     row (at most the scope-specific one and the org-default one, per
+--     inventory_thresholds_identity_uniq), is locked in a deterministic
+--     order via a PL/pgSQL "FOR r IN SELECT ... FOR UPDATE LOOP" cursor —
+--     Postgres does not allow FOR UPDATE together with an aggregate in the
+--     same query, so the sum is only accumulated as each row is locked, and
+--     the caller never sees a value until every contributing row is locked.
+--
+--     CONCURRENCY SCOPE — documented, not solved here: these locks protect
+--     Draft-creation against Draft-creation only. Unifying them with the
+--     SEND/RECEIVE movement RPCs' own row locks and with threshold-upsert
+--     is explicitly deferred to a later phase.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public._phoenix_live_suggestion_scope_position(
+  p_organization_id uuid,
+  p_scope_kind      text,
+  p_scope_id        uuid,
+  p_scientific_name text,
+  p_national_code   text
+)
+RETURNS TABLE (live_available integer, reorder_point integer, target_max integer)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_sci             text := lower(btrim(p_scientific_name));
+  v_sum             integer := 0;
+  v_scope_row       boolean := false;
+  v_default_row     boolean := false;
+  v_scope_reorder   integer;
+  v_scope_target    integer;
+  v_default_reorder integer;
+  v_default_target  integer;
+  v_reorder         integer;
+  v_target          integer;
+  r                 RECORD;
+BEGIN
+  IF p_scope_kind NOT IN ('warehouse', 'outlet') THEN
+    RAISE EXCEPTION 'invalid_scope_kind';
+  END IF;
+  IF public.phoenix_inventory_scope_org(p_scope_kind, p_scope_id) IS DISTINCT FROM p_organization_id THEN
+    RAISE EXCEPTION 'scope_not_in_organization';
+  END IF;
+
+  -- ── Lock every contributing stock row, ascending id order, sum as we go ──
+  IF p_scope_kind = 'warehouse' THEN
+    FOR r IN
+      SELECT ws.available_quantity
+      FROM public.warehouse_stock ws
+      WHERE ws.organization_id = p_organization_id
+        AND ws.warehouse_id = p_scope_id
+        AND lower(ws.scientific_name) = v_sci
+        AND (
+          (p_national_code IS NOT NULL AND ws.national_code IS NOT DISTINCT FROM p_national_code)
+          OR (p_national_code IS NULL AND NOT EXISTS (
+                SELECT 1 FROM public.inventory_signal_thresholds tc
+                WHERE tc.organization_id = p_organization_id
+                  AND tc.scope_kind = p_scope_kind
+                  AND (tc.scope_id = p_scope_id OR tc.scope_id IS NULL)
+                  AND tc.is_active
+                  AND lower(tc.scientific_name) = v_sci
+                  AND tc.national_code IS NOT NULL
+                  AND tc.national_code = ws.national_code
+              ))
+        )
+      ORDER BY ws.id
+      FOR UPDATE
+    LOOP
+      v_sum := v_sum + COALESCE(r.available_quantity, 0);
+    END LOOP;
+  ELSE
+    FOR r IN
+      SELECT os.available_quantity
+      FROM public.outlet_stock os
+      WHERE os.organization_id = p_organization_id
+        AND os.distribution_point_id = p_scope_id
+        AND lower(os.scientific_name) = v_sci
+        AND (
+          (p_national_code IS NOT NULL AND os.national_code IS NOT DISTINCT FROM p_national_code)
+          OR (p_national_code IS NULL AND NOT EXISTS (
+                SELECT 1 FROM public.inventory_signal_thresholds tc
+                WHERE tc.organization_id = p_organization_id
+                  AND tc.scope_kind = p_scope_kind
+                  AND (tc.scope_id = p_scope_id OR tc.scope_id IS NULL)
+                  AND tc.is_active
+                  AND lower(tc.scientific_name) = v_sci
+                  AND tc.national_code IS NOT NULL
+                  AND tc.national_code = os.national_code
+              ))
+        )
+      ORDER BY os.id
+      FOR UPDATE
+    LOOP
+      v_sum := v_sum + COALESCE(r.available_quantity, 0);
+    END LOOP;
+  END IF;
+
+  -- ── Lock both threshold candidates (scope-specific + org-default), then
+  --    pick the effective one — scope-specific wins, verbatim 072's rule.
+  --    Locked in a fixed order (scope-specific first) so two concurrent
+  --    calls for the SAME position can never deadlock against each other.
+  FOR r IN
+    SELECT t.scope_id, t.reorder_point, t.target_max
+    FROM public.inventory_signal_thresholds t
+    WHERE t.organization_id = p_organization_id
+      AND t.scope_kind = p_scope_kind
+      AND (t.scope_id = p_scope_id OR t.scope_id IS NULL)
+      AND t.is_active
+      AND lower(t.scientific_name) = v_sci
+      AND t.national_code IS NOT DISTINCT FROM p_national_code
+    ORDER BY (t.scope_id IS NULL), t.id
+    FOR UPDATE
+  LOOP
+    IF r.scope_id IS NOT NULL THEN
+      v_scope_row := true; v_scope_reorder := r.reorder_point; v_scope_target := r.target_max;
+    ELSE
+      v_default_row := true; v_default_reorder := r.reorder_point; v_default_target := r.target_max;
+    END IF;
+  END LOOP;
+
+  IF v_scope_row THEN
+    v_reorder := v_scope_reorder; v_target := v_scope_target;
+  ELSIF v_default_row THEN
+    v_reorder := v_default_reorder; v_target := v_default_target;
+  ELSE
+    v_reorder := NULL; v_target := NULL;
+  END IF;
+
+  RETURN QUERY SELECT v_sum, v_reorder, v_target;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_live_suggestion_scope_position(uuid, text, uuid, text, text) FROM PUBLIC, anon, authenticated;
+
+-- ============================================================================
 -- 3. THE BRIDGE — one suggestion, full re-verification, one real draft.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_create_transfer_draft_from_suggestion(
@@ -288,8 +454,12 @@ DECLARE
   v_doc                 text := NULLIF(btrim(p_document_number), '');
   v_s                   public.inventory_transfer_suggestions%ROWTYPE;
   v_policy_minutes      integer;
+  v_src_key             text;
+  v_tgt_key             text;
   v_lock_a              text;
   v_lock_b              text;
+  v_src_pos             record;
+  v_tgt_pos             record;
   v_headroom            integer;
   v_deficit             integer;
   v_batch_available     integer;
@@ -354,34 +524,43 @@ BEGIN
     RAISE EXCEPTION 'suggestion_stale_revalidate_required';
   END IF;
 
-  -- Fixed lock order (lexicographic on the two ids involved) so a concurrent
-  -- draft-creation touching the same source/target pair from the other
-  -- direction can never deadlock against this one.
-  v_lock_a := LEAST(v_s.source_stock_id::text, v_s.target_scope_id::text);
-  v_lock_b := GREATEST(v_s.source_stock_id::text, v_s.target_scope_id::text);
+  -- Deterministic advisory-lock pair for THIS suggestion's two LIVE
+  -- positions (source scope+material, target scope+material) — protects
+  -- Draft-creation against Draft-creation ONLY. Unifying this with the
+  -- SEND/RECEIVE movement RPCs' own row locks and with threshold-upsert is
+  -- explicitly deferred to a later phase (see
+  -- _phoenix_live_suggestion_scope_position's header above). Sorted
+  -- (LEAST/GREATEST) so two suggestions naming the same pair from either
+  -- direction can never deadlock against each other.
+  v_src_key := 'src:' || v_s.source_organization_id::text || ':' || v_s.source_scope_kind || ':'
+               || v_s.source_scope_id::text || ':' || lower(v_s.scientific_name) || ':'
+               || COALESCE(v_s.national_code, '');
+  v_tgt_key := 'tgt:' || v_s.target_organization_id::text || ':' || v_s.target_scope_kind || ':'
+               || v_s.target_scope_id::text || ':' || lower(v_s.scientific_name) || ':'
+               || COALESCE(v_s.national_code, '');
+  v_lock_a := LEAST(v_src_key, v_tgt_key);
+  v_lock_b := GREATEST(v_src_key, v_tgt_key);
   PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggestion_draft:' || v_lock_a, 0));
   PERFORM pg_advisory_xact_lock(hashtextextended('inv_suggestion_draft:' || v_lock_b, 0));
 
-  -- ── FULL re-verification, not LEAST(snapshot, current_available) ─────────
-  -- Re-derives the exact same live numbers phoenix_suggest_inventory_transfers
-  -- / phoenix_suggest_cross_org_inventory_transfer would compute right now,
-  -- scoped to this one suggestion, inside this transaction, under the locks
-  -- above — so nothing here can be beaten by a concurrent draft on the same
-  -- surplus or the same batch.
+  -- ── FULL re-verification, LIVE — CROSS-ORG-IDOR-148-FIX sibling ──────────
+  -- headroom/deficit are now derived from warehouse_stock/outlet_stock +
+  -- inventory_signal_thresholds directly, via
+  -- _phoenix_live_suggestion_scope_position, under the row locks that
+  -- function takes — NEVER from inventory_alerts.observed_available/
+  -- threshold_*, which is only as fresh as the last manual
+  -- phoenix_recompute_inventory_alerts call and carries no lock of its own.
+  SELECT * INTO v_src_pos FROM public._phoenix_live_suggestion_scope_position(
+    v_s.source_organization_id, v_s.source_scope_kind, v_s.source_scope_id,
+    v_s.scientific_name, v_s.national_code);
+  SELECT * INTO v_tgt_pos FROM public._phoenix_live_suggestion_scope_position(
+    v_s.target_organization_id, v_s.target_scope_kind, v_s.target_scope_id,
+    v_s.scientific_name, v_s.national_code);
 
   -- Source surplus (live), minus every OTHER open/accepted suggestion drawing
   -- on the same source scope+material.
-  SELECT GREATEST(COALESCE(a.observed_available, 0) - COALESCE(a.threshold_target_max, 0), 0)
-    INTO v_headroom
-  FROM public.inventory_alerts a
-  WHERE a.organization_id = v_s.source_organization_id
-    AND a.scope_kind = v_s.source_scope_kind AND a.scope_id = v_s.source_scope_id
-    AND a.signal_type = 'surplus'
-    AND a.status IN ('open', 'acknowledged', 'in_progress')
-    AND lower(a.scientific_name) = lower(v_s.scientific_name)
-    AND a.national_code IS NOT DISTINCT FROM v_s.national_code
-  ORDER BY a.last_observed_at DESC LIMIT 1;
-  IF v_headroom IS NULL OR v_headroom <= 0 THEN
+  v_headroom := GREATEST(COALESCE(v_src_pos.live_available, 0) - COALESCE(v_src_pos.target_max, 0), 0);
+  IF v_headroom <= 0 THEN
     RAISE EXCEPTION 'suggestion_no_longer_available: no_source_surplus';
   END IF;
   v_headroom := v_headroom - COALESCE((
@@ -397,17 +576,11 @@ BEGIN
   END IF;
 
   -- Target deficit (live), minus every OTHER open/accepted suggestion.
-  SELECT GREATEST(COALESCE(a.threshold_reorder_point, 0) - COALESCE(a.observed_available, 0), 1)
-    INTO v_deficit
-  FROM public.inventory_alerts a
-  WHERE a.organization_id = v_s.target_organization_id
-    AND a.scope_kind = v_s.target_scope_kind AND a.scope_id = v_s.target_scope_id
-    AND a.signal_type IN ('missing', 'low_stock')
-    AND a.status IN ('open', 'acknowledged', 'in_progress')
-    AND lower(a.scientific_name) = lower(v_s.scientific_name)
-    AND a.national_code IS NOT DISTINCT FROM v_s.national_code
-  ORDER BY a.last_observed_at DESC LIMIT 1;
-  IF v_deficit IS NULL OR v_deficit <= 0 THEN
+  -- GREATEST(..., 0) — never GREATEST(..., 1): a genuinely satisfied target
+  -- (reorder_point <= live_available) must be refused, not floored to a
+  -- spurious 1-unit deficit.
+  v_deficit := GREATEST(COALESCE(v_tgt_pos.reorder_point, 0) - COALESCE(v_tgt_pos.live_available, 0), 0);
+  IF v_deficit <= 0 THEN
     RAISE EXCEPTION 'suggestion_no_longer_available: no_target_shortfall';
   END IF;
   v_deficit := v_deficit - COALESCE((
@@ -637,6 +810,15 @@ BEGIN
   END IF;
   IF has_table_privilege('anon', 'public.inventory_suggestion_policy', 'SELECT') THEN
     RAISE EXCEPTION 'ABORT 148: anon can read inventory_suggestion_policy.';
+  END IF;
+  -- LIVE-BALANCE-FIX-148
+  IF to_regprocedure('public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)') IS NULL THEN
+    RAISE EXCEPTION 'ABORT 148: _phoenix_live_suggestion_scope_position was not created.';
+  END IF;
+  IF has_function_privilege('anon', 'public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public._phoenix_live_suggestion_scope_position(uuid,text,uuid,text,text)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'ABORT 148: _phoenix_live_suggestion_scope_position is directly callable by anon/authenticated.';
   END IF;
 END;
 $selfcheck$;
