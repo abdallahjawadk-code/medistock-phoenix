@@ -206,16 +206,49 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_actor uuid := auth.uid();
+  v_actor        uuid := auth.uid();
+  v_actor_status text;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
   IF p_organization_id IS NULL THEN RAISE EXCEPTION 'organization_id_required'; END IF;
   IF p_staleness_minutes IS NULL OR p_staleness_minutes < 1 OR p_staleness_minutes > 1440 THEN
     RAISE EXCEPTION 'staleness_minutes_out_of_range';
   END IF;
+
+  SELECT status INTO v_actor_status FROM public.profiles WHERE id = v_actor;
+  IF NOT FOUND OR v_actor_status IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION 'not_authorized_inventory_manage_thresholds';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.organizations o WHERE o.id = p_organization_id) THEN
+    RAISE EXCEPTION 'organization_not_found';
+  END IF;
+
+  -- CROSS-ORG-IDOR-148-FIX: the previous unscoped phoenix_profile_has_permission
+  -- check let any actor holding inventory.manage_thresholds anywhere rewrite
+  -- ANY organization's suggestion policy by supplying an arbitrary
+  -- p_organization_id. phoenix_profile_has_scoped_permission (091) already
+  -- enforces active status, a super_admin bypass, and p_organization_id
+  -- matching the actor's OWN organization_id before checking the permission
+  -- key — exactly the org-scoping this table (one row per org, no
+  -- warehouse/outlet dimension) needs, matching 092's
+  -- phoenix_upsert_inventory_threshold org-default (NULL scope_id) branch.
+  -- The central_warehouse_manager OR-clause mirrors that same 092 carve-out:
+  -- v_org_wide_roles inside phoenix_profile_has_scoped_permission is
+  -- ['institution_admin'] only (091), but 092 narrowed
+  -- inventory.manage_thresholds to central_warehouse_manager alone — without
+  -- this clause the only role that legitimately holds the permission could
+  -- never pass the scoped check for its own organization's default row. This
+  -- grants nothing new: it still requires the actor's OWN org to match and
+  -- the permission key to already be true, and this function's own
+  -- active-status check above already ran first.
   IF NOT (
     public.phoenix_my_role() = 'super_admin'
-    OR public.phoenix_profile_has_permission(v_actor, 'inventory.manage_thresholds')
+    OR public.phoenix_profile_has_scoped_permission(
+         v_actor, 'inventory.manage_thresholds', p_organization_id, NULL, NULL)
+    OR (public.phoenix_my_role() = 'central_warehouse_manager'
+        AND public.phoenix_my_org() = p_organization_id
+        AND public.phoenix_profile_has_permission(v_actor, 'inventory.manage_thresholds'))
   ) THEN
     RAISE EXCEPTION 'not_authorized_inventory_manage_thresholds';
   END IF;
