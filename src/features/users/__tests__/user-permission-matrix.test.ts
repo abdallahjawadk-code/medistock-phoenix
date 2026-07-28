@@ -612,13 +612,16 @@ describe('User management frontend security', () => {
     expect(screen).not.toContain('um_mode_email_secondary');
   });
 
-  it('hard delete is not exposed in the UI (gated pending next phase)', () => {
-    // No deleteTarget state — delete flow is removed from the UI
-    expect(screen).not.toContain('deleteTarget');
-    // deleteUserViaEdge is not imported in the screen
-    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
-    // No delete button rendered — um_delete_user_action not used as a label
-    expect(screen).not.toContain('um_delete_user_action');
+  it('hard delete is exposed in the UI, gated to super_admin and never self (SECURE-USER-LIFECYCLE-PRODUCTION-A)', () => {
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toMatch(/import[^;]*deleteUserViaEdge/);
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('DeleteConfirmModal');
+    // Delete buttons live inside the `isSuper && !isSelf` row-action block —
+    // never rendered for the actor's own account or for a non-super caller.
+    expect(screen).toContain('isSuper && !isSelf');
+    // Confirmation phrase is built from the target's id, never their Auth email.
+    expect(screen).toContain('DELETE_USER_${user.id}');
   });
   it('institution screen no longer uses old role label keys', () => {
     const inst = readSrc('features/institutions/InstitutionScreen.tsx');

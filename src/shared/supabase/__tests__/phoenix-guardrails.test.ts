@@ -585,14 +585,15 @@ describe('Account lifecycle guardrails: recycling properly guarded', () => {
     expect(screen).toContain("u.status === 'suspended'");
   });
 
-  it('hard delete button is not rendered in the UI', () => {
-    expect(screen).not.toContain('deleteTarget');
-    expect(screen).not.toContain('um_delete_user_action');
+  it('hard delete button is rendered, gated to super_admin and never self', () => {
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('isSuper && !isSelf');
   });
 
-  it('deleteUserViaEdge exists in service but is not imported in the screen', () => {
+  it('deleteUserViaEdge exists in service and is imported in the screen', () => {
     expect(userSvc).toContain('deleteUserViaEdge');
-    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+    expect(screen).toMatch(/import[^;]*deleteUserViaEdge/);
   });
 
   it('no raw .update() on profiles in frontend code (all changes via RPCs/Edge Functions)', () => {
@@ -1132,14 +1133,15 @@ describe('Post-014 guardrails: hard delete still absent, recycling properly guar
     expect(screen).toContain("u.status === 'suspended'");
   });
 
-  it('hard delete button is not rendered', () => {
-    expect(screen).not.toContain('deleteTarget');
-    expect(screen).not.toContain('um_delete_user_action');
+  it('hard delete button is rendered, gated to super_admin and never self', () => {
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('isSuper && !isSelf');
   });
 
-  it('deleteUserViaEdge exists in service but is NOT imported in screen', () => {
+  it('deleteUserViaEdge exists in service and is imported in screen', () => {
     expect(userSvc).toContain('deleteUserViaEdge');
-    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+    expect(screen).toMatch(/import[^;]*deleteUserViaEdge/);
   });
 });
 
@@ -1553,19 +1555,20 @@ describe('Recycling implementation: migration 015', () => {
 });
 
 // ============================================================================
-// 29. POST-RECYCLING: hard delete still hidden, data reset absent
+// 29. POST-RECYCLING: hard delete exposed (gated), data reset absent
 // ============================================================================
 
 describe('Post-recycling guardrails', () => {
   const screen = readSrc('features/users/UserManagementScreen.tsx');
 
-  it('hard delete button still not rendered', () => {
-    expect(screen).not.toContain('deleteTarget');
-    expect(screen).not.toContain('um_delete_user_action');
+  it('hard delete button is rendered, gated to super_admin and never self', () => {
+    expect(screen).toContain('deleteTarget');
+    expect(screen).toContain('um_delete_user_action');
+    expect(screen).toContain('isSuper && !isSelf');
   });
 
-  it('deleteUserViaEdge is NOT imported in the screen', () => {
-    expect(screen).not.toMatch(/import[^;]*deleteUserViaEdge/);
+  it('deleteUserViaEdge is imported in the screen', () => {
+    expect(screen).toMatch(/import[^;]*deleteUserViaEdge/);
   });
 
   it('Data Reset absent', () => {

@@ -1,0 +1,85 @@
+name: Deploy secure admin user lifecycle
+
+# Manually deploys exactly two account-lifecycle Edge Functions:
+#   - admin-user-lifecycle  (disable / enable / rotate_password / delete)
+#   - admin-recycle-user    (recycle a suspended account)
+#
+# Both already delegate every authority decision and profile state transition
+# to the atomic migration-093 contract (phoenix_lifecycle_* / phoenix_recycle_apply),
+# already applied to Production. This workflow does NOT apply any migration —
+# it only ships the two function bodies. It cannot purge/seed data, accept
+# arbitrary SQL/project refs, or deploy any other Edge Function. GitHub's
+# Production environment remains the final approval boundary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: 'Exact master commit SHA to deploy'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type DEPLOY_SECURE_USER_LIFECYCLE exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-secure-user-lifecycle
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: eyrzxgfkvqybjdgyphap
+
+jobs:
+  deploy:
+    name: Deploy admin-user-lifecycle and admin-recycle-user
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Verify explicit Production authorization
+        run: |
+          if [ "${{ github.ref_name }}" != "master" ]; then
+            echo "::error::This deployment may run from master only."
+            exit 1
+          fi
+          if [ "${{ github.sha }}" != "${{ inputs.confirm_sha }}" ]; then
+            echo "::error::SHA mismatch. Refusing to deploy an unintended commit."
+            exit 1
+          fi
+          if [ "${{ inputs.confirmation }}" != "DEPLOY_SECURE_USER_LIFECYCLE" ]; then
+            echo "::error::Confirmation phrase mismatch."
+            exit 1
+          fi
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets are configured
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not configured."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+
+      - name: Deploy admin-user-lifecycle only
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy admin-user-lifecycle --project-ref "$PROJECT_REF"
+
+      - name: Deploy admin-recycle-user only
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy admin-recycle-user --project-ref "$PROJECT_REF"

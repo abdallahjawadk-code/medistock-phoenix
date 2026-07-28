@@ -15,6 +15,7 @@ import {
   listUsers, getEffectivePermissions, assignProfilePermissions,
   resetProfilePermissions, createUserViaEdge, getOrgStatusContacts,
   disableUserViaEdge, enableUserViaEdge, recycleUserViaEdge, rotatePasswordViaEdge,
+  deleteUserViaEdge,
   type ManagedUser,
 } from '@/shared/supabase/services/users.service';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
@@ -157,6 +158,7 @@ export function UserManagementScreen() {
   const [disableTarget, setDisableTarget] = useState<ManagedUser | null>(null);
   const [recycleTarget, setRecycleTarget] = useState<ManagedUser | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ManagedUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
 
   const users = useAsync(() => listUsers(isSuper ? activeOrgId : undefined), [isSuper, activeOrgId]);
 
@@ -258,8 +260,7 @@ export function UserManagementScreen() {
                   </div>
                 </div>
 
-                {/* Lifecycle: disable/enable — super_admin only, not self.
-                    Hard delete is gated pending USER-LIFECYCLE-DISABLE-DELETE-A finalization. */}
+                {/* Lifecycle: disable/enable/rotate/recycle/delete — super_admin only, not self. */}
                 {isSuper && !isSelf && (
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
                     onClick={e => e.stopPropagation()}>
@@ -275,6 +276,9 @@ export function UserManagementScreen() {
                             <PhoenixIcon name="recycle" size={14} inline /> {t('um_recycle_account', lang)}
                           </PhoenixButton>
                         )}
+                        <PhoenixButton variant="danger" size="md" onClick={() => setDeleteTarget(u)}>
+                          <PhoenixIcon name="trash" size={14} inline /> {t('um_delete_user_action', lang)}
+                        </PhoenixButton>
                       </>
                     ) : (
                       <>
@@ -283,6 +287,9 @@ export function UserManagementScreen() {
                         </PhoenixButton>
                         <PhoenixButton variant="ghost" size="md" onClick={() => setRotateTarget(u)}>
                           <PhoenixIcon name="key" size={14} inline /> {t('um_rotate_password', lang)}
+                        </PhoenixButton>
+                        <PhoenixButton variant="danger" size="md" onClick={() => setDeleteTarget(u)}>
+                          <PhoenixIcon name="trash" size={14} inline /> {t('um_delete_user_action', lang)}
                         </PhoenixButton>
                       </>
                     )}
@@ -360,9 +367,14 @@ export function UserManagementScreen() {
         />
       )}
 
-      {/* Hard delete UI intentionally not shown — pending USER-LIFECYCLE-DISABLE-DELETE-A finalization.
-          The admin-user-lifecycle Edge Function must be deployed and email-based confirmation
-          must be wired before the delete flow is exposed in the UI. */}
+      {/* Hard delete modal — super_admin only, never for the actor's own account. */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          user={deleteTarget} lang={lang}
+          onCancel={() => setDeleteTarget(null)}
+          onSuccess={() => { setDeleteTarget(null); showToast(t('um_user_deleted', lang)); afterLifecycle(); }}
+        />
+      )}
 
       {/* PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: Super Admin-only maintenance wizard.
           Renders null internally for any non-super_admin role — this screen
@@ -1284,6 +1296,94 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
   );
 }
 
-/* DeleteConfirmModal removed — pending USER-LIFECYCLE-DISABLE-DELETE-A.
-   Hard delete requires email-based confirmation from ManagedUser (email field not
-   currently fetched) and a deployed admin-user-lifecycle Edge Function. */
+/* ── Hard delete confirmation modal ──
+   Requires typing DELETE_USER_<target-user-id> literally — built entirely from
+   data already visible in the user list (id/name/role/org), never the target's
+   Auth email. The confirm button stays disabled until the phrase matches
+   exactly, and `busy` blocks repeat clicks once a delete is in flight. */
+
+function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
+  user: ManagedUser;
+  lang: 'ar' | 'en';
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const [confirm, setConfirm] = useState('');
+  const [busy,    setBusy]    = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const expectedConfirm = `DELETE_USER_${user.id}`;
+  const canSubmit = confirm === expectedConfirm && !busy;
+
+  async function onSubmit() {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await deleteUserViaEdge(user.id, confirm);
+      if (res.ok) {
+        onSuccess();
+        return;
+      }
+      if (res.edgeMissing) {
+        setError(withSupportRef(t('um_edge_disabled', lang), lang, res.correlationId));
+      } else if (res.unknownError) {
+        setError(withSupportRef(t('um_unknown_error', lang), lang, res.correlationId));
+      } else if (res.error === 'LAST_SUPER_ADMIN') {
+        setError(withSupportRef(t('um_last_super_admin', lang), lang, res.correlationId));
+      } else if (res.error === 'INVALID_CONFIRMATION') {
+        setError(withSupportRef(t('um_delete_confirmation_mismatch', lang), lang, res.correlationId));
+      } else if (res.error === 'REQUEST_DENIED') {
+        setError(withSupportRef(t('um_request_denied', lang), lang, res.correlationId));
+      } else if (res.error === 'LIFECYCLE_IN_PROGRESS') {
+        setError(withSupportRef(t('um_lifecycle_in_progress', lang), lang, res.correlationId));
+      } else {
+        setError(withSupportRef(t('um_lifecycle_failed', lang), lang, res.correlationId));
+      }
+    } catch {
+      setError(t('um_lifecycle_failed', lang));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard padding="24px" style={{ maxWidth: '460px', width: '100%' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px', color: 'var(--danger)' }}>
+          <PhoenixIcon name="trash" size={15} inline /> {t('um_delete_user_action', lang)}
+        </h3>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px', marginBottom: '12px' }}>
+          <InfoLine label={t('um_full_name', lang)} value={userName(user)} />
+          <InfoLine label={t('um_role', lang)} value={t(roleLabelKey(user.role), lang)} />
+          <InfoLine label={t('um_organization', lang)} value={lang === 'ar' ? (user.org_name_ar ?? user.org_name ?? '—') : (user.org_name ?? user.org_name_ar ?? '—')} />
+        </div>
+
+        <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
+<PhoenixIcon name="warning" size={13} inline /> {t('um_delete_confirm_q', lang)}
+        </div>
+
+        <div style={{ marginBottom: '14px' }}>
+          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }} dir="auto">
+            {t('um_delete_type_confirm', lang)}
+          </label>
+          <input type="text" value={confirm} onChange={e => setConfirm(e.target.value)} disabled={busy}
+            placeholder={expectedConfirm} style={fieldStyle} dir="ltr" autoComplete="off" />
+          <div style={{ fontSize: '10.5px', color: 'var(--t3)', marginTop: '4px' }} dir="ltr">
+            {expectedConfirm}
+          </div>
+        </div>
+
+        {error && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '10px' }} dir="auto">{error}</p>}
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <PhoenixButton variant="ghost" size="md" disabled={busy} onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
+          <PhoenixButton variant="danger" size="md" loading={busy} disabled={!canSubmit} onClick={onSubmit}>
+            {t('um_delete_user_action', lang)}
+          </PhoenixButton>
+        </div>
+      </PhoenixCard>
+    </div>
+  );
+}

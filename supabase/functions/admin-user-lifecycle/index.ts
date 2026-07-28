@@ -175,12 +175,12 @@ Deno.serve(async (req: Request) => {
     if (!rv?.ok) return rpcDenied(rv ?? {});
     const targetRole = rv.target_role ?? null;
 
-    // Confirmation string must equal DELETE_USER_<email>. The email lookup and
-    // check happen AFTER reserve so target existence stays behind the generic
-    // gate; a mismatch compensates the reservation back to active.
-    const { data: targetAuthData } = await admin.auth.admin.getUserById(targetId);
-    const targetEmail = targetAuthData?.user?.email ?? '';
-    if (confirmation !== `DELETE_USER_${targetEmail}`) {
+    // Confirmation string must equal DELETE_USER_<target-user-id> — the id is
+    // already visible to the caller in the user list, so this never requires
+    // exposing the target's Auth email to build a valid confirmation. The
+    // check happens AFTER reserve so target existence stays behind the
+    // generic gate; a mismatch compensates the reservation back to active.
+    if (confirmation !== `DELETE_USER_${targetId}`) {
       await caller.rpc('phoenix_lifecycle_compensate', { p_target_id: targetId, p_correlation_id: correlationId });
       return json({ ok: false, error: 'INVALID_CONFIRMATION', correlation_id: correlationId }, 400);
     }
