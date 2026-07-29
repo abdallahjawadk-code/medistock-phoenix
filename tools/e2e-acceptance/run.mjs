@@ -149,6 +149,32 @@ async function openOutletOperations(page, { mobile = false } = {}) {
   console.log('DIAGNOSTIC — post-navigation url:', page.url());
 }
 
+async function openSuggestionMaterials(page, { mobile = false } = {}) {
+  const reportsEn = 'Reporting & Status Center';
+  const reportsAr = 'مركز التقارير والمواقف';
+  if (mobile) {
+    await page.locator('.premium-drawer-trigger').first().click();
+    const item = page.locator('.premium-drawer-nav button', { hasText: reportsEn }).or(
+      page.locator('.premium-drawer-nav button', { hasText: reportsAr }),
+    ).first();
+    await item.waitFor({ state: 'visible', timeout: 15000 });
+    await item.click();
+  } else {
+    const item = page.locator('nav button.premium-nav-item', { hasText: reportsEn }).or(
+      page.locator('nav button.premium-nav-item', { hasText: reportsAr }),
+    ).first();
+    await item.waitFor({ state: 'visible', timeout: 15000 });
+    await item.click();
+  }
+  const materials = page.getByRole('tab', { name: 'Materials & Batches' }).or(
+    page.getByRole('tab', { name: 'المواد والدفعات' }),
+  ).first();
+  await materials.waitFor({ state: 'visible', timeout: 20000 });
+  await materials.click();
+  await page.getByText(seed.phase8.material, { exact: true }).first()
+    .waitFor({ state: 'visible', timeout: 30000 });
+}
+
 /**
  * Outlet resolution goes through an async scope-fetch chain
  * (useInventoryScopes -> manageableOutlets) that can genuinely take longer
@@ -404,6 +430,39 @@ async function main() {
     await page.close();
   }
 
+  // ── Phase 8: real outlet_officer suggestion action + Draft deep link ──────
+  {
+    const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
+    await login(page, seed.users.outletOfficerA.email, seed.password);
+    const switchToEnglish = page.getByRole('button', { name: 'Switch to English' });
+    if (await switchToEnglish.count()) await switchToEnglish.click();
+    await openSuggestionMaterials(page);
+
+    const create = page.getByRole('button', {
+      name: new RegExp(`Create draft: ${seed.phase8.material}`),
+    });
+    const offered = await create.isVisible().catch(() => false);
+    record('Phase 8 outlet_officer is offered server-authorized Create draft without the broad queue key', offered);
+    if (offered) {
+      await create.click();
+      await page.getByLabel('Document number').fill('E2E-PHASE8-DRAFT');
+      await page.getByRole('dialog').getByRole('button', { name: 'Create draft', exact: true }).click();
+      const openDraft = page.getByRole('button', { name: /Open draft: E2E-PHASE8-DRAFT/ });
+      await openDraft.waitFor({ state: 'visible', timeout: 30000 });
+      const writerOk = restCalls.some(c =>
+        /200 rpc\/phoenix_create_transfer_draft_from_suggestion/.test(c)
+        && c.includes('"route_kind":"outlet_to_warehouse"'));
+      record('Phase 8 creates the outlet-return Draft through the unchanged writer RPC', writerOk);
+      await openDraft.click();
+      const openedExistingPage = await waitForText(page, ['E2E-PHASE8-DRAFT'], 20000);
+      record('Phase 8 Open draft navigates to the existing outlet-return request page', openedExistingPage);
+    }
+    record('Phase 8 desktop/EN session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    record('Phase 8 desktop/EN session has no failed/5xx requests', failedRequests.length === 0, failedRequests.slice(0, 3).join(' | '));
+    await page.screenshot({ path: join(OUT_DIR, 'phase8-open-draft-desktop-en.png'), fullPage: true });
+    await page.close();
+  }
+
   // ── 3. outlet_officer B: cross-org denial ─────────────────────────────────
   {
     const { page, consoleErrors } = await freshPage(browser);
@@ -438,8 +497,12 @@ async function main() {
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
-    await openOutletOperations(page, { mobile: true });
-    await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
+    await openSuggestionMaterials(page, { mobile: true });
+    const htmlLang = await page.evaluate(() => document.documentElement.lang);
+    const htmlDir = await page.evaluate(() => document.documentElement.dir);
+    const openDraft = page.getByRole('button', { name: /فتح المسودة: E2E-PHASE8-DRAFT/ });
+    record('Phase 8 mobile/AR accepted suggestion exposes Open draft', await openDraft.isVisible().catch(() => false));
+    record('Phase 8 mobile suggestion surface is Arabic/RTL', htmlLang === 'ar' && htmlDir === 'rtl', `lang=${htmlLang} dir=${htmlDir}`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
     const bodyText = (await page.textContent('body')) ?? '';
     record('mobile viewport: no horizontal overflow', !overflow);

@@ -170,23 +170,23 @@ jobs:
           node -pe "require('/tmp/sb-status.json').SERVICE_ROLE_KEY" > /tmp/sb-service-role-key.txt
           node -pe "require('/tmp/sb-status.json').DB_URL" > /tmp/sb-db-url.txt
 
-      - name: Confirm migration ceiling reached 136 (not silently short)
+      - name: Confirm migration ceiling reached 152 (not silently short)
         run: |
           RESULT=$(node -e "
             const { Client } = require('pg');
             (async () => {
               const c = new Client({ connectionString: require('fs').readFileSync('/tmp/sb-db-url.txt', 'utf8').trim() });
               await c.connect();
-              const r = await c.query(\"SELECT count(*)::int n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname = 'phoenix_dispense_outlet_stock_with_context'\");
+              const r = await c.query(\"SELECT count(*)::int n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname IN ('phoenix_dispense_outlet_stock_with_context','phoenix_get_inventory_suggestion_actions')\");
               await c.end();
               console.log(r.rows[0].n);
             })();
           ")
-          if [ "$RESULT" != "1" ]; then
-            echo "::error::migration 136 (phoenix_dispense_outlet_stock_with_context) not found — supabase start did not reach the expected migration ceiling"
+          if [ "$RESULT" != "2" ]; then
+            echo "::error::migration 152 read model or its migration-136 dispense prerequisite is missing — supabase start did not reach the expected migration ceiling"
             exit 1
           fi
-          echo "Migration ceiling confirmed: 136 present."
+          echo "Migration ceiling confirmed: 152 read model and 136 dispense prerequisite present."
 
       - name: Seed disposable fixtures (orgs, real Auth users, outlet stock — never Production)
         env:
@@ -216,7 +216,7 @@ jobs:
           done
           curl -sf http://127.0.0.1:4173 >/dev/null || { echo "::error::preview server never became ready"; cat /tmp/vite-preview.log; exit 1; }
 
-      - name: Run Phase 2 authenticated browser acceptance
+      - name: Run authenticated browser acceptance (including Phase 8)
         run: node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
 
       - name: Stop preview server

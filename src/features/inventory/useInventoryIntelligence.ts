@@ -57,23 +57,3 @@ export function useInventoryTransferSuggestions(
     [activeOrgId, statusesKey, opts.limit],
   );
 }
-
-/**
- * Whether an open suggestion's proven conservation may now be stale. Migration
- * 072 proves conservation only at each rebuild (last_validated_at); a later
- * real stock movement can invalidate it, so any surface MUST treat an aged
- * recommendation as needing live re-validation before action.
- *
- * maxAgeMs MUST come from the org's actual inventory_suggestion_policy
- * (migration 148) — getInventorySuggestionPolicy(orgId), falling back to the
- * documented 30-minute default — never a client-only literal, so the UI's
- * "stale" display can never disagree with what
- * phoenix_create_transfer_draft_from_suggestion will actually accept.
- */
-export function isSuggestionStale(s: InventoryTransferSuggestion, maxAgeMs: number): boolean {
-  const t = Date.parse(s.lastValidatedAt);
-  if (Number.isNaN(t)) return true;
-  return Date.now() - t > maxAgeMs;
-}
-
-export const INVENTORY_SUGGESTION_STALENESS_DEFAULT_MINUTES = 30;

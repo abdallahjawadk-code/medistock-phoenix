@@ -21,6 +21,7 @@ import {
 import { NetworkTopologyStage, type NodeAlert } from './NetworkTopologyStage';
 import { DirectSupplyOperations } from './DirectSupplyOperations';
 import { getInventoryAlerts } from '@/features/inventory/inventory-intelligence.service';
+import type { SuggestionDocumentTarget } from '@/features/inventory/suggestion-document-navigation';
 
 const ALERT_SEVERITY_RANK = { high: 0, medium: 1, low: 2 } as const;
 
@@ -57,7 +58,11 @@ const nameOf = (w: { name_ar: string; name: string } | undefined, lang: Lang): s
 // are unchanged. warehouse_supply_routes remains only as legacy compatibility.
 type Tab = 'warehouses' | 'supply' | 'scopes';
 
-export function NetworkManagementScreen() {
+export function NetworkManagementScreen({
+  initialSuggestionDocument,
+}: {
+  initialSuggestionDocument?: SuggestionDocumentTarget;
+} = {}) {
   const { lang, dir, role, myPermissions } = useApp();
   const isSuper = role === 'super_admin';
   const canEditScope = isSuper || myPermissions.has('users.edit_scope');
@@ -72,7 +77,11 @@ export function NetworkManagementScreen() {
     return list;
   }, [isSuper, canSupply, canEditScope]);
 
-  const [tab, setTab] = useState<Tab>(() => (isSuper ? 'warehouses' : canSupply ? 'supply' : 'scopes'));
+  const opensTransferRequest =
+    initialSuggestionDocument?.documentKind === 'warehouse_transfer_request';
+  const [tab, setTab] = useState<Tab>(() =>
+    opensTransferRequest && canSupply ? 'supply' : isSuper ? 'warehouses' : canSupply ? 'supply' : 'scopes',
+  );
 
   if (tabs.length === 0) {
     return (
@@ -105,7 +114,14 @@ export function NetworkManagementScreen() {
       </div>
 
       {activeTab === 'warehouses' && isSuper && <WarehousesPanel lang={lang} />}
-      {activeTab === 'supply' && canSupply && <DirectSupplyOperations lang={lang} />}
+      {activeTab === 'supply' && canSupply && (
+        <DirectSupplyOperations
+          lang={lang}
+          initialTransferRequestId={
+            opensTransferRequest ? initialSuggestionDocument.documentId : undefined
+          }
+        />
+      )}
       {activeTab === 'scopes' && canEditScope && <ScopeAssignmentsPanel lang={lang} isSuper={isSuper} />}
     </div>
   );

@@ -212,6 +212,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '149_phoenix_inventory_suggestion_lineage_commitments.sql',
   '150_phoenix_material_identity_fefo_provenance_hardening.sql',
   '151_phoenix_suggestion_route_policy_gates.sql',
+  '152_phoenix_suggestion_action_read_model.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

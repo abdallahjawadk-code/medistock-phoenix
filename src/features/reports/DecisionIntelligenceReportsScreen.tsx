@@ -64,6 +64,7 @@ import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
 import { CommandCenterActivityFeed, type ActivityFeedEntry } from '@/shared/ui/CommandCenterActivityFeed';
 import { SmartFilterChips, type SmartFilterChipItem } from '@/shared/ui/SmartFilterChips';
 import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
+import type { SuggestionDocumentTarget } from '@/features/inventory/suggestion-document-navigation';
 import { MovementReportSection } from '@/features/status/MovementReportSection';
 import { AuditLogSection } from './AuditLogSection';
 import { GlobalMaterialSearchPanel } from './GlobalMaterialSearchPanel';
@@ -107,8 +108,9 @@ interface SupplyBucketRow extends BucketRow { key: string; }
  * the tab bar behaves exactly as it always has; this only affects the
  * FIRST render for a given navigation.
  */
-export function DecisionIntelligenceReportsScreen({ onNavigate, initialTab }: {
+export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestionDocument, initialTab }: {
   onNavigate: (screen: number) => void;
+  onOpenSuggestionDocument?: (target: SuggestionDocumentTarget) => void;
   initialTab?: Tab;
 }) {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
@@ -203,6 +205,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, initialTab }: {
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
             onNavigate={onNavigate}
+            onOpenSuggestionDocument={onOpenSuggestionDocument}
           />
         </ReportsTabErrorBoundary>
       )}
@@ -737,13 +740,23 @@ function daysUntilExpiry(expiryDate: string | null, now: Date = new Date()): num
  * home in this shell's "movements" tab, and mounting it twice would just
  * show the same report in two tabs at once.
  */
-function MaterialsAndBatchesTab({ orgId, lang, role, myPermissions, onToast, onMobilePrint, onNavigate }: {
+function MaterialsAndBatchesTab({
+  orgId,
+  lang,
+  role,
+  myPermissions,
+  onToast,
+  onMobilePrint,
+  onNavigate,
+  onOpenSuggestionDocument,
+}: {
   orgId: string; lang: 'ar' | 'en';
   role: string | null;
   myPermissions: Set<string>;
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
   onNavigate: (screen: number) => void;
+  onOpenSuggestionDocument?: (target: SuggestionDocumentTarget) => void;
 }) {
   const [filterStatus, setFilterStatus] = useState<CanonicalStatus | ''>('');
   const [filterSupply, setFilterSupply] = useState<SupplyCategory | ''>('');
@@ -1410,7 +1423,7 @@ function MaterialsAndBatchesTab({ orgId, lang, role, myPermissions, onToast, onM
       />
 
       <div style={{ marginTop: '28px' }}>
-        <InventoryIntelligencePanel />
+        <InventoryIntelligencePanel onOpenDocument={onOpenSuggestionDocument} />
       </div>
 
       <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>

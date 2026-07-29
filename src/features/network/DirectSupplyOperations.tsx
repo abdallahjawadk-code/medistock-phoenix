@@ -152,7 +152,13 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function DirectSupplyOperations({ lang }: { lang: Lang }) {
+export function DirectSupplyOperations({
+  lang,
+  initialTransferRequestId,
+}: {
+  lang: Lang;
+  initialTransferRequestId?: string;
+}) {
   const [dirTab, setDirTab] = useState<'forward' | 'return'>('forward');
   const warehouses = useAsync(() => getAllWarehouses(), []);
   const whById = useMemo(
@@ -178,7 +184,12 @@ export function DirectSupplyOperations({ lang }: { lang: Lang }) {
 
       {warehouses.loading && <PhoenixLoadingState />}
       {!warehouses.loading && dirTab === 'forward' && (
-        <ForwardPanel lang={lang} warehouses={warehouses.data ?? []} whById={whById} />
+        <ForwardPanel
+          lang={lang}
+          warehouses={warehouses.data ?? []}
+          whById={whById}
+          initialTransferRequestId={initialTransferRequestId}
+        />
       )}
       {!warehouses.loading && dirTab === 'return' && (
         <ReturnPanel lang={lang} warehouses={warehouses.data ?? []} whById={whById} />
@@ -189,15 +200,18 @@ export function DirectSupplyOperations({ lang }: { lang: Lang }) {
 
 // ─── FORWARD: central → institution ──────────────────────────────────────────
 
-function ForwardPanel({ lang, warehouses, whById }: {
-  lang: Lang; warehouses: NetworkWarehouse[]; whById: Map<string, NetworkWarehouse>;
+function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
+  lang: Lang;
+  warehouses: NetworkWarehouse[];
+  whById: Map<string, NetworkWarehouse>;
+  initialTransferRequestId?: string;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey(k => k + 1);
   const requests = useAsync(() => getTransferRequests(true), [reloadKey]);
   const incoming = useAsync(() => getTransfers(undefined, true), [reloadKey]);
   const orgs = useAsync(() => getOrganizations(), []);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialTransferRequestId ?? null);
   const [creating, setCreating] = useState(false);
   const [receiveDestId, setReceiveDestId] = useState('');
   const [status, setStatus] = useState<Status>(null);

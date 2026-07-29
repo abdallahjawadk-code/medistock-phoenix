@@ -41,7 +41,7 @@ export function InventoryIntelligenceSummary({ onViewAll }: Props) {
   const canManage  = myPermissions.has(PK.manageAlerts);
 
   const alerts = useInventoryAlerts();
-  const suggestions = useInventoryTransferSuggestions();
+  const suggestions = useInventoryTransferSuggestions({ statuses: ['open'] });
 
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);

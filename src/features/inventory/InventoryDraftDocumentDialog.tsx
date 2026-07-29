@@ -41,10 +41,11 @@ export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onC
       >
         <PhoenixIcon name="warning" size={12} inline /> {t('inv_draft_dialog_note', lang)}
       </div>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--t2)' }}>
+      <label htmlFor="inventory-draft-document-number" style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--t2)' }}>
         {t('inv_draft_document_number_label', lang)}
       </label>
       <input
+        id="inventory-draft-document-number"
         type="text"
         value={value}
         onChange={e => setValue(e.target.value)}

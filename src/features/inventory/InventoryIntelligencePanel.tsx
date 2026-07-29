@@ -20,9 +20,7 @@ import {
   useInventoryAlerts,
   useInventoryThresholds,
   useInventoryTransferSuggestions,
-  isSuggestionStale,
   INVENTORY_PERMISSION_KEYS as PK,
-  INVENTORY_SUGGESTION_STALENESS_DEFAULT_MINUTES,
 } from './useInventoryIntelligence';
 import {
   acknowledgeInventoryAlert,
@@ -32,11 +30,11 @@ import {
   recomputeInventoryAlerts,
   suggestInventoryTransfers,
   createTransferDraftFromSuggestion,
-  getInventorySuggestionPolicy,
   type InventoryAlert,
   type InventoryThreshold,
   type InventoryTransferSuggestion,
 } from './inventory-intelligence.service';
+import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
 import {
   SIGNAL_LABEL_KEY, SEVERITY_LABEL_KEY, SEVERITY_BADGE_VARIANT,
   SEVERITY_BORDER, SCOPE_LABEL_KEY, SEVERITY_RANK,
@@ -47,7 +45,13 @@ type PendingAction =
   | { kind: 'reject'; suggestion: InventoryTransferSuggestion }
   | null;
 
-export function InventoryIntelligencePanel() {
+interface InventoryIntelligencePanelProps {
+  onOpenDocument?: (target: SuggestionDocumentTarget) => void;
+}
+
+export function InventoryIntelligencePanel({
+  onOpenDocument,
+}: InventoryIntelligencePanelProps = {}) {
   const { lang, activeOrgId, myPermissions } = useApp();
 
   const canView       = myPermissions.has(PK.viewSignals);
@@ -55,16 +59,10 @@ export function InventoryIntelligencePanel() {
   const canRecompute  = myPermissions.has(PK.recompute);
   const canThresholds = myPermissions.has(PK.manageThresholds);
   const canSuggest    = myPermissions.has(PK.suggestTransfers);
-  const canAct        = myPermissions.has(PK.actOnSuggestions);
 
   const alerts = useInventoryAlerts();
   const suggestions = useInventoryTransferSuggestions();
   const thresholds = useInventoryThresholds();
-  const stalenessPolicy = useAsync(
-    () => (activeOrgId ? getInventorySuggestionPolicy(activeOrgId) : Promise.resolve(null)),
-    [activeOrgId],
-  );
-  const stalenessMaxAgeMs = (stalenessPolicy.data ?? INVENTORY_SUGGESTION_STALENESS_DEFAULT_MINUTES) * 60_000;
   const orgThresholdPermission = useExactThresholdPermission(activeOrgId, null, null, canThresholds);
   const canManageOrgDefault = orgThresholdPermission.data === true;
   const scopes = useInventoryScopes(activeOrgId, canManageOrgDefault);
@@ -246,14 +244,43 @@ export function InventoryIntelligencePanel() {
       {!suggestions.loading && !suggestions.error && (suggestions.data ?? []).length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '22px' }}>
           {(suggestions.data ?? []).map(s => {
-            const stale = isSuggestionStale(s, stalenessMaxAgeMs);
+            const action = s.actionModel;
+            const stale = action.freshnessState === 'stale';
+            const openTarget = action.allowedActions.openDocument
+              && action.documentKind
+              && action.documentId
+              ? {
+                  routeKind: action.routeKind,
+                  documentKind: action.documentKind,
+                  documentId: action.documentId,
+                  sourceScopeId: s.sourceScopeId,
+                  targetScopeId: s.targetScopeId,
+                } satisfies SuggestionDocumentTarget
+              : null;
             return (
               <PhoenixCard key={s.id} padding="10px 14px" style={{ borderInlineStart: '3px solid var(--p)' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                       {s.status === 'accepted' ? (
-                        <PhoenixStatusBadge variant="ok" label={t('inv_draft_status_badge', lang)} />
+                        action.currentState === 'accepted_document_draft' ? (
+                          <PhoenixStatusBadge variant="ok" label={t('inv_draft_status_badge', lang)} />
+                        ) : action.currentState === 'accepted_document_link_missing'
+                          || action.currentState === 'accepted_document_unavailable' ? (
+                          <PhoenixStatusBadge variant="warn" label={t('inv_document_unavailable_badge', lang)} />
+                        ) : /_(cancelled|rejected)$/.test(action.currentState) ? (
+                          <PhoenixStatusBadge variant="err" label={t('inv_document_closed_badge', lang)} />
+                        ) : /_(fulfilled|accepted)$/.test(action.currentState) ? (
+                          <PhoenixStatusBadge variant="ok" label={t('inv_document_completed_badge', lang)} />
+                        ) : (
+                          <PhoenixStatusBadge variant="info" label={t('inv_document_in_progress_badge', lang)} />
+                        )
+                      ) : s.status === 'rejected' ? (
+                        <PhoenixStatusBadge variant="err" label={t('inv_suggestion_rejected_badge', lang)} />
+                      ) : s.status === 'expired' ? (
+                        <PhoenixStatusBadge variant="warn" label={t('inv_suggestion_expired_badge', lang)} />
+                      ) : s.status === 'superseded' ? (
+                        <PhoenixStatusBadge variant="neutral" label={t('inv_suggestion_superseded_badge', lang)} />
                       ) : (
                         <PhoenixStatusBadge variant="primary" label={t('inv_recommendation_only', lang)} />
                       )}
@@ -268,9 +295,20 @@ export function InventoryIntelligencePanel() {
                     <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
                       {t('inv_last_validated', lang)}: {formatStableDateTime(s.lastValidatedAt, lang)}
                     </div>
-                    {s.status === 'accepted' && s.draftDocumentNumber && (
+                    {s.status === 'accepted' && action.documentNumber && (
                       <div style={{ fontSize: '10.5px', color: 'var(--ok)', marginTop: '3px' }} dir="auto">
-                        <PhoenixIcon name="check" size={12} inline /> {t('inv_draft_document_number_label', lang)}: <span dir="ltr">{s.draftDocumentNumber}</span>
+                        <PhoenixIcon name="check" size={12} inline /> {t('inv_draft_document_number_label', lang)}: <span dir="ltr">{action.documentNumber}</span>
+                      </div>
+                    )}
+                    {s.status === 'accepted' && !action.allowedActions.openDocument && (
+                      <div role="status" style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
+                        <PhoenixIcon name="warning" size={12} inline />{' '}
+                        {t(
+                          action.actionReason.openDocument === 'document_link_missing'
+                            ? 'inv_draft_link_missing'
+                            : 'inv_draft_unavailable',
+                          lang,
+                        )}
                       </div>
                     )}
                     {s.status === 'open' && stale && (
@@ -283,16 +321,37 @@ export function InventoryIntelligencePanel() {
                       never a generic/bulk accept. Draft is offered only while
                       open and fresh; a stale suggestion offers only "revalidate"
                       (the refresh-data action above regenerates it). */}
-                  {canAct && s.status === 'open' && (
-                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                      {!stale && (
-                        <PhoenixButton variant="primary" size="sm" disabled={busy} onClick={() => setDraftTarget(s)}>
+                  {(action.allowedActions.createDraft
+                    || action.allowedActions.reject
+                    || openTarget) && (
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
+                      {action.allowedActions.createDraft && (
+                        <PhoenixButton
+                          variant="primary"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`${t('inv_draft_create_action', lang)}: ${s.scientificName}`}
+                          onClick={() => setDraftTarget(s)}
+                        >
                           {t('inv_draft_create_action', lang)}
                         </PhoenixButton>
                       )}
+                      {openTarget && (
+                        <PhoenixButton
+                          variant="primary"
+                          size="sm"
+                          disabled={busy || !onOpenDocument}
+                          aria-label={`${t('inv_draft_open_action', lang)}: ${action.documentNumber ?? s.scientificName}`}
+                          onClick={() => onOpenDocument?.(openTarget)}
+                        >
+                          {t('inv_draft_open_action', lang)}
+                        </PhoenixButton>
+                      )}
+                      {action.allowedActions.reject && (
                       <PhoenixButton variant="ghost" size="sm" disabled={busy} onClick={() => setPending({ kind: 'reject', suggestion: s })}>
                         {t('inv_action_reject', lang)}
                       </PhoenixButton>
+                      )}
                     </div>
                   )}
                 </div>

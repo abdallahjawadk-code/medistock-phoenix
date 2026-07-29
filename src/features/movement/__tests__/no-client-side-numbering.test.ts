@@ -416,11 +416,14 @@ describe('no client-side document-number sequence exists', () => {
     // synthesize any movement document number. Ceiling -> 151.
     // 151 changes only the scoped authorization gate around the existing
     // operator-supplied Draft bridge number. Ceiling -> 152.
-    const beyond = migrations.filter(f => /^(15[2-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 152 adds only the server-backed suggestion action read model; it
+    // allocates no document number and creates no sequence. Ceiling -> 153.
+    const beyond = migrations.filter(f => /^(15[3-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');
+    expect(migrations).toContain('152_phoenix_suggestion_action_read_model.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

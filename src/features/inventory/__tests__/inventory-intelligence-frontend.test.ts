@@ -97,21 +97,19 @@ describe('permission gating uses the correct inventory.* keys', () => {
     }
   });
 
-  it('the panel gates view / manage_alerts / recompute / manage_thresholds / suggest / act_on', () => {
+  it('the panel locally gates non-suggestion controls, while suggestion actions come from the server', () => {
     expect(panel).toMatch(/myPermissions\.has\(PK\.viewSignals\)/);
     expect(panel).toMatch(/myPermissions\.has\(PK\.manageAlerts\)/);
     expect(panel).toMatch(/myPermissions\.has\(PK\.recompute\)/);
     expect(panel).toMatch(/myPermissions\.has\(PK\.manageThresholds\)/);
     expect(panel).toMatch(/myPermissions\.has\(PK\.suggestTransfers\)/);
-    expect(panel).toMatch(/myPermissions\.has\(PK\.actOnSuggestions\)/);
+    expect(panel).not.toMatch(/myPermissions\.has\(PK\.actOnSuggestions\)/);
+    expect(panel).toMatch(/action\.allowedActions\.createDraft/);
+    expect(panel).toMatch(/action\.allowedActions\.reject/);
   });
 
-  it('reject is shown only behind act_on_suggestions (canAct)', () => {
-    // the reject control block is guarded by canAct. Window widened (400->700,
-    // migration 148) to span the sibling "create draft" button now rendered
-    // in the same canAct-gated block — both remain narrow, per-suggestion,
-    // never a generic/bulk action.
-    expect(panel).toMatch(/canAct &&[\s\S]{0,700}inv_action_reject/);
+  it('reject is shown only when the server read model allows it', () => {
+    expect(panel).toMatch(/action\.allowedActions\.reject &&[\s\S]{0,300}inv_action_reject/);
   });
 
   it('threshold editing is shown only behind manage_thresholds (canThresholds)', () => {
@@ -179,13 +177,10 @@ describe('all required UI states are present', () => {
     expect(panel).toMatch(/inv_empty_alerts/);
     expect(panel).toMatch(/inv_denied/);
   });
-  it('panel surfaces stale recommendations via isSuggestionStale + a stale note', () => {
-    // 148: maxAgeMs now comes from the org's real inventory_suggestion_policy
-    // (getInventorySuggestionPolicy), never a client-only literal — see
-    // useInventoryIntelligence.ts's isSuggestionStale doc comment.
-    expect(panel).toMatch(/isSuggestionStale\(s, stalenessMaxAgeMs\)/);
+  it('panel surfaces the server-derived stale state + a stale note', () => {
+    expect(panel).toMatch(/action\.freshnessState === 'stale'/);
     expect(panel).toMatch(/inv_stale_note/);
-    expect(hooks).toMatch(/export function isSuggestionStale/);
+    expect(hooks).not.toMatch(/export function isSuggestionStale/);
   });
   it('summary renders dismissible + acknowledgeable high-severity pop-ups', () => {
     expect(summary).toMatch(/setDismissed/);

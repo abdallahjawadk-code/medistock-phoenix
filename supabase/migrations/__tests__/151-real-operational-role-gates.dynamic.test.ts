@@ -53,11 +53,17 @@ const callDraft = (c: any, suggestionId: string, documentNumber: string) =>
     [suggestionId, documentNumber],
   ).then((r: any) => r.rows[0].r);
 
+const readActions = (c: any, suggestionIds: string[]) =>
+  c.query(
+    `SELECT * FROM public.phoenix_get_inventory_suggestion_actions($1::uuid[])`,
+    [suggestionIds],
+  ).then((r: any) => r.rows);
+
 run('151 real operational roles and scoped route policy gates', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
   beforeAll(async () => {
-    rig = await buildRig({ upTo: 151 });
+    rig = await buildRig({ upTo: 152 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`
         INSERT INTO organizations(id,name,name_ar,code) VALUES
@@ -384,12 +390,27 @@ run('151 real operational roles and scoped route policy gates', () => {
     )).rows[0].allowed);
     expect(shadowAllowed).toBe(true);
 
+    const action = (await rig.asUser(CWM, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(action.allowed_actions).toMatchObject({
+      createDraft: true,
+      openDocument: false,
+    });
+    const queueOnly = (await rig.asUser(CWM_NO_ROUTE, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(queueOnly.allowed_actions.createDraft).toBe(false);
+
     const result = await rig.asUser(CWM, (c: any) =>
       callDraft(c, seed.suggestionId, 'P151-C-OK'), { commit: true });
     expect(result.route_kind).toBe('central_to_institution');
     expect(result.warehouse_transfer_request_id).toBeTruthy();
     expect(result.warehouse_transfer_request_line_id).toBeTruthy();
     expect(await stockSnapshot(seed)).toEqual(before);
+    const acceptedAction = (await rig.asUser(CWM, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(acceptedAction.allowed_actions.openDocument).toBe(true);
+    expect(acceptedAction.document_kind).toBe('warehouse_transfer_request');
+    expect(acceptedAction.document_id).toBe(result.warehouse_transfer_request_id);
 
     await rig.asUser(CWM, async (c: any) => {
       expect((await c.query(
@@ -417,12 +438,24 @@ run('151 real operational roles and scoped route policy gates', () => {
     )).rows[0].allowed);
     expect(shadowAllowed).toBe(true);
 
+    const action = (await rig.asUser(WO, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(action.allowed_actions.createDraft).toBe(true);
+    const queueOnly = (await rig.asUser(WO_NO_ROUTE, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(queueOnly.allowed_actions.createDraft).toBe(false);
+
     const result = await rig.asUser(WO, (c: any) =>
       callDraft(c, seed.suggestionId, 'P151-D-OK'), { commit: true });
     expect(result.route_kind).toBe('warehouse_to_outlet');
     expect(result.warehouse_dispatch_id).toBeTruthy();
     expect(result.warehouse_dispatch_line_id).toBeTruthy();
     expect(await stockSnapshot(seed)).toEqual(before);
+    const acceptedAction = (await rig.asUser(WO, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(acceptedAction.allowed_actions.openDocument).toBe(true);
+    expect(acceptedAction.document_kind).toBe('warehouse_dispatch');
+    expect(acceptedAction.document_id).toBe(result.warehouse_dispatch_id);
 
     await rig.asUser(WO, async (c: any) => {
       expect((await c.query(
@@ -451,12 +484,48 @@ run('151 real operational roles and scoped route policy gates', () => {
     `, [OO, ORG_I, DP_I])).rows[0]);
     expect(shadow).toEqual({ route_allowed: true, legacy_queue_allowed: false });
 
+    const auditBefore = await rig.asAdmin(async (c: any) => Number((await c.query(
+      `SELECT count(*) AS n FROM audit_logs`,
+    )).rows[0].n));
+    const action = (await rig.asUser(OO, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(action.allowed_actions).toMatchObject({
+      createDraft: true,
+      reject: false,
+      openDocument: false,
+    });
+    const queueOnly = (await rig.asUser(OO_ACT_ONLY, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(queueOnly.allowed_actions).toMatchObject({
+      createDraft: false,
+      reject: true,
+    });
+    const suspended = await rig.asUser(OO_SUSPENDED, (c: any) =>
+      readActions(c, [seed.suggestionId]));
+    expect(suspended.every((r: any) =>
+      !r.allowed_actions.createDraft
+      && !r.allowed_actions.reject
+      && !r.allowed_actions.openDocument
+    )).toBe(true);
+    const auditAfter = await rig.asAdmin(async (c: any) => Number((await c.query(
+      `SELECT count(*) AS n FROM audit_logs`,
+    )).rows[0].n));
+    expect(auditAfter).toBe(auditBefore);
+    expect(await stockSnapshot(seed)).toEqual(before);
+
     const result = await rig.asUser(OO, (c: any) =>
       callDraft(c, seed.suggestionId, 'P151-R-OK'), { commit: true });
     expect(result.route_kind).toBe('outlet_to_warehouse');
     expect(result.outlet_return_request_id).toBeTruthy();
     expect(result.outlet_return_request_line_id).toBeTruthy();
     expect(await stockSnapshot(seed)).toEqual(before);
+    const acceptedAction = (await rig.asUser(OO, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(acceptedAction.allowed_actions.openDocument).toBe(true);
+    expect(acceptedAction.document_kind).toBe('outlet_return_request');
+    expect(acceptedAction.document_id).toBe(result.outlet_return_request_id);
+    expect(await rig.asUser(OO_CROSS_ORG, (c: any) =>
+      readActions(c, [seed.suggestionId]))).toEqual([]);
 
     await rig.asUser(OO, async (c: any) => {
       expect((await c.query(

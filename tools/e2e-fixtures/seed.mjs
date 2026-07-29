@@ -64,7 +64,25 @@ const USERS = {
   outletOfficerA: { email: 'e2e-outlet-officer-a@phoenix.local', role: 'outlet_officer', org: ORG_A, dp: DP_A },
   institutionAdminA: { email: 'e2e-institution-admin-a@phoenix.local', role: 'institution_admin', org: ORG_A, dp: null },
   outletOfficerB: { email: 'e2e-outlet-officer-b@phoenix.local', role: 'outlet_officer', org: ORG_B, dp: DP_B },
+  fixtureAdmin: { email: 'e2e-fixture-admin@phoenix.local', role: 'super_admin', org: ORG_A, dp: null },
 };
+
+async function asAuthenticated(userId, fn) {
+  const actor = await pool.connect();
+  try {
+    await actor.query('BEGIN');
+    await actor.query('SET LOCAL ROLE authenticated');
+    await actor.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [userId]);
+    const result = await fn(actor);
+    await actor.query('COMMIT');
+    return result;
+  } catch (error) {
+    await actor.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    actor.release();
+  }
+}
 
 async function main() {
   const client = await pool.connect();
@@ -151,11 +169,72 @@ async function main() {
       console.log(`  lot: ${lot.scientific_name} qty=${lot.qty} id=${id}`);
     }
 
+    console.log('Seeding a real outlet-return suggestion with dispatch provenance...');
+    const suggestionWarehouseStockId = randomUUID();
+    const suggestionMaterial = 'E2E Phase 8 Return Material';
+    const suggestionNationalCode = 'E2E-PHASE8-RETURN';
+    await client.query(
+      `INSERT INTO warehouse_stock(
+         id,organization_id,warehouse_id,scientific_name,concentration,dosage_form,unit,
+         national_code,has_no_national_code,batch_number,has_no_batch_number,expiry_date,
+         on_hand_quantity,reserved_quantity,movement_seq
+       ) VALUES($1,$2,$3,$4,'10 mg','tablet','box',$5,false,'E2E-P8-SRC',false,current_date+365,80,0,1)`,
+      [suggestionWarehouseStockId, ORG_A, WH_A, suggestionMaterial, suggestionNationalCode],
+    );
+
+    let dispatchLineId;
+    let suggestionOutletStockId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      const dispatch = (await actor.query(
+        `SELECT public.phoenix_create_warehouse_dispatch($1,$2,$3,NULL,NULL,NULL) AS r`,
+        [WH_A, DP_A, 'E2E-PHASE8-PROVENANCE'],
+      )).rows[0].r;
+      dispatchLineId = (await actor.query(
+        `SELECT public.phoenix_add_dispatch_line_fefo_guarded($1,$2,50,false,NULL,$3) AS r`,
+        [dispatch.dispatch_id, suggestionWarehouseStockId, randomUUID()],
+      )).rows[0].r.dispatch_line_id;
+      await actor.query(`SELECT public.phoenix_send_warehouse_dispatch($1,$2)`, [
+        randomUUID(), dispatch.dispatch_id,
+      ]);
+    });
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      suggestionOutletStockId = (await actor.query(
+        `SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,50,NULL,NULL) AS r`,
+        [randomUUID(), dispatchLineId],
+      )).rows[0].r.outlet_stock_id;
+    });
+    await client.query(
+      `INSERT INTO inventory_signal_thresholds(
+         organization_id,scope_kind,scope_id,scientific_name,national_code,
+         reorder_point,target_max,is_active
+       ) VALUES
+         ($1,'outlet',$2,$3,$4,NULL,20,true),
+         ($1,'warehouse',$5,$3,$4,60,NULL,true)`,
+      [ORG_A, DP_A, suggestionMaterial, suggestionNationalCode, WH_A],
+    );
+    let suggestionId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      await actor.query(`SELECT public.phoenix_recompute_inventory_alerts($1)`, [ORG_A]);
+      await actor.query(`SELECT public.phoenix_suggest_inventory_transfers($1)`, [ORG_A]);
+      suggestionId = (await actor.query(
+        `SELECT id FROM inventory_transfer_suggestions
+          WHERE source_stock_id=$1 AND route_kind='outlet_to_warehouse' AND status='open'`,
+        [suggestionOutletStockId],
+      )).rows[0]?.id;
+    });
+    if (!suggestionId) throw new Error('could not create Phase 8 outlet-return suggestion');
+    console.log(`  Phase 8 suggestion: ${suggestionId}`);
+
     const summary = {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
       password: FIXED_PASSWORD,
       lots: lotIds,
+      phase8: {
+        suggestionId,
+        material: suggestionMaterial,
+        sourceStockId: suggestionOutletStockId,
+      },
     };
 
     // The fixture password (a fixed, hardcoded, disposable synthetic test
