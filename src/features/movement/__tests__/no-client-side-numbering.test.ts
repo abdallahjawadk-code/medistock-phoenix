@@ -412,9 +412,12 @@ describe('no client-side document-number sequence exists', () => {
     // derived commitment accounting around those same existing transfer
     // documents. It introduces no sequence, allocator, or document number.
     // Ceiling -> 150.
-    const beyond = migrations.filter(f => /^(1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 150 adds canonical material/lot identity and does not allocate or
+    // synthesize any movement document number. Ceiling -> 151.
+    const beyond = migrations.filter(f => /^(15[1-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
+    expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.
