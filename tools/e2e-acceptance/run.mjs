@@ -150,27 +150,7 @@ async function openOutletOperations(page, { mobile = false } = {}) {
 }
 
 async function openSuggestionMaterials(page, { mobile = false } = {}) {
-  const reportsEn = 'Reporting & Status Center';
-  const reportsAr = 'مركز التقارير والمواقف';
-  if (mobile) {
-    await page.locator('.premium-drawer-trigger').first().click();
-    const item = page.locator('.premium-drawer-nav button', { hasText: reportsEn }).or(
-      page.locator('.premium-drawer-nav button', { hasText: reportsAr }),
-    ).first();
-    await item.waitFor({ state: 'visible', timeout: 15000 });
-    await item.click();
-  } else {
-    const item = page.locator('nav button.premium-nav-item', { hasText: reportsEn }).or(
-      page.locator('nav button.premium-nav-item', { hasText: reportsAr }),
-    ).first();
-    await item.waitFor({ state: 'visible', timeout: 15000 });
-    await item.click();
-  }
-  const materials = page.getByRole('tab', { name: 'Materials & Batches' }).or(
-    page.getByRole('tab', { name: 'المواد والدفعات' }),
-  ).first();
-  await materials.waitFor({ state: 'visible', timeout: 20000 });
-  await materials.click();
+  await openOutletOperations(page, { mobile });
   await page.getByText(seed.phase8.material, { exact: true }).first()
     .waitFor({ state: 'visible', timeout: 30000 });
 }

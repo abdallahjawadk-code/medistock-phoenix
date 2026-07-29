@@ -35,6 +35,7 @@ import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
 import { useOutletDispensePermission } from '@/features/inventory/useOutletDispensePermission';
+import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
@@ -55,8 +56,10 @@ const dash = (v: string | number | null | undefined) => (v == null || v === '' ?
 
 export function OutletOperationsScreen({
   initialSuggestionDocument,
+  onOpenSuggestionDocument,
 }: {
   initialSuggestionDocument?: SuggestionDocumentTarget;
+  onOpenSuggestionDocument?: (target: SuggestionDocumentTarget) => void;
 } = {}) {
   const { lang, dir, activeOrgId } = useApp();
   const scopes = useInventoryScopes(activeOrgId);
@@ -170,6 +173,10 @@ export function OutletOperationsScreen({
           <OutletHistoryTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />
         </div>
       )}
+
+      <div style={{ marginTop: '24px' }} data-testid="outlet-suggestion-actions">
+        <InventoryIntelligencePanel onOpenDocument={onOpenSuggestionDocument} />
+      </div>
     </div>
   );
 }

@@ -165,6 +165,7 @@ export function AuthenticatedApp() {
       case 18:
         return <OutletOperationsScreen
           initialSuggestionDocument={navigation?.suggestionDocument}
+          onOpenSuggestionDocument={openSuggestionDocument}
         />;
       // INSTITUTION-LOCAL-PROCUREMENT-087: suppliers, purchase orders,
       // approvals, receiving and supplier returns — scoped to assigned

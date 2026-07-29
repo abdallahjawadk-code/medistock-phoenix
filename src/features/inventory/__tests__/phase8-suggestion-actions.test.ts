@@ -82,5 +82,6 @@ describe('Phase 8 open-document wiring reuses the three current pages', () => {
     expect(outlet).toContain("documentKind === 'outlet_return_request'");
     expect(outlet).toContain('initialRequestId=');
     expect(outlet).toContain('initialRequestId ?? null');
+    expect(outlet).toContain('<InventoryIntelligencePanel onOpenDocument={onOpenSuggestionDocument} />');
   });
 });
