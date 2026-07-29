@@ -283,7 +283,8 @@ export const EXCLUDED_WRITERS: readonly ExcludedWriter[] = Object.freeze([
     reason:
       'Same dead projection ledger. Writes an availability projection row for ' +
       'the inter-org exchange workflow; moves no canonical quantity and emits ' +
-      'no canonical movement event.',
+      'no canonical movement event. Migration 153 retires every external ' +
+      'EXECUTE path and leaves the unchanged legacy body owner-only.',
   },
 ]);
 
