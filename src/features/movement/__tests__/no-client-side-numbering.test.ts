@@ -414,10 +414,13 @@ describe('no client-side document-number sequence exists', () => {
     // Ceiling -> 150.
     // 150 adds canonical material/lot identity and does not allocate or
     // synthesize any movement document number. Ceiling -> 151.
-    const beyond = migrations.filter(f => /^(15[1-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 151 changes only the scoped authorization gate around the existing
+    // operator-supplied Draft bridge number. Ceiling -> 152.
+    const beyond = migrations.filter(f => /^(15[2-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
+    expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.
