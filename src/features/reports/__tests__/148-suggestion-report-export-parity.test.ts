@@ -20,7 +20,7 @@ const ROOT = join(__dirname, '../../../../');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
 const movementLedgerMigration = read('supabase/migrations/138_phoenix_movement_ledger_report.sql');
-const monthlyStatusMigration = read('supabase/migrations/092_phoenix_monthly_status_redesign.sql');
+const monthlyStatusMigration = read('supabase/migrations/112_phoenix_status_classification_boundary_correction.sql');
 const reportScreen = read('src/features/reports/DecisionIntelligenceReportsScreen.tsx');
 const custodyService = read('src/features/reports/custody-chain.service.ts');
 

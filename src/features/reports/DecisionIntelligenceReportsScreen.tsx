@@ -1497,7 +1497,7 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
       { key: 'reason', label: t('lp_return_reason', lang), value: r => r.reason },
       { key: 'proposedBy', label: t('dir_col_proposed_by', lang), value: r => r.proposedByName ?? '—' },
       { key: 'proposedAt', label: t('dir_as_of', lang), value: r => r.proposedAt, ltr: true, dateColumn: 'datetime', excelValue: r => r.proposedAt },
-      { key: 'linkedMovement', label: t('dir_col_linked_movement', lang), value: r => r.appliedMovementId ?? '—', ltr: true },
+      { key: 'linkedMovement', label: t('dir_col_linked_movement', lang), value: r => r.appliedMovementId ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
     ];
     return {
       reportTitle: t('dir_tab_corrections', lang),
@@ -1556,8 +1556,8 @@ export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
                 <td style={{ padding: '6px 8px' }}>{t('dir_correction_status_' + r.status, lang)}</td>
                 <td style={{ padding: '6px 8px' }} dir="auto">{r.reason}</td>
                 <td style={{ padding: '6px 8px' }} dir="ltr">{r.scope === 'outlet' ? (paperRefs.data?.get(r.id)?.paperReferenceNumber ?? '—') : '—'}</td>
-                <td style={{ padding: '6px 8px' }} dir="ltr" title={r.appliedMovementId ?? undefined}>
-                  {r.appliedMovementId ? r.appliedMovementId.slice(0, 8) : '—'}
+                <td style={{ padding: '6px 8px' }}>
+                  {r.appliedMovementId ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang)}
                 </td>
               </tr>
             ))}
@@ -1791,8 +1791,6 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
           { key: 'qtyDelta', label: t('mvmt_col_delta', lang), value: (r: CustodyTraceEventRow) => r.quantityDelta === null ? '—' : String(r.quantityDelta), numeric: true, excelValue: (r: CustodyTraceEventRow) => r.quantityDelta ?? undefined },
           { key: 'qtyAfter', label: t('dir_col_quantity_after', lang), value: (r: CustodyTraceEventRow) => r.quantityAfter === null ? '—' : String(r.quantityAfter), numeric: true, excelValue: (r: CustodyTraceEventRow) => r.quantityAfter ?? undefined },
           { key: 'reference', label: t('mvmt_col_document_ref', lang), value: (r: CustodyTraceEventRow) => r.reference ?? '—', ltr: true },
-          { key: 'correlation', label: t('dir_col_correlation', lang), value: (r: CustodyTraceEventRow) => r.correlationId ?? '—', ltr: true },
-          { key: 'causation', label: t('dir_col_causation', lang), value: (r: CustodyTraceEventRow) => r.causationId ?? '—', ltr: true },
           { key: 'dispenseContext', label: t('mvmt_col_dispense_context', lang), value: (r: CustodyTraceEventRow) => r.hasDispenseContext ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
           { key: 'provenance', label: t('dir_col_provenance', lang), value: (r: CustodyTraceEventRow) => r.provenance, ltr: true },
         ] as ProfessionalReportColumn<CustodyTraceEventRow>[],
@@ -1844,16 +1842,6 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
                     </span>
                   )}
                   {ev.reference && <span dir="ltr">{t('mvmt_col_document_ref', lang)}: {ev.reference}</span>}
-                  {ev.correlation_id && (
-                    <span dir="ltr" title={ev.correlation_id}>
-                      {t('dir_col_correlation', lang)}: {ev.correlation_id.slice(0, 8)}
-                    </span>
-                  )}
-                  {ev.causation_id && (
-                    <span dir="ltr" title={ev.causation_id}>
-                      {t('dir_col_causation', lang)}: {ev.causation_id.slice(0, 8)}
-                    </span>
-                  )}
                   {ev.has_dispense_context && (
                     <button
                       type="button"

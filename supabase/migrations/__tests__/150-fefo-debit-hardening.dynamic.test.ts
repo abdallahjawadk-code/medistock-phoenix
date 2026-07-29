@@ -754,6 +754,7 @@ run('150 exact-material FEFO debit hardening — live contract', () => {
       expect(sent.ok).toBe(true);
       events.push('send_returned_with_locks');
 
+      let receiptSettledWhileLocked = false;
       const receiptPromise = receiveWarehouseStock(
         b,
         receiptSecondRequest,
@@ -761,12 +762,16 @@ run('150 exact-material FEFO debit hardening — live contract', () => {
         'RACE-ARRIVING-OLDER',
         '2028-12-01',
       ).then((result) => {
-        events.push('receipt_returned');
+        receiptSettledWhileLocked = true;
         return result;
+      }, (error) => {
+        receiptSettledWhileLocked = true;
+        throw error;
       });
       events.push('receipt_started');
       const waitState = await waitForBackendLock(bPid);
       expect(waitState.wait_event_type).toBe('Lock');
+      expect(receiptSettledWhileLocked).toBe(false);
       events.push('receipt_observed_waiting_on_lock');
 
       await a.query('COMMIT');
@@ -778,6 +783,7 @@ run('150 exact-material FEFO debit hardening — live contract', () => {
           5000,
         )),
       ]) as any;
+      events.push('receipt_returned');
       expect(receipt).toMatchObject({ ok: true, idempotent_replay: false });
       await b.query('COMMIT');
       events.push('receipt_committed');

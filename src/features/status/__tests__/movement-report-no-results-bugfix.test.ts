@@ -240,9 +240,10 @@ describe('Regression: existing quantity-movement features remain intact', () => 
     expect(section).not.toMatch(/auth\.admin/);
   });
 
-  it('no Excel/XLSX library was introduced', () => {
+  it('no workbook implementation is imported directly', () => {
     expect(service).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
-    expect(section).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
+    expect(section).not.toMatch(/from ['"](?:xlsx|exceljs|read-excel-file|sheetjs|papaparse)['"]/i);
+    expect(section).toContain("from '@/shared/lib/professional-export'");
   });
 
   it('no QR file or identifier is referenced', () => {

@@ -4,11 +4,11 @@
  *
  * Static source-code tests for the read-only, filterable Quantity Movement
  * Report (Status Center section):
- *  - Permission gating: view (whole section), export (CSV), print.
+ *  - Permission gating: view (whole section), export (Excel), print.
  *  - getAvailabilityMovementsReport: filters, ordering, limit, no RPC/write.
  *  - Report UI: title, filters, summary cards, table, delta signs, states.
- *  - Print output includes title/filters/rows; CSV escapes values safely.
- *  - Guards: no migrations/RPC/QR touched, no Excel/XLSX, EditorScreen /
+ *  - Print and Excel use one visible column contract without technical UUIDs.
+ *  - Guards: no migrations/RPC/QR touched, EditorScreen /
  *    AdjustQuantityModal / MovementHistoryModal untouched.
  */
 import { describe, it, expect } from 'vitest';
@@ -45,9 +45,9 @@ describe('Quantity Movement Report: permission gating', () => {
     expect(section).toMatch(/if \(!canViewReport\) return null;/);
   });
 
-  it('the CSV export button is gated on availability.movements.export', () => {
+  it('the Excel export button is gated on availability.movements.export', () => {
     expect(section).toContain("myPermissions.has('availability.movements.export')");
-    expect(section).toMatch(/\{canExportCsv && \(/);
+    expect(section).toMatch(/\{canExportXlsx && \(/);
   });
 
   it('the Print button is gated on availability.movements.print', () => {
@@ -184,13 +184,16 @@ describe('MovementReportSection: title, filters, summary, table, states', () => 
   });
 
   it('table includes all required canonical-contract columns', () => {
-    const REQUIRED = ['datetime', 'ledger', 'location', 'sci', 'conc', 'dosage', 'batch', 'type', 'reason', 'before', 'delta', 'after', 'actor', 'doc', 'correlation', 'causation', 'dispense'];
+    const REQUIRED = ['datetime', 'ledger', 'location', 'sci', 'conc', 'dosage', 'batch', 'type', 'reason', 'before', 'delta', 'after', 'actor', 'doc', 'dispense'];
     REQUIRED.forEach(key => expect(section).toContain(`key: '${key}'`));
   });
 
-  it('surfaces correlation_id and causation_id — fetched by the service but previously never rendered', () => {
-    expect(section).toContain("r.correlationId || '—'");
-    expect(section).toContain("r.causationId || '—'");
+  it('keeps correlation and causation UUIDs internal instead of exposing them as business columns', () => {
+    const columnsBlock = section.slice(section.indexOf('const columns:'), section.indexOf('const filterLines'));
+    expect(columnsBlock).not.toContain('r.correlationId');
+    expect(columnsBlock).not.toContain('r.causationId');
+    expect(columnsBlock).not.toContain("key: 'correlation'");
+    expect(columnsBlock).not.toContain("key: 'causation'");
   });
 
   it('delta display uses the stored signed quantityDelta as-is', () => {
@@ -256,56 +259,50 @@ describe('MovementReportSection: print behavior', () => {
   });
 
   it('print opens a new window and calls window.print (existing project pattern)', () => {
-    const fnBody = section.slice(section.indexOf('function printReport'), section.indexOf('function exportCsv'));
+    const fnBody = section.slice(section.indexOf('function printReport'), section.indexOf('async function exportXlsx'));
     expect(fnBody).toContain("window.open('', '_blank')");
     expect(fnBody).toContain('win.print()');
   });
 });
 
 // ============================================================================
-// 5. CSV
+// 5. Professional Excel export
 // ============================================================================
 
-describe('MovementReportSection: CSV export behavior', () => {
-  it('export action only exists gated by canExportCsv', () => {
-    expect(section).toMatch(/\{canExportCsv && \(\s*<button onClick=\{exportCsv\}/);
+describe('MovementReportSection: professional Excel export behavior', () => {
+  it('export action only exists gated by canExportXlsx', () => {
+    expect(section).toMatch(/\{canExportXlsx && \(\s*<button onClick=\{\(\) => void exportXlsx\(\)\}/);
   });
 
-  it('CSV includes the same visible column headers', () => {
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toContain('columns.map(c => cell(c.label))');
+  it('uses the shared ProfessionalReportColumn contract for table, print, and Excel', () => {
+    expect(section).toContain('ProfessionalReportColumn<MovementLedgerReportRow>[]');
+    const configBody = section.slice(section.indexOf('function exportConfig'), section.indexOf('function buildReportHtml'));
+    expect(configBody).toContain('columns,');
+    expect(configBody).toContain('rows,');
   });
 
-  it('CSV escapes quotes safely (doubled quotes, matches existing project convention)', () => {
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toMatch(/replace\(\/"\/g, '""'\)/);
+  it('delegates workbook safety and generation to the shared professional exporter', () => {
+    const fnBody = section.slice(section.indexOf('async function exportXlsx'), section.indexOf('if (!canViewReport)'));
+    expect(fnBody).toContain('await exportProfessionalXlsx(exportConfig())');
+    expect(section).toContain("from '@/shared/lib/professional-export'");
   });
 
-  it('CSV uses a UTF-8 BOM (existing project convention)', () => {
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toMatch(/const bom = /);
+  it('does not retain a parallel CSV/Blob export path', () => {
+    expect(section).not.toContain('function exportCsv');
+    expect(section).not.toContain('function csvSafeCell');
+    expect(section).not.toContain('new Blob(');
   });
 
-  it('CSV escapes cells that could be interpreted as spreadsheet formulas (CSV injection protection)', () => {
-    expect(section).toContain('function csvSafeCell');
-    const guardFn = section.slice(section.indexOf('function csvSafeCell'), section.indexOf('function csvSafeCell') + 300);
-    expect(guardFn).toContain('/^[=+\\-@]/');
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toContain('csvSafeCell');
+  it('uses the stable medistock-movements filename base', () => {
+    expect(section).toContain("fileNameBase: 'medistock-movements'");
   });
 
-  it('uses a medistock-movements-prefixed, date-stamped filename', () => {
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toContain('medistock-movements-');
+  it('does not import a workbook implementation directly', () => {
+    expect(section).not.toMatch(/from ['"](?:xlsx|exceljs|read-excel-file|sheetjs|papaparse)['"]/i);
   });
 
-  it('does not add xlsx/exceljs/sheetjs/read-excel-file/papaparse', () => {
-    expect(section).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
-  });
-
-  it('CSV export is a client-side Blob download, not a server write', () => {
-    const fnBody = section.slice(section.indexOf('function exportCsv'), section.indexOf('if (!canViewReport)'));
-    expect(fnBody).toContain("new Blob([csv]");
+  it('Excel export remains client-side and has no server write', () => {
+    const fnBody = section.slice(section.indexOf('async function exportXlsx'), section.indexOf('if (!canViewReport)'));
     expect(fnBody).not.toContain('.rpc(');
     expect(fnBody).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
   });
@@ -359,13 +356,9 @@ describe('Guards: no unrelated changes, existing features intact', () => {
     expect(statusCenter).toContain('canViewMovementHistory');
   });
 
-  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase
-  // intentionally wires a real .xlsx export into StatusCenterScreen
-  // (exportAvailabilityXlsx) — unrelated to this movement-reports phase,
-  // whose own MovementReportSection.tsx (`section`) remains CSV-only, no
-  // Excel library, exactly as this phase left it.
-  it('does not add Excel import to MovementReportSection.tsx (the file this phase added)', () => {
-    expect(section).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
+  it('uses the existing shared professional exporter instead of a second workbook implementation', () => {
+    expect(section).toContain("from '@/shared/lib/professional-export'");
+    expect(section).not.toMatch(/from ['"](?:xlsx|exceljs|read-excel-file|sheetjs|papaparse)['"]/i);
   });
 
   it('does not reference service_role or auth.admin anywhere in the new files', () => {

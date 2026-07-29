@@ -6,7 +6,7 @@
  *   - custody chain excludes draft-status dispatches/return requests —
  *     custody begins at the real send/dispatch event, never at draft
  *     creation (a 148-created draft included).
- *   - the movement ledger report (138) and the monthly status report (092)
+ *   - the movement ledger report (138) and the latest monthly status report (112)
  *     never reference inventory_transfer_suggestions or any of the 148
  *     draft-linkage columns — a suggestion/draft can never double-count
  *     into the canonical movement ledger or the monthly balance.
@@ -23,7 +23,7 @@ const movementLedgerMigration = read('supabase/migrations/138_phoenix_movement_l
 const movementLedgerServiceFiles = [
   'src/features/reports/movement-ledger-report.service.ts',
 ];
-const monthlyStatusMigration = read('supabase/migrations/092_phoenix_monthly_status_redesign.sql');
+const monthlyStatusMigration = read('supabase/migrations/112_phoenix_status_classification_boundary_correction.sql');
 
 const FORBIDDEN_REFS = /inventory_transfer_suggestions|draft_warehouse_transfer_request_id|draft_warehouse_dispatch_id|draft_outlet_return_request_id/;
 
@@ -55,7 +55,7 @@ describe('movement ledger report (138) never sources from suggestion/draft table
   });
 });
 
-describe('monthly status report (092) never sources from suggestion/draft tables', () => {
+describe('latest monthly status report (112) never sources from suggestion/draft tables', () => {
   it('phoenix_status_prepare_report does not reference inventory_transfer_suggestions or any 148 draft column', () => {
     const fnStart = monthlyStatusMigration.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_status_prepare_report');
     expect(fnStart).toBeGreaterThan(-1);

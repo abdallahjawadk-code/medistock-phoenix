@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * REPORTING-RUNTIME-RECOVERY R03 + MOVEMENT-LEDGER-REPORT-138 — genuine
- * component/runtime test for MovementReportSection's CSV export and Print,
+ * component/runtime test for MovementReportSection's Excel export and Print,
  * proving the ACTUAL fixed behavior against the canonical
  * phoenix_movement_ledger_report-backed data path: once loading completes, a
  * genuine zero-row filtered result is still exportable/printable (not
@@ -31,6 +31,11 @@ vi.mock('@/features/reports/movement-ledger-report.service', () => ({
 const getDispenseContext = vi.fn();
 vi.mock('@/features/outlet/dispense-context.service', () => ({
   getDispenseContext: (movementId: string) => getDispenseContext(movementId),
+}));
+
+const exportProfessionalXlsx = vi.fn(async (_config: unknown) => true);
+vi.mock('@/shared/lib/professional-export', () => ({
+  exportProfessionalXlsx: (config: unknown) => exportProfessionalXlsx(config),
 }));
 
 // jsdom does not implement URL.createObjectURL/revokeObjectURL at all — the
@@ -82,7 +87,7 @@ const ROW = {
   hasDispenseContext: false,
 };
 
-describe('MovementReportSection — CSV export and Print (runtime, not source-scan)', () => {
+describe('MovementReportSection — Excel export and Print (runtime, not source-scan)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getPointsByOrg.mockResolvedValue([]);
@@ -92,55 +97,42 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
   });
   afterEach(cleanup);
 
-  it('R03: CSV/Print are DISABLED while the report is still loading', async () => {
+  it('R03: Excel/Print are DISABLED while the report is still loading', async () => {
     getMovementLedgerReport.mockReturnValue(new Promise(() => {})); // never resolves during this test
     render(<MovementReportSection />);
 
-    const csvBtn = await screen.findByRole('button', { name: /export csv/i });
+    const excelBtn = await screen.findByRole('button', { name: /export excel/i });
     const printBtn = screen.getByRole('button', { name: /print/i });
-    expect(csvBtn).toBeDisabled();
+    expect(excelBtn).toBeDisabled();
     expect(printBtn).toBeDisabled();
-    expect(csvBtn).toHaveAttribute('aria-disabled', 'true');
+    expect(excelBtn).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('R03: CSV export is ENABLED and produces a real download with correct metadata for a genuine ZERO-row result', async () => {
+  it('R03: Excel export is ENABLED and passes honest metadata for a genuine ZERO-row result', async () => {
     getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     render(<MovementReportSection />);
 
-    const csvBtn = await screen.findByRole('button', { name: /export csv/i });
-    await waitFor(() => expect(csvBtn).not.toBeDisabled());
+    const excelBtn = await screen.findByRole('button', { name: /export excel/i });
+    await waitFor(() => expect(excelBtn).not.toBeDisabled());
+    fireEvent.click(excelBtn);
 
-    let capturedBlob: Blob | null = null;
-    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockImplementation((obj: Blob | MediaSource) => {
-      capturedBlob = obj as Blob;
-      return 'blob:mock-url';
-    });
-    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    fireEvent.click(csvBtn);
-
-    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(revokeSpy).toHaveBeenCalledTimes(1);
-    expect(capturedBlob).not.toBeNull();
-    expect(capturedBlob!.type).toContain('text/csv');
-
-    // Blob.text() decodes as UTF-8 and, per the WHATWG spec, silently strips
-    // a leading BOM (it's a decoding marker, not observable text content) —
-    // so the BOM byte sequence itself must be checked on the raw bytes.
-    const bytes = new Uint8Array(await capturedBlob!.arrayBuffer());
-    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xEF, 0xBB, 0xBF]); // UTF-8 BOM
-
-    const text = await capturedBlob!.text();
-    expect(text).toContain('Quantity Movement Report');       // report title
-    expect(text).toContain('Selected filters');                // selected-filters metadata present
-    expect(text).toContain('Total rows: 0');                   // row count IS zero, honestly
-    expect(text).toContain('Date/Time');                       // column headers present
-
-    createObjectURLSpy.mockRestore();
-    revokeSpy.mockRestore();
-    clickSpy.mockRestore();
+    await waitFor(() => expect(exportProfessionalXlsx).toHaveBeenCalledTimes(1));
+    const config = exportProfessionalXlsx.mock.calls[0][0] as {
+      reportTitle: string;
+      filtersSummary: string;
+      rows: unknown[];
+      rowCount: number;
+      columns: Array<{ key: string; label: string }>;
+      labels: { filtersSummary: string };
+    };
+    expect(config.reportTitle).toBe('Quantity Movement Report');
+    expect(config.labels.filtersSummary).toBe('Selected filters');
+    expect(config.filtersSummary).toBeTruthy();
+    expect(config.rows).toEqual([]);
+    expect(config.rowCount).toBe(0);
+    expect(config.columns.some(column => column.label === 'Date/Time')).toBe(true);
+    expect(config.columns.map(column => column.key)).not.toContain('correlation');
+    expect(config.columns.map(column => column.key)).not.toContain('causation');
   });
 
   it('R03: Print (desktop) is ENABLED and actually opens the print window for a genuine ZERO-row result', async () => {
@@ -203,28 +195,26 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
     openSpy.mockRestore();
   });
 
-  it('CSV export works and Print opens for a NON-empty result too (regression coverage, not just the zero-row edge case)', async () => {
+  it('Excel export uses the same populated rows and business columns for a NON-empty result', async () => {
     getMovementLedgerReport.mockResolvedValue({ rows: [ROW], totalCount: 1 });
     render(<MovementReportSection />);
 
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
-    const csvBtn = screen.getByRole('button', { name: /export csv/i });
-    expect(csvBtn).not.toBeDisabled();
+    const excelBtn = screen.getByRole('button', { name: /export excel/i });
+    expect(excelBtn).not.toBeDisabled();
+    fireEvent.click(excelBtn);
 
-    let capturedBlob: Blob | null = null;
-    vi.spyOn(URL, 'createObjectURL').mockImplementation((obj: Blob | MediaSource) => {
-      capturedBlob = obj as Blob;
-      return 'blob:mock-url';
-    });
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    fireEvent.click(csvBtn);
-    const text = await capturedBlob!.text();
-    expect(text).toContain('Paracetamol');
-    expect(text).toMatch(/Total rows.*1/i);
-
-    vi.restoreAllMocks();
+    await waitFor(() => expect(exportProfessionalXlsx).toHaveBeenCalledTimes(1));
+    const config = exportProfessionalXlsx.mock.calls[0][0] as {
+      rows: typeof ROW[];
+      rowCount: number;
+      columns: Array<{ key: string; value: (row: typeof ROW) => string }>;
+    };
+    expect(config.rows).toEqual([ROW]);
+    expect(config.rowCount).toBe(1);
+    expect(config.columns.find(column => column.key === 'sci')?.value(ROW)).toBe('Paracetamol');
+    expect(config.columns.map(column => column.key)).not.toContain('correlation');
+    expect(config.columns.map(column => column.key)).not.toContain('causation');
   });
 
   it('a movement with a recorded dispense context shows a "View" affordance that opens the masked drill-down', async () => {
@@ -256,13 +246,13 @@ describe('MovementReportSection — CSV export and Print (runtime, not source-sc
     expect(screen.queryByRole('button', { name: /view/i })).not.toBeInTheDocument();
   });
 
-  it('permission gating: CSV/Print buttons are entirely absent without the export/print grants (not just disabled)', async () => {
+  it('permission gating: Excel/Print buttons are entirely absent without the export/print grants (not just disabled)', async () => {
     permissions = new Set(['status_center.view']); // view only, no export/print
     getMovementLedgerReport.mockResolvedValue({ rows: [], totalCount: 0 });
     render(<MovementReportSection />);
 
     await waitFor(() => expect(screen.queryByText('loading', { exact: false })).not.toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /export csv/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /export excel/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
   });
 
