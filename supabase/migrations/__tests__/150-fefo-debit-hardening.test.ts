@@ -76,8 +76,11 @@ describe('150 exact-material FEFO debit hardening — static contract', () => {
     expect(dispatch).toContain("RAISE EXCEPTION 'forbidden_fefo_override'");
   });
 
-  it('does not introduce a permission, ledger, reservation, report, or return cap', () => {
-    const stage = sql.slice(sql.indexOf('-- 6B-2: exact-material FEFO'));
+  it('keeps the 6B-2 capsule free of permissions, ledgers, reservations, reports and return-cap logic', () => {
+    const stage = sql.slice(
+      sql.indexOf('-- 6B-2: exact-material FEFO'),
+      sql.indexOf('-- 6B-3. Aggregate outlet-return approval cap.'),
+    );
     expect(stage).not.toMatch(/INSERT INTO public\.permission_keys/i);
     expect(stage).not.toMatch(/CREATE TABLE .*ledger/i);
     expect(stage).not.toMatch(/CREATE TABLE .*reservation/i);

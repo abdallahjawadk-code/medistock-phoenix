@@ -2499,6 +2499,285 @@ GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_dispatch(uuid,uuid)
   TO authenticated,service_role;
 
 -- ============================================================================
+-- 6B-3. Aggregate outlet-return approval cap.
+--
+-- The existing send writer keeps returned_quantity <= received_quantity as the
+-- final physical backstop. Approval now also derives every live administrative
+-- commitment for the same dispatch provenance while holding one shared
+-- canonical provenance lock. No reservation balance or parallel ledger is
+-- persisted.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public._phoenix_validate_outlet_return_review_cap_v1(
+  p_return_request_id uuid,
+  p_decisions jsonb
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_request public.outlet_return_requests%ROWTYPE;
+  v_decision jsonb;
+  v_line public.outlet_return_request_lines%ROWTYPE;
+  v_line_ids uuid[];
+  v_provenance_ids uuid[];
+  v_suggestion_ids uuid[];
+  v_keys text[];
+  v_provenance_id uuid;
+  v_approved integer;
+  v_physical_remaining integer;
+  v_suggestion_commitment integer;
+  v_line_commitment integer;
+  v_proposed_commitment integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000';
+  END IF;
+  IF p_return_request_id IS NULL THEN
+    RAISE EXCEPTION 'return_request_id_required' USING ERRCODE='23514';
+  END IF;
+  IF p_decisions IS NULL OR jsonb_typeof(p_decisions)<>'array' THEN
+    RAISE EXCEPTION 'decisions_must_be_an_array' USING ERRCODE='23514';
+  END IF;
+
+  -- Optimistic discovery only. No row lock is taken before the complete,
+  -- sorted canonical resource set is known.
+  SELECT * INTO v_request
+  FROM public.outlet_return_requests
+  WHERE id=p_return_request_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'return_request_not_found' USING ERRCODE='P0002';
+  END IF;
+
+  SELECT array_agg(DISTINCT x.line_id ORDER BY x.line_id)
+  INTO v_line_ids
+  FROM (
+    SELECT (d.value->>'line_id')::uuid AS line_id
+    FROM jsonb_array_elements(p_decisions) d(value)
+  ) x;
+
+  SELECT array_agg(DISTINCT l.original_dispatch_line_id
+                   ORDER BY l.original_dispatch_line_id)
+  INTO v_provenance_ids
+  FROM public.outlet_return_request_lines l
+  WHERE l.return_request_id=p_return_request_id
+    AND l.id=ANY(COALESCE(v_line_ids,ARRAY[]::uuid[]));
+
+  SELECT array_agg(k ORDER BY k) INTO v_keys
+  FROM (
+    SELECT 'inv_suggest:' || v_request.source_organization_id::text AS k
+    UNION
+    SELECT 'inv_suggest:' || v_request.destination_organization_id::text
+    UNION
+    SELECT 'inv_provline:' || p::text
+    FROM unnest(COALESCE(v_provenance_ids,ARRAY[]::uuid[])) p
+  ) resources;
+  PERFORM public._phoenix_lock_inventory_resources(v_keys);
+
+  -- Lock all potentially live suggestion rows only after every canonical key.
+  -- Re-discovery happens after the canonical locks so a waiter never validates
+  -- against a stale pre-wait suggestion set.
+  SELECT array_agg(s.id ORDER BY s.id) INTO v_suggestion_ids
+  FROM public.inventory_transfer_suggestions s
+  WHERE s.status IN ('open','accepted')
+    AND s.route_kind='outlet_to_warehouse'
+    AND (
+      s.draft_outlet_return_request_id=p_return_request_id
+      OR s.provenance_dispatch_line_id=
+         ANY(COALESCE(v_provenance_ids,ARRAY[]::uuid[]))
+    );
+
+  PERFORM 1
+  FROM public.inventory_transfer_suggestions s
+  WHERE s.id=ANY(COALESCE(v_suggestion_ids,ARRAY[]::uuid[]))
+  ORDER BY s.id
+  FOR UPDATE;
+
+  -- Preserve the historical public contract while pre-locking all review
+  -- rows in deterministic order. The private 149 delegate re-enters these
+  -- locks and performs the established atomic status/audit update.
+  SELECT * INTO v_request
+  FROM public.outlet_return_requests
+  WHERE id=p_return_request_id
+  FOR UPDATE;
+  IF v_request.status<>'submitted' THEN
+    RAISE EXCEPTION 'return_request_not_reviewable' USING ERRCODE='23514';
+  END IF;
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor,'outlet_stock.review_return',
+    v_request.destination_organization_id,
+    v_request.destination_warehouse_id,NULL
+  ) THEN
+    RAISE EXCEPTION 'forbidden_outlet_review_return' USING ERRCODE='42501';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id=v_actor AND p.status='active'
+  ) THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE='42501';
+  END IF;
+
+  PERFORM 1
+  FROM public.outlet_return_request_lines l
+  WHERE l.return_request_id=p_return_request_id
+    AND l.id=ANY(COALESCE(v_line_ids,ARRAY[]::uuid[]))
+  ORDER BY l.id
+  FOR UPDATE;
+
+  -- Validate every decision before the delegate applies any decision. A
+  -- malformed provenance in a multi-decision call therefore aborts the whole
+  -- statement without a partial status or success audit.
+  FOR v_decision IN SELECT value FROM jsonb_array_elements(p_decisions)
+  LOOP
+    SELECT * INTO v_line
+    FROM public.outlet_return_request_lines
+    WHERE id=(v_decision->>'line_id')::uuid
+      AND return_request_id=p_return_request_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'return_request_line_not_found' USING ERRCODE='P0002';
+    END IF;
+    IF v_line.status<>'pending' THEN
+      RAISE EXCEPTION 'return_request_line_not_pending' USING ERRCODE='23514';
+    END IF;
+    v_approved:=(v_decision->>'approved_quantity')::integer;
+    IF v_approved IS NULL OR v_approved<0
+       OR v_approved>v_line.requested_quantity THEN
+      RAISE EXCEPTION 'invalid_approved_quantity' USING ERRCODE='23514';
+    END IF;
+  END LOOP;
+
+  -- Row-level provenance follows document/line locks. The earlier advisory
+  -- inv_provline lock is what serializes different request headers that refer
+  -- to this same row without reversing the established 4B ordering.
+  PERFORM 1
+  FROM public.warehouse_dispatch_lines d
+  WHERE d.id=ANY(COALESCE(v_provenance_ids,ARRAY[]::uuid[]))
+  ORDER BY d.id
+  FOR UPDATE;
+
+  FOR v_provenance_id IN
+    SELECT unnest(COALESCE(v_provenance_ids,ARRAY[]::uuid[]))
+  LOOP
+    SELECT COALESCE(d.received_quantity,0)-d.returned_quantity
+    INTO v_physical_remaining
+    FROM public.warehouse_dispatch_lines d
+    WHERE d.id=v_provenance_id;
+
+    -- Fresh open, accepted linked, and legacy_unresolved suggestion
+    -- commitments remain conservative. The current review lines are excluded
+    -- because their proposed decisions replace, rather than add to, their old
+    -- linked-suggestion commitment.
+    SELECT COALESCE(sum(c.provenance_commitment),0)::integer
+    INTO v_suggestion_commitment
+    FROM public.inventory_transfer_suggestions s
+    CROSS JOIN LATERAL
+      public.phoenix_inventory_suggestion_commitments(s.id) c
+    WHERE s.route_kind='outlet_to_warehouse'
+      AND s.provenance_dispatch_line_id=v_provenance_id
+      AND c.is_active
+      AND NOT COALESCE((
+        s.draft_outlet_return_request_line_id=
+          ANY(COALESCE(v_line_ids,ARRAY[]::uuid[]))
+      ),false);
+
+    -- Approved and partially fulfilled manual lines reserve only their unsent
+    -- remainder. A line represented by a live suggestion is deliberately
+    -- omitted here so the same commitment is never counted twice.
+    SELECT COALESCE(sum(
+      GREATEST(COALESCE(l.approved_quantity,0)-l.fulfilled_quantity,0)
+    ),0)::integer
+    INTO v_line_commitment
+    FROM public.outlet_return_request_lines l
+    JOIN public.outlet_return_requests h ON h.id=l.return_request_id
+    WHERE l.original_dispatch_line_id=v_provenance_id
+      AND l.status IN ('approved','partially_fulfilled')
+      AND h.status NOT IN ('cancelled','rejected')
+      AND NOT (
+        l.id=ANY(COALESCE(v_line_ids,ARRAY[]::uuid[]))
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.inventory_transfer_suggestions s
+        CROSS JOIN LATERAL
+          public.phoenix_inventory_suggestion_commitments(s.id) c
+        WHERE s.route_kind='outlet_to_warehouse'
+          AND s.draft_outlet_return_request_line_id=l.id
+          AND c.is_active
+      );
+
+    SELECT COALESCE(sum((d.value->>'approved_quantity')::integer),0)::integer
+    INTO v_proposed_commitment
+    FROM jsonb_array_elements(p_decisions) d(value)
+    JOIN public.outlet_return_request_lines l
+      ON l.id=(d.value->>'line_id')::uuid
+     AND l.return_request_id=p_return_request_id
+    WHERE l.original_dispatch_line_id=v_provenance_id;
+
+    IF v_suggestion_commitment+v_line_commitment+v_proposed_commitment
+       > v_physical_remaining THEN
+      RAISE EXCEPTION 'outlet_return_aggregate_cap_exceeded'
+        USING ERRCODE='23514';
+    END IF;
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION
+  public._phoenix_validate_outlet_return_review_cap_v1(uuid,jsonb)
+  FROM PUBLIC,anon,authenticated;
+
+CREATE OR REPLACE FUNCTION public.phoenix_review_outlet_return_request(
+  p_return_request_id uuid,
+  p_decisions jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  PERFORM public._phoenix_validate_outlet_return_review_cap_v1(
+    p_return_request_id,p_decisions
+  );
+  v_result:=public._phoenix_149_delegate_review_outlet_return_request(
+    p_return_request_id,p_decisions
+  );
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.outlet_return_request_lines
+    WHERE return_request_id=p_return_request_id AND status='pending'
+  ) THEN
+    UPDATE public.outlet_return_requests h
+    SET status=CASE
+      WHEN EXISTS (
+        SELECT 1 FROM public.outlet_return_request_lines
+        WHERE return_request_id=h.id AND status='approved'
+      ) AND EXISTS (
+        SELECT 1 FROM public.outlet_return_request_lines
+        WHERE return_request_id=h.id AND status='rejected'
+      ) THEN 'partially_approved'
+      WHEN EXISTS (
+        SELECT 1 FROM public.outlet_return_request_lines
+        WHERE return_request_id=h.id AND status='approved'
+      ) THEN 'approved'
+      ELSE 'rejected'
+    END
+    WHERE h.id=p_return_request_id;
+  END IF;
+  RETURN v_result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_review_outlet_return_request(uuid,jsonb)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_review_outlet_return_request(uuid,jsonb)
+  TO authenticated;
+
+-- ============================================================================
 -- Deployment self-check: fail atomically if the capsule is incomplete.
 -- ============================================================================
 DO $verify$
@@ -2715,6 +2994,35 @@ BEGIN
       AND NOT tgisinternal
   ) THEN
     RAISE EXCEPTION '150_verify_failed: fefo_scope_anchor_trigger_missing';
+  END IF;
+
+  IF to_regprocedure(
+       'public._phoenix_validate_outlet_return_review_cap_v1(uuid,jsonb)'
+     ) IS NULL
+     OR has_function_privilege(
+       'authenticated',
+       'public._phoenix_validate_outlet_return_review_cap_v1(uuid,jsonb)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.phoenix_review_outlet_return_request(uuid,jsonb)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.phoenix_review_outlet_return_request(uuid,jsonb)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION '150_verify_failed: outlet_return_cap_acl_boundary';
+  END IF;
+
+  v_def:=pg_get_functiondef(
+    'public.phoenix_review_outlet_return_request(uuid,jsonb)'::regprocedure
+  );
+  IF v_def NOT ILIKE '%_phoenix_validate_outlet_return_review_cap_v1%'
+     OR v_def NOT ILIKE '%_phoenix_149_delegate_review_outlet_return_request%' THEN
+    RAISE EXCEPTION '150_verify_failed: outlet_return_cap_wrapper_incomplete';
   END IF;
 END;
 $verify$;
