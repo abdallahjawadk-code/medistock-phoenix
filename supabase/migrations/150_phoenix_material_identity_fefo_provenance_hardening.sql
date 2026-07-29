@@ -1,14 +1,15 @@
 -- ============================================================================
--- 150 · Canonical Material Identity + Inventory Intelligence Isolation (6B-1)
+-- 150 · Canonical Material Identity + FEFO Debit Hardening (6B-1 / 6B-2)
 -- ============================================================================
 -- Scope:
 --   * versioned, inspectable material identity (no fuzzy/unit equivalence);
 --   * unit-aware stock-lot uniqueness with an atomic collision preflight;
 --   * material-isolated alerts, suggestions, commitments and Draft validation;
---   * conservative legacy backfill.
+--   * conservative legacy backfill;
+--   * exact-material FEFO revalidation at every warehouse supply debit;
+--   * raw historical RPC closure with private write delegates.
 --
 -- Explicitly out of scope:
---   * FEFO send-writer / raw-RPC grant hardening (6B-2);
 --   * outlet-return aggregate-cap hardening (6B-3);
 --   * movement/report/RBAC/public-signature changes.
 -- ============================================================================
@@ -1471,6 +1472,1033 @@ GRANT EXECUTE ON FUNCTION public.phoenix_suggest_cross_org_inventory_transfer(
 ) TO authenticated;
 
 -- ============================================================================
+-- 6B-2: exact-material FEFO and stock-debit boundary
+-- ============================================================================
+
+-- Dispatch override evidence belongs to the existing Draft line.  These fields
+-- are decision metadata, not stock, custody, reservation, or a parallel ledger.
+ALTER TABLE public.warehouse_dispatch_lines
+  ADD COLUMN fefo_candidate_fingerprint text,
+  ADD COLUMN fefo_override_reason text,
+  ADD COLUMN fefo_override_actor_id uuid REFERENCES auth.users(id) ON DELETE RESTRICT,
+  ADD COLUMN fefo_override_material_identity_key text,
+  ADD COLUMN fefo_override_recorded_at timestamptz,
+  ADD CONSTRAINT warehouse_dispatch_lines_fefo_override_chk CHECK (
+    (fefo_override_reason IS NULL
+      AND fefo_override_actor_id IS NULL
+      AND fefo_override_material_identity_key IS NULL
+      AND fefo_override_recorded_at IS NULL)
+    OR
+    (fefo_candidate_fingerprint IS NOT NULL
+      AND NULLIF(btrim(fefo_override_reason), '') IS NOT NULL
+      AND fefo_override_actor_id IS NOT NULL
+      AND fefo_override_material_identity_key IS NOT NULL
+      AND fefo_override_recorded_at IS NOT NULL)
+  );
+
+CREATE FUNCTION public._phoenix_inventory_fefo_batches_exact_v1(
+  p_organization_id uuid,
+  p_scope_kind text,
+  p_scope_id uuid,
+  p_material_identity_key text
+)
+RETURNS TABLE(
+  stock_id uuid, batch_number text, expiry_date date,
+  available_quantity integer, transferable_quantity integer,
+  dispatch_line_id uuid, inbound_movement_id uuid
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_scope_kind NOT IN ('warehouse', 'outlet') THEN
+    RAISE EXCEPTION 'invalid_scope_kind' USING ERRCODE = '23514';
+  END IF;
+  IF p_material_identity_key IS NULL THEN
+    RAISE EXCEPTION 'material_identity_required' USING ERRCODE = '23514';
+  END IF;
+  IF p_scope_kind = 'warehouse' THEN
+    RETURN QUERY
+    SELECT ws.id,ws.batch_number,ws.expiry_date,ws.available_quantity,
+           ws.available_quantity,NULL::uuid,NULL::uuid
+    FROM public.warehouse_stock ws
+    WHERE ws.organization_id=p_organization_id
+      AND ws.warehouse_id=p_scope_id
+      AND ws.material_identity_key=p_material_identity_key
+      AND ws.available_quantity>0
+      AND (ws.expiry_date IS NULL OR ws.expiry_date>=current_date)
+    ORDER BY ws.expiry_date ASC NULLS LAST,ws.id ASC;
+  ELSE
+    RETURN QUERY
+    SELECT os.id,os.batch_number,os.expiry_date,os.available_quantity,
+           LEAST(os.available_quantity,
+                 COALESCE(wdl.received_quantity,0)-wdl.returned_quantity),
+           wdl.id,osm.id
+    FROM public.outlet_stock os
+    JOIN public.warehouse_dispatch_lines wdl
+      ON wdl.resulting_outlet_stock_id=os.id
+     AND wdl.organization_id=os.organization_id
+     AND wdl.status IN ('accepted','accepted_with_difference')
+    JOIN public.outlet_stock_movements osm
+      ON osm.dispatch_line_id=wdl.id
+     AND osm.movement_type='dispatch_receive'
+     AND osm.outlet_stock_id=os.id
+     AND osm.organization_id=os.organization_id
+    WHERE os.organization_id=p_organization_id
+      AND os.distribution_point_id=p_scope_id
+      AND os.material_identity_key=p_material_identity_key
+      AND os.available_quantity>0
+      AND (os.expiry_date IS NULL OR os.expiry_date>=current_date)
+      AND COALESCE(wdl.received_quantity,0)-wdl.returned_quantity>0
+    ORDER BY os.expiry_date ASC NULLS LAST,os.id ASC,wdl.id ASC;
+  END IF;
+END;
+$$;
+
+CREATE FUNCTION public._phoenix_fefo_candidate_fingerprint_v1(
+  p_organization_id uuid,p_scope_kind text,p_scope_id uuid,
+  p_material_identity_key text
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT encode(sha256(convert_to(jsonb_build_object(
+    'material_identity_key',p_material_identity_key,
+    'scope_kind',p_scope_kind,'scope_id',p_scope_id,
+    'candidates',COALESCE(jsonb_agg(jsonb_build_object(
+      'stock_id',b.stock_id,'expiry_date',b.expiry_date,
+      'batch_number',b.batch_number,
+      'internal_batch_reference',ws.internal_batch_reference,
+      'available_quantity',b.available_quantity,
+      'transferable_quantity',b.transferable_quantity
+    ) ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC),'[]'::jsonb)
+  )::text,'UTF8')),'hex')
+  FROM public._phoenix_inventory_fefo_batches_exact_v1(
+    p_organization_id,p_scope_kind,p_scope_id,p_material_identity_key
+  ) b
+  LEFT JOIN public.warehouse_stock ws
+    ON p_scope_kind='warehouse' AND ws.id=b.stock_id
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_inventory_fefo_batches_exact_v1(
+  uuid,text,uuid,text
+) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public._phoenix_fefo_candidate_fingerprint_v1(
+  uuid,text,uuid,text
+) FROM PUBLIC,anon,authenticated;
+
+-- The legacy signature resolves zero/one/many canonical identities.  NULL
+-- national code is an explicit value and never a wildcard.
+CREATE OR REPLACE FUNCTION public.phoenix_inventory_fefo_batches(
+  p_organization_id uuid,p_scope_kind text,p_scope_id uuid,
+  p_scientific_name text,p_national_code text DEFAULT NULL
+)
+RETURNS TABLE(
+  stock_id uuid,batch_number text,expiry_date date,
+  available_quantity integer,transferable_quantity integer,
+  dispatch_line_id uuid,inbound_movement_id uuid
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE
+  v_count integer;
+  v_key text;
+BEGIN
+  IF p_scope_kind NOT IN ('warehouse','outlet') THEN
+    RAISE EXCEPTION 'invalid_scope_kind' USING ERRCODE='23514';
+  END IF;
+  IF public.phoenix_inventory_scope_org(p_scope_kind,p_scope_id)
+       IS DISTINCT FROM p_organization_id THEN
+    RAISE EXCEPTION 'scope_not_in_organization';
+  END IF;
+  IF NOT public.phoenix_can_read_inventory_signal(
+    p_organization_id,p_scope_kind,p_scope_id
+  ) THEN
+    RAISE EXCEPTION 'not_authorized_inventory_read';
+  END IF;
+  IF p_scope_kind='warehouse' THEN
+    SELECT count(DISTINCT ws.material_identity_key),min(ws.material_identity_key)
+      INTO v_count,v_key
+    FROM public.warehouse_stock ws
+    WHERE ws.organization_id=p_organization_id AND ws.warehouse_id=p_scope_id
+      AND lower(ws.scientific_name)=lower(p_scientific_name)
+      AND ws.national_code IS NOT DISTINCT FROM p_national_code
+      AND ws.available_quantity>0
+      AND (ws.expiry_date IS NULL OR ws.expiry_date>=current_date);
+  ELSE
+    SELECT count(DISTINCT os.material_identity_key),min(os.material_identity_key)
+      INTO v_count,v_key
+    FROM public.outlet_stock os
+    WHERE os.organization_id=p_organization_id
+      AND os.distribution_point_id=p_scope_id
+      AND lower(os.scientific_name)=lower(p_scientific_name)
+      AND os.national_code IS NOT DISTINCT FROM p_national_code
+      AND os.available_quantity>0
+      AND (os.expiry_date IS NULL OR os.expiry_date>=current_date);
+  END IF;
+  IF v_count=0 THEN RETURN;
+  ELSIF v_count>1 THEN
+    RAISE EXCEPTION 'material_identity_ambiguous' USING ERRCODE='23514';
+  END IF;
+  RETURN QUERY SELECT * FROM public._phoenix_inventory_fefo_batches_exact_v1(
+    p_organization_id,p_scope_kind,p_scope_id,v_key
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.phoenix_inventory_fefo_batches(
+  uuid,text,uuid,text,text
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_inventory_fefo_batches(
+  uuid,text,uuid,text,text
+) TO authenticated;
+
+-- A new lot enters the same canonical lock domain as send before it can become
+-- visible.  The warehouse row is the scope anchor for concurrent insertions.
+CREATE FUNCTION public._phoenix_warehouse_stock_fefo_insert_lock_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE v_key text;
+BEGIN
+  v_key:=public._phoenix_material_identity_v1(
+    NEW.central_item_id,NEW.scientific_name,NEW.national_code,
+    NEW.concentration,NEW.dosage_form,NEW.unit
+  );
+  PERFORM pg_advisory_xact_lock(hashtextextended('inv_material:'||v_key,0));
+  PERFORM 1 FROM public.warehouses
+  WHERE id=NEW.warehouse_id AND organization_id=NEW.organization_id FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'warehouse_scope_anchor_not_found' USING ERRCODE='23503';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_warehouse_stock_fefo_insert_lock_v150
+BEFORE INSERT ON public.warehouse_stock
+FOR EACH ROW EXECUTE FUNCTION public._phoenix_warehouse_stock_fefo_insert_lock_v1();
+REVOKE ALL ON FUNCTION public._phoenix_warehouse_stock_fefo_insert_lock_v1()
+  FROM PUBLIC,anon,authenticated;
+
+ALTER FUNCTION public.phoenix_send_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) RENAME TO _phoenix_150_delegate_send_warehouse_transfer_line;
+ALTER FUNCTION public.phoenix_add_dispatch_line(uuid,uuid,integer)
+  RENAME TO _phoenix_150_delegate_add_dispatch_line;
+REVOKE ALL ON FUNCTION public._phoenix_150_delegate_send_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public._phoenix_150_delegate_add_dispatch_line(
+  uuid,uuid,integer
+) FROM PUBLIC,anon,authenticated;
+
+-- Routed send.  The request replay gate deliberately precedes every FEFO read.
+CREATE FUNCTION public._phoenix_150_send_routed_v1(
+  p_request_id uuid,p_route_id uuid,p_warehouse_stock_id uuid,
+  p_quantity integer,p_transfer_number text,p_transfer_request_line_id uuid,
+  p_document_number text,p_notes text,p_fefo_override boolean,
+  p_override_reason text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE
+  v_actor uuid:=auth.uid();
+  v_actor_role text;
+  v_stock public.warehouse_stock%ROWTYPE;
+  v_existing public.warehouse_stock_movements%ROWTYPE;
+  v_number text:=NULLIF(btrim(p_transfer_number),'');
+  v_doc text:=NULLIF(btrim(p_document_number),'');
+  v_notes text:=NULLIF(btrim(p_notes),'');
+  v_reason text:=NULLIF(btrim(p_override_reason),'');
+  v_fp text;
+  v_candidate_fp text;
+  v_earliest record;
+  v_result jsonb;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000';
+  END IF;
+  IF p_request_id IS NULL THEN
+    RAISE EXCEPTION 'request_id_required' USING ERRCODE='23514';
+  END IF;
+  v_fp:=encode(sha256(convert_to(jsonb_build_object(
+    'operation','transfer_send','route_id',p_route_id,
+    'warehouse_stock_id',p_warehouse_stock_id,'quantity',p_quantity,
+    'transfer_number',v_number,
+    'transfer_request_line_id',p_transfer_request_line_id,
+    'document_number',v_doc,'notes',v_notes
+  )::text,'UTF8')),'hex');
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text,68068));
+  SELECT * INTO v_existing FROM public.warehouse_stock_movements m
+  WHERE m.reference_type='warehouse_transfer_send'
+    AND m.reference_id=p_request_id;
+  IF FOUND THEN
+    IF v_existing.warehouse_stock_id IS DISTINCT FROM p_warehouse_stock_id
+       OR v_existing.request_fingerprint IS DISTINCT FROM v_fp THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE='23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'idempotent_replay',true,
+      'warehouse_stock_id',v_existing.warehouse_stock_id,
+      'movement_id',v_existing.id,'quantity_before',v_existing.on_hand_before,
+      'quantity_delta',v_existing.on_hand_delta,
+      'quantity_after',v_existing.on_hand_after
+    );
+  END IF;
+
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'warehouse_stock_not_found' USING ERRCODE='P0002';
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('inv_material:'||v_stock.material_identity_key,0)
+  );
+  PERFORM 1 FROM public.warehouse_supply_routes WHERE id=p_route_id FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'supply_route_not_found' USING ERRCODE='P0002';
+  END IF;
+  IF p_transfer_request_line_id IS NOT NULL THEN
+    PERFORM 1 FROM public.warehouse_transfer_request_lines
+    WHERE id=p_transfer_request_line_id FOR UPDATE;
+  END IF;
+  PERFORM 1 FROM public.warehouses
+  WHERE id=v_stock.warehouse_id AND organization_id=v_stock.organization_id
+  FOR UPDATE;
+  PERFORM 1 FROM public.warehouse_stock ws
+  WHERE ws.organization_id=v_stock.organization_id
+    AND ws.warehouse_id=v_stock.warehouse_id
+    AND ws.material_identity_key=v_stock.material_identity_key
+  ORDER BY ws.id FOR UPDATE;
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id FOR UPDATE;
+
+  SELECT b.* INTO v_earliest
+  FROM public._phoenix_inventory_fefo_batches_exact_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  ) b
+  ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC LIMIT 1;
+  v_candidate_fp:=public._phoenix_fefo_candidate_fingerprint_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  );
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    IF NOT COALESCE(p_fefo_override,false) THEN
+      RAISE EXCEPTION 'fefo_revalidation_required' USING ERRCODE='23514';
+    END IF;
+    IF v_reason IS NULL THEN
+      RAISE EXCEPTION 'fefo_override_reason_required' USING ERRCODE='23514';
+    END IF;
+    IF NOT public.phoenix_profile_has_scoped_permission(
+      v_actor,'inventory.fefo_override',v_stock.organization_id,
+      v_stock.warehouse_id,NULL
+    ) THEN
+      RAISE EXCEPTION 'forbidden_fefo_override' USING ERRCODE='42501';
+    END IF;
+  END IF;
+
+  v_result:=public._phoenix_150_delegate_send_warehouse_transfer_line(
+    p_request_id,p_route_id,p_warehouse_stock_id,p_quantity,p_transfer_number,
+    p_transfer_request_line_id,p_document_number,p_notes
+  );
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    SELECT p.role INTO v_actor_role FROM public.profiles p
+    WHERE p.id=v_actor AND p.status='active';
+    INSERT INTO public.audit_logs(
+      organization_id,actor_id,actor_role,action,entity_type,entity_id,
+      entity_label,payload
+    ) VALUES (
+      v_stock.organization_id,v_actor,v_actor_role,'inventory.fefo_overridden',
+      'warehouse_stock_movements',NULLIF(v_result->>'movement_id','')::uuid,
+      v_stock.scientific_name,jsonb_build_object(
+        'request_id',p_request_id,'route_id',p_route_id,
+        'transfer_request_line_id',p_transfer_request_line_id,
+        'material_identity_key',v_stock.material_identity_key,
+        'earliest_stock_id',v_earliest.stock_id,
+        'earliest_batch',v_earliest.batch_number,
+        'earliest_expiry',v_earliest.expiry_date,
+        'selected_stock_id',v_stock.id,'selected_batch',v_stock.batch_number,
+        'selected_expiry',v_stock.expiry_date,
+        'candidate_fingerprint',v_candidate_fp,'reason',v_reason
+      )
+    );
+  END IF;
+  RETURN v_result||jsonb_build_object(
+    'fefo_override_applied',
+    v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_150_send_routed_v1(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) FROM PUBLIC,anon,authenticated;
+
+CREATE FUNCTION public.phoenix_send_warehouse_transfer_line(
+  p_request_id uuid,p_route_id uuid,p_warehouse_stock_id uuid,p_quantity integer,
+  p_transfer_number text,p_transfer_request_line_id uuid DEFAULT NULL,
+  p_document_number text DEFAULT NULL,p_notes text DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_send_routed_v1(
+    p_request_id,p_route_id,p_warehouse_stock_id,p_quantity,p_transfer_number,
+    p_transfer_request_line_id,p_document_number,p_notes,false,NULL
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_send_warehouse_transfer_line_fefo_guarded(
+  p_request_id uuid,p_route_id uuid,p_warehouse_stock_id uuid,p_quantity integer,
+  p_transfer_number text,p_transfer_request_line_id uuid DEFAULT NULL,
+  p_document_number text DEFAULT NULL,p_notes text DEFAULT NULL,
+  p_fefo_override boolean DEFAULT false,p_override_reason text DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_send_routed_v1(
+    p_request_id,p_route_id,p_warehouse_stock_id,p_quantity,p_transfer_number,
+    p_transfer_request_line_id,p_document_number,p_notes,p_fefo_override,
+    p_override_reason
+  )
+$$;
+
+-- Direct send retains the 149 lineage check and proves that a request line
+-- resolves to exactly the selected material variant at its source warehouse.
+CREATE FUNCTION public._phoenix_150_send_direct_v1(
+  p_request_id uuid,p_transfer_request_id uuid,p_warehouse_stock_id uuid,
+  p_quantity integer,p_transfer_number text,p_transfer_request_line_id uuid,
+  p_document_number text,p_notes text,p_fefo_override boolean,
+  p_override_reason text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE
+  v_actor uuid:=auth.uid();
+  v_actor_role text;
+  v_stock public.warehouse_stock%ROWTYPE;
+  v_existing public.warehouse_stock_movements%ROWTYPE;
+  v_line public.warehouse_transfer_request_lines%ROWTYPE;
+  v_number text:=NULLIF(btrim(p_transfer_number),'');
+  v_doc text:=NULLIF(btrim(p_document_number),'');
+  v_notes text:=NULLIF(btrim(p_notes),'');
+  v_reason text:=NULLIF(btrim(p_override_reason),'');
+  v_fp text;
+  v_candidate_fp text;
+  v_earliest record;
+  v_line_identity_count integer;
+  v_line_identity_key text;
+  v_expected_stock_id uuid;
+  v_result jsonb;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000';
+  END IF;
+  IF p_request_id IS NULL THEN
+    RAISE EXCEPTION 'request_id_required' USING ERRCODE='23514';
+  END IF;
+  v_fp:=encode(sha256(convert_to(jsonb_build_object(
+    'operation','direct_transfer_send',
+    'transfer_request_id',p_transfer_request_id,
+    'warehouse_stock_id',p_warehouse_stock_id,'quantity',p_quantity,
+    'transfer_number',v_number,
+    'transfer_request_line_id',p_transfer_request_line_id,
+    'document_number',v_doc,'notes',v_notes
+  )::text,'UTF8')),'hex');
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text,68068));
+  SELECT * INTO v_existing FROM public.warehouse_stock_movements m
+  WHERE m.reference_type='warehouse_transfer_send'
+    AND m.reference_id=p_request_id;
+  IF FOUND THEN
+    IF v_existing.warehouse_stock_id IS DISTINCT FROM p_warehouse_stock_id
+       OR v_existing.request_fingerprint IS DISTINCT FROM v_fp THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE='23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'idempotent_replay',true,
+      'warehouse_stock_id',v_existing.warehouse_stock_id,
+      'movement_id',v_existing.id,'quantity_before',v_existing.on_hand_before,
+      'quantity_delta',v_existing.on_hand_delta,
+      'quantity_after',v_existing.on_hand_after
+    );
+  END IF;
+
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'warehouse_stock_not_found' USING ERRCODE='P0002';
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('inv_material:'||v_stock.material_identity_key,0)
+  );
+  IF p_transfer_request_line_id IS NOT NULL THEN
+    PERFORM public._phoenix_lock_linked_suggestions(
+      'central_line',p_transfer_request_line_id,false
+    );
+  END IF;
+  PERFORM 1 FROM public.warehouse_transfer_requests
+  WHERE id=p_transfer_request_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'transfer_request_not_found' USING ERRCODE='P0002';
+  END IF;
+  IF p_transfer_request_line_id IS NOT NULL THEN
+    SELECT * INTO v_line FROM public.warehouse_transfer_request_lines
+    WHERE id=p_transfer_request_line_id
+      AND transfer_request_id=p_transfer_request_id FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'request_line_not_found_for_request' USING ERRCODE='P0002';
+    END IF;
+  END IF;
+  PERFORM 1 FROM public.warehouses
+  WHERE id=v_stock.warehouse_id AND organization_id=v_stock.organization_id
+  FOR UPDATE;
+  PERFORM 1 FROM public.warehouse_stock ws
+  WHERE ws.organization_id=v_stock.organization_id
+    AND ws.warehouse_id=v_stock.warehouse_id
+    AND ws.material_identity_key=v_stock.material_identity_key
+  ORDER BY ws.id FOR UPDATE;
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id FOR UPDATE;
+
+  IF p_transfer_request_line_id IS NOT NULL THEN
+    SELECT count(DISTINCT ws.material_identity_key),min(ws.material_identity_key)
+      INTO v_line_identity_count,v_line_identity_key
+    FROM public.warehouse_stock ws
+    WHERE ws.organization_id=v_stock.organization_id
+      AND ws.warehouse_id=v_stock.warehouse_id
+      AND ws.central_item_id IS NOT DISTINCT FROM v_line.central_item_id
+      AND lower(ws.scientific_name)=lower(v_line.scientific_name)
+      AND lower(COALESCE(ws.concentration,''))=
+          lower(COALESCE(v_line.concentration,''))
+      AND lower(COALESCE(ws.dosage_form,''))=
+          lower(COALESCE(v_line.dosage_form,''))
+      AND lower(COALESCE(ws.unit,''))=lower(COALESCE(v_line.unit,''));
+    IF v_line_identity_count<>1
+       OR v_line_identity_key IS DISTINCT FROM v_stock.material_identity_key THEN
+      RAISE EXCEPTION 'direct_request_line_material_mismatch'
+        USING ERRCODE='23514';
+    END IF;
+    SELECT s.source_stock_id INTO v_expected_stock_id
+    FROM public.inventory_transfer_suggestions s
+    WHERE s.status='accepted' AND s.lineage_version=1
+      AND s.lineage_state='linked'
+      AND s.draft_warehouse_transfer_request_line_id=p_transfer_request_line_id;
+    IF FOUND AND v_expected_stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+      RAISE EXCEPTION 'suggestion_source_stock_mismatch' USING ERRCODE='23514';
+    END IF;
+  END IF;
+
+  SELECT b.* INTO v_earliest
+  FROM public._phoenix_inventory_fefo_batches_exact_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  ) b
+  ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC LIMIT 1;
+  v_candidate_fp:=public._phoenix_fefo_candidate_fingerprint_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  );
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    IF NOT COALESCE(p_fefo_override,false) THEN
+      RAISE EXCEPTION 'fefo_revalidation_required' USING ERRCODE='23514';
+    END IF;
+    IF v_reason IS NULL THEN
+      RAISE EXCEPTION 'fefo_override_reason_required' USING ERRCODE='23514';
+    END IF;
+    IF NOT public.phoenix_profile_has_scoped_permission(
+      v_actor,'inventory.fefo_override',v_stock.organization_id,
+      v_stock.warehouse_id,NULL
+    ) THEN
+      RAISE EXCEPTION 'forbidden_fefo_override' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  v_result:=public._phoenix_149_delegate_send_direct_warehouse_transfer_line(
+    p_request_id,p_transfer_request_id,p_warehouse_stock_id,p_quantity,
+    p_transfer_number,p_transfer_request_line_id,p_document_number,p_notes
+  );
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    SELECT p.role INTO v_actor_role FROM public.profiles p
+    WHERE p.id=v_actor AND p.status='active';
+    INSERT INTO public.audit_logs(
+      organization_id,actor_id,actor_role,action,entity_type,entity_id,
+      entity_label,payload
+    ) VALUES (
+      v_stock.organization_id,v_actor,v_actor_role,'inventory.fefo_overridden',
+      'warehouse_stock_movements',NULLIF(v_result->>'movement_id','')::uuid,
+      v_stock.scientific_name,jsonb_build_object(
+        'request_id',p_request_id,
+        'transfer_request_id',p_transfer_request_id,
+        'transfer_request_line_id',p_transfer_request_line_id,
+        'material_identity_key',v_stock.material_identity_key,
+        'earliest_stock_id',v_earliest.stock_id,
+        'earliest_batch',v_earliest.batch_number,
+        'earliest_expiry',v_earliest.expiry_date,
+        'selected_stock_id',v_stock.id,'selected_batch',v_stock.batch_number,
+        'selected_expiry',v_stock.expiry_date,
+        'candidate_fingerprint',v_candidate_fp,'reason',v_reason
+      )
+    );
+  END IF;
+  RETURN v_result||jsonb_build_object(
+    'fefo_override_applied',
+    v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_150_send_direct_v1(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) FROM PUBLIC,anon,authenticated;
+
+CREATE OR REPLACE FUNCTION public.phoenix_send_direct_warehouse_transfer_line(
+  p_request_id uuid,p_transfer_request_id uuid,p_warehouse_stock_id uuid,
+  p_quantity integer,p_transfer_number text,
+  p_transfer_request_line_id uuid DEFAULT NULL,
+  p_document_number text DEFAULT NULL,p_notes text DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_send_direct_v1(
+    p_request_id,p_transfer_request_id,p_warehouse_stock_id,p_quantity,
+    p_transfer_number,p_transfer_request_line_id,p_document_number,p_notes,
+    false,NULL
+  )
+$$;
+
+CREATE FUNCTION public.phoenix_send_direct_warehouse_transfer_line_fefo_guarded(
+  p_request_id uuid,p_transfer_request_id uuid,p_warehouse_stock_id uuid,
+  p_quantity integer,p_transfer_number text,
+  p_transfer_request_line_id uuid DEFAULT NULL,
+  p_document_number text DEFAULT NULL,p_notes text DEFAULT NULL,
+  p_fefo_override boolean DEFAULT false,p_override_reason text DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_send_direct_v1(
+    p_request_id,p_transfer_request_id,p_warehouse_stock_id,p_quantity,
+    p_transfer_number,p_transfer_request_line_id,p_document_number,p_notes,
+    p_fefo_override,p_override_reason
+  )
+$$;
+
+-- Dispatch add has no stock movement.  Raw stays compatible but is now a
+-- no-override guarded wrapper; explicit guarded calls retain request replay.
+CREATE FUNCTION public._phoenix_150_add_dispatch_line_v1(
+  p_dispatch_id uuid,p_warehouse_stock_id uuid,p_quantity integer,
+  p_fefo_override boolean,p_override_reason text,p_request_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE
+  v_actor uuid:=auth.uid();
+  v_actor_role text;
+  v_dispatch public.warehouse_dispatches%ROWTYPE;
+  v_stock public.warehouse_stock%ROWTYPE;
+  v_existing public.phoenix_dispatch_line_requests%ROWTYPE;
+  v_reason text:=NULLIF(btrim(p_override_reason),'');
+  v_fp text;
+  v_candidate_fp text;
+  v_earliest record;
+  v_result jsonb;
+  v_line_id uuid;
+BEGIN
+  IF p_request_id IS NULL THEN
+    RAISE EXCEPTION 'request_id_required' USING ERRCODE='23514';
+  END IF;
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000';
+  END IF;
+  v_fp:=encode(sha256(convert_to(jsonb_build_object(
+    'operation','add_dispatch_line_fefo_guarded',
+    'dispatch_id',p_dispatch_id,'warehouse_stock_id',p_warehouse_stock_id,
+    'quantity',p_quantity,'fefo_override',COALESCE(p_fefo_override,false),
+    'override_reason',v_reason,'actor',v_actor
+  )::text,'UTF8')),'hex');
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text,106106));
+  SELECT * INTO v_existing FROM public.phoenix_dispatch_line_requests
+  WHERE request_id=p_request_id;
+  IF FOUND THEN
+    IF v_existing.payload_fingerprint IS DISTINCT FROM v_fp THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE='23505';
+    END IF;
+    RETURN v_existing.result;
+  END IF;
+
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'warehouse_stock_not_found' USING ERRCODE='P0002';
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('inv_material:'||v_stock.material_identity_key,0)
+  );
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('warehouse_dispatch:'||p_dispatch_id::text,0)
+  );
+  SELECT * INTO v_dispatch FROM public.warehouse_dispatches
+  WHERE id=p_dispatch_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_not_found' USING ERRCODE='P0002';
+  END IF;
+  PERFORM 1 FROM public.warehouses
+  WHERE id=v_stock.warehouse_id AND organization_id=v_stock.organization_id
+  FOR UPDATE;
+  PERFORM 1 FROM public.warehouse_stock ws
+  WHERE ws.organization_id=v_stock.organization_id
+    AND ws.warehouse_id=v_stock.warehouse_id
+    AND ws.material_identity_key=v_stock.material_identity_key
+  ORDER BY ws.id FOR UPDATE;
+  SELECT * INTO v_stock FROM public.warehouse_stock
+  WHERE id=p_warehouse_stock_id FOR UPDATE;
+  SELECT b.* INTO v_earliest
+  FROM public._phoenix_inventory_fefo_batches_exact_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  ) b
+  ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC LIMIT 1;
+  v_candidate_fp:=public._phoenix_fefo_candidate_fingerprint_v1(
+    v_stock.organization_id,'warehouse',v_stock.warehouse_id,
+    v_stock.material_identity_key
+  );
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    IF NOT COALESCE(p_fefo_override,false) THEN
+      RAISE EXCEPTION 'fefo_revalidation_required' USING ERRCODE='23514';
+    END IF;
+    IF v_reason IS NULL THEN
+      RAISE EXCEPTION 'fefo_override_reason_required' USING ERRCODE='23514';
+    END IF;
+    IF NOT public.phoenix_profile_has_scoped_permission(
+      v_actor,'inventory.fefo_override',v_stock.organization_id,
+      v_stock.warehouse_id,NULL
+    ) THEN
+      RAISE EXCEPTION 'forbidden_fefo_override' USING ERRCODE='42501';
+    END IF;
+  END IF;
+
+  v_result:=public._phoenix_150_delegate_add_dispatch_line(
+    p_dispatch_id,p_warehouse_stock_id,p_quantity
+  );
+  v_line_id:=NULLIF(v_result->>'dispatch_line_id','')::uuid;
+  UPDATE public.warehouse_dispatch_lines
+  SET fefo_candidate_fingerprint=v_candidate_fp,
+      fefo_override_reason=CASE
+        WHEN v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+        THEN v_reason END,
+      fefo_override_actor_id=CASE
+        WHEN v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+        THEN v_actor END,
+      fefo_override_material_identity_key=CASE
+        WHEN v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+        THEN v_stock.material_identity_key END,
+      fefo_override_recorded_at=CASE
+        WHEN v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+        THEN now() END
+  WHERE id=v_line_id;
+  IF v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id THEN
+    SELECT p.role INTO v_actor_role FROM public.profiles p
+    WHERE p.id=v_actor AND p.status='active';
+    INSERT INTO public.audit_logs(
+      organization_id,actor_id,actor_role,action,entity_type,entity_id,
+      entity_label,payload
+    ) VALUES (
+      v_stock.organization_id,v_actor,v_actor_role,'inventory.fefo_overridden',
+      'warehouse_dispatch_lines',v_line_id,v_stock.scientific_name,
+      jsonb_build_object(
+        'request_id',p_request_id,'dispatch_id',p_dispatch_id,
+        'dispatch_line_id',v_line_id,
+        'material_identity_key',v_stock.material_identity_key,
+        'earliest_stock_id',v_earliest.stock_id,
+        'earliest_batch',v_earliest.batch_number,
+        'earliest_expiry',v_earliest.expiry_date,
+        'selected_stock_id',v_stock.id,'selected_batch',v_stock.batch_number,
+        'selected_expiry',v_stock.expiry_date,
+        'candidate_fingerprint',v_candidate_fp,'reason',v_reason
+      )
+    );
+  END IF;
+  v_result:=v_result||jsonb_build_object(
+    'fefo_override_applied',
+    v_earliest.stock_id IS DISTINCT FROM p_warehouse_stock_id
+  );
+  INSERT INTO public.phoenix_dispatch_line_requests(
+    request_id,organization_id,dispatch_id,payload_fingerprint,result,
+    dispatch_line_id,actor_id
+  ) VALUES (
+    p_request_id,v_dispatch.organization_id,p_dispatch_id,v_fp,v_result,
+    v_line_id,v_actor
+  );
+  RETURN v_result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_150_add_dispatch_line_v1(
+  uuid,uuid,integer,boolean,text,uuid
+) FROM PUBLIC,anon,authenticated;
+
+CREATE FUNCTION public.phoenix_add_dispatch_line(
+  p_dispatch_id uuid,p_warehouse_stock_id uuid,p_quantity integer
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_add_dispatch_line_v1(
+    p_dispatch_id,p_warehouse_stock_id,p_quantity,false,NULL,gen_random_uuid()
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_add_dispatch_line_fefo_guarded(
+  p_dispatch_id uuid,p_warehouse_stock_id uuid,p_quantity integer,
+  p_fefo_override boolean DEFAULT false,p_override_reason text DEFAULT NULL,
+  p_request_id uuid DEFAULT NULL
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+  SELECT public._phoenix_150_add_dispatch_line_v1(
+    p_dispatch_id,p_warehouse_stock_id,p_quantity,p_fefo_override,
+    p_override_reason,p_request_id
+  )
+$$;
+
+-- Revalidate every dispatch line in one locked transaction before the 149
+-- movement delegate.  One failure therefore means zero debits and zero status
+-- or success-audit changes.
+CREATE OR REPLACE FUNCTION public.phoenix_send_warehouse_dispatch(
+  p_request_id uuid,p_dispatch_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public,pg_temp
+AS $$
+DECLARE
+  v_actor uuid:=auth.uid();
+  v_actor_role text;
+  v_dispatch public.warehouse_dispatches%ROWTYPE;
+  v_prior record;
+  v_line record;
+  v_key text;
+  v_candidate_fp text;
+  v_earliest record;
+  v_result jsonb;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000';
+  END IF;
+  IF p_request_id IS NULL OR p_dispatch_id IS NULL THEN
+    RAISE EXCEPTION 'request_id_and_dispatch_id_required' USING ERRCODE='23514';
+  END IF;
+
+  -- Exact replay/conflict precedes all FEFO reads.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text,70169));
+  SELECT a.entity_id,a.payload INTO v_prior
+  FROM public.audit_logs a
+  WHERE a.action='warehouse_dispatch.sent'
+    AND a.payload->>'request_id'=p_request_id::text
+  ORDER BY a.created_at,a.id LIMIT 1;
+  IF FOUND THEN
+    IF v_prior.entity_id IS DISTINCT FROM p_dispatch_id THEN
+      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE='23505';
+    END IF;
+    RETURN jsonb_build_object(
+      'ok',true,'idempotent_replay',true,'dispatch_id',p_dispatch_id,
+      'status','sent','line_count',v_prior.payload->'line_count',
+      'movement_ids',v_prior.payload->'movement_ids'
+    );
+  END IF;
+
+  -- Canonical materials sort before suggestion/document/stock locks.
+  FOR v_key IN
+    SELECT DISTINCT ws.material_identity_key
+    FROM public.warehouse_dispatch_lines l
+    JOIN public.warehouse_stock ws ON ws.id=l.warehouse_stock_id
+    WHERE l.dispatch_id=p_dispatch_id
+    ORDER BY ws.material_identity_key
+  LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended('inv_material:'||v_key,0));
+  END LOOP;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('warehouse_dispatch:'||p_dispatch_id::text,0)
+  );
+  PERFORM public._phoenix_lock_linked_suggestions(
+    'dispatch_header',p_dispatch_id,false
+  );
+  SELECT * INTO v_dispatch FROM public.warehouse_dispatches
+  WHERE id=p_dispatch_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'dispatch_not_found' USING ERRCODE='P0002';
+  END IF;
+  IF v_dispatch.status<>'draft' THEN
+    RETURN public._phoenix_149_delegate_send_warehouse_dispatch(
+      p_request_id,p_dispatch_id
+    );
+  END IF;
+  PERFORM 1 FROM public.warehouse_dispatch_lines
+  WHERE dispatch_id=p_dispatch_id ORDER BY id FOR UPDATE;
+  PERFORM 1 FROM public.warehouses
+  WHERE id=v_dispatch.warehouse_id
+    AND organization_id=v_dispatch.organization_id FOR UPDATE;
+  PERFORM 1 FROM public.warehouse_stock ws
+  WHERE ws.organization_id=v_dispatch.organization_id
+    AND ws.warehouse_id=v_dispatch.warehouse_id
+    AND ws.material_identity_key IN (
+      SELECT DISTINCT s.material_identity_key
+      FROM public.warehouse_dispatch_lines l
+      JOIN public.warehouse_stock s ON s.id=l.warehouse_stock_id
+      WHERE l.dispatch_id=p_dispatch_id
+    )
+  ORDER BY ws.id FOR UPDATE;
+
+  SELECT p.role INTO v_actor_role FROM public.profiles p
+  WHERE p.id=v_actor AND p.status='active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE='42501';
+  END IF;
+  FOR v_line IN
+    SELECT l.*,ws.material_identity_key,ws.batch_number AS selected_batch,
+           ws.expiry_date AS selected_expiry
+    FROM public.warehouse_dispatch_lines l
+    JOIN public.warehouse_stock ws ON ws.id=l.warehouse_stock_id
+    WHERE l.dispatch_id=p_dispatch_id ORDER BY l.id
+  LOOP
+    SELECT b.* INTO v_earliest
+    FROM public._phoenix_inventory_fefo_batches_exact_v1(
+      v_dispatch.organization_id,'warehouse',v_dispatch.warehouse_id,
+      v_line.material_identity_key
+    ) b
+    ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC LIMIT 1;
+    v_candidate_fp:=public._phoenix_fefo_candidate_fingerprint_v1(
+      v_dispatch.organization_id,'warehouse',v_dispatch.warehouse_id,
+      v_line.material_identity_key
+    );
+    IF v_earliest.stock_id IS DISTINCT FROM v_line.warehouse_stock_id THEN
+      IF v_line.fefo_override_reason IS NULL
+         OR v_line.fefo_override_material_identity_key
+              IS DISTINCT FROM v_line.material_identity_key
+         OR v_line.fefo_candidate_fingerprint IS DISTINCT FROM v_candidate_fp THEN
+        RAISE EXCEPTION 'fefo_revalidation_required' USING ERRCODE='23514';
+      END IF;
+      IF NOT public.phoenix_profile_has_scoped_permission(
+        v_actor,'inventory.fefo_override',v_dispatch.organization_id,
+        v_dispatch.warehouse_id,NULL
+      ) THEN
+        RAISE EXCEPTION 'forbidden_fefo_override' USING ERRCODE='42501';
+      END IF;
+    END IF;
+  END LOOP;
+
+  v_result:=public._phoenix_149_delegate_send_warehouse_dispatch(
+    p_request_id,p_dispatch_id
+  );
+  -- Send-time audit is emitted only for overrides still required and valid.
+  FOR v_line IN
+    SELECT l.*,ws.material_identity_key,ws.batch_number AS selected_batch,
+           ws.expiry_date AS selected_expiry
+    FROM public.warehouse_dispatch_lines l
+    JOIN public.warehouse_stock ws ON ws.id=l.warehouse_stock_id
+    WHERE l.dispatch_id=p_dispatch_id AND l.fefo_override_reason IS NOT NULL
+    ORDER BY l.id
+  LOOP
+    SELECT b.* INTO v_earliest
+    FROM public._phoenix_inventory_fefo_batches_exact_v1(
+      v_dispatch.organization_id,'warehouse',v_dispatch.warehouse_id,
+      v_line.material_identity_key
+    ) b
+    ORDER BY b.expiry_date ASC NULLS LAST,b.stock_id ASC LIMIT 1;
+    IF v_earliest.stock_id IS DISTINCT FROM v_line.warehouse_stock_id THEN
+      INSERT INTO public.audit_logs(
+        organization_id,actor_id,actor_role,action,entity_type,entity_id,
+        entity_label,payload
+      ) VALUES (
+        v_dispatch.organization_id,v_actor,v_actor_role,
+        'inventory.fefo_override_revalidated','warehouse_dispatch_lines',
+        v_line.id,v_line.scientific_name,jsonb_build_object(
+          'request_id',p_request_id,'dispatch_id',p_dispatch_id,
+          'dispatch_line_id',v_line.id,
+          'material_identity_key',v_line.material_identity_key,
+          'earliest_stock_id',v_earliest.stock_id,
+          'earliest_batch',v_earliest.batch_number,
+          'earliest_expiry',v_earliest.expiry_date,
+          'selected_stock_id',v_line.warehouse_stock_id,
+          'selected_batch',v_line.selected_batch,
+          'selected_expiry',v_line.selected_expiry,
+          'candidate_fingerprint',v_line.fefo_candidate_fingerprint,
+          'reason',v_line.fefo_override_reason
+        )
+      );
+    END IF;
+  END LOOP;
+  RETURN v_result;
+END;
+$$;
+
+-- Public signatures remain stable.  Internal delegates/helpers are not
+-- executable by clients.  The one additive direct guarded signature reuses
+-- inventory.fefo_override and is also denied to anon.
+REVOKE ALL ON FUNCTION public.phoenix_send_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_send_warehouse_transfer_line_fefo_guarded(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_transfer_line_fefo_guarded(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_send_direct_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_direct_warehouse_transfer_line(
+  uuid,uuid,uuid,integer,text,uuid,text,text
+) TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.phoenix_send_direct_warehouse_transfer_line_fefo_guarded(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_direct_warehouse_transfer_line_fefo_guarded(
+  uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text
+) TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.phoenix_add_dispatch_line(uuid,uuid,integer)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_add_dispatch_line(uuid,uuid,integer)
+  TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_add_dispatch_line_fefo_guarded(
+  uuid,uuid,integer,boolean,text,uuid
+) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_add_dispatch_line_fefo_guarded(
+  uuid,uuid,integer,boolean,text,uuid
+) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_send_warehouse_dispatch(uuid,uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_send_warehouse_dispatch(uuid,uuid)
+  TO authenticated,service_role;
+
+-- ============================================================================
 -- Deployment self-check: fail atomically if the capsule is incomplete.
 -- ============================================================================
 DO $verify$
@@ -1602,6 +2630,91 @@ BEGIN
        SELECT 1 FROM public.permission_keys p WHERE p.key='inventory.fefo_override'
      ) THEN
     RAISE EXCEPTION '150_verify_failed: report_or_rbac_contract_missing';
+  END IF;
+
+  -- 6B-2 is deployment-fatal if a historical raw signature, private
+  -- delegate boundary, exact helper, or dispatch send revalidation is absent.
+  IF to_regprocedure(
+       'public.phoenix_inventory_fefo_batches(uuid,text,uuid,text,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public._phoenix_inventory_fefo_batches_exact_v1(uuid,text,uuid,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_send_warehouse_transfer_line_fefo_guarded(uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_send_direct_warehouse_transfer_line_fefo_guarded(uuid,uuid,uuid,integer,text,uuid,text,text,boolean,text)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_add_dispatch_line(uuid,uuid,integer)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_add_dispatch_line_fefo_guarded(uuid,uuid,integer,boolean,text,uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.phoenix_send_warehouse_dispatch(uuid,uuid)'
+     ) IS NULL THEN
+    RAISE EXCEPTION '150_verify_failed: fefo_public_signature_missing';
+  END IF;
+
+  IF has_function_privilege(
+       'anon',
+       'public.phoenix_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.phoenix_send_direct_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon','public.phoenix_add_dispatch_line(uuid,uuid,integer)','EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon','public.phoenix_send_warehouse_dispatch(uuid,uuid)','EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public._phoenix_150_delegate_send_warehouse_transfer_line(uuid,uuid,uuid,integer,text,uuid,text,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public._phoenix_150_delegate_add_dispatch_line(uuid,uuid,integer)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public._phoenix_inventory_fefo_batches_exact_v1(uuid,text,uuid,text)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION '150_verify_failed: fefo_acl_boundary';
+  END IF;
+
+  v_def:=pg_get_functiondef(
+    'public.phoenix_send_warehouse_dispatch(uuid,uuid)'::regprocedure
+  );
+  IF v_def NOT ILIKE '%fefo_revalidation_required%'
+     OR v_def NOT ILIKE '%fefo_candidate_fingerprint%'
+     OR v_def NOT ILIKE '%_phoenix_149_delegate_send_warehouse_dispatch%'
+     OR v_def NOT ILIKE '%ORDER BY ws.id FOR UPDATE%' THEN
+    RAISE EXCEPTION '150_verify_failed: dispatch_fefo_revalidation_incomplete';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid='public.warehouse_stock'::regclass
+      AND tgname='trg_warehouse_stock_fefo_insert_lock_v150'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION '150_verify_failed: fefo_scope_anchor_trigger_missing';
   END IF;
 END;
 $verify$;

@@ -167,9 +167,10 @@ describe('150 canonical material identity — static contract', () => {
     expect(guard).toContain("NEW.status IN ('open','accepted')");
   });
 
-  it('does not enter the deferred FEFO/return-cap/report/RBAC scopes', () => {
-    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_send_/i);
-    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_add_dispatch_line/i);
+  it('enters only 6B-2 FEFO while keeping return-cap/report/RBAC deferred', () => {
+    expect(sql).toContain('_phoenix_inventory_fefo_batches_exact_v1');
+    expect(sql).toContain('_phoenix_150_send_routed_v1');
+    expect(sql).toContain('_phoenix_150_add_dispatch_line_v1');
     expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_review_outlet_return/i);
     expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_movement_(timeline|ledger_report)/i);
     expect(sql).not.toMatch(/INSERT INTO public\.(permissions|role_permissions)/i);

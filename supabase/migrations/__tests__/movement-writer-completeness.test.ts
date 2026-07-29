@@ -305,12 +305,34 @@ describe('6. every reviewed writer keeps its SECURITY DEFINER hardening', () => 
     it(`${w.fn} is SECURITY DEFINER with a pinned search_path`, () => {
       // Look at the declaration, which sits just before the body.
       const src = sourceOf.get(latestWriters.get(w.fn)!.file)!;
-      const declRe = new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${w.fn}\\s*\\(`, 'g');
+      let declarationName = w.fn;
+      const renameRe = new RegExp(
+        `ALTER\\s+FUNCTION\\s+public\\.([a-zA-Z0-9_]+)\\s*\\([^;]*?\\)\\s+RENAME\\s+TO\\s+${w.fn}\\b`,
+        'i',
+      );
+      let renamed: RegExpMatchArray | null = null;
+      for (const file of migrationFiles) {
+        renamed = sourceOf.get(file)!.match(renameRe);
+        if (renamed) break;
+      }
+      if (renamed) declarationName = renamed[1];
+      const declRe = new RegExp(
+        `CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${declarationName}\\s*\\(`,
+        'g',
+      );
       let declIdx = -1;
+      let declarationSource = src;
       let dm: RegExpExecArray | null;
-      while ((dm = declRe.exec(src)) !== null) declIdx = dm.index; // last one wins
+      for (const file of migrationFiles) {
+        const candidate = sourceOf.get(file)!;
+        declRe.lastIndex = 0;
+        while ((dm = declRe.exec(candidate)) !== null) {
+          declIdx = dm.index;
+          declarationSource = candidate;
+        }
+      }
       expect(declIdx, `${w.fn} declaration not found`).toBeGreaterThanOrEqual(0);
-      const decl = src.slice(declIdx, declIdx + 3000);
+      const decl = declarationSource.slice(declIdx, declIdx + 3000);
       expect(decl).toMatch(/SECURITY DEFINER/);
       expect(decl).toMatch(/SET search_path\s*=\s*public,\s*pg_temp/);
     });
@@ -387,7 +409,7 @@ describe('10. every contract group has at least one reviewed writer', () => {
   it('every reviewed writer names the migration that made it compliant, within the reviewed range', () => {
     for (const w of REVIEWED_MOVEMENT_WRITERS) {
       expect(w.migration, w.fn).toBeGreaterThanOrEqual(126);
-      expect(w.migration, w.fn).toBeLessThanOrEqual(135);
+      expect(w.migration, w.fn).toBeLessThanOrEqual(150);
     }
   });
 });
