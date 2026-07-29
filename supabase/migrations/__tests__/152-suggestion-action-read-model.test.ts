@@ -32,6 +32,8 @@ describe('152 server-backed suggestion action read model', () => {
     expect(sql).not.toContain("'warehouse_transfer.send'");
     expect(sql).not.toContain("'warehouse_dispatch.create'");
     expect(sql).not.toContain("'outlet_stock.return_request'");
+    expect(sql).toContain('AND v_can_route');
+    expect(sql).toContain("'route_permission_required'");
   });
 
   it('keeps reject independent on inventory.act_on_suggestions', () => {
@@ -46,11 +48,20 @@ describe('152 server-backed suggestion action read model', () => {
     expect(sql).toContain("'openDocument', v_can_open");
     expect(sql).toContain("'document_link_missing'");
     expect(sql).toContain("'document_unavailable'");
+    expect(sql).toContain("'document_line_deleted'");
+    expect(sql).toContain("'accepted_document_line_deleted'");
   });
 
   it('does not expose an internal helper or create process-state storage', () => {
     expect(sql).not.toMatch(/CREATE TABLE/i);
     expect(sql).not.toMatch(/process_state|outbox|event_sourc|reservation|ledger/i);
     expect(sql).toContain('process_version := 1');
+  });
+
+  it('verifies the final RPC ACL in the migration itself', () => {
+    expect(sql).toContain('aclexplode(');
+    expect(sql).toContain("has_function_privilege(\n       'anon'");
+    expect(sql).toContain("NOT has_function_privilege(\n       'authenticated'");
+    expect(sql).toContain('VERIFY FAILED (152): suggestion action read-model ACL drift');
   });
 });

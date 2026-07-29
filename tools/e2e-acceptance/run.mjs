@@ -175,6 +175,7 @@ async function waitForText(page, substrings, timeoutMs = 20000) {
 async function main() {
   const browser = await launch();
   let allOk = true;
+  let phase8DraftId = null;
 
   // ── 1. outlet_officer A: login, dispense all 3 beneficiary types ─────────
   {
@@ -414,27 +415,62 @@ async function main() {
   {
     const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
     await login(page, seed.users.outletOfficerA.email, seed.password);
-    const switchToEnglish = page.getByRole('button', { name: 'Switch to English' });
-    if (await switchToEnglish.count()) await switchToEnglish.click();
+    if (await page.evaluate(() => document.documentElement.lang) !== 'en') {
+      const switchToEnglish = page.getByRole('button', { name: 'Switch to English' });
+      await switchToEnglish.waitFor({ state: 'visible', timeout: 15000 });
+      await switchToEnglish.click();
+      await page.waitForFunction(() => document.documentElement.lang === 'en');
+    }
+    record(
+      'Phase 8 desktop suggestion surface is English/LTR',
+      await page.evaluate(() =>
+        document.documentElement.lang === 'en'
+        && document.documentElement.dir === 'ltr'),
+    );
     await openSuggestionMaterials(page);
 
-    const create = page.getByRole('button', {
+    const actionSurface = page.getByTestId('outlet-suggestion-actions');
+    const create = actionSurface.getByRole('button', {
       name: new RegExp(`Create draft: ${seed.phase8.material}`),
     });
-    const offered = await create.isVisible().catch(() => false);
+    const offered = await create
+      .waitFor({ state: 'visible', timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
     record('Phase 8 outlet_officer is offered server-authorized Create draft without the broad queue key', offered);
     if (offered) {
       await create.click();
       await page.getByLabel('Document number').fill('E2E-PHASE8-DRAFT');
+      const writerResponsePromise = page.waitForResponse(
+        res =>
+          res.url().includes('/rpc/phoenix_create_transfer_draft_from_suggestion')
+          && res.request().method() === 'POST',
+        { timeout: 30000 },
+      );
       await page.getByRole('dialog').getByRole('button', { name: 'Create draft', exact: true }).click();
-      const openDraft = page.getByRole('button', { name: /Open draft: E2E-PHASE8-DRAFT/ });
+      const writerResponse = await writerResponsePromise.catch(() => null);
+      const writerPayload = writerResponse
+        ? await writerResponse.json().catch(() => null)
+        : null;
+      const openDraft = actionSurface.getByRole('button', { name: /Open draft: E2E-PHASE8-DRAFT/ });
       await openDraft.waitFor({ state: 'visible', timeout: 30000 });
-      const writerOk = restCalls.some(c =>
-        /200 rpc\/phoenix_create_transfer_draft_from_suggestion/.test(c)
-        && c.includes('"route_kind":"outlet_to_warehouse"'));
-      record('Phase 8 creates the outlet-return Draft through the unchanged writer RPC', writerOk);
+      phase8DraftId =
+        writerPayload?.outlet_return_request_id
+        ?? null;
+      record(
+        'Phase 8 creates the outlet-return Draft through the unchanged writer RPC',
+        writerResponse?.status() === 200
+        && writerPayload?.route_kind === 'outlet_to_warehouse'
+        && phase8DraftId !== null,
+      );
       await openDraft.click();
-      const openedExistingPage = await waitForText(page, ['E2E-PHASE8-DRAFT'], 20000);
+      const openedTarget = page.getByTestId('outlet-return-created');
+      const openedExistingPage = await openedTarget
+        .waitFor({ state: 'visible', timeout: 20000 })
+        .then(async () =>
+          phase8DraftId !== null
+          && ((await openedTarget.textContent()) ?? '').includes(phase8DraftId))
+        .catch(() => false);
       record('Phase 8 Open draft navigates to the existing outlet-return request page', openedExistingPage);
     }
     record('Phase 8 desktop/EN session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
@@ -480,9 +516,26 @@ async function main() {
     await openSuggestionMaterials(page, { mobile: true });
     const htmlLang = await page.evaluate(() => document.documentElement.lang);
     const htmlDir = await page.evaluate(() => document.documentElement.dir);
-    const openDraft = page.getByRole('button', { name: /فتح المسودة: E2E-PHASE8-DRAFT/ });
-    record('Phase 8 mobile/AR accepted suggestion exposes Open draft', await openDraft.isVisible().catch(() => false));
+    const openDraft = page
+      .getByTestId('outlet-suggestion-actions')
+      .getByRole('button', { name: /فتح المسودة: E2E-PHASE8-DRAFT/ });
+    const mobileOpenVisible = await openDraft
+      .waitFor({ state: 'visible', timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    record('Phase 8 mobile/AR accepted suggestion exposes Open draft', mobileOpenVisible);
     record('Phase 8 mobile suggestion surface is Arabic/RTL', htmlLang === 'ar' && htmlDir === 'rtl', `lang=${htmlLang} dir=${htmlDir}`);
+    if (mobileOpenVisible) {
+      await openDraft.click();
+      const openedTarget = page.getByTestId('outlet-return-created');
+      const openedExistingPage = await openedTarget
+        .waitFor({ state: 'visible', timeout: 20000 })
+        .then(async () =>
+          phase8DraftId !== null
+          && ((await openedTarget.textContent()) ?? '').includes(phase8DraftId))
+        .catch(() => false);
+      record('Phase 8 mobile Open draft reaches the existing return-request detail', openedExistingPage);
+    }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
     const bodyText = (await page.textContent('body')) ?? '';
     record('mobile viewport: no horizontal overflow', !overflow);

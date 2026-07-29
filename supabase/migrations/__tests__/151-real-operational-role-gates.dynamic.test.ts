@@ -396,6 +396,13 @@ run('151 real operational roles and scoped route policy gates', () => {
       createDraft: true,
       openDocument: false,
     });
+    const mixedBatch = await rig.asUser(CWM, (c: any) =>
+      readActions(c, [seed.suggestionId, randomUUID(), seed.suggestionId]));
+    expect(mixedBatch).toHaveLength(1);
+    expect(mixedBatch[0].suggestion_id).toBe(seed.suggestionId);
+    await expect(rig.asUser(CWM, (c: any) =>
+      readActions(c, Array.from({ length: 201 }, () => seed.suggestionId))),
+    ).rejects.toThrow(/suggestion_action_batch_too_large/);
     const queueOnly = (await rig.asUser(CWM_NO_ROUTE, (c: any) =>
       readActions(c, [seed.suggestionId])))[0];
     expect(queueOnly.allowed_actions.createDraft).toBe(false);
@@ -494,6 +501,11 @@ run('151 real operational roles and scoped route policy gates', () => {
       reject: false,
       openDocument: false,
     });
+    await rig.asAdmin((c: any) =>
+      c.query(`UPDATE profiles SET status='suspended' WHERE id=$1`, [OO]));
+    await expectDraftDenied(OO, seed.suggestionId, 'P151-R-STALE-READ');
+    await rig.asAdmin((c: any) =>
+      c.query(`UPDATE profiles SET status='active' WHERE id=$1`, [OO]));
     const queueOnly = (await rig.asUser(OO_ACT_ONLY, (c: any) =>
       readActions(c, [seed.suggestionId])))[0];
     expect(queueOnly.allowed_actions).toMatchObject({
@@ -524,6 +536,19 @@ run('151 real operational roles and scoped route policy gates', () => {
     expect(acceptedAction.allowed_actions.openDocument).toBe(true);
     expect(acceptedAction.document_kind).toBe('outlet_return_request');
     expect(acceptedAction.document_id).toBe(result.outlet_return_request_id);
+
+    await rig.asUser(OO, (c: any) =>
+      c.query(
+        `SELECT public.phoenix_delete_outlet_return_request_line($1)`,
+        [result.outlet_return_request_line_id],
+      ), { commit: true });
+    const lineDeletedAction = (await rig.asUser(OO, (c: any) =>
+      readActions(c, [seed.suggestionId])))[0];
+    expect(lineDeletedAction.current_state).toBe('accepted_document_line_deleted');
+    expect(lineDeletedAction.allowed_actions.openDocument).toBe(true);
+    expect(lineDeletedAction.action_reason.openDocument).toBe('document_line_deleted');
+    expect(lineDeletedAction.document_id).toBe(result.outlet_return_request_id);
+
     expect(await rig.asUser(OO_CROSS_ORG, (c: any) =>
       readActions(c, [seed.suggestionId]))).toEqual([]);
 
@@ -555,14 +580,34 @@ run('151 real operational roles and scoped route policy gates', () => {
           ) AS authenticated_execute,
           has_function_privilege(
             'anon','public.phoenix_create_transfer_draft_from_suggestion(uuid,text)','EXECUTE'
-          ) AS anon_execute
+          ) AS anon_execute,
+          has_function_privilege(
+            'authenticated','public.phoenix_get_inventory_suggestion_actions(uuid[])','EXECUTE'
+          ) AS action_authenticated_execute,
+          has_function_privilege(
+            'anon','public.phoenix_get_inventory_suggestion_actions(uuid[])','EXECUTE'
+          ) AS action_anon_execute,
+          has_function_privilege(
+            'authenticated',
+            'public._phoenix_authorize_suggestion_draft_route_v1(uuid,public.inventory_transfer_suggestions)',
+            'EXECUTE'
+          ) AS helper_authenticated_execute
       `)).rows[0];
-      expect(acl).toEqual({ authenticated_execute: true, anon_execute: false });
+      expect(acl).toEqual({
+        authenticated_execute: true,
+        anon_execute: false,
+        action_authenticated_execute: true,
+        action_anon_execute: false,
+        helper_authenticated_execute: false,
+      });
       expect((await c.query(`
         SELECT count(*)::integer AS n
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname LIKE '%shadow_authorization%'
       `)).rows[0].n).toBe(0);
     });
+    await expect(rig.asUser(null, (c: any) =>
+      readActions(c, [randomUUID()]), { role: 'anon' }),
+    ).rejects.toThrow(/permission denied|not_authenticated/);
   });
 });

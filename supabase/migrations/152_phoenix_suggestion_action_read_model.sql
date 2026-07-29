@@ -55,6 +55,7 @@ DECLARE
   v_s public.inventory_transfer_suggestions%ROWTYPE;
   v_policy_minutes integer;
   v_freshness text;
+  v_can_route boolean;
   v_can_create boolean;
   v_can_reject boolean;
   v_can_open boolean;
@@ -102,6 +103,7 @@ BEGIN
     v_can_create := false;
     v_can_reject := false;
     v_can_open := false;
+    v_can_route := false;
     v_document_kind := NULL;
     v_document_id := NULL;
     v_document_number := NULL;
@@ -122,16 +124,24 @@ BEGIN
       ELSE 'fresh'
     END;
 
-    IF v_s.status = 'open' AND v_freshness = 'fresh' THEN
-      BEGIN
-        -- Exact Migration 151 gate; route-role logic is not reproduced here.
-        PERFORM public._phoenix_authorize_suggestion_draft_route_v1(v_actor, v_s);
-        v_can_create := true;
-      EXCEPTION
-        WHEN insufficient_privilege OR invalid_authorization_specification THEN
-          v_can_create := false;
-      END;
-    END IF;
+    BEGIN
+      -- Exact Migration 151 gate; route-role logic is not reproduced here.
+      -- It also proves that the actor can enter the existing source-side
+      -- document surface. A target-side RLS reader must not receive an Open
+      -- action that routes to a writer-only page it cannot render.
+      PERFORM public._phoenix_authorize_suggestion_draft_route_v1(v_actor, v_s);
+      v_can_route := true;
+    EXCEPTION
+      WHEN insufficient_privilege
+        OR invalid_authorization_specification
+        OR check_violation THEN
+        v_can_route := false;
+    END;
+
+    v_can_create :=
+      v_s.status = 'open'
+      AND v_freshness = 'fresh'
+      AND v_can_route;
 
     -- Kept byte-for-byte equivalent to the reject writer's independent gate.
     v_can_reject := v_s.status = 'open' AND (
@@ -221,7 +231,10 @@ BEGIN
       END CASE;
     END IF;
 
-    v_can_open := v_s.status = 'accepted' AND v_document_id IS NOT NULL;
+    v_can_open :=
+      v_s.status = 'accepted'
+      AND v_document_id IS NOT NULL
+      AND v_can_route;
 
     v_create_reason := CASE
       WHEN v_can_create THEN 'ready'
@@ -235,9 +248,13 @@ BEGIN
       ELSE 'suggestion_permission_required'
     END;
     v_open_reason := CASE
+      WHEN v_can_open AND v_s.lineage_state = 'line_deleted'
+        THEN 'document_line_deleted'
       WHEN v_can_open THEN 'document_available'
       WHEN v_s.status <> 'accepted' THEN 'suggestion_not_accepted'
       WHEN v_link_id IS NULL THEN 'document_link_missing'
+      WHEN v_document_id IS NOT NULL AND NOT v_can_route
+        THEN 'route_permission_required'
       ELSE 'document_unavailable'
     END;
 
@@ -249,6 +266,8 @@ BEGIN
           THEN 'accepted_document_link_missing'
           ELSE 'accepted_document_unavailable'
         END
+      WHEN v_s.status = 'accepted' AND v_s.lineage_state = 'line_deleted'
+        THEN 'accepted_document_line_deleted'
       WHEN v_s.status = 'accepted'
         THEN 'accepted_document_' || COALESCE(v_document_status, 'available')
       ELSE v_s.status
@@ -284,6 +303,34 @@ REVOKE ALL ON FUNCTION public.phoenix_get_inventory_suggestion_actions(uuid[])
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.phoenix_get_inventory_suggestion_actions(uuid[])
   TO authenticated;
+
+DO $$
+BEGIN
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(p.proacl, acldefault('f', p.proowner))
+       ) acl
+       WHERE p.oid =
+         'public.phoenix_get_inventory_suggestion_actions(uuid[])'::regprocedure
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.phoenix_get_inventory_suggestion_actions(uuid[])',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.phoenix_get_inventory_suggestion_actions(uuid[])',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (152): suggestion action read-model ACL drift';
+  END IF;
+END;
+$$;
 
 COMMENT ON FUNCTION public.phoenix_get_inventory_suggestion_actions(uuid[]) IS
   'PHASE-8-152: bounded, read-only batch action model for already-visible '

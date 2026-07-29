@@ -1606,13 +1606,17 @@ export const T: Dict = {
   inv_subtitle:             { ar: 'إشارات وتنبيهات وتوصيات تحويل — قراءة وتحليل فقط', en: 'Signals, alerts and transfer recommendations — read & advise only' },
   inv_recommendation_only:  { ar: 'توصية فقط',                                  en: 'Recommendation only' },
   inv_recommendation_note:  { ar: 'توصية فقط — لا تحجز مخزونًا ولا تنفذ مناقلة تلقائية ولا حركة مخزون تلقائية. إنشاء مسودة يعيد التحقق من التوفر الحي، ثم تدخل ضمن دورة الإرسال والاستلام العادية.', en: 'Recommendation only — no acceptance, no stock movement, no automatic transfer. Creating a draft re-verifies live availability, then follows the normal send/receive cycle.' },
-  inv_stale_note:           { ar: 'قد تكون هذه التوصية قديمة بعد حركة مخزون لاحقة — اضغط تحديث التوصيات لإعادة التحقق قبل إنشاء مسودة.', en: 'This recommendation may be stale after later stock movement — refresh recommendations to re-validate before creating a draft.' },
+  inv_stale_note:           { ar: 'هذه التوصية قديمة ولا يمكن إنشاء مسودة منها حتى يعيد مستخدم مخول تحديثها.', en: 'This recommendation is stale and cannot create a draft until an authorized user refreshes it.' },
   inv_last_validated:       { ar: 'آخر تحقق',                                   en: 'Last validated' },
 
   /* Draft bridge (migration 147) — deliberately never "accept"/"execute" */
   inv_draft_status_badge:              { ar: 'أُنشئت مسودة',                       en: 'Draft created' },
   inv_draft_create_action:             { ar: 'إنشاء مسودة',                       en: 'Create draft' },
   inv_draft_open_action:               { ar: 'فتح المسودة',                       en: 'Open draft' },
+  inv_document_open_action:            { ar: 'فتح المستند',                       en: 'Open document' },
+  inv_document_opened:                 { ar: 'فُتح المستند المرتبط',                en: 'Linked document opened' },
+  inv_draft_line_deleted:              { ar: 'حُذف سطر المسودة المرتبط؛ افتح المستند لمراجعته وتسوية الحالة.', en: 'The linked draft line was deleted; open the document to review and reconcile it.' },
+  inv_draft_line_deleted_badge:        { ar: 'حُذف سطر المسودة',                   en: 'Draft line deleted' },
   inv_draft_link_missing:              { ar: 'رابط المسودة مفقود ويحتاج إلى تسوية.', en: 'The draft link is missing and needs reconciliation.' },
   inv_draft_unavailable:               { ar: 'المسودة غير متاحة ضمن نطاقك الحالي.', en: 'The draft is unavailable in your current scope.' },
   inv_document_unavailable_badge:      { ar: 'المستند غير متاح',                    en: 'Document unavailable' },

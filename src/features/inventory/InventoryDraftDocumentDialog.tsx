@@ -46,6 +46,8 @@ export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onC
       </label>
       <input
         id="inventory-draft-document-number"
+        aria-describedby={trimmed === '' ? 'inventory-draft-document-number-hint' : undefined}
+        aria-required="true"
         type="text"
         value={value}
         onChange={e => setValue(e.target.value)}
@@ -58,7 +60,7 @@ export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onC
         }}
       />
       {trimmed === '' && (
-        <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '6px' }}>{t('inv_draft_document_number_required', lang)}</div>
+        <div id="inventory-draft-document-number-hint" style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '6px' }}>{t('inv_draft_document_number_required', lang)}</div>
       )}
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '18px' }}>
         <PhoenixButton variant="ghost" size="sm" onClick={onCancel} disabled={busy}>

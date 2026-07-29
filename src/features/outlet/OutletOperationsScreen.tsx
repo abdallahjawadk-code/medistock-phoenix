@@ -31,6 +31,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
@@ -301,6 +302,7 @@ function OutletReturnsTab({
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
   const [created, setCreated] = useState<string | null>(initialRequestId ?? null);
+  const openedFromSuggestion = initialRequestId != null;
 
   // The receipt is built ONLY from freshly reloaded server rows for the created
   // request — never from the local draft. Missing/denied rows yield no document.
@@ -323,9 +325,26 @@ function OutletReturnsTab({
 
   return (
     <div>
-      {created && (
+      {created && receipt.loading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {created && receipt.error && (
+        <PhoenixErrorState
+          title={t('load_error', lang)}
+          message={receipt.error}
+          onRetry={receipt.reload}
+        />
+      )}
+      {created && !receipt.loading && !receipt.error && receipt.data && (
         <div data-testid="outlet-return-created" style={{ background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--ok)', marginBottom: '12px' }}>
-          {t('mv_line_succeeded', lang)} · <code>{created}</code>
+          {t(openedFromSuggestion ? 'inv_document_opened' : 'mv_line_succeeded', lang)} · <code>{created}</code>
+        </div>
+      )}
+      {created && !receipt.loading && !receipt.error && !receipt.data && (
+        <div
+          role="status"
+          data-testid="outlet-return-unavailable"
+          style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)', marginBottom: '12px' }}
+        >
+          {t('inv_draft_unavailable', lang)}
         </div>
       )}
       {created && receipt.data && (

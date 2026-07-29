@@ -129,16 +129,19 @@ export function InventoryIntelligencePanel({
   async function runRefreshAll() {
     if (!activeOrgId) return;
     setBusy(true);
+    const errors: string[] = [];
     if (canRecompute) {
       const res = await recomputeInventoryAlerts(activeOrgId);
       if (res.ok) alerts.reload();
+      else errors.push(res.error ?? 'error');
     }
     if (canSuggest) {
       const res2 = await suggestInventoryTransfers(activeOrgId);
       if (res2.ok) suggestions.reload();
+      else errors.push(res2.error ?? 'error');
     }
     setBusy(false);
-    flash(t('inv_saved', lang));
+    flash(errors[0] ?? t('inv_saved', lang));
   }
 
   if (!canView) {
@@ -257,6 +260,12 @@ export function InventoryIntelligencePanel({
                   targetScopeId: s.targetScopeId,
                 } satisfies SuggestionDocumentTarget
               : null;
+            const openActionLabel = t(
+              action.currentState === 'accepted_document_draft'
+                ? 'inv_draft_open_action'
+                : 'inv_document_open_action',
+              lang,
+            );
             return (
               <PhoenixCard key={s.id} padding="10px 14px" style={{ borderInlineStart: '3px solid var(--p)' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
@@ -265,6 +274,8 @@ export function InventoryIntelligencePanel({
                       {s.status === 'accepted' ? (
                         action.currentState === 'accepted_document_draft' ? (
                           <PhoenixStatusBadge variant="ok" label={t('inv_draft_status_badge', lang)} />
+                        ) : action.currentState === 'accepted_document_line_deleted' ? (
+                          <PhoenixStatusBadge variant="warn" label={t('inv_draft_line_deleted_badge', lang)} />
                         ) : action.currentState === 'accepted_document_link_missing'
                           || action.currentState === 'accepted_document_unavailable' ? (
                           <PhoenixStatusBadge variant="warn" label={t('inv_document_unavailable_badge', lang)} />
@@ -288,12 +299,20 @@ export function InventoryIntelligencePanel({
                       <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{s.scientificName}</span>
                     </div>
                     <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>
-                      {t(SCOPE_LABEL_KEY[s.sourceScopeKind], lang)} → {t(SCOPE_LABEL_KEY[s.targetScopeKind], lang)}
+                      <span
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        dir={lang === 'ar' ? 'rtl' : 'ltr'}
+                      >
+                        <span>{t(SCOPE_LABEL_KEY[s.sourceScopeKind], lang)}</span>
+                        <span aria-hidden="true">{lang === 'ar' ? '←' : '→'}</span>
+                        <span>{t(SCOPE_LABEL_KEY[s.targetScopeKind], lang)}</span>
+                      </span>
                       {' · '}{t('inv_qty', lang)}: {s.suggestedQuantity}
                       {s.fefoBatchNumber && <span dir="ltr"> · {t('inv_batch', lang)}: {s.fefoBatchNumber}</span>}
                     </div>
-                    <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
-                      {t('inv_last_validated', lang)}: {formatStableDateTime(s.lastValidatedAt, lang)}
+                    <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }}>
+                      {t('inv_last_validated', lang)}:{' '}
+                      <span dir="ltr">{formatStableDateTime(s.lastValidatedAt, lang)}</span>
                     </div>
                     {s.status === 'accepted' && action.documentNumber && (
                       <div style={{ fontSize: '10.5px', color: 'var(--ok)', marginTop: '3px' }} dir="auto">
@@ -309,6 +328,11 @@ export function InventoryIntelligencePanel({
                             : 'inv_draft_unavailable',
                           lang,
                         )}
+                      </div>
+                    )}
+                    {action.currentState === 'accepted_document_line_deleted' && (
+                      <div role="status" style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
+                        <PhoenixIcon name="warning" size={12} inline /> {t('inv_draft_line_deleted', lang)}
                       </div>
                     )}
                     {s.status === 'open' && stale && (
@@ -341,14 +365,20 @@ export function InventoryIntelligencePanel({
                           variant="primary"
                           size="sm"
                           disabled={busy || !onOpenDocument}
-                          aria-label={`${t('inv_draft_open_action', lang)}: ${action.documentNumber ?? s.scientificName}`}
+                          aria-label={`${openActionLabel}: ${action.documentNumber ?? s.scientificName}`}
                           onClick={() => onOpenDocument?.(openTarget)}
                         >
-                          {t('inv_draft_open_action', lang)}
+                          {openActionLabel}
                         </PhoenixButton>
                       )}
                       {action.allowedActions.reject && (
-                      <PhoenixButton variant="ghost" size="sm" disabled={busy} onClick={() => setPending({ kind: 'reject', suggestion: s })}>
+                      <PhoenixButton
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        aria-label={`${t('inv_action_reject', lang)}: ${s.scientificName}`}
+                        onClick={() => setPending({ kind: 'reject', suggestion: s })}
+                      >
                         {t('inv_action_reject', lang)}
                       </PhoenixButton>
                       )}

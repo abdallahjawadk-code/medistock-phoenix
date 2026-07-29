@@ -32,6 +32,7 @@ describe('Phase 8 server-backed suggestion actions', () => {
     expect(panel).not.toContain('myPermissions.has(PK.actOnSuggestions)');
     expect(panel).not.toMatch(/canAct && s\.status === 'open'/);
     expect(panel).not.toContain('isSuggestionStale');
+    expect(service).not.toContain('suggestion (needs inventory.act_on_suggestions');
   });
 
   it('renders truthful terminal, stale and unavailable-document states', () => {
@@ -40,6 +41,8 @@ describe('Phase 8 server-backed suggestion actions', () => {
     expect(panel).toContain('inv_suggestion_expired_badge');
     expect(panel).toContain('inv_draft_link_missing');
     expect(panel).toContain('inv_draft_unavailable');
+    expect(panel).toContain('accepted_document_line_deleted');
+    expect(panel).toContain('inv_draft_line_deleted');
   });
 
   it('provides bilingual accessible create/open actions', () => {
@@ -47,6 +50,8 @@ describe('Phase 8 server-backed suggestion actions', () => {
       'inv_draft_open_action',
       'inv_draft_link_missing',
       'inv_draft_unavailable',
+      'inv_document_open_action',
+      'inv_draft_line_deleted',
       'inv_suggestion_rejected_badge',
       'inv_suggestion_expired_badge',
     ]) {
@@ -54,7 +59,7 @@ describe('Phase 8 server-backed suggestion actions', () => {
       expect(T[key].en.trim()).not.toBe('');
     }
     expect(panel).toMatch(/aria-label=\{`\$\{t\('inv_draft_create_action'/);
-    expect(panel).toMatch(/aria-label=\{`\$\{t\('inv_draft_open_action'/);
+    expect(panel).toContain('aria-label={`${openActionLabel}: ${action.documentNumber ?? s.scientificName}`}');
     expect(panel).toMatch(/flexWrap: 'wrap'/);
   });
 });
@@ -83,5 +88,16 @@ describe('Phase 8 open-document wiring reuses the three current pages', () => {
     expect(outlet).toContain('initialRequestId=');
     expect(outlet).toContain('initialRequestId ?? null');
     expect(outlet).toContain('<InventoryIntelligencePanel onOpenDocument={onOpenSuggestionDocument} />');
+    expect(app).toContain("key={navigation?.suggestionDocument?.documentId ?? 'outlet-operations'}");
+    expect(outlet).toContain('data-testid="outlet-return-created"');
+    expect(outlet).toContain('receipt.data &&');
+  });
+
+  it('waits for the real action and proves the destination detail in browser acceptance', () => {
+    const e2e = read('tools/e2e-acceptance/run.mjs');
+    expect(e2e).toMatch(/create\s*\.waitFor\(\{ state: 'visible', timeout: 30000 \}\)/);
+    expect(e2e).toContain("page.getByTestId('outlet-return-created')");
+    expect(e2e).toContain("includes(phase8DraftId)");
+    expect(e2e).not.toContain("waitForText(page, ['E2E-PHASE8-DRAFT']");
   });
 });

@@ -123,6 +123,7 @@ export function AuthenticatedApp() {
       // warehouse ledger (migration 065) — see InventoryCenterScreen.
       case 3:
         return <InventoryCenterScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'inventory-center'}
           initialSuggestionDocument={navigation?.suggestionDocument}
         />;
       case 4:  return <RegistryScreen />;
@@ -158,12 +159,14 @@ export function AuthenticatedApp() {
       case 16: return <StatusEditorScreen />;
       case 17:
         return <NetworkManagementScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'network-management'}
           initialSuggestionDocument={navigation?.suggestionDocument}
         />;
       // OUTLET-CORRIDOR: the outlet operator's surface — receive, stock, returns,
       // history — scoped to assigned outlets (062), server re-checked per action.
       case 18:
         return <OutletOperationsScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'outlet-operations'}
           initialSuggestionDocument={navigation?.suggestionDocument}
           onOpenSuggestionDocument={openSuggestionDocument}
         />;

@@ -438,9 +438,10 @@ export interface CreateTransferDraftResult {
 
 /**
  * Create a real draft document from ONE open, still-valid computed
- * suggestion (needs inventory.act_on_suggestions AND the real corridor
- * permission for the suggestion's route_kind — the second is enforced by
- * delegation inside the RPC, not by this client). p_document_number is the
+ * suggestion. The real corridor permission for the suggestion's route_kind is
+ * enforced by Migration 151 and by the delegated writer; the broad
+ * inventory.act_on_suggestions key is intentionally not a prerequisite.
+ * p_document_number is the
  * human-supplied paper/document reference; it becomes the new draft's
  * request/dispatch/return number. This is NEVER an execution — the draft
  * still goes through the corridor's own submit/review/send/receive RPCs
