@@ -1,163 +1,49 @@
 # Edge Function — `admin-create-user`
 
-Secure server-side user creation for MediStock Phoenix V2. This is the **only**
-place the Supabase `service_role` key is used. It must never appear in the
-frontend bundle.
+Secure server-side user creation for MediStock Phoenix V2.
 
-## Why an Edge Function
+## Authentication and key contract
 
-Creating an `auth.users` row requires the Supabase Admin API, which needs the
-`service_role` key. Exposing that key in the browser would grant full database
-access to anyone. The frontend therefore calls this function with the caller's
-JWT; the function verifies the caller's identity and effective permissions
-server-side before creating anything.
+- The caller supplies `Authorization: Bearer <user-jwt>`.
+- A caller-scoped client uses the `default` key from
+  `SUPABASE_PUBLISHABLE_KEYS` and verifies the JWT with `auth.getUser()`.
+- A separate privileged client uses the `default` key from
+  `SUPABASE_SECRET_KEYS`.
+- Missing or invalid key-set JSON, a missing `default`, or the wrong key class
+  fails closed as `NOT_CONFIGURED`.
+- There is no fallback to `SUPABASE_SERVICE_ROLE_KEY`.
+- Key JSON, values, and fingerprints are never logged or returned.
 
-## Status
+The database RPC `phoenix_admin_provision_profile` remains the final authority
+for actor status, permission, official role, and organization scope.
 
-**Scaffold — not deployed.** Until it is deployed, the User Management UI keeps
-the create-user form disabled with a clear bilingual message. The frontend never
-fakes user creation and never creates local-only users.
+## Deployment boundary
 
-## Deploy (manual, when ready — not part of this phase)
+A3-3A is local hardening only. Do not deploy from this document.
 
-### Prerequisites
+In the separately authorized A3-3B window:
 
-- Migration `010_phoenix_user_permission_matrix.sql` must be applied first. The
-  function calls `phoenix_profile_has_permission` and the three permission RPCs
-  introduced in that migration.
-- `supabase` CLI must be installed and linked to the project.
+1. Confirm `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS`, and
+   `SUPABASE_SECRET_KEYS` are present by name without printing values.
+2. Keep production `verify_jwt=true` for the first modern-key deployment.
+3. Deploy only the reviewed commit through the manual Production workflow.
+4. Run authenticated RBAC/RLS, cross-organization, IDOR, suspended-actor, and
+   malformed-token smoke tests.
 
-### Required Supabase secrets
+## Request and response
 
-These are **Supabase Function secrets** — set them via the CLI or the Supabase
-dashboard under **Project → Settings → Edge Functions → Secrets**. They must
-**NOT** be added to Vercel or any frontend env file (`.env`, `VITE_*`).
+The existing wire contract is unchanged:
 
-| Secret | Source | Automatically injected? |
-|--------|--------|------------------------|
-| `SUPABASE_URL` | Project Settings → API → Project URL | Yes — injected by Supabase |
-| `SUPABASE_ANON_KEY` | Project Settings → API → anon key | Yes — injected by Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → service_role key | **No — must be set manually** |
-
-> **Security note:** `SUPABASE_SERVICE_ROLE_KEY` grants full database bypass of
-> RLS. It must live exclusively in the Deno edge runtime (`Deno.env`). It must
-> never appear in the browser bundle, Vercel env vars, or any `VITE_` prefix.
-> The function returns `NOT_CONFIGURED` (HTTP 500) if any secret is absent.
-
-### Deployment commands
-
-```bash
-# 1. Link to the project (once per machine).
-supabase link --project-ref <your-project-ref>
-
-# 2. Set the service role secret (SUPABASE_URL and SUPABASE_ANON_KEY are
-#    injected automatically — do not set them manually).
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-dashboard>
-
-# 3. Deploy the function.
-supabase functions deploy admin-create-user
-
-# 4. Verify the secret is present (should list SUPABASE_SERVICE_ROLE_KEY).
-supabase secrets list
-```
-
-### Smoke tests after deployment
-
-Run these manually once the function is live. Use a Supabase JWT from a logged-in
-session (copy from browser dev-tools → Application → Local Storage →
-`supabase.auth.token`).
-
-```bash
-BASE_URL="https://<project-ref>.supabase.co/functions/v1"
-TOKEN="<caller-jwt>"
-
-# 1. Unauthenticated request → 401 NOT_AUTHENTICATED
-curl -s -X POST "$BASE_URL/admin-create-user" \
-  -H "Content-Type: application/json" \
-  -d '{"full_name":"T","email":"t@t.com","organization_id":"00000000-0000-0000-0000-000000000000","role":"viewer"}' \
-  | jq .
-# Expected: {"ok":false,"error":"NOT_AUTHENTICATED"}
-
-# 2. Missing fields → 400 MISSING_FIELDS
-curl -s -X POST "$BASE_URL/admin-create-user" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@test.com"}' \
-  | jq .
-# Expected: {"ok":false,"error":"MISSING_FIELDS"}
-
-# 3. Invalid role → 400 INVALID_ROLE
-curl -s -X POST "$BASE_URL/admin-create-user" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"full_name":"T","email":"t@t.com","organization_id":"<uuid>","role":"hospital_admin"}' \
-  | jq .
-# Expected: {"ok":false,"error":"INVALID_ROLE"}
-
-# 4. Viewer tries to create a user → 403 INSUFFICIENT_PERMISSION
-# (Log in as a viewer account, then run a valid POST with their JWT)
-# Expected: {"ok":false,"error":"INSUFFICIENT_PERMISSION"}
-
-# 5. Non-super tries to create super_admin → 403 CANNOT_CREATE_SUPER_ADMIN
-# Expected: {"ok":false,"error":"CANNOT_CREATE_SUPER_ADMIN"}
-
-# 6. Happy path (run as super_admin with a real org UUID)
-curl -s -X POST "$BASE_URL/admin-create-user" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"full_name":"Smoke Test User","email":"smoketest@example.com","organization_id":"<org-uuid>","role":"viewer"}' \
-  | jq .
-# Expected: {"ok":true,"user_id":"<uuid>","role":"viewer","invited":true|false}
-# After verifying: delete the smoke-test user from auth.users in the dashboard.
-```
-
-## Authorization contract
-
-| Caller | Allowed |
-|--------|---------|
-| `super_admin` | Create any official role in any organization |
-| Non-super with `users.create` | Create non-super users **in their own organization only** |
-| Anyone else | Rejected (`INSUFFICIENT_PERMISSION`) |
-
-- Only `super_admin` may create `super_admin` (`CANNOT_CREATE_SUPER_ADMIN`).
-- No cross-organization creation for non-super (`CROSS_ORG_FORBIDDEN`).
-- Official roles only: `super_admin`, `warehouse_officer`, `port_officer`,
-  `monthly_status_officer`, `viewer`.
-
-## Creation modes
-
-### Mode 1 — Temporary password
-Pass `password` (min 8 chars) in the request body. The user's email is auto-confirmed
-and they can log in immediately with the password. Share the password securely out-of-band.
-The password is **never stored** in the `profiles` table.
-
-### Mode 2 — Email invite (default)
-Omit `password`. The user is created without email confirmation; a best-effort invite
-email is sent. `invited: true` in the response means the invite was sent successfully.
-
-## Request / response
-
-```
+```text
 POST /functions/v1/admin-create-user
 Authorization: Bearer <caller-jwt>
 
-// Mode 1 (password):
-{ "full_name": "...", "email": "...", "organization_id": "uuid", "role": "viewer", "password": "SecurePass123" }
+{ full_name, organization_id, role, login_mode, ... }
 
-// Mode 2 (invite):
-{ "full_name": "...", "email": "...", "organization_id": "uuid", "role": "viewer" }
-
-→ { "ok": true,  "user_id": "uuid", "role": "viewer", "invited": false, "password_mode": true  }
-→ { "ok": true,  "user_id": "uuid", "role": "viewer", "invited": true,  "password_mode": false }
-→ { "ok": false, "error": "INSUFFICIENT_PERMISSION" | "PASSWORD_TOO_SHORT" | ... }
+→ { ok: true, user_id, role, invited, password_mode }
+→ { ok: false, error, correlation_id? }
 ```
 
-Raw provider errors are never returned — only structured, safe error codes.
-
-## Safety notes
-
-- `service_role` is read from `Deno.env` only; never returned in a response.
-- `password` is never stored in the `profiles` table.
-- On profile-insert failure the orphaned auth user is deleted to keep state consistent.
-- The invite email is best-effort and non-fatal (only attempted in Mode 2).
-- This function never deletes users as part of creation (rollback on profile failure only).
+Temporary passwords are never logged, stored in `profiles`, or returned.
+Provisioning failure rolls back the newly created Auth user; rollback failure is
+reported using the correlation id without exposing provider details.

@@ -353,8 +353,9 @@ describe('Edge Function admin-create-user: local credentials mode', () => {
     expect(returnBlock.toLowerCase()).not.toMatch(/temporary_password|temporarypassword/);
   });
 
-  it('still reads the service key only from Deno.env', () => {
-    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  it('uses the shared modern secret-key resolver without a legacy fallback', () => {
+    expect(fn).toContain('resolveEdgeApiKeys');
+    expect(fn).not.toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
   });
 });
 

@@ -637,8 +637,9 @@ describe('User management frontend security', () => {
 describe('admin-create-user Edge Function', () => {
   const fn = readPhoenix('supabase/functions/admin-create-user/index.ts');
 
-  it('reads service_role only from the server env', () => {
-    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  it('reads only the named modern server key through the shared resolver', () => {
+    expect(fn).toContain('resolveEdgeApiKeys');
+    expect(fn).not.toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
   });
   it('verifies the caller and their users.create permission', () => {
     expect(fn).toContain('getUser');
@@ -691,15 +692,13 @@ describe('admin-user-lifecycle Edge Function', () => {
   // live in the atomic contract (migration 093); the Edge Function delegates.
   const mig = readPhoenix('supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql');
 
-  it('reads service_role only from the server env', () => {
-    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  it('reads only the named modern server key through the shared resolver', () => {
+    expect(fn).toContain('resolveEdgeApiKeys');
+    expect(fn).not.toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
   });
-  it('service_role key value is never in a json response body', () => {
-    // Acceptable: reading the key from Deno.env into a const.
-    // Not acceptable: leaking the key string in a response payload.
-    // Check: no line that calls json() also contains the literal key name as a value.
+  it('modern secret key value is never in a json response body', () => {
     const lines = fn.split('\n');
-    const leaks = lines.filter(l => l.includes('json(') && l.includes('SUPABASE_SERVICE_ROLE_KEY'));
+    const leaks = lines.filter(l => l.includes('json(') && l.includes('apiKeys.secretKey'));
     expect(leaks).toHaveLength(0);
   });
   it('guards against self-action (in the contract)', () => {
