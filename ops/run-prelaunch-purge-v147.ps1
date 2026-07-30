@@ -1,7 +1,7 @@
 <#
 ================================================================================
- MediStock Phoenix — OWNER-RUN PRODUCTION COMMAND
- A3-3B0N-R7 / Option A — full pre-launch purge at migration ceiling 147
+ MediStock Phoenix -- OWNER-RUN PRODUCTION COMMAND
+ A3-3B0N-R7 / Option A -- full pre-launch purge at migration ceiling 147
 
  RUN THIS YOURSELF, from a visible PowerShell window. It is the only step of the
  release gate that touches Production data.
@@ -56,7 +56,7 @@ function Log([string]$m) {
 function Fail([string]$m) { Log "STOP: $m"; throw $m }
 function Section([string]$t) { Write-Host ''; Write-Host ('=' * 78); Write-Host "  $t"; Write-Host ('=' * 78) }
 
-# psql helper — password travels via PGPASSWORD in the environment, never argv.
+# psql helper -- password travels via PGPASSWORD in the environment, never argv.
 function Invoke-Psql {
     param([string]$Sql, [string]$File, [switch]$Quiet)
     $conn = "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef " +
@@ -74,7 +74,7 @@ try {
     New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
 
     # ---------------------------------------------------------------- 1. drift
-    Section '1. INTEGRITY — the SQL must be exactly what was reviewed and tested'
+    Section '1. INTEGRITY -- the SQL must be exactly what was reviewed and tested'
     if (-not (Test-Path $PurgeSql)) { Fail "purge SQL not found: $PurgeSql" }
     if (-not (Test-Path $PurgeSha)) { Fail "SHA-256 pin not found: $PurgeSha" }
     $expected = (Get-Content $PurgeSha -Raw).Trim().ToLower()
@@ -85,7 +85,7 @@ try {
     Log "purge SQL SHA-256 verified: $actual"
 
     # ------------------------------------------------------------------ 2. git
-    Section '2. WORKTREE — clean, and on the reviewed commit'
+    Section '2. WORKTREE -- clean, and on the reviewed commit'
     Push-Location $RepoRoot
     try {
         $dirty = (& git status --porcelain) | Where-Object { $_ -notmatch 'supabase/\.temp' }
@@ -95,7 +95,7 @@ try {
     } finally { Pop-Location }
 
     # ------------------------------------------------------------ 3. credential
-    Section '3. CREDENTIAL — entered once, held in process memory only'
+    Section '3. CREDENTIAL -- entered once, held in process memory only'
     Write-Host 'MediStock Phoenix - Supabase Production Purge'
     Write-Host "Keeper account that will SURVIVE: $KeeperEmail"
     Write-Host ''
@@ -171,13 +171,13 @@ ORDER BY 1;
     if ($LASTEXITCODE -ne 0) { Fail "pg_dump failed with exit code $LASTEXITCODE" }
     $size = (Get-Item $dump).Length
     Log ("local dump created: {0:N0} bytes" -f $size)
-    if ($size -lt 100KB) { Fail "dump is implausibly small ($size bytes) — refusing to treat it as a backup" }
+    if ($size -lt 100KB) { Fail "dump is implausibly small ($size bytes) -- refusing to treat it as a backup" }
 
     Write-Host ''
     Write-Host 'Confirm a RESTORABLE Supabase platform backup exists (dashboard > Database > Backups).'
     Write-Host 'The local dump above is a second line of defence, not a substitute.'
     $ok = Read-Host 'Type EXACTLY  I HAVE A RESTORABLE BACKUP  to continue'
-    if ($ok -ne 'I HAVE A RESTORABLE BACKUP') { Fail 'backup not confirmed — STOP_RESTORABLE_BACKUP_UNVERIFIED' }
+    if ($ok -ne 'I HAVE A RESTORABLE BACKUP') { Fail 'backup not confirmed -- STOP_RESTORABLE_BACKUP_UNVERIFIED' }
     Log 'backup gate passed'
 
     # -------------------------------------------------------------- 6. storage
@@ -195,7 +195,7 @@ re-run this script. This run is stopping before any deletion.
     Log 'storage is empty'
 
     # ---------------------------------------------------------------- 7. PURGE
-    Section '7. THE PURGE — one atomic transaction, one attempt'
+    Section '7. THE PURGE -- one atomic transaction, one attempt'
     Write-Host 'This permanently deletes ALL business data. Only the keeper account survives.'
     Write-Host "Keeper: $KeeperEmail"
     $go = Read-Host 'Type EXACTLY  PURGE PRODUCTION NOW  to proceed'
