@@ -53,3 +53,8 @@ tools/ocr-eval/fixtures/
 /ara.traineddata
 /eng.traineddata
 /*.traineddata
+
+# TLS trust material: the pinned .sha256 IS committed, the certificate is not.
+ops/certs/*.crt
+ops/certs/*.pem
+ops/certs/*.key

@@ -107,18 +107,47 @@ describe('purge runner — PowerShell compatibility', () => {
     expect(src).not.toMatch(/Set-Content[^\n]*\$env:PGPASSWORD/);
   });
 
-  it('verifies TLS against the OS trust store, with no CA file and no downgrade', () => {
+  it('verifies TLS against an explicit pinned CA, not the OS trust store', () => {
+    // Canonical memory v11 3.2: an explicit, checksum-pinned Supabase CA is the
+    // approved trust root. sslrootcert=system was the PREVIOUS approach and is
+    // demoted to unproven -- an unverifiable trust root fails silently open,
+    // which is worse than a missing one that fails closed.
     const src = readFileSync(RUNNER, 'utf8');
-    // sslrootcert=system (libpq 16+) is what makes verify-full work without a
-    // per-user CA bundle. Its absence is what killed the previous live attempt.
     expect(src).toContain('sslmode=verify-full');
-    expect(src).toContain('sslrootcert=system');
-    // No file-based CA anywhere, and no weaker mode.
-    expect(src).not.toMatch(/root\.crt/i);
-    expect(src).not.toMatch(/sslrootcert\s*=\s*(?!system)[^\s"']+/);
+    expect(src).toMatch(/sslrootcert=\$ca/);
+    expect(src, 'the connection must not fall back to the OS trust store').not.toMatch(
+      /return\s+"[^"]*sslrootcert=system/,
+    );
     for (const weak of ['sslmode=require', 'sslmode=prefer', 'sslmode=allow', 'sslmode=disable']) {
-      expect(src, `${weak} would downgrade verification`).not.toContain(weak);
+      expect(src, `${weak} encrypts without authenticating the server`).not.toContain(weak);
     }
+  });
+
+  it('proves the CA file and its pinned checksum before any credential', () => {
+    const src = readFileSync(RUNNER, 'utf8');
+    for (const stop of [
+      'STOP_CA_CERTIFICATE_MISSING',
+      'STOP_CA_CERTIFICATE_INVALID',
+      'STOP_CA_CHECKSUM_MISSING',
+      'STOP_CA_CHECKSUM_MISMATCH',
+    ]) {
+      expect(src, `${stop} must be enforced`).toContain(stop);
+    }
+    expect(src).toMatch(/Get-FileHash -Path \$CaCertPath -Algorithm SHA256/);
+    const caGate = src.indexOf('Assert-CaCertificate\n');
+    const prompt = src.indexOf("Read-Host 'Enter Supabase Database Password'");
+    expect(caGate, 'the CA gate must be invoked').toBeGreaterThan(-1);
+    expect(caGate, 'CA verification must precede the password prompt').toBeLessThan(prompt);
+  });
+
+  it('requires a client toolchain matching the Production major, not merely newer', () => {
+    // v11 3.4: Production is PostgreSQL 17.x. A newer pg_dump can emit archive
+    // features a 17 server cannot restore, which would make the backup unusable
+    // exactly when it is needed -- so equality, not >=.
+    const src = readFileSync(RUNNER, 'utf8');
+    expect(src).toMatch(/\$RequiredPgMajor\s*=\s*17/);
+    expect(src).toMatch(/\$mp -eq \$RequiredPgMajor -and \$md -eq \$RequiredPgMajor/);
+    expect(src, 'a >= comparison would admit an 18.x toolchain').not.toMatch(/\$mp -ge 16/);
   });
 
   it('drives psql and pg_dump from one connection builder', () => {
@@ -131,11 +160,9 @@ describe('purge runner — PowerShell compatibility', () => {
     expect(src, 'psql must use the shared builder').toMatch(/\$script:PsqlExe \(Get-ConnString\)/);
   });
 
-  it('rejects old client tools BEFORE prompting for a password', () => {
+  it('rejects a mismatched toolchain BEFORE prompting for a password', () => {
     const src = readFileSync(RUNNER, 'utf8');
     expect(src).toContain('STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED');
-    expect(src).toMatch(/-ge 16/);
-    expect(src).toMatch(/-ge 17/); // pg_dump must not be older than the server
     const gateAt = src.indexOf('Resolve-PgClientTools\n');
     const promptAt = src.indexOf("Read-Host 'Enter Supabase Database Password'");
     expect(gateAt, 'the version gate must be invoked').toBeGreaterThan(-1);

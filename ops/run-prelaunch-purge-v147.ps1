@@ -44,6 +44,12 @@ $ProjectRef   = 'eyrzxgfkvqybjdgyphap'
 $PoolerHost   = 'aws-1-ap-south-1.pooler.supabase.com'
 $ExpectedCeiling = 147
 
+# v11 3.4: match the Production server major exactly (Production is 17.x).
+$RequiredPgMajor = 17
+# v11 3.2/3.3: explicit CA certificate + pinned SHA-256, verified before any credential.
+$CaCertPath   = Join-Path $RepoRoot 'ops\certs\supabase-prod-ca.crt'
+$CaShaPath    = Join-Path $RepoRoot 'ops\certs\supabase-prod-ca.crt.sha256'
+
 $WorkDir = Join-Path $env:TEMP ('phoenix-purge-' + (Get-Date -Format 'yyyyMMddTHHmmssZ'))
 $BstrPtr = [IntPtr]::Zero
 $LogLines = New-Object System.Collections.Generic.List[string]
@@ -75,22 +81,30 @@ function Get-PgMajor([string]$exe) {
     return 0
 }
 
+# v11 3.4: the client toolchain must MATCH the Production server major, not merely
+# exceed it. Production is PostgreSQL 17.x, so an 18.x client is refused: a newer
+# pg_dump can emit archive features a 17 server cannot restore, which would make
+# the "backup" unusable exactly when it is needed. PG18 is a forward-compatibility
+# CI concern, never the tool that touches Production.
 function Resolve-PgClientTools {
     $psqlCandidates = @()
     $psqlCandidates += (Get-Command psql -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
-    foreach ($root in @("$env:ProgramFiles\PostgreSQL", "$env:USERPROFILE\scoop\apps\postgresql")) {
-        if (Test-Path $root) {
+    foreach ($root in @("$env:ProgramFiles\PostgreSQL", "${env:ProgramFiles(x86)}\PostgreSQL",
+                        "$env:USERPROFILE\scoop\apps\postgresql", "$env:LOCALAPPDATA\Programs\PostgreSQL")) {
+        if ($root -and (Test-Path $root)) {
             $psqlCandidates += (Get-ChildItem $root -Filter 'psql.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
                                 Where-Object { $_.FullName -notlike '*pgAdmin*' } | ForEach-Object { $_.FullName })
         }
     }
+    $seen = @()
     foreach ($p in ($psqlCandidates | Select-Object -Unique)) {
         if (-not (Test-Path $p)) { continue }
         $d = Join-Path (Split-Path -Parent $p) 'pg_dump.exe'
         if (-not (Test-Path $d)) { continue }          # same distribution only
         $mp = Get-PgMajor $p
         $md = Get-PgMajor $d
-        if ($mp -ge 16 -and $md -ge 16 -and $md -ge 17) {
+        $seen += ("{0} (psql {1} / pg_dump {2})" -f (Split-Path -Parent $p), $mp, $md)
+        if ($mp -eq $RequiredPgMajor -and $md -eq $RequiredPgMajor) {
             $script:PsqlExe = $p
             $script:DumpExe = $d
             Log ("psql     : $p (major $mp)")
@@ -98,22 +112,56 @@ function Resolve-PgClientTools {
             return
         }
     }
-    Fail 'STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED -- need psql >= 16 and pg_dump >= 17 from one distribution (pg_dump must be >= the Production server major 17).'
+    Fail ("STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED -- need psql AND pg_dump both major $RequiredPgMajor " +
+          "(matching the Production server) from one distribution.`nFound:`n  " + (($seen | Select-Object -Unique) -join "`n  "))
+}
+
+# ------------------------------------------------------------- CA trust
+# v11 3.2/3.3: the approved path is an EXPLICIT Supabase CA certificate at a
+# canonical location with a PINNED SHA-256, not the OS trust store. The pin is
+# what makes this meaningful -- without it, "a file exists" proves nothing.
+# A missing, empty, or mismatched certificate must abort BEFORE the password
+# prompt. The certificate is public, but it is never printed or logged.
+function Assert-CaCertificate {
+    if (-not (Test-Path $CaCertPath)) {
+        Fail ("STOP_CA_CERTIFICATE_MISSING -- expected the Supabase CA certificate at:`n  $CaCertPath`n" +
+              "Download it from the Supabase dashboard (Project Settings -> Database -> SSL Configuration), " +
+              "place it there, then run ops\pin-supabase-ca.ps1 once to record its SHA-256.")
+    }
+    $len = (Get-Item $CaCertPath).Length
+    if ($len -lt 512) { Fail "STOP_CA_CERTIFICATE_INVALID -- certificate file is $len bytes, which is too small to be a CA bundle." }
+
+    if (-not (Test-Path $CaShaPath)) {
+        Fail ("STOP_CA_CHECKSUM_MISSING -- no pinned SHA-256 at:`n  $CaShaPath`n" +
+              "Run ops\pin-supabase-ca.ps1 once, after verifying the certificate's provenance.")
+    }
+    $expected = (Get-Content $CaShaPath -Raw).Trim().ToLower()
+    if ($expected -notmatch '^[0-9a-f]{64}$') { Fail 'STOP_CA_CHECKSUM_INVALID -- pinned checksum is not a SHA-256 hex digest.' }
+    $actual = (Get-FileHash -Path $CaCertPath -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $expected) {
+        Fail ("STOP_CA_CHECKSUM_MISMATCH -- the CA certificate does not match its pin.`n" +
+              "  expected $expected`n  actual   $actual`nRefusing to connect with an unverified trust root.")
+    }
+    Log "CA certificate verified against its pinned SHA-256"
 }
 
 # ------------------------------------------------------- connection builder
 # ONE builder for psql AND pg_dump, so they can never drift apart.
 #
-# sslrootcert=system (libpq 16+) tells libpq to verify against the OPERATING
-# SYSTEM trust store. Without it, sslmode=verify-full falls back to a per-user CA
-# bundle file that does not exist on a clean machine, and the connection dies
-# before it is even attempted -- which is exactly what stopped the previous run.
-# This keeps FULL verification (hostname + chain); it is not a downgrade and
-# needs no manual certificate download. The password is NEVER part of this
-# string; it travels only in PGPASSWORD inside the child process environment.
+# v11 3.2: sslrootcert points at an EXPLICIT, checksum-pinned Supabase CA file.
+#
+# sslrootcert=system was the previous approach and is NOT used here. It is only
+# permissible once an automated test on the target Windows machine proves the OS
+# trust store actually validates this host under verify-full for BOTH psql and
+# pg_dump; until then it is an unproven assumption, and an unproven trust root is
+# worse than a missing one because it fails silently open rather than closed.
+#
+# sslmode stays verify-full (hostname + chain). The password is NEVER part of
+# this string; it travels only in PGPASSWORD inside the child process environment.
 function Get-ConnString {
+    $ca = $CaCertPath -replace '\\', '/'
     return "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef " +
-           "sslmode=verify-full sslrootcert=system connect_timeout=10 " +
+           "sslmode=verify-full sslrootcert=$ca connect_timeout=10 " +
            "application_name=phoenix_owner_purge"
 }
 
@@ -155,16 +203,16 @@ try {
     # --------------------------------------------- 2b. PRE-CREDENTIAL GATE
     # Everything that can fail without a password is proven FIRST, so a bad
     # toolchain or a weakened SSL contract can never reach a password prompt.
-    Section '2b. PRE-CREDENTIAL GATE -- client tools and SSL contract'
+    Section '2b. PRE-CREDENTIAL GATE -- client tools, CA certificate, SSL contract'
     Resolve-PgClientTools
+    Assert-CaCertificate
     $conn = Get-ConnString
-    foreach ($required in @('sslmode=verify-full', 'sslrootcert=system')) {
-        if ($conn -notmatch [regex]::Escape($required)) { Fail "connection string is missing $required" }
-        Log "connection contract: $required"
-    }
+    if ($conn -notmatch 'sslmode=verify-full') { Fail 'connection string is missing sslmode=verify-full' }
     if ($conn -match 'sslmode=(require|prefer|allow|disable)') { Fail 'refusing a weakened sslmode' }
+    if ($conn -notmatch 'sslrootcert=') { Fail 'connection string is missing an explicit sslrootcert' }
+    if ($conn -match 'sslrootcert=system') { Fail 'sslrootcert=system is not proven for this host; an explicit pinned CA is required' }
     if ($conn -match 'password=') { Fail 'password must never appear in the connection string' }
-    Log 'SSL: full verification against the OS trust store (no CA file needed)'
+    Log 'SSL: verify-full against the explicit, checksum-pinned Supabase CA'
 
     # ------------------------------------------------------------ 3. credential
     Section '3. CREDENTIAL -- entered once, held in process memory only'
