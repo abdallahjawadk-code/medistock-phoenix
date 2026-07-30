@@ -48,6 +48,12 @@ $WorkDir = Join-Path $env:TEMP ('phoenix-purge-' + (Get-Date -Format 'yyyyMMddTH
 $BstrPtr = [IntPtr]::Zero
 $LogLines = New-Object System.Collections.Generic.List[string]
 
+# Set only once a real dump exists, so the final report can never claim a backup
+# that was never written.
+$script:DumpPath = $null
+$script:DumpSize = 0
+$script:DumpHash = $null
+
 function Log([string]$m) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ'), $m
     Write-Host $line
@@ -56,15 +62,67 @@ function Log([string]$m) {
 function Fail([string]$m) { Log "STOP: $m"; throw $m }
 function Section([string]$t) { Write-Host ''; Write-Host ('=' * 78); Write-Host "  $t"; Write-Host ('=' * 78) }
 
-# psql helper -- password travels via PGPASSWORD in the environment, never argv.
+# ---------------------------------------------------------------- tooling
+# Absolute paths, resolved once and preferring a single distribution, so PATH
+# order cannot silently pair a new psql with an old pg_dump.
+$script:PsqlExe = $null
+$script:DumpExe = $null
+
+function Get-PgMajor([string]$exe) {
+    $v = & $exe --version 2>&1
+    if ($v -match '(\d+)\.\d+') { return [int]$Matches[1] }
+    if ($v -match '(\d+)')      { return [int]$Matches[1] }
+    return 0
+}
+
+function Resolve-PgClientTools {
+    $psqlCandidates = @()
+    $psqlCandidates += (Get-Command psql -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+    foreach ($root in @("$env:ProgramFiles\PostgreSQL", "$env:USERPROFILE\scoop\apps\postgresql")) {
+        if (Test-Path $root) {
+            $psqlCandidates += (Get-ChildItem $root -Filter 'psql.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                                Where-Object { $_.FullName -notlike '*pgAdmin*' } | ForEach-Object { $_.FullName })
+        }
+    }
+    foreach ($p in ($psqlCandidates | Select-Object -Unique)) {
+        if (-not (Test-Path $p)) { continue }
+        $d = Join-Path (Split-Path -Parent $p) 'pg_dump.exe'
+        if (-not (Test-Path $d)) { continue }          # same distribution only
+        $mp = Get-PgMajor $p
+        $md = Get-PgMajor $d
+        if ($mp -ge 16 -and $md -ge 16 -and $md -ge 17) {
+            $script:PsqlExe = $p
+            $script:DumpExe = $d
+            Log ("psql     : $p (major $mp)")
+            Log ("pg_dump  : $d (major $md)")
+            return
+        }
+    }
+    Fail 'STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED -- need psql >= 16 and pg_dump >= 17 from one distribution (pg_dump must be >= the Production server major 17).'
+}
+
+# ------------------------------------------------------- connection builder
+# ONE builder for psql AND pg_dump, so they can never drift apart.
+#
+# sslrootcert=system (libpq 16+) tells libpq to verify against the OPERATING
+# SYSTEM trust store. Without it, sslmode=verify-full falls back to a per-user CA
+# bundle file that does not exist on a clean machine, and the connection dies
+# before it is even attempted -- which is exactly what stopped the previous run.
+# This keeps FULL verification (hostname + chain); it is not a downgrade and
+# needs no manual certificate download. The password is NEVER part of this
+# string; it travels only in PGPASSWORD inside the child process environment.
+function Get-ConnString {
+    return "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef " +
+           "sslmode=verify-full sslrootcert=system connect_timeout=10 " +
+           "application_name=phoenix_owner_purge"
+}
+
 function Invoke-Psql {
     param([string]$Sql, [string]$File, [switch]$Quiet)
-    $conn = "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef " +
-            "sslmode=verify-full connect_timeout=10 application_name=phoenix_owner_purge"
-    $args = @('-X', '-v', 'ON_ERROR_STOP=1', '--no-password')
-    if ($Quiet) { $args += @('-A', '-t') }
-    if ($File)  { $args += @('-f', $File) } else { $args += @('-c', $Sql) }
-    $out = & psql $conn @args 2>&1
+    $psqlArgs = @('-X', '-v', 'ON_ERROR_STOP=1', '--no-password')
+    if ($Quiet) { $psqlArgs += @('-A', '-t') }
+    if ($File)  { $psqlArgs += @('-f', $File) } else { $psqlArgs += @('-c', $Sql) }
+    $out = & $script:PsqlExe (Get-ConnString) @psqlArgs 2>&1
     if ($LASTEXITCODE -ne 0) { throw ("psql exited $LASTEXITCODE`n" + ($out -join "`n")) }
     return $out
 }
@@ -93,6 +151,20 @@ try {
         $head = (& git rev-parse HEAD).Trim()
         Log "HEAD = $head"
     } finally { Pop-Location }
+
+    # --------------------------------------------- 2b. PRE-CREDENTIAL GATE
+    # Everything that can fail without a password is proven FIRST, so a bad
+    # toolchain or a weakened SSL contract can never reach a password prompt.
+    Section '2b. PRE-CREDENTIAL GATE -- client tools and SSL contract'
+    Resolve-PgClientTools
+    $conn = Get-ConnString
+    foreach ($required in @('sslmode=verify-full', 'sslrootcert=system')) {
+        if ($conn -notmatch [regex]::Escape($required)) { Fail "connection string is missing $required" }
+        Log "connection contract: $required"
+    }
+    if ($conn -match 'sslmode=(require|prefer|allow|disable)') { Fail 'refusing a weakened sslmode' }
+    if ($conn -match 'password=') { Fail 'password must never appear in the connection string' }
+    Log 'SSL: full verification against the OS trust store (no CA file needed)'
 
     # ------------------------------------------------------------ 3. credential
     Section '3. CREDENTIAL -- entered once, held in process memory only'
@@ -166,12 +238,25 @@ ORDER BY 1;
     Section '5. BACKUP GATE'
     $dump = Join-Path $WorkDir 'pre-purge.dump'
     Log "creating local logical backup -> $dump"
-    $conn = "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef sslmode=verify-full"
-    & pg_dump $conn --format=custom --no-owner --no-privileges --file $dump
-    if ($LASTEXITCODE -ne 0) { Fail "pg_dump failed with exit code $LASTEXITCODE" }
+    # Same builder as psql: identical host, user and SSL contract.
+    & $script:DumpExe (Get-ConnString) --format=custom --no-owner --no-privileges --file $dump
+    if ($LASTEXITCODE -ne 0) {
+        # Never leave a truncated file that a later step could mistake for a backup.
+        if (Test-Path $dump) { Remove-Item $dump -Force -ErrorAction SilentlyContinue }
+        Fail "pg_dump failed with exit code $LASTEXITCODE"
+    }
+    if (-not (Test-Path $dump)) { Fail 'pg_dump reported success but produced no file' }
     $size = (Get-Item $dump).Length
+    if ($size -lt 100KB) {
+        Remove-Item $dump -Force -ErrorAction SilentlyContinue
+        Fail "dump is implausibly small ($size bytes) -- refusing to treat it as a backup"
+    }
+    $dumpHash = (Get-FileHash -Path $dump -Algorithm SHA256).Hash.ToLower()
+    $script:DumpPath = $dump
+    $script:DumpSize = $size
+    $script:DumpHash = $dumpHash
     Log ("local dump created: {0:N0} bytes" -f $size)
-    if ($size -lt 100KB) { Fail "dump is implausibly small ($size bytes) -- refusing to treat it as a backup" }
+    Log ("local dump SHA-256: $dumpHash")
 
     Write-Host ''
     Write-Host 'Confirm a RESTORABLE Supabase platform backup exists (dashboard > Database > Backups).'
@@ -298,8 +383,15 @@ finally {
         $LogLines | Set-Content -Path $report -Encoding utf8
         Write-Host ''
         Write-Host "Redacted report : $report"
-        Write-Host "Local dump kept : $(Join-Path $WorkDir 'pre-purge.dump')"
-        Write-Host 'Delete the dump only after you are satisfied with the outcome.'
+        # Only ever claim a backup that actually exists on disk.
+        if ($script:DumpPath -and (Test-Path $script:DumpPath)) {
+            Write-Host ("Local dump kept : {0}" -f $script:DumpPath)
+            Write-Host ("  size          : {0:N0} bytes" -f $script:DumpSize)
+            Write-Host ("  SHA-256       : {0}" -f $script:DumpHash)
+            Write-Host 'Delete the dump only after you are satisfied with the outcome.'
+        } else {
+            Write-Host 'No local dump was created.'
+        }
     }
     Write-Host 'Credentials cleared from this process.'
 }

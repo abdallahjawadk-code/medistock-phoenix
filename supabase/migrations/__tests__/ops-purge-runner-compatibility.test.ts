@@ -107,6 +107,56 @@ describe('purge runner — PowerShell compatibility', () => {
     expect(src).not.toMatch(/Set-Content[^\n]*\$env:PGPASSWORD/);
   });
 
+  it('verifies TLS against the OS trust store, with no CA file and no downgrade', () => {
+    const src = readFileSync(RUNNER, 'utf8');
+    // sslrootcert=system (libpq 16+) is what makes verify-full work without a
+    // per-user CA bundle. Its absence is what killed the previous live attempt.
+    expect(src).toContain('sslmode=verify-full');
+    expect(src).toContain('sslrootcert=system');
+    // No file-based CA anywhere, and no weaker mode.
+    expect(src).not.toMatch(/root\.crt/i);
+    expect(src).not.toMatch(/sslrootcert\s*=\s*(?!system)[^\s"']+/);
+    for (const weak of ['sslmode=require', 'sslmode=prefer', 'sslmode=allow', 'sslmode=disable']) {
+      expect(src, `${weak} would downgrade verification`).not.toContain(weak);
+    }
+  });
+
+  it('drives psql and pg_dump from one connection builder', () => {
+    const src = readFileSync(RUNNER, 'utf8');
+    expect(src).toMatch(/function Get-ConnString/);
+    // Exactly one place constructs host=..., so the two tools cannot drift.
+    const hostLiterals = src.match(/host=\$PoolerHost/g) ?? [];
+    expect(hostLiterals.length, 'only Get-ConnString may build the connection string').toBe(1);
+    expect(src, 'pg_dump must use the shared builder').toMatch(/\$script:DumpExe \(Get-ConnString\)/);
+    expect(src, 'psql must use the shared builder').toMatch(/\$script:PsqlExe \(Get-ConnString\)/);
+  });
+
+  it('rejects old client tools BEFORE prompting for a password', () => {
+    const src = readFileSync(RUNNER, 'utf8');
+    expect(src).toContain('STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED');
+    expect(src).toMatch(/-ge 16/);
+    expect(src).toMatch(/-ge 17/); // pg_dump must not be older than the server
+    const gateAt = src.indexOf('Resolve-PgClientTools\n');
+    const promptAt = src.indexOf("Read-Host 'Enter Supabase Database Password'");
+    expect(gateAt, 'the version gate must be invoked').toBeGreaterThan(-1);
+    expect(promptAt).toBeGreaterThan(-1);
+    expect(gateAt, 'version gate must run before the password prompt').toBeLessThan(promptAt);
+    // Same-distribution pairing, not PATH roulette.
+    expect(src).toMatch(/pg_dump\.exe/);
+  });
+
+  it('never claims a backup it did not write', () => {
+    const src = readFileSync(RUNNER, 'utf8');
+    expect(src).toContain('No local dump was created.');
+    // The success message must be guarded by an existence check.
+    expect(src).toMatch(/if \(\$script:DumpPath -and \(Test-Path \$script:DumpPath\)\)/);
+    // A failed or undersized dump is deleted rather than left to look like one.
+    expect(src).toMatch(/Remove-Item \$dump -Force/);
+    // Size and checksum are reported on success.
+    expect(src).toMatch(/Get-FileHash -Path \$dump -Algorithm SHA256/);
+    expect(src).toMatch(/SHA-256\s*:/);
+  });
+
   it('parses cleanly under the real Windows PowerShell parser', () => {
     const ps = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
     if (process.platform !== 'win32' || !existsSync(ps)) return; // Linux CI: byte guard above is the protection
