@@ -7,18 +7,18 @@ checksum-pinned** Supabase CA certificate (canonical memory v11 §3.2/§3.3).
 
 | file | committed | purpose |
 |---|---|---|
-| `supabase-prod-ca.crt` | **no** | the CA certificate, supplied per machine |
-| `supabase-prod-ca.crt.sha256` | **yes** | the pinned digest the runner enforces |
+| `production-ca.crt` / `staging-ca.crt` | **no** | the CA certificate, supplied per machine |
+| `production-ca.crt.sha256` / `staging-ca.crt.sha256` | **yes** | the pinned digest the runner enforces |
 
 ## One-time setup
 
 1. Supabase dashboard → **Project Settings → Database → SSL Configuration** →
    download the certificate.
-2. Save it as `ops/certs/supabase-prod-ca.crt`.
+2. Save it as `ops/certs/<target>-ca.crt`.
 3. Run once:
 
    ```
-   powershell -NoProfile -ExecutionPolicy Bypass -File ops\pin-supabase-ca.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File ops\pin-supabase-ca.ps1 -Target production
    ```
 
 That records the SHA-256 into the pin file. Commit **only** the pin file.

@@ -22,6 +22,12 @@
 #>
 
 param(
+    # Which target's certificate to pin. Each environment has its OWN CA file and
+    # its own pin, so a staging certificate can never satisfy production.
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('production', 'staging')]
+    [string]$Target,
+
     # Re-pin over an existing pin. Requires deliberate intent, because silently
     # accepting a changed CA would defeat the entire point of pinning.
     [switch]$Force
@@ -31,12 +37,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$CertPath = Join-Path $RepoRoot 'ops\certs\supabase-prod-ca.crt'
-$ShaPath  = Join-Path $RepoRoot 'ops\certs\supabase-prod-ca.crt.sha256'
+$CertPath = Join-Path $RepoRoot ("ops\certs\{0}-ca.crt" -f $Target)
+$ShaPath  = Join-Path $RepoRoot ("ops\certs\{0}-ca.crt.sha256" -f $Target)
 
 Write-Host ''
 Write-Host '=============================================================================='
-Write-Host '  Pin the Supabase CA certificate'
+Write-Host ("  Pin the Supabase CA certificate -- target: {0}" -f $Target)
 Write-Host '=============================================================================='
 
 if (-not (Test-Path $CertPath)) {

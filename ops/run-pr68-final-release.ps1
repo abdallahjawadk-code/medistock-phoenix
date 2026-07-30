@@ -21,7 +21,11 @@ param(
     # change the very commit it names.
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-f]{40}$')]
-    [string]$PinnedHead
+    [string]$PinnedHead,
+
+    # Produced by a successful staging rehearsal. Production refuses without it.
+    [Parameter(Mandatory = $true)]
+    [string]$RehearsalArtifact
 )
 
 Set-StrictMode -Version Latest
@@ -83,7 +87,9 @@ try {
     Write-Host 'Type them yourself. Nothing is entered on your behalf.'
     Write-Host ''
 
-    & (Join-Path $PSScriptRoot 'run-prelaunch-purge-v147.ps1')
+    & (Join-Path $PSScriptRoot 'run-prelaunch-release-core.ps1') `
+        -TargetManifest (Join-Path $PSScriptRoot 'targets\production.json') `
+        -RehearsalArtifact $RehearsalArtifact
     $purgeExit = $LASTEXITCODE
 
     if ($purgeExit -ne 0) {
@@ -95,7 +101,7 @@ try {
     }
 
     Section '6. POST-PURGE RELEASE'
-    & (Join-Path $PSScriptRoot 'run-pr68-post-purge-release.ps1')
+    & (Join-Path $PSScriptRoot 'run-pr68-post-purge-release.ps1') -TargetManifest (Join-Path $PSScriptRoot 'targets\production.json')
     $postExit = $LASTEXITCODE
     if ($postExit -ne 0) {
         Section 'RESULT: PURGE SUCCEEDED, RELEASE STOPPED'

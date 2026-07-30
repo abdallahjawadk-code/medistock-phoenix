@@ -140,8 +140,18 @@ first; the plan and the script both refuse to proceed while it is non-empty.
 ## 8. Running it
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-purge-v147.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-release-core.ps1 `
+  -TargetManifest ops\targets\production.json `
+  -RehearsalArtifact <rehearsal-artifact.json>
 ```
+
+The engine is target-agnostic: the same file, functions and step order run against
+the rehearsal clone, staging and Production. Only the manifest and the operator's
+credentials differ. `ops/targets/production.json` ships with
+`allow_destructive_execution: false`, and even once that is flipped the engine
+still demands a rehearsal artifact whose head SHA, purge-SQL digest, purge-manifest
+digest, PostgreSQL major, client tool versions and CA pin all match — otherwise it
+stops with `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED` before requesting a password.
 
 The script is fail-closed at every stage and stops **before** the next
 destructive step on any drift. It:

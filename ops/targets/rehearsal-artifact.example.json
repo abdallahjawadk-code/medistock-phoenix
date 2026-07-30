@@ -1,0 +1,32 @@
+{
+  "_comment": "REHEARSAL AUTHORIZATION ARTIFACT (example). Produced only by a SUCCESSFUL staging or clone rehearsal, then reviewed and signed off by the owner. The release engine refuses a production run without one, and re-verifies every pinned value against the live repository and toolchain before requesting a password. Contains no secrets.",
+
+  "tested_head_sha": "0000000000000000000000000000000000000000",
+  "purge_sql_sha256": "4ee2facffa814ee50b323f46d7d4c45a71d7635fc73b31a3fde800d6c27cf0a8",
+  "migration_manifest_sha256": "PLACEHOLDER_SHA256_OF_supabase/ops/purge-manifest-v147.ts",
+
+  "staging_project_ref": "PLACEHOLDER_STAGING_PROJECT_REF",
+  "staging_pg_major": 17,
+  "client_tool_versions": "psql=17;pg_dump=17",
+  "ca_sha256": "PLACEHOLDER_SHA256_OF_THE_TARGET_CA_CERTIFICATE",
+  "backup_sha256": "PLACEHOLDER_SHA256_OF_THE_VERIFIED_BACKUP",
+
+  "restore_proven": false,
+  "trigger_reconciliation_proven": false,
+  "rollback_proven": false,
+
+  "rehearsal_completed_at": "PLACEHOLDER_ISO8601_UTC",
+  "owner_go_decision": "NO-GO",
+
+  "_verification_notes": [
+    "tested_head_sha must equal the repository HEAD at production run time.",
+    "purge_sql_sha256 must equal the target manifest's purge_sql_sha256.",
+    "migration_manifest_sha256 is recomputed from supabase/ops/purge-manifest-v147.ts and must match.",
+    "staging_pg_major must equal the target's required_pg_major.",
+    "client_tool_versions must equal the psql/pg_dump majors resolved at run time.",
+    "ca_sha256 must equal the target's committed CA pin.",
+    "restore_proven, trigger_reconciliation_proven and rollback_proven must all be true.",
+    "owner_go_decision must be exactly GO, recorded in ADR-001.",
+    "Any mismatch stops with STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED before any credential is requested."
+  ]
+}

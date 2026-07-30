@@ -3,7 +3,7 @@
  MediStock Phoenix -- PR #68 POST-PURGE RELEASE
  A3-3B0N / Option A
 
- Runs ONLY after run-prelaunch-purge-v147.ps1 exits 0. Never invoked directly by
+ Runs ONLY after run-prelaunch-release-core.ps1 exits 0. Never invoked directly by
  the owner; the launcher chains it.
 
  It re-proves the end state read-only, then marks PR #68 Ready, merges, waits for
@@ -15,15 +15,26 @@
 ================================================================================
 #>
 
+param(
+    # Same target manifest the release engine used. Nothing about any specific
+    # environment is hard-coded here either.
+    [Parameter(Mandatory = $true)][string]$TargetManifest
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot   = Split-Path -Parent $PSScriptRoot
-$ProjectRef = 'eyrzxgfkvqybjdgyphap'
-$PoolerHost = 'aws-1-ap-south-1.pooler.supabase.com'
-$KeeperEmail = 'abdallahjawad2015@gmail.com'
-$PrNumber   = 68
-$TargetCeiling = 153
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$PrNumber = 68
+
+$mPath = if ([IO.Path]::IsPathRooted($TargetManifest)) { $TargetManifest } else { Join-Path $RepoRoot $TargetManifest }
+if (-not (Test-Path $mPath)) { throw "target manifest not found: $mPath" }
+$M = Get-Content $mPath -Raw | ConvertFrom-Json
+
+$ProjectRef    = $M.project_ref
+$PoolerHost    = $M.pooler_host
+$KeeperEmail   = $M.keeper_email
+$TargetCeiling = [int]$M.expected_final_ceiling
 
 $LogLines = New-Object System.Collections.Generic.List[string]
 function Log([string]$m) {
@@ -33,11 +44,19 @@ function Log([string]$m) {
 function Fail([string]$m) { Log "STOP: $m"; throw $m }
 function Section([string]$t) { Write-Host ''; Write-Host ('=' * 78); Write-Host "  $t"; Write-Host ('=' * 78) }
 
-# Same SSL contract as the purge runner: full verification via the OS trust store.
+# Same SSL contract as the release engine: verify-full against the target's own
+# explicit, checksum-pinned CA. Never the OS trust store, never a weaker mode.
 function Get-ConnString {
-    return "host=$PoolerHost port=5432 dbname=postgres user=postgres.$ProjectRef " +
-           "sslmode=verify-full sslrootcert=system connect_timeout=10 " +
-           "application_name=phoenix_post_purge"
+    $s = "host=$PoolerHost port=$($M.port) dbname=$($M.database_name) user=$($M.database_user) " +
+         "connect_timeout=10 application_name=phoenix_post_purge"
+    if ($M.ssl_mode -eq 'disable') {
+        if ($PoolerHost -notin @('127.0.0.1', 'localhost', '::1')) {
+            throw "ssl_mode=disable is only permitted on loopback, not '$PoolerHost'"
+        }
+        return "$s sslmode=disable"
+    }
+    $ca = (Join-Path $RepoRoot $M.ca_certificate_path) -replace '\\', '/'
+    return "$s sslmode=$($M.ssl_mode) sslrootcert=$ca"
 }
 function Resolve-Psql {
     $c = Get-Command psql -ErrorAction SilentlyContinue
