@@ -24,10 +24,11 @@ param(
     [string]$PinnedHead,
 
     # The evidence chain produced by a successful staging rehearsal and a
-    # recorded owner Go decision. Production refuses without all three.
+    # recorded owner Go decision. Production refuses without all four.
     [Parameter(Mandatory = $true)][string]$RestoreProofPath,
     [Parameter(Mandatory = $true)][string]$StagingProofPath,
-    [Parameter(Mandatory = $true)][string]$OwnerGoPath
+    [Parameter(Mandatory = $true)][string]$OwnerGoPath,
+    [Parameter(Mandatory = $true)][string]$StagingManifestPath
 )
 
 Set-StrictMode -Version Latest
@@ -93,7 +94,8 @@ try {
         -TargetManifest (Join-Path $PSScriptRoot 'targets\production.json') `
         -RestoreProofPath $RestoreProofPath `
         -StagingProofPath $StagingProofPath `
-        -OwnerGoPath $OwnerGoPath
+        -OwnerGoPath $OwnerGoPath `
+        -StagingManifestPath $StagingManifestPath
     $purgeExit = $LASTEXITCODE
 
     if ($purgeExit -ne 0) {

@@ -26,7 +26,7 @@ function ScalarOn($Conn, [string]$Sql) {
 }
 
 function Invoke-ReleaseStages {
-    param($M, [string]$Conn, [string]$WorkDir, [string]$PurgeSql)
+    param($M, [string]$Conn, [string]$WorkDir, [string]$PurgeSql, [string]$Head)
 
     $isClone  = ($M.environment -eq 'rehearsal_clone')
     $isProd   = ($M.environment -eq 'production')
@@ -40,6 +40,7 @@ SELECT current_database() AS db,
        current_setting('server_version') AS ver;
 "@) | ForEach-Object { Log $_ }
 
+    $serverVersionFull = ScalarOn $Conn "SELECT current_setting('server_version');"
     $serverMajor = [int]((ScalarOn $Conn "SELECT split_part(current_setting('server_version'),'.',1);"))
     Log "server major = $serverMajor"
     if ($serverMajor -ne [int]$M.required_pg_major) {
@@ -209,7 +210,10 @@ SET phoenix.purge_attestation = 'I_ATTEST_PRODUCTION_FULL_PURGE_V147_OPTION_A';
 
     if ($isProd) {
         Log 'production run complete -- merge and deployment are driven separately.'
+    } elseif ($M.environment -eq 'staging') {
+        Log 'rehearsal complete on staging. Writing the staging run result for the evidence chain...'
+        New-StagingRunResult -M $M -Head $Head -ServerVersionFull $serverVersionFull -FinalCeiling $finalCeiling
     } else {
-        Log "rehearsal complete on '$($M.environment)'. Record the results in a rehearsal artifact before any production run."
+        Log "rehearsal complete on '$($M.environment)'. Generate a restore proof before any staging or production run."
     }
 }

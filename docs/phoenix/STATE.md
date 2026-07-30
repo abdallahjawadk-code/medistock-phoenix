@@ -74,12 +74,13 @@ RBAC 130/415 · Storage empty · all business data is test data.
 |---|---|
 | Option-A purge (rig, **PG18.4**) | 15/15 |
 | purge manifest coverage (rig, **PG18.4**) | 7/7 |
-| release engine contract | 30/30 |
+| release engine contract | 56/56 |
 | typecheck / lint / build | pass |
-| full suite | 301 files passed (381 total, 79 skipped), **12,155** passed, 0 failed tests |
+| full suite | 302 files passed (381 total, 79 skipped), **12,182** passed, 0 failed tests |
 
-The full-suite count moves as suites are added; it was 12,139 before the R0
-evidence-chain tests grew. Treat the number as a snapshot, not a constant.
+The full-suite count moves as suites are added; it was 12,155 before the R0
+evidence-authenticity-hardening tests grew. Treat the number as a snapshot, not
+a constant.
 
 **Local-only caveats.** The full suite must run
 `--pool=forks --poolOptions.forks.singleFork --fileParallelism=false`; default
@@ -130,6 +131,22 @@ SHA-256, and the owner's Go decision bound to the exact staging proof and
 commit — before requesting any credential. Any placeholder, empty field, or
 mismatch: `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED`. None of the three evidence
 files exist in this repository yet; R0 is not closed.
+
+**Authenticity hardening.** `-Confirmed` alone cannot produce a restore proof
+— `ops/generate-restore-proof.ps1` requires a structured execution report
+(`-RestoreRunReportPath`) and validates nine fields of it (exit code, probe,
+ceiling 147, keeper, RBAC, trigger before==after, rollback, reconciliation,
+clone major 17). A staging proof cannot be hand-typed either — the release
+engine itself writes `staging-run-result.json` at the end of a real staging
+success, and `ops/generate-staging-rehearsal-proof.ps1` re-verifies the
+backup and both tool executables against the filesystem rather than trusting
+that file's own claims. `ops/evidence-chain.ps1` is the single shared
+validator dot-sourced by the engine, `record-owner-go.ps1`, and both
+generators: the owner sees the Go prompt only after the exact same
+cross-checks (staging/restore backup SHA match, trigger/rollback subset hash
+recomputation, restore clone PG major, staging manifest/CA re-hashed against
+the live file, and `restore <= staging <= owner` timestamp ordering) the
+Production engine will re-run.
 
 ## Next action
 
