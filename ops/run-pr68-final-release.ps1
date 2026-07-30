@@ -14,11 +14,20 @@
 ================================================================================
 #>
 
+param(
+    # The exact commit this release was validated against. Supplied by the
+    # desktop shortcut, which is regenerated whenever the head moves. It is a
+    # parameter rather than a baked-in constant because a constant would have to
+    # change the very commit it names.
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-f]{40}$')]
+    [string]$PinnedHead
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot   = Split-Path -Parent $PSScriptRoot
-$PinnedHead = 'PINNED_HEAD_PLACEHOLDER'
 $PrNumber   = 68
 
 function Section([string]$t) { Write-Host ''; Write-Host ('=' * 78); Write-Host "  $t"; Write-Host ('=' * 78) }
