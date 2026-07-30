@@ -23,9 +23,11 @@ param(
     [ValidatePattern('^[0-9a-f]{40}$')]
     [string]$PinnedHead,
 
-    # Produced by a successful staging rehearsal. Production refuses without it.
-    [Parameter(Mandatory = $true)]
-    [string]$RehearsalArtifact
+    # The evidence chain produced by a successful staging rehearsal and a
+    # recorded owner Go decision. Production refuses without all three.
+    [Parameter(Mandatory = $true)][string]$RestoreProofPath,
+    [Parameter(Mandatory = $true)][string]$StagingProofPath,
+    [Parameter(Mandatory = $true)][string]$OwnerGoPath
 )
 
 Set-StrictMode -Version Latest
@@ -89,7 +91,9 @@ try {
 
     & (Join-Path $PSScriptRoot 'run-prelaunch-release-core.ps1') `
         -TargetManifest (Join-Path $PSScriptRoot 'targets\production.json') `
-        -RehearsalArtifact $RehearsalArtifact
+        -RestoreProofPath $RestoreProofPath `
+        -StagingProofPath $StagingProofPath `
+        -OwnerGoPath $OwnerGoPath
     $purgeExit = $LASTEXITCODE
 
     if ($purgeExit -ne 0) {

@@ -1,7 +1,7 @@
 # Staging rehearsal runbook — R0
 
 Prove the exact purge and migration path on an isolated environment **before**
-Production is touched. Canonical memory v11 §R0-2 … §R0-8.
+Production is touched. Canonical memory v12 §R0-2 … §R0-8.
 
 > No step here connects to Production except explicitly read-only Management API
 > calls and one owner-run backup export. Production is never written to.
@@ -86,6 +86,17 @@ SELECT count(*) FROM public.organizations
 **Gate:** `RESTORE_PROVEN`. If the restore cannot be verified → **No-Go**, switch
 to the new-Production fallback (ARCHITECTURE.md §3).
 
+Once proven, generate the evidence file (never hand-write it):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\generate-restore-proof.ps1 `
+  -BackupPath <pre-purge.dump> -RestoreStartedAtUtc <ISO-8601 UTC> `
+  -CloneServerVersion <psql --version output> `
+  -PrePurgeReconciliationReportPath <report> `
+  -TriggerDefinitionBeforePath <report> -TriggerDefinitionAfterPath <report> `
+  -RollbackReportPath <report> -Confirmed
+```
+
 ---
 
 ## R0-5 — Purge rehearsal at ceiling 147
@@ -142,6 +153,20 @@ approval.
 
 Any unmet condition is a **No-Go**.
 
+After R0-6 succeeds on staging, generate the staging proof, then record Go:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\generate-staging-rehearsal-proof.ps1 `
+  -StagingManifestPath ops\targets\staging.json -RestoreProofPath ops\evidence\restore-proof.json `
+  -BackupPath <staging pre-purge.dump> -StagingServerVersion <SELECT version() output> `
+  -PsqlExecutablePath <psql.exe used> -PgDumpExecutablePath <pg_dump.exe used>
+
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\record-owner-go.ps1
+```
+
+`ops/targets/production.json` itself is never edited to authorize this decision
+— see [ops/evidence/README.md](../../ops/evidence/README.md).
+
 ---
 
 ## R0-9 — Production execution (only after Go)
@@ -149,6 +174,14 @@ Any unmet condition is a **No-Go**.
 Same commit, same runner, same SQL SHA-256, same client major/minor, same CA and
 checksum policy. **No modification between rehearsal and Production.** Human
 password and confirmations only. No automatic retry.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-release-core.ps1 `
+  -TargetManifest ops\targets\production.json `
+  -RestoreProofPath ops\evidence\restore-proof.json `
+  -StagingProofPath ops\evidence\staging-rehearsal-proof.json `
+  -OwnerGoPath ops\evidence\owner-go.json
+```
 
 ---
 

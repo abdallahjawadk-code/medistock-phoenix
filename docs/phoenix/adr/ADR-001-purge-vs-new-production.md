@@ -3,7 +3,7 @@
 **Status:** Proposed — decision pending the R0 staging rehearsal
 **Date:** _to be filled at decision time_
 **Deciders:** Abdallah Jawad (owner)
-**Context source:** canonical decision memory v11 §1.3, §R0-8
+**Context source:** canonical decision memory v12 §1.3, §R0-8
 
 ---
 
@@ -35,9 +35,12 @@ _To be recorded after R0-8. Do not fill in before the rehearsal completes._
 | 5 | Immutability triggers disabled and restored inside one transaction, definitions identical | ☐ | |
 | 6 | Zero operational data confirmed (nothing outside migration 004's demo seed) | ☐ | |
 | 7 | Rollback and reconciliation documented and exercised | ☐ | |
-| 8 | Owner approval recorded | ☐ | |
+| 8 | Owner approval recorded | ☐ | `ops/evidence/owner-go.json`, generated only by `ops\record-owner-go.ps1` after criteria 1-7 verify clean |
 
-Any unmet criterion ⇒ **No-Go**.
+Any unmet criterion ⇒ **No-Go**. Criteria 1, 2 and 7 are the exact fields the
+release engine re-verifies from `ops/evidence/restore-proof.json` and
+`ops/evidence/staging-rehearsal-proof.json` before any Production credential
+prompt — see [STATE.md](../STATE.md) and [ops/evidence/README.md](../../ops/evidence/README.md).
 
 ## No-Go triggers — automatic switch to Option B
 

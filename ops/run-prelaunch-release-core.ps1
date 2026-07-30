@@ -6,31 +6,56 @@
  any specific environment is written into this file.
 
      powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-release-core.ps1 `
-        -TargetManifest ops\targets\<target>.json [-RehearsalArtifact <path>]
-
- WHY THIS EXISTS. An earlier version hard-coded the Production project ref,
- pooler host, CA path and labels. That made canonical memory v11's central
- requirement impossible: rehearse on staging, then run THE SAME PATH on
- Production without modification. Editing constants between the rehearsal and
- the real run means the thing you proved is not the thing you ran.
+        -TargetManifest ops\targets\<target>.json `
+        [-RestoreProofPath <path>] [-StagingProofPath <path>] [-OwnerGoPath <path>]
 
  Environments (manifest field "environment"):
    rehearsal_clone  local restored PostgreSQL 17 clone. No Supabase CLI, no
                     Management API, no Vercel, no Storage API. Loopback only.
    staging          isolated Supabase project. Same path as production.
-   production       the live project. Additionally requires a rehearsal
-                    authorization artifact that pins head, SQL, manifest,
-                    tools and CA.
+   production       the live project. Additionally requires a cryptographically
+                     linked evidence chain: restore-proof.json ->
+                     staging-rehearsal-proof.json -> owner-go.json.
 
- Secrets NEVER live in a manifest or an artifact. The password is read once into
- process memory, passed only via PGPASSWORD to child processes, and zeroed in
- finally.
+ EXECUTION POLICY. A manifest carries "execution_policy", one of:
+   rehearsal_allowed              -- rehearsal_clone and staging. Proceeds
+                                      straight to the credential prompt once
+                                      the pre-credential gates pass.
+   requires_rehearsal_authorization -- production. Never flipped by hand and
+                                      never edited to "unlock" a run: the
+                                      engine instead demands the evidence
+                                      chain above, re-verified from scratch
+                                      every time, before any credential is
+                                      requested. production.json stays
+                                      byte-identical whether or not a release
+                                      is authorized.
+   disabled                       -- the target is not runnable at all. The
+                                      engine stops after the read-only gates,
+                                      before any credential prompt.
+
+ WHY THIS EXISTS. An earlier version hard-coded the Production project ref,
+ pooler host, CA path and labels. That made canonical memory's central
+ requirement impossible: rehearse on staging, then run THE SAME PATH on
+ Production without modification. Editing constants between the rehearsal and
+ the real run means the thing you proved is not the thing you ran. A later
+ version used a single allow_destructive_execution boolean on production.json,
+ which created a different defect: "authorizing" a release meant editing and
+ committing the production manifest itself, so the manifest was never
+ byte-identical between rehearsal and the real run either. Authorization now
+ lives entirely outside the manifest, in a chain of generated, re-verifiable
+ evidence files.
+
+ Secrets NEVER live in a manifest or an evidence file. The password is read
+ once into process memory, passed only via PGPASSWORD to child processes, and
+ zeroed in finally.
 ================================================================================
 #>
 
 param(
     [Parameter(Mandatory = $true)][string]$TargetManifest,
-    [string]$RehearsalArtifact
+    [string]$RestoreProofPath,
+    [string]$StagingProofPath,
+    [string]$OwnerGoPath
 )
 
 Set-StrictMode -Version Latest
@@ -40,11 +65,15 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $BstrPtr  = [IntPtr]::Zero
 $LogLines = New-Object System.Collections.Generic.List[string]
 
-$script:PsqlExe  = $null
-$script:DumpExe  = $null
-$script:DumpPath = $null
-$script:DumpSize = 0
-$script:DumpHash = $null
+$script:PsqlExe     = $null
+$script:DumpExe     = $null
+$script:PsqlVersion = $null
+$script:DumpVersion = $null
+$script:PsqlSha256  = $null
+$script:DumpSha256  = $null
+$script:DumpPath    = $null
+$script:DumpSize    = 0
+$script:DumpHash    = $null
 
 function Log([string]$m) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ'), $m
@@ -58,6 +87,50 @@ function Resolve-RepoPath([string]$p) {
     return (Join-Path $RepoRoot $p)
 }
 
+function Get-FileSha256([string]$path) {
+    return (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLower()
+}
+
+function Get-MigrationRangeSha256([int]$from, [int]$to) {
+    $dir = Join-Path $RepoRoot 'supabase\migrations'
+    $bytes = New-Object System.Collections.Generic.List[byte]
+    for ($n = $from; $n -le $to; $n++) {
+        $pat = '{0:d3}_*.sql' -f $n
+        $f = Get-ChildItem $dir -Filter $pat -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
+        if (-not $f) { Fail "migration $n not found in $dir -- cannot compute migrations digest" }
+        $bytes.AddRange([IO.File]::ReadAllBytes($f.FullName))
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash($bytes.ToArray())
+        return ([BitConverter]::ToString($hash) -replace '-', '').ToLower()
+    } finally { $sha.Dispose() }
+}
+
+function Test-NonPlaceholder([string]$v, [string]$fieldName) {
+    if ([string]::IsNullOrWhiteSpace($v)) { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- field '$fieldName' is empty" }
+    if ($v -match '(?i)placeholder|\bexample\b|\bTODO\b|\bFIXME\b|^xxx+$|^0{8,}$') {
+        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- field '$fieldName' looks like a placeholder: $v"
+    }
+}
+function Test-Sha256Hex([string]$v, [string]$fieldName) {
+    Test-NonPlaceholder $v $fieldName
+    if ($v -notmatch '^[0-9a-f]{64}$') { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- field '$fieldName' is not a lowercase SHA-256 hex digest" }
+}
+function Test-Iso8601Utc([string]$v, [string]$fieldName) {
+    Test-NonPlaceholder $v $fieldName
+    if ($v -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') {
+        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- field '$fieldName' is not ISO-8601 UTC (expected YYYY-MM-DDTHH:MM:SSZ)"
+    }
+}
+function Test-RequiredFields($obj, [string[]]$fields, [string]$label) {
+    foreach ($f in $fields) {
+        if (-not ($obj.PSObject.Properties.Name -contains $f)) {
+            Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- $label is missing field: $f"
+        }
+    }
+}
+
 # ----------------------------------------------------------------- manifest
 function Read-TargetManifest([string]$path) {
     if (-not (Test-Path $path)) { Fail "target manifest not found: $path" }
@@ -68,13 +141,16 @@ function Read-TargetManifest([string]$path) {
         'environment','project_ref','pooler_host','port','database_name','database_user',
         'expected_initial_ceiling','expected_final_ceiling','keeper_email',
         'ca_certificate_path','ca_sha256_path','purge_sql_path','purge_sql_sha256',
-        'allow_destructive_execution','ssl_mode','required_pg_major'
+        'execution_policy','ssl_mode','required_pg_major'
     )
     foreach ($k in $required) {
         if (-not ($m.PSObject.Properties.Name -contains $k)) { Fail "target manifest is missing required field: $k" }
     }
     if ($m.environment -notin @('rehearsal_clone','staging','production')) {
         Fail "unknown environment '$($m.environment)' -- expected rehearsal_clone, staging or production"
+    }
+    if ($m.execution_policy -notin @('rehearsal_allowed','requires_rehearsal_authorization','disabled')) {
+        Fail "unknown execution_policy '$($m.execution_policy)' -- expected rehearsal_allowed, requires_rehearsal_authorization or disabled"
     }
 
     # A manifest must never carry secret material.
@@ -122,7 +198,7 @@ function Assert-CaCertificate($m) {
     if (-not (Test-Path $sha)) { Fail "STOP_CA_CHECKSUM_MISSING -- no pinned SHA-256 at: $sha" }
     $expected = (Get-Content $sha -Raw).Trim().ToLower()
     if ($expected -notmatch '^[0-9a-f]{64}$') { Fail 'STOP_CA_CHECKSUM_INVALID -- pin is not a SHA-256 hex digest.' }
-    $actual = (Get-FileHash -Path $cert -Algorithm SHA256).Hash.ToLower()
+    $actual = Get-FileSha256 $cert
     if ($actual -ne $expected) {
         Fail ("STOP_CA_CHECKSUM_MISMATCH -- CA certificate does not match its pin.`n  expected $expected`n  actual   $actual")
     }
@@ -136,6 +212,9 @@ function Get-PgMajor([string]$exe) {
     if ($v -match '(\d+)')      { return [int]$Matches[1] }
     return 0
 }
+function Get-PgFullVersion([string]$exe) {
+    return (& $exe --version 2>&1 | Select-Object -First 1).ToString().Trim()
+}
 
 function Resolve-PgClientTools([int]$requiredMajor) {
     $candidates = @()
@@ -147,19 +226,29 @@ function Resolve-PgClientTools([int]$requiredMajor) {
                             Where-Object { $_.FullName -notlike '*pgAdmin*' } | ForEach-Object { $_.FullName })
         }
     }
-    $seen = @()
     foreach ($p in ($candidates | Select-Object -Unique)) {
         if (-not (Test-Path $p)) { continue }
         $d = Join-Path (Split-Path -Parent $p) 'pg_dump.exe'
         if (-not (Test-Path $d)) { continue }
         $mp = Get-PgMajor $p; $md = Get-PgMajor $d
-        $seen += ("{0} (psql {1} / pg_dump {2})" -f (Split-Path -Parent $p), $mp, $md)
         if ($mp -eq $requiredMajor -and $md -eq $requiredMajor) {
-            $script:PsqlExe = $p; $script:DumpExe = $d
-            Log "psql     : $p (major $mp)"
-            Log "pg_dump  : $d (major $md)"
+            $script:PsqlExe     = $p
+            $script:DumpExe     = $d
+            $script:PsqlVersion = Get-PgFullVersion $p
+            $script:DumpVersion = Get-PgFullVersion $d
+            $script:PsqlSha256  = Get-FileSha256 $p
+            $script:DumpSha256  = Get-FileSha256 $d
+            Log "psql     : $p ($($script:PsqlVersion))"
+            Log "pg_dump  : $d ($($script:DumpVersion))"
             return
         }
+    }
+    $seen = @()
+    foreach ($p in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path $p)) { continue }
+        $d = Join-Path (Split-Path -Parent $p) 'pg_dump.exe'
+        if (-not (Test-Path $d)) { continue }
+        $seen += ("{0} (psql {1} / pg_dump {2})" -f (Split-Path -Parent $p), (Get-PgMajor $p), (Get-PgMajor $d))
     }
     Fail ("STOP_POSTGRES_CLIENT_VERSION_UNSUPPORTED -- need psql AND pg_dump both major $requiredMajor " +
           "from one distribution.`nFound:`n  " + (($seen | Select-Object -Unique) -join "`n  "))
@@ -174,68 +263,158 @@ function Get-ConnString($m) {
     return "$s sslmode=$($m.ssl_mode) sslrootcert=$ca"
 }
 
-# --------------------------------------------- rehearsal authorization artifact
-function Assert-RehearsalAuthorization($m, [string]$artifactPath, [string]$head) {
-    if ($m.environment -ne 'production') {
-        Log "environment '$($m.environment)': no rehearsal artifact required"
+# --------------------------------------------- rehearsal evidence chain
+# Verified in full, from the current repository and toolchain state, every
+# single time. Nothing here is trusted merely because a file exists: every
+# value inside every evidence file is recomputed and compared.
+function Assert-RehearsalAuthorization($m, [string]$head, [string]$restoreProofPath, [string]$stagingProofPath, [string]$ownerGoPath) {
+    if ($m.execution_policy -ne 'requires_rehearsal_authorization') {
+        Log "environment '$($m.environment)': execution_policy=$($m.execution_policy), no evidence chain required"
         return
     }
-    if (-not $m.allow_destructive_execution) {
-        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- manifest sets allow_destructive_execution=false. It is flipped only by a recorded Go decision, never by hand."
-    }
-    if ([string]::IsNullOrWhiteSpace($artifactPath)) {
-        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- production requires -RehearsalArtifact produced by a successful staging rehearsal.'
-    }
-    if (-not (Test-Path $artifactPath)) {
-        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- rehearsal artifact not found: $artifactPath"
-    }
-    $a = Get-Content $artifactPath -Raw | ConvertFrom-Json
 
-    $needed = @('tested_head_sha','purge_sql_sha256','migration_manifest_sha256','staging_project_ref',
-                'staging_pg_major','client_tool_versions','ca_sha256','backup_sha256','restore_proven',
-                'trigger_reconciliation_proven','rollback_proven','rehearsal_completed_at','owner_go_decision')
-    foreach ($k in $needed) {
-        if (-not ($a.PSObject.Properties.Name -contains $k)) {
-            Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- artifact is missing field: $k"
+    foreach ($pair in @(
+        @{ Name = 'restore proof'; Path = $restoreProofPath },
+        @{ Name = 'staging rehearsal proof'; Path = $stagingProofPath },
+        @{ Name = 'owner Go decision'; Path = $ownerGoPath }
+    )) {
+        if ([string]::IsNullOrWhiteSpace($pair.Path)) {
+            Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- $($pair.Name) path was not supplied"
+        }
+        if (-not (Test-Path $pair.Path)) {
+            Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- $($pair.Name) not found: $($pair.Path)"
         }
     }
-    foreach ($flag in @('restore_proven','trigger_reconciliation_proven','rollback_proven')) {
-        if (-not $a.$flag) { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- artifact reports $flag = false" }
+
+    $restoreRaw = Get-Content $restoreProofPath -Raw
+    $stagingRaw = Get-Content $stagingProofPath -Raw
+    $ownerRaw   = Get-Content $ownerGoPath -Raw
+    try { $restore = $restoreRaw | ConvertFrom-Json } catch { Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- restore proof is not valid JSON' }
+    try { $staging = $stagingRaw | ConvertFrom-Json } catch { Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- staging rehearsal proof is not valid JSON' }
+    try { $owner   = $ownerRaw   | ConvertFrom-Json } catch { Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- owner Go decision is not valid JSON' }
+
+    # --- restore-proof.json -------------------------------------------------
+    Test-RequiredFields $restore @(
+        'backup_sha256','backup_size','restore_started_at_utc','restore_completed_at_utc',
+        'clone_server_version','pre_purge_reconciliation_report_sha256',
+        'trigger_definition_before_sha256','trigger_definition_after_sha256','trigger_reconciliation_proven',
+        'rollback_report_sha256','rollback_proven','proof_generated_at_utc'
+    ) 'restore proof'
+    foreach ($flag in @('trigger_reconciliation_proven','rollback_proven')) {
+        if (-not $restore.$flag) { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- restore proof reports $flag = false" }
     }
-    if ($a.owner_go_decision -ne 'GO') {
-        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- owner_go_decision is '$($a.owner_go_decision)', expected GO"
+    Test-Sha256Hex $restore.backup_sha256 'restore proof: backup_sha256'
+    Test-Sha256Hex $restore.pre_purge_reconciliation_report_sha256 'restore proof: pre_purge_reconciliation_report_sha256'
+    Test-Sha256Hex $restore.trigger_definition_before_sha256 'restore proof: trigger_definition_before_sha256'
+    Test-Sha256Hex $restore.trigger_definition_after_sha256 'restore proof: trigger_definition_after_sha256'
+    Test-Sha256Hex $restore.rollback_report_sha256 'restore proof: rollback_report_sha256'
+    Test-Iso8601Utc $restore.restore_completed_at_utc 'restore proof: restore_completed_at_utc'
+    Test-Iso8601Utc $restore.proof_generated_at_utc 'restore proof: proof_generated_at_utc'
+
+    # --- staging-rehearsal-proof.json ---------------------------------------
+    Test-RequiredFields $staging @(
+        'tested_head_sha','purge_sql_sha256','purge_manifest_sha256','migrations_148_153_sha256',
+        'staging_manifest_sha256','production_manifest_sha256','staging_project_ref',
+        'staging_ca_sha256','production_ca_sha256','backup_sha256','restore_proof_sha256',
+        'trigger_proof_sha256','rollback_proof_sha256','exact_psql_version','exact_pg_dump_version',
+        'psql_executable_path','pg_dump_executable_path','psql_executable_sha256','pg_dump_executable_sha256',
+        'staging_pg_version','completed_at_utc'
+    ) 'staging rehearsal proof'
+
+    foreach ($f in @('tested_head_sha','staging_project_ref','exact_psql_version','exact_pg_dump_version',
+                     'psql_executable_path','pg_dump_executable_path','staging_pg_version')) {
+        Test-NonPlaceholder $staging.$f "staging rehearsal proof: $f"
     }
-    if ($a.tested_head_sha -ne $head) {
+    foreach ($f in @('purge_sql_sha256','purge_manifest_sha256','migrations_148_153_sha256','staging_manifest_sha256',
+                     'production_manifest_sha256','staging_ca_sha256','production_ca_sha256','backup_sha256',
+                     'restore_proof_sha256','trigger_proof_sha256','rollback_proof_sha256',
+                     'psql_executable_sha256','pg_dump_executable_sha256')) {
+        Test-Sha256Hex $staging.$f "staging rehearsal proof: $f"
+    }
+    Test-Iso8601Utc $staging.completed_at_utc 'staging rehearsal proof: completed_at_utc'
+
+    if ($staging.tested_head_sha -ne $head) {
         Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the rehearsal proved a different commit.`n" +
-              "  rehearsed $($a.tested_head_sha)`n  current   $head")
+              "  rehearsed $($staging.tested_head_sha)`n  current   $head")
     }
-    if ($a.purge_sql_sha256 -ne $m.purge_sql_sha256) {
-        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- purge SQL digest differs between the artifact and this manifest.'
+    if ($staging.purge_sql_sha256 -ne $m.purge_sql_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- purge SQL digest differs between the staging proof and this manifest.'
     }
-    $manifestSha = (Get-FileHash -Path (Resolve-RepoPath 'supabase/ops/purge-manifest-v147.ts') -Algorithm SHA256).Hash.ToLower()
-    if ($a.migration_manifest_sha256.ToLower() -ne $manifestSha) {
+    $manifestSha = Get-FileSha256 (Resolve-RepoPath 'supabase/ops/purge-manifest-v147.ts')
+    if ($staging.purge_manifest_sha256 -ne $manifestSha) {
         Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- purge manifest changed since the rehearsal.`n" +
-              "  rehearsed $($a.migration_manifest_sha256)`n  current   $manifestSha")
+              "  rehearsed $($staging.purge_manifest_sha256)`n  current   $manifestSha")
     }
-    if ([int]$a.staging_pg_major -ne [int]$m.required_pg_major) {
-        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- rehearsal ran on PostgreSQL $($a.staging_pg_major), target requires $($m.required_pg_major)"
+    $migSha = Get-MigrationRangeSha256 148 153
+    if ($staging.migrations_148_153_sha256 -ne $migSha) {
+        Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- migrations 148-153 changed since the rehearsal.`n" +
+              "  rehearsed $($staging.migrations_148_153_sha256)`n  current   $migSha")
     }
-    $caPin = (Get-Content (Resolve-RepoPath $m.ca_sha256_path) -Raw).Trim().ToLower()
-    if ($a.ca_sha256.ToLower() -ne $caPin) {
-        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- CA pin differs between the artifact and this target.'
+    $prodManifestSha = Get-FileSha256 (Resolve-RepoPath $TargetManifest)
+    if ($staging.production_manifest_sha256 -ne $prodManifestSha) {
+        Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- production.json changed since the rehearsal -- it must stay byte-identical.`n" +
+              "  rehearsed $($staging.production_manifest_sha256)`n  current   $prodManifestSha")
     }
-    $toolsNow = ("psql={0};pg_dump={1}" -f (Get-PgMajor $script:PsqlExe), (Get-PgMajor $script:DumpExe))
-    if ($a.client_tool_versions -ne $toolsNow) {
-        Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- client toolchain differs from the rehearsal.`n" +
-              "  rehearsed $($a.client_tool_versions)`n  current   $toolsNow")
+    if ($staging.staging_project_ref -eq $m.project_ref) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- staging_project_ref equals the production project_ref.'
     }
-    Log "rehearsal authorization verified (rehearsed $($a.rehearsal_completed_at), Go recorded)"
+    $prodCaPin = (Get-Content (Resolve-RepoPath $m.ca_sha256_path) -Raw).Trim().ToLower()
+    if ($staging.production_ca_sha256 -ne $prodCaPin) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- production CA pin differs between the staging proof and this target.'
+    }
+    if ($staging.staging_ca_sha256 -eq $staging.production_ca_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- staging and production certificates must be pinned separately, not shared.'
+    }
+    if ($staging.staging_pg_version -notmatch "^$([regex]::Escape([string][int]$m.required_pg_major))\.") {
+        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- rehearsal ran on PostgreSQL '$($staging.staging_pg_version)', target requires major $($m.required_pg_major)"
+    }
+    if ($staging.exact_psql_version -ne $script:PsqlVersion -or $staging.exact_pg_dump_version -ne $script:DumpVersion) {
+        Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- exact client toolchain version differs from the rehearsal.`n" +
+              "  rehearsed psql=$($staging.exact_psql_version) pg_dump=$($staging.exact_pg_dump_version)`n" +
+              "  current   psql=$($script:PsqlVersion) pg_dump=$($script:DumpVersion)")
+    }
+    if ($staging.psql_executable_path -ne $script:PsqlExe -or $staging.pg_dump_executable_path -ne $script:DumpExe) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- client executable path differs from the rehearsal.'
+    }
+    if ($staging.psql_executable_sha256 -ne $script:PsqlSha256 -or $staging.pg_dump_executable_sha256 -ne $script:DumpSha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- client executable SHA-256 differs from the rehearsal -- the binaries changed.'
+    }
+
+    # restore proof chain: the staging proof must reference THIS restore proof file.
+    $restoreProofFileSha = Get-FileSha256 $restoreProofPath
+    if ($staging.restore_proof_sha256 -ne $restoreProofFileSha) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- staging proof does not reference the supplied restore proof file (SHA-256 mismatch).'
+    }
+
+    # --- owner-go.json -------------------------------------------------------
+    Test-RequiredFields $owner @('staging_proof_sha256','decision','decision_at_utc','owner_identity','expected_production_head') 'owner Go decision'
+    if ($owner.decision -ne 'GO') {
+        Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- owner decision is '$($owner.decision)', expected GO"
+    }
+    Test-NonPlaceholder $owner.owner_identity 'owner Go decision: owner_identity'
+    Test-Iso8601Utc $owner.decision_at_utc 'owner Go decision: decision_at_utc'
+    Test-NonPlaceholder $owner.expected_production_head 'owner Go decision: expected_production_head'
+    if ($owner.expected_production_head -ne $head) {
+        Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- owner Go was recorded for a different commit.`n" +
+              "  recorded  $($owner.expected_production_head)`n  current   $head")
+    }
+    $stagingProofFileSha = Get-FileSha256 $stagingProofPath
+    Test-Sha256Hex $owner.staging_proof_sha256 'owner Go decision: staging_proof_sha256'
+    if ($owner.staging_proof_sha256 -ne $stagingProofFileSha) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- owner Go decision does not reference the supplied staging proof file (SHA-256 mismatch).'
+    }
+
+    Log "evidence chain verified: restore proof -> staging proof ($($staging.completed_at_utc)) -> owner Go ($($owner.decision_at_utc))"
 }
 
 # ============================================================== main
 try {
     $manifestPath = Resolve-RepoPath $TargetManifest
     $M = Read-TargetManifest $manifestPath
+
+    if (-not $RestoreProofPath) { $RestoreProofPath = Join-Path $RepoRoot 'ops\evidence\restore-proof.json' }
+    if (-not $StagingProofPath) { $StagingProofPath = Join-Path $RepoRoot 'ops\evidence\staging-rehearsal-proof.json' }
+    if (-not $OwnerGoPath)      { $OwnerGoPath      = Join-Path $RepoRoot 'ops\evidence\owner-go.json' }
 
     $Host.UI.RawUI.WindowTitle = "MediStock Phoenix -- release [$($M.environment)]"
     Section "0. TARGET: $($M.environment)"
@@ -244,7 +423,7 @@ try {
     Log "host          : $($M.pooler_host):$($M.port)"
     Log "keeper        : $($M.keeper_email)"
     Log "ceiling       : $($M.expected_initial_ceiling) -> $($M.expected_final_ceiling)"
-    Log "destructive   : $($M.allow_destructive_execution)"
+    Log "execution policy : $($M.execution_policy)"
 
     $WorkDir = Join-Path $env:TEMP ("phoenix-release-$($M.environment)-" + (Get-Date -Format 'yyyyMMddTHHmmssZ'))
     New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
@@ -253,7 +432,7 @@ try {
     Section '1. INTEGRITY -- purge SQL must match its pinned digest'
     $purgeSql = Resolve-RepoPath $M.purge_sql_path
     if (-not (Test-Path $purgeSql)) { Fail "purge SQL not found: $purgeSql" }
-    $actualSql = (Get-FileHash -Path $purgeSql -Algorithm SHA256).Hash.ToLower()
+    $actualSql = Get-FileSha256 $purgeSql
     if ($actualSql -ne $M.purge_sql_sha256.ToLower()) {
         Fail ("purge SQL digest mismatch.`n  expected $($M.purge_sql_sha256)`n  actual   $actualSql")
     }
@@ -274,7 +453,14 @@ try {
     Assert-SslPolicy $M
     Resolve-PgClientTools ([int]$M.required_pg_major)
     Assert-CaCertificate $M
-    Assert-RehearsalAuthorization $M $RehearsalArtifact $head
+
+    if ($M.execution_policy -eq 'disabled') {
+        Section 'RESULT: GATES PASSED, EXECUTION NOT AUTHORIZED'
+        Log "execution_policy=disabled for '$($M.environment)': stopping before any credential is requested."
+        exit 0
+    }
+
+    Assert-RehearsalAuthorization $M $head $RestoreProofPath $StagingProofPath $OwnerGoPath
 
     $conn = Get-ConnString $M
     if ($conn -match 'password=') { Fail 'password must never appear in a connection string' }
@@ -284,13 +470,6 @@ try {
         if ($conn -match 'sslrootcert=system') { Fail 'sslrootcert=system is unproven; an explicit pinned CA is required' }
     }
     Log 'all pre-credential gates passed'
-
-    if (-not $M.allow_destructive_execution) {
-        Section 'RESULT: GATES PASSED, EXECUTION NOT AUTHORIZED'
-        Log "allow_destructive_execution=false for '$($M.environment)': stopping before any credential is requested."
-        Log 'This is the intended state until a rehearsal has proven the path and a Go decision is recorded.'
-        exit 0
-    }
 
     # -------------------------------------------------------- 4. credential
     Section '4. CREDENTIAL -- entered once, process memory only'

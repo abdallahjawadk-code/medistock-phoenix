@@ -118,10 +118,16 @@ Storage through the official Storage API first, then re-run.
 
     # ------------------------------------------------------------- D. purge
     Section '8. PURGE -- one atomic transaction, one attempt'
+    $purgePhrase = switch ($M.environment) {
+        'rehearsal_clone' { 'PURGE REHEARSAL CLONE NOW' }
+        'staging'         { 'PURGE STAGING NOW' }
+        'production'      { 'PURGE PRODUCTION NOW' }
+        default           { Fail "no purge confirmation phrase defined for environment '$($M.environment)'" }
+    }
     Write-Host "This permanently deletes ALL business data on: $($M.environment) / $($M.project_ref)"
     Write-Host "Only $($M.keeper_email) survives."
-    $go = Read-Host 'Type EXACTLY  PURGE PRODUCTION NOW  to proceed'
-    if ($go -ne 'PURGE PRODUCTION NOW') { Fail 'purge not confirmed by operator' }
+    $go = Read-Host "Type EXACTLY  $purgePhrase  to proceed"
+    if ($go -ne $purgePhrase) { Fail 'purge not confirmed by operator' }
 
     $wrapper = Join-Path $WorkDir 'purge-session.sql'
     @"

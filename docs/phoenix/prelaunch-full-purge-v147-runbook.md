@@ -142,16 +142,24 @@ first; the plan and the script both refuse to proceed while it is non-empty.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-release-core.ps1 `
   -TargetManifest ops\targets\production.json `
-  -RehearsalArtifact <rehearsal-artifact.json>
+  -RestoreProofPath ops\evidence\restore-proof.json `
+  -StagingProofPath ops\evidence\staging-rehearsal-proof.json `
+  -OwnerGoPath ops\evidence\owner-go.json
 ```
 
 The engine is target-agnostic: the same file, functions and step order run against
 the rehearsal clone, staging and Production. Only the manifest and the operator's
-credentials differ. `ops/targets/production.json` ships with
-`allow_destructive_execution: false`, and even once that is flipped the engine
-still demands a rehearsal artifact whose head SHA, purge-SQL digest, purge-manifest
-digest, PostgreSQL major, client tool versions and CA pin all match — otherwise it
-stops with `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED` before requesting a password.
+credentials differ. `ops/targets/production.json` carries
+`execution_policy: requires_rehearsal_authorization` permanently — that value never
+changes and the manifest is never edited to "unlock" a run. Instead the engine
+demands the evidence chain above (`restore-proof.json` -> `staging-rehearsal-proof.json`
+-> `owner-go.json`, see `ops/evidence/README.md`) and re-verifies every field —
+head SHA, purge-SQL digest, purge-manifest digest, migrations 148-153 digest,
+staging and production manifest digests, staging and production CA pins (verified
+separately), exact PostgreSQL client tool versions/paths/hashes, and the owner's
+Go decision — against the current repository and toolchain state, every time —
+otherwise it stops with `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED` before requesting
+a password.
 
 The script is fail-closed at every stage and stops **before** the next
 destructive step on any drift. It:

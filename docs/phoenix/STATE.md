@@ -4,14 +4,14 @@
 > Long-lived decisions live in [ARCHITECTURE.md](ARCHITECTURE.md).
 > Finished stage reports are appended to [HISTORY/](HISTORY/).
 
-**Updated:** 2026-07-30
-**Canonical decision memory:** v11 (supersedes v10 and all earlier plans)
+**Updated:** 2026-07-31
+**Canonical decision memory:** v12 (supersedes v11, v10 and all earlier plans)
 
 ---
 
 ## Gate
 
-`R0 — Staging rehearsal package`. Phases A–J are **not** started and must not be.
+`R0 — Authorization and evidence chain`. Phases A–J are **not** started and must not be.
 
 ## Repository
 
@@ -22,10 +22,8 @@
 | PR | **#68**, OPEN, **Draft**, mergeable, base `master` |
 | CI | 5/5 green |
 
-v11 recorded head `db3a695`; two later commits (`dd62337`, `0a63113`) were made
-after that snapshot and are CI-green. v11 §2.1 states the snapshot is
-point-in-time and must be re-verified — it was, and the divergence is explained,
-not drift.
+v12 recorded head `a7ff05e`; R0-authorization-chain work landed on top of it (see
+git log for the exact new head). Production remains untouched throughout.
 
 ## Production — verified read-only
 
@@ -76,12 +74,12 @@ RBAC 130/415 · Storage empty · all business data is test data.
 |---|---|
 | Option-A purge (rig, **PG18.4**) | 15/15 |
 | purge manifest coverage (rig, **PG18.4**) | 7/7 |
-| release engine contract | 19/19 |
+| release engine contract | 30/30 |
 | typecheck / lint / build | pass |
-| full suite | 302 files, **12,139** passed, 0 failed tests |
+| full suite | 301 files passed (381 total, 79 skipped), **12,155** passed, 0 failed tests |
 
-The full-suite count moves as suites are added; it was 12,135 before the release
-engine contract tests grew. Treat the number as a snapshot, not a constant.
+The full-suite count moves as suites are added; it was 12,139 before the R0
+evidence-chain tests grew. Treat the number as a snapshot, not a constant.
 
 **Local-only caveats.** The full suite must run
 `--pool=forks --poolOptions.forks.singleFork --fileParallelism=false`; default
@@ -98,24 +96,46 @@ do not satisfy the parity requirement and must be re-run on a PG17 rig.
 from a manifest in `ops/targets/`. `ops/release-stages.ps1` holds the single
 implementation of the destructive path, dot-sourced by the engine, so the
 rehearsal clone, staging and Production execute identical code in identical
-order. There is deliberately no staging copy and no production copy.
+order. There is deliberately no staging copy and no production copy. Each
+target's manifest carries `execution_policy` (`rehearsal_allowed` /
+`requires_rehearsal_authorization` / `disabled`) — the old
+`allow_destructive_execution` boolean is retired, because "authorizing" a
+release by editing and committing `production.json` meant the file was never
+byte-identical between rehearsal and the real run.
 
-| target | manifest | destructive | notes |
+| target | manifest | execution_policy | notes |
 |---|---|---|---|
-| rehearsal clone | `rehearsal-clone.example.json` | yes | loopback PG17, no Supabase/Vercel calls |
-| staging | `staging.example.json` | yes | placeholders until the project exists |
-| production | `production.json` | **false** | plus a rehearsal artifact is required |
+| rehearsal clone | `rehearsal-clone.example.json` | `rehearsal_allowed` | loopback PG17, no Supabase/Vercel calls |
+| staging | `staging.example.json` | `rehearsal_allowed` | placeholders until the project exists |
+| production | `production.json` | `requires_rehearsal_authorization` (permanent, never flipped) | requires the full evidence chain below |
 
-Production additionally demands a rehearsal artifact whose head SHA, purge-SQL
-digest, purge-manifest digest, PostgreSQL major, client tool versions and CA pin
-all match the live repository and toolchain — otherwise
-`STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED` fires **before** any password prompt.
-Template: `ops/targets/rehearsal-artifact.example.json`.
+## Authorization and evidence chain (R0)
+
+Production requires three generated (never hand-written) files, chained by
+SHA-256, described in [ops/evidence/README.md](../../ops/evidence/README.md):
+
+```text
+restore-proof.json              ops/generate-restore-proof.ps1
+    -> staging-rehearsal-proof.json   ops/generate-staging-rehearsal-proof.ps1
+        -> owner-go.json               ops/record-owner-go.ps1
+```
+
+At production-run time the engine re-verifies every field of every file
+against the live repository and toolchain — head SHA, purge-SQL digest,
+purge-manifest digest, migrations 148-153 digest, staging and production
+manifest digests (production.json must be byte-identical to what was
+rehearsed), staging and production CA pins (checked separately, never shared),
+exact `psql`/`pg_dump` version strings, executable paths and executable
+SHA-256, and the owner's Go decision bound to the exact staging proof and
+commit — before requesting any credential. Any placeholder, empty field, or
+mismatch: `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED`. None of the three evidence
+files exist in this repository yet; R0 is not closed.
 
 ## Next action
 
 Close the blockers above, then execute the rehearsal in
-[staging-rehearsal-runbook.md](staging-rehearsal-runbook.md). No Production
-purge is authorized before an identical, successful, PG17-matched rehearsal and
-an explicit Go decision recorded in
+[staging-rehearsal-runbook.md](staging-rehearsal-runbook.md), generate the
+evidence chain, and record an explicit Go decision per
 [adr/ADR-001-purge-vs-new-production.md](adr/ADR-001-purge-vs-new-production.md).
+No Production purge is authorized before all three evidence files exist and
+verify clean.

@@ -13,7 +13,7 @@
   "ca_sha256_path": "",
   "purge_sql_path": "supabase/ops/pre_launch_full_purge_v147.sql",
   "purge_sql_sha256": "4ee2facffa814ee50b323f46d7d4c45a71d7635fc73b31a3fde800d6c27cf0a8",
-  "allow_destructive_execution": true,
+  "execution_policy": "rehearsal_allowed",
   "ssl_mode": "disable",
   "required_pg_major": 17
 }

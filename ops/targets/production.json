@@ -1,5 +1,5 @@
 {
-  "_comment": "PRODUCTION target. allow_destructive_execution stays false until a rehearsal artifact and a recorded Go decision exist (ADR-001). Flipping it by hand is not sufficient: the engine also demands a matching rehearsal artifact.",
+  "_comment": "PRODUCTION target. execution_policy stays requires_rehearsal_authorization permanently -- there is no value that 'unlocks' this file. Authorization comes from a separate, cryptographically-linked evidence chain (restore-proof.json + staging-rehearsal-proof.json + owner-go.json), never from editing this manifest (ADR-001).",
   "environment": "production",
   "project_ref": "eyrzxgfkvqybjdgyphap",
   "pooler_host": "aws-1-ap-south-1.pooler.supabase.com",
@@ -13,7 +13,7 @@
   "ca_sha256_path": "ops/certs/production-ca.crt.sha256",
   "purge_sql_path": "supabase/ops/pre_launch_full_purge_v147.sql",
   "purge_sql_sha256": "4ee2facffa814ee50b323f46d7d4c45a71d7635fc73b31a3fde800d6c27cf0a8",
-  "allow_destructive_execution": false,
+  "execution_policy": "requires_rehearsal_authorization",
   "ssl_mode": "verify-full",
   "required_pg_major": 17
 }
