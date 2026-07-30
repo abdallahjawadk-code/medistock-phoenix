@@ -8,7 +8,8 @@
      powershell -NoProfile -ExecutionPolicy Bypass -File ops\run-prelaunch-release-core.ps1 `
         -TargetManifest ops\targets\<target>.json `
         [-RestoreProofPath <path>] [-StagingProofPath <path>] [-OwnerGoPath <path>] `
-        [-StagingManifestPath <path>]
+        [-StagingManifestPath <path>] `
+        [-RestoreRunResultPath <path>] [-StagingRunResultPath <path>]
 
  Environments (manifest field "environment"):
    rehearsal_clone  local restored PostgreSQL 17 clone. No Supabase CLI, no
@@ -57,7 +58,9 @@ param(
     [string]$RestoreProofPath,
     [string]$StagingProofPath,
     [string]$OwnerGoPath,
-    [string]$StagingManifestPath
+    [string]$StagingManifestPath,
+    [string]$RestoreRunResultPath,
+    [string]$StagingRunResultPath
 )
 
 Set-StrictMode -Version Latest
@@ -227,7 +230,7 @@ function Get-ConnString($m) {
 # called before it would let the owner record a Go decision. Nothing here is
 # trusted merely because a file exists: every value inside every evidence
 # file is recomputed and compared.
-function Assert-RehearsalAuthorization($m, [string]$head, [string]$restoreProofPath, [string]$stagingProofPath, [string]$ownerGoPath, [string]$stagingManifestPath) {
+function Assert-RehearsalAuthorization($m, [string]$head, [string]$restoreProofPath, [string]$stagingProofPath, [string]$ownerGoPath, [string]$stagingManifestPath, [string]$restoreRunResultPath, [string]$stagingRunResultPath) {
     if ($m.execution_policy -ne 'requires_rehearsal_authorization') {
         Log "environment '$($m.environment)': execution_policy=$($m.execution_policy), no evidence chain required"
         return
@@ -238,7 +241,8 @@ function Assert-RehearsalAuthorization($m, [string]$head, [string]$restoreProofP
 
     $chain = Test-RestoreAndStagingEvidence -M $m -RepoRoot $RepoRoot -Head $head `
         -RestoreProofPath $restoreProofPath -StagingProofPath $stagingProofPath `
-        -StagingManifestPath $stagingManifestPath -ProductionManifestPath (Resolve-RepoPath $TargetManifest)
+        -StagingManifestPath $stagingManifestPath -ProductionManifestPath (Resolve-RepoPath $TargetManifest) `
+        -RestoreRunResultPath $restoreRunResultPath -StagingRunResultPath $stagingRunResultPath
 
     # Engine-only check, not shared with owner-go: the psql/pg_dump binaries
     # THIS process just resolved -- the ones it is about to use to connect to
@@ -301,10 +305,12 @@ try {
     $manifestPath = Resolve-RepoPath $TargetManifest
     $M = Read-TargetManifest $manifestPath
 
-    if (-not $RestoreProofPath)   { $RestoreProofPath   = Join-Path $RepoRoot 'ops\evidence\restore-proof.json' }
-    if (-not $StagingProofPath)   { $StagingProofPath   = Join-Path $RepoRoot 'ops\evidence\staging-rehearsal-proof.json' }
-    if (-not $OwnerGoPath)        { $OwnerGoPath        = Join-Path $RepoRoot 'ops\evidence\owner-go.json' }
-    if (-not $StagingManifestPath) { $StagingManifestPath = Join-Path $RepoRoot 'ops\targets\staging.json' }
+    if (-not $RestoreProofPath)      { $RestoreProofPath      = Join-Path $RepoRoot 'ops\evidence\restore-proof.json' }
+    if (-not $StagingProofPath)      { $StagingProofPath      = Join-Path $RepoRoot 'ops\evidence\staging-rehearsal-proof.json' }
+    if (-not $OwnerGoPath)           { $OwnerGoPath           = Join-Path $RepoRoot 'ops\evidence\owner-go.json' }
+    if (-not $StagingManifestPath)   { $StagingManifestPath   = Join-Path $RepoRoot 'ops\targets\staging.json' }
+    if (-not $RestoreRunResultPath)  { $RestoreRunResultPath  = Join-Path $RepoRoot 'ops\evidence\restore-run-result.json' }
+    if (-not $StagingRunResultPath)  { $StagingRunResultPath  = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json' }
 
     $Host.UI.RawUI.WindowTitle = "MediStock Phoenix -- release [$($M.environment)]"
     Section "0. TARGET: $($M.environment)"
@@ -350,7 +356,7 @@ try {
         exit 0
     }
 
-    Assert-RehearsalAuthorization $M $head $RestoreProofPath $StagingProofPath $OwnerGoPath $StagingManifestPath
+    Assert-RehearsalAuthorization $M $head $RestoreProofPath $StagingProofPath $OwnerGoPath $StagingManifestPath $RestoreRunResultPath $StagingRunResultPath
 
     $conn = Get-ConnString $M
     if ($conn -match 'password=') { Fail 'password must never appear in a connection string' }

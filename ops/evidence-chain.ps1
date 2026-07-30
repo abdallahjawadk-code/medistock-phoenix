@@ -117,7 +117,9 @@ function Test-RestoreRunReport($report) {
         'keeper_verified', 'rbac_130_415_verified',
         'trigger_definition_before_sha256', 'trigger_definition_after_sha256',
         'deliberate_rollback_passed', 'reconciliation_passed', 'clone_pg_major',
-        'pre_purge_reconciliation_report_sha256', 'rollback_report_sha256'
+        'pre_purge_reconciliation_report_sha256', 'rollback_report_sha256',
+        'restore_started_at_utc', 'restore_completed_at_utc', 'clone_server_version',
+        'backup_path', 'backup_sha256', 'backup_size'
     ) 'restore run report'
     Test-ExactValue ([int]$report.restore_exit_code) 0 'restore_exit_code'
     Test-BooleanTrue $report.restored_database_probe_passed 'restored_database_probe_passed'
@@ -134,6 +136,15 @@ function Test-RestoreRunReport($report) {
     }
     Test-Sha256Hex $report.pre_purge_reconciliation_report_sha256 'pre_purge_reconciliation_report_sha256'
     Test-Sha256Hex $report.rollback_report_sha256 'rollback_report_sha256'
+    Test-Iso8601Utc $report.restore_started_at_utc 'restore_started_at_utc'
+    Test-Iso8601Utc $report.restore_completed_at_utc 'restore_completed_at_utc'
+    if ((ConvertTo-UtcDateTime $report.restore_completed_at_utc 'restore_completed_at_utc') -lt (ConvertTo-UtcDateTime $report.restore_started_at_utc 'restore_started_at_utc')) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- restore_completed_at_utc is before restore_started_at_utc'
+    }
+    Test-NonPlaceholder $report.clone_server_version 'clone_server_version'
+    Test-NonPlaceholder $report.backup_path 'backup_path'
+    Test-Sha256Hex $report.backup_sha256 'backup_sha256'
+    if ([int]$report.backup_size -le 0) { Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- backup_size must be greater than zero' }
 }
 
 function Test-StagingRunResult($result) {
@@ -264,7 +275,9 @@ function Test-RestoreAndStagingEvidence {
         [string]$RestoreProofPath,
         [string]$StagingProofPath,
         [string]$StagingManifestPath,
-        [string]$ProductionManifestPath
+        [string]$ProductionManifestPath,
+        [string]$RestoreRunResultPath,
+        [string]$StagingRunResultPath
     )
 
     function Resolve-EvidenceLocal([string]$p) {
@@ -275,7 +288,9 @@ function Test-RestoreAndStagingEvidence {
     foreach ($pair in @(
         @{ Name = 'restore proof'; Path = $RestoreProofPath },
         @{ Name = 'staging rehearsal proof'; Path = $StagingProofPath },
-        @{ Name = 'staging manifest'; Path = $StagingManifestPath }
+        @{ Name = 'staging manifest'; Path = $StagingManifestPath },
+        @{ Name = 'restore run result (raw)'; Path = $RestoreRunResultPath },
+        @{ Name = 'staging run result (raw)'; Path = $StagingRunResultPath }
     )) {
         if ([string]::IsNullOrWhiteSpace($pair.Path)) { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- $($pair.Name) path was not supplied" }
         if (-not (Test-Path $pair.Path)) { Fail "STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- $($pair.Name) not found: $($pair.Path)" }
@@ -284,10 +299,57 @@ function Test-RestoreAndStagingEvidence {
     $restore = Get-Content $RestoreProofPath -Raw | ConvertFrom-Json
     $staging = Get-Content $StagingProofPath -Raw | ConvertFrom-Json
     $stagingManifest = Get-Content $StagingManifestPath -Raw | ConvertFrom-Json
+    $rawRestore = Get-Content $RestoreRunResultPath -Raw | ConvertFrom-Json
+    $rawStaging = Get-Content $StagingRunResultPath -Raw | ConvertFrom-Json
 
     Test-RestoreProofObject $restore
     Test-StagingProofObject $staging
     Test-ToolBinaryMatchesProof $staging
+
+    # The raw execution reports behind each proof are re-validated from
+    # scratch here, every time -- not merely trusted because a proof file
+    # referencing their hash exists. A proof is only as good as the report
+    # it was built from, and that report could have been overwritten after
+    # the proof was generated.
+    Test-RestoreRunReport $rawRestore
+    Test-StagingRunResult $rawStaging
+
+    $rawRestoreSha = Get-FileSha256 $RestoreRunResultPath
+    if ($restore.restore_run_report_sha256 -ne $rawRestoreSha) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the restore proof does not reference the supplied raw restore run result (SHA-256 mismatch) -- it may have been regenerated or edited since the proof was written.'
+    }
+    $rawStagingSha = Get-FileSha256 $StagingRunResultPath
+    if ($staging.staging_run_result_sha256 -ne $rawStagingSha) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the staging proof does not reference the supplied raw staging run result (SHA-256 mismatch) -- it may have been regenerated or edited since the proof was written.'
+    }
+
+    # Cross-check the raw facts against what each proof claims about them.
+    if ($rawRestore.backup_sha256 -ne $restore.backup_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw restore run result backup SHA-256 does not match the restore proof.'
+    }
+    if ($rawStaging.backup_sha256 -ne $staging.backup_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw staging run result backup SHA-256 does not match the staging proof.'
+    }
+    if ($rawRestore.pre_purge_reconciliation_report_sha256 -ne $restore.pre_purge_reconciliation_report_sha256 -or
+        $rawRestore.rollback_report_sha256 -ne $restore.rollback_report_sha256 -or
+        $rawRestore.trigger_definition_before_sha256 -ne $restore.trigger_definition_before_sha256 -or
+        $rawRestore.trigger_definition_after_sha256 -ne $restore.trigger_definition_after_sha256 -or
+        [int]$rawRestore.clone_pg_major -ne [int]$restore.clone_pg_major -or
+        [int]$rawRestore.migration_ceiling -ne [int]$restore.migration_ceiling) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw restore run result no longer agrees with the restore proof built from it.'
+    }
+    if ($rawStaging.head_sha -ne $staging.tested_head_sha) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw staging run result head does not match the staging proof tested head.'
+    }
+    if ($rawStaging.server_version -ne $staging.staging_pg_version) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw staging run result server version does not match the staging proof.'
+    }
+    if ($rawStaging.psql_path -ne $staging.psql_executable_path -or $rawStaging.psql_version -ne $staging.exact_psql_version -or $rawStaging.psql_sha256 -ne $staging.psql_executable_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw staging run result psql path/version/hash does not match the staging proof.'
+    }
+    if ($rawStaging.pg_dump_path -ne $staging.pg_dump_executable_path -or $rawStaging.pg_dump_version -ne $staging.exact_pg_dump_version -or $rawStaging.pg_dump_sha256 -ne $staging.pg_dump_executable_sha256) {
+        Fail 'STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the raw staging run result pg_dump path/version/hash does not match the staging proof.'
+    }
 
     if ($staging.tested_head_sha -ne $Head) {
         Fail ("STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED -- the rehearsal proved a different commit.`n" +

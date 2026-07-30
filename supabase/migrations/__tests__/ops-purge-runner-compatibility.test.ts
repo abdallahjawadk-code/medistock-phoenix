@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +43,7 @@ const EVIDENCE_CHAIN = join(OPS, 'evidence-chain.ps1');
 const RESTORE_PROOF_GEN = join(OPS, 'generate-restore-proof.ps1');
 const STAGING_PROOF_GEN = join(OPS, 'generate-staging-rehearsal-proof.ps1');
 const OWNER_GO = join(OPS, 'record-owner-go.ps1');
+const RESTORE_RIG = join(OPS, 'run-pg17-restore-rehearsal.ps1');
 const TARGETS = join(OPS, 'targets');
 
 const PS_FILES = [
@@ -54,6 +56,7 @@ const PS_FILES = [
   'generate-restore-proof.ps1',
   'generate-staging-rehearsal-proof.ps1',
   'record-owner-go.ps1',
+  'run-pg17-restore-rehearsal.ps1',
 ].map((f) => join(OPS, f));
 
 const readTarget = (n: string) => JSON.parse(readFileSync(join(TARGETS, n), 'utf8'));
@@ -512,9 +515,19 @@ describe('staging proof: nothing is typed by hand', () => {
     expect(newResultCall).toBeGreaterThan(stagingBranch);
   });
 
-  it('the staging run result is never a script parameter the operator can fabricate', () => {
-    expect(coreSrc()).not.toMatch(/\[string\]\$StagingRunResultPath/);
-    expect(stagesSrc()).not.toMatch(/\[string\]\$StagingRunResultPath/);
+  it('New-StagingRunResult writes to a fixed path, never one the operator supplies', () => {
+    // -StagingRunResultPath does exist as an engine parameter now (Production
+    // reads an already-written result as evidence), but the function that
+    // WRITES the file during a staging run must never consult it -- the
+    // write path stays hard-coded so the operator cannot redirect what a
+    // staging run produces.
+    const src = coreSrc();
+    const start = src.indexOf('function New-StagingRunResult');
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('\n}', start);
+    const body = src.slice(start, end);
+    expect(body).not.toContain('$StagingRunResultPath');
+    expect(body).toMatch(/Join-Path \$RepoRoot 'ops\\evidence\\staging-run-result\.json'/);
   });
 });
 
@@ -613,6 +626,32 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
 
   const VALID_HEX = 'a'.repeat(64);
   const OTHER_HEX = 'b'.repeat(64);
+  const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
+
+  function validReport(backupPath: string, overrides: Record<string, unknown> = {}) {
+    const backupSha256 = createHash('sha256').update(readFileSync(backupPath)).digest('hex');
+    return {
+      restore_exit_code: 0,
+      restored_database_probe_passed: true,
+      migration_ceiling: 147,
+      keeper_verified: true,
+      rbac_130_415_verified: true,
+      trigger_definition_before_sha256: VALID_HEX,
+      trigger_definition_after_sha256: VALID_HEX,
+      deliberate_rollback_passed: true,
+      reconciliation_passed: true,
+      clone_pg_major: 17,
+      pre_purge_reconciliation_report_sha256: VALID_HEX,
+      rollback_report_sha256: VALID_HEX,
+      restore_started_at_utc: '2026-01-01T00:00:00Z',
+      restore_completed_at_utc: '2026-01-01T01:00:00Z',
+      clone_server_version: '17.6',
+      backup_path: backupPath,
+      backup_sha256: backupSha256,
+      backup_size: readFileSync(backupPath).length,
+      ...overrides,
+    };
+  }
 
   it.runIf(canRun)('an empty run report is rejected and no proof file is written', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phoenix-restore-proof-'));
@@ -624,11 +663,8 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
       const out = join(dir, 'restore-proof.json');
 
       const { status, out: text } = runPs(RESTORE_PROOF_GEN, [
-        '-BackupPath', backup,
-        '-RestoreStartedAtUtc', '2026-01-01T00:00:00Z',
-        '-RestoreCompletedAtUtc', '2026-01-01T01:00:00Z',
-        '-CloneServerVersion', 'PostgreSQL 17.6',
         '-RestoreRunReportPath', report,
+        '-BackupPath', backup,
         '-Confirmed',
         '-OutPath', out,
       ]);
@@ -647,28 +683,13 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
       const backup = join(dir, 'backup.dump');
       writeFileSync(backup, 'x'.repeat(1024));
       const report = join(dir, 'report.json');
-      writeFileSync(report, JSON.stringify({
-        restore_exit_code: 1, // the lie: claims success elsewhere but the exit code says it failed
-        restored_database_probe_passed: true,
-        migration_ceiling: 147,
-        keeper_verified: true,
-        rbac_130_415_verified: true,
-        trigger_definition_before_sha256: VALID_HEX,
-        trigger_definition_after_sha256: VALID_HEX,
-        deliberate_rollback_passed: true,
-        reconciliation_passed: true,
-        clone_pg_major: 17,
-        pre_purge_reconciliation_report_sha256: VALID_HEX,
-        rollback_report_sha256: VALID_HEX,
-      }));
+      // The lie: claims success elsewhere but the exit code says it failed.
+      writeFileSync(report, JSON.stringify(validReport(backup, { restore_exit_code: 1 })));
       const out = join(dir, 'restore-proof.json');
 
       const { status, out: text } = runPs(RESTORE_PROOF_GEN, [
-        '-BackupPath', backup,
-        '-RestoreStartedAtUtc', '2026-01-01T00:00:00Z',
-        '-RestoreCompletedAtUtc', '2026-01-01T01:00:00Z',
-        '-CloneServerVersion', 'PostgreSQL 17.6',
         '-RestoreRunReportPath', report,
+        '-BackupPath', backup,
         '-Confirmed',
         '-OutPath', out,
       ]);
@@ -687,28 +708,13 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
       const backup = join(dir, 'backup.dump');
       writeFileSync(backup, 'x'.repeat(1024));
       const report = join(dir, 'report.json');
-      writeFileSync(report, JSON.stringify({
-        restore_exit_code: 0,
-        restored_database_probe_passed: true,
-        migration_ceiling: 147,
-        keeper_verified: true,
-        rbac_130_415_verified: true,
-        trigger_definition_before_sha256: VALID_HEX,
-        trigger_definition_after_sha256: OTHER_HEX, // triggers were not restored identically
-        deliberate_rollback_passed: true,
-        reconciliation_passed: true,
-        clone_pg_major: 17,
-        pre_purge_reconciliation_report_sha256: VALID_HEX,
-        rollback_report_sha256: VALID_HEX,
-      }));
+      // Triggers were not restored identically.
+      writeFileSync(report, JSON.stringify(validReport(backup, { trigger_definition_after_sha256: OTHER_HEX })));
       const out = join(dir, 'restore-proof.json');
 
       const { status, out: text } = runPs(RESTORE_PROOF_GEN, [
-        '-BackupPath', backup,
-        '-RestoreStartedAtUtc', '2026-01-01T00:00:00Z',
-        '-RestoreCompletedAtUtc', '2026-01-01T01:00:00Z',
-        '-CloneServerVersion', 'PostgreSQL 17.6',
         '-RestoreRunReportPath', report,
+        '-BackupPath', backup,
         '-Confirmed',
         '-OutPath', out,
       ]);
@@ -721,34 +727,44 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
     }
   });
 
+  it.runIf(canRun)('a backup that no longer matches the report SHA-256 is rejected', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'phoenix-restore-proof-'));
+    try {
+      const backup = join(dir, 'backup.dump');
+      writeFileSync(backup, 'x'.repeat(1024));
+      const report = join(dir, 'report.json');
+      writeFileSync(report, JSON.stringify(validReport(backup)));
+      // Tamper with the backup after the report was written.
+      writeFileSync(backup, 'y'.repeat(1024));
+      const out = join(dir, 'restore-proof.json');
+
+      const { status, out: text } = runPs(RESTORE_PROOF_GEN, [
+        '-RestoreRunReportPath', report,
+        '-BackupPath', backup,
+        '-Confirmed',
+        '-OutPath', out,
+      ]);
+
+      expect(status, text).not.toBe(0);
+      expect(text).toContain('no longer matches the SHA-256');
+      expect(existsSync(out)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(canRun)('a genuinely passing report produces a proof whose fields match', () => {
     const dir = mkdtempSync(join(tmpdir(), 'phoenix-restore-proof-'));
     try {
       const backup = join(dir, 'backup.dump');
       writeFileSync(backup, 'x'.repeat(1024));
       const report = join(dir, 'report.json');
-      writeFileSync(report, JSON.stringify({
-        restore_exit_code: 0,
-        restored_database_probe_passed: true,
-        migration_ceiling: 147,
-        keeper_verified: true,
-        rbac_130_415_verified: true,
-        trigger_definition_before_sha256: VALID_HEX,
-        trigger_definition_after_sha256: VALID_HEX,
-        deliberate_rollback_passed: true,
-        reconciliation_passed: true,
-        clone_pg_major: 17,
-        pre_purge_reconciliation_report_sha256: VALID_HEX,
-        rollback_report_sha256: VALID_HEX,
-      }));
+      writeFileSync(report, JSON.stringify(validReport(backup)));
       const out = join(dir, 'restore-proof.json');
 
       const { status, out: text } = runPs(RESTORE_PROOF_GEN, [
-        '-BackupPath', backup,
-        '-RestoreStartedAtUtc', '2026-01-01T00:00:00Z',
-        '-RestoreCompletedAtUtc', '2026-01-01T01:00:00Z',
-        '-CloneServerVersion', 'PostgreSQL 17.6',
         '-RestoreRunReportPath', report,
+        '-BackupPath', backup,
         '-Confirmed',
         '-OutPath', out,
       ]);
@@ -756,16 +772,240 @@ describe('evidence generators, exercised for real (Windows PowerShell only)', ()
       expect(status, text).toBe(0);
       expect(existsSync(out)).toBe(true);
       // Windows PowerShell 5.1's "Set-Content -Encoding utf8" writes a BOM.
-      const BOM = String.fromCharCode(0xfeff);
-      const raw = readFileSync(out, 'utf8');
-      const proof = JSON.parse(raw.startsWith(BOM) ? raw.slice(1) : raw);
+      const proof = JSON.parse(stripBom(readFileSync(out, 'utf8')));
       expect(proof.restore_exit_code).toBe(0);
       expect(proof.clone_pg_major).toBe(17);
       expect(proof.trigger_reconciliation_proven).toBe(true);
       expect(proof.rollback_proven).toBe(true);
       expect(proof.migration_ceiling).toBe(147);
+      expect(proof.backup_sha256).toBe(createHash('sha256').update(readFileSync(backup)).digest('hex'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ============================================================================
+// RAW EVIDENCE AND WORKTREE GATE
+//
+// Two closing gaps: default evidence output collided with the engine's own
+// "worktree must be clean" gate, and the chain proved proofs were internally
+// consistent without ever re-deriving them from a genuine restore rehearsal
+// tool. This section proves both are closed, plus that the new raw-result
+// wiring (Production and owner-go re-validating restore-run-result.json and
+// staging-run-result.json, not just the proofs built from them) actually
+// works, for real, against this repository's own git state.
+// ============================================================================
+
+const restoreRigSrc = () => readFileSync(RESTORE_RIG, 'utf8');
+
+function gitStatusPorcelain(): string {
+  return execFileSync('git', ['status', '--porcelain'], { cwd: REPO, encoding: 'utf8' });
+}
+
+function spawnSyncGit(args: string[]): { status: number | null; out: string } {
+  const res = spawnSync('git', args, { cwd: REPO, encoding: 'utf8' });
+  return { status: res.status, out: (res.stdout || '') + (res.stderr || '') };
+}
+
+describe('evidence files never dirty the worktree gate', () => {
+  it('the default evidence and filled-target paths are git-ignored', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'phoenix-worktree-gate-'));
+    const evidenceDir = join(REPO, 'ops', 'evidence');
+    const targetsDir = join(REPO, 'ops', 'targets');
+    const created: string[] = [];
+    try {
+      const before = gitStatusPorcelain();
+
+      for (const name of [
+        'restore-proof.json', 'staging-rehearsal-proof.json', 'owner-go.json',
+        'restore-run-result.json', 'staging-run-result.json', 'some-report.log', 'a-backup.dump',
+      ]) {
+        const p = join(evidenceDir, name);
+        writeFileSync(p, '{"marker":"phoenix-worktree-gate-test"}');
+        created.push(p);
+      }
+      for (const name of ['staging.json', 'rehearsal-clone.json']) {
+        const p = join(targetsDir, name);
+        writeFileSync(p, '{"marker":"phoenix-worktree-gate-test"}');
+        created.push(p);
+      }
+
+      const after = gitStatusPorcelain();
+      expect(after, 'evidence and filled-target files must not appear in git status').toBe(before);
+    } finally {
+      for (const p of created) rmSync(p, { force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a genuine new file (a real change) still shows up as dirty', () => {
+    // Proves the gate is not simply broken -- ignoring evidence output does
+    // not mean the worktree-dirty check stopped working for real changes.
+    const marker = join(OPS, 'phoenix-worktree-gate-marker.tmp');
+    try {
+      const before = gitStatusPorcelain();
+      expect(before).not.toContain('phoenix-worktree-gate-marker');
+
+      writeFileSync(marker, 'not ignored -- a real, trackable change');
+      const after = gitStatusPorcelain();
+      expect(after).toContain('phoenix-worktree-gate-marker.tmp');
+    } finally {
+      rmSync(marker, { force: true });
+    }
+  });
+
+  it('ops/evidence/README.md and the manifest examples stay committed, not ignored', () => {
+    // git check-ignore exits 1 for a path that is NOT ignored (and 0, with
+    // the matching pattern printed, for one that is).
+    for (const path of [
+      'ops/evidence/README.md', 'ops/targets/production.json',
+      'ops/targets/staging.example.json', 'ops/targets/rehearsal-clone.example.json',
+    ]) {
+      const res = spawnSyncGit(['check-ignore', '-v', path]);
+      expect(res.status, `${path} must not be gitignored (matched: ${res.out.trim()})`).toBe(1);
+    }
+  });
+
+  it('ops/evidence/*.json, ops/targets/staging.json and rehearsal-clone.json ARE ignored', () => {
+    for (const path of [
+      'ops/evidence/restore-proof.json', 'ops/evidence/staging-run-result.json',
+      'ops/targets/staging.json', 'ops/targets/rehearsal-clone.json',
+    ]) {
+      const res = spawnSyncGit(['check-ignore', path]);
+      expect(res.status, `${path} should be gitignored`).toBe(0);
+    }
+  });
+});
+
+describe('ops/run-pg17-restore-rehearsal.ps1: the one tool that writes restore-run-result.json', () => {
+  it('accepts only backup path, clone manifest and output directory -- no booleans, exit codes or versions', () => {
+    const src = restoreRigSrc();
+    // The param(...) block contains nested parens (e.g. "[Parameter(Mandatory
+    // = $true)]"), so the matching close paren must be found by depth, not
+    // by the first ")" (which lands mid-attribute).
+    const paramBlockStart = src.indexOf('param(');
+    let depth = 0;
+    let paramBlockEnd = -1;
+    for (let i = paramBlockStart + 'param('.length - 1; i < src.length; i++) {
+      if (src[i] === '(') depth++;
+      else if (src[i] === ')') { depth--; if (depth === 0) { paramBlockEnd = i; break; } }
+    }
+    expect(paramBlockEnd, 'param() block must close').toBeGreaterThan(-1);
+    const paramBlock = src.slice(paramBlockStart, paramBlockEnd);
+    expect(paramBlock).toMatch(/\[string\]\$BackupPath/);
+    expect(paramBlock).toMatch(/\[string\]\$CloneTargetManifest/);
+    expect(paramBlock).toMatch(/\[string\]\$OutputDirectory/);
+    // No parameter for any of the facts the script must derive itself.
+    for (const forbidden of [
+      '$RestoreExitCode', '$RestoredDatabaseProbePassed', '$MigrationCeiling', '$KeeperVerified',
+      '$Rbac130415Verified', '$DeliberateRollbackPassed', '$ReconciliationPassed', '$ClonePgMajor',
+      '$ServerVersion', '$CloneServerVersion',
+    ]) {
+      expect(paramBlock, `${forbidden} must not be a parameter`).not.toContain(forbidden);
+    }
+    // Exactly three parameters total (matching "[string]$Name" declarations,
+    // not incidental "$true" inside the [Parameter(...)] attributes).
+    const paramNames = paramBlock.match(/\[string\]\$(\w+)/g) ?? [];
+    expect(new Set(paramNames).size).toBe(3);
+  });
+
+  it('only writes restore-run-result.json in the success path, after every check', () => {
+    const src = restoreRigSrc();
+    const writeIdx = src.indexOf("Join-Path $OutputDirectory 'restore-run-result.json'");
+    const ceilingCheck = src.indexOf("if ($ceiling -ne 147)");
+    const keeperCheck = src.indexOf('STOP_KEEPER_ACCOUNT_UNVERIFIED');
+    const rbacCheck = src.indexOf('RBAC drift');
+    const rollbackCheck = src.indexOf('the deliberate rollback test did not fail as expected');
+    const triggerCompare = src.indexOf('trigger definitions changed across the rollback test');
+    const reconciliationCheck = src.indexOf('unvalidated FK constraint');
+    for (const [name, idx] of [
+      ['ceiling', ceilingCheck], ['keeper', keeperCheck], ['rbac', rbacCheck],
+      ['rollback', rollbackCheck], ['trigger comparison', triggerCompare], ['reconciliation', reconciliationCheck],
+    ] as const) {
+      expect(idx, `${name} check must exist`).toBeGreaterThan(-1);
+      expect(idx, `${name} check must precede the result write`).toBeLessThan(writeIdx);
+    }
+  });
+
+  it('a pg_restore failure stops before any report is written', () => {
+    const src = restoreRigSrc();
+    const restoreCall = src.indexOf('& $script:PgRestoreExe');
+    const exitCheck = src.indexOf('if ($restoreExitCode -ne 0)');
+    const writeIdx = src.indexOf("Join-Path $OutputDirectory 'restore-run-result.json'");
+    expect(restoreCall).toBeGreaterThan(-1);
+    expect(exitCheck).toBeGreaterThan(restoreCall);
+    expect(exitCheck).toBeLessThan(writeIdx);
+    expect(src.slice(exitCheck, exitCheck + 200)).toMatch(/Fail "pg_restore failed/);
+    // The whole flow is one try{} block; a Fail anywhere throws out of it,
+    // so the write statement (last in the block) is never reached.
+    const tryStart = src.indexOf('try {');
+    const catchStart = src.indexOf('catch {');
+    expect(tryStart).toBeGreaterThan(-1);
+    expect(writeIdx).toBeGreaterThan(tryStart);
+    expect(writeIdx).toBeLessThan(catchStart);
+  });
+
+  it('the restore rig only ever touches a loopback, disposable, PG17 clone', () => {
+    const src = restoreRigSrc();
+    expect(src).toMatch(/environment -ne 'rehearsal_clone'/);
+    expect(src).toMatch(/pooler_host -notin @\('127\.0\.0\.1', 'localhost', '::1'\)/);
+    expect(src).toMatch(/ssl_mode -ne 'disable'/);
+    expect(src).toMatch(/required_pg_major -ne 17/);
+    expect(src).toMatch(/DROP DATABASE IF EXISTS/);
+  });
+});
+
+describe('raw evidence re-verification -- tamper and deletion detection', () => {
+  it('Production and owner-go both require the raw restore and staging results, re-validate them, and cross-check their hashes against the proofs', () => {
+    const chain = evidenceChainSrc();
+    expect(chain).toMatch(/\[string\]\$RestoreRunResultPath,\s*\n\s*\[string\]\$StagingRunResultPath/);
+    // Existence is required for both raw files, in the same loop as the proofs.
+    expect(chain).toMatch(/'restore run result \(raw\)'; Path = \$RestoreRunResultPath/);
+    expect(chain).toMatch(/'staging run result \(raw\)'; Path = \$StagingRunResultPath/);
+    // Re-validated with the exact same functions the generators use.
+    expect(chain).toMatch(/Test-RestoreRunReport \$rawRestore/);
+    expect(chain).toMatch(/Test-StagingRunResult \$rawStaging/);
+    // The proof must reference the CURRENT hash of the raw file, not a
+    // remembered one -- so editing the raw file after the proof exists
+    // invalidates the proof.
+    expect(chain).toMatch(/\$rawRestoreSha = Get-FileSha256 \$RestoreRunResultPath/);
+    expect(chain).toMatch(/\$restore\.restore_run_report_sha256 -ne \$rawRestoreSha/);
+    expect(chain).toMatch(/\$rawStagingSha = Get-FileSha256 \$StagingRunResultPath/);
+    expect(chain).toMatch(/\$staging\.staging_run_result_sha256 -ne \$rawStagingSha/);
+    // Cross-checks: backup, head, server version, and both tool identities.
+    expect(chain).toMatch(/\$rawRestore\.backup_sha256 -ne \$restore\.backup_sha256/);
+    expect(chain).toMatch(/\$rawStaging\.backup_sha256 -ne \$staging\.backup_sha256/);
+    expect(chain).toMatch(/\$rawStaging\.head_sha -ne \$staging\.tested_head_sha/);
+    expect(chain).toMatch(/\$rawStaging\.server_version -ne \$staging\.staging_pg_version/);
+    expect(chain).toMatch(/\$rawStaging\.psql_path -ne \$staging\.psql_executable_path/);
+    expect(chain).toMatch(/\$rawStaging\.pg_dump_path -ne \$staging\.pg_dump_executable_path/);
+  });
+
+  it('both the Production engine and owner-go pass the raw result paths into the same call', () => {
+    expect(coreSrc()).toMatch(/-RestoreRunResultPath \$restoreRunResultPath -StagingRunResultPath \$stagingRunResultPath/);
+    expect(ownerGoSrc()).toMatch(/-RestoreRunResultPath \$RestoreRunResultPath -StagingRunResultPath \$StagingRunResultPath/);
+  });
+
+  it('deleting a raw result file is indistinguishable from never having supplied it -- both fail before credentials', () => {
+    // The existence check for both raw paths lives in the SAME foreach loop
+    // as the proof and manifest paths that were already proven (in the
+    // "authorization is checked before the password prompt" test) to run
+    // before Read-Host. Confirm the raw-result checks are in that same loop,
+    // not a separate later gate that could be reordered independently.
+    const chain = evidenceChainSrc();
+    // Anchor on the restore-proof entry, which only appears in the
+    // path-existence loop inside Test-RestoreAndStagingEvidence (unlike
+    // "foreach ($pair in @(", which also opens the unrelated tool-binary
+    // loop in Test-ToolBinaryMatchesProof, defined earlier in the file).
+    const anchor = chain.indexOf("'restore proof'; Path = $RestoreProofPath");
+    expect(anchor, 'the restore proof path-existence entry must exist').toBeGreaterThan(-1);
+    const loopStart = chain.lastIndexOf('foreach (', anchor);
+    const loopEnd = chain.indexOf('))', anchor);
+    const loopBody = chain.slice(loopStart, loopEnd);
+    expect(loopBody).toContain('$RestoreProofPath');
+    expect(loopBody).toContain('$StagingProofPath');
+    expect(loopBody).toContain('$RestoreRunResultPath');
+    expect(loopBody).toContain('$StagingRunResultPath');
   });
 });

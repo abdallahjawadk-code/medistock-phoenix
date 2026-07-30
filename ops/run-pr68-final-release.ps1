@@ -24,11 +24,13 @@ param(
     [string]$PinnedHead,
 
     # The evidence chain produced by a successful staging rehearsal and a
-    # recorded owner Go decision. Production refuses without all four.
+    # recorded owner Go decision. Production refuses without all six.
     [Parameter(Mandatory = $true)][string]$RestoreProofPath,
     [Parameter(Mandatory = $true)][string]$StagingProofPath,
     [Parameter(Mandatory = $true)][string]$OwnerGoPath,
-    [Parameter(Mandatory = $true)][string]$StagingManifestPath
+    [Parameter(Mandatory = $true)][string]$StagingManifestPath,
+    [Parameter(Mandatory = $true)][string]$RestoreRunResultPath,
+    [Parameter(Mandatory = $true)][string]$StagingRunResultPath
 )
 
 Set-StrictMode -Version Latest
@@ -95,7 +97,9 @@ try {
         -RestoreProofPath $RestoreProofPath `
         -StagingProofPath $StagingProofPath `
         -OwnerGoPath $OwnerGoPath `
-        -StagingManifestPath $StagingManifestPath
+        -StagingManifestPath $StagingManifestPath `
+        -RestoreRunResultPath $RestoreRunResultPath `
+        -StagingRunResultPath $StagingRunResultPath
     $purgeExit = $LASTEXITCODE
 
     if ($purgeExit -ne 0) {

@@ -74,12 +74,12 @@ RBAC 130/415 · Storage empty · all business data is test data.
 |---|---|
 | Option-A purge (rig, **PG18.4**) | 15/15 |
 | purge manifest coverage (rig, **PG18.4**) | 7/7 |
-| release engine contract | 56/56 |
+| release engine contract | 68/68 |
 | typecheck / lint / build | pass |
-| full suite | 302 files passed (381 total, 79 skipped), **12,182** passed, 0 failed tests |
+| full suite | 301 files passed (381 total, 79 skipped), **12,193** passed, 0 failed tests |
 
-The full-suite count moves as suites are added; it was 12,155 before the R0
-evidence-authenticity-hardening tests grew. Treat the number as a snapshot, not
+The full-suite count moves as suites are added; it was 12,182 before the R0
+raw-evidence-and-worktree-gate tests grew. Treat the number as a snapshot, not
 a constant.
 
 **Local-only caveats.** The full suite must run
@@ -112,13 +112,22 @@ byte-identical between rehearsal and the real run.
 
 ## Authorization and evidence chain (R0)
 
-Production requires three generated (never hand-written) files, chained by
-SHA-256, described in [ops/evidence/README.md](../../ops/evidence/README.md):
+Production requires an evidence chain, chained by SHA-256, described in
+[ops/evidence/README.md](../../ops/evidence/README.md). Nothing in it is
+hand-written; two files are raw execution reports and four are built on top
+of them:
 
 ```text
-restore-proof.json              ops/generate-restore-proof.ps1
-    -> staging-rehearsal-proof.json   ops/generate-staging-rehearsal-proof.ps1
-        -> owner-go.json               ops/record-owner-go.ps1
+ops/run-pg17-restore-rehearsal.ps1  (the ONE tool that produces this)
+    -> restore-run-result.json
+        -> restore-proof.json           ops/generate-restore-proof.ps1
+
+ops/run-prelaunch-release-core.ps1  (target: staging, writes this itself)
+    -> staging-run-result.json
+        -> staging-rehearsal-proof.json ops/generate-staging-rehearsal-proof.ps1
+
+restore-proof.json + staging-rehearsal-proof.json
+    -> owner-go.json                    ops/record-owner-go.ps1
 ```
 
 At production-run time the engine re-verifies every field of every file
@@ -128,25 +137,43 @@ manifest digests (production.json must be byte-identical to what was
 rehearsed), staging and production CA pins (checked separately, never shared),
 exact `psql`/`pg_dump` version strings, executable paths and executable
 SHA-256, and the owner's Go decision bound to the exact staging proof and
-commit — before requesting any credential. Any placeholder, empty field, or
-mismatch: `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED`. None of the three evidence
-files exist in this repository yet; R0 is not closed.
+commit — before requesting any credential. It also re-loads and re-validates
+**both raw run-result files** (`-RestoreRunResultPath` / `-StagingRunResultPath`)
+with the exact same validators the generators used, and requires their
+current SHA-256 to still match what each proof references — editing or
+deleting a raw file after its proof exists invalidates the proof. Any
+placeholder, empty field, or mismatch: `STOP_PRODUCTION_RELEASE_NOT_AUTHORIZED`.
+None of the evidence files exist in this repository yet; R0 is not closed.
 
-**Authenticity hardening.** `-Confirmed` alone cannot produce a restore proof
-— `ops/generate-restore-proof.ps1` requires a structured execution report
-(`-RestoreRunReportPath`) and validates nine fields of it (exit code, probe,
-ceiling 147, keeper, RBAC, trigger before==after, rollback, reconciliation,
-clone major 17). A staging proof cannot be hand-typed either — the release
-engine itself writes `staging-run-result.json` at the end of a real staging
-success, and `ops/generate-staging-rehearsal-proof.ps1` re-verifies the
-backup and both tool executables against the filesystem rather than trusting
-that file's own claims. `ops/evidence-chain.ps1` is the single shared
-validator dot-sourced by the engine, `record-owner-go.ps1`, and both
-generators: the owner sees the Go prompt only after the exact same
+**Authenticity hardening.** `-Confirmed` alone cannot produce a restore proof.
+`ops/run-pg17-restore-rehearsal.ps1` is the only tool that writes
+`restore-run-result.json`: it takes exactly three inputs (backup path, a
+`rehearsal_clone` manifest, an output directory — never a boolean, exit code,
+or version), and performs the real sequence against a local, disposable,
+loopback PG17 clone (drop/recreate, `pg_restore`, probe, ceiling 147, keeper,
+RBAC 130/415, trigger definitions before, a deliberate rollback test, trigger
+definitions after, reconciliation) before writing anything — any failure
+stops before the file is written. `ops/generate-restore-proof.ps1` then
+re-verifies the backup hash independently and validates every field of that
+report. A staging proof cannot be hand-typed either — the release engine
+itself writes `staging-run-result.json` at the end of a real staging success,
+and `ops/generate-staging-rehearsal-proof.ps1` re-verifies the backup and
+both tool executables against the filesystem rather than trusting that
+file's own claims. `ops/evidence-chain.ps1` is the single shared validator
+dot-sourced by the engine, `record-owner-go.ps1`, both generators, and the
+restore rig: the owner sees the Go prompt only after the exact same
 cross-checks (staging/restore backup SHA match, trigger/rollback subset hash
 recomputation, restore clone PG major, staging manifest/CA re-hashed against
-the live file, and `restore <= staging <= owner` timestamp ordering) the
-Production engine will re-run.
+the live file, raw-result re-validation, and `restore <= staging <= owner`
+timestamp ordering) the Production engine will re-run.
+
+**Worktree gate.** The engine refuses to run against a dirty `git status`,
+and evidence output defaults into `ops/evidence/`. `.gitignore` now excludes
+`ops/evidence/*.json`, `*.log`, `*.dump`, and the filled-in
+`ops/targets/staging.json` / `rehearsal-clone.json` — `ops/evidence/README.md`
+and the manifest `.example.json` templates (and `production.json`) stay
+committed. Generating the default evidence files no longer blocks a
+rehearsal or Production run; a genuine code change still does.
 
 ## Next action
 

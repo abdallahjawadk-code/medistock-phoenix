@@ -8,6 +8,8 @@
         [-StagingProofPath ops\evidence\staging-rehearsal-proof.json] `
         [-StagingManifestPath ops\targets\staging.json] `
         [-ProductionManifestPath ops\targets\production.json] `
+        [-RestoreRunResultPath ops\evidence\restore-run-result.json] `
+        [-StagingRunResultPath ops\evidence\staging-run-result.json] `
         [-ExpectedProductionHead <40-hex commit sha, defaults to current HEAD>]
 
  Before showing anything or asking for a decision, this script runs the exact
@@ -30,6 +32,8 @@ param(
     [string]$StagingProofPath,
     [string]$StagingManifestPath,
     [string]$ProductionManifestPath,
+    [string]$RestoreRunResultPath,
+    [string]$StagingRunResultPath,
     [string]$ExpectedProductionHead,
     [string]$OutPath
 )
@@ -38,11 +42,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $RestoreProofPath)      { $RestoreProofPath      = Join-Path $RepoRoot 'ops\evidence\restore-proof.json' }
-if (-not $StagingProofPath)      { $StagingProofPath      = Join-Path $RepoRoot 'ops\evidence\staging-rehearsal-proof.json' }
-if (-not $StagingManifestPath)   { $StagingManifestPath   = Join-Path $RepoRoot 'ops\targets\staging.json' }
+if (-not $RestoreProofPath)       { $RestoreProofPath       = Join-Path $RepoRoot 'ops\evidence\restore-proof.json' }
+if (-not $StagingProofPath)       { $StagingProofPath       = Join-Path $RepoRoot 'ops\evidence\staging-rehearsal-proof.json' }
+if (-not $StagingManifestPath)    { $StagingManifestPath    = Join-Path $RepoRoot 'ops\targets\staging.json' }
 if (-not $ProductionManifestPath) { $ProductionManifestPath = Join-Path $RepoRoot 'ops\targets\production.json' }
-if (-not $OutPath)               { $OutPath               = Join-Path $RepoRoot 'ops\evidence\owner-go.json' }
+if (-not $RestoreRunResultPath)   { $RestoreRunResultPath   = Join-Path $RepoRoot 'ops\evidence\restore-run-result.json' }
+if (-not $StagingRunResultPath)   { $StagingRunResultPath   = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json' }
+if (-not $OutPath)                { $OutPath                = Join-Path $RepoRoot 'ops\evidence\owner-go.json' }
 
 $ConfirmPhrase = 'I AUTHORIZE THE PRODUCTION RELEASE'
 
@@ -65,7 +71,8 @@ if ($ExpectedProductionHead -notmatch '^[0-9a-f]{40}$') { Fail "ExpectedProducti
 # engine runs. No summary is shown and no prompt appears unless this passes.
 $chain = Test-RestoreAndStagingEvidence -M $M -RepoRoot $RepoRoot -Head $ExpectedProductionHead `
     -RestoreProofPath $RestoreProofPath -StagingProofPath $StagingProofPath `
-    -StagingManifestPath $StagingManifestPath -ProductionManifestPath $ProductionManifestPath
+    -StagingManifestPath $StagingManifestPath -ProductionManifestPath $ProductionManifestPath `
+    -RestoreRunResultPath $RestoreRunResultPath -StagingRunResultPath $StagingRunResultPath
 
 $staging = $chain.Staging
 $restore = $chain.Restore
@@ -123,4 +130,6 @@ Write-Host '  ops\run-prelaunch-release-core.ps1 -TargetManifest ops\targets\pro
 Write-Host "    -RestoreProofPath $RestoreProofPath"
 Write-Host "    -StagingProofPath $StagingProofPath"
 Write-Host "    -StagingManifestPath $StagingManifestPath"
+Write-Host "    -RestoreRunResultPath $RestoreRunResultPath"
+Write-Host "    -StagingRunResultPath $StagingRunResultPath"
 Write-Host "    -OwnerGoPath $OutPath"

@@ -1,20 +1,18 @@
 <#
 ================================================================================
- Generate restore-proof.json -- run ONLY after a real, successful restore of a
- Production backup onto a local PostgreSQL 17 rehearsal clone.
+ Generate restore-proof.json -- run ONLY after ops\run-pg17-restore-rehearsal.ps1
+ has written a passing restore-run-result.json.
 
      powershell -NoProfile -ExecutionPolicy Bypass -File ops\generate-restore-proof.ps1 `
-        -BackupPath <path to pre-purge.dump> `
-        -RestoreStartedAtUtc <ISO-8601 UTC> `
-        -RestoreCompletedAtUtc <ISO-8601 UTC> `
-        -CloneServerVersion <full "postgres --version" style string> `
-        -RestoreRunReportPath <path to a structured JSON report from the restore tooling> `
+        -RestoreRunReportPath ops\evidence\restore-run-result.json `
+        -BackupPath <the same backup path the rehearsal restored> `
         -Confirmed
 
  -Confirmed alone proves nothing and no longer suffices on its own: it is the
  operator's acknowledgement, required IN ADDITION to a structured JSON report
- (-RestoreRunReportPath) that the restore tooling itself produced. That report
- must show, and this script verifies every field of:
+ (-RestoreRunReportPath) that ops\run-pg17-restore-rehearsal.ps1 itself
+ produced -- no field of it is typed in by hand. This script verifies every
+ field of that report:
 
      restore_exit_code = 0
      restored_database_probe_passed = true
@@ -25,23 +23,28 @@
      deliberate_rollback_passed = true
      reconciliation_passed = true
      clone_pg_major = 17
+     backup_sha256 / backup_size / backup_path / clone_server_version /
+       restore_started_at_utc / restore_completed_at_utc all present and valid
 
- A missing field, a false flag, a wrong value, or a report that is not valid
- JSON fails closed -- no proof is written. This script never connects to a
- database and never decides on its own that a restore succeeded; it only
- assembles and hashes evidence that already exists on disk from a run the
- operator already completed.
+ -BackupPath is required for one purpose only: to independently re-hash the
+ backup file and confirm it matches what the report claims -- never trusted
+ from the report alone, the same pattern
+ ops\generate-staging-rehearsal-proof.ps1 uses for its own backup.
+
+ A missing field, a false flag, a wrong value, a backup hash mismatch, or a
+ report that is not valid JSON fails closed -- no proof is written. This
+ script never connects to a database and never decides on its own that a
+ restore succeeded; it only assembles and re-verifies evidence that already
+ exists on disk from a rehearsal the operator already completed with the one
+ restore tool.
 
  No secrets are read, computed, or written by this script.
 ================================================================================
 #>
 
 param(
-    [Parameter(Mandatory = $true)][string]$BackupPath,
-    [Parameter(Mandatory = $true)][string]$RestoreStartedAtUtc,
-    [Parameter(Mandatory = $true)][string]$RestoreCompletedAtUtc,
-    [Parameter(Mandatory = $true)][string]$CloneServerVersion,
     [Parameter(Mandatory = $true)][string]$RestoreRunReportPath,
+    [Parameter(Mandatory = $true)][string]$BackupPath,
     [Parameter(Mandatory = $true)][switch]$Confirmed,
     [string]$OutPath
 )
@@ -64,28 +67,28 @@ if (-not $Confirmed) {
     Fail '-Confirmed is required but is not sufficient on its own -- it must accompany a passing -RestoreRunReportPath. Nothing was written.'
 }
 
+Require-File $RestoreRunReportPath 'restore run result'
 Require-File $BackupPath 'backup'
-Require-File $RestoreRunReportPath 'restore run report'
-if ([string]::IsNullOrWhiteSpace($CloneServerVersion)) { Fail 'CloneServerVersion must not be empty' }
-Test-Iso8601Utc $RestoreStartedAtUtc 'RestoreStartedAtUtc'
-Test-Iso8601Utc $RestoreCompletedAtUtc 'RestoreCompletedAtUtc'
-$startedAt = ConvertTo-UtcDateTime $RestoreStartedAtUtc 'RestoreStartedAtUtc'
-$completedAt = ConvertTo-UtcDateTime $RestoreCompletedAtUtc 'RestoreCompletedAtUtc'
-if ($completedAt -lt $startedAt) { Fail 'RestoreCompletedAtUtc is before RestoreStartedAtUtc' }
 
 $reportRaw = Get-Content $RestoreRunReportPath -Raw
-try { $report = $reportRaw | ConvertFrom-Json } catch { Fail "restore run report is not valid JSON: $RestoreRunReportPath" }
+try { $report = $reportRaw | ConvertFrom-Json } catch { Fail "restore run result is not valid JSON: $RestoreRunReportPath" }
 
 # The single point where a report is judged genuine. Anything short of every
 # field matching exactly fails here, before any proof is assembled.
 Test-RestoreRunReport $report
 
+# Re-verify the backup independently -- never trust the report's own claim.
+$actualBackupSha = Get-FileSha256 $BackupPath
+if ($actualBackupSha -ne $report.backup_sha256) {
+    Fail "the backup file at $BackupPath no longer matches the SHA-256 recorded in the restore run result"
+}
+
 $proof = [ordered]@{
-    backup_sha256                          = Get-FileSha256 $BackupPath
-    backup_size                            = (Get-Item $BackupPath).Length
-    restore_started_at_utc                 = $RestoreStartedAtUtc
-    restore_completed_at_utc               = $RestoreCompletedAtUtc
-    clone_server_version                   = $CloneServerVersion
+    backup_sha256                          = $actualBackupSha
+    backup_size                            = [int64]$report.backup_size
+    restore_started_at_utc                 = $report.restore_started_at_utc
+    restore_completed_at_utc               = $report.restore_completed_at_utc
+    clone_server_version                   = $report.clone_server_version
     clone_pg_major                         = [int]$report.clone_pg_major
     restore_exit_code                      = [int]$report.restore_exit_code
     restored_database_probe_passed         = [bool]$report.restored_database_probe_passed
