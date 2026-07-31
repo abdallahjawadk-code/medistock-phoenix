@@ -148,11 +148,11 @@ export function InventoryCenterScreen({
   );
 
   const header = (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('inv_center_title', lang)}</h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('inv_center_sub', lang)}</p>
+    <div className="nexus-it-header" style={{ marginBottom: '16px' }}>
+      <div className="nexus-it-header__row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <div className="nexus-it-header__titles">
+          <h2 className="nexus-it-header__title" style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('inv_center_title', lang)}</h2>
+          <p className="nexus-it-header__subtitle" style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('inv_center_sub', lang)}</p>
         </div>
         {/* A super_admin's profile has organization_id = null, so without this
             selector activeOrgId stays null, the warehouse catalog comes back
@@ -204,7 +204,7 @@ export function InventoryCenterScreen({
     <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
       {header}
 
-      <PhoenixCard>
+      <PhoenixCard className="nexus-it-context-bar">
         <PhoenixSelect
           label={t('inv_warehouse', lang)}
           value={activeWarehouseId}
@@ -212,13 +212,13 @@ export function InventoryCenterScreen({
           options={[{ value: '', label: t('inv_select_warehouse', lang) }, ...warehouseOptions]}
         />
         {activeWarehouseId && !perms.loading && !canAdjust && !canCorrect && (
-          <p style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '8px' }}>
+          <p className="nexus-it-context-bar__hint" style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '8px' }}>
             {t('inv_read_only_scope', lang)}
           </p>
         )}
       </PhoenixCard>
 
-      <div role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '16px 0' }}>
+      <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '16px 0' }}>
         {([
           { id: 'intake' as const, labelKey: 'inv_tab_intake' },
           { id: 'stock' as const, labelKey: 'inv_tab_stock' },
@@ -243,6 +243,7 @@ export function InventoryCenterScreen({
             role="tab"
             aria-selected={tab === x.id}
             onClick={() => setTab(x.id)}
+            className="nexus-it-tab"
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
@@ -255,10 +256,11 @@ export function InventoryCenterScreen({
         ))}
       </div>
 
-      <div style={{ background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '12px 14px', fontSize: '12px', color: 'var(--pd)', marginBottom: '16px' }}>
+      <div className="nexus-it-notice" style={{ background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '12px 14px', fontSize: '12px', color: 'var(--pd)', marginBottom: '16px' }}>
         {t('inv_derived_notice', lang)}
       </div>
 
+      <div className="nexus-it-content">
       {!activeWarehouseId ? (
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
@@ -280,7 +282,7 @@ export function InventoryCenterScreen({
           />
         )
       ) : tab === 'stock' ? (
-        <div style={{ display: 'grid', gap: '12px' }}>
+        <div className="nexus-it-stock-panel" style={{ display: 'grid', gap: '12px' }}>
         {/* SOURCE-BALANCES-PANEL (088): fail-closed readiness gate inside. */}
         <SourceBalancesPanel warehouseId={activeWarehouseId} />
         <StockList
@@ -329,6 +331,7 @@ export function InventoryCenterScreen({
       ) : (
         <LedgerList batches={stock.data ?? []} lang={lang} />
       )}
+      </div>
 
       {toast && <PhoenixToast message={toast} />}
     </div>
@@ -673,18 +676,19 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
   if ((state.data ?? []).length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div className="nexus-it-stock-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <input
         type="search"
         value={query}
         onChange={e => setQuery(e.target.value)}
         placeholder={t('inv_stock_search', lang)}
         aria-label={t('inv_stock_search', lang)}
-        className="premium-field"
+        className="premium-field nexus-it-search"
         dir="auto"
         style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' }}
       />
       {batches.length === 0 && <PhoenixEmptyState icon="search" title={t('cc_palette_no_results', lang)} />}
+      <div className="nexus-it-batch-list">
       {batches.map(b => (
         <BatchRow
           key={b.id}
@@ -698,6 +702,7 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
           onConflictReload={onConflictReload}
         />
       ))}
+      </div>
     </div>
   );
 }
@@ -804,18 +809,18 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, 
   };
 
   return (
-    <PhoenixCard>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: '13.5px', fontWeight: 700 }}>{batch.scientificName}</div>
-          <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
+    <PhoenixCard className="nexus-it-batch-row">
+      <div className="nexus-it-batch-row__head" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div className="nexus-it-batch-row__id">
+          <div className="nexus-it-batch-row__name" style={{ fontSize: '13.5px', fontWeight: 700 }}>{batch.scientificName}</div>
+          <div className="nexus-it-batch-row__meta" style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
             {[batch.batchNumber, batch.nationalCode, batch.expiryDate].filter(Boolean).join(' · ') || '—'}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '14px', fontSize: '12px' }}>
-          <span>{t('inv_on_hand', lang)}: <strong>{batch.onHandQuantity}</strong></span>
-          <span>{t('inv_reserved', lang)}: <strong>{batch.reservedQuantity}</strong></span>
-          <span>{t('inv_available', lang)}: <strong>{batch.availableQuantity}</strong></span>
+        <div className="nexus-it-batch-row__stats" style={{ display: 'flex', gap: '14px', fontSize: '12px' }}>
+          <span className="nexus-it-stat nexus-it-stat--onhand">{t('inv_on_hand', lang)}: <strong>{batch.onHandQuantity}</strong></span>
+          <span className="nexus-it-stat nexus-it-stat--reserved">{t('inv_reserved', lang)}: <strong>{batch.reservedQuantity}</strong></span>
+          <span className={`nexus-it-stat nexus-it-stat--available${batch.availableQuantity === 0 ? ' nexus-it-stat--zero' : ''}`}>{t('inv_available', lang)}: <strong>{batch.availableQuantity}</strong></span>
         </div>
       </div>
 
@@ -828,7 +833,7 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, 
       )}
 
       {open && allowedTypes.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: '10px', marginTop: '10px' }}>
+        <div className="nexus-it-movement-form" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: '10px', marginTop: '10px' }}>
           <PhoenixSelect
             label={t('inv_movement', lang)}
             value={movementType}
@@ -882,7 +887,7 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
   );
 
   return (
-    <PhoenixCard>
+    <PhoenixCard className="nexus-it-ledger">
       <PhoenixSelect
         label={t('inv_tab_ledger', lang)}
         value={activeBatchId}
@@ -899,9 +904,9 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
         : (movements.data ?? []).length === 0
           ? <PhoenixEmptyState icon="🗒️" title={t('inv_no_movements', lang)} />
           : (
-            <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <ul className="nexus-it-ledger-list" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {(movements.data ?? []).map(m => (
-                <li key={m.id} style={{ fontSize: '12px', borderBottom: '1px solid var(--brd)', paddingBottom: '8px' }}>
+                <li key={m.id} className="nexus-it-ledger-row" style={{ fontSize: '12px', borderBottom: '1px solid var(--brd)', paddingBottom: '8px' }}>
                   <strong>{m.movementType}</strong> {m.quantityBefore} → {m.quantityAfter}
                   {' · '}{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
                   {m.actorNameSnapshot ? ` · ${m.actorNameSnapshot}` : ''}
