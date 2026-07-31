@@ -132,7 +132,12 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   );
 
   if (!activeOrgId) {
-    return <div dir={dir}>{header}<PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} /></div>;
+    return (
+      <div dir={dir} className="nexus-command-center nexus-command-center--reports">
+        {header}
+        <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
+      </div>
+    );
   }
 
   const tabs: Array<{ id: Tab; labelKey: string }> = [
@@ -154,7 +159,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   ];
 
   return (
-    <div dir={dir}>
+    <div dir={dir} className="nexus-command-center nexus-command-center--reports">
       {header}
       <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {tabs.map(x => (
