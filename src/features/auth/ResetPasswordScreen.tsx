@@ -117,7 +117,7 @@ export function ResetPasswordScreen() {
       </div>
 
       <div style={{ textAlign: 'center', marginBottom: '22px' }}>
-        <div style={{ width: '64px', height: '64px', borderRadius: 'var(--r4)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', color: '#fff' }}><PhoenixIcon name="lock" size={30} /></div>
+        <div style={{ width: '64px', height: '64px', borderRadius: 'var(--r4)', background: 'var(--phoenix-gold, var(--p))', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', color: 'var(--phoenix-gold-ink, #fff)' }}><PhoenixIcon name="lock" size={30} /></div>
         <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.4px' }}>MediStock-Babil</h1>
       </div>
 
@@ -127,7 +127,7 @@ export function ResetPasswordScreen() {
             <div style={{ marginBottom: '12px', color: 'var(--ok)', display: 'flex', justifyContent: 'center' }}><PhoenixIcon name="check" size={38} /></div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>{t('reset_success', lang)}</h2>
             <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginBottom: '18px' }}>{t('reset_success_msg', lang)}</p>
-            <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--phoenix-gold, var(--p))', color: 'var(--phoenix-gold-ink, #fff)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               {t('back_to_login', lang)}
             </button>
           </div>
@@ -142,7 +142,7 @@ export function ResetPasswordScreen() {
           <div style={{ textAlign: 'center', padding: '12px 0' }}>
             <div style={{ marginBottom: '12px', color: 'var(--err)', display: 'flex', justifyContent: 'center' }}><PhoenixIcon name="warning" size={30} /></div>
             <p style={{ fontSize: '13px', color: 'var(--err)', marginBottom: '18px' }} dir="auto">{t('recovery_no_session', lang)}</p>
-            <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+            <button onClick={onBackToLogin} style={{ width: '100%', padding: '13px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--phoenix-gold, var(--p))', color: 'var(--phoenix-gold-ink, #fff)', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               {t('back_to_login', lang)}
             </button>
           </div>
@@ -164,7 +164,7 @@ export function ResetPasswordScreen() {
               <div role="alert" style={{ marginBottom: '16px', padding: '9px 12px', borderRadius: 'var(--r2)', background: 'var(--err2)', border: '1px solid var(--err)', color: 'var(--err)', fontSize: '12px', fontWeight: 600 }}>{error}</div>
             )}
 
-            <button type="submit" disabled={busy} style={{ width: '100%', padding: '14px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--p)', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 16px rgba(13,148,136,.3)' }}>
+            <button type="submit" disabled={busy} style={{ width: '100%', padding: '14px', borderRadius: 'var(--r3)', border: 'none', background: 'var(--phoenix-gold, var(--p))', color: 'var(--phoenix-gold-ink, #fff)', fontSize: '15px', fontWeight: 700, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 12px 26px color-mix(in srgb, var(--phoenix-gold, var(--p)) 30%, transparent)' }}>
               {busy ? t('saving', lang) : t('set_password', lang)}
             </button>
             <button type="button" onClick={onBackToLogin} style={{ width: '100%', marginTop: '10px', padding: '8px', borderRadius: 'var(--r2)', border: 'none', background: 'transparent', color: 'var(--t2)', fontSize: '12px', cursor: 'pointer' }}>
