@@ -63,6 +63,7 @@ ops/certs/*.key
 # committed (real hashes of a real machine's real rehearsal). The schema
 # documentation stays committed.
 ops/evidence/*.json
+ops/evidence/*.json.tmp
 ops/evidence/*.log
 ops/evidence/*.dump
 !ops/evidence/README.md

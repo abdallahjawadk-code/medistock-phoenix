@@ -76,6 +76,20 @@ if ((Get-Item $BackupPath).Length -eq 0) { Fail "backup is empty: $BackupPath" }
 
 if (-not (Test-Path $OutputDirectory)) { New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null }
 
+# No failed attempt may leave a stale SUCCESS result behind: delete both the
+# final file and any leftover .tmp from a prior attempt before this one does
+# anything else. On any failure below, the same two paths are removed again
+# in the catch block, so a partial or failed attempt never leaves a result a
+# downstream consumer could mistake for this attempt's outcome.
+$RestoreResultPath = Join-Path $OutputDirectory 'restore-run-result.json'
+$RestoreResultTmpPath = "$RestoreResultPath.tmp"
+foreach ($stale in @($RestoreResultPath, $RestoreResultTmpPath)) {
+    if (Test-Path $stale) {
+        Remove-Item $stale -Force
+        Log "removed stale evidence before attempt: $stale"
+    }
+}
+
 function Resolve-Pg17RestoreTools {
     $candidates = @()
     $candidates += (Get-Command psql -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
@@ -106,6 +120,62 @@ Resolve-Pg17RestoreTools
 $Conn = "host=$($M.pooler_host) port=$($M.port) dbname=$($M.database_name) user=$($M.database_user) connect_timeout=10 application_name=phoenix_restore_rehearsal sslmode=disable"
 $MaintConn = "host=$($M.pooler_host) port=$($M.port) dbname=postgres user=$($M.database_user) connect_timeout=10 application_name=phoenix_restore_rehearsal_maint sslmode=disable"
 
+# PostgreSQL double-quoted identifier: double any embedded double-quote. The
+# database_name has already been rejected by Assert-CloneDropSafety unless it
+# matches ^phoenix_rehearsal_[a-z0-9_]+$, so this never actually encounters a
+# quote -- it is applied unconditionally anyway, so no DROP/CREATE DATABASE
+# statement in this file is ever built by raw string interpolation.
+function Get-SafePgIdentifier([string]$name) {
+    return '"' + ($name -replace '"', '""') + '"'
+}
+
+# Every gate below must pass, in this exact order, before a single
+# destructive statement (terminate/DROP/CREATE) runs against the clone. Each
+# check is independent of the others so a defect in one cannot silently
+# satisfy another: syntax and identity are checked before any connection is
+# used, the live server major is queried (not merely read from the manifest)
+# right before the drop, and the operator must type a phrase that names the
+# exact database about to be destroyed.
+function Assert-CloneDropSafety($m, [string]$maintConn) {
+    if ($m.pooler_host -notin @('127.0.0.1', 'localhost', '::1')) {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: host '$($m.pooler_host)' is not loopback"
+    }
+    if ($m.ssl_mode -ne 'disable') {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: ssl_mode must be 'disable' for a local clone, got '$($m.ssl_mode)'"
+    }
+
+    $name = $m.database_name
+    if ([string]::IsNullOrWhiteSpace($name)) { Fail 'STOP_CLONE_GUARD -- refusing DROP DATABASE: database_name is empty' }
+    # Character-level rejection first, independent of the regex below -- an
+    # explicit defence against space/quote/semicolon/comment/SQL syntax ever
+    # reaching a DROP/CREATE DATABASE statement.
+    if ($name -match '[\s''";]' -or $name.Contains('--') -or $name.Contains('/*') -or $name.Contains('*/')) {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: database_name contains a disallowed character: $name"
+    }
+    if ($name -notmatch '^phoenix_rehearsal_[a-z0-9_]+$') {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: database_name '$name' does not match ^phoenix_rehearsal_[a-z0-9_]+`$"
+    }
+    if ($name -in @('postgres', 'template0', 'template1')) {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: '$name' is a protected system database"
+    }
+
+    # The maintenance server's ACTUAL major version, queried live -- not the
+    # manifest's required_pg_major, which is only a request, not a fact.
+    $maintMajor = [int]((ScalarOn $maintConn "SELECT split_part(current_setting('server_version'),'.',1);"))
+    if ($maintMajor -ne 17) {
+        Fail "STOP_CLONE_GUARD -- refusing DROP DATABASE: maintenance server is PostgreSQL major $maintMajor, expected 17"
+    }
+
+    $expectedPhrase = "RESET LOCAL PG17 CLONE $name"
+    Write-Host ''
+    Write-Host "This will DROP and recreate the local, disposable PG17 rehearsal clone database '$name'."
+    Write-Host 'This is loopback-only and is never Production or Staging.'
+    $typed = Read-Host "Type EXACTLY  $expectedPhrase  to proceed"
+    if ($typed -ne $expectedPhrase) { Fail 'STOP_CLONE_GUARD -- clone reset not confirmed by operator' }
+
+    return $name
+}
+
 $TRIGGER_PAIRS = @(
     @{ Table = 'item_availability'; Trigger = 'trg_guard_availability_source_kind' },
     @{ Table = 'phoenix_report_snapshots'; Trigger = 'phoenix_report_snapshots_forbid_mutation' },
@@ -135,10 +205,12 @@ try {
     Log "backup: $BackupPath ($backupSize bytes, $backupSha256)"
 
     Section '1. CREATE/VERIFY CLEAN PG17 CLONE'
-    Invoke-PsqlOn -Conn $MaintConn -Sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$($M.database_name)' AND pid <> pg_backend_pid();" | Out-Null
-    Invoke-PsqlOn -Conn $MaintConn -Sql "DROP DATABASE IF EXISTS $($M.database_name);" | Out-Null
-    Invoke-PsqlOn -Conn $MaintConn -Sql "CREATE DATABASE $($M.database_name);" | Out-Null
-    Log "clone database '$($M.database_name)' dropped and recreated clean"
+    $safeDbName = Assert-CloneDropSafety $M $MaintConn
+    $quotedDbName = Get-SafePgIdentifier $safeDbName
+    Invoke-PsqlOn -Conn $MaintConn -Sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$safeDbName' AND pid <> pg_backend_pid();" | Out-Null
+    Invoke-PsqlOn -Conn $MaintConn -Sql "DROP DATABASE IF EXISTS $quotedDbName;" | Out-Null
+    Invoke-PsqlOn -Conn $MaintConn -Sql "CREATE DATABASE $quotedDbName;" | Out-Null
+    Log "clone database '$safeDbName' dropped and recreated clean"
 
     Section '2. RESTORE BACKUP'
     & $script:PgRestoreExe -d $Conn --no-owner --no-privileges --exit-on-error $BackupPath 2>&1 | ForEach-Object { Log $_ }
@@ -267,16 +339,31 @@ COMMIT;
         backup_sha256                           = $backupSha256
         backup_size                             = $backupSize
     }
-    $outPath = Join-Path $OutputDirectory 'restore-run-result.json'
-    ($result | ConvertTo-Json -Depth 5) | Set-Content -Path $outPath -Encoding utf8
+    ($result | ConvertTo-Json -Depth 5) | Set-Content -Path $RestoreResultTmpPath -Encoding utf8
+
+    Section '12. SELF-VALIDATE'
+    # Re-parse what was actually written to disk (not the in-memory $result)
+    # and run it through the exact same validator every downstream consumer
+    # uses, before the file is ever visible under its final name.
+    $roundTripped = Get-Content $RestoreResultTmpPath -Raw | ConvertFrom-Json
+    Test-RestoreRunReport $roundTripped
+    Log 'self-validation passed: written result re-parses and satisfies every check'
+
+    Move-Item -Path $RestoreResultTmpPath -Destination $RestoreResultPath -Force
 
     Section 'RESULT: COMPLETED'
-    Log "restore-run-result.json written: $outPath"
+    Log "restore-run-result.json written atomically: $RestoreResultPath"
     Log 'Pass this file to ops\generate-restore-proof.ps1 -RestoreRunReportPath.'
 }
 catch {
     Section 'RESULT: STOPPED'
     Log ('ERROR: ' + $_.Exception.Message)
+    foreach ($stale in @($RestoreResultPath, $RestoreResultTmpPath)) {
+        if (Test-Path $stale) {
+            Remove-Item $stale -Force -ErrorAction SilentlyContinue
+            Log "removed evidence from the failed attempt: $stale"
+        }
+    }
     Log 'No restore-run-result.json was written.'
     exit 1
 }

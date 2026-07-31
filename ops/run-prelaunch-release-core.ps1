@@ -296,8 +296,19 @@ function New-StagingRunResult($m, [string]$head, [string]$serverVersionFull, [in
     $outPath = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json'
     $dir = Split-Path -Parent $outPath
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    ($result | ConvertTo-Json -Depth 5) | Set-Content -Path $outPath -Encoding utf8
-    Log "staging run result written: $outPath"
+    $tmpPath = "$outPath.tmp"
+    if (Test-Path $tmpPath) { Remove-Item $tmpPath -Force }
+    ($result | ConvertTo-Json -Depth 5) | Set-Content -Path $tmpPath -Encoding utf8
+
+    # Self-validate what was actually written to disk, with the exact same
+    # validator every downstream consumer (Production's evidence chain,
+    # ops\generate-staging-rehearsal-proof.ps1) uses, before the file is ever
+    # visible under its final name.
+    $roundTripped = Get-Content $tmpPath -Raw | ConvertFrom-Json
+    Test-StagingRunResult $roundTripped
+
+    Move-Item -Path $tmpPath -Destination $outPath -Force
+    Log "staging run result written atomically: $outPath"
 }
 
 # ============================================================== main
@@ -311,6 +322,20 @@ try {
     if (-not $StagingManifestPath)   { $StagingManifestPath   = Join-Path $RepoRoot 'ops\targets\staging.json' }
     if (-not $RestoreRunResultPath)  { $RestoreRunResultPath  = Join-Path $RepoRoot 'ops\evidence\restore-run-result.json' }
     if (-not $StagingRunResultPath)  { $StagingRunResultPath  = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json' }
+
+    # No failed staging attempt may leave a stale SUCCESS result behind: wipe
+    # both the final file and any leftover .tmp -- the same fixed path
+    # New-StagingRunResult always writes to -- before this attempt does
+    # anything else. Same contract as ops\run-pg17-restore-rehearsal.ps1.
+    if ($M.environment -eq 'staging') {
+        $stagingResultFixedPath = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json'
+        foreach ($stale in @($stagingResultFixedPath, "$stagingResultFixedPath.tmp")) {
+            if (Test-Path $stale) {
+                Remove-Item $stale -Force
+                Log "removed stale evidence before attempt: $stale"
+            }
+        }
+    }
 
     $Host.UI.RawUI.WindowTitle = "MediStock Phoenix -- release [$($M.environment)]"
     Section "0. TARGET: $($M.environment)"
@@ -393,6 +418,15 @@ try {
 catch {
     Section 'RESULT: STOPPED'
     Log ('ERROR: ' + $_.Exception.Message)
+    if ((Test-Path variable:M) -and $M -and $M.environment -eq 'staging') {
+        $stagingResultFixedPath = Join-Path $RepoRoot 'ops\evidence\staging-run-result.json'
+        foreach ($stale in @($stagingResultFixedPath, "$stagingResultFixedPath.tmp")) {
+            if (Test-Path $stale) {
+                Remove-Item $stale -Force -ErrorAction SilentlyContinue
+                Log "removed evidence from the failed attempt: $stale"
+            }
+        }
+    }
     Log 'If the purge transaction itself failed it rolled back atomically: data AND triggers are unchanged.'
     Log 'There is no automatic retry.'
     exit 1

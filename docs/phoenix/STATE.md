@@ -5,7 +5,7 @@
 > Finished stage reports are appended to [HISTORY/](HISTORY/).
 
 **Updated:** 2026-07-31
-**Canonical decision memory:** v12 (supersedes v11, v10 and all earlier plans)
+**Canonical decision memory:** v13 (supersedes v12, v11, v10 and all earlier plans)
 
 ---
 
@@ -74,13 +74,13 @@ RBAC 130/415 · Storage empty · all business data is test data.
 |---|---|
 | Option-A purge (rig, **PG18.4**) | 15/15 |
 | purge manifest coverage (rig, **PG18.4**) | 7/7 |
-| release engine contract | 68/68 |
+| release engine contract | 85/85 |
 | typecheck / lint / build | pass |
-| full suite | 301 files passed (381 total, 79 skipped), **12,193** passed, 0 failed tests |
+| full suite | 302 files passed (381 total, 79 skipped), **12,211** passed, 0 failed tests |
 
-The full-suite count moves as suites are added; it was 12,182 before the R0
-raw-evidence-and-worktree-gate tests grew. Treat the number as a snapshot, not
-a constant.
+The full-suite count moves as suites are added; it was 12,193 before the v13
+stale-evidence-and-local-clone-safety patch grew it. Treat the number as a
+snapshot, not a constant.
 
 **Local-only caveats.** The full suite must run
 `--pool=forks --poolOptions.forks.singleFork --fileParallelism=false`; default
@@ -169,11 +169,34 @@ timestamp ordering) the Production engine will re-run.
 
 **Worktree gate.** The engine refuses to run against a dirty `git status`,
 and evidence output defaults into `ops/evidence/`. `.gitignore` now excludes
-`ops/evidence/*.json`, `*.log`, `*.dump`, and the filled-in
+`ops/evidence/*.json`, `*.json.tmp`, `*.log`, `*.dump`, and the filled-in
 `ops/targets/staging.json` / `rehearsal-clone.json` — `ops/evidence/README.md`
 and the manifest `.example.json` templates (and `production.json`) stay
 committed. Generating the default evidence files no longer blocks a
 rehearsal or Production run; a genuine code change still does.
+
+**Stale-evidence protection (v13).** Both raw-result writers now follow the
+same contract: delete any stale final and `.tmp` for that file before an
+attempt does anything else; write the real result to `.tmp`; self-validate
+the round-tripped file with the exact same `Test-RestoreRunReport` /
+`Test-StagingRunResult` functions every downstream consumer uses; atomically
+`Move-Item` the `.tmp` to its final name only after that validation passes;
+and on any failure, the catch block removes both the final and `.tmp` path
+for that attempt. A failed attempt can no longer leave a previous
+successful run's evidence looking current.
+
+**Local clone DROP DATABASE safety (v13).** Before
+`ops/run-pg17-restore-rehearsal.ps1` runs `pg_terminate_backend` / `DROP
+DATABASE` / `CREATE DATABASE` against the disposable rehearsal clone, it
+re-checks (again, not only at manifest load) that the host is loopback and
+`ssl_mode=disable`; that `database_name` matches
+`^phoenix_rehearsal_[a-z0-9_]+$`, is not `postgres`/`template0`/`template1`,
+and contains no space/quote/semicolon/comment syntax; queries the
+maintenance connection's *live* server major and refuses anything but 17;
+and requires the operator to type `RESET LOCAL PG17 CLONE <database_name>`
+naming the exact database, never auto-answered. Every destructive statement
+uses a safely double-quoted identifier. All of this is local-only: no
+Production or Staging connection, no live migration, no real restore/purge.
 
 ## Next action
 

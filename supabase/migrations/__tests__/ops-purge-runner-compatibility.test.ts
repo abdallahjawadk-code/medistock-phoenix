@@ -61,6 +61,20 @@ const PS_FILES = [
 
 const readTarget = (n: string) => JSON.parse(readFileSync(join(TARGETS, n), 'utf8'));
 const coreSrc = () => readFileSync(CORE, 'utf8');
+
+// Shared by every describe block below that needs to exercise a script for
+// real: Windows PowerShell 5.1 only (Linux CI is protected by the byte/parse
+// guards above instead), always non-interactive so a script that reaches an
+// unanswered Read-Host fails fast rather than hanging.
+const PS_EXE = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+const canRun = process.platform === 'win32' && existsSync(PS_EXE);
+function runPs(script: string, args: string[]) {
+  const res = spawnSync(PS_EXE, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], {
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  return { status: res.status, out: (res.stdout || '') + (res.stderr || '') };
+}
 const stagesSrc = () => readFileSync(STAGES, 'utf8');
 
 describe('release engine -- encoding and PowerShell compatibility', () => {
@@ -613,17 +627,6 @@ describe('all evidence-chain failures precede the Production password prompt', (
 });
 
 describe('evidence generators, exercised for real (Windows PowerShell only)', () => {
-  const ps = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-  const canRun = process.platform === 'win32' && existsSync(ps);
-
-  function runPs(script: string, args: string[]) {
-    const res = spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], {
-      encoding: 'utf8',
-      timeout: 30_000,
-    });
-    return { status: res.status, out: (res.stdout || '') + (res.stderr || '') };
-  }
-
   const VALID_HEX = 'a'.repeat(64);
   const OTHER_HEX = 'b'.repeat(64);
   const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
@@ -820,6 +823,7 @@ describe('evidence files never dirty the worktree gate', () => {
       for (const name of [
         'restore-proof.json', 'staging-rehearsal-proof.json', 'owner-go.json',
         'restore-run-result.json', 'staging-run-result.json', 'some-report.log', 'a-backup.dump',
+        'restore-run-result.json.tmp', 'staging-run-result.json.tmp',
       ]) {
         const p = join(evidenceDir, name);
         writeFileSync(p, '{"marker":"phoenix-worktree-gate-test"}');
@@ -876,6 +880,13 @@ describe('evidence files never dirty the worktree gate', () => {
       expect(res.status, `${path} should be gitignored`).toBe(0);
     }
   });
+
+  it('ops/evidence/*.json.tmp is ignored too -- the tmp-then-atomic-rename artifacts never dirty the gate either', () => {
+    for (const path of ['ops/evidence/restore-run-result.json.tmp', 'ops/evidence/staging-run-result.json.tmp']) {
+      const res = spawnSyncGit(['check-ignore', path]);
+      expect(res.status, `${path} should be gitignored`).toBe(0);
+    }
+  });
 });
 
 describe('ops/run-pg17-restore-rehearsal.ps1: the one tool that writes restore-run-result.json', () => {
@@ -910,40 +921,53 @@ describe('ops/run-pg17-restore-rehearsal.ps1: the one tool that writes restore-r
     expect(new Set(paramNames).size).toBe(3);
   });
 
-  it('only writes restore-run-result.json in the success path, after every check', () => {
+  it('only commits restore-run-result.json to its final name after every check, atomically', () => {
     const src = restoreRigSrc();
-    const writeIdx = src.indexOf("Join-Path $OutputDirectory 'restore-run-result.json'");
+    const commitIdx = src.indexOf('Move-Item -Path $RestoreResultTmpPath -Destination $RestoreResultPath');
     const ceilingCheck = src.indexOf("if ($ceiling -ne 147)");
     const keeperCheck = src.indexOf('STOP_KEEPER_ACCOUNT_UNVERIFIED');
     const rbacCheck = src.indexOf('RBAC drift');
     const rollbackCheck = src.indexOf('the deliberate rollback test did not fail as expected');
     const triggerCompare = src.indexOf('trigger definitions changed across the rollback test');
     const reconciliationCheck = src.indexOf('unvalidated FK constraint');
+    const selfValidate = src.indexOf('Test-RestoreRunReport $roundTripped');
+    expect(commitIdx).toBeGreaterThan(-1);
     for (const [name, idx] of [
       ['ceiling', ceilingCheck], ['keeper', keeperCheck], ['rbac', rbacCheck],
       ['rollback', rollbackCheck], ['trigger comparison', triggerCompare], ['reconciliation', reconciliationCheck],
+      ['self-validation', selfValidate],
     ] as const) {
       expect(idx, `${name} check must exist`).toBeGreaterThan(-1);
-      expect(idx, `${name} check must precede the result write`).toBeLessThan(writeIdx);
+      expect(idx, `${name} check must precede the atomic commit to the final name`).toBeLessThan(commitIdx);
     }
   });
 
-  it('a pg_restore failure stops before any report is written', () => {
+  it('a pg_restore failure stops before any tmp or final report is written', () => {
     const src = restoreRigSrc();
     const restoreCall = src.indexOf('& $script:PgRestoreExe');
     const exitCheck = src.indexOf('if ($restoreExitCode -ne 0)');
-    const writeIdx = src.indexOf("Join-Path $OutputDirectory 'restore-run-result.json'");
+    const tmpWriteIdx = src.indexOf('Set-Content -Path $RestoreResultTmpPath -Encoding utf8');
+    const commitIdx = src.indexOf('Move-Item -Path $RestoreResultTmpPath -Destination $RestoreResultPath');
     expect(restoreCall).toBeGreaterThan(-1);
     expect(exitCheck).toBeGreaterThan(restoreCall);
-    expect(exitCheck).toBeLessThan(writeIdx);
+    expect(exitCheck).toBeLessThan(tmpWriteIdx);
+    expect(exitCheck).toBeLessThan(commitIdx);
     expect(src.slice(exitCheck, exitCheck + 200)).toMatch(/Fail "pg_restore failed/);
     // The whole flow is one try{} block; a Fail anywhere throws out of it,
-    // so the write statement (last in the block) is never reached.
+    // so the tmp write (near the end of the block) is never reached.
     const tryStart = src.indexOf('try {');
     const catchStart = src.indexOf('catch {');
     expect(tryStart).toBeGreaterThan(-1);
-    expect(writeIdx).toBeGreaterThan(tryStart);
-    expect(writeIdx).toBeLessThan(catchStart);
+    expect(tmpWriteIdx).toBeGreaterThan(tryStart);
+    expect(tmpWriteIdx).toBeLessThan(catchStart);
+    // And the catch block itself removes any evidence the failed attempt
+    // left behind, so a Fail AFTER the tmp write (e.g. self-validation)
+    // still leaves nothing on disk.
+    const finallyStart = src.indexOf('finally {');
+    const catchBody = src.slice(catchStart, finallyStart);
+    expect(catchBody).toContain('$RestoreResultPath');
+    expect(catchBody).toContain('$RestoreResultTmpPath');
+    expect(catchBody).toMatch(/Remove-Item \$stale -Force -ErrorAction SilentlyContinue/);
   });
 
   it('the restore rig only ever touches a loopback, disposable, PG17 clone', () => {
@@ -1007,5 +1031,283 @@ describe('raw evidence re-verification -- tamper and deletion detection', () => 
     expect(loopBody).toContain('$StagingProofPath');
     expect(loopBody).toContain('$RestoreRunResultPath');
     expect(loopBody).toContain('$StagingRunResultPath');
+  });
+});
+
+// ============================================================================
+// R0: STALE EVIDENCE AND LOCAL CLONE SAFETY
+//
+// Two closing gaps, both purely local: (1) a failed restore or staging
+// attempt could leave a PREVIOUS successful run's result file on disk,
+// indistinguishable from a genuine SUCCESS for this attempt, and (2) the one
+// script that runs DROP DATABASE -- against a local, disposable clone by
+// design -- had no defence of its own if a manifest were ever malformed or
+// substituted: no live server-major check, no name-format check, no
+// injection guard, no operator confirmation naming the exact database. Both
+// gaps are closed with zero real database access: PowerShell parses cleanly
+// under the real parser (already proven above), and every DROP-safety check
+// is proven either statically (source order/content) or, where it needs no
+// database and no interactive prompt, by real, non-interactive execution
+// against a manifest engineered to fail deterministically before ever
+// reaching a live connection (this machine's/CI's PostgreSQL client tools
+// are not major 17 -- Resolve-Pg17RestoreTools / Resolve-PgClientTools stops
+// the run before Assert-CloneDropSafety could ever open a socket).
+// ============================================================================
+
+describe('ops/run-pg17-restore-rehearsal.ps1: stale restore-run-result.json is never left behind', () => {
+  it('deletes stale final and tmp restore-run-result.json before the attempt does anything else', () => {
+    const src = restoreRigSrc();
+    const staleBlock = src.indexOf('removed stale evidence before attempt');
+    const resolveTools = src.indexOf('function Resolve-Pg17RestoreTools');
+    const tryStart = src.indexOf('try {');
+    expect(staleBlock).toBeGreaterThan(-1);
+    expect(staleBlock).toBeLessThan(resolveTools);
+    expect(staleBlock).toBeLessThan(tryStart);
+    expect(src).toMatch(/\$RestoreResultPath = Join-Path \$OutputDirectory 'restore-run-result\.json'/);
+    expect(src).toMatch(/\$RestoreResultTmpPath = "\$RestoreResultPath\.tmp"/);
+    expect(src).toMatch(/foreach \(\$stale in @\(\$RestoreResultPath, \$RestoreResultTmpPath\)\)/);
+  });
+
+  it.runIf(canRun)('really deletes a stale final and tmp result before doing anything else, for a real (non-interactive) run', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'phoenix-restore-stale-'));
+    try {
+      const backup = join(dir, 'backup.dump');
+      writeFileSync(backup, 'x'.repeat(2048));
+      const manifest = join(dir, 'clone-manifest.json');
+      writeFileSync(manifest, JSON.stringify({
+        environment: 'rehearsal_clone',
+        pooler_host: '127.0.0.1',
+        port: 19187,
+        database_name: 'phoenix_rehearsal_stale_test',
+        database_user: 'postgres',
+        keeper_email: 'abdallahjawad2015@gmail.com',
+        ssl_mode: 'disable',
+        required_pg_major: 17,
+      }));
+      const finalPath = join(dir, 'restore-run-result.json');
+      const tmpPath = join(dir, 'restore-run-result.json.tmp');
+      writeFileSync(finalPath, JSON.stringify({ marker: 'stale-from-previous-run', restore_exit_code: 0 }));
+      writeFileSync(tmpPath, '{"marker":"stale-tmp"}');
+
+      const { status, out } = runPs(RESTORE_RIG, [
+        '-BackupPath', backup,
+        '-CloneTargetManifest', manifest,
+        '-OutputDirectory', dir,
+      ]);
+
+      // Expected to stop at client-tool resolution (or, if PG17 tools ever
+      // are present, at the next real gate) -- never a genuine restore, and
+      // never a connection to anything but loopback. What is proven here is
+      // narrower and unconditional: it did not report success, and the
+      // stale evidence from a previous attempt is gone.
+      expect(status, out).not.toBe(0);
+      expect(existsSync(finalPath), 'stale final must be removed before the attempt proceeds').toBe(false);
+      expect(existsSync(tmpPath), 'stale tmp must be removed before the attempt proceeds').toBe(false);
+      expect(out).toContain('removed stale evidence before attempt');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('only commits restore-run-result.json to its final name after every check, atomically', () => {
+    // Duplicate of the assertion in the "one tool" describe block above,
+    // kept here too as the canonical home for the R0 stale-evidence
+    // contract's "atomic tmp-to-final only on success" requirement.
+    const src = restoreRigSrc();
+    const tmpWrite = src.indexOf('Set-Content -Path $RestoreResultTmpPath -Encoding utf8');
+    const selfValidate = src.indexOf('Test-RestoreRunReport $roundTripped');
+    const commit = src.indexOf('Move-Item -Path $RestoreResultTmpPath -Destination $RestoreResultPath');
+    expect(tmpWrite).toBeGreaterThan(-1);
+    expect(selfValidate).toBeGreaterThan(tmpWrite);
+    expect(commit).toBeGreaterThan(selfValidate);
+  });
+
+  it('the catch block removes both the final and tmp path for this attempt on any failure', () => {
+    const src = restoreRigSrc();
+    const catchStart = src.indexOf('catch {');
+    const finallyStart = src.indexOf('finally {');
+    const catchBody = src.slice(catchStart, finallyStart);
+    expect(catchBody).toContain('$RestoreResultPath');
+    expect(catchBody).toContain('$RestoreResultTmpPath');
+    expect(catchBody).toMatch(/Remove-Item \$stale -Force -ErrorAction SilentlyContinue/);
+  });
+});
+
+describe('ops/run-prelaunch-release-core.ps1: stale staging-run-result.json is never left behind', () => {
+  it("deletes stale final and tmp staging-run-result.json at the very start of a staging attempt, before any gate", () => {
+    const src = coreSrc();
+    const staleBlock = src.indexOf('removed stale evidence before attempt');
+    const section0 = src.indexOf('Section "0. TARGET:');
+    const worktree = src.indexOf("Section '2. WORKTREE'");
+    expect(staleBlock).toBeGreaterThan(-1);
+    expect(staleBlock).toBeLessThan(section0);
+    expect(staleBlock).toBeLessThan(worktree);
+    expect(src).toMatch(/if \(\$M\.environment -eq 'staging'\)/);
+    expect(src).toMatch(/\$stagingResultFixedPath = Join-Path \$RepoRoot 'ops\\evidence\\staging-run-result\.json'/);
+  });
+
+  it.runIf(canRun)('really deletes a stale final and tmp staging result before doing anything else, for a real (non-interactive) run', () => {
+    const evidenceDir = join(OPS, 'evidence');
+    const finalPath = join(evidenceDir, 'staging-run-result.json');
+    const tmpPath = join(evidenceDir, 'staging-run-result.json.tmp');
+    writeFileSync(finalPath, JSON.stringify({ marker: 'stale-from-previous-run', result: 'SUCCESS' }));
+    writeFileSync(tmpPath, '{"marker":"stale-tmp"}');
+    try {
+      const manifest = join(TARGETS, 'staging.example.json');
+      const { status, out } = runPs(CORE, ['-TargetManifest', manifest]);
+      // The run is expected to stop somewhere in the pre-credential gates
+      // (dirty worktree, unsupported client tool major, or missing CA) --
+      // never reaching a database. What matters here is unconditional: it
+      // did not report success, and the stale evidence is gone.
+      expect(status, out).not.toBe(0);
+      expect(existsSync(finalPath), 'stale final must be removed before the attempt proceeds').toBe(false);
+      expect(existsSync(tmpPath), 'stale tmp must be removed before the attempt proceeds').toBe(false);
+      expect(out).toContain('removed stale evidence before attempt');
+    } finally {
+      rmSync(finalPath, { force: true });
+      rmSync(tmpPath, { force: true });
+    }
+  }, 30_000);
+
+  it('New-StagingRunResult writes to .tmp, self-validates, then commits atomically only after validation passes', () => {
+    const src = coreSrc();
+    const start = src.indexOf('function New-StagingRunResult');
+    const end = src.indexOf('\n}', start);
+    const body = src.slice(start, end);
+    const tmpWrite = body.indexOf('Set-Content -Path $tmpPath -Encoding utf8');
+    const selfValidate = body.indexOf('Test-StagingRunResult $roundTripped');
+    const commit = body.indexOf('Move-Item -Path $tmpPath -Destination $outPath -Force');
+    expect(tmpWrite).toBeGreaterThan(-1);
+    expect(selfValidate).toBeGreaterThan(tmpWrite);
+    expect(commit).toBeGreaterThan(selfValidate);
+  });
+
+  it('the outer catch block removes any staging evidence left behind by a failed attempt', () => {
+    const src = coreSrc();
+    // '\ncatch {' / '\nfinally {' (not the inline try/catch inside
+    // Read-TargetManifest's JSON parse, or the inline try/finally around
+    // Push-Location) anchor the OUTER main block -- both inline forms are
+    // preceded by a space ("} catch {" / "} finally {"), never a newline.
+    const catchStart = src.indexOf('\ncatch {');
+    const finallyStart = src.indexOf('\nfinally {');
+    expect(catchStart).toBeGreaterThan(-1);
+    expect(finallyStart).toBeGreaterThan(catchStart);
+    const catchBody = src.slice(catchStart, finallyStart);
+    expect(catchBody).toMatch(/\$M\.environment -eq 'staging'/);
+    expect(catchBody).toContain("Join-Path $RepoRoot 'ops\\evidence\\staging-run-result.json'");
+    expect(catchBody).toMatch(/Remove-Item \$stale -Force -ErrorAction SilentlyContinue/);
+  });
+});
+
+describe('ops/run-pg17-restore-rehearsal.ps1: local clone DROP DATABASE safety guard', () => {
+  it('only accepts database_name matching ^phoenix_rehearsal_[a-z0-9_]+$, rejecting everything else', () => {
+    const src = restoreRigSrc();
+    const match = src.match(/name -notmatch '(\^phoenix_rehearsal_\[[^']+)'/);
+    expect(match, 'the database_name regex must be present in source').toBeTruthy();
+    const re = new RegExp(match![1]);
+    expect(re.test('phoenix_rehearsal_abc123')).toBe(true);
+    expect(re.test('phoenix_rehearsal_a')).toBe(true);
+    expect(re.test('phoenix_rehearsal_')).toBe(false);
+    expect(re.test('phoenix_prod')).toBe(false);
+    expect(re.test('postgres')).toBe(false);
+    expect(re.test('phoenix_rehearsal_abc; DROP TABLE x;')).toBe(false);
+    expect(re.test("phoenix_rehearsal_abc'")).toBe(false);
+    expect(re.test('PHOENIX_REHEARSAL_ABC')).toBe(false);
+
+    const nameCheck = src.indexOf("name -notmatch '^phoenix_rehearsal_");
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    expect(nameCheck).toBeGreaterThan(-1);
+    expect(dropCall).toBeGreaterThan(-1);
+    expect(nameCheck).toBeLessThan(dropCall);
+  });
+
+  it('rejects postgres/template0/template1 by exact name, before any DROP statement', () => {
+    const src = restoreRigSrc();
+    expect(src).toContain(`$name -in @('postgres', 'template0', 'template1')`);
+    const protectedCheck = src.indexOf(`-in @('postgres', 'template0', 'template1')`);
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    expect(protectedCheck).toBeGreaterThan(-1);
+    expect(protectedCheck).toBeLessThan(dropCall);
+  });
+
+  it('rejects database names containing whitespace, quotes, semicolons or SQL comment syntax, before any DROP', () => {
+    const src = restoreRigSrc();
+    // Mirrors the character class in Assert-CloneDropSafety exactly --
+    // $name -match '[\s''";]' in PowerShell is the char class [\s'";] (a
+    // doubled '' inside a single-quoted PS string is one literal quote).
+    expect(src).toContain(`$name -match '[\\s''";]'`);
+    const injectionCharClass = /[\s'";]/;
+    for (const bad of ['has space', "quote'name", 'double"quote', 'semi;colon', 'tab\tname']) {
+      expect(injectionCharClass.test(bad), `${bad} must be rejected`).toBe(true);
+    }
+    expect(injectionCharClass.test('phoenix_rehearsal_clean_name')).toBe(false);
+    expect(src).toContain(`.Contains('--')`);
+    expect(src).toContain(`.Contains('/*')`);
+    expect(src).toContain(`.Contains('*/')`);
+
+    const charGuard = src.indexOf('database_name contains a disallowed character');
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    expect(charGuard).toBeGreaterThan(-1);
+    expect(charGuard).toBeLessThan(dropCall);
+  });
+
+  it('queries the maintenance server live and refuses a non-PG17 server before any DROP', () => {
+    const src = restoreRigSrc();
+    const majorQuery = src.indexOf(`ScalarOn $maintConn "SELECT split_part(current_setting('server_version'),'.',1);"`);
+    const majorCheck = src.indexOf('$maintMajor -ne 17');
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    expect(majorQuery, 'the live server-major query must exist').toBeGreaterThan(-1);
+    expect(majorCheck).toBeGreaterThan(majorQuery);
+    expect(majorCheck).toBeLessThan(dropCall);
+    expect(src.slice(majorCheck, majorCheck + 150)).toMatch(/Fail "STOP_CLONE_GUARD/);
+  });
+
+  it('requires the operator to type RESET LOCAL PG17 CLONE <database_name>, never auto-answered, before any DROP', () => {
+    const src = restoreRigSrc();
+    expect(src).toMatch(/\$expectedPhrase = "RESET LOCAL PG17 CLONE \$name"/);
+    expect(src).toMatch(/if \(\$typed -ne \$expectedPhrase\) \{ Fail 'STOP_CLONE_GUARD -- clone reset not confirmed by operator' \}/);
+    expect(src).not.toMatch(/\$typed\s*=\s*\$expectedPhrase/);
+    const promptIdx = src.indexOf('Read-Host "Type EXACTLY  $expectedPhrase  to proceed"');
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    expect(promptIdx).toBeGreaterThan(-1);
+    expect(promptIdx).toBeLessThan(dropCall);
+  });
+
+  it('Assert-CloneDropSafety runs entirely before terminate/DROP/CREATE, and every destructive statement uses a safely quoted identifier', () => {
+    const src = restoreRigSrc();
+    const guardCall = src.indexOf('Assert-CloneDropSafety $M $MaintConn');
+    const terminateCall = src.indexOf('pg_terminate_backend');
+    const dropCall = src.indexOf('DROP DATABASE IF EXISTS $quotedDbName');
+    const createCall = src.indexOf('CREATE DATABASE $quotedDbName');
+    expect(guardCall).toBeGreaterThan(-1);
+    expect(guardCall).toBeLessThan(terminateCall);
+    expect(terminateCall).toBeLessThan(dropCall);
+    expect(dropCall).toBeLessThan(createCall);
+    expect(src).toMatch(/function Get-SafePgIdentifier/);
+    expect(src).toMatch(/return '"' \+ \(\$name -replace '"', '""'\) \+ '"'/);
+  });
+
+  it('re-validates host loopback and ssl_mode=disable again immediately before the drop, not only at manifest load', () => {
+    const src = restoreRigSrc();
+    const start = src.indexOf('function Assert-CloneDropSafety');
+    const end = src.indexOf('\n}', start);
+    const body = src.slice(start, end);
+    expect(body).toMatch(/pooler_host -notin @\('127\.0\.0\.1', 'localhost', '::1'\)/);
+    expect(body).toMatch(/ssl_mode -ne 'disable'/);
+  });
+
+  it('the clone-reset code path never touches a credential, and the raw result writers never carry one either', () => {
+    const restoreSrc = restoreRigSrc();
+    const coreSource = coreSrc();
+
+    const guardStart = restoreSrc.indexOf('function Assert-CloneDropSafety');
+    const guardEnd = restoreSrc.indexOf('\n}', guardStart);
+    const guardBody = restoreSrc.slice(guardStart, guardEnd);
+    expect(guardBody).not.toMatch(/PGPASSWORD|password|AsSecureString/i);
+
+    const newResultStart = coreSource.indexOf('function New-StagingRunResult');
+    const newResultEnd = coreSource.indexOf('\n}', newResultStart);
+    const newResultBody = coreSource.slice(newResultStart, newResultEnd);
+    expect(newResultBody).not.toMatch(/PGPASSWORD|password|service_role_key|access_token/i);
   });
 });
