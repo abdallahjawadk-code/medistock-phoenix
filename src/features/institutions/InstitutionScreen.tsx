@@ -144,14 +144,14 @@ export function InstitutionScreen() {
   }
 
   return (
-    <div className="premium-page premium-institutions-page" style={{ animation: 'fs .3s ease' }}>
-      <div className="premium-page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
-        <div>
+    <div className="premium-page premium-institutions-page nexus-institutions" style={{ animation: 'fs .3s ease' }}>
+      <div className="premium-page-header nexus-io-header nexus-io-header__row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '22px' }}>
+        <div className="nexus-io-header__titles">
           <div className="premium-command-kicker">MediStock-Babil</div>
-          <h2 className="premium-section-header" style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 700, letterSpacing: '-.3px' }}>
+          <h2 className="premium-section-header nexus-io-header__title" style={{ fontSize: isMobile ? '20px' : '25px', fontWeight: 700, letterSpacing: '-.3px' }}>
             {t('nav_institutions', lang)}
           </h2>
-          <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
+          <p className="nexus-io-header__subtitle" style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
             {t('inst_sub', lang)}
           </p>
         </div>
@@ -238,7 +238,7 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
 
   return (
     <>
-      <div className="premium-org-toolbar" style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
+      <div className="premium-org-toolbar nexus-io-toolbar" style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
           <span style={{ position: 'absolute', insetInlineStart: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none' }}><PhoenixIcon name="search" size={16} /></span>
           <input
@@ -263,9 +263,9 @@ function OrgListView({ lang, isMobile, orgs, onSelect, onAdd }: {
       )}
 
       {!orgs.loading && !orgs.error && filtered.length > 0 && (
-        <div className="premium-org-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
+        <div className="premium-org-grid nexus-io-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
           {filtered.map(org => (
-            <PhoenixCard className="premium-org-card" key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
+            <PhoenixCard className={`premium-org-card nexus-io-org-card nexus-io-org-card--${org.status}`} key={org.id} hover padding="16px" onClick={() => onSelect(org.id)}>
               <div className="premium-org-card__head">
                 <div className="premium-org-card__icon" aria-hidden="true"><PhoenixIcon name="hospital" size={16} /></div>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -334,7 +334,7 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
   }
 
   return (
-    <PhoenixCard padding="20px" style={{ maxWidth: '560px' }}>
+    <PhoenixCard className="nexus-io-form-card" padding="20px" style={{ maxWidth: '560px' }}>
       <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '18px' }}>{t('inst_add', lang)}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div>
@@ -425,7 +425,7 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
       {org.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!org.loading && org.error && <PhoenixErrorState title={t('load_error', lang)} message={org.error} onRetry={org.reload} />}
       {!org.loading && !org.error && o && !editing && (
-        <PhoenixCard padding="18px">
+        <PhoenixCard className="nexus-io-detail-masthead" padding="18px">
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
@@ -492,10 +492,10 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
 
       {/* Users section */}
       <div>
-        <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('inst_users', lang)}</h3>
+        <h3 className="nexus-io-section-title" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('inst_users', lang)}</h3>
 
         {/* Notice: user creation requires server-side */}
-        <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="nexus-io-notice" style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <PhoenixIcon name="info" size={13} inline /> {t('user_create_notice', lang)}
         </div>
 
@@ -506,7 +506,7 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         )}
 
         {!users.loading && !users.error && (users.data ?? []).length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="nexus-io-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {(users.data ?? []).map(u => (
               <UserRow
                 key={u.id}
@@ -597,7 +597,7 @@ function EditOrgForm({ lang, org, onSaved, onCancel }: {
   }
 
   return (
-    <PhoenixCard padding="20px">
+    <PhoenixCard className="nexus-io-form-card" padding="20px">
       <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '18px' }}>{t('inst_edit', lang)}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div>
@@ -687,7 +687,7 @@ function UserRow({ user, lang, actorRole, canEditRoles, onRoleChanged }: {
   };
 
   return (
-    <PhoenixCard padding="12px 16px">
+    <PhoenixCard className="nexus-io-row-card" padding="12px 16px">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -803,7 +803,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
+        <h3 className="nexus-io-section-title" style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
         {canCreatePorts && (
           <PhoenixButton variant="primary" size="sm" onClick={() => setShowAdd(true)}>
             + {t('port_add', lang)}
@@ -812,7 +812,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
       </div>
 
       {/* Safety notice */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div className="nexus-io-notice" style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--info)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <span><PhoenixIcon name="lock" size={13} inline /> {t('port_revoke_safe', lang)}</span>
         <span><PhoenixIcon name="clipboard" size={13} inline /> {t('port_archive_warn', lang)}</span>
         <span><PhoenixIcon name="warning" size={13} inline /> {t('port_archive_deps', lang)}</span>
@@ -839,7 +839,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
       )}
 
       {!pointsLoading && !pointsError && points.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '10px' }}>
+        <div className="nexus-io-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '10px' }}>
           {points.map(pt => (
             <PortCard
               key={pt.id}
@@ -933,7 +933,7 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
   }
 
   return (
-    <PhoenixCard padding="18px" style={{ marginBottom: '14px' }}>
+    <PhoenixCard className="nexus-io-form-card" padding="18px" style={{ marginBottom: '14px' }}>
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '14px' }}>{t('port_add', lang)}</h4>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div>
@@ -1201,7 +1201,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
   return (
     <PhoenixCard
       padding="14px"
-      className={`premium-mobile-card premium-mobile-pressable premium-mobile-enter${point.status !== 'active' ? ' premium-mobile-card-warning' : ' premium-mobile-card-success'}`}
+      className={`premium-mobile-card premium-mobile-pressable premium-mobile-enter nexus-io-row-card${isApprovedPointType(point.pointType) ? ` nexus-io-row-card--${point.pointType}` : ''}${point.status !== 'active' ? ' premium-mobile-card-warning' : ' premium-mobile-card-success'}`}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
         <div style={{ minWidth: 0 }}>
@@ -1516,7 +1516,7 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
         {srcErr ? (
           <div style={{ padding: '24px', color: 'var(--err)', fontSize: '13px' }}>{t('qr_display_error', lang)}</div>
         ) : (
-          <div style={{ display: 'inline-block', background: '#fff', borderRadius: '10px', padding: '10px', border: '1px solid var(--brd)', marginBottom: '14px' }}>
+          <div className="nexus-io-qr-preview" style={{ display: 'inline-block', background: '#fff', borderRadius: '10px', padding: '10px', border: '1px solid var(--brd)', marginBottom: '14px' }}>
             {src ? (
               <img src={src} width={200} height={200} alt="QR Code" style={{ display: 'block', borderRadius: '4px' }} />
             ) : (
@@ -1748,7 +1748,7 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
             return (
               <div
                 key={r.id}
-                className="premium-material-row"
+                className="premium-material-row nexus-io-material-row"
                 role="button"
                 tabIndex={0}
                 onClick={() => setDetailsRow(r)}
@@ -1947,7 +1947,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
 
   return (
     <div style={{ marginTop: '16px' }}>
-      <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}><PhoenixIcon name="trash" size={13} inline /> {t('dw_title', lang)}</h3>
+      <h3 className="nexus-io-section-title" style={{ fontSize: '14px', fontWeight: 700, marginBottom: '10px' }}><PhoenixIcon name="trash" size={13} inline /> {t('dw_title', lang)}</h3>
 
       {impact.loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
@@ -1956,7 +1956,7 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
       )}
 
       {!impact.loading && d && (
-        <PhoenixCard padding="16px">
+        <PhoenixCard className="nexus-io-danger-card" padding="16px">
           <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '10px' }}>{t('dw_impact', lang)}</div>
 
           {/* Impact grid */}
