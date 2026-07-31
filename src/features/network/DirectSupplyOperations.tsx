@@ -130,9 +130,9 @@ function StatusLine({ status }: { status: Status }) {
   return (
     <div role="status" style={{
       margin: '10px 0', padding: '9px 12px', borderRadius: 'var(--r2)', fontSize: '12.5px',
-      background: status.error ? 'var(--err2)' : 'var(--ok2, #ecfdf5)',
-      color: status.error ? 'var(--err)' : 'var(--ok, #047857)',
-      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok, #047857)'}`,
+      background: status.error ? 'var(--err2)' : 'var(--ok2)',
+      color: status.error ? 'var(--err)' : 'var(--ok)',
+      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok)'}`,
     }}>{status.msg}</div>
   );
 }
@@ -140,8 +140,8 @@ function StatusLine({ status }: { status: Status }) {
 function StatusBadge({ status }: { status: string }) {
   const done = ['fulfilled', 'received', 'approved'].includes(status);
   const bad = ['cancelled', 'rejected'].includes(status);
-  const bg = done ? 'var(--ok2, #ecfdf5)' : bad ? 'var(--err2)' : 'var(--s2, #f1f5f9)';
-  const fg = done ? 'var(--ok, #047857)' : bad ? 'var(--err)' : 'var(--t2)';
+  const bg = done ? 'var(--ok2)' : bad ? 'var(--err2)' : 'var(--s2)';
+  const fg = done ? 'var(--ok)' : bad ? 'var(--err)' : 'var(--t2)';
   return (
     <span style={{
       display: 'inline-block', padding: '1px 8px', borderRadius: 'var(--rpill)',
@@ -175,7 +175,7 @@ export function DirectSupplyOperations({
             style={{
               padding: '8px 13px', minHeight: '40px', borderRadius: 'var(--r2)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
-              background: dirTab === id ? 'var(--p)' : 'var(--s)', color: dirTab === id ? '#fff' : 'var(--t2)',
+              background: dirTab === id ? 'var(--p)' : 'var(--s)', color: dirTab === id ? 'var(--on-accent)' : 'var(--t2)',
             }}>
             {t(id === 'forward' ? 'net_op_forward' : 'net_op_return', lang)}
           </button>

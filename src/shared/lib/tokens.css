@@ -103,6 +103,32 @@
   --skel: var(--surface2);
 }
 
+/* ─── A7.1 HEX-TO-TOKEN CONVERSION — constant across themes, same as the
+   literal values each replaces (a relocation, not a colour change). See
+   docs/phoenix/visual-evidence/a71/hardcoded-colour-allowlist.md for the
+   full audit of what stayed hex and why. ──────────────────────────────── */
+:root {
+  /* Text over a solid saturated accent fill (tab-active pills, the
+     notification unread badge) — white is the correct contrast choice
+     against --p/--ember regardless of theme. */
+  --on-accent: #fff;
+
+  /* Expiry-risk 4-tier gradient (materialAlertEngine.getExpiryBucketStyle).
+     'expired' and '6_months' already read --err/--warn; these fill the
+     remaining two tiers with the exact values the function used to
+     hardcode inline. */
+  --risk-tier-3m:    #DC2626;
+  --risk-tier-3m-bg: #FEF2F2;
+  --risk-tier-9m:    #B45309;
+  --risk-tier-9m-bg: #FEF3C7;
+
+  /* WhatsApp brand accent (WhatsAppContactButton) — a third-party brand
+     colour, intentionally constant across themes, same as before. */
+  --whatsapp-brand:     #25D366;
+  --whatsapp-brand-bg:  #E9FBF1;
+  --whatsapp-brand-ink: #0D7A3F;
+}
+
 /* ─── AMBIENT / GLASS ───────────────────────────────────────────────────────
    The new art direction layers cyan + ember atmospherics over the hero
    gradient instead of the old teal/blue wash.

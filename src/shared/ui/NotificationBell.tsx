@@ -184,7 +184,7 @@ export function NotificationBell() {
             style={{
               position: 'absolute', top: -2, insetInlineEnd: -2,
               minWidth: 16, height: 16, padding: '0 3px', borderRadius: 999,
-              background: 'var(--ember)', color: '#fff', fontSize: 10, fontWeight: 700,
+              background: 'var(--ember)', color: 'var(--on-accent)', fontSize: 10, fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
             }}
           >
@@ -252,14 +252,14 @@ export function NotificationBell() {
                         )}
                         <span style={{ fontWeight: n.isRead ? 400 : 600, fontSize: 13.5 }}>{eventLabel(n, lang)}</span>
                       </span>
-                      <span style={{ fontSize: 12, color: 'var(--muted, #8a93a6)', display: 'flex', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 6 }}>
                         {n.reference && <span>{n.reference}</span>}
                         <span dir="ltr">{relativeTime(n.occurredAt, lang)}</span>
                       </span>
                       {/* PAPER-REFERENCE-CONTRACT-110: only when actually recorded — most
                           notifications carry no paper reference and must not show a "—". */}
                       {paperRef?.paperReferenceNumber && (
-                        <span style={{ fontSize: 11.5, color: 'var(--muted, #8a93a6)' }}>
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                           {t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef)}
                         </span>
                       )}

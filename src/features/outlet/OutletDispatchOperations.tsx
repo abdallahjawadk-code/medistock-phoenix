@@ -53,9 +53,9 @@ function StatusLine({ status }: { status: Status }) {
   return (
     <div role="status" style={{
       margin: '10px 0', padding: '9px 12px', borderRadius: 'var(--r2)', fontSize: '12.5px',
-      background: status.error ? 'var(--err2)' : 'var(--ok2, #ecfdf5)',
-      color: status.error ? 'var(--err)' : 'var(--ok, #047857)',
-      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok, #047857)'}`,
+      background: status.error ? 'var(--err2)' : 'var(--ok2)',
+      color: status.error ? 'var(--err)' : 'var(--ok)',
+      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok)'}`,
     }}>{status.msg}</div>
   );
 }
@@ -66,8 +66,8 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span style={{
       display: 'inline-block', padding: '1px 8px', borderRadius: 'var(--rpill)', fontSize: '10px', fontWeight: 700,
-      background: done ? 'var(--ok2, #ecfdf5)' : bad ? 'var(--err2)' : 'var(--s2, #f1f5f9)',
-      color: done ? 'var(--ok, #047857)' : bad ? 'var(--err)' : 'var(--t2)',
+      background: done ? 'var(--ok2)' : bad ? 'var(--err2)' : 'var(--s2)',
+      color: done ? 'var(--ok)' : bad ? 'var(--err)' : 'var(--t2)',
     }}>{status}</span>
   );
 }

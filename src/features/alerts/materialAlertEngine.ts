@@ -114,10 +114,10 @@ export function expiryBucketToSeverity(bucket: ExpiryBucket): AlertSeverity {
 // DashboardScreen, InterInstitutionAlertsScreen, and PublicQrScreen.
 export function getExpiryBucketStyle(bucket: string): { color: string; bg: string } | null {
   switch (bucket) {
-    case 'expired':  return { color: 'var(--err)',  bg: 'var(--err2)'  };
-    case '3_months': return { color: '#dc2626',     bg: '#fef2f2'      };
-    case '6_months': return { color: 'var(--warn)', bg: 'var(--warn2)' };
-    case '9_months': return { color: '#b45309',     bg: '#fef3c7'      };
+    case 'expired':  return { color: 'var(--err)',         bg: 'var(--err2)'         };
+    case '3_months': return { color: 'var(--risk-tier-3m)', bg: 'var(--risk-tier-3m-bg)' };
+    case '6_months': return { color: 'var(--warn)',         bg: 'var(--warn2)'        };
+    case '9_months': return { color: 'var(--risk-tier-9m)', bg: 'var(--risk-tier-9m-bg)' };
     default:         return null;
   }
 }

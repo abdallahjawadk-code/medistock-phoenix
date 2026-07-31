@@ -25,7 +25,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 const variantStyles: Record<Variant, CSSProperties> = {
   primary: {
     background: 'linear-gradient(135deg, var(--phoenix-gold-2, var(--gold)), var(--phoenix-gold, var(--gold)))',
-    color: 'var(--phoenix-gold-ink, #241A08)',
+    color: 'var(--phoenix-gold-ink)',
     border: '1px solid transparent',
     boxShadow: '0 10px 24px color-mix(in srgb, var(--phoenix-gold, var(--gold)) 26%, transparent)',
     fontWeight: 700,

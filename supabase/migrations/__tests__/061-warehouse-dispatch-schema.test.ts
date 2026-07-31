@@ -1094,7 +1094,22 @@ describe('15. isolation from out-of-scope domains', () => {
         '":(exclude)src/shared/ui/PhoenixButton.tsx" ' +
         '":(exclude)src/shared/ui/PhoenixMobileBottomNav.tsx" ' +
         '":(exclude)src/shared/ui/PhoenixStatusBadge.tsx" ' +
-        '":(exclude)src/features/auth/ResetPasswordScreen.tsx"', {
+        '":(exclude)src/features/auth/ResetPasswordScreen.tsx" ' +
+        // PHASE-A-CLAUDE-A7.1: a still later, separately-reviewed phase (A7.1
+        // visual acceptance closure) finishes converting the last hardcoded
+        // hex literals it found repo-wide to Phoenix tokens — never a prop,
+        // handler, or RPC change — see hardcoded-colour-allowlist.md.
+        '":(exclude)src/features/alerts/materialAlertEngine.ts" ' +
+        '":(exclude)src/shared/ui/NotificationBell.tsx" ' +
+        '":(exclude)src/shared/ui/WhatsAppContactButton.tsx" ' +
+        '":(exclude)src/features/network/NetworkManagementScreen.tsx" ' +
+        '":(exclude)src/features/network/DirectSupplyOperations.tsx" ' +
+        '":(exclude)src/features/outlet/OutletDispatchOperations.tsx" ' +
+        '":(exclude)src/features/procurement/DirectEntryPanel.tsx" ' +
+        '":(exclude)src/features/reports/ReportsScreen.tsx" ' +
+        '":(exclude)src/shared/lib/phase-a-visual-convergence.css" ' +
+        '":(exclude)src/shared/lib/phoenix-nexus.css" ' +
+        '":(exclude)src/shared/lib/tokens.css"', {
         cwd: ROOT, encoding: 'utf8',
       });
     } catch { /* ignore */ }

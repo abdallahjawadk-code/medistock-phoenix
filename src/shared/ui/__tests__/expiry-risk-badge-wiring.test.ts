@@ -145,9 +145,12 @@ describe('Existing filters/backend/lifecycle/QR/WhatsApp remain unchanged', () =
     // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A, a later, separately-reviewed
     // phase that additively wires in the Super Admin-only
     // AvailabilityCleanupWizard at the end of that screen.
+    // PHASE-A-CLAUDE-A7.1: WhatsAppContactButton.tsx excluded too — that
+    // later, separately-reviewed presentation pass moves its inline
+    // '#25D366'/'#e9fbf1'/'#0d7a3f' literals to --whatsapp-brand* tokens; the
+    // href/message-building logic is unchanged.
     for (const rel of [
       'features/qr/QrScreen.tsx',
-      'shared/ui/WhatsAppContactButton.tsx',
     ]) {
       let diff = '';
       try {
