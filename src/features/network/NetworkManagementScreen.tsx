@@ -93,14 +93,14 @@ export function NetworkManagementScreen({
 
   return (
     <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--network">
-      <div role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {tabs.map(x => (
           <button
             key={x.id}
             role="tab"
             aria-selected={activeTab === x.id}
             onClick={() => setTab(x.id)}
-            className="premium-focus-ring"
+            className="premium-focus-ring nexus-it-tab"
             style={{
               padding: '9px 14px', minHeight: '44px', borderRadius: 'var(--r2)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
@@ -215,8 +215,8 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   if (warehouses.error) return <PhoenixErrorState message={warehouses.error} onRetry={reload} />;
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
+    <div className="nexus-it-panel">
+      <div className="nexus-it-toolbar" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
         <div style={{ minWidth: '220px', flex: 1 }}>
           <PhoenixSelect label={t('net_org_select', lang)} options={options} value={orgId}
             onChange={e => setOrgId(e.target.value)} />
@@ -262,9 +262,9 @@ function WarehouseGroup({ lang, title, rows, onChanged }: {
   onChanged: (s: { msg: string; error: boolean }) => void;
 }) {
   return (
-    <div style={{ marginTop: '14px' }}>
-      <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--t2)' }}>{title}</h4>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div className="nexus-it-group" style={{ marginTop: '14px' }}>
+      <h4 className="nexus-it-group__title" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--t2)' }}>{title}</h4>
+      <div className="nexus-it-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {rows.map(w => <WarehouseRow key={w.id} lang={lang} w={w} onChanged={onChanged} />)}
       </div>
     </div>
@@ -299,7 +299,7 @@ function WarehouseRow({ lang, w, onChanged }: {
   }
 
   return (
-    <PhoenixCard padding="12px 14px">
+    <PhoenixCard className={`nexus-it-row-card nexus-it-row-card--${w.warehouseKind}`} padding="12px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13.5px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -341,7 +341,7 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
   }
 
   return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
       <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <PhoenixInput label={t('net_wh_name_ar', lang)} value={nameAr} onChange={e => setNameAr(e.target.value)} />
         <PhoenixInput label={t('net_wh_name', lang)} value={name} onChange={e => setName(e.target.value)} />
@@ -397,8 +397,8 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
   if (orgs.error) return <PhoenixErrorState message={orgs.error} onRetry={reload} />;
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
+    <div className="nexus-it-panel">
+      <div className="nexus-it-toolbar" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
         <div style={{ minWidth: '220px', flex: 1 }}>
           <PhoenixSelect label={t('net_org_select', lang)} options={options} value={orgId} onChange={e => setOrgId(e.target.value)} />
         </div>
@@ -426,14 +426,14 @@ function ScopeAssignmentsPanel({ lang, isSuper }: { lang: Lang; isSuper: boolean
 
       {orgId && !assigns.loading && (assigns.data ?? []).length === 0 && <PhoenixEmptyState icon="scope" title={t('net_sc_empty', lang)} />}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+      <div className="nexus-it-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
         {orgId && (assigns.data ?? []).map(a => {
           const who = profileById.get(a.profileId);
           const targetLabel = a.scopeType === 'warehouse'
             ? nameOf(whById.get(a.warehouseId ?? ''), lang)
             : nameOf(outletById.get(a.distributionPointId ?? ''), lang);
           return (
-            <PhoenixCard key={a.id} padding="12px 14px">
+            <PhoenixCard key={a.id} className="nexus-it-row-card" padding="12px 14px">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 0, fontSize: '13px' }}>
                   <span style={{ fontWeight: 700 }}>{who ? who.full_name : '—'}</span>
@@ -497,7 +497,7 @@ function ScopeForm({ lang, profiles, warehouses, outlets, onCancel, onDone }: {
   const canSubmit = profileId !== '' && effTarget !== '';
 
   return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
       <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <PhoenixSelect label={t('net_sc_user', lang)} value={profileId} onChange={e => setProfileId(e.target.value)}
           options={profiles.map(p => ({ value: p.id, label: p.label }))} />
