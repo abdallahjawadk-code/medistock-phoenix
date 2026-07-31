@@ -1,21 +1,32 @@
-/* ─── PHASE A — INVENTORY CENTER + NETWORK/TRANSFER WORKSPACES ──────────────
+/* ─── PHASE A — INVENTORY CENTER + NETWORK/TRANSFER WORKSPACES (A4.1) ───────
    Presentation-only layer for the current Inventory Center (screen 3: intake,
    warehouse stock/balances/batches/expiry, ledger, incoming receipts, outlet
    dispatch, return receipts, quarantine, corrections) and the current Network
    Management screen (screen 17: central/institution warehouse roster, the
    digital-twin topology, direct central→institution supply + institution→
-   central return requests, and scope assignments). It changes no data,
-   computation, RBAC, or routing — every selector is gated by the Phase A
-   document marker and hooks only into the existing DOM/class surface both
-   screens already render (.nexus-inventory-transfers is the sole new class
-   hook, applied to each screen's own root element(s) alongside its existing
-   attributes).
+   central return requests, and scope assignments — including the
+   DirectSupplyOperations component it renders on the "supply" tab). It
+   changes no data, computation, RBAC, or routing — every selector is gated
+   by the Phase A document marker and hooks only into named className hooks
+   added to each screen's existing DOM (never new data, handlers, or props).
+
+   A4.1 deepens A4's foundational coat into real page composition: a banded
+   header, a distinct context/control strip, a segmented tab track, denser
+   table-like rows for stock/warehouse/request lists, and richer empty/error/
+   loading treatment — while never fighting PhoenixCard's own inline
+   border/background/box-shadow/padding (author-inline always wins the
+   cascade); accents are added via ::before/::after pseudo-elements and
+   non-inline properties instead.
    ─────────────────────────────────────────────────────────────────────────── */
 
 html[data-phoenix-ui-phase='a'] {
   --phase-a-it-hairline: color-mix(in srgb, var(--cyan) 14%, var(--brd));
   --phase-a-it-accent-line: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 55%, var(--line)), transparent);
   --phase-a-it-row-hover: color-mix(in srgb, var(--cyan) 6%, transparent);
+  --phase-a-it-central: var(--cyan);
+  --phase-a-it-institution: var(--gold);
+  --phase-a-it-glow: color-mix(in srgb, var(--cyan) 10%, transparent);
+  --phase-a-it-warmth: color-mix(in srgb, var(--gold) 8%, transparent);
 }
 
 /* ── Shared entrance + card/hairline language ────────────────────────────
@@ -38,37 +49,172 @@ html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .phoenix-card {
 html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-empty,
 html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-error {
   border-color: var(--phase-a-it-hairline);
-}
-
-/* ── Tabs: existing active-state colors, plus a slim cinematic underline ──
-   Both screens render their own role='tab' buttons directly (no shared tab
-   component), so the underline is addressed structurally via the standard
-   ARIA attributes every tab already carries. */
-html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tablist'] {
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--line);
-}
-
-html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tab'] {
   position: relative;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  overflow: hidden;
 }
 
-html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tab'][aria-selected='true']::after {
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-empty::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(28rem 16rem at 50% -20%, var(--phase-a-it-glow), transparent 70%);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-empty__icon {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--cyan) 6%, transparent);
+}
+
+/* ── Page header: a proper banded region, not a bare heading ─────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-header {
+  position: relative;
+  padding: clamp(14px, 1.8vw, 20px) clamp(16px, 2vw, 22px);
+  margin-block-end: 18px !important;
+  border: 1px solid var(--phase-a-it-hairline);
+  border-radius: var(--r4);
+  overflow: hidden;
+  background:
+    radial-gradient(34rem 20rem at 6% -30%, var(--phase-a-it-glow), transparent 72%),
+    radial-gradient(26rem 16rem at 100% 120%, var(--phase-a-it-warmth), transparent 74%),
+    linear-gradient(140deg, var(--s2), var(--s));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-header__titles {
+  position: relative;
+  padding-inline-start: 14px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-header__titles::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, var(--cyan), var(--gold));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-header__title {
+  letter-spacing: -.01em;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-header__subtitle {
+  max-width: 62ch;
+}
+
+/* ── Context/control strip: warehouse selector, read-only hint ──────────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-context-bar {
+  position: relative;
+  margin-block-end: 14px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-context-bar::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--phase-a-it-central);
+  opacity: .55;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-context-bar__hint {
+  position: relative;
+  padding-inline-start: 18px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-context-bar__hint::before {
+  content: '⚠';
+  position: absolute;
+  inset-inline-start: 0;
+  top: -1px;
+  font-size: 11px;
+}
+
+/* ── Tabs: a segmented pill track, not bare bordered buttons ─────────────
+   The track (padding + rounded background) is added on the CONTAINER only —
+   each tab button keeps its own inline active/inactive background and color,
+   so nothing here fights an inline style; it wraps that existing contract
+   in a calmer, denser shell. */
+html[data-phoenix-ui-phase='a'] .nexus-it-tabs {
+  padding: 5px !important;
+  background: var(--s2);
+  border: 1px solid var(--phase-a-it-hairline);
+  border-radius: var(--r4);
+  gap: 4px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-tabs--sub {
+  background: transparent;
+  border-color: var(--line);
+  padding: 3px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-tab {
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  letter-spacing: .01em;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-tab[aria-selected='true'] {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--cyan) 16%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-tab[aria-selected='true']::after {
   content: '';
   position: absolute;
   inset-inline: 10px;
-  bottom: -3px;
+  bottom: -2px;
   height: 2px;
   border-radius: 99px;
   background: linear-gradient(90deg, var(--cyan), var(--gold));
 }
 
-/* ── Search + filter controls: stock search box, org/warehouse selects ──── */
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-it-tab[aria-selected='false']:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* ── Notice banner: derived-state explanation, given an icon accent ──────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-notice {
+  position: relative;
+  overflow: hidden;
+  padding-inline-start: 34px !important;
+  line-height: 1.5;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-notice::before {
+  content: 'ℹ';
+  position: absolute;
+  inset-inline-start: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ── Content region: consistent rhythm between the notice and tab body ──── */
+html[data-phoenix-ui-phase='a'] .nexus-it-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Search + filter controls ──────────────────────────────────────────── */
 html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers input[type='search'].premium-field,
 html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-field__control,
 html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-select {
   border-color: var(--phase-a-it-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 /* ── Section headers (e.g. Inventory Intelligence's alerts / suggestions /
@@ -86,10 +232,204 @@ html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .premium-section-head
   background: var(--phase-a-it-accent-line);
 }
 
+/* ── Group titles (e.g. "central" / "institution" warehouse groups) ──────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-group__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-size: 11px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-group__title::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--phase-a-it-accent-line);
+}
+
+/* ── Toolbars: primary action + secondary refresh/org-select rows ───────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-toolbar {
+  padding-block-end: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* ── Row cards: warehouse / scope-assignment / request / line rows ───────
+   A slim kind-accent bar via ::before (never the card's own inline border,
+   background, or box-shadow — all three are set inline by PhoenixCard and
+   would need !important to touch; a pseudo-element sidesteps that safely). */
+html[data-phoenix-ui-phase='a'] .nexus-it-row-list {
+  gap: 8px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-row-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-row-card::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--phase-a-it-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-row-card--central::before {
+  background: var(--phase-a-it-central);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-row-card--institution::before {
+  background: var(--phase-a-it-institution);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-it-row-card:hover {
+    transform: translateX(0);
+  }
+}
+
+/* ── Form cards: create/add-line forms, given a top accent instead of a
+   side one so they read as an INPUT surface, not a data row ─────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-form-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-form-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+/* ── Batch rows: name + identity on one side, quantity stats as chips ────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-batch-row__id {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-batch-row__name {
+  overflow-wrap: anywhere;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-batch-row__stats {
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--rpill);
+  background: var(--s2);
+  border: 1px solid var(--brd);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-stat--reserved {
+  color: var(--warn);
+  background: var(--warn2);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-stat--available {
+  color: var(--ok);
+  background: var(--ok2);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-stat--available.nexus-it-stat--zero {
+  color: var(--err);
+  background: var(--err2);
+  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+}
+
+/* ── Movement / correction inline form ────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-movement-form {
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+/* ── Ledger: scannable movement history ──────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-it-ledger-row {
+  position: relative;
+  padding-inline-start: 14px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-ledger-row::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 3px;
+  bottom: 11px;
+  width: 2px;
+  border-radius: 99px;
+  background: var(--phase-a-it-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-it-ledger-row strong:first-child {
+  color: var(--pd);
+  text-transform: capitalize;
+}
+
 /* ── Responsive contract ─────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tablist'] {
-    padding-bottom: 4px;
+  html[data-phoenix-ui-phase='a'] .nexus-it-header__row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-tabs,
+  html[data-phoenix-ui-phase='a'] .nexus-it-tabs--sub {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-tabs::-webkit-scrollbar,
+  html[data-phoenix-ui-phase='a'] .nexus-it-tabs--sub::-webkit-scrollbar {
+    display: none;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-tab {
+    flex: 0 0 auto;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-batch-row__head {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-batch-row__stats {
+    justify-content: flex-start;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-toolbar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-toolbar .phoenix-button {
+    width: 100%;
   }
 }
 
@@ -97,5 +437,16 @@ html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .premium-section-head
 @media (prefers-reduced-motion: reduce) {
   html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers {
     animation: none;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-it-tab,
+  html[data-phoenix-ui-phase='a'] .nexus-it-row-card {
+    transition: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    html[data-phoenix-ui-phase='a'] .nexus-it-tab[aria-selected='false']:hover {
+      transform: none;
+    }
   }
 }
