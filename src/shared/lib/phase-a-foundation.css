@@ -1,0 +1,157 @@
+/* ─── PHASE A — DESIGN FOUNDATION + DUAL APP SHELL ──────────────────────────
+   Presentation-only contract. This layer does not alter routing, auth, RBAC,
+   RLS, inventory writers, FEFO, custody, reports, or data fetching.
+
+   The existing PhoenixAppShell remains the structural owner. This file adds a
+   stable responsive stage, daylight-cinematic atmosphere, safe viewport rules,
+   and reduced-motion behavior for desktop and mobile.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] {
+  --phoenix-content-max: 1680px;
+  --phoenix-stage-radius: clamp(18px, 1.8vw, 28px);
+  --phoenix-stage-gutter: clamp(14px, 2vw, 32px);
+  --phoenix-shell-seam: color-mix(in srgb, var(--cyan) 18%, var(--line));
+  --phoenix-shell-glow: color-mix(in srgb, var(--cyan) 12%, transparent);
+  --phoenix-shell-warmth: color-mix(in srgb, var(--ember) 9%, transparent);
+  --phoenix-page-enter-duration: 360ms;
+}
+
+html[data-phoenix-ui-phase='a'][data-theme='light'] {
+  --phoenix-shell-glow: color-mix(in srgb, var(--cyan) 10%, transparent);
+  --phoenix-shell-warmth: color-mix(in srgb, var(--gold) 9%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] body {
+  min-width: 320px;
+  overscroll-behavior: none;
+  background-color: var(--bg);
+}
+
+html[data-phoenix-ui-phase='a'] .premium-shell.nexus-shell {
+  isolation: isolate;
+  background:
+    radial-gradient(54rem 38rem at 12% -8%, var(--phoenix-shell-glow), transparent 68%),
+    radial-gradient(48rem 34rem at 92% 4%, var(--phoenix-shell-warmth), transparent 72%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg) 96%, var(--surface2)), var(--bg));
+}
+
+html[data-phoenix-ui-phase='a'][data-theme='light'] .premium-shell.nexus-shell {
+  background:
+    radial-gradient(58rem 40rem at 8% -10%, color-mix(in srgb, var(--cyan) 12%, transparent), transparent 70%),
+    radial-gradient(48rem 34rem at 94% 0%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 72%),
+    linear-gradient(145deg, #f8fbfe 0%, var(--bg) 48%, color-mix(in srgb, var(--bg) 90%, #dfeaf3) 100%);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-app-column {
+  min-inline-size: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--highlight) 24%, transparent), transparent 18%),
+    transparent;
+}
+
+html[data-phoenix-ui-phase='a'] .premium-topbar {
+  border-bottom-color: var(--phoenix-shell-seam) !important;
+  background: color-mix(in srgb, var(--surface) 92%, transparent) !important;
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+html[data-phoenix-ui-phase='a'] #phoenix-main {
+  scroll-padding-block: calc(var(--tbh) + 16px) calc(var(--bnh) + 20px);
+  scrollbar-gutter: stable;
+}
+
+/* The first child is the existing screen-content owner in PhoenixAppShell.
+   Constraining it here creates one consistent stage for every operational
+   screen without wrapping or changing any feature component. */
+html[data-phoenix-ui-phase='a'] #phoenix-main > div:first-child {
+  inline-size: min(100%, var(--phoenix-content-max));
+  min-inline-size: 0;
+  margin-inline: auto;
+}
+
+html[data-phoenix-ui-phase='a'] #phoenix-main > div:first-child > * {
+  min-inline-size: 0;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-shell .premium-main > * {
+  animation-duration: var(--phoenix-page-enter-duration);
+}
+
+/* Desktop shell: preserve the permanent navigation rail and give dense
+   operational screens a stable, centered working canvas. */
+@media (min-width: 768px) {
+  html[data-phoenix-ui-phase='a'] .premium-shell.nexus-shell {
+    --phoenix-content-max: 1720px;
+  }
+
+  html[data-phoenix-ui-phase='a'] #phoenix-main > div:first-child {
+    padding-inline: clamp(0px, .35vw, 6px);
+  }
+
+  html[data-phoenix-ui-phase='a'] .premium-sidebar {
+    border-inline-end-color: var(--phoenix-shell-seam) !important;
+  }
+}
+
+/* Wide desktop: retain readable line lengths while allowing tables and
+   command-center screens to use the available viewport. */
+@media (min-width: 1440px) {
+  html[data-phoenix-ui-phase='a'] {
+    --phoenix-content-max: 1840px;
+  }
+}
+
+/* Mobile shell: one scroll owner, compact atmosphere, safe-area aware fixed
+   navigation, and full-width feature surfaces. */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'] {
+    --phoenix-content-max: 100%;
+    --phoenix-page-enter-duration: 260ms;
+  }
+
+  html[data-phoenix-ui-phase='a'] .premium-shell.nexus-shell {
+    background:
+      radial-gradient(28rem 22rem at 50% -10%, var(--phoenix-shell-glow), transparent 72%),
+      linear-gradient(180deg, color-mix(in srgb, var(--bg) 96%, var(--surface2)), var(--bg));
+  }
+
+  html[data-phoenix-ui-phase='a'] .premium-topbar {
+    padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px));
+  }
+
+  html[data-phoenix-ui-phase='a'] #phoenix-main {
+    overscroll-behavior-y: contain;
+  }
+
+  html[data-phoenix-ui-phase='a'] #phoenix-main > div:first-child {
+    inline-size: 100%;
+  }
+
+  html[data-phoenix-ui-phase='a'] .premium-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Accessibility and low-power behavior. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-phoenix-ui-phase='a'] {
+    --phoenix-page-enter-duration: 1ms;
+  }
+
+  html[data-phoenix-ui-phase='a'] *,
+  html[data-phoenix-ui-phase='a'] *::before,
+  html[data-phoenix-ui-phase='a'] *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+html[data-page-hidden][data-phoenix-ui-phase='a'] *,
+html[data-page-hidden][data-phoenix-ui-phase='a'] *::before,
+html[data-page-hidden][data-phoenix-ui-phase='a'] *::after {
+  animation-play-state: paused !important;
+}
