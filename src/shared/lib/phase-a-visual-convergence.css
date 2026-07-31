@@ -290,13 +290,142 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__ar
   }
 }
 
-/* ─── WELCOME — same daylight institutional treatment over the hero plate ─── */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome::before {
-  border-color: color-mix(in srgb, var(--phoenix-gold) 40%, transparent);
+/* ─── WELCOME — A7.1: bounded institutional hero, not a full-bleed dark
+   cinematic backdrop. Same DOM/classNames/handlers as every prior phase
+   (PhoenixWelcomeExperience.tsx is untouched, zero diff) — this replaces the
+   full-viewport dark plate + glass credits + drifting embers with a
+   contained hero panel, a plain-language title and a clearly bordered
+   credits card on the ordinary institutional canvas. Built entirely from
+   --bg/--surface/--text/--muted, so it follows the light/dark toggle like
+   every other daylight surface instead of forcing one fixed dark identity —
+   same structure both ways, only the theme tokens change. No WebGL, no
+   canvas, no new animation: the existing 18 CSS-only ember spans are simply
+   hidden, and the progress bar reuses phase-a-auth.css's own
+   phase-a-welcome-progress keyframe/timing (still 6s, matching the
+   component's SEQUENCE_MS) — only its position/colour change. ─────────── */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg);
+  color: var(--text);
 }
 
+/* The old ornate inset frame was designed to border a full-viewport dark
+   scene; the bounded hero below needs no competing decorative border. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome::before {
+  display: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__skip {
+  color: var(--t2);
+  border-color: var(--brd);
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-sm);
+}
+
+/* Bounded hero panel — the approved artwork stays, framed as a composition
+   element (rounded, shadowed, contained height) instead of the page itself. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
+  position: relative;
+  inset: auto;
+  flex-shrink: 0;
+  width: min(100%, 760px);
+  height: clamp(180px, 32vh, 320px);
+  margin-top: clamp(44px, 8vh, 88px);
+  border-radius: var(--r5);
+  overflow: hidden;
+  box-shadow: var(--phoenix-card-shadow-hover, var(--sh-lg));
+}
+
+/* A soft bottom-edge vignette only — the title now sits below the hero, not
+   overlaid on it, so the heavy top-to-bottom legibility wash is no longer
+   needed. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__scrim {
+  background: linear-gradient(180deg, transparent 68%, color-mix(in srgb, var(--phoenix-sidebar-bg) 30%, transparent) 100%);
+}
+
+/* Calmer institutional motif: no drifting ember particles over the canvas. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__embers {
+  display: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__masthead {
+  position: relative;
+  inset-inline: auto;
+  top: auto;
+  z-index: 1;
+  width: min(100%, 760px);
+  margin-top: clamp(20px, 3.6vh, 34px);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__kicker {
+  color: var(--phoenix-gold);
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__kicker::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__kicker::after {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--phoenix-gold) 60%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__title {
+  color: var(--text);
+  text-shadow: none;
+}
+
+/* A clearly bordered, opaque credits card on the institutional surface — no
+   glass/blur, so the exact approved credit text stays legible in both themes. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits {
+  position: relative;
+  inset-inline: auto;
+  bottom: auto;
+  z-index: 1;
+  width: min(100%, 640px);
+  margin: clamp(20px, 3.6vh, 34px) auto 0;
+  border: 1px solid var(--brd);
+  border-radius: var(--r4);
+  background: var(--surface);
+  box-shadow: var(--phoenix-card-shadow, var(--sh-md));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits-name {
+  color: var(--text);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits-rule {
+  background: color-mix(in srgb, var(--phoenix-gold) 55%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits-sup {
+  color: var(--t2);
+}
+
+/* Calm progress treatment: a slim gold bar quietly pinned to the bottom edge
+   (same absolute position/timing phase-a-auth.css already established), no
+   glow — just a quiet fill, distinct from the composition above it. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome::after {
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--phoenix-gold) 70%, transparent), transparent);
+  height: 3px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--phoenix-gold) 65%, transparent), transparent);
+  box-shadow: none;
+}
+
+@media (max-width: 520px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
+    height: clamp(150px, 26vh, 240px);
+    margin-top: clamp(56px, 11vh, 88px);
+    border-radius: var(--r4);
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__masthead,
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits {
+    inset-inline: auto;
+    bottom: auto;
+  }
 }
 
 /* ─── RESPONSIVE + MOTION CONTRACT (mirrors phase-a-foundation's pattern) ─── */
