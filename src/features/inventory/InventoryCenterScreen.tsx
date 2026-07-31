@@ -165,18 +165,18 @@ export function InventoryCenterScreen({
 
   if (!activeOrgId) {
     return (
-      <div dir={dir}>
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
         <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       </div>
     );
   }
 
-  if (scopes.loading) return <div dir={dir}>{header}<PhoenixLoadingState /></div>;
+  if (scopes.loading) return <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">{header}<PhoenixLoadingState /></div>;
 
   if (manageableWarehouses.length === 0) {
     return (
-      <div dir={dir}>
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
         <PhoenixEmptyState icon="🔒" title={t('inv_center_denied', lang)} />
       </div>
@@ -201,7 +201,7 @@ export function InventoryCenterScreen({
   const reloadCanonicalStock = () => setReloadKey(k => k + 1);
 
   return (
-    <div dir={dir}>
+    <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
       {header}
 
       <PhoenixCard>

@@ -1,0 +1,101 @@
+/* ─── PHASE A — INVENTORY CENTER + NETWORK/TRANSFER WORKSPACES ──────────────
+   Presentation-only layer for the current Inventory Center (screen 3: intake,
+   warehouse stock/balances/batches/expiry, ledger, incoming receipts, outlet
+   dispatch, return receipts, quarantine, corrections) and the current Network
+   Management screen (screen 17: central/institution warehouse roster, the
+   digital-twin topology, direct central→institution supply + institution→
+   central return requests, and scope assignments). It changes no data,
+   computation, RBAC, or routing — every selector is gated by the Phase A
+   document marker and hooks only into the existing DOM/class surface both
+   screens already render (.nexus-inventory-transfers is the sole new class
+   hook, applied to each screen's own root element(s) alongside its existing
+   attributes).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] {
+  --phase-a-it-hairline: color-mix(in srgb, var(--cyan) 14%, var(--brd));
+  --phase-a-it-accent-line: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 55%, var(--line)), transparent);
+  --phase-a-it-row-hover: color-mix(in srgb, var(--cyan) 6%, transparent);
+}
+
+/* ── Shared entrance + card/hairline language ────────────────────────────
+   A single quiet entrance and a consistent card/empty/error hairline across
+   both screens, matching the rest of Phase A. Deliberately restrained:
+   readability over effect, no dense glass, existing tokens only. */
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers {
+  animation: phase-a-it-enter var(--phoenix-page-enter-duration, 360ms) var(--ease-standard) both;
+}
+
+@keyframes phase-a-it-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .phoenix-card {
+  border-color: var(--phase-a-it-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-error {
+  border-color: var(--phase-a-it-hairline);
+}
+
+/* ── Tabs: existing active-state colors, plus a slim cinematic underline ──
+   Both screens render their own role='tab' buttons directly (no shared tab
+   component), so the underline is addressed structurally via the standard
+   ARIA attributes every tab already carries. */
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tablist'] {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tab'] {
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tab'][aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 10px;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+/* ── Search + filter controls: stock search box, org/warehouse selects ──── */
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers input[type='search'].premium-field,
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-field__control,
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .nexus-select {
+  border-color: var(--phase-a-it-hairline);
+}
+
+/* ── Section headers (e.g. Inventory Intelligence's alerts / suggestions /
+   thresholds headings, when reached from within these two screens) ──────── */
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .premium-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers .premium-section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--phase-a-it-accent-line);
+}
+
+/* ── Responsive contract ─────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers [role='tablist'] {
+    padding-bottom: 4px;
+  }
+}
+
+/* ── Accessibility and low-power behavior ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-phoenix-ui-phase='a'] .nexus-inventory-transfers {
+    animation: none;
+  }
+}

@@ -15,6 +15,7 @@ import '@/shared/lib/global.css';
 import '@/shared/lib/phase-a-foundation.css';
 import '@/shared/lib/phase-a-auth.css';
 import '@/shared/lib/phase-a-command-center.css';
+import '@/shared/lib/phase-a-inventory-transfers.css';
 import { App } from '@/app/App';
 import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
 

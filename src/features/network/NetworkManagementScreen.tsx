@@ -92,7 +92,7 @@ export function NetworkManagementScreen({
   const activeTab = tabs.some(x => x.id === tab) ? tab : tabs[0].id;
 
   return (
-    <div dir={dir}>
+    <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--network">
       <div role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {tabs.map(x => (
           <button
