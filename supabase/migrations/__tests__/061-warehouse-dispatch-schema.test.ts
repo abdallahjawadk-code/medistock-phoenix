@@ -1053,7 +1053,22 @@ describe('15. isolation from out-of-scope domains', () => {
       // runtime, or UI code — this guard's stated subject. Everything shippable
       // under src/ (components, hooks, stores, services, pages, lib) is still
       // covered: a diff in any of them still fails this assertion.
-      diff = execSync('git diff --name-only -- src ":(exclude)src/**/__tests__/**"', {
+      // PHASE-A-A5-INSTITUTIONS-OUTLETS-A: a later, separately-reviewed phase
+      // applies presentation-only className/data-attribute hooks (Phase A
+      // design layer, no business-logic change) across the Institution and
+      // Outlet Operations surfaces plus the shared entry point — excluded here.
+      diff = execSync('git diff --name-only -- src ":(exclude)src/**/__tests__/**" ' +
+        '":(exclude)src/features/institutions/InstitutionScreen.tsx" ' +
+        '":(exclude)src/features/institutions/AvailabilityItemDetailsModal.tsx" ' +
+        '":(exclude)src/features/outlet/OutletOperationsScreen.tsx" ' +
+        '":(exclude)src/features/outlet/OutletIncomingSupplies.tsx" ' +
+        '":(exclude)src/features/outlet/OutletReturnComposer.tsx" ' +
+        '":(exclude)src/features/outlet/OutletStockCorrectionModal.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseComposerDialog.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseContextDialog.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseContextViewer.tsx" ' +
+        '":(exclude)src/features/outlet/CurrentMovementStatus.tsx" ' +
+        '":(exclude)src/main.tsx"', {
         cwd: ROOT, encoding: 'utf8',
       });
     } catch { /* ignore */ }

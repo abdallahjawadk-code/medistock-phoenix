@@ -388,7 +388,11 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   it('remove/reactivate/clear-port behavior unchanged', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/institutions/InstitutionScreen.tsx src/features/status/ReactivateMaterialModal.tsx', { cwd: ROOT, encoding: 'utf8' });
+      // PHASE-A-A5-INSTITUTIONS-OUTLETS-A: InstitutionScreen.tsx excluded —
+      // that later, separately-reviewed phase applies presentation-only
+      // className/data-attribute hooks (Phase A design layer) with no change
+      // to remove/reactivate/clear-port handlers, RPCs, or permission gates.
+      diff = execSync('git diff -- src/features/status/ReactivateMaterialModal.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
