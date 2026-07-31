@@ -1513,6 +1513,14 @@ describe('16. isolation: untouched domains', () => {
       // the same kind of presentation-only className/data-attribute hooks
       // (phase-a-alerts-admin-qr.css) to Status Center / User Administration /
       // Platform Broadcast / Availability Cleanup / Public QR — excluded here.
+      // PHASE-A-CLAUDE-A7: a still later, separately-reviewed phase (Phoenix
+      // Daylight visual convergence) applies the same kind of presentation-
+      // only token/data-attribute recolouring — never a prop, handler, or RPC
+      // change — to PhoenixSidebar/PhoenixMobileDrawer (nav active state moved
+      // from an inline style to a CSS data-active selector), ResetPassword
+      // Screen (primary-button recolour), and PhoenixButton/PhoenixMobile
+      // BottomNav/PhoenixStatusBadge (gold primary, teal secondary, dedicated
+      // info-blue) — excluded here.
       diff = execSync(
         'git diff --name-only -- src supabase/functions package.json ":(exclude)src/**/__tests__/**" ' +
         '":(exclude)src/features/institutions/InstitutionScreen.tsx" ' +
@@ -1533,7 +1541,13 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/platform-broadcast/PlatformBroadcastGate.tsx" ' +
         '":(exclude)src/features/admin/AvailabilityCleanupWizard.tsx" ' +
         '":(exclude)src/features/qr/PublicQrScreen.tsx" ' +
-        '":(exclude)src/main.tsx"',
+        '":(exclude)src/main.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixSidebar.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixMobileDrawer.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixButton.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixMobileBottomNav.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixStatusBadge.tsx" ' +
+        '":(exclude)src/features/auth/ResetPasswordScreen.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
