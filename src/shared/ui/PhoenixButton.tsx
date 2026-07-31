@@ -10,22 +10,28 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
-/* Button vocabulary transcribed from design-source/MediStock-Phoenix.dc.html:
-   the committing action is an ember gradient with white text at weight 700;
-   secondary is a --chip fill with a --line hairline and --cyanDim text at 600;
-   ghost drops the fill entirely and keeps the cyan text. Danger and warn follow
-   the secondary shape with their own semantic hue so status never reads by
-   fill alone. Every colour here is a token — nothing is baked. */
+/* PHASE-A7-VISUAL-CONVERGENCE: the committing action is the institutional gold
+   fill (--phoenix-gold, defined in phase-a-visual-convergence.css) with dark
+   ink text at weight 700 — the reference board's primary action colour.
+   Secondary is a --chip fill with a --line hairline and institutional teal
+   text at 600; ghost drops the fill entirely and keeps the teal text. Danger
+   and warn follow the secondary shape with their own semantic hue so status
+   never reads by fill alone. Every colour here is a token — nothing is baked.
+   (phase-a-visual-convergence.css also carries a scoped !important override
+   for the primary variant, since the legacy .phoenix-button[data-variant=
+   "primary"] class rule in phoenix-nexus.css still forces its own ember fill
+   with !important — this inline value is the source of truth once that
+   legacy rule is retired.) */
 const variantStyles: Record<Variant, CSSProperties> = {
   primary: {
-    background: 'linear-gradient(92deg, var(--ember), var(--ember2))',
-    color: '#fff',
+    background: 'linear-gradient(135deg, var(--phoenix-gold-2, var(--gold)), var(--phoenix-gold, var(--gold)))',
+    color: 'var(--phoenix-gold-ink, #241A08)',
     border: '1px solid transparent',
-    boxShadow: '0 10px 24px color-mix(in srgb, var(--ember) 26%, transparent)',
+    boxShadow: '0 10px 24px color-mix(in srgb, var(--phoenix-gold, var(--gold)) 26%, transparent)',
     fontWeight: 700,
   },
-  secondary: { background: 'var(--chip)', color: 'var(--cyanDim)', border: '1px solid var(--line)' },
-  ghost: { background: 'transparent', color: 'var(--cyanDim)', border: '1px solid var(--line)' },
+  secondary: { background: 'var(--chip)', color: 'var(--teal)', border: '1px solid var(--line)' },
+  ghost: { background: 'transparent', color: 'var(--teal)', border: '1px solid var(--line)' },
   danger: {
     background: 'var(--chipD)',
     color: 'var(--danger)',
