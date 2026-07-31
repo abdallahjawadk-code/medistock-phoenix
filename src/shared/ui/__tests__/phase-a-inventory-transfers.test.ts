@@ -11,6 +11,7 @@ describe('Phase A inventory + network/transfer workspaces (A4) presentation cont
   const css = read('shared/lib/phase-a-inventory-transfers.css');
   const inventoryCenter = read('features/inventory/InventoryCenterScreen.tsx');
   const networkManagement = read('features/network/NetworkManagementScreen.tsx');
+  const directSupplyOperations = read('features/network/DirectSupplyOperations.tsx');
   const authenticatedApp = read('app/AuthenticatedApp.tsx');
 
   it('loads the inventory-transfers layer after every prior Phase A layer', () => {
@@ -37,10 +38,50 @@ describe('Phase A inventory + network/transfer workspaces (A4) presentation cont
     expect(ungated).toEqual([]);
   });
 
-  it('touches only the Inventory Center and Network Management screens via one shared class hook', () => {
+  it('touches only the Inventory Center and Network Management screens via the shared root class hook', () => {
     expect(css).toContain('.nexus-inventory-transfers');
     expect(inventoryCenter).toContain('nexus-inventory-transfers nexus-inventory-transfers--center');
     expect(networkManagement).toContain('nexus-inventory-transfers nexus-inventory-transfers--network');
+  });
+
+  // ── A4.1: composition/hierarchy hooks ───────────────────────────────────
+  // A4.1 deepens the A4 foundational coat into real page composition (banded
+  // header, control strip, segmented tabs, table-like rows). Every additional
+  // hook below is a named `nexus-it-*` className hook, applied ONLY inside
+  // the two screens (and the DirectSupplyOperations component the Network
+  // Management screen renders on its "supply" tab) — never a new element
+  // that carries data, state, or a handler.
+
+  it('adds every A4.1 structural hook as a plain className on existing elements, gated the same way', () => {
+    const a41Hooks = [
+      '.nexus-it-header', '.nexus-it-context-bar', '.nexus-it-tabs', '.nexus-it-tab',
+      '.nexus-it-notice', '.nexus-it-content', '.nexus-it-batch-row', '.nexus-it-stat',
+      '.nexus-it-row-card', '.nexus-it-form-card', '.nexus-it-toolbar', '.nexus-it-ledger-row',
+    ];
+    for (const hook of a41Hooks) {
+      expect(css, `${hook} must be styled`).toContain(hook);
+    }
+  });
+
+  it('applies the batch-row quantity chips to the existing WarehouseStockBatch fields only', () => {
+    // Presentation mapping derived directly from existing data (an EXISTING
+    // numeric field, already returned by getWarehouseStock), never a new
+    // threshold, query, or business computation.
+    expect(inventoryCenter).toMatch(/nexus-it-stat--onhand/);
+    expect(inventoryCenter).toMatch(/nexus-it-stat--reserved/);
+    expect(inventoryCenter).toMatch(/batch\.availableQuantity === 0/);
+    expect(inventoryCenter).not.toMatch(/isLowStock|isNearExpiry|isExpired/);
+  });
+
+  it('applies the warehouse row-card kind accent from the existing warehouseKind field only', () => {
+    expect(networkManagement).toMatch(/nexus-it-row-card--\$\{w\.warehouseKind\}/);
+  });
+
+  it('wires DirectSupplyOperations (rendered inside Network Management\'s supply tab) into the same hook family', () => {
+    expect(directSupplyOperations).toContain('nexus-it-panel');
+    expect(directSupplyOperations).toContain('nexus-it-tabs');
+    expect(directSupplyOperations).toContain('nexus-it-row-card');
+    expect(directSupplyOperations).toContain('nexus-it-toolbar');
   });
 
   it('is a pure CSS file: no imports, no Supabase/RPC access, no CDN or external URL', () => {
@@ -124,8 +165,37 @@ describe('Phase A inventory + network/transfer workspaces (A4) presentation cont
     expect(authenticatedApp).toContain('<NetworkManagementScreen');
   });
 
-  it('adds no wrapping element: both screens keep their original dir={dir} root, only className is added', () => {
+  it('keeps both screens\' own root elements: only className was added, no new wrapping component around them', () => {
     expect(inventoryCenter).toMatch(/<div dir=\{dir\} className="nexus-inventory-transfers nexus-inventory-transfers--center">/);
     expect(networkManagement).toMatch(/<div dir=\{dir\} className="nexus-inventory-transfers nexus-inventory-transfers--network">/);
+  });
+
+  it('keeps DirectSupplyOperations on its existing direct-supply/return RPCs, never a new query', () => {
+    expect(directSupplyOperations).toContain('createDirectTransferRequest(');
+    expect(directSupplyOperations).toContain('sendDirectTransferLine(');
+    expect(directSupplyOperations).toContain('receiveTransferLine(');
+    expect(directSupplyOperations).toContain('requestDirectReturn(');
+  });
+
+  // ── A4.1: no fabricated production data ─────────────────────────────────
+  // Owner instructions (§4/§16): every reading must come from a real existing
+  // source; no hardcoded KPI, no Math.random(), no demo array in a production
+  // screen file. The CSS layer is presentation-only and carries no data at all.
+
+  it('introduces no random or time-seeded fake value in the touched screen files', () => {
+    for (const [name, src] of [
+      ['InventoryCenterScreen', inventoryCenter],
+      ['NetworkManagementScreen', networkManagement],
+      ['DirectSupplyOperations', directSupplyOperations],
+    ] as const) {
+      expect(src, `${name} must not use Math.random for a displayed value`).not.toMatch(/Math\.random\(\)/);
+    }
+  });
+
+  it('the CSS layer carries no literal data value — presentation only', () => {
+    // No hardcoded counts/percentages that could be mistaken for a KPI, and no
+    // inline JSON/array literal smuggling fixture-shaped data into the stylesheet.
+    expect(css).not.toMatch(/content:\s*['"]\d/);
+    expect(css).not.toMatch(/\[\s*\{/);
   });
 });
