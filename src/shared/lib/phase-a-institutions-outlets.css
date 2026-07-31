@@ -1,0 +1,507 @@
+/* ─── PHASE A — INSTITUTIONS, OUTLETS + DISPENSING WORKSPACES (A5.1) ────────
+   Presentation-only layer for the current Institution management screen
+   (screen 11: organization directory/detail, warehouses, distribution
+   points/outlets, profiles/roles, QR lifecycle, availability visibility) and
+   the current Outlet Operations screen (screen 18: incoming supplies, stock &
+   batches with dispense/correction, returns, movement history & tracking). It
+   changes no data, computation, RBAC, or routing — every selector is gated by
+   the Phase A document marker and hooks only into named className/data-
+   attribute hooks added to each screen's existing DOM (never new data,
+   handlers, or props).
+
+   Follows the exact contract established for A4.1
+   (phase-a-inventory-transfers.css): a banded header, a distinct context/
+   control strip, a segmented tab track, denser row-card composition, and
+   richer empty/error/loading treatment — while never fighting PhoenixCard's
+   own inline border/background/box-shadow/padding (author-inline always wins
+   the cascade); accents are added via ::before/::after pseudo-elements and
+   non-inline properties instead.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] {
+  --phase-a-io-hairline: color-mix(in srgb, var(--cyan) 14%, var(--brd));
+  --phase-a-io-accent-line: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 55%, var(--line)), transparent);
+  --phase-a-io-row-hover: color-mix(in srgb, var(--cyan) 6%, transparent);
+  --phase-a-io-glow: color-mix(in srgb, var(--cyan) 10%, transparent);
+  --phase-a-io-warmth: color-mix(in srgb, var(--gold) 8%, transparent);
+  --phase-a-io-pharmacy: var(--cyan);
+  --phase-a-io-crash-cabinet: var(--err);
+  --phase-a-io-rescue-cart: var(--warn);
+  --phase-a-io-dispense-accent: var(--ok);
+  --phase-a-io-correction-accent: var(--warn);
+}
+
+/* ── Shared entrance + card/hairline language ────────────────────────────
+   A single quiet entrance and a consistent card/empty/error hairline across
+   both screens, matching the rest of Phase A. Deliberately restrained:
+   readability over effect, no dense glass, existing tokens only. */
+html[data-phoenix-ui-phase='a'] .nexus-institutions,
+html[data-phoenix-ui-phase='a'] .nexus-outlet-ops {
+  animation: phase-a-io-enter var(--phoenix-page-enter-duration, 360ms) var(--ease-standard) both;
+}
+
+@keyframes phase-a-io-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-institutions .phoenix-card,
+html[data-phoenix-ui-phase='a'] .nexus-outlet-ops .phoenix-card {
+  border-color: var(--phase-a-io-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-institutions .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-institutions .nexus-error,
+html[data-phoenix-ui-phase='a'] .nexus-outlet-ops .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-outlet-ops .nexus-error {
+  border-color: var(--phase-a-io-hairline);
+}
+
+/* ── Page header: a proper banded region, not a bare heading ─────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-header {
+  position: relative;
+  padding: clamp(14px, 1.8vw, 20px) clamp(16px, 2vw, 22px);
+  border: 1px solid var(--phase-a-io-hairline);
+  border-radius: var(--r4);
+  overflow: hidden;
+  background:
+    radial-gradient(34rem 20rem at 6% -30%, var(--phase-a-io-glow), transparent 72%),
+    radial-gradient(26rem 16rem at 100% 120%, var(--phase-a-io-warmth), transparent 74%),
+    linear-gradient(140deg, var(--s2), var(--s));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-header__titles {
+  position: relative;
+  padding-inline-start: 14px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-header__titles::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, var(--cyan), var(--gold));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-header__title {
+  letter-spacing: -.01em;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-header__subtitle {
+  max-width: 62ch;
+}
+
+/* ── Context/control strip: outlet selector, org-scope row ───────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-context-bar {
+  position: relative;
+  padding-inline-start: 18px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-context-bar::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--phase-a-io-pharmacy);
+  opacity: .55;
+}
+
+/* ── Tabs: a segmented pill track, not bare bordered buttons ─────────────
+   The track (padding + rounded background) is added on the CONTAINER only —
+   each tab button keeps its own inline active/inactive background and color,
+   so nothing here fights an inline style; it wraps that existing contract
+   in a calmer, denser shell. */
+html[data-phoenix-ui-phase='a'] .nexus-io-tabs {
+  padding: 5px !important;
+  background: var(--s2);
+  border: 1px solid var(--phase-a-io-hairline);
+  border-radius: var(--r4);
+  gap: 4px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-tab {
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  letter-spacing: .01em;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-tab[aria-selected='true'] {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--cyan) 16%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 10px;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-io-tab[aria-selected='false']:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* ── Content region: consistent rhythm between sections ──────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Toolbars: search + primary action rows ──────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-toolbar {
+  padding-block-end: 12px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-institutions input[type='search'].premium-field,
+html[data-phoenix-ui-phase='a'] .nexus-institutions .nexus-field__control,
+html[data-phoenix-ui-phase='a'] .nexus-outlet-ops .nexus-field__control {
+  border-color: var(--phase-a-io-hairline);
+}
+
+/* ── Section headers ───────────────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--phase-a-io-accent-line);
+}
+
+/* ── Notice banners ───────────────────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-notice {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-notice--warn {
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent) !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-notice--error {
+  border-color: color-mix(in srgb, var(--err) 35%, transparent) !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-notice--ok {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent) !important;
+}
+
+/* ── Org grid + org card: kind accent via ::before (never the card's own
+   inline border/background/box-shadow — all three set inline by PhoenixCard
+   and would need !important to touch; a pseudo-element sidesteps that). ──── */
+html[data-phoenix-ui-phase='a'] .nexus-io-grid {
+  gap: 12px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card,
+html[data-phoenix-ui-phase='a'] .nexus-io-row-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card::before,
+html[data-phoenix-ui-phase='a'] .nexus-io-row-card::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--phase-a-io-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card--active::before {
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card--suspended::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card--inactive::before,
+html[data-phoenix-ui-phase='a'] .nexus-io-org-card--archived::before {
+  background: var(--t3);
+}
+
+/* Distribution-point kind accents — pharmacy / crash cabinet / rescue cart —
+   applied ONLY when the point's real pointType is one of the three approved
+   values (never inferred, never a default). */
+html[data-phoenix-ui-phase='a'] .nexus-io-row-card--pharmacy::before {
+  background: var(--phase-a-io-pharmacy);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-row-card--crash_cabinet::before {
+  background: var(--phase-a-io-crash-cabinet);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-row-card--rescue_cart::before {
+  background: var(--phase-a-io-rescue-cart);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-io-org-card:hover,
+  html[data-phoenix-ui-phase='a'] .nexus-io-row-card:hover {
+    transform: translateX(0);
+  }
+}
+
+/* ── Form cards: create/edit forms get a top accent so they read as an
+   INPUT surface, not a data row ──────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-form-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-form-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+/* ── Detail masthead: the org-detail identity card ───────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-detail-masthead {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-detail-masthead::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-io-accent-line);
+}
+
+/* ── Row list rhythm (users, availability materials) ─────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-row-list {
+  gap: 8px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-material-row {
+  transition: background 140ms ease;
+}
+
+/* ── Danger/cleanup surfaces: archive-organization, clear-port-items — a
+   cautionary top accent instead of the calm cyan/gold one. ──────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-danger-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-danger-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--err), transparent);
+}
+
+/* ── Outlet stock rows: identity + stat chips ────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-stock-row {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-stock-row::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-stock-row--zero::before {
+  background: var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-stock-row__qty {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-stock-row--zero .nexus-io-stock-row__qty {
+  color: var(--err);
+}
+
+/* Dispense vs correction: two deliberately different visual weights. Dispense
+   is the PRIMARY clinical action (confident, emphasized); correction is a
+   SECONDARY, cautionary exception — never described or styled as a normal
+   balance edit. */
+html[data-phoenix-ui-phase='a'] .nexus-io-action-dispense {
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--ok) 20%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-action-correct {
+  opacity: .88;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-io-action-correct:hover {
+    opacity: 1;
+  }
+}
+
+/* ── Dispense / correction dialog bodies: distinct accent per surface ────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-dispense-body {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-correction-body {
+  position: relative;
+  padding-inline-start: 14px;
+  border-inline-start: 3px solid var(--phase-a-io-correction-accent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-dispense-context-block {
+  position: relative;
+}
+
+/* ── Dispense context viewer: a quiet inline record, not a form ──────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-context-viewer {
+  position: relative;
+  padding-inline-start: 12px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-context-viewer::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 99px;
+  background: var(--phase-a-io-hairline);
+}
+
+/* ── Movement history / timeline: scannable ledger rows ──────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-history-row {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-history-row::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--phase-a-io-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-ledger-row {
+  position: relative;
+  padding-inline-start: 14px !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-ledger-row::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 99px;
+  background: var(--phase-a-io-hairline);
+}
+
+/* ── Availability item details: a quiet read-only label/value list ──────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-avail-details {
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-avail-row {
+  border-color: var(--phase-a-io-hairline) !important;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-io-avail-row:last-child {
+  border-bottom: 0 !important;
+}
+
+/* ── QR preview surface ──────────────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-io-qr-preview img {
+  box-shadow: 0 8px 22px color-mix(in srgb, #07111f 18%, transparent);
+}
+
+/* ── Responsive contract ─────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'] .nexus-io-header {
+    padding: clamp(14px, 4vw, 20px);
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-header__row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-tab {
+    flex: 0 0 auto;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-toolbar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-toolbar .phoenix-button {
+    width: 100%;
+  }
+}
+
+/* ── Accessibility and low-power behavior ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-phoenix-ui-phase='a'] .nexus-institutions,
+  html[data-phoenix-ui-phase='a'] .nexus-outlet-ops {
+    animation: none;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-io-tab,
+  html[data-phoenix-ui-phase='a'] .nexus-io-org-card,
+  html[data-phoenix-ui-phase='a'] .nexus-io-row-card {
+    transition: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    html[data-phoenix-ui-phase='a'] .nexus-io-tab[aria-selected='false']:hover {
+      transform: none;
+    }
+  }
+}
