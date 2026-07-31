@@ -141,7 +141,8 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
 
   return (
     <PhoenixDialog open={open} onClose={resetAndClose} title={t('dsp_title', lang)} maxWidth={520}>
-      <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px' }}>
+      <div className="nexus-io-dispense-body">
+      <div className="nexus-io-dispense-context-block" style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px' }}>
         <div style={{ fontWeight: 700, marginBottom: '4px' }} dir="auto">{lot.scientificName}</div>
         <div style={{ color: 'var(--t2)', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           {lot.batchNumber && <span dir="ltr">{lot.batchNumber}</span>}
@@ -266,6 +267,7 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
           </div>
         </>
       )}
+      </div>
     </PhoenixDialog>
   );
 }
