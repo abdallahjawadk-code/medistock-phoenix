@@ -202,7 +202,12 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
       );
     } catch { /* ignore */ }
     if (diff.trim()) {
-      expect(diff).toMatch(/enteredPrice|priceFilterMode|OutletAvailabilityReportModal|outletOptions|OutletReportRow/);
+      // PHASE-A-CLAUDE-A6: a later, separately-reviewed presentation-only
+      // phase (phase-a-alerts-admin-qr.css) adds className/data-attribute
+      // hooks to StatusCenterScreen.tsx, carrying the 'nexus-sc-' /
+      // 'nexus-status-center' marker — allowed alongside the pre-existing
+      // Entered Price / Outlet Report Modal markers.
+      expect(diff).toMatch(/enteredPrice|priceFilterMode|OutletAvailabilityReportModal|outletOptions|OutletReportRow|nexus-sc-|nexus-status-center/);
       expect(diff).not.toMatch(/phoenix_get_dashboard_condition_counts|phoenix_get_institution_condition_counts/);
     }
   });

@@ -304,7 +304,16 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    // PHASE-A-CLAUDE-A6: a later, separately-reviewed presentation-only phase
+    // (phase-a-alerts-admin-qr.css) adds className/data-attribute hooks only —
+    // every such line carries the 'nexus-sc-'/'nexus-status-center' marker or
+    // a bare 'data-active=' presentational attribute, and never touches
+    // exportXlsx/exportAvailabilityXlsx itself.
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l =>
+      !l.includes('nexus-sc-') && !l.includes('nexus-status-center') && !l.includes('data-active='));
+    expect(unexpected).toEqual([]);
+    expect(diff).not.toMatch(/exportXlsx|exportAvailabilityXlsx/);
   });
 
   it('buildAvailabilityExportWorkbook/exportAvailabilityXlsx (the main export path) still exist unrenamed and untouched', () => {

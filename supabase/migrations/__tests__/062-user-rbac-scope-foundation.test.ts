@@ -1509,6 +1509,10 @@ describe('16. isolation: untouched domains', () => {
       // applies presentation-only className/data-attribute hooks (Phase A
       // design layer, no business-logic change) across the Institution and
       // Outlet Operations surfaces plus the shared entry point — excluded here.
+      // PHASE-A-CLAUDE-A6: a still later, separately-reviewed phase applies
+      // the same kind of presentation-only className/data-attribute hooks
+      // (phase-a-alerts-admin-qr.css) to Status Center / User Administration /
+      // Platform Broadcast / Availability Cleanup / Public QR — excluded here.
       diff = execSync(
         'git diff --name-only -- src supabase/functions package.json ":(exclude)src/**/__tests__/**" ' +
         '":(exclude)src/features/institutions/InstitutionScreen.tsx" ' +
@@ -1521,6 +1525,14 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/outlet/DispenseContextDialog.tsx" ' +
         '":(exclude)src/features/outlet/DispenseContextViewer.tsx" ' +
         '":(exclude)src/features/outlet/CurrentMovementStatus.tsx" ' +
+        '":(exclude)src/features/status/StatusCenterScreen.tsx" ' +
+        '":(exclude)src/features/status/InternalAlertsSection.tsx" ' +
+        '":(exclude)src/features/status/OutletMaterialGroups.tsx" ' +
+        '":(exclude)src/features/users/UserManagementScreen.tsx" ' +
+        '":(exclude)src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ' +
+        '":(exclude)src/features/platform-broadcast/PlatformBroadcastGate.tsx" ' +
+        '":(exclude)src/features/admin/AvailabilityCleanupWizard.tsx" ' +
+        '":(exclude)src/features/qr/PublicQrScreen.tsx" ' +
         '":(exclude)src/main.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
