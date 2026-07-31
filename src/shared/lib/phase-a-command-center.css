@@ -1,0 +1,153 @@
+/* ─── PHASE A — EXECUTIVE DASHBOARD + UNIFIED REPORTING SHELL ──────────────
+   Presentation-only layer for the current Dashboard screen and the current
+   unified Reports & Status Center («مركز التقارير والمواقف»). It changes no
+   data, computation, RBAC, or routing — every selector is gated by the Phase
+   A document marker and hooks only into the existing DOM/class surface both
+   screens already render (.nexus-command-center is the sole new class hook,
+   applied to each screen's own root element alongside its existing classes).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] {
+  --phase-a-cc-accent-line: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 55%, var(--line)), transparent);
+  --phase-a-cc-hairline: color-mix(in srgb, var(--cyan) 14%, var(--brd));
+  --phase-a-cc-table-head: color-mix(in srgb, var(--cyan) 7%, var(--s2));
+  --phase-a-cc-table-stripe: color-mix(in srgb, var(--s2) 55%, transparent);
+  --phase-a-cc-row-hover: color-mix(in srgb, var(--cyan) 6%, transparent);
+}
+
+/* ── Shared atmosphere ────────────────────────────────────────────────────
+   A single quiet entrance and a consistent card/hairline language across
+   both screens. Deliberately restrained: readability over effect, no dense
+   glass, existing tokens only. */
+html[data-phoenix-ui-phase='a'] .nexus-command-center {
+  animation: phase-a-cc-enter var(--phoenix-page-enter-duration, 360ms) var(--ease-standard) both;
+}
+
+@keyframes phase-a-cc-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center .premium-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center .premium-section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--phase-a-cc-accent-line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center .premium-kpi-card,
+html[data-phoenix-ui-phase='a'] .nexus-command-center .phoenix-card {
+  border-color: var(--phase-a-cc-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center .premium-kpi-card::after {
+  background: radial-gradient(circle, color-mix(in srgb, var(--gold) 16%, transparent), transparent 70%);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-command-center .nexus-error {
+  border-color: var(--phase-a-cc-hairline);
+}
+
+/* ── Dashboard hero band ─────────────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-command-center--dashboard .nexus-dash-hero {
+  border-color: var(--phoenix-shell-seam);
+  background:
+    radial-gradient(46rem 30rem at 6% -20%, var(--phoenix-shell-glow), transparent 70%),
+    radial-gradient(38rem 26rem at 100% 120%, var(--phoenix-shell-warmth), transparent 72%),
+    var(--heroGrad, linear-gradient(140deg, var(--s2), var(--s)));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center--dashboard .nexus-dash-hero__kicker {
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* ── Reports / Status Center header ──────────────────────────────────────
+   The header block is always the unified screen's first rendered child
+   (its own title + org-scope row), so it is addressed structurally without
+   touching the component's JSX beyond the one root class already added. */
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports > div:first-child {
+  padding: clamp(14px, 1.6vw, 20px) clamp(16px, 2vw, 22px);
+  margin-block-end: 18px;
+  border: 1px solid var(--phoenix-shell-seam);
+  border-radius: var(--r4);
+  background:
+    radial-gradient(38rem 22rem at 4% -30%, var(--phoenix-shell-glow), transparent 72%),
+    linear-gradient(140deg, var(--s2), var(--s));
+}
+
+/* ── Tabs: existing active-state colors, plus a slim cinematic underline ── */
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports [role='tablist'] {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports [role='tab'] {
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports [role='tab'][aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: 10px;
+  bottom: -3px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+/* ── Filters: smart chips + selects/inputs share the cinematic hairline ─── */
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports .premium-smart-filter-chip,
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports .nexus-field__control,
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports .nexus-select {
+  border-color: var(--phase-a-cc-hairline);
+}
+
+/* ── Tables: quiet header wash + zebra rows, readability first ──────────── */
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports table {
+  border: 1px solid var(--phase-a-cc-hairline);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports table thead th {
+  background: var(--phase-a-cc-table-head);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-command-center--reports table tbody tr:nth-child(even) {
+  background: var(--phase-a-cc-table-stripe);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-command-center--reports table tbody tr:hover {
+    background: var(--phase-a-cc-row-hover);
+  }
+}
+
+/* ── Responsive contract ─────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'] .nexus-command-center--reports > div:first-child {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-command-center--dashboard .nexus-dash-hero {
+    padding: clamp(14px, 4vw, 20px);
+  }
+}
+
+/* ── Accessibility and low-power behavior ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-phoenix-ui-phase='a'] .nexus-command-center {
+    animation: none;
+  }
+}
