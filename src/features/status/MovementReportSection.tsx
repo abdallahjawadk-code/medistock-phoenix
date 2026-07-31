@@ -5,6 +5,11 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDateTime } from '@/shared/lib/date';
 import { isLikelyMobilePrintContext } from '@/shared/lib/reportExport';
+import {
+  exportProfessionalXlsx,
+  type ProfessionalExportConfig,
+  type ProfessionalReportColumn,
+} from '@/shared/lib/professional-export';
 import { getPointsByOrg, getWarehouses } from '@/shared/supabase/services/warehouses.service';
 import {
   getMovementLedgerReport,
@@ -32,7 +37,7 @@ import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
  * duplicate). Loads via getMovementLedgerReport(), which calls the canonical
  * phoenix_movement_ledger_report RPC over the three live Unified Movements
  * ledgers. This component NEVER writes: no insert/update/delete anywhere in
- * this file. Visibility of the whole section and of the Export CSV / Print
+ * this file. Visibility of the whole section and of the Export XLSX / Print
  * actions is UX-only — the RPC independently re-enforces org scope +
  * status_center.view on every read regardless of what is shown here.
  *
@@ -59,16 +64,6 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/**
- * PRODUCTION-READINESS-CLEANUP-B: CSV injection protection — same pattern
- * already used by StatusCenterScreen's exportCsv(). A cell value beginning
- * with =, +, -, or @ can be interpreted as a formula by Excel/Sheets; a
- * leading apostrophe forces plain-text treatment without altering the value.
- */
-function csvSafeCell(v: string): string {
-  return /^[=+\-@]/.test(v) ? `'${v}` : v;
-}
-
 const fieldStyle = {
   padding: '8px 12px', borderRadius: 'var(--r2)',
   border: '1px solid var(--brd)', background: 'var(--s)',
@@ -80,7 +75,7 @@ const btnStyle = {
   background: 'var(--s)', color: 'var(--t)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
 } as const;
 
-// R03-FIX: CSV/Print must stay enabled once loading completes, even for a
+// R03-FIX: XLSX/Print must stay enabled once loading completes, even for a
 // genuine zero-row result — a filtered "no movements" result is still a
 // real, exportable/printable report. Only loading (nothing to export yet)
 // or a load error (nothing trustworthy to export) disable the actions.
@@ -93,7 +88,7 @@ export function MovementReportSection() {
   const { lang, activeOrgId, myPermissions } = useApp();
 
   const canViewReport = myPermissions.has('status_center.view');
-  const canExportCsv  = myPermissions.has('availability.movements.export');
+  const canExportXlsx = myPermissions.has('availability.movements.export');
   const canPrint      = myPermissions.has('availability.movements.print');
 
   const [dateFrom, setDateFrom] = useState('');
@@ -104,6 +99,7 @@ export function MovementReportSection() {
   const [materialSearch, setMaterialSearch] = useState('');
   const [actorSearch, setActorSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
   // BUGFIX-MOBILE-PRINT-DOES-NOT-EXIT-APP-A: on mobile, printReport() routes
   // here instead of calling window.open/window.print directly.
   const [mobilePrintHtml, setMobilePrintHtml] = useState<string | null>(null);
@@ -176,28 +172,26 @@ export function MovementReportSection() {
   const typeLabel = (r: MovementLedgerReportRow) => movementTypeLabel(r.movementType, lang);
   const ledgerLabel = (r: MovementLedgerReportRow) => ledgerSourceLabel(r.ledgerSource, lang);
 
-  // Shared column definitions for table / print / CSV — mirrors the pattern
+  // Shared column definitions for table / print / XLSX — mirrors the pattern
   // already used by StatusCenterScreen's live availability report. The
-  // dispense-context column is TEXT-ONLY here (Recorded/—) so CSV/print stay
+  // dispense-context column is TEXT-ONLY here (Recorded/—) so XLSX/print stay
   // in exact parity with the live table; the clickable "View" affordance is
   // rendered separately, only in the on-screen table.
-  const columns: { key: string; label: string; value: (r: MovementLedgerReportRow) => string }[] = [
-    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => formatStableDateTime(r.occurredAt, lang) },
+  const columns: ProfessionalReportColumn<MovementLedgerReportRow>[] = [
+    { key: 'datetime', label: t('mvmt_col_datetime', lang), value: r => formatStableDateTime(r.occurredAt, lang), ltr: true, dateColumn: 'datetime', excelValue: r => r.occurredAt },
     { key: 'ledger',   label: t('mvmt_col_ledger_source', lang), value: ledgerLabel },
     { key: 'location', label: t('mvmt_col_location', lang), value: locationLabel },
     { key: 'sci',      label: t('avail_scientific_name', lang), value: r => r.scientificName || '—' },
     { key: 'conc',     label: t('avail_concentration', lang), value: r => r.concentration || '—' },
     { key: 'dosage',   label: t('avail_dosage_form', lang), value: r => r.dosageForm || '—' },
-    { key: 'batch',    label: t('mv_f_batch_number', lang), value: r => r.batchNumber || '—' },
+    { key: 'batch',    label: t('mv_f_batch_number', lang), value: r => r.batchNumber || '—', ltr: true },
     { key: 'type',     label: t('mvmt_col_type', lang),     value: typeLabel },
     { key: 'reason',   label: t('mvmt_col_reason_code', lang), value: reasonLabel },
-    { key: 'before',   label: t('mvmt_col_before', lang),   value: r => String(r.quantityBefore) },
-    { key: 'delta',    label: t('mvmt_col_delta', lang),    value: r => formatDelta(r.quantityDelta) },
-    { key: 'after',    label: t('mvmt_col_after', lang),    value: r => String(r.quantityAfter) },
+    { key: 'before',   label: t('mvmt_col_before', lang),   value: r => String(r.quantityBefore), ltr: true, numeric: true, excelValue: r => r.quantityBefore },
+    { key: 'delta',    label: t('mvmt_col_delta', lang),    value: r => formatDelta(r.quantityDelta), ltr: true, numeric: true, excelValue: r => r.quantityDelta },
+    { key: 'after',    label: t('mvmt_col_after', lang),    value: r => String(r.quantityAfter), ltr: true, numeric: true, excelValue: r => r.quantityAfter },
     { key: 'actor',    label: t('mvmt_col_actor', lang),    value: actorLabel },
-    { key: 'doc',      label: t('mvmt_col_document_ref', lang), value: r => r.sourceDocumentNumber || '—' },
-    { key: 'correlation', label: t('mvmt_col_correlation', lang), value: r => r.correlationId || '—' },
-    { key: 'causation',   label: t('mvmt_col_causation', lang),   value: r => r.causationId || '—' },
+    { key: 'doc',      label: t('mvmt_col_document_ref', lang), value: r => r.sourceDocumentNumber || '—', ltr: true },
     { key: 'dispense',  label: t('mvmt_col_dispense_context', lang), value: r => r.hasDispenseContext ? t('mvmt_dispense_context_yes', lang) : t('mvmt_dispense_context_no', lang) },
   ];
 
@@ -217,6 +211,26 @@ export function MovementReportSection() {
     if (actorSearch.trim()) parts.push(`${t('mvmt_col_actor', lang)}: ${actorSearch.trim()}`);
     return parts.length ? parts.join(' · ') : t('sc_all', lang);
   }, [dateFrom, dateTo, ledgerSource, movementType, locationId, materialSearch, actorSearch, locationOptions, lang]);
+
+  function exportConfig(): ProfessionalExportConfig<MovementLedgerReportRow> {
+    return {
+      reportTitle: t('mvmt_report_title', lang),
+      moduleName: t('mvmt_report_sub', lang),
+      generatedAt: new Date(),
+      filtersSummary: selectedFiltersText,
+      columns,
+      rows,
+      rowCount: report.data?.totalCount ?? rows.length,
+      lang,
+      fileNameBase: 'medistock-movements',
+      footerText: t('report_footer_generated_by', lang),
+      labels: {
+        generatedAt: t('sc_generated_at', lang),
+        filtersSummary: t('sc_selected_filters', lang),
+        rowCount: t('sc_total_rows', lang),
+      },
+    };
+  }
 
   function buildReportHtml(): string {
     const dir = lang === 'ar' ? 'rtl' : 'ltr';
@@ -271,35 +285,13 @@ export function MovementReportSection() {
     win.close();
   }
 
-  function exportCsv() {
+  async function exportXlsx() {
+    if (xlsxBusy) return;
+    setXlsxBusy(true);
     try {
-      const bom = '﻿';
-      const cell = (v: string) => `"${csvSafeCell(v).replace(/"/g, '""')}"`;
-      const metadataLines = [
-        t('mvmt_report_title', lang),
-        `${t('sc_selected_filters', lang)}: ${selectedFiltersText}`,
-        `${t('sc_generated_at', lang)}: ${generatedAt()}`,
-        `${t('sc_total_rows', lang)}: ${rows.length}`,
-      ];
-      const lines = [
-        ...metadataLines.map(m => cell(m)),
-        '',
-        columns.map(c => cell(c.label)).join(','),
-        ...rows.map(r => columns.map(c => cell(String(c.value(r)))).join(',')),
-      ];
-      const csv = bom + lines.join('\r\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const pad2 = (n: number) => String(n).padStart(2, '0');
-      const now = new Date();
-      const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}`;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `medistock-movements-${stamp}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      showToast(t('csv_export_failed', lang));
+      await exportProfessionalXlsx(exportConfig());
+    } finally {
+      setXlsxBusy(false);
     }
   }
 
@@ -325,8 +317,8 @@ export function MovementReportSection() {
           </div>
         </div>
         <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {canExportCsv && (
-            <button onClick={exportCsv} disabled={reportActionsDisabled} aria-disabled={reportActionsDisabled} aria-label={t('mvmt_report_export_csv', lang)} style={reportActionsDisabled ? disabledBtnStyle : btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('mvmt_report_export_csv', lang)}</button>
+          {canExportXlsx && (
+            <button onClick={() => void exportXlsx()} disabled={reportActionsDisabled || xlsxBusy} aria-disabled={reportActionsDisabled || xlsxBusy} aria-label={t('mv_export_xlsx', lang)} style={reportActionsDisabled || xlsxBusy ? disabledBtnStyle : btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('mv_export_xlsx', lang)}</button>
           )}
           {canPrint && (
             <button onClick={printReport} disabled={reportActionsDisabled} aria-disabled={reportActionsDisabled} aria-label={t('sc_print_report', lang)} style={reportActionsDisabled ? disabledBtnStyle : btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
@@ -434,7 +426,7 @@ export function MovementReportSection() {
                             )}
                           </td>
                         ) : (
-                          <td key={c.key} style={td} dir={LTR_COLUMN_KEYS.has(c.key) ? 'ltr' : 'auto'}>{c.value(r)}</td>
+                          <td key={c.key} style={td} dir={c.ltr ? 'ltr' : 'auto'}>{c.value(r)}</td>
                         )
                       ))}
                     </tr>

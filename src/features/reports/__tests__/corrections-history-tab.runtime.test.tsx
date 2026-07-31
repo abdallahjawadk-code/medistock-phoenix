@@ -81,17 +81,17 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
     expect(getPaperReferencesFor).toHaveBeenCalledWith('stock_correction_request', []);
   });
 
-  it('shows the linked movement id (truncated, full value on hover) for an approved correction, and a dash while pending', async () => {
+  it('shows a non-technical recorded marker for an approved correction, and no UUID', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
 
     render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
-    const linked = screen.getByTitle(WAREHOUSE_ROW.appliedMovementId!);
-    expect(linked).toHaveTextContent(WAREHOUSE_ROW.appliedMovementId!.slice(0, 8));
+    expect(screen.getByText('Recorded')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(WAREHOUSE_ROW.appliedMovementId!);
     // The pending row's cell has no appliedMovementId, so no title-bearing
     // cell exists for it — only one such cell should be present.
-    expect(screen.getAllByTitle(WAREHOUSE_ROW.appliedMovementId!)).toHaveLength(1);
+    expect(document.querySelector(`[title="${WAREHOUSE_ROW.appliedMovementId}"]`)).toBeNull();
   });
 
   it('only fetches paper references for outlet-scope rows, never warehouse-scope (110 does not cover warehouse corrections)', async () => {

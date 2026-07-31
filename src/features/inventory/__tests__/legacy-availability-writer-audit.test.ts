@@ -55,7 +55,7 @@ describe('1. EditorScreen — the retired create-then-reopen availability form',
 
   it('screen 3 routes to the Inventory Center, which replaced it', () => {
     expectScreenThreeIsInventoryCenter();
-    expect(authenticatedApp).toContain('case 3:  return <InventoryCenterScreen />;');
+    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen[\s\S]*?initialSuggestionDocument=/);
   });
 
   it('is imported by no production module — every navigation entry point is clear', () => {

@@ -37,6 +37,7 @@ import {
   type ReceiveWarehouseStockInput,
   requestWarehouseStockCorrection,
 } from './warehouse-intake.service';
+import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
 
 /**
  * INVENTORY-CENTER-INTAKE-A — the Inventory Management & Intake Center,
@@ -57,11 +58,18 @@ import {
 
 type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine' | 'corrections';
 
-export function InventoryCenterScreen() {
+export function InventoryCenterScreen({
+  initialSuggestionDocument,
+}: {
+  initialSuggestionDocument?: SuggestionDocumentTarget;
+} = {}) {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
 
   const scopes = useInventoryScopes(activeOrgId);
-  const [warehouseId, setWarehouseId] = useState('');
+  const opensDispatch = initialSuggestionDocument?.documentKind === 'warehouse_dispatch';
+  const [warehouseId, setWarehouseId] = useState(
+    opensDispatch ? initialSuggestionDocument.sourceScopeId : '',
+  );
 
   // §1 receiver reachability — the institution officer's incoming-supplies
   // surface lives HERE, gated on the real receive permission, so a receive-only
@@ -100,7 +108,7 @@ export function InventoryCenterScreen() {
   const canApproveWarehouseCorrection = useApproveCorrectionPermission(activeOrgId, 'warehouse_stock.approve_correction').data ?? false;
   const canApproveAnyCorrection = canApproveOutletCorrection || canApproveWarehouseCorrection;
 
-  const [tab, setTab] = useState<Tab>('intake');
+  const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -300,6 +308,9 @@ export function InventoryCenterScreen() {
           outlets={outletsForWarehouse}
           canDispatch={canDispatch}
           lang={lang}
+          initialDispatchId={
+            opensDispatch ? initialSuggestionDocument.documentId : undefined
+          }
         />
       ) : tab === 'returns' && canReceiveReturns ? (
         <InstitutionReturnReceipts

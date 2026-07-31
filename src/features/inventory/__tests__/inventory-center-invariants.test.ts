@@ -234,7 +234,7 @@ describe('IDOR invariant: a scope id from another org cannot survive a switch', 
 
 describe('Route replacement', () => {
   it('screen 3 renders the Inventory Center, not the Availability Editor', () => {
-    expect(authenticatedApp).toContain('case 3:  return <InventoryCenterScreen />;');
+    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen[\s\S]*?initialSuggestionDocument=/);
     expect(authenticatedApp).not.toContain('<EditorScreen />');
     expect(authenticatedApp).not.toContain("from '@/features/editor/EditorScreen'");
   });

@@ -63,7 +63,7 @@ describe('StatusCenterScreen: stable date rendering', () => {
 
 describe('MovementReportSection: print popup-blocked handling', () => {
   it('printReport shows print_popup_blocked instead of a silent return when window.open fails', () => {
-    const fnBody = movementReport.slice(movementReport.indexOf('function printReport'), movementReport.indexOf('function exportCsv'));
+    const fnBody = movementReport.slice(movementReport.indexOf('function printReport'), movementReport.indexOf('async function exportXlsx'));
     expect(fnBody).toMatch(/if \(!win\) \{/);
     expect(fnBody).toContain("showToast(t('print_popup_blocked', lang))");
     expect(fnBody).not.toMatch(/if \(!win\) return;/);
@@ -90,8 +90,8 @@ describe('MovementReportSection: stable date rendering', () => {
     expect(fnBody).toContain('LTR_COLUMN_KEYS.has(c.key)');
   });
 
-  it('the on-screen table reuses the same LTR_COLUMN_KEYS set (single source of truth)', () => {
-    expect(movementReport).toContain("dir={LTR_COLUMN_KEYS.has(c.key) ? 'ltr' : 'auto'}");
+  it('the on-screen table reuses the shared column ltr metadata', () => {
+    expect(movementReport).toContain("dir={c.ltr ? 'ltr' : 'auto'}");
   });
 
   it('print HTML wraps the "generated at" value with dir="ltr"', () => {

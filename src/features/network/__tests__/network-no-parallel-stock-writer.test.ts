@@ -78,7 +78,7 @@ describe('Network Management is not a parallel stock writer', () => {
 describe('Network Management keeps its route and navigation entry', () => {
   it('screen 17 still renders NetworkManagementScreen', () => {
     const authenticatedApp = readSrc('app/AuthenticatedApp.tsx');
-    expect(authenticatedApp).toContain('case 17: return <NetworkManagementScreen />;');
+    expect(authenticatedApp).toMatch(/case 17:\s*return <NetworkManagementScreen[\s\S]*?initialSuggestionDocument=/);
   });
 
   it('it retains capabilities the Inventory Center does not provide', () => {

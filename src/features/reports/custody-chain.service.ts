@@ -19,6 +19,14 @@ import {
  * retrospective history cannot always be reconstructed (`complete: false`
  * with a `completeness_note`), and this report surfaces that honestly
  * rather than pretending otherwise.
+ *
+ * REVIEWER FIX (Phase 4, migration 148 review): custody begins at the real
+ * send/dispatch event, never at draft creation — a draft (including one
+ * auto-created by phoenix_create_transfer_draft_from_suggestion) is an
+ * administrative document with no physical custody yet. The three list*
+ * functions below therefore exclude status='draft' rows; drafts remain
+ * fully visible on their own operational request/dispatch list screens
+ * (network.service.ts consumers), just not inside this custody trail.
  */
 
 export type { WarehouseDispatch, OutletReturnRequest, OutletReturnShipment };
@@ -63,17 +71,25 @@ export interface MovementTimelineResult {
   completeness_note: string;
 }
 
-/** Every dispatch (any status) RLS-visible to the caller's organization. */
-export function listCustodyDispatches(): Promise<WarehouseDispatch[]> {
-  return getWarehouseDispatches();
+/**
+ * Every dispatch RLS-visible to the caller's organization EXCEPT drafts —
+ * custody starts at the real send event, not at document creation.
+ */
+export async function listCustodyDispatches(): Promise<WarehouseDispatch[]> {
+  const rows = await getWarehouseDispatches();
+  return rows.filter(d => d.status !== 'draft');
 }
 
-/** Every outlet return REQUEST (any status) RLS-visible to the caller's organization. */
-export function listCustodyReturnRequests(): Promise<OutletReturnRequest[]> {
-  return getOutletReturnRequests();
+/**
+ * Every outlet return REQUEST RLS-visible to the caller's organization
+ * EXCEPT drafts — custody starts at the real dispatched/sent event.
+ */
+export async function listCustodyReturnRequests(): Promise<OutletReturnRequest[]> {
+  const rows = await getOutletReturnRequests();
+  return rows.filter(r => r.status !== 'draft');
 }
 
-/** Every outlet return SHIPMENT (any status) RLS-visible to the caller's organization. */
+/** Every outlet return SHIPMENT (any status) RLS-visible to the caller's organization — a shipment row only ever exists once a real send has happened, so no draft filter applies here. */
 export function listCustodyReturnShipments(): Promise<OutletReturnShipment[]> {
   return getOutletReturnShipments();
 }

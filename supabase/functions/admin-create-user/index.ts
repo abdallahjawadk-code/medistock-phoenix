@@ -1,12 +1,14 @@
 // =============================================================================
 // MediStock Phoenix V2 — Edge Function: admin-create-user
 //
-// Secure server-side user creation. The service_role key lives ONLY here.
+// Secure server-side user creation. Privileged access uses a server-only
+// modern secret key resolved from SUPABASE_SECRET_KEYS.
 //
 // SECURE-USER-PROVISIONING-146:
 //   After Auth Admin creates a user, the auth trigger creates a fail-closed
 //   outlet_officer placeholder. The profile is then converted exactly once by
-//   phoenix_admin_provision_profile (migration 146), called with service_role.
+//   phoenix_admin_provision_profile (migration 146), called through the
+//   privileged server client.
 //   The database contract re-derives the acting administrator's status, role,
 //   permissions and organization scope, and accepts only a fresh placeholder
 //   bound to an unguessable Auth app-metadata nonce. The legacy authenticated
@@ -20,6 +22,10 @@
 
 // @ts-nocheck — Deno edge runtime types are not part of the app's tsconfig.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  parseBearerAuthorization,
+  resolveEdgeApiKeys,
+} from '../_shared/edge-auth.ts';
 
 const LOCAL_AUTH_DOMAIN = 'local.medistock.invalid';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -51,13 +57,17 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
 
-  const url = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !anonKey || !serviceKey) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  const authHeader = parseBearerAuthorization(req.headers.get('Authorization'));
+  if (!authHeader) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
+  const url = Deno.env.get('SUPABASE_URL');
+  let apiKeys: { secretKey: string; publishableKey: string };
+  try {
+    apiKeys = resolveEdgeApiKeys();
+  } catch {
+    return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  }
+  if (!url) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
 
   const suppliedCorrelationId = (req.headers.get('x-correlation-id') ?? '').trim();
   const correlationId = UUID_PATTERN.test(suppliedCorrelationId)
@@ -66,10 +76,14 @@ Deno.serve(async (req: Request) => {
   const provisioningNonce = crypto.randomUUID();
 
   // Caller-scoped client → verifies the presented JWT belongs to a real user.
-  const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+  const caller = createClient(url, apiKeys.publishableKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
   // Privileged client → Auth Admin operations + the service-only provisioning
   // contract. The service key is never sent to the browser.
-  const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const admin = createClient(url, apiKeys.secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data: userData, error: userErr } = await caller.auth.getUser();
   if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED', correlation_id: correlationId }, 401);

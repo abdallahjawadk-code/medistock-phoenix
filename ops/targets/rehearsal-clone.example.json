@@ -1,0 +1,19 @@
+{
+  "_comment": "LOCAL REHEARSAL CLONE. A restored Production copy in a local PostgreSQL 17 container. Loopback only; the engine refuses ssl_mode=disable for any non-loopback host. No Supabase CLI, Management API, Vercel or Storage API is used for this target.",
+  "environment": "rehearsal_clone",
+  "project_ref": "local-rehearsal-clone",
+  "pooler_host": "127.0.0.1",
+  "port": 55432,
+  "database_name": "phoenix_clone",
+  "database_user": "postgres",
+  "expected_initial_ceiling": 147,
+  "expected_final_ceiling": 153,
+  "keeper_email": "abdallahjawad2015@gmail.com",
+  "ca_certificate_path": "",
+  "ca_sha256_path": "",
+  "purge_sql_path": "supabase/ops/pre_launch_full_purge_v147.sql",
+  "purge_sql_sha256": "4ee2facffa814ee50b323f46d7d4c45a71d7635fc73b31a3fde800d6c27cf0a8",
+  "execution_policy": "rehearsal_allowed",
+  "ssl_mode": "disable",
+  "required_pg_major": 17
+}

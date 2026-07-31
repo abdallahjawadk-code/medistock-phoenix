@@ -85,12 +85,14 @@ export const REVIEWED_MOVEMENT_WRITERS: readonly ReviewedWriter[] = Object.freez
   },
   // ── Group B — warehouse transfer ────────────────────────────────────────
   {
-    fn: 'phoenix_send_warehouse_transfer_line', group: 'B', migration: 127,
+    // 150 keeps the public signature as an exact-material FEFO wrapper and
+    // moves the reviewed movement body behind this owner-only delegate.
+    fn: '_phoenix_150_delegate_send_warehouse_transfer_line', group: 'B', migration: 150,
     ledgers: ['warehouse_stock_movements'],
     reasonCode: { kind: 'literal', value: 'transferred' },
     correlation: 'fresh', causation: null,
     idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
-    clientCallable: true,
+    clientCallable: false,
   },
   {
     fn: 'phoenix_receive_warehouse_transfer_line', group: 'B', migration: 127,
@@ -281,7 +283,8 @@ export const EXCLUDED_WRITERS: readonly ExcludedWriter[] = Object.freeze([
     reason:
       'Same dead projection ledger. Writes an availability projection row for ' +
       'the inter-org exchange workflow; moves no canonical quantity and emits ' +
-      'no canonical movement event.',
+      'no canonical movement event. Migration 153 retires every external ' +
+      'EXECUTE path and leaves the unchanged legacy body owner-only.',
   },
 ]);
 

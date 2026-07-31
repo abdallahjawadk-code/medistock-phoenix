@@ -24,7 +24,7 @@ const strings = read('src', 'shared', 'i18n', 'strings.ts');
 
 describe('the route is wired without disturbing screens 3-17', () => {
   it('case 18 renders OutletOperationsScreen', () => {
-    expect(app).toContain('case 18: return <OutletOperationsScreen />');
+    expect(app).toMatch(/case 18:\s*return <OutletOperationsScreen[\s\S]*?initialSuggestionDocument=/);
     expect(app).toContain("import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen'");
   });
 

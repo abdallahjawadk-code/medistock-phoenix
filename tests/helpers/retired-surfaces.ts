@@ -113,7 +113,7 @@ export function expectRetiredSurfaceAbsent(name: string): void {
 /** Screen 3 must keep routing to the replacement, never back to the editor. */
 export function expectScreenThreeIsInventoryCenter(): void {
   const app = readRepoFile('src/app/AuthenticatedApp.tsx');
-  expect(app).toContain('case 3:  return <InventoryCenterScreen />;');
+  expect(app).toMatch(/case 3:\s*return <InventoryCenterScreen[\s\S]*?initialSuggestionDocument=/);
   expect(app).not.toContain('features/editor/EditorScreen');
 }
 

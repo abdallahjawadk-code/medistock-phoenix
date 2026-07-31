@@ -149,10 +149,15 @@ describe('Material editor: responsive layout polish', () => {
 });
 
 describe('Alert screens use safe bilingual labels (no forbidden wording)', () => {
-  it('InterInstitutionAlertsScreen has no suggestion/recommendation/opportunity/اقتراح/فرصة wording', () => {
-    expect(alertsScreen.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended|opportunit/);
+  // REVIEWER FIX (Phase 2, PR #68): "فرصة/opportunity" is now the MANDATED,
+  // honest term for this screen (see live-inter-institution-alerts-ui.test.ts)
+  // — it has no live execution corridor and must never sound like it produced
+  // a computed transfer recommendation, which is exactly what
+  // "suggestion/recommendation/اقتراح" would imply.
+  it('InterInstitutionAlertsScreen has no suggestion/recommendation/اقتراح/توصية wording', () => {
+    expect(alertsScreen.toLowerCase()).not.toMatch(/suggestion|suggested|recommendation|recommended/);
     expect(alertsScreen).not.toContain('اقتراح');
-    expect(alertsScreen).not.toContain('فرصة');
+    expect(alertsScreen).not.toContain('توصية');
   });
 
   it('PublicQrScreen has no suggestion/recommendation/opportunity/اقتراح/فرصة wording', () => {

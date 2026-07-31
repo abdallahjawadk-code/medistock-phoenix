@@ -14,12 +14,12 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { InventoryReasonDialog } from './InventoryReasonDialog';
+import { InventoryDraftDocumentDialog } from './InventoryDraftDocumentDialog';
 import { InventoryThresholdModal } from './InventoryThresholdModal';
 import {
   useInventoryAlerts,
   useInventoryThresholds,
   useInventoryTransferSuggestions,
-  isSuggestionStale,
   INVENTORY_PERMISSION_KEYS as PK,
 } from './useInventoryIntelligence';
 import {
@@ -29,10 +29,12 @@ import {
   rejectInventoryTransferSuggestion,
   recomputeInventoryAlerts,
   suggestInventoryTransfers,
+  createTransferDraftFromSuggestion,
   type InventoryAlert,
   type InventoryThreshold,
   type InventoryTransferSuggestion,
 } from './inventory-intelligence.service';
+import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
 import {
   SIGNAL_LABEL_KEY, SEVERITY_LABEL_KEY, SEVERITY_BADGE_VARIANT,
   SEVERITY_BORDER, SCOPE_LABEL_KEY, SEVERITY_RANK,
@@ -43,7 +45,13 @@ type PendingAction =
   | { kind: 'reject'; suggestion: InventoryTransferSuggestion }
   | null;
 
-export function InventoryIntelligencePanel() {
+interface InventoryIntelligencePanelProps {
+  onOpenDocument?: (target: SuggestionDocumentTarget) => void;
+}
+
+export function InventoryIntelligencePanel({
+  onOpenDocument,
+}: InventoryIntelligencePanelProps = {}) {
   const { lang, activeOrgId, myPermissions } = useApp();
 
   const canView       = myPermissions.has(PK.viewSignals);
@@ -51,7 +59,6 @@ export function InventoryIntelligencePanel() {
   const canRecompute  = myPermissions.has(PK.recompute);
   const canThresholds = myPermissions.has(PK.manageThresholds);
   const canSuggest    = myPermissions.has(PK.suggestTransfers);
-  const canAct        = myPermissions.has(PK.actOnSuggestions);
 
   const alerts = useInventoryAlerts();
   const suggestions = useInventoryTransferSuggestions();
@@ -63,6 +70,7 @@ export function InventoryIntelligencePanel() {
   const orgLabel = org.data ? (lang === 'ar' ? org.data.name_ar : org.data.name) : null;
 
   const [pending, setPending] = useState<PendingAction>(null);
+  const [draftTarget, setDraftTarget] = useState<InventoryTransferSuggestion | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [thresholdOpen, setThresholdOpen] = useState(false);
@@ -103,20 +111,37 @@ export function InventoryIntelligencePanel() {
     setPending(null);
   }
 
+  async function confirmDraft(documentNumber: string) {
+    if (!draftTarget) return;
+    setBusy(true);
+    const res = await createTransferDraftFromSuggestion(draftTarget.id, documentNumber);
+    setBusy(false);
+    setDraftTarget(null);
+    if (res.ok) {
+      flash(t('inv_draft_created', lang));
+      suggestions.reload();
+    } else {
+      flash(res.error ?? 'error');
+    }
+  }
+
   /** ONE refresh act: recompute alerts + regenerate suggestions (permission-gated pieces). */
   async function runRefreshAll() {
     if (!activeOrgId) return;
     setBusy(true);
+    const errors: string[] = [];
     if (canRecompute) {
       const res = await recomputeInventoryAlerts(activeOrgId);
       if (res.ok) alerts.reload();
+      else errors.push(res.error ?? 'error');
     }
     if (canSuggest) {
       const res2 = await suggestInventoryTransfers(activeOrgId);
       if (res2.ok) suggestions.reload();
+      else errors.push(res2.error ?? 'error');
     }
     setBusy(false);
-    flash(t('inv_saved', lang));
+    flash(errors[0] ?? t('inv_saved', lang));
   }
 
   if (!canView) {
@@ -205,7 +230,7 @@ export function InventoryIntelligencePanel() {
         </div>
       )}
 
-      {/* ── Transfer recommendations (RECOMMENDATION-ONLY: no Accept) ──────────── */}
+      {/* ── Transfer recommendations (no generic accept — one draft per suggestion) ── */}
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('inv_suggestions_title', lang)}</h4>
       <div role="note" style={{ fontSize: '11.5px', color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 10px', marginBottom: '10px' }} dir="auto">
         <PhoenixIcon name="warning" size={12} inline /> {t('inv_recommendation_note', lang)}
@@ -222,36 +247,141 @@ export function InventoryIntelligencePanel() {
       {!suggestions.loading && !suggestions.error && (suggestions.data ?? []).length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '22px' }}>
           {(suggestions.data ?? []).map(s => {
-            const stale = isSuggestionStale(s);
+            const action = s.actionModel;
+            const stale = action.freshnessState === 'stale';
+            const openTarget = action.allowedActions.openDocument
+              && action.documentKind
+              && action.documentId
+              ? {
+                  routeKind: action.routeKind,
+                  documentKind: action.documentKind,
+                  documentId: action.documentId,
+                  sourceScopeId: s.sourceScopeId,
+                  targetScopeId: s.targetScopeId,
+                } satisfies SuggestionDocumentTarget
+              : null;
+            const openActionLabel = t(
+              action.currentState === 'accepted_document_draft'
+                ? 'inv_draft_open_action'
+                : 'inv_document_open_action',
+              lang,
+            );
             return (
               <PhoenixCard key={s.id} padding="10px 14px" style={{ borderInlineStart: '3px solid var(--p)' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <PhoenixStatusBadge variant="primary" label={t('inv_recommendation_only', lang)} />
+                      {s.status === 'accepted' ? (
+                        action.currentState === 'accepted_document_draft' ? (
+                          <PhoenixStatusBadge variant="ok" label={t('inv_draft_status_badge', lang)} />
+                        ) : action.currentState === 'accepted_document_line_deleted' ? (
+                          <PhoenixStatusBadge variant="warn" label={t('inv_draft_line_deleted_badge', lang)} />
+                        ) : action.currentState === 'accepted_document_link_missing'
+                          || action.currentState === 'accepted_document_unavailable' ? (
+                          <PhoenixStatusBadge variant="warn" label={t('inv_document_unavailable_badge', lang)} />
+                        ) : /_(cancelled|rejected)$/.test(action.currentState) ? (
+                          <PhoenixStatusBadge variant="err" label={t('inv_document_closed_badge', lang)} />
+                        ) : /_(fulfilled|accepted)$/.test(action.currentState) ? (
+                          <PhoenixStatusBadge variant="ok" label={t('inv_document_completed_badge', lang)} />
+                        ) : (
+                          <PhoenixStatusBadge variant="info" label={t('inv_document_in_progress_badge', lang)} />
+                        )
+                      ) : s.status === 'rejected' ? (
+                        <PhoenixStatusBadge variant="err" label={t('inv_suggestion_rejected_badge', lang)} />
+                      ) : s.status === 'expired' ? (
+                        <PhoenixStatusBadge variant="warn" label={t('inv_suggestion_expired_badge', lang)} />
+                      ) : s.status === 'superseded' ? (
+                        <PhoenixStatusBadge variant="neutral" label={t('inv_suggestion_superseded_badge', lang)} />
+                      ) : (
+                        <PhoenixStatusBadge variant="primary" label={t('inv_recommendation_only', lang)} />
+                      )}
                       {s.crossOrg && <PhoenixStatusBadge variant="info" label={t('inv_cross_org', lang)} />}
                       <span style={{ fontSize: '12.5px', fontWeight: 700 }} dir="auto">{s.scientificName}</span>
                     </div>
                     <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>
-                      {t(SCOPE_LABEL_KEY[s.sourceScopeKind], lang)} → {t(SCOPE_LABEL_KEY[s.targetScopeKind], lang)}
+                      <span
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        dir={lang === 'ar' ? 'rtl' : 'ltr'}
+                      >
+                        <span>{t(SCOPE_LABEL_KEY[s.sourceScopeKind], lang)}</span>
+                        <span aria-hidden="true">{lang === 'ar' ? '←' : '→'}</span>
+                        <span>{t(SCOPE_LABEL_KEY[s.targetScopeKind], lang)}</span>
+                      </span>
                       {' · '}{t('inv_qty', lang)}: {s.suggestedQuantity}
                       {s.fefoBatchNumber && <span dir="ltr"> · {t('inv_batch', lang)}: {s.fefoBatchNumber}</span>}
                     </div>
-                    <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
-                      {t('inv_last_validated', lang)}: {formatStableDateTime(s.lastValidatedAt, lang)}
+                    <div style={{ fontSize: '10px', color: 'var(--t2)', marginTop: '3px' }}>
+                      {t('inv_last_validated', lang)}:{' '}
+                      <span dir="ltr">{formatStableDateTime(s.lastValidatedAt, lang)}</span>
                     </div>
-                    {stale && (
+                    {s.status === 'accepted' && action.documentNumber && (
+                      <div style={{ fontSize: '10.5px', color: 'var(--ok)', marginTop: '3px' }} dir="auto">
+                        <PhoenixIcon name="check" size={12} inline /> {t('inv_draft_document_number_label', lang)}: <span dir="ltr">{action.documentNumber}</span>
+                      </div>
+                    )}
+                    {s.status === 'accepted' && !action.allowedActions.openDocument && (
+                      <div role="status" style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
+                        <PhoenixIcon name="warning" size={12} inline />{' '}
+                        {t(
+                          action.actionReason.openDocument === 'document_link_missing'
+                            ? 'inv_draft_link_missing'
+                            : 'inv_draft_unavailable',
+                          lang,
+                        )}
+                      </div>
+                    )}
+                    {action.currentState === 'accepted_document_line_deleted' && (
+                      <div role="status" style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
+                        <PhoenixIcon name="warning" size={12} inline /> {t('inv_draft_line_deleted', lang)}
+                      </div>
+                    )}
+                    {s.status === 'open' && stale && (
                       <div style={{ fontSize: '10.5px', color: 'var(--warn)', marginTop: '3px' }} dir="auto">
                         <PhoenixIcon name="warning" size={12} inline /> {t('inv_stale_note', lang)}
                       </div>
                     )}
                   </div>
-                  {/* REJECT ONLY — there is deliberately no Accept control anywhere. */}
-                  {canAct && (
-                    <div style={{ flexShrink: 0 }}>
-                      <PhoenixButton variant="ghost" size="sm" disabled={busy} onClick={() => setPending({ kind: 'reject', suggestion: s })}>
+                  {/* Two independent, narrow actions on ONE suggestion at a time —
+                      never a generic/bulk accept. Draft is offered only while
+                      open and fresh; a stale suggestion offers only "revalidate"
+                      (the refresh-data action above regenerates it). */}
+                  {(action.allowedActions.createDraft
+                    || action.allowedActions.reject
+                    || openTarget) && (
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
+                      {action.allowedActions.createDraft && (
+                        <PhoenixButton
+                          variant="primary"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`${t('inv_draft_create_action', lang)}: ${s.scientificName}`}
+                          onClick={() => setDraftTarget(s)}
+                        >
+                          {t('inv_draft_create_action', lang)}
+                        </PhoenixButton>
+                      )}
+                      {openTarget && (
+                        <PhoenixButton
+                          variant="primary"
+                          size="sm"
+                          disabled={busy || !onOpenDocument}
+                          aria-label={`${openActionLabel}: ${action.documentNumber ?? s.scientificName}`}
+                          onClick={() => onOpenDocument?.(openTarget)}
+                        >
+                          {openActionLabel}
+                        </PhoenixButton>
+                      )}
+                      {action.allowedActions.reject && (
+                      <PhoenixButton
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        aria-label={`${t('inv_action_reject', lang)}: ${s.scientificName}`}
+                        onClick={() => setPending({ kind: 'reject', suggestion: s })}
+                      >
                         {t('inv_action_reject', lang)}
                       </PhoenixButton>
+                      )}
                     </div>
                   )}
                 </div>
@@ -322,6 +452,12 @@ export function InventoryIntelligencePanel() {
         busy={busy}
         onCancel={() => setPending(null)}
         onConfirm={confirmPending}
+      />
+      <InventoryDraftDocumentDialog
+        open={draftTarget !== null}
+        busy={busy}
+        onCancel={() => setDraftTarget(null)}
+        onConfirm={confirmDraft}
       />
       {activeOrgId && (
         <InventoryThresholdModal

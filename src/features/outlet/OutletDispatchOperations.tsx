@@ -78,9 +78,17 @@ interface Props {
   outlets: ReadonlyArray<{ id: string; name: string }>;
   canDispatch: boolean;
   lang: Lang;
+  initialDispatchId?: string;
 }
 
-export function OutletDispatchOperations({ warehouseId, warehouseName, outlets, canDispatch, lang }: Props) {
+export function OutletDispatchOperations({
+  warehouseId,
+  warehouseName,
+  outlets,
+  canDispatch,
+  lang,
+  initialDispatchId,
+}: Props) {
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey(k => k + 1);
   const dispatches = useAsync(() => getWarehouseDispatches(warehouseId), [warehouseId, reloadKey]);
@@ -120,6 +128,7 @@ export function OutletDispatchOperations({ warehouseId, warehouseName, outlets, 
           <DispatchRow
             key={d.id} dispatch={d} outletName={outletName.get(d.destinationDistributionPointId) ?? '—'}
             canDispatch={canDispatch} lang={lang}
+            initiallyOpen={d.id === initialDispatchId}
             onDone={(res) => {
               setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opError(res.error, lang), error: true });
               if (res.ok) reload();
@@ -131,11 +140,12 @@ export function OutletDispatchOperations({ warehouseId, warehouseName, outlets, 
   );
 }
 
-function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone }: {
+function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiallyOpen }: {
   dispatch: WarehouseDispatch; outletName: string; canDispatch: boolean; lang: Lang;
   onDone: (res: { ok: boolean; error?: string }) => void;
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen ?? false);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');

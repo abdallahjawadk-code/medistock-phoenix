@@ -3,7 +3,7 @@
 //
 // Recycle a suspended account: reassign identity (name, email, role) and
 // reactivate it under a new identity version, preserving the old identity in
-// user_identity_history. The service_role key lives ONLY here.
+// user_identity_history. Privileged access uses a server-only modern key.
 //
 // SECURITY-ARCH-HARDENING-A (D1 + D2):
 //   The whole DB transition (close old identity row, bump version, update the
@@ -27,6 +27,10 @@
 
 // @ts-nocheck — Deno edge runtime; not part of app tsconfig.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  parseBearerAuthorization,
+  resolveEdgeApiKeys,
+} from '../_shared/edge-auth.ts';
 
 const LOCAL_AUTH_DOMAIN = 'local.medistock.invalid';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -56,18 +60,26 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
 
-  const url        = Deno.env.get('SUPABASE_URL');
-  const anonKey    = Deno.env.get('SUPABASE_ANON_KEY');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !anonKey || !serviceKey) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  const authHeader = parseBearerAuthorization(req.headers.get('Authorization'));
+  if (!authHeader) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
+  const url = Deno.env.get('SUPABASE_URL');
+  let apiKeys: { secretKey: string; publishableKey: string };
+  try {
+    apiKeys = resolveEdgeApiKeys();
+  } catch {
+    return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  }
+  if (!url) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
 
   const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
 
-  const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
-  const admin  = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const caller = createClient(url, apiKeys.publishableKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const admin = createClient(url, apiKeys.secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data: userData, error: userErr } = await caller.auth.getUser();
   if (userErr || !userData?.user) return json({ ok: false, error: 'NOT_AUTHENTICATED', correlation_id: correlationId }, 401);

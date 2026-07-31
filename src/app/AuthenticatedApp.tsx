@@ -25,6 +25,10 @@ import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
+import {
+  suggestionDocumentScreen,
+  type SuggestionDocumentTarget,
+} from '@/features/inventory/suggestion-document-navigation';
 
 /**
  * QR-BUNDLE-CODE-SPLIT-A: everything that only an authenticated session
@@ -44,7 +48,11 @@ export function AuthenticatedApp() {
   // Keep explicit navigation scoped to the profile that created it. A later
   // session on the same workstation must derive its own role-safe landing
   // instead of inheriting the previous user's screen.
-  const [navigation, setNavigation] = useState<{ profileId: string; screen: number } | null>(null);
+  const [navigation, setNavigation] = useState<{
+    profileId: string;
+    screen: number;
+    suggestionDocument?: SuggestionDocumentTarget;
+  } | null>(null);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
@@ -99,6 +107,13 @@ export function AuthenticatedApp() {
   const setScreen = (nextScreen: number) => {
     setNavigation({ profileId: profile.id, screen: nextScreen });
   };
+  const openSuggestionDocument = (target: SuggestionDocumentTarget) => {
+    setNavigation({
+      profileId: profile.id,
+      screen: suggestionDocumentScreen(target),
+      suggestionDocument: target,
+    });
+  };
 
   const screenContent = () => {
     switch (screen) {
@@ -106,7 +121,11 @@ export function AuthenticatedApp() {
       // wrote item_availability directly with a hand-picked condition. It is
       // replaced by the Inventory Center, whose only write path is the
       // warehouse ledger (migration 065) — see InventoryCenterScreen.
-      case 3:  return <InventoryCenterScreen />;
+      case 3:
+        return <InventoryCenterScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'inventory-center'}
+          initialSuggestionDocument={navigation?.suggestionDocument}
+        />;
       case 4:  return <RegistryScreen />;
       case 5:  return <MeshScreen onNavigate={setScreen} />;
       case 6:  return <QrScreen />;
@@ -117,7 +136,7 @@ export function AuthenticatedApp() {
       // Comparison tab is redundant with Institution Status (same RPC), its
       // Global Material Search and Audit tabs both moved into screen 21
       // verbatim. Redirects to Overview, the closest single equivalent.
-      case 9:  return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="overview" />;
+      case 9:  return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} initialTab="overview" />;
       case 10: return <MobileCommandScreen onNavigate={setScreen} />;
       // ROLE-REORG-§5: institutions management is platform-admin exclusive; an
       // institution admin gets the same route scoped to "My Organization". Any
@@ -133,15 +152,24 @@ export function AuthenticatedApp() {
       // Batches tab. Redirects there directly, not to Overview, since that
       // tab is the exact 1:1 continuation of what this screen number used
       // to show.
-      case 12: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="materials" />;
+      case 12: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} initialTab="materials" />;
       case 13: return <InterInstitutionAlertsScreen />;
       case 14: return <UserManagementScreen />;
       case 15: return <MyAccountScreen />;
       case 16: return <StatusEditorScreen />;
-      case 17: return <NetworkManagementScreen />;
+      case 17:
+        return <NetworkManagementScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'network-management'}
+          initialSuggestionDocument={navigation?.suggestionDocument}
+        />;
       // OUTLET-CORRIDOR: the outlet operator's surface — receive, stock, returns,
       // history — scoped to assigned outlets (062), server re-checked per action.
-      case 18: return <OutletOperationsScreen />;
+      case 18:
+        return <OutletOperationsScreen
+          key={navigation?.suggestionDocument?.documentId ?? 'outlet-operations'}
+          initialSuggestionDocument={navigation?.suggestionDocument}
+          onOpenSuggestionDocument={openSuggestionDocument}
+        />;
       // INSTITUTION-LOCAL-PROCUREMENT-087: suppliers, purchase orders,
       // approvals, receiving and supplier returns — scoped to assigned
       // institution warehouses (062), every write a guarded 087 RPC.
@@ -151,7 +179,7 @@ export function AuthenticatedApp() {
       // workflow moved verbatim into screen 21's Monthly Position tab
       // (every RPC in monthly-status.service.ts, every role gate,
       // unchanged). Redirects there directly, the exact 1:1 continuation.
-      case 20: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} initialTab="monthly" />;
+      case 20: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} initialTab="monthly" />;
       // DECISION-INTELLIGENCE-REPORTS-119/REPORTING-UNIFICATION: «مركز
       // التقارير والمواقف» — the single unified reporting/status shell.
       // Executive overview, live institution position, materials &
@@ -161,10 +189,10 @@ export function AuthenticatedApp() {
       // log, the official report library, and (super_admin only) global
       // material search — every RPC re-checked server-side, every
       // permission gate unchanged from its original screen.
-      case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} />;
+      case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to the unified shell — the real-data landing screen.
-      default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} />;
+      default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;
     }
   };
 

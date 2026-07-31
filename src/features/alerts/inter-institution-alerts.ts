@@ -1,3 +1,9 @@
+/**
+ * @deprecated Pure helpers for the legacy, institution_item_status_reports-based
+ * alert path (migration 009), only consumed by the now-deprecated
+ * `inter-institution-alerts.service.ts`. No runtime UI consumer. Left in place,
+ * not deleted, pending a dedicated cleanup PR after a monitoring window.
+ */
 import type { StatusReport } from '@/shared/supabase/services/status-reports.service';
 import {
   generateExchangeAlerts,

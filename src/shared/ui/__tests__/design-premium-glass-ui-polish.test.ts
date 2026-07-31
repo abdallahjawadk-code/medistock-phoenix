@@ -282,7 +282,7 @@ describe('13. Mobile action bars wrap/stack and do not hide export/print buttons
     expect(statusCenter).toContain("t('sc_print_report', lang)");
     expect(statusEditor).toContain("t('se_export_excel', lang)");
     expect(statusEditor).toContain("t('se_print', lang)");
-    expect(movementReport).toContain("t('mvmt_report_export_csv', lang)");
+    expect(movementReport).toContain("t('mv_export_xlsx', lang)");
   });
 });
 

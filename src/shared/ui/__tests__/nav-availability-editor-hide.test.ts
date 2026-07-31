@@ -218,7 +218,7 @@ describe('App.tsx retains both routes (nothing removed)', () => {
   // replacement's own invariants.
   it('imports and renders InventoryCenterScreen on case 3', () => {
     expect(authenticatedApp).toContain("import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen'");
-    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen \/>/);
+    expect(authenticatedApp).toMatch(/case 3:\s*return <InventoryCenterScreen[\s\S]*?initialSuggestionDocument=/);
   });
 
   it('the retired Availability Editor is no longer routed anywhere', () => {

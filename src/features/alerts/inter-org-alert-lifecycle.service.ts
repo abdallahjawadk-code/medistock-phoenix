@@ -276,6 +276,52 @@ export async function getLiveInterInstitutionAlertsWithState(
   return { ok: true, alerts, computedAt: result.computed_at ?? null };
 }
 
+export interface LiveInterInstitutionAlertsPageResult extends LiveInterInstitutionAlertsWithStateResult {
+  totalCount: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * REVIEWER FIX (Phase 2): real server-side pagination over the SAME
+ * discovery query (migration 147's phoenix_get_live_inter_institution_
+ * alerts_with_state_page), instead of silently summarizing only the first
+ * 200 rows. Every alert this returns is permanently non-executable — this
+ * screen's own domain (peer-institution discovery) has no execution
+ * corridor; see the screen's disclaimer copy.
+ */
+export async function getLiveInterInstitutionAlertsPage(
+  limit = 50, offset = 0,
+): Promise<LiveInterInstitutionAlertsPageResult> {
+  if (!supabaseConfigured) {
+    return { ok: false, alerts: [], computedAt: null, totalCount: 0, limit, offset, error: 'not_configured' };
+  }
+
+  const { data, error } = await supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state_page', {
+    p_limit: limit, p_offset: offset,
+  });
+
+  if (error) {
+    return { ok: false, alerts: [], computedAt: null, totalCount: 0, limit, offset, error: error.message };
+  }
+
+  const result = data as {
+    ok: boolean; error?: string; alerts?: RawLiveAlertWithStateRow[]; computed_at?: string;
+    total_count?: number; limit?: number; offset?: number;
+  };
+
+  if (!result.ok) {
+    return { ok: false, alerts: [], computedAt: null, totalCount: 0, limit, offset, error: result.error };
+  }
+
+  const alerts = (result.alerts ?? []).map(mapRow);
+  return {
+    ok: true, alerts, computedAt: result.computed_at ?? null,
+    totalCount: result.total_count ?? alerts.length,
+    limit: result.limit ?? limit, offset: result.offset ?? offset,
+  };
+}
+
 /**
  * Transition an alert's lifecycle status (migration 039's
  * phoenix_update_inter_org_alert_state RPC). Throws are not used — RPC

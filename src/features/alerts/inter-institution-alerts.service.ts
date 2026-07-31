@@ -1,3 +1,11 @@
+/**
+ * @deprecated Superseded by `live-inter-institution-alerts.service.ts` (migrations
+ * 036/038/039), which InterInstitutionAlertsScreen.tsx actually renders. This file
+ * wraps the legacy `get_scoped_inter_institution_alerts` RPC (migration 009) over
+ * institution_item_status_reports and has no runtime UI consumer (confirmed by
+ * import-graph search, 2026-07-27 — only its own __tests__ reference it). Left in
+ * place, not deleted, pending a dedicated cleanup PR after a monitoring window.
+ */
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 import { getStatusReports } from '@/shared/supabase/services/status-reports.service';
 import type { AlertPriority } from '@/features/status/exchange-alerts';

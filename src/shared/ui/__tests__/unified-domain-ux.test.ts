@@ -156,9 +156,11 @@ describe('creating/approving a transfer requires the regulatory acknowledgement'
     expect(ops).toContain("'transfer.review_ack'");
   });
 
-  it('suggestions stay recommendation-only — no accept control anywhere', () => {
+  it('suggestions have a narrow per-suggestion draft action, never a generic accept (migration 147)', () => {
     const svc = read('features/inventory/inventory-intelligence.service.ts');
-    expect(svc).toContain('no accept wrapper');
+    expect(svc).toContain('DRAFT, NOT ACCEPT/EXECUTE');
+    expect(svc).toContain('createTransferDraftFromSuggestion');
+    expect(svc).not.toMatch(/export function accept/i);
   });
 });
 

@@ -26,7 +26,7 @@ const modal = read('shared/ui/MobilePrintFallbackModal.tsx');
 const strings = read('shared/i18n/strings.ts');
 
 describe('MovementReportSection: mobile-safe print', () => {
-  const fn = movementReport.slice(movementReport.indexOf('function printReport'), movementReport.indexOf('function exportCsv'));
+  const fn = movementReport.slice(movementReport.indexOf('function printReport'), movementReport.indexOf('async function exportXlsx'));
 
   it('imports isLikelyMobilePrintContext and MobilePrintFallbackModal', () => {
     expect(movementReport).toContain("isLikelyMobilePrintContext } from '@/shared/lib/reportExport'");
@@ -210,11 +210,11 @@ describe('i18n: mobile print strings exist bilingually (Arabic + English)', () =
   });
 });
 
-describe('Excel/CSV export behavior unchanged/upgraded by this phase', () => {
-  it('MovementReportSection still exports CSV with BOM + csvSafeCell (untouched by this phase — movement history export is explicitly out of scope for SAFE-PROFESSIONAL-XLSX-EXPORT-A)', () => {
-    const csvFn = movementReport.slice(movementReport.indexOf('function exportCsv'), movementReport.indexOf('function exportCsv') + 900);
-    expect(csvFn).toContain('﻿');
-    expect(csvFn).toContain('csvSafeCell');
+describe('Excel export behavior remains mobile-print independent', () => {
+  it('MovementReportSection delegates Excel generation to the shared professional exporter', () => {
+    expect(movementReport).toContain('await exportProfessionalXlsx(exportConfig())');
+    expect(movementReport).not.toContain('function csvSafeCell');
+    expect(movementReport).not.toContain('function exportCsv');
   });
 
   // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase

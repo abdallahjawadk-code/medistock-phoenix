@@ -31,10 +31,12 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
 import { useOutletDispensePermission } from '@/features/inventory/useOutletDispensePermission';
+import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
@@ -48,17 +50,28 @@ import { getDispenseContext, type DispenseContext } from './dispense-context.ser
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 import { getPaperReference } from '@/features/movement/paper-reference.service';
+import type { SuggestionDocumentTarget } from '@/features/inventory/suggestion-document-navigation';
 
 type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
 
-export function OutletOperationsScreen() {
+export function OutletOperationsScreen({
+  initialSuggestionDocument,
+  onOpenSuggestionDocument,
+}: {
+  initialSuggestionDocument?: SuggestionDocumentTarget;
+  onOpenSuggestionDocument?: (target: SuggestionDocumentTarget) => void;
+} = {}) {
   const { lang, dir, activeOrgId } = useApp();
   const scopes = useInventoryScopes(activeOrgId);
   const outlets = scopes.data?.manageableOutlets ?? [];
 
-  const [outletId, setOutletId] = useState('');
-  const [tab, setTab] = useState<OutletTab>('incoming');
+  const opensReturn =
+    initialSuggestionDocument?.documentKind === 'outlet_return_request';
+  const [outletId, setOutletId] = useState(
+    opensReturn ? initialSuggestionDocument.sourceScopeId : '',
+  );
+  const [tab, setTab] = useState<OutletTab>(opensReturn ? 'returns' : 'incoming');
 
   const activeOutlet = useMemo(
     () => outlets.find(o => o.id === outletId) ?? outlets[0] ?? null,
@@ -144,7 +157,16 @@ export function OutletOperationsScreen() {
 
       {tab === 'stock' && <OutletStockTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />}
 
-      {tab === 'returns' && <OutletReturnsTab distributionPointId={activeOutlet.id} outletName={outletName} lang={lang} />}
+      {tab === 'returns' && (
+        <OutletReturnsTab
+          distributionPointId={activeOutlet.id}
+          outletName={outletName}
+          lang={lang}
+          initialRequestId={
+            opensReturn ? initialSuggestionDocument.documentId : undefined
+          }
+        />
+      )}
 
       {tab === 'history' && (
         <div style={{ display: 'grid', gap: '18px' }}>
@@ -152,6 +174,10 @@ export function OutletOperationsScreen() {
           <OutletHistoryTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />
         </div>
       )}
+
+      <div style={{ marginTop: '24px' }} data-testid="outlet-suggestion-actions">
+        <InventoryIntelligencePanel onOpenDocument={onOpenSuggestionDocument} />
+      </div>
     </div>
   );
 }
@@ -263,9 +289,20 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
 }
 
 /** Tab 3 — compose a return. Draft-first; nothing persists before confirmation. */
-function OutletReturnsTab({ distributionPointId, outletName, lang }: { distributionPointId: string; outletName: string; lang: 'ar' | 'en' }) {
+function OutletReturnsTab({
+  distributionPointId,
+  outletName,
+  lang,
+  initialRequestId,
+}: {
+  distributionPointId: string;
+  outletName: string;
+  lang: 'ar' | 'en';
+  initialRequestId?: string;
+}) {
   const [instanceKey, setInstanceKey] = useState(0);
-  const [created, setCreated] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(initialRequestId ?? null);
+  const openedFromSuggestion = initialRequestId != null;
 
   // The receipt is built ONLY from freshly reloaded server rows for the created
   // request — never from the local draft. Missing/denied rows yield no document.
@@ -288,9 +325,26 @@ function OutletReturnsTab({ distributionPointId, outletName, lang }: { distribut
 
   return (
     <div>
-      {created && (
+      {created && receipt.loading && <PhoenixLoadingState label={t('loading', lang)} />}
+      {created && receipt.error && (
+        <PhoenixErrorState
+          title={t('load_error', lang)}
+          message={receipt.error}
+          onRetry={receipt.reload}
+        />
+      )}
+      {created && !receipt.loading && !receipt.error && receipt.data && (
         <div data-testid="outlet-return-created" style={{ background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--ok)', marginBottom: '12px' }}>
-          {t('mv_line_succeeded', lang)} · <code>{created}</code>
+          {t(openedFromSuggestion ? 'inv_document_opened' : 'mv_line_succeeded', lang)} · <code>{created}</code>
+        </div>
+      )}
+      {created && !receipt.loading && !receipt.error && !receipt.data && (
+        <div
+          role="status"
+          data-testid="outlet-return-unavailable"
+          style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)', marginBottom: '12px' }}
+        >
+          {t('inv_draft_unavailable', lang)}
         </div>
       )}
       {created && receipt.data && (

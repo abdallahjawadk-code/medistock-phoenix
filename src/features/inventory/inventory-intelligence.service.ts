@@ -19,14 +19,18 @@ import { supabase, supabaseConfigured } from '@/shared/supabase/client';
  *     SCOPED permission server-side, so the UI's permission gates are a
  *     convenience only — never the security boundary.
  *
- * ACCEPTANCE IS DISABLED (recommendation-only, migration 072 Round 5/6). There
- * is DELIBERATELY no accept wrapper in this file: phoenix_accept_inventory_
- * transfer_suggestion only raises `acceptance_disabled_recommendation_only`,
- * a structural CHECK (inventory_suggestions_no_accept_chk) makes the accepted
- * status unreachable, and the reserved accept columns are pinned NULL.
- * A suggestion is a RECOMMENDATION, never a reservation — no Accept, no
- * auto-execution, no stock movement. Only REJECT is offered, and only where the
- * reject RPC + inventory.act_on_suggestions permission prove it is allowed.
+ * DRAFT, NOT ACCEPT/EXECUTE (migration 148). A suggestion is a RECOMMENDATION
+ * until `createTransferDraftFromSuggestion` succeeds — that call never moves
+ * stock itself. It re-verifies live eligibility server-side and, only if a
+ * real corridor permission also allows it (not just inventory.act_on_
+ * suggestions), delegates to the EXISTING draft-creation RPC for the
+ * suggestion's route_kind (warehouse_transfer_requests / warehouse_dispatches
+ * / outlet_return_requests). The resulting draft still goes through the
+ * corridor's own normal submit/review/send/receive lifecycle — nothing here
+ * ever reserves or moves stock by itself. There is still no generic "accept"
+ * — every call targets exactly one suggestion and requires a human document
+ * number. REJECT remains available unconditionally, gated the same way it
+ * always was.
  */
 
 // ── Vocabulary (verbatim from migration 072 CHECK constraints) ───────────────
@@ -37,6 +41,31 @@ export type InventoryExpiryTier = 'expired' | 'critical_3m' | 'warning_6m' | 'wa
 export type InventoryAlertStatus = 'open' | 'acknowledged' | 'in_progress' | 'resolved' | 'dismissed';
 export type InventorySuggestionStatus = 'open' | 'accepted' | 'rejected' | 'superseded' | 'expired';
 export type InventoryRouteKind = 'warehouse_to_outlet' | 'outlet_to_warehouse' | 'central_to_institution';
+export type InventorySuggestionDocumentKind =
+  | 'warehouse_transfer_request'
+  | 'warehouse_dispatch'
+  | 'outlet_return_request';
+
+export interface InventorySuggestionActionReadModel {
+  currentState: string;
+  allowedActions: {
+    createDraft: boolean;
+    reject: boolean;
+    openDocument: boolean;
+  };
+  actionReason: {
+    createDraft: string;
+    reject: string;
+    openDocument: string;
+  };
+  routeKind: InventoryRouteKind;
+  documentKind: InventorySuggestionDocumentKind | null;
+  documentId: string | null;
+  documentNumber: string | null;
+  freshnessState: 'fresh' | 'stale' | 'not_applicable';
+  processKind: string;
+  processVersion: number;
+}
 
 /** Result envelope for the mutation RPCs. RPC failures surface as { ok:false, error }. */
 export interface InventoryRpcResult<T = Record<string, unknown>> {
@@ -114,6 +143,8 @@ export interface InventoryTransferSuggestion {
    */
   lastValidatedAt: string;
   lastSuggestedAt: string;
+  /** Display-time server decision; every writer re-authorizes independently. */
+  actionModel: InventorySuggestionActionReadModel;
 }
 
 // ── Row shapes (snake_case, as returned by PostgREST) ────────────────────────
@@ -142,6 +173,19 @@ interface SuggestionRow {
   fefo_batch_number: string | null; fefo_expiry_date: string | null; rationale: string | null;
   status: InventorySuggestionStatus; last_validated_at: string; last_suggested_at: string;
 }
+interface SuggestionActionRow {
+  suggestion_id: string;
+  current_state: string;
+  allowed_actions: InventorySuggestionActionReadModel['allowedActions'];
+  action_reason: InventorySuggestionActionReadModel['actionReason'];
+  route_kind: InventoryRouteKind;
+  document_kind: InventorySuggestionDocumentKind | null;
+  document_id: string | null;
+  document_number: string | null;
+  freshness_state: InventorySuggestionActionReadModel['freshnessState'];
+  process_kind: string;
+  process_version: number;
+}
 
 function mapThreshold(r: ThresholdRow): InventoryThreshold {
   return {
@@ -164,7 +208,10 @@ function mapAlert(r: AlertRow): InventoryAlert {
     lastObservedAt: r.last_observed_at, updatedAt: r.updated_at,
   };
 }
-function mapSuggestion(r: SuggestionRow): InventoryTransferSuggestion {
+function mapSuggestion(
+  r: SuggestionRow,
+  actionModel: InventorySuggestionActionReadModel,
+): InventoryTransferSuggestion {
   return {
     id: r.id, sourceOrganizationId: r.source_organization_id, targetOrganizationId: r.target_organization_id,
     scientificName: r.scientific_name, nationalCode: r.national_code,
@@ -174,6 +221,22 @@ function mapSuggestion(r: SuggestionRow): InventoryTransferSuggestion {
     fefoBatchNumber: r.fefo_batch_number, fefoExpiryDate: r.fefo_expiry_date, rationale: r.rationale,
     status: r.status, crossOrg: r.source_organization_id !== r.target_organization_id,
     lastValidatedAt: r.last_validated_at, lastSuggestedAt: r.last_suggested_at,
+    actionModel,
+  };
+}
+
+function mapSuggestionAction(r: SuggestionActionRow): InventorySuggestionActionReadModel {
+  return {
+    currentState: r.current_state,
+    allowedActions: r.allowed_actions,
+    actionReason: r.action_reason,
+    routeKind: r.route_kind,
+    documentKind: r.document_kind,
+    documentId: r.document_id,
+    documentNumber: r.document_number,
+    freshnessState: r.freshness_state,
+    processKind: r.process_kind,
+    processVersion: r.process_version,
   };
 }
 
@@ -213,13 +276,17 @@ export async function getInventoryThresholds(orgId?: string | null): Promise<Inv
   return (data as ThresholdRow[] | null ?? []).map(mapThreshold);
 }
 
-/** Open transfer suggestions (recommendations) the caller may see. */
+/**
+ * Suggestions plus one bounded server-backed action batch. The base SELECT
+ * intentionally omits linked document identifiers and numbers; the RPC returns
+ * them only after the real document read boundary admits the caller.
+ */
 export async function getInventoryTransferSuggestions(
   orgId?: string | null,
   opts: { statuses?: InventorySuggestionStatus[]; limit?: number } = {},
 ): Promise<InventoryTransferSuggestion[]> {
   if (!supabaseConfigured) return [];
-  const statuses = opts.statuses ?? ['open'];
+  const statuses = opts.statuses ?? ['open', 'accepted', 'rejected', 'expired'];
   let q = supabase
     .from('inventory_transfer_suggestions')
     .select('id,source_organization_id,target_organization_id,scientific_name,national_code,source_scope_kind,source_scope_id,target_scope_kind,target_scope_id,route_kind,suggested_quantity,fefo_batch_number,fefo_expiry_date,rationale,status,last_validated_at,last_suggested_at')
@@ -229,7 +296,46 @@ export async function getInventoryTransferSuggestions(
   if (orgId) q = q.or(`source_organization_id.eq.${orgId},target_organization_id.eq.${orgId}`);
   const { data, error } = await q;
   if (error) throw error;
-  return (data as SuggestionRow[] | null ?? []).map(mapSuggestion);
+  const rows = data as SuggestionRow[] | null ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: actionData, error: actionError } = await supabase.rpc(
+    'phoenix_get_inventory_suggestion_actions',
+    { p_suggestion_ids: rows.map(r => r.id) },
+  );
+  if (actionError) throw actionError;
+
+  const actions = new Map(
+    ((actionData ?? []) as SuggestionActionRow[]).map(r => [
+      r.suggestion_id,
+      mapSuggestionAction(r),
+    ]),
+  );
+
+  // A scope change between the RLS SELECT and the RPC removes the row rather
+  // than rendering a stale client-side authorization decision.
+  return rows.flatMap(r => {
+    const action = actions.get(r.id);
+    return action ? [mapSuggestion(r, action)] : [];
+  });
+}
+
+/**
+ * The org's configured suggestion-staleness window (minutes), or null if no
+ * override row exists — callers should fall back to the documented 30-minute
+ * default (same default phoenix_create_transfer_draft_from_suggestion uses
+ * server-side via COALESCE(policy.staleness_minutes, 30), so the UI's
+ * "stale" display always matches what the server will actually accept).
+ */
+export async function getInventorySuggestionPolicy(orgId: string): Promise<number | null> {
+  if (!supabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('inventory_suggestion_policy')
+    .select('staleness_minutes')
+    .eq('organization_id', orgId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { staleness_minutes: number }).staleness_minutes;
 }
 
 // ── WRITES (RPC only; server re-checks scoped permission + raises on denial) ──
@@ -313,5 +419,67 @@ export function rejectInventoryTransferSuggestion(
 ): Promise<InventoryRpcResult> {
   return callRpc('phoenix_reject_inventory_transfer_suggestion', {
     p_suggestion_id: suggestionId, p_reason: reason,
+  });
+}
+
+export interface CreateTransferDraftResult {
+  ok: boolean;
+  suggestionId?: string;
+  status?: 'accepted';
+  quantity?: number;
+  routeKind?: InventoryRouteKind;
+  documentNumber?: string;
+  warehouseTransferRequestId?: string | null;
+  warehouseDispatchId?: string | null;
+  outletReturnRequestId?: string | null;
+  idempotentReplay?: boolean;
+  error?: string;
+}
+
+/**
+ * Create a real draft document from ONE open, still-valid computed
+ * suggestion. The real corridor permission for the suggestion's route_kind is
+ * enforced by Migration 151 and by the delegated writer; the broad
+ * inventory.act_on_suggestions key is intentionally not a prerequisite.
+ * p_document_number is the
+ * human-supplied paper/document reference; it becomes the new draft's
+ * request/dispatch/return number. This is NEVER an execution — the draft
+ * still goes through the corridor's own submit/review/send/receive RPCs
+ * before any stock moves.
+ */
+export async function createTransferDraftFromSuggestion(
+  suggestionId: string, documentNumber: string,
+): Promise<CreateTransferDraftResult> {
+  if (!supabaseConfigured) return { ok: false, error: 'not_configured' };
+  const { data, error } = await supabase.rpc('phoenix_create_transfer_draft_from_suggestion', {
+    p_suggestion_id: suggestionId, p_document_number: documentNumber,
+  });
+  if (error) return { ok: false, error: error.message };
+  const r = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: Boolean(r.ok),
+    suggestionId: r.suggestion_id as string | undefined,
+    status: r.status as 'accepted' | undefined,
+    quantity: r.quantity as number | undefined,
+    routeKind: r.route_kind as InventoryRouteKind | undefined,
+    documentNumber: r.document_number as string | undefined,
+    warehouseTransferRequestId: (r.warehouse_transfer_request_id as string | null | undefined) ?? null,
+    warehouseDispatchId: (r.warehouse_dispatch_id as string | null | undefined) ?? null,
+    outletReturnRequestId: (r.outlet_return_request_id as string | null | undefined) ?? null,
+    idempotentReplay: Boolean(r.idempotent_replay),
+  };
+}
+
+/**
+ * Org-scoped staleness window (minutes) a suggestion's last_validated_at may
+ * age before createTransferDraftFromSuggestion refuses it. No stored row
+ * means the documented 30-minute default applies (needs
+ * inventory.manage_thresholds).
+ */
+export function upsertInventorySuggestionPolicy(
+  organizationId: string, stalenessMinutes: number,
+): Promise<InventoryRpcResult> {
+  return callRpc('phoenix_upsert_inventory_suggestion_policy', {
+    p_organization_id: organizationId, p_staleness_minutes: stalenessMinutes,
   });
 }

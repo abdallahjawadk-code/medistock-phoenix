@@ -1,0 +1,19 @@
+{
+  "_comment": "STAGING example. Copy to ops/targets/staging.json and fill the PLACEHOLDER values after the owner creates the project. Never commit the filled file if it gains anything sensitive; project refs and hosts are not secrets, passwords are and are never stored here.",
+  "environment": "staging",
+  "project_ref": "PLACEHOLDER_STAGING_PROJECT_REF",
+  "pooler_host": "PLACEHOLDER_STAGING_POOLER_HOST",
+  "port": 5432,
+  "database_name": "postgres",
+  "database_user": "postgres.PLACEHOLDER_STAGING_PROJECT_REF",
+  "expected_initial_ceiling": 147,
+  "expected_final_ceiling": 153,
+  "keeper_email": "abdallahjawad2015@gmail.com",
+  "ca_certificate_path": "ops/certs/staging-ca.crt",
+  "ca_sha256_path": "ops/certs/staging-ca.crt.sha256",
+  "purge_sql_path": "supabase/ops/pre_launch_full_purge_v147.sql",
+  "purge_sql_sha256": "4ee2facffa814ee50b323f46d7d4c45a71d7635fc73b31a3fde800d6c27cf0a8",
+  "execution_policy": "rehearsal_allowed",
+  "ssl_mode": "verify-full",
+  "required_pg_major": 17
+}

@@ -45,6 +45,18 @@ export interface MaterialContactMessageInput {
   targetInstitution?: string | null;
   outlet?: string | null;
   quantity?: string | number | null;
+  /**
+   * REVIEWER FIX (Phase 3): quantity is ambiguous by itself — a raw source
+   * balance and a real computed transfer recommendation must never render
+   * with the same generic "Quantity:" label.
+   * 'balance'   — a discovery-layer alert's raw source stock; the message
+   *               explicitly says it is NOT a transfer suggestion.
+   * 'suggested' — a real FEFO-computed suggestion's quantity; labeled as
+   *               "for review", never as a done deal.
+   * Omitted     — unchanged legacy "Quantity:" wording (status-officer
+   *               follow-up context, byte-for-byte preserved).
+   */
+  quantityLabel?: 'balance' | 'suggested';
   expiryDate?: string | null;
   lastUpdate?: string | null;
   /**
@@ -67,6 +79,12 @@ export interface MaterialContactMessageInput {
 export function buildMaterialContactMessage(input: MaterialContactMessageInput, lang: Lang): string {
   const hasQty = input.quantity !== undefined && input.quantity !== null && input.quantity !== '';
   const isAlert = input.context === 'alert';
+  const qtyLabelAr = input.quantityLabel === 'suggested' ? 'الكمية المقترحة للمراجعة'
+    : input.quantityLabel === 'balance' ? 'رصيد المصدر الحالي — ليس كمية مناقلة مقترحة'
+    : 'الكمية';
+  const qtyLabelEn = input.quantityLabel === 'suggested' ? 'Suggested quantity for review'
+    : input.quantityLabel === 'balance' ? 'Current source balance — not a suggested transfer quantity'
+    : 'Quantity';
 
   const fieldLines: string[] = [];
   if (lang === 'ar') {
@@ -76,7 +94,7 @@ export function buildMaterialContactMessage(input: MaterialContactMessageInput, 
     if (input.sourceInstitution) fieldLines.push(`المؤسسة المرسلة: ${input.sourceInstitution}`);
     if (input.targetInstitution) fieldLines.push(`المؤسسة المستلمة: ${input.targetInstitution}`);
     if (input.outlet) fieldLines.push(`المنفذ: ${input.outlet}`);
-    if (hasQty) fieldLines.push(`الكمية: ${input.quantity}`);
+    if (hasQty) fieldLines.push(`${qtyLabelAr}: ${input.quantity}`);
     if (input.expiryDate) fieldLines.push(`تاريخ الانتهاء: ${input.expiryDate}`);
     if (input.lastUpdate) fieldLines.push(`آخر تحديث: ${input.lastUpdate}`);
 
@@ -97,7 +115,7 @@ export function buildMaterialContactMessage(input: MaterialContactMessageInput, 
   if (input.sourceInstitution) fieldLines.push(`Source institution: ${input.sourceInstitution}`);
   if (input.targetInstitution) fieldLines.push(`Target institution: ${input.targetInstitution}`);
   if (input.outlet) fieldLines.push(`Outlet: ${input.outlet}`);
-  if (hasQty) fieldLines.push(`Quantity: ${input.quantity}`);
+  if (hasQty) fieldLines.push(`${qtyLabelEn}: ${input.quantity}`);
   if (input.expiryDate) fieldLines.push(`Expiry date: ${input.expiryDate}`);
   if (input.lastUpdate) fieldLines.push(`Last update: ${input.lastUpdate}`);
 

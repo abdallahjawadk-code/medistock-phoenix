@@ -2,7 +2,7 @@
 // MediStock Phoenix V2 — Edge Function: admin-user-lifecycle
 //
 // Secure server-side user disable / enable / rotate_password / hard-delete.
-// The service_role key lives ONLY here in the Deno runtime.
+// Privileged access uses a server-only key from SUPABASE_SECRET_KEYS.
 //
 // SECURITY-ARCH-HARDENING-A (D1 + D2):
 //   This function no longer checks the last-super-admin invariant nor mutates
@@ -42,6 +42,10 @@
 
 // @ts-nocheck — Deno edge runtime; not part of app tsconfig.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  parseBearerAuthorization,
+  resolveEdgeApiKeys,
+} from '../_shared/edge-auth.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -75,23 +79,31 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
 
-  const url        = Deno.env.get('SUPABASE_URL');
-  const anonKey    = Deno.env.get('SUPABASE_ANON_KEY');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !anonKey || !serviceKey) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  const authHeader = parseBearerAuthorization(req.headers.get('Authorization'));
+  if (!authHeader) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
 
-  const authHeader = req.headers.get('Authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) return json({ ok: false, error: 'NOT_AUTHENTICATED' }, 401);
+  const url = Deno.env.get('SUPABASE_URL');
+  let apiKeys: { secretKey: string; publishableKey: string };
+  try {
+    apiKeys = resolveEdgeApiKeys();
+  } catch {
+    return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
+  }
+  if (!url) return json({ ok: false, error: 'NOT_CONFIGURED' }, 500);
 
   // Correlation id: reuse the client's stamp so client and server logs line up.
   const correlationId = req.headers.get('x-correlation-id') || crypto.randomUUID();
 
   // Caller-scoped client: RPCs run with the caller's JWT, so auth.uid() inside
   // the atomic contract is the acting admin (the contract does its own authz).
-  const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+  const caller = createClient(url, apiKeys.publishableKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
   // Privileged client: used ONLY for Auth Admin operations (ban/unban/password/
   // delete/session-revoke). It never mutates profile role/status directly.
-  const admin  = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const admin = createClient(url, apiKeys.secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   // Verify the caller is authenticated at all (the contract re-checks authority).
   const { data: userData, error: userErr } = await caller.auth.getUser();
@@ -153,7 +165,10 @@ Deno.serve(async (req: Request) => {
       } else {
         const resp = await fetch(`${url}/auth/v1/admin/users/${targetId}/sessions`, {
           method: 'DELETE',
-          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+          headers: {
+            apikey: apiKeys.secretKey,
+            Authorization: `Bearer ${apiKeys.secretKey}`,
+          },
         });
         sessionsRevoked = resp.ok;
       }

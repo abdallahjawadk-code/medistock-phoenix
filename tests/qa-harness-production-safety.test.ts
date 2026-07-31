@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execSync } from 'node:child_process';
+import { exec } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 /**
  * VISUAL-QA-HARNESS-A — production-safety contract.
@@ -15,6 +16,7 @@ import { join } from 'node:path';
  */
 const ROOT = join(__dirname, '..');
 const DIST = join(ROOT, 'dist');
+const execAsync = promisify(exec);
 
 // Markers that would only exist if harness code leaked into the bundle:
 // the route/component, the fixture client, the fixtures, and QA personas.
@@ -74,7 +76,7 @@ function bundleFiles(): string[] {
 }
 
 describe('QA harness is excluded from production builds', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     // Reproduce a REAL production build. Vitest runs with NODE_ENV=test in the
     // ambient env; inheriting that would make Vite keep import.meta.env.DEV
     // true and defeat the very elimination we are verifying. CI/Vercel build
@@ -82,11 +84,14 @@ describe('QA harness is excluded from production builds', () => {
     // is the adversarial case: even with the opt-in flag on, a production build
     // must still strip the harness because import.meta.env.DEV is false.
     try {
-      execSync('npm run build', {
+      await execAsync('npm run build', {
         cwd: ROOT,
-        stdio: 'pipe',
         encoding: 'utf8',
-        env: { ...process.env, NODE_ENV: 'production', VITE_ENABLE_VISUAL_QA: 'true' },
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          VITE_ENABLE_VISUAL_QA: 'true',
+        },
       });
     } catch (error) {
       const failure = error as {

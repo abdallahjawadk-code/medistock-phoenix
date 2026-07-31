@@ -57,15 +57,3 @@ export function useInventoryTransferSuggestions(
     [activeOrgId, statusesKey, opts.limit],
   );
 }
-
-/**
- * Whether an open suggestion's proven conservation may now be stale. Migration
- * 072 proves conservation only at each rebuild (last_validated_at); a later
- * real stock movement can invalidate it, so any surface MUST treat an aged
- * recommendation as needing live re-validation before action.
- */
-export function isSuggestionStale(s: InventoryTransferSuggestion, maxAgeMs = 60 * 60 * 1000): boolean {
-  const t = Date.parse(s.lastValidatedAt);
-  if (Number.isNaN(t)) return true;
-  return Date.now() - t > maxAgeMs;
-}

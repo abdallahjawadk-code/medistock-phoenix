@@ -400,8 +400,34 @@ describe('no client-side document-number sequence exists', () => {
     // check (EXISTS across movement/request/approval tables) before allowing
     // a hard delete. No sequence, allocator, or document string of any kind.
     // Ceiling -> 148.
-    const beyond = migrations.filter(f => /^(14[8-9]|1[5-9]\d|[2-9]\d\d)_/.test(f));
+    // 148 (TRANSFER-SUGGESTION-DRAFT-BRIDGE-148, renumbered from 147 to make
+    // room for master's SECURE-USER-DELETE-HISTORY-GUARD-147) adds NO new
+    // document numbering -- phoenix_create_transfer_draft_from_suggestion's
+    // p_document_number is an OPERATOR-TYPED value passed straight through
+    // to the EXISTING request_number/dispatch_number/return_number
+    // parameters 068/070/071 already require from a human caller; no new
+    // sequence, no server-side allocator, no client-computed identifier of
+    // any kind is introduced by this migration. Ceiling -> 149.
+    // 149 (INVENTORY-SUGGESTION-LINEAGE-COMMITMENTS-149) adds lineage and
+    // derived commitment accounting around those same existing transfer
+    // documents. It introduces no sequence, allocator, or document number.
+    // Ceiling -> 150.
+    // 150 adds canonical material/lot identity and does not allocate or
+    // synthesize any movement document number. Ceiling -> 151.
+    // 151 changes only the scoped authorization gate around the existing
+    // operator-supplied Draft bridge number. Ceiling -> 152.
+    // 152 adds only the server-backed suggestion action read model; it
+    // allocates no document number and creates no sequence. Ceiling -> 153.
+    // 153 only retires EXECUTE on the legacy exchange status writer. It
+    // creates no function, sequence, allocator, or document number.
+    // Ceiling -> 154.
+    const beyond = migrations.filter(f => /^(15[4-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
+    expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
+    expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');
+    expect(migrations).toContain('152_phoenix_suggestion_action_read_model.sql');
+    expect(migrations).toContain('153_phoenix_retire_inter_org_exchange_status_writer.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

@@ -21,13 +21,13 @@ const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const UUID_LITERAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 describe('InterInstitutionAlertsScreen: uses the lifecycle RPC service', () => {
-  it('imports getLiveInterInstitutionAlertsWithState from inter-org-alert-lifecycle.service', () => {
+  it('imports getLiveInterInstitutionAlertsPage from inter-org-alert-lifecycle.service', () => {
     expect(screen).toContain("from './inter-org-alert-lifecycle.service'");
-    expect(screen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(screen).toContain('getLiveInterInstitutionAlertsPage');
   });
 
-  it('calls getLiveInterInstitutionAlertsWithState inside the data-loading hook', () => {
-    expect(screen).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsWithState\(/);
+  it('calls getLiveInterInstitutionAlertsPage inside the data-loading hook (147: real server pagination, not a fixed first-200)', () => {
+    expect(screen).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsPage\(/);
   });
 });
 
@@ -72,42 +72,44 @@ describe('InterInstitutionAlertsScreen: does not render supply_type', () => {
   });
 });
 
+// REVIEWER FIX (Phase 2, migration/PR #68): the previous "اقتراح is the
+// mandated term" convention was itself the exact conflation this rework
+// corrects — this screen (036/039) is a peer-institution DISCOVERY layer
+// with no live execution corridor, and must never sound like it produced a
+// computed transfer recommendation. That vocabulary belongs exclusively to
+// InventoryIntelligencePanel (072/077 + the 147 draft bridge), which is the
+// only place a real FEFO-computed quantity and a real "create draft" action
+// exist. The wording contract is now the OPPOSITE of what these tests
+// originally asserted: "فرصة/opportunity" is the mandated, honest term for
+// this screen; "اقتراح/suggestion/recommendation/توصية" must NOT appear here.
 describe('InterInstitutionAlertsScreen: forbidden wording removed', () => {
-  it('does not use opportunity/promotional wording (suggestion IS the mandated term now)', () => {
-    expect(screen.toLowerCase()).not.toMatch(/opportunit/);
-  });
-
-  it('does not use recommendation/recommended wording', () => {
+  it('does not use recommendation/recommended/suggestion wording — this screen has no computed quantity', () => {
     expect(screen.toLowerCase()).not.toMatch(/recommendation|recommended/);
+    expect(screen.toLowerCase()).not.toMatch(/\bsuggestion\b/);
   });
 
-  it('does not use opportunity wording', () => {
-    expect(screen.toLowerCase()).not.toMatch(/opportunit/);
+  it('does not use Arabic اقتراح/توصية wording (فرصة is the mandated term now — this is discovery, not a computed suggestion)', () => {
+    expect(screen).not.toContain('اقتراح');
+    expect(screen).not.toContain('توصية');
   });
 
-  it('does not use Arabic فرصة wording (اقتراح is the mandated term now)', () => {
-    expect(screen).not.toContain('فرصة');
-    void 0;
-    expect(screen).not.toContain('فرصة');
-  });
-
-  it('uses Alert/تنبيه and Required Action/إجراء مطلوب wording keys', () => {
+  it('uses Alert/تنبيه, opportunity/فرصة, and Required Action/إجراء مطلوب wording keys', () => {
     expect(screen).toContain('lia_title');
     expect(screen).toContain('lia_required_action');
     const titleLine = strings.split('\n').find(l => l.includes('lia_title:'));
-    expect(titleLine).toContain('Transfer Suggestions'); // UNIFIED-DOMAIN §11
-    expect(titleLine).toContain('اقتراحات المناقلات');
+    expect(titleLine).toContain('Transfer Alerts & Opportunities');
+    expect(titleLine).toContain('تنبيهات وفرص المناقلة');
     const reqActionLine = strings.split('\n').find(l => l.includes('lia_required_action:'));
     expect(reqActionLine).toContain('Required Action');
     expect(reqActionLine).toContain('إجراء مطلوب');
   });
 
-  it('none of the new lia_* strings use suggestion/recommendation/opportunity/اقتراح/فرصة', () => {
+  it('none of the new lia_* strings use suggestion/recommendation/اقتراح/توصية', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
-    expect(joined).not.toContain('فرصة');
-    expect(joined).not.toContain('فرصة');
+    expect(joined.toLowerCase()).not.toMatch(/recommendation|recommended|\bsuggestion\b/);
+    expect(joined).not.toContain('اقتراح');
+    expect(joined).not.toContain('توصية');
   });
 });
 
@@ -206,12 +208,11 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-A: no exchange workflow, no Servic
     expect(screen).not.toContain('supply_type');
   });
 
-  it('none of the new lia_*/smart-view strings use forbidden wording (including new Arabic terms)', () => {
+  it('none of the new lia_*/smart-view strings use forbidden wording (opportunity/فرصة is mandated here — see Phase 2 reviewer fix above)', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
-    expect(joined).not.toContain('فرصة');
-    expect(joined).not.toContain('فرصة');
+    expect(joined.toLowerCase()).not.toMatch(/recommendation|recommended|\bsuggestion\b/);
+    expect(joined).not.toContain('اقتراح');
     expect(joined).not.toContain('توصية');
     expect(joined).not.toContain('طلب تبادل');
     expect(joined).not.toContain('إنشاء طلب');
@@ -288,9 +289,8 @@ describe('INTER-INSTITUTION-ALERTS-SMART-VIEW-B: priority sort + critical lane (
   it('no forbidden wording near the sort/critical-lane additions', () => {
     const liaLines = strings.split('\n').filter(l => /^\s*lia_(sort_|critical_lane_|visible_alerts_)/.test(l));
     const joined = liaLines.join('\n');
-    expect(joined.toLowerCase()).not.toMatch(/opportunit/); // UNIFIED-DOMAIN: suggestion/recommendation are sanctioned terms
-    expect(joined).not.toContain('فرصة');
-    expect(joined).not.toContain('فرصة');
+    expect(joined.toLowerCase()).not.toMatch(/recommendation|recommended|\bsuggestion\b/);
+    expect(joined).not.toContain('اقتراح');
     expect(joined).not.toContain('توصية');
     expect(joined).not.toContain('طلب تبادل');
     expect(joined).not.toContain('إنشاء طلب');

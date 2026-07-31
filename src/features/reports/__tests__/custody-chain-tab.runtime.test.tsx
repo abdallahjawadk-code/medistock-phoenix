@@ -166,7 +166,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     });
   });
 
-  it('139: a movement-row trace event surfaces reason code, before/delta/after, correlation and causation', async () => {
+  it('139: a movement-row trace event shows legal fields while technical UUIDs stay internal', async () => {
     listCustodyDispatches.mockResolvedValue([DISPATCH]);
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
@@ -178,8 +178,8 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     expect(ev.textContent).toContain('Dispensed');        // translated reason_code
     expect(ev.textContent).toMatch(/30\s*→\s*20/);        // before → after
     expect(ev.textContent).toContain('(-10)');             // signed delta
-    expect(ev.textContent).toContain('c0ffee00');          // correlation (short)
-    expect(ev.textContent).toContain('ca05a710');          // causation (short)
+    expect(ev.textContent).not.toContain('c0ffee00');      // correlation is internal
+    expect(ev.textContent).not.toContain('ca05a710');      // causation is internal
     expect(ev.textContent).toContain('movement_events');   // provenance still shown
   });
 

@@ -1,81 +1,40 @@
 # Edge Function — `admin-user-lifecycle`
 
-Secure server-side user disable / enable / hard-delete for MediStock Phoenix V2.
-`service_role` lives only in the Deno runtime — never in the frontend bundle.
+Secure server-side disable, enable, password rotation, and guarded hard-delete
+for MediStock Phoenix V2.
 
-## Status
+## Authentication and key contract
 
-**Scaffold — not deployed.** Requires migration `011_phoenix_user_lifecycle_controls.sql`
-to be applied before the delete/disable feature is considered live.
+- The caller supplies `Authorization: Bearer <user-jwt>`.
+- A caller-scoped client uses the `default` key from
+  `SUPABASE_PUBLISHABLE_KEYS` and verifies the JWT with `auth.getUser()`.
+- A separate privileged client uses the `default` key from
+  `SUPABASE_SECRET_KEYS` only for Auth Admin operations.
+- There is no fallback to `SUPABASE_SERVICE_ROLE_KEY`.
+- Invalid key configuration fails closed without logging key material.
 
-## Deploy (manual, when ready)
+The lifecycle RPCs remain the final authority for active actor status,
+permission, organization scope, self-action denial, last-super-admin safety,
+operational-history protection, reservation, compensation, and commit.
 
-```bash
-# SUPABASE_SERVICE_ROLE_KEY was already set during admin-create-user deploy.
-supabase functions deploy admin-user-lifecycle --project-ref <your-project-ref>
-supabase secrets list --project-ref <your-project-ref>   # confirm key present
-```
+## Deployment boundary
 
-## Authorization contract
+A3-3A is local hardening only. Do not deploy from this document. The separately
+authorized A3-3B window must keep production `verify_jwt=true` for the first
+modern-key deployment and run authenticated positive and negative smoke tests
+before any gateway-auth transition.
 
-| Action | Caller requirement | Notes |
-|--------|-------------------|-------|
-| `disable` | `super_admin` | Bans auth user (prevents login) + sets profile `status = 'suspended'` |
-| `enable`  | `super_admin` | Removes ban + sets profile `status = 'active'` |
-| `delete`  | `super_admin` | Hard deletes auth user; profile cascades via FK. Requires confirmation string. |
+## Request and response
 
-Rules that always apply:
-- Cannot act on self (`SELF_ACTION_FORBIDDEN`).
-- Cannot delete the last active `super_admin` (`LAST_SUPER_ADMIN`).
-- Hard delete requires `confirmation = "DELETE_USER_<email>"`.
-
-## Request / response
-
-```
+```text
 POST /functions/v1/admin-user-lifecycle
 Authorization: Bearer <caller-jwt>
-{ "action": "disable", "target_user_id": "<uuid>" }
-{ "action": "enable",  "target_user_id": "<uuid>" }
-{ "action": "delete",  "target_user_id": "<uuid>", "confirmation": "DELETE_USER_user@example.com" }
 
-→ { "ok": true,  "action": "disabled"|"enabled"|"deleted", "user_id": "<uuid>" }
-→ { "ok": false, "error": "SELF_ACTION_FORBIDDEN"|"LAST_SUPER_ADMIN"|"INVALID_CONFIRMATION"|... }
+{ action: disable|enable|delete|rotate_password, target_user_id, ... }
+
+→ { ok: true, action, user_id, correlation_id? }
+→ { ok: false, error, correlation_id? }
 ```
 
-## Safety notes
-
-- `service_role` read only from `Deno.env` — never returned in a response.
-- Auth ban (`ban_duration: '876000h'`) is server-enforced; the user cannot bypass it.
-- `profiles.disabled_at` / `disabled_by` columns are set if migration 011 is applied;
-  the function degrades gracefully if they are absent.
-- Profile cascade-deletion from `auth.users` is defined in migration 001 (`ON DELETE CASCADE`).
-
-## Smoke tests after deployment
-
-```bash
-BASE="https://<project-ref>.supabase.co/functions/v1/admin-user-lifecycle"
-TOKEN="<super_admin-jwt>"
-
-# 1. No auth → 401
-curl -s -X POST "$BASE" -H "Content-Type: application/json" -d '{}' | jq .
-
-# 2. Invalid action → 400 INVALID_ACTION
-curl -s -X POST "$BASE" -H "Authorization: Bearer $TOKEN" \
-  -d '{"action":"nuke","target_user_id":"..."}' | jq .
-
-# 3. Self-disable → 403 SELF_ACTION_FORBIDDEN
-curl -s -X POST "$BASE" -H "Authorization: Bearer $TOKEN" \
-  -d "{\"action\":\"disable\",\"target_user_id\":\"<your-own-id>\"}" | jq .
-
-# 4. Delete last super_admin → 403 LAST_SUPER_ADMIN
-# (only if target is the only super_admin)
-
-# 5. Delete without correct confirmation → 400 INVALID_CONFIRMATION
-curl -s -X POST "$BASE" -H "Authorization: Bearer $TOKEN" \
-  -d '{"action":"delete","target_user_id":"<uuid>","confirmation":"wrong"}' | jq .
-
-# 6. Disable smoke-test user (super_admin caller, valid target)
-curl -s -X POST "$BASE" -H "Authorization: Bearer $TOKEN" \
-  -d '{"action":"disable","target_user_id":"<smoke-user-uuid>"}' | jq .
-# Expected: {"ok":true,"action":"disabled","user_id":"<uuid>"}
-```
+Passwords and key material are never logged or returned. Database state changes
+remain delegated to the existing atomic RPC contracts.

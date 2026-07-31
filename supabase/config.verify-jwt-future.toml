@@ -1,0 +1,12 @@
+# NOT ACTIVE. The Supabase CLI reads supabase/config.toml, not this file.
+# A3-3B may copy these entries into the active config only after the modern
+# key deployment, authenticated smoke tests, and explicit owner authorization.
+
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.admin-user-lifecycle]
+verify_jwt = false
+
+[functions.admin-recycle-user]
+verify_jwt = false

@@ -1320,13 +1320,14 @@ describe('Recycling implementation: admin-recycle-user Edge Function', () => {
     expect(fn.length).toBeGreaterThan(500);
   });
 
-  it('reads service key only from Deno.env', () => {
-    expect(fn).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
+  it('uses the shared modern secret-key resolver without a legacy fallback', () => {
+    expect(fn).toContain('resolveEdgeApiKeys');
+    expect(fn).not.toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
   });
 
   it('service key value is never in a json response body', () => {
     const lines = fn.split('\n');
-    const leaks = lines.filter(l => l.includes('json(') && l.includes('SUPABASE_SERVICE_ROLE_KEY'));
+    const leaks = lines.filter(l => l.includes('json(') && l.includes('apiKeys.secretKey'));
     expect(leaks.length).toBe(0);
   });
 

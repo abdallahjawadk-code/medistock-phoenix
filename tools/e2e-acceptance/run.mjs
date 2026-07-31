@@ -149,6 +149,12 @@ async function openOutletOperations(page, { mobile = false } = {}) {
   console.log('DIAGNOSTIC — post-navigation url:', page.url());
 }
 
+async function openSuggestionMaterials(page, { mobile = false } = {}) {
+  await openOutletOperations(page, { mobile });
+  await page.getByText(seed.phase8.material, { exact: true }).first()
+    .waitFor({ state: 'visible', timeout: 30000 });
+}
+
 /**
  * Outlet resolution goes through an async scope-fetch chain
  * (useInventoryScopes -> manageableOutlets) that can genuinely take longer
@@ -169,6 +175,7 @@ async function waitForText(page, substrings, timeoutMs = 20000) {
 async function main() {
   const browser = await launch();
   let allOk = true;
+  let phase8DraftId = null;
 
   // ── 1. outlet_officer A: login, dispense all 3 beneficiary types ─────────
   {
@@ -404,6 +411,74 @@ async function main() {
     await page.close();
   }
 
+  // ── Phase 8: real outlet_officer suggestion action + Draft deep link ──────
+  {
+    const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
+    await login(page, seed.users.outletOfficerA.email, seed.password);
+    if (await page.evaluate(() => document.documentElement.lang) !== 'en') {
+      const switchToEnglish = page.getByRole('button', { name: 'Switch to English' });
+      await switchToEnglish.waitFor({ state: 'visible', timeout: 15000 });
+      await switchToEnglish.click();
+      await page.waitForFunction(() => document.documentElement.lang === 'en');
+    }
+    record(
+      'Phase 8 desktop suggestion surface is English/LTR',
+      await page.evaluate(() =>
+        document.documentElement.lang === 'en'
+        && document.documentElement.dir === 'ltr'),
+    );
+    await openSuggestionMaterials(page);
+
+    const actionSurface = page.getByTestId('outlet-suggestion-actions');
+    const create = actionSurface.getByRole('button', {
+      name: new RegExp(`Create draft: ${seed.phase8.material}`),
+    });
+    const offered = await create
+      .waitFor({ state: 'visible', timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    record('Phase 8 outlet_officer is offered server-authorized Create draft without the broad queue key', offered);
+    if (offered) {
+      await create.click();
+      await page.getByLabel('Document number').fill('E2E-PHASE8-DRAFT');
+      const writerResponsePromise = page.waitForResponse(
+        res =>
+          res.url().includes('/rpc/phoenix_create_transfer_draft_from_suggestion')
+          && res.request().method() === 'POST',
+        { timeout: 30000 },
+      );
+      await page.getByRole('dialog').getByRole('button', { name: 'Create draft', exact: true }).click();
+      const writerResponse = await writerResponsePromise.catch(() => null);
+      const writerPayload = writerResponse
+        ? await writerResponse.json().catch(() => null)
+        : null;
+      const openDraft = actionSurface.getByRole('button', { name: /Open draft: E2E-PHASE8-DRAFT/ });
+      await openDraft.waitFor({ state: 'visible', timeout: 30000 });
+      phase8DraftId =
+        writerPayload?.outlet_return_request_id
+        ?? null;
+      record(
+        'Phase 8 creates the outlet-return Draft through the unchanged writer RPC',
+        writerResponse?.status() === 200
+        && writerPayload?.route_kind === 'outlet_to_warehouse'
+        && phase8DraftId !== null,
+      );
+      await openDraft.click();
+      const openedTarget = page.getByTestId('outlet-return-created');
+      const openedExistingPage = await openedTarget
+        .waitFor({ state: 'visible', timeout: 20000 })
+        .then(async () =>
+          phase8DraftId !== null
+          && ((await openedTarget.textContent()) ?? '').includes(phase8DraftId))
+        .catch(() => false);
+      record('Phase 8 Open draft navigates to the existing outlet-return request page', openedExistingPage);
+    }
+    record('Phase 8 desktop/EN session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    record('Phase 8 desktop/EN session has no failed/5xx requests', failedRequests.length === 0, failedRequests.slice(0, 3).join(' | '));
+    await page.screenshot({ path: join(OUT_DIR, 'phase8-open-draft-desktop-en.png'), fullPage: true });
+    await page.close();
+  }
+
   // ── 3. outlet_officer B: cross-org denial ─────────────────────────────────
   {
     const { page, consoleErrors } = await freshPage(browser);
@@ -438,8 +513,29 @@ async function main() {
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
-    await openOutletOperations(page, { mobile: true });
-    await waitForText(page, ['E2E Outlet A', 'منفذ أ']);
+    await openSuggestionMaterials(page, { mobile: true });
+    const htmlLang = await page.evaluate(() => document.documentElement.lang);
+    const htmlDir = await page.evaluate(() => document.documentElement.dir);
+    const openDraft = page
+      .getByTestId('outlet-suggestion-actions')
+      .getByRole('button', { name: /فتح المسودة: E2E-PHASE8-DRAFT/ });
+    const mobileOpenVisible = await openDraft
+      .waitFor({ state: 'visible', timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    record('Phase 8 mobile/AR accepted suggestion exposes Open draft', mobileOpenVisible);
+    record('Phase 8 mobile suggestion surface is Arabic/RTL', htmlLang === 'ar' && htmlDir === 'rtl', `lang=${htmlLang} dir=${htmlDir}`);
+    if (mobileOpenVisible) {
+      await openDraft.click();
+      const openedTarget = page.getByTestId('outlet-return-created');
+      const openedExistingPage = await openedTarget
+        .waitFor({ state: 'visible', timeout: 20000 })
+        .then(async () =>
+          phase8DraftId !== null
+          && ((await openedTarget.textContent()) ?? '').includes(phase8DraftId))
+        .catch(() => false);
+      record('Phase 8 mobile Open draft reaches the existing return-request detail', openedExistingPage);
+    }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
     const bodyText = (await page.textContent('body')) ?? '';
     record('mobile viewport: no horizontal overflow', !overflow);
