@@ -1,5 +1,12 @@
 # Phase A · A7 — Phoenix Daylight Visual Convergence and Final Acceptance
 
+> **Superseded by `A7.1-VISUAL-ACCEPTANCE-CLOSURE.md`.** Every surface §3
+> classifies **PARTIALLY CONVERGED** below (Welcome, screen 21, Internal
+> Alerts, User Management/Admin, Public QR) is now **CONVERGED** with real
+> rendered evidence — see that file for the closure report, the corrected
+> screenshot-to-screen mapping, and the hardcoded-colour allowlist. This
+> file is kept as the historical record of A7's own pass and diff audit.
+
 Presentation-only convergence pass on top of A1–A6 (`feat/phase-a-design-foundation`,
 head `1eeee57` at branch time). No schema, RPC, auth, RBAC/RLS, route, or
 business-logic change. Full diff audit in §5.
