@@ -1,0 +1,140 @@
+/* ─── PHASE A7.2 — PREMIUM LIVING AUTH & WELCOME SIGNATURE ──────────────────
+   Presentation-only, imported LAST (after phase-a-visual-convergence.css).
+   Every selector is gated behind BOTH Phase A markers, exactly like that
+   file. It changes no routing, auth, session, RBAC/RLS, RPC, or data — only
+   selectors, custom properties, and values on the SAME LoginScreen/
+   PhoenixWelcomeExperience markup A1/A2/A7/A7.1 already established.
+
+   WHY THIS FILE EXISTS: the reference board replaces the photographic
+   Phoenix-bird hero (a full-bleed dark cinematic identity behind both Login
+   and Welcome) with a light-first "Premium Living Pharmaceutical Supply"
+   identity — warm white, institutional teal, gold accents, a calm abstract
+   supply-network illustration instead of a literal bird. The bird PHOTO
+   asset/<picture> is removed from both components' JSX in this same phase
+   (see LoginScreen.tsx / PhoenixWelcomeExperience.tsx) and replaced with
+   <InstitutionalSupplyMotif> — this file styles that motif and re-colours
+   the surrounding panel/caption for a light hero instead of a dark one.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ─── LOGIN ART PANEL — light institutional hero, not a dark photo backdrop ── */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
+  background:
+    radial-gradient(120% 100% at 20% 15%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 60%),
+    radial-gradient(110% 90% at 85% 90%, color-mix(in srgb, var(--phoenix-gold) 12%, transparent), transparent 62%),
+    var(--surface2);
+}
+
+/* The old cinematic vignette/frame assumed a dark photo needing legibility
+   darkening — the light hero needs none of that. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::after {
+  content: none;
+}
+
+/* Calmer institutional motif: no drifting ember particles over the panel
+   (same "no fire/ember identity" contract as the Welcome hero). */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-embers {
+  display: none;
+}
+
+/* A light, low bottom fade — enough that the caption always reads cleanly
+   over the motif regardless of exact node placement, without the old dark
+   legibility scrim a light hero no longer needs. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption {
+  background: linear-gradient(to top, color-mix(in srgb, var(--surface2) 88%, transparent) 0%, transparent 76%);
+  pointer-events: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__kicker {
+  color: var(--phoenix-gold);
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption h1 {
+  color: var(--text);
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row {
+  pointer-events: auto;
+}
+
+/* Trust row: quiet, descriptive-only chips (no numbers/claims) on the light
+   hero — a bordered institutional surface instead of a dark glass pill. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row > span {
+  color: var(--text);
+  border: 1px solid var(--brd);
+  background: var(--surface);
+  box-shadow: var(--sh-xs);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ─── THE MOTIF ITSELF — sizes to fill whichever panel hosts it ───────────── */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art .phoenix-supply-motif,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage .phoenix-supply-motif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__route {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: .55;
+  stroke-dasharray: 3 10;
+  animation: phase-a-motif-flow 5s linear infinite;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__orbit {
+  fill: none;
+  stroke: color-mix(in srgb, var(--phoenix-gold) 45%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 9;
+  transform-origin: 480px 300px;
+  animation: phase-a-motif-orbit 48s linear infinite;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node circle {
+  fill: var(--surface);
+  stroke: var(--teal);
+  stroke-width: 2;
+  filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--teal) 22%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node use {
+  color: var(--teal);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node--hub circle {
+  fill: var(--phoenix-gold);
+  stroke: var(--phoenix-gold-2);
+  filter: drop-shadow(0 10px 20px color-mix(in srgb, var(--phoenix-gold) 34%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node--hub use {
+  color: var(--phoenix-gold-ink);
+}
+
+@keyframes phase-a-motif-flow {
+  to { stroke-dashoffset: -52; }
+}
+
+@keyframes phase-a-motif-orbit {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── WELCOME HERO — same motif, bounded panel established by A7.1 ────────── */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
+  background: var(--surface2);
+}
+
+/* ─── RESPONSIVE — mobile art panel is hidden already (phoenix-nexus.css's
+   own ≤940px rule); nothing extra required. Reduced motion is handled by
+   phase-a-visual-convergence.css's global wildcard rule, which this file's
+   selectors inherit for free since every rule above lives under the same
+   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] gate. ── */
