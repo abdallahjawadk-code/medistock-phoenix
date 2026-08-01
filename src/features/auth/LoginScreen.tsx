@@ -4,7 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { MediStockMark } from '@/shared/ui/MediStockMark';
-import { PharmaceuticalSupplyScene } from '@/shared/ui/PharmaceuticalSupplyScene';
+import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -86,9 +86,7 @@ export function LoginScreen() {
           board. Being the first in-flow child, this panel resolves to the
           inline-start (physical right) column under RTL. */}
       <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
-        <div className="nexus-login__scene" aria-hidden="true">
-          <PharmaceuticalSupplyScene />
-        </div>
+        <AuthSupplyHero className="nexus-login__hero" priority />
         <div className="nexus-login__art-caption">
           <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
           <h1>

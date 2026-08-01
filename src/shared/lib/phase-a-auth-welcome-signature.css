@@ -1,228 +1,58 @@
-/* ─── PHASE A7.2.2 — PREMIUM LIVING AUTH & WELCOME SIGNATURE ────────────────
+/* ─── PHASE A7.2.3 — PREMIUM LIVING AUTH & WELCOME SIGNATURE ────────────────
    Presentation-only, imported LAST (after phase-a-visual-convergence.css).
    Every selector is gated behind BOTH Phase A markers, exactly like that
-   file. It changes no routing, auth, session, RBAC/RLS, RPC, or data — only
-   selectors, custom properties, and values on the SAME LoginScreen/
-   PhoenixWelcomeExperience markup A1/A2/A7/A7.1 already established.
+   file. It changes no routing, auth, session, RBAC/RLS, RPC, or data.
 
    WHY THIS FILE EXISTS: the reference board replaces the photographic
-   Phoenix-bird hero (a full-bleed dark cinematic identity behind both Login
-   and Welcome) with a light-first "Premium Living Pharmaceutical Supply"
-   identity — warm white, institutional teal, gold accents, and a real
-   pharmaceutical-supply ENVIRONMENT instead of a literal bird.
+   Phoenix-bird hero with a light-first "Premium Living Pharmaceutical
+   Supply" identity — warm ivory, institutional teal, gold accents.
 
-   A7.2.2 supersedes the A7.2/A7.2.1 hero: the flat cube-and-icon diagram
-   (InstitutionalSupplyMotif, now retired) read as a teaching diagram rather
-   than a premium institutional scene. <PharmaceuticalSupplyScene> replaces
-   it, and the Phoenix-bird app icon in the Login brand lockup is replaced by
-   the geometric <MediStockMark>. This file styles both, and rebuilds the two
-   compositions around them:
-     • Login  — one continuous sheet, hero ~65% / auth panel ~35%, with the
-       caption IN FLOW under the scene so nothing can be cropped;
-     • Welcome — a centred column with a bounded, uncropped stage and no
-       unexplained grey gradient beneath it.
+   A7.2.3 supersedes every earlier hero attempt. A7.2's flat motif and
+   A7.2.1/A7.2.2's isometric vector scene were both rejected as reading like
+   diagrams rather than a premium environment; both components are now
+   deleted. The hero is real photography — a daylight dispensing hall with
+   medicine shelving, palletised consignments and a delivery vehicle —
+   supplied as two separately composed masters (landscape for desktop,
+   portrait for phones) and served through <AuthSupplyHero>.
+
+   The compositions are therefore rebuilt around a FULL-BLEED image with
+   live text over a scrim, which is how the reference boards themselves are
+   built — and which also removes the class of bugs the stacked-layout
+   versions kept producing (intrinsic-height overflow, letterboxing, and
+   an unexplained grey gap under a bounded stage).
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   1 · THE SCENE
-   Every solid is ONE token colour at a fixed opacity step, lit from above
-   left, so the whole environment re-themes for light/dark with no second
-   palette to maintain.
+   1 · THE HERO IMAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene {
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Warm ivory paint under the image: it is what shows during decode and
+     behind any transparent edge, so the panel never flashes grey/white. */
+  background: var(--surface2);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero__img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  /* The pharmacist, the pallet and the truck all sit left-of-centre in the
+     landscape master; biasing the crop toward that side keeps the subject
+     in frame as the panel narrows instead of drifting to empty floor. */
+  object-position: 38% 50%;
 }
 
-/* ground + survey grid */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__grid path {
-  fill: none;
-  stroke: color-mix(in srgb, var(--teal) 20%, transparent);
-  stroke-width: 1;
+/* Dark theme keeps the SAME image and the same DOM — it is dimmed and
+   slightly cooled rather than swapped or inverted, so the structure is
+   identical across themes and no second asset has to be shipped. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='dark'] .auth-supply-hero__img {
+  filter: brightness(.72) saturate(.9);
 }
-
-/* roads */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__road polygon {
-  fill: color-mix(in srgb, var(--teal) 13%, var(--surface));
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__road-mark path {
-  fill: none;
-  stroke: color-mix(in srgb, var(--phoenix-gold) 62%, transparent);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-dasharray: 7 12;
-  animation: phase-a-scene-flow 6s linear infinite;
-}
-
-/* cast shadows — one light direction for the whole scene */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__shadow {
-  fill: color-mix(in srgb, var(--phoenix-sidebar-bg) 30%, transparent);
-}
-
-/* building masses */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__face-left {
-  fill: var(--teal);
-  opacity: .74;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__face-right {
-  fill: var(--teal);
-  opacity: .54;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__roof {
-  fill: var(--teal);
-  opacity: .95;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__roof-inset {
-  fill: var(--surface);
-  opacity: .14;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__roof-unit {
-  fill: var(--teal);
-  opacity: .88;
-}
-
-/* dock, doors, banding */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__apron {
-  fill: var(--teal);
-  opacity: .26;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__door {
-  fill: var(--surface);
-  opacity: .8;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__band {
-  fill: var(--phoenix-gold);
-  opacity: .82;
-}
-
-/* palletised consignments */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__crate-top {
-  fill: var(--phoenix-gold);
-  opacity: .9;
-}
-
-/* glazing */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__glass polygon {
-  fill: var(--surface);
-  opacity: .74;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__glass-solid {
-  fill: var(--surface);
-  opacity: .82;
-}
-
-/* signage, canopies, entrances */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__sign polygon {
-  fill: var(--phoenix-gold);
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__canopy {
-  fill: var(--teal);
-  opacity: .32;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__entrance {
-  fill: var(--surface);
-  opacity: .58;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__awning {
-  fill: var(--phoenix-gold);
-  opacity: .5;
-}
-
-/* central hub */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__platform {
-  fill: var(--phoenix-gold);
-  opacity: .3;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__platform-inset {
-  fill: var(--phoenix-gold);
-  opacity: .46;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__orbit {
-  fill: none;
-  stroke: color-mix(in srgb, var(--phoenix-gold) 58%, transparent);
-  stroke-width: 1.6;
-  stroke-dasharray: 3 10;
-  transform-origin: 640px 415px;
-  animation: phase-a-scene-orbit 54s linear infinite;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__gold-top {
-  fill: var(--phoenix-gold);
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__gold-left {
-  fill: var(--phoenix-gold);
-  opacity: .82;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__gold-right {
-  fill: var(--phoenix-gold-2);
-  opacity: .9;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__strap {
-  fill: none;
-  stroke: var(--phoenix-gold-ink);
-  stroke-width: 1.6;
-  opacity: .32;
-}
-
-/* the consignment breathes — the one restrained "living" gesture */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__hub {
-  animation: phase-a-scene-lift 7s ease-in-out infinite;
-  transform-origin: 640px 415px;
-}
-
-/* delivery vehicle — the cargo body is the lightest mass in the front row,
-   so the vehicle reads clearly against the teal buildings behind it */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__body-top {
-  fill: var(--surface);
-  opacity: .97;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__body-left {
-  fill: var(--surface);
-  opacity: .88;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__body-right {
-  fill: var(--surface);
-  opacity: .7;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__wheel {
-  fill: color-mix(in srgb, var(--phoenix-sidebar-bg) 78%, transparent);
-}
-
-/* landscaping */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__trunk {
-  fill: var(--teal);
-  opacity: .46;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-scene__canopy-leaf {
-  fill: var(--teal);
-  opacity: .5;
-}
-
-@keyframes phase-a-scene-flow { to { stroke-dashoffset: -57; } }
-@keyframes phase-a-scene-orbit { to { transform: rotate(360deg); } }
-@keyframes phase-a-scene-lift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    2 · THE GEOMETRIC BRAND MARK
@@ -256,25 +86,16 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark_
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ─── DESKTOP (>900px, matching phase-a-auth.css's own mobile switch) ───────
-   ONE continuous sheet, not two floating cards: the base Phase A cinematic
-   frame gives .nexus-login__art and .nexus-login__auth their OWN
-   border+radius+shadow with a gap between them — right for the retired dark
-   cinematic identity, wrong once the hero became a light institutional
-   scene. The outer shell becomes the single frame; the zones sit flush
-   inside it. The 65/35 split is the reference board's own proportion.
-   Scoped above 900px deliberately: at ≤900px the art panel is hidden and the
-   shell is a single scrollable column, which an unconditional overflow:hidden
-   would silently clip. */
+   ONE continuous sheet at the reference board's 65/35 hero/panel split. The
+   hairline is an INSET ring, never a real border: the shell already sits at
+   min-height:100dvh, so a 1px border would add 2px of layout height and
+   force the page to scroll on an exact-height desktop viewport. */
 @media (min-width: 901px) {
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-login.nexus-login {
     grid-template-columns: minmax(360px, 35fr) minmax(0, 65fr);
     gap: 0;
     border-radius: var(--phase-a-auth-radius);
     overflow: hidden;
-    /* The hairline is an INSET ring, not a real border: the shell already
-       sits at min-height:100dvh, so a 1px border would add 2px of layout
-       height and force the page to scroll on an exact-height desktop
-       viewport (measured: 770px document against a 768px viewport). */
     box-shadow: var(--phase-a-auth-shadow), inset 0 0 0 1px var(--brd);
   }
 
@@ -286,53 +107,39 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark_
   }
 }
 
-/* Light institutional hero field — no dark photo backdrop to compensate for */
+/* The art panel is now a frame for the photograph, not a padded column. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(10px, 1.6vh, 22px);
-  padding: clamp(24px, 2.6vw, 48px);
-  background:
-    radial-gradient(120% 100% at 22% 12%, color-mix(in srgb, var(--teal) 11%, transparent), transparent 62%),
-    radial-gradient(110% 90% at 84% 92%, color-mix(in srgb, var(--phoenix-gold) 13%, transparent), transparent 64%),
-    var(--surface2);
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface2);
 }
 
-/* The old cinematic vignette/frame assumed a dark photo needing legibility
-   darkening — the light hero needs none of it. */
+/* The old cinematic vignette/frame assumed a dark plate needing legibility
+   darkening; the photograph carries its own light. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::before,
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::after {
   content: none;
 }
 
-/* The scene takes only the FREE height and always fits. flex-basis MUST be
-   0, not auto: with auto the track's basis is the SVG's intrinsic height
-   (viewBox 1200×800 at the panel's width ≈ 528px at 1366×768), which grew
-   the panel to ~812px inside a 768px viewport and pushed the trust row
-   past the fold. A zero basis makes the scene a pure free-space share, so
-   it shrinks first and the caption can never be clipped — measured, not
-   assumed (see the A7.2.2 evidence set at 1366×768). */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__scene {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__scene .pharma-scene {
-  max-height: 100%;
-}
-
-/* Caption IN FLOW beneath the scene (the base layer positions it absolutely
-   over the art, which is what pushed content past the viewport edge). */
+/* Caption over the photograph, on an ivory scrim that fades UP from the
+   panel's inline edge — this is what ties the image to the auth panel so the
+   two read as one sheet instead of a picture beside a form. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption {
-  position: static;
-  flex: 0 0 auto;
-  inset: auto;
-  max-width: 46ch;
-  padding: 0;
-  background: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  max-width: none;
+  padding: clamp(80px, 14vh, 190px) clamp(28px, 3vw, 56px) clamp(24px, 3.4vh, 44px);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface2) 96%, transparent) 0%,
+    color-mix(in srgb, var(--surface2) 88%, transparent) 34%,
+    color-mix(in srgb, var(--surface2) 46%, transparent) 66%,
+    transparent 100%
+  );
   pointer-events: auto;
 }
 
@@ -353,15 +160,14 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__ar
 }
 
 /* English sets far fewer characters per line than Arabic at the same size,
-   so the shared clamp made the LTR headline run to five lines and dominate
-   the hero. Same visual weight, fewer lines. */
+   so the shared clamp made the LTR headline run long and dominate. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][lang='en'] .nexus-login__art-caption h1 {
   max-width: 28ch;
   font-size: clamp(18px, 1.62vw, 27px);
 }
 
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-lede {
-  max-width: 44ch;
+  max-width: 46ch;
   margin: 10px 0 0;
   color: var(--muted);
   font-size: clamp(12.5px, .92vw, 15px);
@@ -377,54 +183,42 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__ar
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row > span {
   color: var(--text);
   border: 1px solid var(--brd);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   box-shadow: var(--sh-xs);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
-/* ─── MOBILE ───────────────────────────────────────────────────────────────
-   The fixed language/theme controls (44px tall at top:14px) otherwise
-   overlap the brand row, which the base ≤900px block starts only 28px from
-   the top — a real, pre-existing defect caught via a rendered screenshot.
-   The auth column also never grew to fill its flex-column parent's
-   min-height:100dvh (flex's main axis does not stretch without flex-grow),
-   leaving a bare page-background gap beneath a short form. */
+/* ─── LOGIN · MOBILE ───────────────────────────────────────────────────────
+   A real phone composition: a bounded portrait hero band above a full-width
+   form. The base layer hides the art panel entirely at this width, which
+   suited the retired vector hero but not the photographic identity. */
 @media (max-width: 900px) {
-  /* A real phone composition, not a scaled desktop: a compact hero band
-     (scene + headline) above a full-width form, per the reference mobile
-     board. The base layer hides the art panel entirely at this width — that
-     suited the retired photographic hero, but the institutional scene is
-     the identity now, so it stays, bounded to a fixed share of the screen. */
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
-    padding: max(52px, env(safe-area-inset-top, 0px)) 20px 16px;
-    gap: 6px;
+    display: block;
+    height: clamp(210px, 34vh, 320px);
+    min-height: 0;
   }
 
-  /* An explicit height, not a flex share: the art panel is content-sized in
-     the mobile column, so a `flex: 1 1 0` scene would collapse to a sliver. */
-  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__scene {
-    flex: 0 0 auto;
-    height: clamp(112px, 16vh, 164px);
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero__img {
+    /* The portrait master frames the pharmacist centre-left; hold the
+       subject and the shelving, letting the floor crop away. */
+    object-position: 50% 42%;
   }
 
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption {
-    max-width: none;
+    padding: clamp(48px, 12vh, 96px) 20px 18px;
     text-align: center;
   }
 
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption h1 {
     max-width: none;
-    font-size: clamp(18px, 4.6vw, 24px);
+    font-size: clamp(17px, 4.4vw, 22px);
   }
 
-  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-lede {
-    max-width: none;
-    font-size: 13px;
-  }
-
-  /* Descriptive chips are desktop-only furniture — the phone needs the
-     vertical budget for the form itself. */
+  /* The lede and chips are desktop furniture — the phone needs the vertical
+     budget for the form itself. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-lede,
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row {
     display: none;
   }
@@ -432,11 +226,11 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__ar
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
     flex: 1 0 auto;
     justify-content: flex-start;
-    padding-top: clamp(20px, 3vh, 30px);
+    padding-top: clamp(18px, 2.6vh, 28px);
   }
 
-  /* The controls are pinned inside the art panel on mobile, so the brand row
-     no longer needs to clear them. */
+  /* The controls sit over the hero band on mobile, so the brand row no
+     longer needs to clear them. */
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand {
     margin-top: 0;
   }
@@ -444,57 +238,83 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__ar
 
 /* ═══════════════════════════════════════════════════════════════════════════
    4 · WELCOME COMPOSITION
-   Centred column: bounded uncropped stage, masthead, calm progress rail,
-   then the untouched credits block. Replaces the previous full-bleed stage
-   whose top was cropped and which left a large unexplained grey gradient
-   below the artwork.
+   A full-bleed hero experience: the photograph fills the viewport, the live
+   text sits over a scrim. Replaces the bounded stage-in-a-card layout whose
+   artwork letterboxed and which left a large grey gradient beneath it.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: clamp(10px, 1.8vh, 24px);
-  padding: clamp(22px, 4vh, 54px) clamp(18px, 4vw, 60px);
-  background:
-    radial-gradient(90% 70% at 50% 6%, color-mix(in srgb, var(--teal) 10%, transparent), transparent 64%),
-    radial-gradient(80% 60% at 50% 96%, color-mix(in srgb, var(--phoenix-gold) 11%, transparent), transparent 66%),
-    var(--phoenix-canvas);
-}
-
-/* The stage is sized so the scene FILLS it exactly. Width is capped by the
-   height budget times the artwork's own 3:2 ratio (min() picks whichever
-   of the three limits binds first), so the box can never end up wider than
-   the aspect ratio allows — which is what left white letterbox bands beside
-   the artwork when only max-height was capping it. */
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
-  position: relative;
-  flex: 0 1 auto;
-  width: min(100%, 780px, calc(42vh * 1.5));
-  min-height: 0;
-  aspect-ratio: 3 / 2;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 0;
   overflow: hidden;
-  border: 1px solid var(--brd);
-  border-radius: clamp(18px, 2vw, 28px);
-  /* A soft wash rather than a flat fill: the scene's ground is an isometric
-     rhombus, so a flat panel colour showed as hard pale bands either side of
-     the artwork. The radial follows the plane's own tint and lets the scene
-     read edge-to-edge. */
-  background:
-    radial-gradient(122% 96% at 50% 46%, color-mix(in srgb, var(--teal) 13%, var(--surface2)) 0%, var(--surface2) 76%);
-  box-shadow: var(--sh-md);
+  background: var(--surface2);
 }
 
-/* The scrim/ember layers belonged to the retired cinematic identity. */
+/* A7.1's layer made this a BOUNDED card in flow —
+   position:relative; inset:auto; width:min(100%,760px);
+   height:clamp(180px,32vh,320px); margin-top:clamp(44px,8vh,88px).
+   Restoring a full-bleed stage therefore has to unset height AND margin as
+   well as position/inset: overriding inset alone left the element absolute
+   but still 32vh tall and pushed down 8vh, which is exactly the pale empty
+   band that showed under the artwork (measured 245.75px tall at 61.4px top
+   in a 768px frame). Same specificity as that rule, later in the cascade. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: auto;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  aspect-ratio: auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface2);
+  box-shadow: none;
+}
+
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage::before,
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage::after {
   content: none;
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage .pharma-scene {
+/* Ivory scrim rising from the foot of the frame — the only thing that makes
+   the credits and masthead legible over daylight photography, in both
+   themes, without baking any text into the artwork. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__scrim {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  /* The ramp stays LOW and short. A tall, gentle gradient washed the whole
+     frame to near-paper and left a large empty band above the text — the
+     photograph has to keep reading through the upper half, with the scrim
+     doing legibility work only where the copy actually sits. */
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface2) 97%, transparent) 0%,
+    color-mix(in srgb, var(--surface2) 92%, transparent) 22%,
+    color-mix(in srgb, var(--surface2) 62%, transparent) 38%,
+    color-mix(in srgb, var(--surface2) 16%, transparent) 52%,
+    transparent 64%
+  );
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.4vh, 18px);
+  width: min(100%, 760px);
+  padding: 0 clamp(20px, 4vw, 48px) clamp(26px, 5vh, 62px);
+  text-align: center;
 }
 
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__masthead {
@@ -540,7 +360,7 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--teal) 18%, transparent);
+  background: color-mix(in srgb, var(--teal) 20%, transparent);
 }
 
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__progress-fill {
@@ -553,38 +373,45 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__
   animation: phase-a-welcome-progress var(--welcome-duration, 6000ms) linear forwards;
 }
 
+/* Credits are a quiet inline block over the scrim, not a large standalone
+   card floating in empty space. */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits {
   position: static;
-  padding: clamp(14px, 2vh, 22px) clamp(18px, 3vw, 34px);
-  border: 1px solid var(--brd);
-  border-radius: clamp(14px, 1.6vw, 22px);
-  background: var(--surface);
-  box-shadow: var(--sh-xs);
+  margin-top: clamp(4px, .8vh, 10px);
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
   text-align: center;
 }
 
 @keyframes phase-a-welcome-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
-/* ─── WELCOME · MOBILE ─────────────────────────────────────────────────────
-   A real single-column phone composition, not a scaled desktop: a shorter
-   stage so the masthead and credits stay above the fold without scrolling. */
+/* ─── WELCOME · MOBILE ─────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome {
-    justify-content: flex-start;
-    gap: clamp(10px, 1.6vh, 18px);
-    padding: max(54px, env(safe-area-inset-top, 0px)) 18px max(24px, env(safe-area-inset-bottom, 0px));
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__content {
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
   }
 
-  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
-    width: min(100%, calc(30vh * 1.5));
+  /* The phone frame is much taller than it is wide, so the copy block needs
+     a proportionally taller ramp than the desktop one — but it still has to
+     stop well short of the top so the portrait master reads. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__scrim {
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--surface2) 98%, transparent) 0%,
+      color-mix(in srgb, var(--surface2) 94%, transparent) 30%,
+      color-mix(in srgb, var(--surface2) 66%, transparent) 46%,
+      color-mix(in srgb, var(--surface2) 18%, transparent) 60%,
+      transparent 72%
+    );
   }
 }
 
-/* ─── RESPONSIVE / MOTION NOTES ────────────────────────────────────────────
+/* ─── MOTION NOTES ─────────────────────────────────────────────────────────
    Reduced motion is inherited for free: phase-a-visual-convergence.css
    already collapses every animation and transition under this SAME
    html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] root via a
-   universal descendant selector, and every animated class in this file is a
-   descendant of it — so the scene's flow/orbit/lift and the welcome progress
-   rail all stop there without restating the media query. Likewise the
-   hidden-tab pause contract. ─────────────────────────────────────────────── */
+   universal descendant selector, and the welcome progress rail is a
+   descendant of it — so it stops there without restating the media query.
+   Likewise the hidden-tab pause contract. ──────────────────────────────── */

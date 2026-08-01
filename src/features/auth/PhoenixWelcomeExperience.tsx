@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
 import { MediStockMark } from '@/shared/ui/MediStockMark';
-import { PharmaceuticalSupplyScene } from '@/shared/ui/PharmaceuticalSupplyScene';
+import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 
 interface Props {
   onComplete: () => void;
@@ -57,16 +57,20 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
-      {/* Institutional hero — the original pharmaceutical-supply scene,
-          never a Phoenix-bird photograph and never a fire/ember identity. */}
+      {/* Full-bleed institutional hero — the production pharmaceutical-supply
+          photography, never a Phoenix-bird photograph and never a fire/ember
+          identity. The scrim is what makes the live text over it legible in
+          both themes without baking any text into the artwork. */}
       <div className="nexus-welcome__stage" aria-hidden="true">
-        <PharmaceuticalSupplyScene />
+        <AuthSupplyHero className="nexus-welcome__hero" />
+        <div className="nexus-welcome__scrim" />
       </div>
 
       <button type="button" className="nexus-welcome__skip nexus-control" onClick={finish}>
         {lang === 'ar' ? 'تخطي' : 'Skip'}
       </button>
 
+      <div className="nexus-welcome__content">
       <header className="nexus-welcome__masthead">
         <div className="nexus-welcome__brand">
           <MediStockMark size={40} title="" />
@@ -110,6 +114,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
         {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
             single seal lives in the authenticated shell footer. */}
+      </div>
       </div>
     </div>
   );
