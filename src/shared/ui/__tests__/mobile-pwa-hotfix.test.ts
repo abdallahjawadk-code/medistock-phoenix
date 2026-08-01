@@ -127,13 +127,18 @@ describe('the complete Phoenix survives every viewport', () => {
   // no longer applies to a vector illustration the same way; the STRONGER
   // replacement is InstitutionalSupplyMotif's own safe-band layout contract,
   // asserted directly against its source below.
-  it('the hero is the original supply-network motif, not a re-painted or newly fetched image asset', () => {
+  // PHASE-A-CLAUDE-A7.2.2: the A7.2 motif was itself superseded by the
+  // fuller <PharmaceuticalSupplyScene> (and its file removed), so the
+  // invariant is re-pointed at the scene. It is unchanged in substance: the
+  // Welcome hero must be original inline artwork, never a fetched or
+  // re-painted image asset.
+  it('the hero is the original institutional scene, not a re-painted or newly fetched image asset', () => {
     const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
-    const motif = read('shared/ui/InstitutionalSupplyMotif.tsx');
-    expect(welcome).toContain('InstitutionalSupplyMotif');
+    const scene = read('shared/ui/PharmaceuticalSupplyScene.tsx');
+    expect(welcome).toContain('PharmaceuticalSupplyScene');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
-    expect(motif).not.toMatch(/https?:\/\//);
-    expect(motif).not.toMatch(/<img\b/);
+    expect(scene).not.toMatch(/https?:\/\//);
+    expect(scene).not.toMatch(/<img\b/);
   });
 });
 

@@ -23,7 +23,9 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
   const main = read('main.tsx');
   const css = read('shared/lib/phase-a-auth-welcome-signature.css');
   const convergenceCss = read('shared/lib/phase-a-visual-convergence.css');
-  const motif = read('shared/ui/InstitutionalSupplyMotif.tsx');
+  const motif = read('shared/ui/PharmaceuticalSupplyScene.tsx');
+  const mark = read('shared/ui/MediStockMark.tsx');
+  const strings = read('shared/i18n/strings.ts');
   const login = read('features/auth/LoginScreen.tsx');
   const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
   const appContext = read('app/AppContext.tsx');
@@ -96,7 +98,7 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
 
   // ─── 2. The motif itself — original, dependency-free, no fetched asset ─────
 
-  it('InstitutionalSupplyMotif is pure inline SVG: no <img>, no external URL, no Math.random', () => {
+  it('the hero scene is pure inline SVG: no <img>, no external URL, no Math.random', () => {
     expect(motif).not.toMatch(/<img\b/);
     expect(motif).not.toMatch(/https?:\/\//);
     expect(motif).not.toMatch(/Math\.random\(\)/);
@@ -104,12 +106,59 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     expect(motif).toContain('aria-hidden="true"');
   });
 
-  it('both auth screens render the motif in place of the retired Phoenix-bird photo, and the small brand mark stays', () => {
-    expect(login).toContain('InstitutionalSupplyMotif');
-    expect(welcome).toContain('InstitutionalSupplyMotif');
+  it('the geometric brand mark is pure inline SVG with no bird and no raster asset (A7.2.2)', () => {
+    expect(mark).not.toMatch(/<img\b/);
+    expect(mark).not.toMatch(/https?:\/\//);
+    expect(mark).toContain('<svg');
+    expect(mark).not.toMatch(/phoenix-icon|\.png|\.webp|\.avif/);
+  });
+
+  it('both auth screens render the scene in place of the retired Phoenix-bird photo AND the retired motif (A7.2.2)', () => {
+    expect(login).toContain('PharmaceuticalSupplyScene');
+    expect(welcome).toContain('PharmaceuticalSupplyScene');
     expect(login).not.toContain('/assets/phoenix/runtime/phoenix-login');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
-    expect(login).toContain('PhoenixMark');
+    expect(login).not.toContain('InstitutionalSupplyMotif');
+    expect(welcome).not.toContain('InstitutionalSupplyMotif');
+  });
+
+  it('the auth identity mark is geometric, not the Phoenix bird — and the rest of the app is untouched (A7.2.2)', () => {
+    expect(login).toContain('MediStockMark');
+    expect(login).not.toContain('PhoenixMark');
+    expect(welcome).toContain('MediStockMark');
+    expect(read('shared/ui/PhoenixSidebar.tsx')).toContain('PhoenixMark');
+    expect(read('shared/ui/PhoenixMobileDrawer.tsx')).toContain('PhoenixMark');
+  });
+
+  // ─── A7.2.2 · mandated Arabic copy correction ─────────────────────────────
+
+  it('the auth headline says "من قسم الصيدلة", never "من المخزن المركزي" (A7.2.2)', () => {
+    expect(login).toContain('منظومة الإمداد الدوائي — من قسم الصيدلة إلى منفذ الصرف.');
+    expect(welcome).toContain('منظومة الإمداد الدوائي — من قسم الصيدلة إلى منفذ الصرف.');
+    expect(login).not.toContain('من المخزن المركزي');
+    expect(welcome).not.toContain('من المخزن المركزي');
+  });
+
+  it('the English headline is a natural translation, and no Arabic leaks into the English branch', () => {
+    expect(login).toContain('Medication Supply Network — From the Pharmacy Department to the Dispensing Point.');
+    expect(welcome).toContain('Medication Supply Network — From the Pharmacy Department to the Dispensing Point.');
+    // The retired English copy referenced a "central store"; it must not linger.
+    expect(login).not.toContain('central store');
+  });
+
+  // The copy fix is a MARKETING-COPY change on two screens only. Operational
+  // central-warehouse terminology is business vocabulary and stays exactly as
+  // it is — this guards against a careless global search-and-replace.
+  it('operational central-warehouse terminology outside Login/Welcome is untouched (A7.2.2)', () => {
+    expect(strings).toContain('مخازن قسم الصيدلة (مركزي)');
+    expect(strings).toContain('المصدر (مركزي)');
+    expect(strings).toContain('مشتريات مركزية');
+    expect(strings).toContain('استرجاع مركزي');
+    let diff = '';
+    try {
+      diff = execSync('git diff --name-only HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
+    } catch { /* ignore */ }
+    expect(diff.trim()).toBe('');
   });
 
   // ─── 3. No fabricated data, no invented functionality ──────────────────────

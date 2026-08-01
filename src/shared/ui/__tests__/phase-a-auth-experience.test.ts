@@ -45,19 +45,37 @@ describe('Phase A auth and welcome presentation contract', () => {
   // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
   // Auth & Welcome) deliberately retires the photographic Phoenix-bird hero
   // art on BOTH screens — the reference board's own explicit "no Phoenix bird
-  // as hero" contract — replacing it with an original inline-SVG supply-
-  // network illustration (<InstitutionalSupplyMotif>, no image asset, no new
-  // dependency). The two asset-path assertions above are superseded by this
-  // stronger check: the new motif is used, and the retired asset paths never
-  // reappear in either file.
-  it('the Phoenix-bird photo hero is retired from both screens in favour of the original supply-network motif (A7.2)', () => {
-    expect(login).toContain('InstitutionalSupplyMotif');
-    expect(welcome).toContain('InstitutionalSupplyMotif');
+  // as hero" contract — replacing it with an original inline-SVG illustration
+  // (no image asset, no new dependency). The two asset-path assertions above
+  // are superseded by this stronger check.
+  // PHASE-A-CLAUDE-A7.2.2: that phase's first illustration
+  // (<InstitutionalSupplyMotif>) read as a flat teaching diagram rather than
+  // a premium institutional environment, so a further corrective round
+  // replaced it with <PharmaceuticalSupplyScene> and retired the motif file
+  // entirely; the same round also replaced the Phoenix-bird APP ICON in the
+  // Login brand lockup with the geometric <MediStockMark>, per the board's
+  // "no bird as the auth identity" requirement. PhoenixMark deliberately
+  // stays in PhoenixSidebar/PhoenixMobileDrawer, so the wider application's
+  // identity is untouched — asserted below so that scope cannot silently widen.
+  it('the Phoenix-bird photo hero is retired from both screens in favour of the original institutional scene (A7.2 → A7.2.2)', () => {
+    expect(login).toContain('PharmaceuticalSupplyScene');
+    expect(welcome).toContain('PharmaceuticalSupplyScene');
     expect(login).not.toContain('/assets/phoenix/runtime/phoenix-login');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
-    // The small 44px brand-lockup mark (PhoenixMark, the approved app icon) is
-    // NOT the hero — it stays, exactly like the reference board's own small
-    // logo mark beside the product name.
-    expect(login).toContain('PhoenixMark');
+    // The retired motif must not creep back in alongside the scene.
+    expect(login).not.toContain('InstitutionalSupplyMotif');
+    expect(welcome).not.toContain('InstitutionalSupplyMotif');
+  });
+
+  it('the auth brand lockup uses the geometric mark, while the rest of the app keeps PhoenixMark (A7.2.2)', () => {
+    expect(login).toContain('MediStockMark');
+    expect(login).not.toContain('PhoenixMark');
+    expect(welcome).toContain('MediStockMark');
+    // Scope guard: the wider application identity is explicitly NOT part of
+    // this change.
+    const sidebar = read('shared/ui/PhoenixSidebar.tsx');
+    const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
+    expect(sidebar).toContain('PhoenixMark');
+    expect(drawer).toContain('PhoenixMark');
   });
 });
