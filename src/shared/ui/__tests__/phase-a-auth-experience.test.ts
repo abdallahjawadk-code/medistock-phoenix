@@ -51,15 +51,15 @@ describe('Phase A auth and welcome presentation contract', () => {
   // PHASE-A-CLAUDE-A7.2.2: that phase's first illustration
   // (<InstitutionalSupplyMotif>) read as a flat teaching diagram rather than
   // a premium institutional environment, so a further corrective round
-  // replaced it with <PharmaceuticalSupplyScene> and retired the motif file
+  // replaced it with real photography via <AuthSupplyHero> (A7.2.3) and retired the vector files
   // entirely; the same round also replaced the Phoenix-bird APP ICON in the
   // Login brand lockup with the geometric <MediStockMark>, per the board's
   // "no bird as the auth identity" requirement. PhoenixMark deliberately
   // stays in PhoenixSidebar/PhoenixMobileDrawer, so the wider application's
   // identity is untouched — asserted below so that scope cannot silently widen.
   it('the Phoenix-bird photo hero is retired from both screens in favour of the original institutional scene (A7.2 → A7.2.2)', () => {
-    expect(login).toContain('PharmaceuticalSupplyScene');
-    expect(welcome).toContain('PharmaceuticalSupplyScene');
+    expect(login).toContain('AuthSupplyHero');
+    expect(welcome).toContain('AuthSupplyHero');
     expect(login).not.toContain('/assets/phoenix/runtime/phoenix-login');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
     // The retired motif must not creep back in alongside the scene.

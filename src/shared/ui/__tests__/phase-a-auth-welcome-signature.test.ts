@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import pkg from '../../../../package.json';
@@ -23,7 +23,7 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
   const main = read('main.tsx');
   const css = read('shared/lib/phase-a-auth-welcome-signature.css');
   const convergenceCss = read('shared/lib/phase-a-visual-convergence.css');
-  const motif = read('shared/ui/PharmaceuticalSupplyScene.tsx');
+  const motif = read('shared/ui/AuthSupplyHero.tsx');
   const mark = read('shared/ui/MediStockMark.tsx');
   const strings = read('shared/i18n/strings.ts');
   const login = read('features/auth/LoginScreen.tsx');
@@ -98,12 +98,66 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
 
   // ─── 2. The motif itself — original, dependency-free, no fetched asset ─────
 
-  it('the hero scene is pure inline SVG: no <img>, no external URL, no Math.random', () => {
-    expect(motif).not.toMatch(/<img\b/);
+  // ─── A7.2.3 · production photographic asset contract ──────────────────────
+  // The hero is no longer inline SVG — it is real photography. These
+  // assertions replace the "pure inline SVG" one for the same underlying
+  // invariant: the hero must be LOCAL, never fetched from anywhere.
+
+  it('the hero serves LOCAL build-hashed assets only — no external URL, CDN, runtime fetch or base64', () => {
     expect(motif).not.toMatch(/https?:\/\//);
-    expect(motif).not.toMatch(/Math\.random\(\)/);
-    expect(motif).toContain('<svg');
+    expect(motif).not.toMatch(/data:image/);
+    expect(motif).not.toMatch(/fetch\(|XMLHttpRequest/);
+    // Every source is a static import Vite resolves and hashes at build time.
+    const imports = motif.match(/^import \w+ from '@\/assets\/auth-welcome\/[\w.-]+\.webp';$/gm) ?? [];
+    expect(imports.length).toBe(6);
     expect(motif).toContain('aria-hidden="true"');
+  });
+
+  it('art direction is real: the portrait master serves phones, the landscape master serves desktop', () => {
+    // A <source media> switch, so the unused master is never downloaded.
+    expect(motif).toMatch(/<source\s[^>]*media="\(max-width: 900px\)"/);
+    for (const m of ['mobile480', 'mobile720', 'mobile940']) expect(motif).toContain(m);
+    for (const d of ['desktop960', 'desktop1280', 'desktop1536']) expect(motif).toContain(d);
+    // The mobile srcSet must not reference a desktop master and vice versa.
+    const mobileSource = motif.slice(motif.indexOf('max-width: 900px'), motif.indexOf('/>', motif.indexOf('max-width: 900px')));
+    expect(mobileSource).not.toMatch(/desktop/);
+  });
+
+  it('declares responsive sizing and explicit intrinsic dimensions so the hero cannot shift layout', () => {
+    expect(motif).toContain('srcSet');
+    expect(motif).toContain('sizes=');
+    expect(motif).toMatch(/width=\{[A-Z_]+\}/);
+    expect(motif).toMatch(/height=\{[A-Z_]+\}/);
+    expect(motif).toContain('decoding="async"');
+  });
+
+  it('the hero image files exist on disk, are WebP, and stay inside the agreed byte budget', () => {
+    const dir = join(SRC, 'assets/auth-welcome');
+    const budget: Record<string, number> = {
+      'supply-desktop-1536.webp': 500_000,
+      'supply-desktop-1280.webp': 350_000,
+      'supply-desktop-960.webp': 300_000,
+      'supply-mobile-940.webp': 400_000,
+      'supply-mobile-720.webp': 280_000,
+      'supply-mobile-480.webp': 180_000,
+    };
+    for (const [file, max] of Object.entries(budget)) {
+      const p = join(dir, file);
+      expect(existsSync(p), `${file} must exist`).toBe(true);
+      const { size } = statSync(p);
+      expect(size, `${file} is ${size} bytes, over its ${max} budget`).toBeLessThanOrEqual(max);
+      // RIFF....WEBP magic — proves the extension is not lying about the codec.
+      const head = readFileSync(p).subarray(0, 12).toString('latin1');
+      expect(head.startsWith('RIFF') && head.includes('WEBP'), `${file} must be real WebP`).toBe(true);
+    }
+  });
+
+  it('the retired vector hero components are gone, with no dangling reference left behind', () => {
+    expect(existsSync(join(SRC, 'shared/ui/InstitutionalSupplyMotif.tsx'))).toBe(false);
+    expect(existsSync(join(SRC, 'shared/ui/PharmaceuticalSupplyScene.tsx'))).toBe(false);
+    expect(css).not.toMatch(/phoenix-supply-motif|pharma-scene/);
+    expect(login).not.toMatch(/InstitutionalSupplyMotif|PharmaceuticalSupplyScene/);
+    expect(welcome).not.toMatch(/InstitutionalSupplyMotif|PharmaceuticalSupplyScene/);
   });
 
   it('the geometric brand mark is pure inline SVG with no bird and no raster asset (A7.2.2)', () => {
@@ -114,8 +168,8 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
   });
 
   it('both auth screens render the scene in place of the retired Phoenix-bird photo AND the retired motif (A7.2.2)', () => {
-    expect(login).toContain('PharmaceuticalSupplyScene');
-    expect(welcome).toContain('PharmaceuticalSupplyScene');
+    expect(login).toContain('AuthSupplyHero');
+    expect(welcome).toContain('AuthSupplyHero');
     expect(login).not.toContain('/assets/phoenix/runtime/phoenix-login');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
     expect(login).not.toContain('InstitutionalSupplyMotif');

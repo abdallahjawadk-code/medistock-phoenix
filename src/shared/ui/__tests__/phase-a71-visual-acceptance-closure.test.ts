@@ -107,13 +107,13 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
   // test protects (every handler/timing constant untouched) is unaffected
   // and asserted directly below instead of via a zero-diff check.
   // PHASE-A-CLAUDE-A7.2.2 re-pointed the hero once more, from that motif to
-  // <PharmaceuticalSupplyScene>. The behavioural assertions are unchanged.
+  // <AuthSupplyHero> (A7.2.3). The behavioural assertions are unchanged.
   it('Welcome keeps every skip/timing/completion handler unchanged — only the hero visual was replaced (A7.2 → A7.2.2)', () => {
     expect(welcome).toContain('const finish = useCallback(');
     expect(welcome).toContain('SEQUENCE_MS = 6000');
     expect(welcome).toContain('REDUCED_MS = 900');
     expect(welcome).toContain("window.setTimeout(finish, reduced ? REDUCED_MS : SEQUENCE_MS)");
-    expect(welcome).toContain('PharmaceuticalSupplyScene');
+    expect(welcome).toContain('AuthSupplyHero');
   });
 
   it('screen 21 routing (AuthenticatedApp.tsx) is byte-for-byte unchanged', () => {

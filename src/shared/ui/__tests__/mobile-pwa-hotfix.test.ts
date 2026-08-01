@@ -127,18 +127,23 @@ describe('the complete Phoenix survives every viewport', () => {
   // no longer applies to a vector illustration the same way; the STRONGER
   // replacement is InstitutionalSupplyMotif's own safe-band layout contract,
   // asserted directly against its source below.
-  // PHASE-A-CLAUDE-A7.2.2: the A7.2 motif was itself superseded by the
-  // fuller <PharmaceuticalSupplyScene> (and its file removed), so the
-  // invariant is re-pointed at the scene. It is unchanged in substance: the
-  // Welcome hero must be original inline artwork, never a fetched or
-  // re-painted image asset.
-  it('the hero is the original institutional scene, not a re-painted or newly fetched image asset', () => {
+  // PHASE-A-CLAUDE-A7.2.3: the A7.2/A7.2.2 vector illustrations were both
+  // superseded by real photography served through <AuthSupplyHero>, and both
+  // vector files were deleted. The hero is now legitimately an <img>, so the
+  // old "contains no <img>" clause no longer expresses anything meaningful.
+  // The invariant it actually existed to protect — the Welcome hero is never
+  // fetched from off-origin at runtime — is asserted directly instead, which
+  // is strictly stronger than a tag check.
+  it('the Welcome hero is served from local build-hashed assets, never fetched at runtime', () => {
     const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
-    const scene = read('shared/ui/PharmaceuticalSupplyScene.tsx');
-    expect(welcome).toContain('PharmaceuticalSupplyScene');
+    const scene = read('shared/ui/AuthSupplyHero.tsx');
+    expect(welcome).toContain('AuthSupplyHero');
     expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
     expect(scene).not.toMatch(/https?:\/\//);
-    expect(scene).not.toMatch(/<img\b/);
+    expect(scene).not.toMatch(/data:image/);
+    expect(scene).not.toMatch(/fetch\(|XMLHttpRequest/);
+    // Sources arrive only as static imports Vite hashes into the bundle.
+    expect(scene).toMatch(/import \w+ from '@\/assets\/auth-welcome\//);
   });
 });
 
