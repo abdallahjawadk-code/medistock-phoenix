@@ -1562,7 +1562,17 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/reports/ReportsScreen.tsx" ' +
         '":(exclude)src/shared/lib/phase-a-visual-convergence.css" ' +
         '":(exclude)src/shared/lib/phoenix-nexus.css" ' +
-        '":(exclude)src/shared/lib/tokens.css"',
+        '":(exclude)src/shared/lib/tokens.css" ' +
+        // PHASE-A-CLAUDE-A7.2: a still later, separately-reviewed phase
+        // (Premium Living Auth & Welcome) retires the photographic Phoenix-
+        // bird hero on both auth screens for an original inline-SVG supply-
+        // network illustration — never a handler, session, or RPC change —
+        // and flips AppContext's in-memory theme default to light-first
+        // (no persistence key exists or is added; same structure, same
+        // toggle) — excluded here.
+        '":(exclude)src/features/auth/LoginScreen.tsx" ' +
+        '":(exclude)src/features/auth/PhoenixWelcomeExperience.tsx" ' +
+        '":(exclude)src/app/AppContext.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

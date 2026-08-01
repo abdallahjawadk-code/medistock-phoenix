@@ -38,12 +38,24 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
   const directEntry = read('features/procurement/DirectEntryPanel.tsx');
   const tokens = read('shared/lib/tokens.css');
 
-  it('the visual convergence CSS is still the LAST Phase A import (A7.1 only appended rules to it)', () => {
-    const convergenceIndex = main.indexOf("import '@/shared/lib/phase-a-visual-convergence.css';");
+  // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
+  // Auth & Welcome) legitimately adds ONE further CSS import right after this
+  // one — src/shared/lib/phase-a-auth-welcome-signature.css, itself gated
+  // behind the same html[data-phoenix-ui-phase='a'][data-phoenix-visual=
+  // 'daylight'] marker (see phase-a-auth-welcome-signature.test.ts) — so the
+  // invariant this test protects (no import silently reorders ahead of an
+  // established layer) becomes: the ONLY file allowed to follow is that one,
+  // and nothing follows THAT one in turn.
+  it('the visual convergence CSS is immediately followed only by the new A7.2 signature layer — nothing else reorders ahead (A7.1 only appended rules to it)', () => {
+    const convergenceImport = "import '@/shared/lib/phase-a-visual-convergence.css';";
+    const signatureImport = "import '@/shared/lib/phase-a-auth-welcome-signature.css';";
+    const convergenceIndex = main.indexOf(convergenceImport);
     expect(convergenceIndex).toBeGreaterThan(-1);
-    // Nothing else in main.tsx imports a CSS file after it.
-    const afterConvergence = main.slice(convergenceIndex + 1);
-    expect(afterConvergence).not.toMatch(/import ['"].*\.css['"]/);
+    const afterConvergence = main.slice(convergenceIndex + convergenceImport.length);
+    const nextCssMatch = afterConvergence.match(/import ['"].*\.css['"];/);
+    expect(nextCssMatch?.[0]).toBe(signatureImport);
+    const afterSignature = afterConvergence.slice(afterConvergence.indexOf(signatureImport) + signatureImport.length);
+    expect(afterSignature).not.toMatch(/import ['"].*\.css['"]/);
   });
 
   it('every new Welcome rule this pass added is still gated behind BOTH the Phase A marker and the daylight marker', () => {
@@ -88,18 +100,18 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
     expect(diff.trim()).toBe('');
   });
 
-  it('Welcome (PhoenixWelcomeExperience.tsx) is byte-for-byte unchanged — the rework is CSS-only', () => {
-    let diff = '';
-    try {
-      diff = execSync(
-        'git diff --name-only HEAD -- src/features/auth/PhoenixWelcomeExperience.tsx',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
+  // Auth & Welcome) deliberately edits this file's JSX — swapping the
+  // photographic Phoenix-bird <picture> for <InstitutionalSupplyMotif> — so
+  // it is no longer byte-for-byte unchanged. The BEHAVIOURAL invariant this
+  // test protects (every handler/timing constant untouched) is unaffected
+  // and asserted directly below instead of via a zero-diff check.
+  it('Welcome keeps every skip/timing/completion handler unchanged — only the hero visual was replaced (A7.2)', () => {
     expect(welcome).toContain('const finish = useCallback(');
     expect(welcome).toContain('SEQUENCE_MS = 6000');
     expect(welcome).toContain('REDUCED_MS = 900');
+    expect(welcome).toContain("window.setTimeout(finish, reduced ? REDUCED_MS : SEQUENCE_MS)");
+    expect(welcome).toContain('InstitutionalSupplyMotif');
   });
 
   it('screen 21 routing (AuthenticatedApp.tsx) is byte-for-byte unchanged', () => {

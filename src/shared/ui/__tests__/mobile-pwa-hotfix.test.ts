@@ -119,10 +119,21 @@ describe('the complete Phoenix survives every viewport', () => {
     expect(welcomeRoot).toContain('overflow-y: auto;');
   });
 
-  it('the plate is the existing canonical runtime master — no new art, no repaint', () => {
+  // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
+  // Auth & Welcome) deliberately retires this photographic plate — the
+  // reference board's own "no Phoenix bird as hero" contract — for an
+  // original inline-SVG supply-network illustration. The historical concern
+  // this test guarded (a mobile-portrait crop amputating part of the bird)
+  // no longer applies to a vector illustration the same way; the STRONGER
+  // replacement is InstitutionalSupplyMotif's own safe-band layout contract,
+  // asserted directly against its source below.
+  it('the hero is the original supply-network motif, not a re-painted or newly fetched image asset', () => {
     const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
-    expect(welcome).toContain('/assets/phoenix/runtime/phoenix-welcome-clean.avif');
-    expect(welcome).toContain('/assets/phoenix/runtime/phoenix-welcome-clean.webp');
+    const motif = read('shared/ui/InstitutionalSupplyMotif.tsx');
+    expect(welcome).toContain('InstitutionalSupplyMotif');
+    expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
+    expect(motif).not.toMatch(/https?:\/\//);
+    expect(motif).not.toMatch(/<img\b/);
   });
 });
 
