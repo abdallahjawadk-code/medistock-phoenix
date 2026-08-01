@@ -16,6 +16,61 @@
    the surrounding panel/caption for a light hero instead of a dark one.
    ─────────────────────────────────────────────────────────────────────────── */
 
+/* ─── LOGIN SPLIT-SCREEN — ONE continuous sheet, not two floating cards ─────
+   The base Phase A cinematic frame (phase-a-auth.css) gives .nexus-login__art
+   and .nexus-login__auth their OWN border+radius+shadow with a gap between
+   them — appropriate for the original dark cinematic identity, but reading
+   as two disconnected panels once the hero became a light institutional
+   scene (A7.2.1 visual-fidelity correction). The outer shell becomes the
+   single rounded/bordered/shadowed frame; the two zones sit flush inside it,
+   clipped to its one shared corner radius.
+   DESKTOP ONLY (>900px, matching phase-a-auth.css's own mobile switch): at
+   ≤900px the art panel is hidden and the shell becomes a single scrollable
+   column (display:flex; height:auto; overflow-y:auto) so content taller
+   than the viewport can scroll — an unconditional overflow:hidden here would
+   silently clip that column instead, which is exactly what a first pass of
+   this rule did before being caught via a real mobile screenshot. */
+@media (min-width: 901px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-login.nexus-login {
+    gap: 0;
+    border: 1px solid var(--brd);
+    border-radius: var(--phase-a-auth-radius);
+    overflow: hidden;
+    box-shadow: var(--phase-a-auth-shadow);
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art,
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* ─── MOBILE — the fixed language/theme controls (44px tall, pinned at
+   top:14px) otherwise overlap the brand row, which phase-a-auth.css's own
+   ≤900px block starts at only 28px from the top — a real, pre-existing
+   defect caught via a rendered mobile screenshot, not a regression from the
+   rule above (it reproduces with that rule removed too). Push the brand row
+   below the controls instead of guessing a pixel value: the controls' own
+   box (top + height) is the true lower bound. */
+@media (max-width: 900px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand {
+    margin-top: 46px;
+  }
+
+  /* The shell is display:flex; flex-direction:column; min-height:100dvh at
+     this width (phase-a-auth.css) — but a flex column's main axis does NOT
+     stretch a child to fill it by default, only flex-grow does. With no
+     flex-grow, .nexus-login__auth stayed at its own content height, leaving
+     a bare page-background gap below the card whenever the form is shorter
+     than the viewport — a real, pre-existing defect caught the same way. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+    flex: 1 0 auto;
+    justify-content: flex-start;
+  }
+}
+
 /* ─── LOGIN ART PANEL — light institutional hero, not a dark photo backdrop ── */
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
   background:
@@ -95,29 +150,96 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-
   stroke: color-mix(in srgb, var(--phoenix-gold) 45%, transparent);
   stroke-width: 1.5;
   stroke-dasharray: 2 9;
-  transform-origin: 480px 300px;
+  transform-origin: 480px 205px;
   animation: phase-a-motif-orbit 48s linear infinite;
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node circle {
+/* ─── ISOMETRIC BUILDINGS — a top rhombus + two shaded side faces, the
+   standard flat-illustration technique for reading as 3D without true
+   rendering. Every face is the SAME one colour per element; only opacity
+   steps (brightest=top, as if lit from above; darkest=right) fake the
+   shading, so no new colour token is needed and both themes stay correct. ── */
+/* Ground shadows: no neutral dark token stays correct in BOTH themes (--text
+   flips light/dark, --bg is the surface colour itself, not a shadow tint),
+   so each building's own hue tints its own shadow instead — the exact same
+   technique the badges below already use for their drop-shadows. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--warehouse .phoenix-supply-motif__iso-shadow,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hospital .phoenix-supply-motif__iso-shadow,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--outlet .phoenix-supply-motif__iso-shadow {
+  fill: color-mix(in srgb, var(--teal) 38%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hub .phoenix-supply-motif__iso-shadow {
+  fill: color-mix(in srgb, var(--phoenix-gold-2) 42%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--warehouse .phoenix-supply-motif__iso-top,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hospital .phoenix-supply-motif__iso-top,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--outlet .phoenix-supply-motif__iso-top {
+  fill: var(--teal);
+  opacity: .92;
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--warehouse .phoenix-supply-motif__iso-left,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hospital .phoenix-supply-motif__iso-left,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--outlet .phoenix-supply-motif__iso-left {
+  fill: var(--teal);
+  opacity: .68;
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--warehouse .phoenix-supply-motif__iso-right,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hospital .phoenix-supply-motif__iso-right,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--outlet .phoenix-supply-motif__iso-right {
+  fill: var(--teal);
+  opacity: .48;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hub .phoenix-supply-motif__iso-top {
+  fill: var(--phoenix-gold);
+  opacity: .96;
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hub .phoenix-supply-motif__iso-left {
+  fill: var(--phoenix-gold);
+  opacity: .78;
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__iso--hub .phoenix-supply-motif__iso-right {
+  fill: var(--phoenix-gold-2);
+  opacity: .84;
+}
+
+/* Badges: small circular icon accents sitting at each building's top vertex —
+   the SAME node treatment A7.2 established, reused here at a smaller size. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__badge circle {
   fill: var(--surface);
   stroke: var(--teal);
   stroke-width: 2;
   filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--teal) 22%, transparent));
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node use {
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__badge use {
   color: var(--teal);
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node--hub circle {
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__badge--hub circle {
   fill: var(--phoenix-gold);
   stroke: var(--phoenix-gold-2);
   filter: drop-shadow(0 10px 20px color-mix(in srgb, var(--phoenix-gold) 34%, transparent));
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__node--hub use {
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__badge--hub use {
   color: var(--phoenix-gold-ink);
+}
+
+/* Delivery-route accent: a smaller, quieter badge — secondary to the three
+   institutional buildings and the hub, never competing with them. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__truck circle {
+  fill: var(--surface);
+  stroke: color-mix(in srgb, var(--teal) 55%, var(--brd));
+  stroke-width: 1.5;
+  opacity: .92;
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--teal) 16%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .phoenix-supply-motif__truck use {
+  color: var(--muted);
 }
 
 @keyframes phase-a-motif-flow {
