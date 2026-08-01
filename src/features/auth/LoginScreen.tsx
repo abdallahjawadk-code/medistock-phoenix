@@ -4,6 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { InstitutionalSupplyMotif } from '@/shared/ui/InstitutionalSupplyMotif';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -78,28 +79,14 @@ export function LoginScreen() {
         </button>
       </div>
 
-      {/* Two-column layout: the form panel stays on the LEFT; the approved
-          photoreal Phoenix master (AVIF→WebP) dominates the RIGHT art panel. It is
-          the permanent hero — never a procedural point-cloud. object-fit:cover +
-          object-position keep the COMPLETE bird (fiery wing, gold/pearl wing and
-          the teal medical chest) in frame; only restrained CSS embers move over
-          it, and three.js stays off the login critical path. Being the first
-          in-flow child, this panel resolves to the inline-start (physical right)
-          column under RTL. */}
-      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شعار طائر الفينيكس' : 'Phoenix emblem'}>
-        <picture>
-          <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
-          <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
-          <img
-            className="nexus-login__plate"
-            src="/assets/phoenix/runtime/phoenix-login.webp"
-            alt=""
-            width={1680}
-            height={941}
-            decoding="async"
-            loading="eager"
-          />
-        </picture>
+      {/* Two-column layout: the form panel stays on the LEFT; a light,
+          institutional supply-network illustration (original SVG, no image
+          asset, no Phoenix bird) dominates the RIGHT art panel — the "Premium
+          Living Pharmaceutical Supply" identity from the approved reference
+          board. Being the first in-flow child, this panel resolves to the
+          inline-start (physical right) column under RTL. */}
+      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
+        <InstitutionalSupplyMotif />
         <div className="nexus-login__art-embers" aria-hidden="true">
           {Array.from({ length: 14 }, (_, i) => (
             <span key={i} className="nexus-login__ember" style={{ '--ember-index': i } as CSSProperties} />
