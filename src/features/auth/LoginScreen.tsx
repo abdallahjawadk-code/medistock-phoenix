@@ -1,10 +1,10 @@
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
-import { PhoenixMark } from '@/shared/ui/PhoenixMark';
-import { InstitutionalSupplyMotif } from '@/shared/ui/InstitutionalSupplyMotif';
+import { MediStockMark } from '@/shared/ui/MediStockMark';
+import { PharmaceuticalSupplyScene } from '@/shared/ui/PharmaceuticalSupplyScene';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -86,23 +86,25 @@ export function LoginScreen() {
           board. Being the first in-flow child, this panel resolves to the
           inline-start (physical right) column under RTL. */}
       <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
-        <InstitutionalSupplyMotif />
-        <div className="nexus-login__art-embers" aria-hidden="true">
-          {Array.from({ length: 14 }, (_, i) => (
-            <span key={i} className="nexus-login__ember" style={{ '--ember-index': i } as CSSProperties} />
-          ))}
+        <div className="nexus-login__scene" aria-hidden="true">
+          <PharmaceuticalSupplyScene />
         </div>
         <div className="nexus-login__art-caption">
           <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
           <h1>
             {lang === 'ar'
-              ? 'منظومة الإمداد الدوائي — من المخزن المركزي إلى منفذ الصرف.'
-              : 'The medicine supply fabric — from central store to dispensing outlet.'}
+              ? 'منظومة الإمداد الدوائي — من قسم الصيدلة إلى منفذ الصرف.'
+              : 'Medication Supply Network — From the Pharmacy Department to the Dispensing Point.'}
           </h1>
+          <p className="nexus-login__art-lede" dir="auto">
+            {lang === 'ar'
+              ? 'متابعة مؤسسية واحدة لحركة الدواء عبر مخازن قسم الصيدلة والمستشفيات ومنافذ الصرف.'
+              : 'One institutional view of medicine moving through pharmacy-department stores, hospitals and dispensing points.'}
+          </p>
           <div className="nexus-login__trust-row">
-            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
-            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
-            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
+            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'تدفق آمن' : 'Secure flow'}</span>
+            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'شبكة مترابطة' : 'Connected network'}</span>
+            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تتبع تشغيلي' : 'Operational tracking'}</span>
           </div>
         </div>
       </section>
@@ -110,7 +112,7 @@ export function LoginScreen() {
       <main className="nexus-login__auth">
         <div className="nexus-login__brand">
           <div className="nexus-brand-mark nexus-login__brand-mark">
-            <PhoenixMark size={44} title="" />
+            <MediStockMark size={44} title="" />
           </div>
           <div>
             <div className="nexus-login__brand-name">MediStock-Babil Phoenix</div>
