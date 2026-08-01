@@ -1119,7 +1119,13 @@ describe('15. isolation from out-of-scope domains', () => {
         // toggle) — excluded here.
         '":(exclude)src/features/auth/LoginScreen.tsx" ' +
         '":(exclude)src/features/auth/PhoenixWelcomeExperience.tsx" ' +
-        '":(exclude)src/app/AppContext.tsx"', {
+        '":(exclude)src/app/AppContext.tsx" ' +
+        // PHASE-A-CLAUDE-A7.2.1: a still later, separately-reviewed phase
+        // (Luxury Visual Fidelity Correction) reworks the illustration
+        // component and its CSS layer for closer reference-board fidelity —
+        // never a handler, session, or RPC change — excluded here.
+        '":(exclude)src/shared/ui/InstitutionalSupplyMotif.tsx" ' +
+        '":(exclude)src/shared/lib/phase-a-auth-welcome-signature.css"', {
         cwd: ROOT, encoding: 'utf8',
       });
     } catch { /* ignore */ }
