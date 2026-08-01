@@ -116,8 +116,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       {/* Brand */}
       <div className="premium-sidebar-brand">
         <div className="nexus-brand-lockup">
-          <div className="nexus-brand-mark">
-            <PhoenixMark size={39} title="" />
+          <div className="nexus-brand-mark nexus-brand-mark--phoenix">
+            <PhoenixMark size={40} title="" />
           </div>
           <div style={{ minWidth: 0 }}>
             <div className="nexus-brand-title">MediStock-Babil Phoenix</div>

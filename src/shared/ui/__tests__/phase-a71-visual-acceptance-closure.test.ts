@@ -179,15 +179,24 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
     expect(broadcastGate).not.toMatch(/onClose=\{[^}]*setQueue/);
   });
 
-  it("Public QR's privacy predicate (isPubliclyAvailableQrItem) is byte-for-byte unchanged", () => {
+  it("Public QR's privacy predicate (isPubliclyAvailableQrItem) is unchanged", () => {
+    // A7.2.4 NARROWING (documented exclusion, guard never deleted): the whole
+    // file is no longer required to be byte-for-byte identical, because
+    // A7.2.4 legitimately replaces this screen's decorative header icon with
+    // the new global brand mark (Public QR branding area — presentation-only,
+    // see phase-a724-pharmacy-emblem-rollout.test.ts). What this test must
+    // keep proving is narrower and unchanged: the privacy predicate itself
+    // was never touched by that (or any other) edit — checked both by exact
+    // content below AND by confirming no diff line even mentions it.
     let diff = '';
     try {
       diff = execSync(
-        'git diff --name-only HEAD -- src/features/qr/PublicQrScreen.tsx',
+        'git diff HEAD -- src/features/qr/PublicQrScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    expect(diff).not.toContain('isPubliclyAvailableQrItem');
+    expect(diff).not.toMatch(/^[+-].*item\.quantity/m);
     expect(publicQr).toContain('export function isPubliclyAvailableQrItem(item: PublicItem): boolean {');
     expect(publicQr).toContain("if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return false;");
   });

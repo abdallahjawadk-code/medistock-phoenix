@@ -53,10 +53,9 @@ describe('Phase A auth and welcome presentation contract', () => {
   // a premium institutional environment, so a further corrective round
   // replaced it with real photography via <AuthSupplyHero> (A7.2.3) and retired the vector files
   // entirely; the same round also replaced the Phoenix-bird APP ICON in the
-  // Login brand lockup with the geometric <MediStockMark>, per the board's
-  // "no bird as the auth identity" requirement. PhoenixMark deliberately
-  // stays in PhoenixSidebar/PhoenixMobileDrawer, so the wider application's
-  // identity is untouched — asserted below so that scope cannot silently widen.
+  // Login brand lockup with <MediStockMark>. A7.2.4 supersedes the geometric
+  // cube with the owner-supplied Phoenix Pharmacy emblem while preserving the
+  // wrapper and every auth interaction.
   it('the Phoenix-bird photo hero is retired from both screens in favour of the original institutional scene (A7.2 → A7.2.2)', () => {
     expect(login).toContain('AuthSupplyHero');
     expect(welcome).toContain('AuthSupplyHero');
@@ -67,12 +66,12 @@ describe('Phase A auth and welcome presentation contract', () => {
     expect(welcome).not.toContain('InstitutionalSupplyMotif');
   });
 
-  it('the auth brand lockup uses the geometric mark, while the rest of the app keeps PhoenixMark (A7.2.2)', () => {
+  it('the auth lockup keeps MediStockMark while navigation keeps its PhoenixMark wrapper (A7.2.4)', () => {
     expect(login).toContain('MediStockMark');
     expect(login).not.toContain('PhoenixMark');
     expect(welcome).toContain('MediStockMark');
-    // Scope guard: the wider application identity is explicitly NOT part of
-    // this change.
+    // Both wrappers now resolve to exact raster variants without changing the
+    // existing screen contracts.
     const sidebar = read('shared/ui/PhoenixSidebar.tsx');
     const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
     expect(sidebar).toContain('PhoenixMark');

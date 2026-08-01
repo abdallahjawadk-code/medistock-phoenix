@@ -113,6 +113,11 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar
   background: color-mix(in srgb, #FFFFFF 8%, transparent);
 }
 
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .nexus-brand-mark--phoenix {
+  border-color: transparent;
+  background: transparent;
+}
+
 /* Nav items read their active/inactive treatment from data-active (already
    rendered by PhoenixSidebar/PhoenixMobileDrawer for aria-current parity)
    instead of an inline background/colour — CSS now owns the full visual

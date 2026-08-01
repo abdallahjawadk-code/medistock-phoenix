@@ -116,8 +116,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
 
         <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px' }}>
           <div className="nexus-brand-lockup">
-            <div className="nexus-brand-mark">
-              <PhoenixMark size={39} title="" />
+            <div className="nexus-brand-mark nexus-brand-mark--phoenix">
+              <PhoenixMark size={44} title="" />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="nexus-brand-title">MediStock-Babil Phoenix</div>

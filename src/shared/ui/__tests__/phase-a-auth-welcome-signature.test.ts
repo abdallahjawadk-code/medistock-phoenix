@@ -160,11 +160,19 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     expect(welcome).not.toMatch(/InstitutionalSupplyMotif|PharmaceuticalSupplyScene/);
   });
 
-  it('the geometric brand mark is pure inline SVG with no bird and no raster asset (A7.2.2)', () => {
+  it('the brand mark delegates to the exact local raster emblem (A7.2.4 supersession)', () => {
+    // A7.2.4 NARROWING (documented exclusion, guard never deleted):
+    // MediStockMark no longer inlines its own SVG — it delegates to the
+    // shared <PhoenixPharmacyEmblem> full variant (global brand rollout).
     expect(mark).not.toMatch(/<img\b/);
     expect(mark).not.toMatch(/https?:\/\//);
-    expect(mark).toContain('<svg');
+    expect(mark).toContain('PhoenixPharmacyEmblem');
     expect(mark).not.toMatch(/phoenix-icon|\.png|\.webp|\.avif/);
+    const emblem = read('shared/ui/PhoenixPharmacyEmblem.tsx');
+    expect(emblem).toContain('<img');
+    expect(emblem).not.toContain('<svg');
+    expect(emblem).toContain("variant = 'full'");
+    expect(emblem).toContain("phoenix-pharmacy-full.png");
   });
 
   it('both auth screens render the scene in place of the retired Phoenix-bird photo AND the retired motif (A7.2.2)', () => {

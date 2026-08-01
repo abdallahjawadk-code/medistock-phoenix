@@ -109,8 +109,8 @@ export function LoginScreen() {
 
       <main className="nexus-login__auth">
         <div className="nexus-login__brand">
-          <div className="nexus-brand-mark nexus-login__brand-mark">
-            <MediStockMark size={44} title="" />
+          <div className="nexus-login__brand-emblem">
+            <MediStockMark size={80} className="nexus-login__emblem" title="" />
           </div>
           <div>
             <div className="nexus-login__brand-name">MediStock-Babil Phoenix</div>

@@ -55,30 +55,41 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='dark
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   2 · THE GEOMETRIC BRAND MARK
+   2 · THE BRAND MARK
+   A7.2.4: exact owner-supplied transparent raster, free-standing without a tile.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark {
-  display: block;
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  flex: 0 0 80px;
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark__top {
-  fill: var(--phoenix-gold);
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem {
+  width: 80px;
+  height: 80px;
+  filter: drop-shadow(0 5px 9px color-mix(in srgb, var(--phoenix-gold) 20%, transparent));
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark__left {
-  fill: var(--teal);
-  opacity: .92;
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 6px 12px color-mix(in srgb, var(--phoenix-gold) 24%, transparent));
 }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark__right {
-  fill: var(--teal);
-  opacity: .66;
-}
+@media (max-width: 900px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem {
+    width: 62px;
+    height: 62px;
+    flex-basis: 62px;
+  }
 
-html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .medistock-mark__cross polygon {
-  fill: var(--phoenix-gold-ink);
-  opacity: .82;
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem {
+    width: 62px;
+    height: 62px;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -389,6 +400,11 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__
 
 /* ─── WELCOME · MOBILE ─────────────────────────────────────────────────── */
 @media (max-width: 700px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+    width: 66px;
+    height: 66px;
+  }
+
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__content {
     padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
   }

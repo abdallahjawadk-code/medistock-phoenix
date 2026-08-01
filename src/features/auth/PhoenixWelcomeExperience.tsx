@@ -73,7 +73,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       <div className="nexus-welcome__content">
       <header className="nexus-welcome__masthead">
         <div className="nexus-welcome__brand">
-          <MediStockMark size={40} title="" />
+          <MediStockMark size={88} className="nexus-welcome__emblem" title="" />
           <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
         </div>
         <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
