@@ -153,6 +153,25 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar
   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item[data-active="false"]:hover .nexus-nav-icon {
     transform: none;
   }
+
+  /* A7.2-CONTRAST-FIX: phoenix-nexus.css's own generic
+     .nexus-shell .premium-nav-item:hover rule (!important, ungated by
+     data-active) otherwise strips the ACTIVE item's gold fill on hover,
+     replacing it with a near-transparent wash — leaving the dark-ink text
+     (styled for the gold pill) sitting almost directly on the dark sidebar
+     rail. The active state must stay the clearest state on the rail,
+     hovered or not, so this re-asserts the gold pill at the same
+     (!important, higher-specificity) tier that rule uses. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item[data-active="true"]:hover {
+    background: var(--phoenix-sidebar-active-bg) !important;
+    color: var(--phoenix-sidebar-active-text) !important;
+    border-color: transparent !important;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item[data-active="true"]:hover .nexus-nav-icon {
+    transform: none;
+    color: inherit;
+  }
 }
 
 /* ─── MOBILE BOTTOM NAV — stays a light, compact bar (unlike the drawer) ──── */
