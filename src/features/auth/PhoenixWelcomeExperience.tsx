@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
+import { InstitutionalSupplyMotif } from '@/shared/ui/InstitutionalSupplyMotif';
 
 interface Props {
   onComplete: () => void;
@@ -10,14 +11,13 @@ const SEQUENCE_MS = 6000;
 const REDUCED_MS = 900;
 
 /**
- * Phoenix rebirth welcome. The approved clean-plate master IS the dominant
- * full-screen artwork (obsidian, no white overexposure) — it is never replaced
- * by a WebGL reconstruction. Motion is a controlled cinematic reveal: a gentle
- * fade-in, a slow camera push, and drifting embers over the plate. The title and
- * the exact issuance/supervision credits are always live React text — never baked
- * into the texture. Skip is available from the first frame; the sequence shows
- * once per session (gated by the caller). On reduced-motion it holds the still
- * keyframe with only a short fade.
+ * Premium living welcome (A7.2). A bounded institutional hero — an original
+ * supply-network illustration, never a Phoenix-bird photograph or a WebGL
+ * reconstruction — with a calm ember→rise reveal for the title/credits below
+ * it. The title and the exact issuance/supervision credits are always live
+ * React text — never baked into an image. Skip is available from the first
+ * frame; the sequence shows once per session (gated by the caller). On
+ * reduced-motion it holds the still keyframe with only a short fade.
  */
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
@@ -50,21 +50,10 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
-      {/* Dominant full-screen approved Phoenix (clean-plate master, AVIF→WebP). */}
+      {/* Bounded institutional hero — original supply-network illustration,
+          never a Phoenix-bird photograph. */}
       <div className="nexus-welcome__stage" aria-hidden="true">
-        <picture>
-          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.avif" type="image/avif" />
-          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.webp" type="image/webp" />
-          <img
-            className="nexus-welcome__plate"
-            src="/assets/phoenix/runtime/phoenix-welcome-clean.webp"
-            alt=""
-            width={1680}
-            height={941}
-            decoding="async"
-            loading="eager"
-          />
-        </picture>
+        <InstitutionalSupplyMotif />
         <div className="nexus-welcome__scrim" />
         <div className="nexus-welcome__embers">
           {Array.from({ length: 18 }, (_, i) => (
