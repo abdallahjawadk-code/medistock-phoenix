@@ -416,7 +416,10 @@ async function main() {
     const { page, consoleErrors, failedRequests, restCalls } = await freshPage(browser);
     await login(page, seed.users.outletOfficerA.email, seed.password);
     if (await page.evaluate(() => document.documentElement.lang) !== 'en') {
-      const switchToEnglish = page.getByRole('button', { name: 'Switch to English' });
+      // B5 localizes the accessible name to the currently active UI language.
+      // Keep this acceptance step semantic while accepting both supported
+      // labels; the following assertion still proves the actual lang/dir flip.
+      const switchToEnglish = page.getByRole('button', { name: /^(Switch to English|التبديل إلى الإنجليزية)$/ });
       await switchToEnglish.waitFor({ state: 'visible', timeout: 15000 });
       await switchToEnglish.click();
       await page.waitForFunction(() => document.documentElement.lang === 'en');
