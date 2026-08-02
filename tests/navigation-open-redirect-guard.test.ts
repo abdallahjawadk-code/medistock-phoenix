@@ -105,7 +105,10 @@ describe('open-redirect guard: react-router / navigation surface', () => {
     // Sanity check the scanner itself found the known call sites.
     expect(calls.length).toBeGreaterThan(0);
     for (const { file, args } of calls) {
-      const safe = /window\.location\.pathname/.test(args) || /,\s*['"]\/[a-zA-Z0-9/_-]*['"]\s*\)?$/.test(`,${args.split(',').pop()})`);
+      // A two-argument history call writes state only and cannot redirect; it
+      // also preserves the existing query/hash instead of reconstructing them.
+      const stateOnly = args.split(',').length === 2;
+      const safe = stateOnly || /window\.location\.pathname/.test(args) || /,\s*['"]\/[a-zA-Z0-9/_-]*['"]\s*\)?$/.test(`,${args.split(',').pop()})`);
       expect(safe, `${file}: history call target "${args}" is neither window.location.pathname nor a hardcoded literal path`).toBe(true);
       // Must never forward the raw query string or hash back into the URL.
       expect(args).not.toMatch(/window\.location\.search/);

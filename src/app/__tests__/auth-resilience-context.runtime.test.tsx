@@ -74,6 +74,23 @@ function Probe() {
   );
 }
 
+describe('PHASE B4 — inactive account fail-closed handling', () => {
+  it('states profile_inactive without loading permissions or mounting an authenticated identity scope', async () => {
+    getSessionResult.mockResolvedValue({ status: 'ok', session: SESSION });
+    getMyProfileResult.mockResolvedValue({
+      status: 'ok',
+      profile: { ...PROFILE, status: 'suspended' },
+    });
+    mount();
+
+    await waitFor(() => expect(status()).toBe('profile_inactive'));
+    expect(screen.getByTestId('profile')).toHaveTextContent('user-1');
+    expect(screen.getByTestId('org')).toHaveTextContent('null');
+    expect(screen.getByTestId('perms')).toHaveTextContent('0');
+    expect(getEffectivePermissions).not.toHaveBeenCalled();
+  });
+});
+
 function mount() {
   return render(<AppProvider><Probe /></AppProvider>);
 }

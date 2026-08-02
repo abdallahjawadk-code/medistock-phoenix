@@ -16,6 +16,7 @@ import type { Profile, ProfileLoad, SessionLoad } from '@/shared/supabase/servic
 
 const getSessionResult = vi.fn<() => Promise<SessionLoad>>();
 const getMyProfileResult = vi.fn<() => Promise<ProfileLoad>>();
+const signIn = vi.fn<(email: string, password: string) => Promise<{ ok: boolean }>>();
 const signOut = vi.fn<() => Promise<void>>();
 const onAuthChange = vi.fn<(cb: unknown) => () => void>();
 
@@ -25,7 +26,7 @@ vi.mock('@/shared/supabase/services/auth.service', () => ({
   getSessionResult: () => getSessionResult(),
   getMyProfileResult: () => getMyProfileResult(),
   onAuthChange: (cb: unknown) => onAuthChange(cb),
-  signIn: vi.fn(),
+  signIn: (email: string, password: string) => signIn(email, password),
   signOut: () => signOut(),
   requestPasswordReset: vi.fn(),
   updatePassword: vi.fn(),
@@ -83,6 +84,7 @@ function Probe() {
       <span data-testid="perms">{app.myPermissions.size}</span>
       <span data-testid="session">{app.session?.user.id ?? 'null'}</span>
       <button onClick={() => void app.signOut()}>sign-out</button>
+      <button onClick={() => void app.signIn('operator@example.test', 'test-password')}>sign-in</button>
       <button onClick={() => void app.reloadMyPermissions()}>reload-perms</button>
       <button onClick={() => void app.clearRecovery()}>clear-recovery</button>
     </div>
@@ -120,6 +122,7 @@ beforeEach(() => {
     return () => undefined;
   });
   signOut.mockResolvedValue(undefined);
+  signIn.mockResolvedValue({ ok: true });
   getEffectivePermissions.mockResolvedValue({ permissions: { 'reports.view': true } });
 });
 afterEach(cleanup);
@@ -392,6 +395,54 @@ describe('LOGOUT — local invalidation happens before the remote sign-out', () 
     expect(val('perms')).toBe('0');
   });
 
+  it('rejects delayed non-null auth events after logout until an explicit sign-in', async () => {
+    const remoteSignOut = deferred<void>();
+
+    await signedInAsA();
+    const profileReadsBeforeLogout = getMyProfileResult.mock.calls.length;
+    signOut.mockReturnValue(remoteSignOut.promise);
+
+    await act(async () => { screen.getByText('sign-out').click(); });
+    await emitAuthEvent('INITIAL_SESSION', SESSION_A);
+    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    await emitAuthEvent('SIGNED_IN', SESSION_A);
+
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+    expect(getMyProfileResult).toHaveBeenCalledTimes(profileReadsBeforeLogout);
+
+    // SIGNED_OUT remains accepted and idempotent while the barrier is closed.
+    await emitAuthEvent('SIGNED_OUT', null);
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    await act(async () => { remoteSignOut.resolve(); await remoteSignOut.promise; });
+
+    // A new explicit sign-in attempt is the only normal path that opens the
+    // barrier. Its subsequent auth event may establish a new identity.
+    getMyProfileResult.mockResolvedValueOnce({ status: 'ok', profile: PROFILE_B });
+    await act(async () => { screen.getByText('sign-in').click(); });
+    await emitAuthEvent('SIGNED_IN', SESSION_B);
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(val('profile')).toBe('user-B');
+  });
+
+  it('keeps the React identity cleared when the local fallback also fails', async () => {
+    const error = new Error('local clear failed');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await signedInAsA();
+    signOut.mockRejectedValueOnce(error);
+
+    await act(async () => { screen.getByText('sign-out').click(); });
+
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+    expect(errorLog).toHaveBeenCalledWith('[phoenix] remote sign-out failed:', error);
+
+    errorLog.mockRestore();
+  });
+
   it('clearRecovery invalidates locally first and cleans the URL after the remote call', async () => {
     const pendingProfile = deferred<ProfileLoad>();
     const remoteSignOut  = deferred<void>();
@@ -412,6 +463,10 @@ describe('LOGOUT — local invalidation happens before the remote sign-out', () 
     expectNoIdentityResidue();
     // The URL is cleaned only after the remote call, exactly as before.
     expect(replaceState).not.toHaveBeenCalled();
+
+    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
 
     await act(async () => {
       pendingProfile.resolve({ status: 'ok', profile: PROFILE_A });

@@ -52,7 +52,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
       padding: '6px max(env(safe-area-inset-right, 0px), 4px) calc(6px + env(safe-area-inset-bottom, 0px)) max(env(safe-area-inset-left, 0px), 4px)',
       zIndex: 'var(--z-sticky)',
       boxShadow: 'none',
-    }} aria-label="Bottom Navigation">
+    }} aria-label={t('shell_bottom_nav', lang)}>
       {visibleItems.map(item => {
         const s = bns(item.screen);
         return (

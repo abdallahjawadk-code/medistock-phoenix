@@ -60,6 +60,7 @@ function setState(authStatus: AuthStatus, over: Partial<AppState> = {}) {
     signOut,
     retryAuthBootstrap,
     retryProfileLoad,
+    myPermissions: new Set(),
     ...over,
   } as Partial<AppState>;
 }
@@ -72,6 +73,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   try { window.sessionStorage.clear(); } catch { /* restricted storage */ }
+  window.history.replaceState(null, '');
 });
 
 // ── C1 at the screen level ───────────────────────────────────────────────────
@@ -124,7 +126,7 @@ describe('C1 — bootstrap failure renders a stated state, not a spinner', () =>
 // ── C2 at the screen level ───────────────────────────────────────────────────
 
 describe('C2 — an unreadable profile renders a stated state with a way out', () => {
-  for (const authStatus of ['profile_failed', 'profile_missing'] as const) {
+  for (const authStatus of ['profile_failed', 'profile_missing', 'profile_inactive'] as const) {
     it(`${authStatus}: retry AND a working sign-out, never the endless spinner`, () => {
       setState(authStatus, { session: SESSION } as Partial<AppState>);
       render(<AuthenticatedApp />);

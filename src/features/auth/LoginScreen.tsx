@@ -112,13 +112,17 @@ export function LoginScreen() {
   return (
     <div className="premium-login nexus-login">
       <div className="nexus-login__controls">
-        <button onClick={toggleLang} className="nexus-control nexus-control--language">
+        <button
+          onClick={toggleLang}
+          className="nexus-control nexus-control--language"
+          aria-label={t(lang === 'ar' ? 'switch_to_english' : 'switch_to_arabic', lang)}
+        >
           {lang === 'ar' ? 'EN' : 'عربي'}
         </button>
         <button
           onClick={toggleTheme}
           className="nexus-control"
-          aria-label={theme === 'dark' ? 'Activate light theme' : 'Activate dark theme'}
+          aria-label={t(theme === 'dark' ? 'activate_light_theme' : 'activate_dark_theme', lang)}
         >
           <PhoenixIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} />
         </button>
