@@ -31,9 +31,16 @@ export function LoginScreen() {
     const selection = passwordSelectionRef.current;
     if (!input || !selection) return;
 
-    input.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
-    if (selection.restoreFocus) input.focus({ preventScroll: true });
     passwordSelectionRef.current = null;
+    const frame = requestAnimationFrame(() => {
+      const currentInput = passwordInputRef.current;
+      if (!currentInput) return;
+
+      currentInput.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+      if (selection.restoreFocus) currentInput.focus({ preventScroll: true });
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [passwordVisible]);
 
   const passwordToggleLabel = passwordVisible
