@@ -94,7 +94,8 @@ describe('Drawer access is preserved via the topbar menu button', () => {
   });
 
   it('AppShell wires the same setSidebarOpen toggle to both the topbar menu button and the drawer', () => {
-    expect(appShell).toContain('onMenuClick={() => setSidebarOpen(s => !s)}');
+    expect(appShell).toContain('const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);');
+    expect(appShell).toContain('onMenuClick={toggleSidebar}');
     expect(appShell).toContain('PhoenixMobileDrawer');
   });
 

@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect } from 'react';
+import { ReactNode, useCallback, useState, useEffect } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixSidebar } from './PhoenixSidebar';
@@ -47,6 +47,8 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -93,7 +95,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
         <PhoenixMobileDrawer
           currentScreen={currentScreen}
           onNavigate={onNavigate}
-          onClose={() => setSidebarOpen(false)}
+          onClose={closeSidebar}
           onLogout={onLogout}
         />
       )}
@@ -102,7 +104,8 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
         <PhoenixTopbar
           title={title}
           isMobile={isMobile}
-          onMenuClick={() => setSidebarOpen(s => !s)}
+          menuOpen={sidebarOpen}
+          onMenuClick={toggleSidebar}
         />
 
         <main

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useApp } from '@/app/AppContext';
 import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { t } from '@/shared/i18n/strings';
@@ -61,6 +62,9 @@ interface Props {
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
   const { lang, dir, role, myPermissions } = useApp();
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
   // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx / PhoenixSidebar.tsx.
   const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
   // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
@@ -72,15 +76,79 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
      an inline style. */
   const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const panel = panelRef.current;
+    if (!overlay || !panel) return;
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+
+    // Make every shell sibling genuinely non-interactive while the modal
+    // drawer is open; restore pre-existing accessibility state on close.
+    const background = Array.from(overlay.parentElement?.children ?? [])
+      .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== overlay);
+    const previous = background.map(node => ({
+      node,
+      inert: node.hasAttribute('inert'),
+      ariaHidden: node.getAttribute('aria-hidden'),
+    }));
+    for (const { node } of previous) {
+      node.setAttribute('inert', '');
+      node.setAttribute('aria-hidden', 'true');
+    }
+
+    const focusables = () => Array.from(panel.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ));
+    (focusables()[0] ?? panel).focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panel.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      for (const item of previous) {
+        if (!item.inert) item.node.removeAttribute('inert');
+        if (item.ariaHidden === null) item.node.removeAttribute('aria-hidden');
+        else item.node.setAttribute('aria-hidden', item.ariaHidden);
+      }
+      previouslyFocused.current?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div
+      ref={overlayRef}
+      id="phoenix-mobile-drawer"
       dir={dir}
       style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-drawer)', display: 'flex' }}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="phoenix-mobile-drawer-title"
     >
-      <div onClick={onClose} className="premium-drawer-backdrop" style={{ position: 'absolute', inset: 0 }} />
-      <aside className="premium-sidebar premium-dialog-panel premium-mobile-drawer" style={{
+      <div aria-hidden="true" onClick={onClose} className="premium-drawer-backdrop" style={{ position: 'absolute', inset: 0 }} />
+      <aside ref={panelRef} tabIndex={-1} className="premium-sidebar premium-dialog-panel premium-mobile-drawer" style={{
         position: 'relative',
         width: 'min(var(--sw), 88vw)',
         background: 'var(--surface)',
@@ -120,13 +188,13 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
               <PhoenixMark size={44} title="" />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
+              <div id="phoenix-mobile-drawer-title" className="nexus-brand-title">MediStock-Babil Phoenix</div>
               <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
           </div>
         </div>
 
-        <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label="Navigation">
+        <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
           {ALL_NAV
             .filter(item => item.screen !== 11 || institutionsScreenAccess(role) !== false)
             .map(item => item.screen === 11 && institutionsScreenAccess(role) === 'own'

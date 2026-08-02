@@ -52,7 +52,8 @@ describe('authenticated landing is role-safe and session-scoped', () => {
     // belong to THIS session.
     expect(app).toContain("if (authStatus !== 'authenticated' || !profile) {");
     expect(app).toContain('navigation?.profileId === profile.id');
-    expect(app).toContain('roleLandingScreen(profile.role)');
+    expect(app).toContain('resolveRestoredScreen(profile.id, profile.role, myPermissions)');
+    expect(read('app/screen-continuity.ts')).toContain('roleLandingScreen(role)');
     expect(app).toContain('setNavigation({ profileId: profile.id, screen: nextScreen })');
     expect(app).toContain('setNavigation(null);');
     expect(app).not.toContain('const [screen, setScreen] = useState(21);');

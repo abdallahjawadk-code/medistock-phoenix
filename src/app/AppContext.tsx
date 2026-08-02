@@ -52,6 +52,8 @@ export type AuthStatus =
   | 'profile_loading'
   | 'profile_failed'
   | 'profile_missing'
+  /** The session is valid but the existing profile is suspended or inactive. */
+  | 'profile_inactive'
   | 'authenticated';
 
 interface AppState {
@@ -198,7 +200,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   // whether the session read FAILED, and how the profile read ended.
   const [bootstrapFailed, setBootstrapFailed] = useState(false);
   const [profileStatus, setProfileStatus] =
-    useState<'idle' | 'loading' | 'ready' | 'failed' | 'missing'>('idle');
+    useState<'idle' | 'loading' | 'ready' | 'failed' | 'missing' | 'inactive'>('idle');
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
 
@@ -387,6 +389,16 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     if (p.id !== expectedUserId) {
       clearIdentityState();
       setProfileStatus('failed');
+      return;
+    }
+
+    // Lifecycle status is already part of the profile contract. A suspended
+    // account must not load permissions or mount the authenticated shell.
+    if (p.status !== 'active') {
+      clearIdentityState();
+      profileUserIdRef.current = p.id;
+      setProfile(p);
+      setProfileStatus('inactive');
       return;
     }
 
@@ -754,6 +766,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     : session === null       ? 'no_session'
     : profileStatus === 'failed'  ? 'profile_failed'
     : profileStatus === 'missing' ? 'profile_missing'
+    : profileStatus === 'inactive' ? 'profile_inactive'
     : authenticated          ? 'authenticated'
     : 'profile_loading';
 

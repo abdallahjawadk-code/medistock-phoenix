@@ -52,7 +52,7 @@ describe('Central dashboard removed from navigation', () => {
   });
 
   it('the initial screen is role-safe and logout clears navigation instead of returning to removed screens 2/12', () => {
-    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
+    expect(authenticatedApp).toContain('resolveRestoredScreen(profile.id, profile.role, myPermissions)');
     expect(authenticatedApp).toContain('setNavigation(null)');
     expect(authenticatedApp).not.toContain('useState(2)');
     expect(authenticatedApp).not.toContain('setScreen(2)');

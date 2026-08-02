@@ -6,10 +6,11 @@ import { NotificationBell } from './NotificationBell';
 interface Props {
   title: string;
   isMobile: boolean;
+  menuOpen: boolean;
   onMenuClick: () => void;
 }
 
-export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
+export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick }: Props) {
   const { lang, toggleLang, toggleTheme, theme } = useApp();
 
   return (
@@ -33,6 +34,8 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
           className="premium-drawer-trigger premium-focus-ring nexus-control"
           style={{ flexShrink: 0 }}
           aria-label={t('menu', lang)}
+          aria-expanded={menuOpen}
+          aria-controls="phoenix-mobile-drawer"
         >
           {/* The legacy ☰ control is rendered as a deterministic accessible SVG. */}
           <PhoenixIcon name="menu" size={20} />
@@ -57,7 +60,7 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
         <button
           onClick={toggleLang}
           className="nexus-control nexus-control--language"
-          aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+          aria-label={t(lang === 'ar' ? 'switch_to_english' : 'switch_to_arabic', lang)}
         >
           {lang === 'ar' ? 'EN' : 'عربي'}
         </button>
@@ -65,7 +68,7 @@ export function PhoenixTopbar({ title, isMobile, onMenuClick }: Props) {
         <button
           onClick={toggleTheme}
           className="nexus-control"
-          aria-label={theme === 'dark' ? 'Activate light theme' : 'Activate dark theme'}
+          aria-label={t(theme === 'dark' ? 'activate_light_theme' : 'activate_dark_theme', lang)}
         >
           <PhoenixIcon name={theme === 'dark' ? 'sun' : 'moon'} size={17} />
         </button>

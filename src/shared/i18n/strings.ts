@@ -16,7 +16,12 @@ export const T: Dict = {
   /* A11Y-SHELL-LANDMARKS-A: keyboard skip link + landmark labels (WCAG 2.4.1). */
   skip_to_content: { ar: 'تخطٍّ إلى المحتوى الرئيسي', en: 'Skip to main content' },
   shell_primary_nav: { ar: 'التنقّل الرئيسي', en: 'Primary navigation' },
+  shell_bottom_nav:  { ar: 'التنقّل السفلي', en: 'Bottom navigation' },
   shell_main_region: { ar: 'المحتوى الرئيسي', en: 'Main content' },
+  switch_to_english: { ar: 'التبديل إلى الإنجليزية', en: 'Switch to English' },
+  switch_to_arabic:  { ar: 'التبديل إلى العربية', en: 'Switch to Arabic' },
+  activate_light_theme: { ar: 'تفعيل المظهر الفاتح', en: 'Activate light theme' },
+  activate_dark_theme:  { ar: 'تفعيل المظهر الداكن', en: 'Activate dark theme' },
 
   /* ── Login rights block (AUTH-BRAND-ICON-MOBILE-LOGOUT-PASSKEY-A) ──
      Replaces the removed technical badges (RLS / QR Public Safe / Intake Frozen). */
@@ -1610,6 +1615,8 @@ export const T: Dict = {
   auth_profile_failed_msg:  { ar: 'الجلسة نشطة، لكن تعذّر تحميل بيانات الحساب. أعد المحاولة، أو سجّل الخروج والدخول من جديد.', en: 'Your session is active, but your account details could not be loaded. Try again, or sign out and sign in again.' },
   auth_profile_missing_title:{ ar: 'لا توجد بيانات حساب متاحة',                    en: 'No account details available' },
   auth_profile_missing_msg: { ar: 'لا يوجد حساب متاح لهذه الجلسة. يرجى تسجيل الخروج ومراجعة مدير النظام.', en: 'No account is available for this session. Please sign out and contact your administrator.' },
+  auth_profile_inactive_title:{ ar: 'الحساب غير نشط', en: 'Account inactive' },
+  auth_profile_inactive_msg: { ar: 'تم تعليق هذا الحساب أوإيقافه. أعد المحاولة بعد مراجعة مدير النظام، أو سجّل الخروج.', en: 'This account is suspended or inactive. Try again after contacting your administrator, or sign out.' },
 
   /* ── Inventory Intelligence (migration 072 · INVENTORY-INTELLIGENCE-FRONTEND-A) ──
      Read-only intelligence + advisory layer. Suggestions are RECOMMENDATIONS

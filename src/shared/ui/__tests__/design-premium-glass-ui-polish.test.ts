@@ -79,7 +79,7 @@ describe('1. Route paths (screen-number switch) were not changed', () => {
   });
 
   it('the initial/default screen is derived from the authenticated profile role', () => {
-    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
+    expect(authenticatedApp).toContain('resolveRestoredScreen(profile.id, profile.role, myPermissions)');
   });
 });
 

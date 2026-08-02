@@ -40,7 +40,7 @@ describe('1. App screen map / routes unchanged', () => {
   });
 
   it('derives a role-safe landing and clears profile navigation on logout', () => {
-    expect(authenticatedApp).toContain('roleLandingScreen(profile.role)');
+    expect(authenticatedApp).toContain('resolveRestoredScreen(profile.id, profile.role, myPermissions)');
     expect(authenticatedApp).toContain('setNavigation(null)');
   });
 

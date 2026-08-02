@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
-import { institutionsScreenAccess, roleLandingScreen } from '@/shared/authz/screen-access';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -30,6 +30,13 @@ import {
   suggestionDocumentScreen,
   type SuggestionDocumentTarget,
 } from '@/features/inventory/suggestion-document-navigation';
+import {
+  clearRememberedScreen,
+  isScreenRestorable,
+  rememberScreen,
+  resolveRestoredScreen,
+  screenFromPopState,
+} from './screen-continuity';
 
 /**
  * QR-BUNDLE-CODE-SPLIT-A: everything that only an authenticated session
@@ -47,7 +54,7 @@ function ForbiddenScreen() {
 export function AuthenticatedApp() {
   const {
     authReady, session, profile, signOut, passwordRecovery, role, lang,
-    authStatus, retryAuthBootstrap, retryProfileLoad,
+    authStatus, retryAuthBootstrap, retryProfileLoad, myPermissions,
   } = useApp();
   // Keep explicit navigation scoped to the profile that created it. A later
   // session on the same workstation must derive its own role-safe landing
@@ -58,6 +65,27 @@ export function AuthenticatedApp() {
     suggestionDocument?: SuggestionDocumentTarget;
   } | null>(null);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !profile) return;
+    const profileId = profile.id;
+    const restored = resolveRestoredScreen(profileId, profile.role, myPermissions);
+    setNavigation(previous => previous?.profileId === profileId
+      ? previous
+      : { profileId, screen: restored });
+    rememberScreen(profileId, restored, 'replace');
+
+    const onPopState = (event: PopStateEvent) => {
+      const next = screenFromPopState(event.state, profileId, profile.role, myPermissions);
+      setNavigation({ profileId, screen: next });
+      rememberScreen(profileId, next, 'storage-only');
+      if (event.state === null || typeof event.state !== 'object') {
+        rememberScreen(profileId, next, 'replace');
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [authStatus, profile, myPermissions]);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
   if (passwordRecovery) {
@@ -107,6 +135,7 @@ export function AuthenticatedApp() {
     } catch {
       // A restricted storage environment needs no cleanup.
     }
+    if (profile) clearRememberedScreen(profile.id);
     setWelcomeCompletedFor(null);
     void signOut();
     setNavigation(null);
@@ -121,12 +150,13 @@ export function AuthenticatedApp() {
   //   • missing — the read completed and there is no readable profile row;
   //               retry stays available (an administrator may fix it while
   //               this screen is open) but sign-out is the real way out.
-  if (authStatus === 'profile_failed' || authStatus === 'profile_missing') {
+  if (authStatus === 'profile_failed' || authStatus === 'profile_missing' || authStatus === 'profile_inactive') {
     const missing = authStatus === 'profile_missing';
+    const inactive = authStatus === 'profile_inactive';
     return (
       <AuthRecoveryState
-        title={t(missing ? 'auth_profile_missing_title' : 'auth_profile_failed_title', lang)}
-        message={t(missing ? 'auth_profile_missing_msg' : 'auth_profile_failed_msg', lang)}
+        title={t(inactive ? 'auth_profile_inactive_title' : missing ? 'auth_profile_missing_title' : 'auth_profile_failed_title', lang)}
+        message={t(inactive ? 'auth_profile_inactive_msg' : missing ? 'auth_profile_missing_msg' : 'auth_profile_failed_msg', lang)}
         onRetry={() => { void retryProfileLoad(); }}
         onSignOut={handleLogout}
       />
@@ -163,16 +193,23 @@ export function AuthenticatedApp() {
 
   const screen = navigation?.profileId === profile.id
     ? navigation.screen
-    : roleLandingScreen(profile.role);
+    : resolveRestoredScreen(profile.id, profile.role, myPermissions);
   const setScreen = (nextScreen: number) => {
     setNavigation({ profileId: profile.id, screen: nextScreen });
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions)) {
+      rememberScreen(profile.id, nextScreen, 'push');
+    }
   };
   const openSuggestionDocument = (target: SuggestionDocumentTarget) => {
+    const nextScreen = suggestionDocumentScreen(target);
     setNavigation({
       profileId: profile.id,
-      screen: suggestionDocumentScreen(target),
+      screen: nextScreen,
       suggestionDocument: target,
     });
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions)) {
+      rememberScreen(profile.id, nextScreen, 'push');
+    }
   };
 
   const screenContent = () => {
