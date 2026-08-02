@@ -130,9 +130,9 @@ function StatusLine({ status }: { status: Status }) {
   return (
     <div role="status" style={{
       margin: '10px 0', padding: '9px 12px', borderRadius: 'var(--r2)', fontSize: '12.5px',
-      background: status.error ? 'var(--err2)' : 'var(--ok2, #ecfdf5)',
-      color: status.error ? 'var(--err)' : 'var(--ok, #047857)',
-      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok, #047857)'}`,
+      background: status.error ? 'var(--err2)' : 'var(--ok2)',
+      color: status.error ? 'var(--err)' : 'var(--ok)',
+      border: `1px solid ${status.error ? 'var(--err)' : 'var(--ok)'}`,
     }}>{status.msg}</div>
   );
 }
@@ -140,8 +140,8 @@ function StatusLine({ status }: { status: Status }) {
 function StatusBadge({ status }: { status: string }) {
   const done = ['fulfilled', 'received', 'approved'].includes(status);
   const bad = ['cancelled', 'rejected'].includes(status);
-  const bg = done ? 'var(--ok2, #ecfdf5)' : bad ? 'var(--err2)' : 'var(--s2, #f1f5f9)';
-  const fg = done ? 'var(--ok, #047857)' : bad ? 'var(--err)' : 'var(--t2)';
+  const bg = done ? 'var(--ok2)' : bad ? 'var(--err2)' : 'var(--s2)';
+  const fg = done ? 'var(--ok)' : bad ? 'var(--err)' : 'var(--t2)';
   return (
     <span style={{
       display: 'inline-block', padding: '1px 8px', borderRadius: 'var(--rpill)',
@@ -167,15 +167,15 @@ export function DirectSupplyOperations({
   );
 
   return (
-    <div>
-      <div role="tablist" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+    <div className="nexus-it-panel">
+      <div role="tablist" className="nexus-it-tabs nexus-it-tabs--sub" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
         {(['forward', 'return'] as const).map(id => (
           <button key={id} role="tab" aria-selected={dirTab === id} onClick={() => setDirTab(id)}
-            className="premium-focus-ring"
+            className="premium-focus-ring nexus-it-tab"
             style={{
               padding: '8px 13px', minHeight: '40px', borderRadius: 'var(--r2)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
-              background: dirTab === id ? 'var(--p)' : 'var(--s)', color: dirTab === id ? '#fff' : 'var(--t2)',
+              background: dirTab === id ? 'var(--p)' : 'var(--s)', color: dirTab === id ? 'var(--on-accent)' : 'var(--t2)',
             }}>
             {t(id === 'forward' ? 'net_op_forward' : 'net_op_return', lang)}
           </button>
@@ -302,7 +302,7 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+      <div className="nexus-it-toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
         <PhoenixButton onClick={() => setCreating(c => !c)}>{t('net_op_new', lang)}</PhoenixButton>
         <PhoenixButton variant="ghost" onClick={reload}>{t('net_op_refresh', lang)}</PhoenixButton>
       </div>
@@ -321,7 +321,7 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '14px 0 8px', color: 'var(--t2)' }}>{t('net_op_requests', lang)}</h4>
       {requests.loading && <PhoenixLoadingState />}
       {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="package" title={t('net_op_none', lang)} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="nexus-it-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(requests.data ?? []).map(r => (
           <RequestRow key={r.id} label={r.requestNumber} status={r.status}
             sub={`${nameOf(whById.get(r.sourceWarehouseId), lang)} → ${nameOf(whById.get(r.destinationWarehouseId), lang)}`}
@@ -391,7 +391,7 @@ function ForwardCreateForm({ lang, warehouses, onCancel, onDone }: {
   const orgOptions = (orgs.data ?? []).map(o => ({ value: o.id, label: lang === 'ar' ? o.name_ar : o.name }));
 
   return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
       <p style={{ fontSize: '11.5px', color: 'var(--t2)', margin: '0 0 10px' }}>{t('net_ds_hint', lang)}</p>
       <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
         <PhoenixSelect label={t('net_ds_source', lang)} value={effSource} onChange={e => setSourceId(e.target.value)}
@@ -555,7 +555,7 @@ function AddForwardLineForm({ lang, requestId, onDone }: {
   const n = parseInt(qty, 10);
   const canAdd = selected !== null && Number.isFinite(n) && n > 0 && !busy;
   return (
-    <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="12px 14px" style={{ marginBottom: '8px' }}>
       <div style={{ display: 'grid', gap: '8px' }}>
         {selected === null ? (
           <PhoenixMaterialResolver lang={lang} onSelect={setSelected} />
@@ -600,7 +600,7 @@ function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone }: {
   const sendable = canSend && line.status !== 'rejected' && remaining > 0;
 
   return (
-    <PhoenixCard padding="10px 14px">
+    <PhoenixCard className="nexus-it-row-card" padding="10px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 600 }}>{line.scientificName}</div>
@@ -697,7 +697,7 @@ function IncomingTransferRow({ lang, transfer, whById, onDone }: {
   const [open, setOpen] = useState(false);
   const lines = useAsync(() => (open ? getTransferLines(transfer.id) : Promise.resolve([])), [open]);
   return (
-    <PhoenixCard padding="10px 14px">
+    <PhoenixCard className="nexus-it-row-card" padding="10px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 600 }}>{transfer.transferNumber}</div>
@@ -793,7 +793,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+      <div className="nexus-it-toolbar" style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
         <PhoenixButton onClick={() => setCreating(c => !c)}>{t('net_op_new', lang)}</PhoenixButton>
         <PhoenixButton variant="ghost" onClick={reload}>{t('net_op_refresh', lang)}</PhoenixButton>
       </div>
@@ -812,7 +812,7 @@ function ReturnPanel({ lang, warehouses, whById }: {
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '14px 0 8px', color: 'var(--t2)' }}>{t('net_op_requests', lang)}</h4>
       {requests.loading && <PhoenixLoadingState />}
       {!requests.loading && (requests.data ?? []).length === 0 && <PhoenixEmptyState icon="↩️" title={t('net_op_none', lang)} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="nexus-it-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(requests.data ?? []).map(r => (
           <RequestRow key={r.id} label={r.returnNumber} status={r.status}
             sub={`${nameOf(whById.get(r.sourceWarehouseId), lang)} → ${nameOf(whById.get(r.destinationWarehouseId), lang)}`}
@@ -851,7 +851,7 @@ function ReturnCreateForm({ lang, warehouses, onCancel, onDone }: {
   const canSubmit = effSource !== '' && effDest !== '' && number.trim() !== '' && !busy;
 
   return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
       <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
         <PhoenixSelect label={t('net_op_status', lang)} value={mode} onChange={e => setMode(e.target.value as 'request' | 'recall')}
           options={[
@@ -1006,7 +1006,7 @@ function AddReturnLineForm({ lang, requestId, transfers, sourceWarehouseId, onDo
   const canAdd = effOriginal !== '' && Number.isFinite(n) && n > 0 && !busy;
 
   return (
-    <PhoenixCard padding="12px 14px" style={{ marginBottom: '8px' }}>
+    <PhoenixCard className="nexus-it-form-card" padding="12px 14px" style={{ marginBottom: '8px' }}>
       {linesByTransfer.loading ? <PhoenixLoadingState /> : candidates.length === 0 ? (
         <PhoenixEmptyState icon="package" title={t('net_op_no_provenance', lang)} />
       ) : (
@@ -1042,7 +1042,7 @@ function ReturnLineRow({ lang, line, isDraft, canSend, onDone }: {
   const canDoSend = Number.isFinite(n) && n > 0 && n <= remaining && number.trim() !== '' && !busy;
 
   return (
-    <PhoenixCard padding="10px 14px">
+    <PhoenixCard className="nexus-it-row-card" padding="10px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 600 }}>{line.scientificName} · {line.batchNumber ?? '—'}</div>
@@ -1089,7 +1089,7 @@ function IncomingReturnRow({ lang, shipment, whById, onDone }: {
   const [open, setOpen] = useState(false);
   const lines = useAsync(() => (open ? getReturnShipmentLines(shipment.id) : Promise.resolve([])), [open]);
   return (
-    <PhoenixCard padding="10px 14px">
+    <PhoenixCard className="nexus-it-row-card" padding="10px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 600 }}>{shipment.shipmentNumber}</div>
@@ -1125,7 +1125,7 @@ function RequestRow({ label, status, sub, onOpen, lang }: {
   label: string; status: string; sub: string; onOpen: () => void; lang: Lang;
 }) {
   return (
-    <PhoenixCard padding="10px 14px">
+    <PhoenixCard className="nexus-it-row-card" padding="10px 14px">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '13px', fontWeight: 700 }}>{label}</div>

@@ -247,7 +247,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
   const successes = Object.entries(lineStates).filter(([, v]) => v.state === 'succeeded');
 
   return (
-    <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div dir={dir} className="nexus-io-content" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div>
         <h3 style={{ fontSize: '16px', fontWeight: 700 }}>{t('mv_incoming_title', lang)}</h3>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>
@@ -258,6 +258,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
       {(failures.length > 0 || successes.length > 0) && (
         <div
           data-testid="outlet-incoming-outcome"
+          className={`nexus-io-notice ${failures.length > 0 ? 'nexus-io-notice--error' : 'nexus-io-notice--ok'}`}
           style={{
             background: failures.length > 0 ? 'var(--err2)' : 'var(--ok2)',
             border: `1px solid ${failures.length > 0 ? 'var(--err)' : 'var(--ok)'}`,
@@ -273,7 +274,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="nexus-io-toolbar" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <PhoenixButton
           disabled={!canReceive || busy || selectedBulkIds.length === 0}
           onClick={() => void acceptAllSafe()}
@@ -292,7 +293,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
       {pending.length === 0 ? (
         <PhoenixEmptyState icon="package" title={t('mv_incoming_none', lang)} />
       ) : (
-        <div style={{ display: 'grid', gap: '10px' }} data-testid="outlet-incoming-lines">
+        <div className="nexus-io-row-list" style={{ display: 'grid', gap: '10px' }} data-testid="outlet-incoming-lines">
           {pending.map(line => {
             const parent = dispatchById.get(line.dispatchId);
             const eligibility = assessReceive(toReceivable(line));
@@ -303,7 +304,7 @@ export function OutletIncomingSupplies({ distributionPointId, outletName, canRec
             const issues = validateReceive(toReceivable(line), quantity, reason.trim() || null);
 
             return (
-              <PhoenixCard key={line.id}>
+              <PhoenixCard key={line.id} className="nexus-io-row-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

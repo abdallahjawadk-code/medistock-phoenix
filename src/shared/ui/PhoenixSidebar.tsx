@@ -90,21 +90,14 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   // institution admin sees the same entry relabelled "My Organization".
   const instAccess = institutionsScreenAccess(role);
 
-  /* Nav item states, transcribed from the design source's mkNav():
-     active   → --chip fill, --cyanDim text, weight 700, 3px ember rail
-     inactive → no fill,     --muted text,   weight 500, transparent rail
-     The rail is what makes the active item read by SHAPE as well as by colour
-     and weight, so selection never depends on hue alone (WCAG 1.4.1). It pairs
-     with aria-current="page" below for the non-visual equivalent. */
-  const ns = (n: number) => {
-    const active = currentScreen === n;
-    return {
-      background: active ? 'var(--chip)' : 'transparent',
-      color:      active ? 'var(--cyanDim)' : 'var(--muted)',
-      fontWeight: active ? 700 : 500,
-      borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`,
-    };
-  };
+  /* PHASE-A7-VISUAL-CONVERGENCE: active/inactive fill and colour now live in
+     phase-a-visual-convergence.css, keyed off the data-active attribute
+     already rendered below (and already read by aria-current for the
+     non-visual equivalent). The active state is a solid gold fill — a
+     shape+colour change together, so selection never depends on hue alone
+     (WCAG 1.4.1). Only weight stays here since nothing else needs to fight
+     it via !important. */
+  const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
   return (
     <aside className="premium-sidebar" style={{
@@ -123,8 +116,8 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       {/* Brand */}
       <div className="premium-sidebar-brand">
         <div className="nexus-brand-lockup">
-          <div className="nexus-brand-mark">
-            <PhoenixMark size={39} title="" />
+          <div className="nexus-brand-mark nexus-brand-mark--phoenix">
+            <PhoenixMark size={40} title="" />
           </div>
           <div style={{ minWidth: 0 }}>
             <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
@@ -217,15 +210,15 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
             <PhoenixIcon name={ri.icon} size={17} />
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.full_name ?? role}</div>
-            <div style={{ fontSize: '10px', color: 'var(--t2)' }}>{role}</div>
+            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--phoenix-sidebar-text-strong)' }}>{profile?.full_name ?? role}</div>
+            <div style={{ fontSize: '10px', color: 'var(--phoenix-sidebar-text)' }}>{role}</div>
           </div>
           <button
             onClick={onLogout}
             style={{
               padding: '4px 8px', borderRadius: 'var(--r1)',
-              border: '1px solid var(--brd)', background: 'transparent',
-              color: 'var(--t2)', fontSize: '10.5px', flexShrink: 0,
+              border: '1px solid var(--phoenix-sidebar-border)', background: 'transparent',
+              color: 'var(--phoenix-sidebar-text)', fontSize: '10.5px', flexShrink: 0,
               cursor: 'pointer', transition: 'all 120ms',
               // Sign-out is a real touch target on tablet, where the sidebar is
               // rendered but the pointer is a finger. It measured 86×26.

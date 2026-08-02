@@ -96,7 +96,7 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
 
   return (
     <PhoenixDialog open={open} onClose={resetAndClose} title={t('dc_dialog_title', lang)} maxWidth={480}>
-      <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px' }}>
+      <div className="nexus-io-dispense-context-block" style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px' }}>
         <div style={{ fontWeight: 700 }} dir="auto">{movement.scientificName}</div>
         <div style={{ color: 'var(--t2)', marginTop: '3px' }} dir="ltr">
           {movement.batchNumber ?? '—'} · {new Date(movement.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}

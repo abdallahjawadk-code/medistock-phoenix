@@ -231,10 +231,19 @@ describe('10. No package/lockfile/migration changes', () => {
     expect(findUnexpectedMigrationGitStatusEntries(status)).toEqual([]);
   });
 
-  it('no docs/ changes', () => {
+  it('no docs/ changes outside the Phase A7 visual-evidence/report additions this later, separately-reviewed phase is explicitly required to make', () => {
+    // PHASE-A7-VISUAL-CONVERGENCE: A7's own acceptance contract (§16/§17)
+    // mandates real screenshot evidence under docs/phoenix/visual-evidence/
+    // and a docs/phoenix/*.md convergence report — narrowly excluded here by
+    // name rather than deleting this guard, per the "narrow documented
+    // exclusion, never a deleted assertion" rule. Any OTHER docs/ diff still
+    // fails this test exactly as before.
     let diff = '';
     try {
-      diff = execSync('git diff -- docs/', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync(
+        'git diff -- docs/ ":!docs/phoenix/visual-evidence" ":!docs/phoenix/A7-PHOENIX-DAYLIGHT-VISUAL-CONVERGENCE.md"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

@@ -232,13 +232,13 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
   const messages: AdminBroadcast[] = (list.data && list.data.ok) ? list.data.messages : [];
 
   return (
-    <PhoenixCard padding="18px" style={{ marginTop: '20px' }}>
+    <PhoenixCard className="nexus-broadcast-admin" padding="18px" style={{ marginTop: '20px' }}>
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{t('pbc_admin_title', lang)}</h3>
       <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '14px' }} dir="auto">
         {t('pbc_admin_subtitle', lang)}
       </p>
 
-      <div style={{ paddingBottom: '14px', marginBottom: '14px', borderBottom: '1px solid var(--brd)' }}>
+      <div className="nexus-broadcast-compose" style={{ paddingBottom: '14px', marginBottom: '14px', borderBottom: '1px solid var(--brd)' }}>
         <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '10px' }}>{t('pbc_create_title', lang)}</div>
 
         <div style={{ marginBottom: '10px' }}>
@@ -308,7 +308,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
         </PhoenixButton>
       </div>
 
-      <div>
+      <div className="nexus-broadcast-list">
         <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '10px' }}>{t('pbc_list_title', lang)}</div>
 
         {list.loading && <PhoenixLoadingState label={t('pbc_list_loading', lang)} />}
@@ -324,7 +324,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
         {!list.loading && !list.error && messages.map(m => {
           const status = messageStatus(m);
           return (
-            <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--brd)' }}>
+            <div key={m.id} className={`nexus-broadcast-item nexus-broadcast-item--${m.severity}`} style={{ padding: '10px 0', borderBottom: '1px solid var(--brd)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                 <PhoenixStatusBadge variant={SEVERITY_BADGE[m.severity]} label={t(`pbc_severity_${m.severity}`, lang)} />
                 <PhoenixStatusBadge variant={STATUS_BADGE[status]} label={t(`pbc_status_${status}`, lang)} />
@@ -356,7 +356,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
           {detailsLoading && <PhoenixLoadingState label={t('pbc_list_loading', lang)} />}
           {detailsError && <PhoenixErrorState message={t('pbc_ack_details_load_failed', lang)} />}
           {!detailsLoading && !detailsError && detailsData && (
-            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+            <div className="nexus-broadcast-ack-details" style={{ maxHeight: '420px', overflowY: 'auto' }}>
               {detailsData.institutions.map(inst => (
                 <div key={inst.organization_id} style={{ padding: '8px 0', borderBottom: '1px solid var(--brd)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -390,6 +390,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
 
       {deleteMessageId && (
         <PhoenixDialog open onClose={onCloseDelete} title={t('pbc_delete_button', lang)} maxWidth={460}>
+          <div className="nexus-broadcast-delete-confirm">
           <p style={{ fontSize: '12.5px', color: 'var(--err)', marginBottom: '14px' }} dir="auto">
             {t('pbc_delete_warning', lang)}
           </p>
@@ -419,6 +420,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
             <PhoenixButton variant="ghost" size="md" onClick={onCloseDelete}>
               {t('pbc_close_button', lang)}
             </PhoenixButton>
+          </div>
           </div>
         </PhoenixDialog>
       )}

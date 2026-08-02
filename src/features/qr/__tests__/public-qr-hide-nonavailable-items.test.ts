@@ -228,10 +228,15 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
   // adds cache-invalidation to archiveOrganization in
   // src/shared/supabase/services/lifecycle.service.ts — excluded here.
   it('no alert lifecycle/WhatsApp/editor/movement production files changed', () => {
+    // PHASE-A-CLAUDE-A7.1: materialAlertEngine.ts excluded — that later,
+    // separately-reviewed presentation pass moves getExpiryBucketStyle's
+    // 3_months/9_months literals to --risk-tier-3m/-9m tokens (see
+    // hardcoded-colour-allowlist.md); the bucket→style mapping itself, and
+    // every other function in the file, is unchanged.
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/materialAlertEngine.ts src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
+        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

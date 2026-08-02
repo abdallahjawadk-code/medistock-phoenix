@@ -70,7 +70,7 @@ export function OutletMaterialGroups({ rows }: Props) {
 
   if (groups.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '40px 12px', color: 'var(--t2)' }}>
+      <div className="nexus-outlet-groups-empty" style={{ textAlign: 'center', padding: '40px 12px', color: 'var(--t2)' }}>
         <div style={{ marginBottom: '6px', opacity: 0.6, color: 'var(--t3)' }}><PhoenixIcon name="package" size={26} /></div>
         <div style={{ fontSize: '13px' }}>{t('sc_outlet_empty', lang)}</div>
       </div>
@@ -78,14 +78,14 @@ export function OutletMaterialGroups({ rows }: Props) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+    <div className="nexus-outlet-groups" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
       {groups.map(g => {
         const attentionCount = g.rows.filter(r => {
           const eff = effOf(r);
           return eff === 'missing' || eff === 'low_stock';
         }).length;
         return (
-          <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} padding="14px" hover>
+          <PhoenixCard key={lang === 'ar' ? g.nameAr : g.name} className={`nexus-outlet-group-card${attentionCount > 0 ? ' nexus-outlet-group-card--attention' : ''}`} padding="14px" hover>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--brd)' }}>
               <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto"><PhoenixIcon name="package" size={13} inline /> {lang === 'ar' ? g.nameAr : g.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -101,7 +101,7 @@ export function OutletMaterialGroups({ rows }: Props) {
               {g.rows.map((r, i) => {
                 const eff = effOf(r);
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingBottom: '8px', borderBottom: i < g.rows.length - 1 ? '1px solid var(--brd)' : 'none' }}>
+                  <div key={i} className="nexus-outlet-group-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingBottom: '8px', borderBottom: i < g.rows.length - 1 ? '1px solid var(--brd)' : 'none' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
                         {outletGroupRowTitle(r, lang)}

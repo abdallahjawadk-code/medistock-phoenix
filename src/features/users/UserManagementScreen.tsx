@@ -190,8 +190,8 @@ export function UserManagementScreen() {
   }
 
   return (
-    <div style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+    <div className="nexus-user-admin" style={{ maxWidth: '1100px', animation: 'fs .3s ease' }}>
+      <div className="nexus-ua-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         <div>
           <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('um_title', lang)}</h2>
           <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('um_multi_officer', lang)}</p>
@@ -207,7 +207,7 @@ export function UserManagementScreen() {
       </div>
 
       {/* Secure server-path notice */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="nexus-ua-notice" style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
 <PhoenixIcon name="lock" size={14} inline /> {t('um_server_only', lang)}
       </div>
 
@@ -220,7 +220,7 @@ export function UserManagementScreen() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'center' }}>
+      <div className="nexus-ua-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', alignItems: 'center' }}>
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           style={{ ...fieldStyle, width: 'auto', minWidth: '160px', appearance: 'none', cursor: 'pointer' }} aria-label={t('um_filter_role', lang)}>
           <option value="">{t('um_filter_role', lang)}: {t('um_all', lang)}</option>
@@ -233,9 +233,9 @@ export function UserManagementScreen() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.4fr', gap: '16px', alignItems: 'start' }}>
+      <div className="nexus-ua-layout" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.4fr', gap: '16px', alignItems: 'start' }}>
         {/* User list */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="nexus-ua-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {users.loading && <PhoenixLoadingState label={t('loading', lang)} />}
           {!users.loading && users.error && (
             <PhoenixErrorState title={t('load_error', lang)} message={users.error} onRetry={users.reload} />
@@ -247,7 +247,7 @@ export function UserManagementScreen() {
             const selected = u.id === selectedId;
             const isSelf   = u.id === profile?.id;
             return (
-              <PhoenixCard key={u.id} padding="12px 14px" onClick={() => setSelectedId(u.id)}
+              <PhoenixCard key={u.id} className={`nexus-ua-user-card nexus-ua-user-card--${u.status}${selected ? ' nexus-ua-user-card--selected' : ''}`} padding="12px 14px" onClick={() => setSelectedId(u.id)}
                 style={{ cursor: 'pointer', border: selected ? '1px solid var(--p)' : undefined, background: selected ? 'var(--p2)' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <div style={{ minWidth: 0 }}>
@@ -262,7 +262,7 @@ export function UserManagementScreen() {
 
                 {/* Lifecycle: disable/enable/rotate/recycle/delete — super_admin only, not self. */}
                 {isSuper && !isSelf && (
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
+                  <div className="nexus-ua-lifecycle-actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--brd)' }}
                     onClick={e => e.stopPropagation()}>
                     {u.status === 'suspended' ? (
                       <>
@@ -301,7 +301,7 @@ export function UserManagementScreen() {
         </div>
 
         {/* Selected-user panel: summary by default, permission matrix only when explicitly opened */}
-        <div>
+        <div className="nexus-ua-detail">
           {!selectedUser && (
             <PhoenixEmptyState icon="scope" title={t('um_select_user', lang)} description={t('um_permissions', lang)} />
           )}
@@ -423,7 +423,7 @@ function UserPermissionsPanel({ user, lang, actorRole, isSuper, actorId, actorPe
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      <PhoenixCard padding="16px">
+      <PhoenixCard className="nexus-ua-profile-card" padding="16px">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
           <div>
             <div style={{ fontSize: '14px', fontWeight: 700 }} dir="auto">{userName(user)}</div>
@@ -621,7 +621,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
   const isOrgContactEligible = normalizeRole(user.role) === 'institution_admin';
 
   return (
-    <PhoenixCard padding="16px">
+    <PhoenixCard className="nexus-ua-permission-matrix" padding="16px">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
         <div>
           <div style={{ fontSize: '14px', fontWeight: 700 }} dir="auto">{userName(user)}</div>
@@ -642,7 +642,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
       )}
 
       {!readOnly && (
-        <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--err)' }} dir="auto">
+        <div className="nexus-ua-sensitive-warning" style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '8px 12px', marginBottom: '12px', fontSize: '11.5px', color: 'var(--err)' }} dir="auto">
           <PhoenixIcon name="warning" size={13} inline /> {t('um_editing_sensitive_permissions', lang)}
         </div>
       )}
@@ -670,7 +670,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
               .map(([mod, perms]) => {
               const open = !collapsed[mod];
               return (
-                <div key={mod} style={{ border: '1px solid var(--brd)', borderRadius: 'var(--r2)', overflow: 'hidden' }}>
+                <div key={mod} className="nexus-ua-perm-module" style={{ border: '1px solid var(--brd)', borderRadius: 'var(--r2)', overflow: 'hidden' }}>
                   <button onClick={() => setCollapsed(c => ({ ...c, [mod]: open }))}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', background: 'var(--s2)', border: 'none', cursor: 'pointer', fontSize: '12.5px', fontWeight: 700, color: 'var(--t)', textAlign: 'start' }}>
                     <span>{t(`permmod_${mod}`, lang)}</span>
@@ -687,7 +687,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
                               onChange={e => toggle(p.key, e.target.checked)} />
                             <span>{t(p.labelKey, lang)}</span>
                             {isDangerousPermission(p.key) && (
-                              <span style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--err)', background: 'var(--err2)', padding: '1px 6px', borderRadius: 'var(--rpill)' }}>
+                              <span className="nexus-ua-perm-dangerous" style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--err)', background: 'var(--err2)', padding: '1px 6px', borderRadius: 'var(--rpill)' }}>
 <PhoenixIcon name="warning" size={12} inline /> {t('um_dangerous', lang)}
                               </span>
                             )}
@@ -856,7 +856,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
   }
 
   return (
-    <PhoenixCard padding="18px" style={{ marginBottom: '16px' }}>
+    <PhoenixCard className="nexus-ua-form-card" padding="18px" style={{ marginBottom: '16px' }}>
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>{t('um_create_user', lang)}</h3>
 
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--info)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
@@ -972,8 +972,8 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
-      <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
+    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard className={`nexus-ua-modal-panel nexus-ua-modal-panel--${isEnable ? 'recovery' : 'caution'}`} padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           {isEnable
             ? <><PhoenixIcon name="check" size={15} inline /> {t('um_enable_user', lang)}</>
@@ -1060,8 +1060,8 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
-      <PhoenixCard padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
+    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--caution" padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           <PhoenixIcon name="key" size={14} inline /> {t('um_rotate_password', lang)}
         </h3>
@@ -1196,8 +1196,8 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
-      <PhoenixCard padding="24px" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--caution" padding="24px" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           <PhoenixIcon name="recycle" size={14} inline /> {t('um_recycle_account', lang)}
         </h3>
@@ -1354,8 +1354,8 @@ function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
-      <PhoenixCard padding="24px" style={{ maxWidth: '460px', width: '100%' }}>
+    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+      <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--danger" padding="24px" style={{ maxWidth: '460px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px', color: 'var(--danger)' }}>
           <PhoenixIcon name="trash" size={15} inline /> {t('um_delete_user_action', lang)}
         </h3>

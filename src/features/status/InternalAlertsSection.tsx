@@ -38,14 +38,14 @@ export function InternalAlertsSection({ matches }: Props) {
   const mediumCount = useMemo(() => matches.filter(m => m.severity === 'medium').length, [matches]);
 
   return (
-    <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
+    <PhoenixCard className="nexus-alerts-panel" padding="16px" style={{ marginBottom: '16px' }}>
+      <div className="nexus-alerts-panel__head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
         <div>
           <div style={{ fontSize: '15px', fontWeight: 700 }}><PhoenixIcon name="hospital" size={15} inline /> {t('sc_internal_alerts_title', lang)}</div>
           <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>{t('sc_internal_alerts_sub', lang)}</div>
         </div>
         {matches.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <div className="nexus-alerts-summary" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             {highCount > 0 && (
               <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--err)', background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--rpill)', padding: '2px 9px' }}>
                 {t('lia_severity_high', lang)}: {highCount}
@@ -61,7 +61,7 @@ export function InternalAlertsSection({ matches }: Props) {
       </div>
 
       {matches.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '28px 12px', color: 'var(--t2)' }}>
+        <div className="nexus-alerts-empty" style={{ textAlign: 'center', padding: '28px 12px', color: 'var(--t2)' }}>
           <div style={{ marginBottom: '6px', opacity: 0.6, color: 'var(--ok)' }}><PhoenixIcon name="check" size={26} /></div>
           <div style={{ fontSize: '12.5px' }}>{t('sc_internal_alerts_empty', lang)}</div>
         </div>
@@ -70,6 +70,7 @@ export function InternalAlertsSection({ matches }: Props) {
           {matches.map((m, i) => (
             <div
               key={i}
+              className={`nexus-alert-card nexus-alert-card--${m.severity}`}
               style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r3)', padding: '12px 14px' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>

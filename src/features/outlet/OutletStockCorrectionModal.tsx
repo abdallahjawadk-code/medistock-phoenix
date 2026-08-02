@@ -93,6 +93,7 @@ export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClos
 
   return (
     <PhoenixDialog open={open} onClose={resetAndClose} title={t('oc_correct_title', lang)} maxWidth={480}>
+      <div className="nexus-io-correction-body">
       <div style={{ background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px' }}>
         <div style={{ fontWeight: 700, marginBottom: '4px' }} dir="auto">
           {lot.scientificName || '—'}{lot.tradeName ? ` (${lot.tradeName})` : ''}
@@ -153,6 +154,7 @@ export function OutletStockCorrectionModal({ open, lot, lang, canCorrect, onClos
           </div>
         </>
       )}
+      </div>
     </PhoenixDialog>
   );
 }

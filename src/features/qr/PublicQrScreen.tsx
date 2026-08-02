@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PhoenixPharmacyEmblem } from '@/shared/ui/PhoenixPharmacyEmblem';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPublicQrPayload } from '@/shared/supabase/services/qr.service';
@@ -194,12 +195,12 @@ export function PublicQrScreen({ publicId }: Props) {
     : visibleItems;
 
   return (
-    <div className="premium-qr-public-shell" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+    <div className="premium-qr-public-shell nexus-qr-public" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: '480px' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+        <div className="nexus-qr-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: 'var(--r3)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}><PhoenixIcon name="medical" size={20} /></div>
+            <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PhoenixPharmacyEmblem variant="compact-teal" size={48} /></div>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700 }}>{t('public_title', lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('public_sub', lang)}</div>
@@ -232,7 +233,7 @@ export function PublicQrScreen({ publicId }: Props) {
           <>
             {/* Org/point header */}
             {orgName && (
-              <div style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px', boxShadow: 'var(--sh-sm)' }}>
+              <div className="nexus-qr-org-card" style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px', boxShadow: 'var(--sh-sm)' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>{orgName}</div>
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
@@ -247,7 +248,7 @@ export function PublicQrScreen({ publicId }: Props) {
 
             {/* Status summary — counts computed from the already-loaded rawItems only */}
             {summaryCounts.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              <div className="nexus-qr-summary" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
                 {summaryCounts.map(({ condition, count }) => {
                   const variant = CONDITION_VARIANT[condition] ?? 'neutral';
                   const { color, bg } = VARIANT_COLOR[variant];
@@ -265,7 +266,7 @@ export function PublicQrScreen({ publicId }: Props) {
 
             {/* Search */}
             {visibleItems.length > 3 && (
-              <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <div className="nexus-qr-search" style={{ position: 'relative', marginBottom: '12px' }}>
                 <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}><PhoenixIcon name="search" size={14} /></span>
                 <input
                   type="search"
@@ -308,7 +309,7 @@ export function PublicQrScreen({ publicId }: Props) {
                 const isNearExpiry = item.condition === 'near_expiry' || item.condition === 'expired';
                 const bucketBadge = getExpBucketBadge(item.expiry_bucket, lang);
                 return (
-                  <div key={i} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: `1px solid ${bucketBadge ? bucketBadge.color : 'var(--brd)'}`, boxShadow: 'var(--sh-xs)', transition: 'box-shadow 150ms' }}>
+                  <div key={i} className="nexus-qr-item" data-condition={item.condition ?? undefined} style={{ background: 'var(--s)', borderRadius: 'var(--r3)', padding: '12px 14px', border: `1px solid ${bucketBadge ? bucketBadge.color : 'var(--brd)'}`, boxShadow: 'var(--sh-xs)', transition: 'box-shadow 150ms' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{label}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
@@ -342,7 +343,7 @@ export function PublicQrScreen({ publicId }: Props) {
               })}
             </div>
 
-            <div className="premium-qr-trust-note" style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
+            <div className="premium-qr-trust-note nexus-qr-trust-note" style={{ marginTop: '16px', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', fontSize: '11px', color: 'var(--t3)', textAlign: 'center' }}>
               <PhoenixIcon name="lock" size={12} inline /> {t('qr_no_expose', lang)}
             </div>
           </>

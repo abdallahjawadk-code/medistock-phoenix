@@ -16,11 +16,16 @@ interface Props {
    same hue. The hairline matters for accessibility as much as for looks: it
    keeps the pill legible against --surface2 rows where the tint alone is nearly
    invisible, so status never depends on a fill colour being perceived. */
+/* PHASE-A7-VISUAL-CONVERGENCE: "info" reads from --phoenix-info (a dedicated
+   blue, defined in phase-a-visual-convergence.css) rather than --teal — the
+   reference board uses blue for informational status and reserves teal for
+   the institutional secondary/brand accent, so the two semantics no longer
+   share a hue. A --teal fallback keeps this safe outside the phase-a scope. */
 const badgeMap: Record<BadgeVariant, CSSProperties> = {
   ok:      { background: 'var(--chip)',    color: 'var(--ok)',      borderColor: 'color-mix(in srgb, var(--ok) 40%, transparent)' },
   warn:    { background: 'var(--chipW)',   color: 'var(--warn)',    borderColor: 'color-mix(in srgb, var(--warn) 40%, transparent)' },
   err:     { background: 'var(--chipD)',   color: 'var(--danger)',  borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)' },
-  info:    { background: 'var(--chip)',    color: 'var(--teal)',    borderColor: 'color-mix(in srgb, var(--teal) 40%, transparent)' },
+  info:    { background: 'var(--chip)',    color: 'var(--phoenix-info, var(--teal))', borderColor: 'color-mix(in srgb, var(--phoenix-info, var(--teal)) 40%, transparent)' },
   neutral: { background: 'var(--surface2)', color: 'var(--muted)',  borderColor: 'var(--line)' },
   primary: { background: 'var(--chip)',    color: 'var(--cyanDim)', borderColor: 'var(--line)' },
   frozen:  { background: 'var(--surface2)', color: 'var(--muted)',  borderColor: 'var(--line)', opacity: 0.8 },
@@ -28,7 +33,7 @@ const badgeMap: Record<BadgeVariant, CSSProperties> = {
 
 export function PhoenixStatusBadge({ variant, label, dot = false, icon, style }: Props) {
   return (
-    <span className="premium-status-badge" style={{
+    <span className="premium-status-badge" data-variant={variant} style={{
       padding: '2px 8px',
       borderRadius: 'var(--rpill)',
       borderWidth: '1px',

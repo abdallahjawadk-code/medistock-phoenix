@@ -162,19 +162,19 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
   }, [raw, kindHint, deps]);
 
   return (
-    <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div dir={dir} className="nexus-io-content" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div>
         <h3 style={{ fontSize: '16px', fontWeight: 700 }}>{t('or_status_title', lang)}</h3>
         <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('or_status_hint', lang)}</p>
       </div>
 
       {!online() && (
-        <div data-testid="movement-status-offline" style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)' }}>
+        <div data-testid="movement-status-offline" className="nexus-io-notice nexus-io-notice--warn" style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)' }}>
           {t('or_status_offline', lang)}
         </div>
       )}
 
-      <PhoenixCard>
+      <PhoenixCard className="nexus-io-form-card">
         <div style={{ display: 'grid', gap: '10px' }}>
           <PhoenixInput
             label={t('or_status_input_label', lang)}
@@ -256,16 +256,16 @@ export function CurrentMovementStatus({ lang, deps = liveDeps, isOnline }: Props
 
 function TimelineResult({ timeline, lang }: { timeline: MovementTimeline; lang: Lang }) {
   return (
-    <PhoenixCard data-testid="movement-timeline">
+    <PhoenixCard className="nexus-io-history-row" data-testid="movement-timeline">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <h4 style={{ fontSize: '13.5px', fontWeight: 700 }}>{t('or_timeline_title', lang)}</h4>
         <PhoenixButton variant="ghost" size="sm" onClick={() => window.print()}>
           {t('or_timeline_print', lang)}
         </PhoenixButton>
       </div>
-      <ol style={{ listStyle: 'none', marginTop: '10px', display: 'grid', gap: '8px' }}>
+      <ol className="nexus-io-row-list" style={{ listStyle: 'none', marginTop: '10px', display: 'grid', gap: '8px' }}>
         {timeline.events.map(e => (
-          <li key={e.eventId} style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '12px', borderInlineStart: '2px solid var(--p)', paddingInlineStart: '10px' }}>
+          <li key={e.eventId} className="nexus-io-ledger-row" style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '12px', borderInlineStart: '2px solid var(--p)', paddingInlineStart: '10px' }}>
             <span dir="ltr" style={{ color: 'var(--t3)', whiteSpace: 'nowrap', fontSize: '11px' }}>
               {new Date(e.occurredAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
             </span>
@@ -290,8 +290,8 @@ function TimelineResult({ timeline, lang }: { timeline: MovementTimeline; lang: 
 function StatusResult({ status, fetchedAt, lang }: { status: MovementStatus; fetchedAt: number; lang: Lang }) {
   const kindLabel = status.kind === 'return_shipment' ? t('or_kind_return_shipment', lang) : t('or_kind_return_request', lang);
   return (
-    <div style={{ display: 'grid', gap: '10px' }} data-testid="movement-status-result">
-      <PhoenixCard>
+    <div className="nexus-io-row-list" style={{ display: 'grid', gap: '10px' }} data-testid="movement-status-result">
+      <PhoenixCard className="nexus-io-form-card">
         <div style={{ fontSize: '12.5px', display: 'grid', gap: '4px' }}>
           <div><strong>{kindLabel}</strong> · {t('mv_h_status', lang)}: {dash(status.status)}</div>
           <div style={{ fontSize: '11px', color: 'var(--t2)' }}>
@@ -305,7 +305,7 @@ function StatusResult({ status, fetchedAt, lang }: { status: MovementStatus; fet
       </PhoenixCard>
 
       {status.lines.map((l, i) => (
-        <PhoenixCard key={`${l.provenance ?? i}-${i}`}>
+        <PhoenixCard key={`${l.provenance ?? i}-${i}`} className="nexus-io-history-row">
           <div style={{ fontSize: '12.5px', fontWeight: 700 }}>{l.scientificName}</div>
           <div style={{ fontSize: '11px', color: 'var(--t2)' }}>
             {t('mv_f_batch_number', lang)}: {dash(l.batchNumber)} · {t('mv_f_expiry_date', lang)}: {dash(l.expiryDate)}

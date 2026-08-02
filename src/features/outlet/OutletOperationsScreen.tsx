@@ -80,10 +80,10 @@ export function OutletOperationsScreen({
   const outletName = activeOutlet ? (lang === 'ar' ? (activeOutlet.nameAr || activeOutlet.name) : activeOutlet.name) : '';
 
   const header = (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-      <div>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('or_screen_title', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('or_screen_sub', lang)}</p>
+    <div className="nexus-io-header nexus-io-header__row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      <div className="nexus-io-header__titles">
+        <h2 className="nexus-io-header__title" style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('or_screen_title', lang)}</h2>
+        <p className="nexus-io-header__subtitle" style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('or_screen_sub', lang)}</p>
       </div>
       {/* super_admin's profile has organization_id = null; without this the outlet
           catalog comes back empty and the screen dead-ends. */}
@@ -92,13 +92,13 @@ export function OutletOperationsScreen({
   );
 
   if (!activeOrgId) {
-    return <div dir={dir}>{header}<PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} /></div>;
+    return <div dir={dir} className="nexus-outlet-ops">{header}<PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} /></div>;
   }
   if (scopes.loading && outlets.length === 0) {
-    return <div dir={dir}>{header}<PhoenixLoadingState /></div>;
+    return <div dir={dir} className="nexus-outlet-ops">{header}<PhoenixLoadingState /></div>;
   }
   if (outlets.length === 0 || !activeOutlet) {
-    return <div dir={dir}>{header}<PhoenixEmptyState icon="package" title={t('or_no_outlet_scope', lang)} description={t('empty_hint', lang)} /></div>;
+    return <div dir={dir} className="nexus-outlet-ops">{header}<PhoenixEmptyState icon="package" title={t('or_no_outlet_scope', lang)} description={t('empty_hint', lang)} /></div>;
   }
 
   // MOVEMENT-TRACKING-MERGE: "movement history" and "movement status" are ONE
@@ -112,11 +112,11 @@ export function OutletOperationsScreen({
   ];
 
   return (
-    <div dir={dir}>
+    <div dir={dir} className="nexus-outlet-ops">
       {header}
 
       {outlets.length > 1 && (
-        <div style={{ maxWidth: '360px', marginBottom: '14px' }}>
+        <div className="nexus-io-context-bar" style={{ maxWidth: '360px', marginBottom: '14px' }}>
           <PhoenixSelect
             label={t('or_select_outlet', lang)}
             value={activeOutlet.id}
@@ -126,13 +126,14 @@ export function OutletOperationsScreen({
         </div>
       )}
 
-      <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      <div role="tablist" className="nexus-io-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {tabs.map(x => (
           <button
             key={x.id}
             role="tab"
             aria-selected={tab === x.id}
             onClick={() => setTab(x.id)}
+            className="nexus-io-tab"
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
@@ -169,7 +170,7 @@ export function OutletOperationsScreen({
       )}
 
       {tab === 'history' && (
-        <div style={{ display: 'grid', gap: '18px' }}>
+        <div className="nexus-io-content" style={{ display: 'grid', gap: '18px' }}>
           <CurrentMovementStatus lang={lang} />
           <OutletHistoryTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />
         </div>
@@ -216,9 +217,9 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('or_stock_none', lang)} />;
 
   return (
-    <div style={{ display: 'grid', gap: '10px' }} data-testid="outlet-stock-list">
+    <div className="nexus-io-row-list" style={{ display: 'grid', gap: '10px' }} data-testid="outlet-stock-list">
       {rows.map(r => (
-        <PhoenixCard key={r.id}>
+        <PhoenixCard key={r.id} className={`nexus-io-stock-row${r.availableQuantity === 0 ? ' nexus-io-stock-row--zero' : ''}`}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: '13px', fontWeight: 700 }}>{r.scientificName}</div>
@@ -230,7 +231,7 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
                 {t('mv_f_expiry_date', lang)}: {dash(r.expiryDate)} ·{' '}
                 {t('mv_f_national_code', lang)}: {dash(r.nationalCode)}
               </div>
-              <div style={{ fontSize: '12px', fontWeight: 700, marginTop: '4px' }}>
+              <div className="nexus-io-stock-row__qty" style={{ fontSize: '12px', fontWeight: 700, marginTop: '4px' }}>
                 {t('mv_available', lang)}: {r.availableQuantity}
                 <span style={{ fontWeight: 400, color: 'var(--t2)' }}>
                   {' '}({t('mv_f_received_quantity', lang)}: {r.onHandQuantity} · {t('mv_returned_against', lang)}: {r.reservedQuantity})
@@ -239,12 +240,12 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
             </div>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {canDispense && r.availableQuantity > 0 && (
-                <PhoenixButton variant="primary" size="sm" onClick={() => setDispenseLot(r)}>
+                <PhoenixButton className="nexus-io-action-dispense" variant="primary" size="sm" onClick={() => setDispenseLot(r)}>
                   {t('dsp_action', lang)}
                 </PhoenixButton>
               )}
               {canCorrect && (
-                <PhoenixButton variant="ghost" size="sm" onClick={() => setCorrectLot(r)}>
+                <PhoenixButton className="nexus-io-action-correct" variant="ghost" size="sm" onClick={() => setCorrectLot(r)}>
                   {t('oc_correct_action', lang)}
                 </PhoenixButton>
               )}
@@ -384,9 +385,9 @@ function OutletHistoryTab({ orgId, distributionPointId, lang }: { orgId: string 
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('or_history_none', lang)} />;
 
   return (
-    <div style={{ display: 'grid', gap: '8px' }} data-testid="outlet-history-list">
+    <div className="nexus-io-row-list" style={{ display: 'grid', gap: '8px' }} data-testid="outlet-history-list">
       {rows.map(r => (
-        <PhoenixCard key={r.id}>
+        <PhoenixCard key={r.id} className="nexus-io-history-row">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: '12.5px', fontWeight: 700 }}>{r.scientificName}</div>

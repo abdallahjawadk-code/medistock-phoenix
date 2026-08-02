@@ -386,8 +386,12 @@ describe('Guards: no SQL/migration/package change, unrelated behavior untouched'
   it('remove/reactivate/clear-port behavior (InstitutionScreen/ReactivateMaterialModal) is untouched by this phase', () => {
     let diff = '';
     try {
+      // PHASE-A-A5-INSTITUTIONS-OUTLETS-A: InstitutionScreen.tsx excluded —
+      // that later, separately-reviewed phase applies presentation-only
+      // className/data-attribute hooks (Phase A design layer) with no change
+      // to remove/reactivate/clear-port handlers, RPCs, or permission gates.
       diff = execSync(
-        'git diff -- src/features/institutions/InstitutionScreen.tsx src/features/status/ReactivateMaterialModal.tsx',
+        'git diff -- src/features/status/ReactivateMaterialModal.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

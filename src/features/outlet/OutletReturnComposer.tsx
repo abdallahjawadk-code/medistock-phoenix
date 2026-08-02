@@ -231,8 +231,8 @@ export function OutletReturnComposer({
       )}
 
       {step === 'review' && (
-        <div style={{ display: 'grid', gap: '12px' }}>
-          <PhoenixCard>
+        <div className="nexus-io-content" style={{ display: 'grid', gap: '12px' }}>
+          <PhoenixCard className="nexus-io-form-card">
             <div style={{ fontSize: '12.5px', display: 'grid', gap: '4px' }}>
               <div><strong>{t('mv_h_source', lang)}:</strong> {distributionPointName}</div>
               <div><strong>{t('mv_external_reference', lang)}:</strong> {externalReference.trim() || '—'}</div>
@@ -248,6 +248,7 @@ export function OutletReturnComposer({
           {result?.partial && (
             <div
               data-testid="outlet-return-partial-failure"
+              className="nexus-io-notice nexus-io-notice--error"
               style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r3)', padding: '12px 14px', fontSize: '12px', color: 'var(--err)' }}
             >
               <strong>{t('mv_partial_title', lang)}</strong>
@@ -271,12 +272,12 @@ export function OutletReturnComposer({
           )}
           {committing && !progress && <PhoenixLoadingState />}
 
-          <div style={{ display: 'grid', gap: '8px' }} data-testid="outlet-return-review-lines">
+          <div className="nexus-io-row-list" style={{ display: 'grid', gap: '8px' }} data-testid="outlet-return-review-lines">
             {lines.map(line => {
               const lineState = result?.lines.find(r => r.idempotencyKey === line.idempotencyKey);
               const issue = issues.find(i => i.idempotencyKey === line.idempotencyKey);
               return (
-                <PhoenixCard key={line.idempotencyKey}>
+                <PhoenixCard key={line.idempotencyKey} className="nexus-io-row-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: '12.5px', fontWeight: 700 }}>{line.scientificName}</div>

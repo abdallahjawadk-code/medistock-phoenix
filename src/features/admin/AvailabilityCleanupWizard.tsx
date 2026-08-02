@@ -136,14 +136,14 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
   }
 
   return (
-    <PhoenixCard padding="18px" style={{ marginTop: '20px' }}>
+    <PhoenixCard className="nexus-cleanup-wizard" padding="18px" style={{ marginTop: '20px' }}>
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px' }}>
         {t('acw_title', lang)}
       </h3>
-      <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '10px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
+      <div className="nexus-cleanup-warning" style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '10px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
 <PhoenixIcon name="warning" size={13} inline /> {t('acw_delete_materials_warning', lang)}
       </div>
-      <div style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
+      <div className="nexus-cleanup-warning" style={{ background: 'var(--err2)', border: '1px solid var(--err)', borderRadius: 'var(--r2)', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: 'var(--err)' }} dir="auto">
 <PhoenixIcon name="warning" size={13} inline /> {t('acw_delete_movements_warning', lang)}
       </div>
       <p style={{ fontSize: '12px', color: 'var(--t2)', marginBottom: '6px' }} dir="auto">
@@ -167,7 +167,7 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
       )}
 
       {dryRunCounts && (
-        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--brd)' }}>
+        <div className="nexus-cleanup-counts" style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--brd)' }}>
           <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '8px' }}>{t('acw_counts_title', lang)}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 12px', fontSize: '12px', color: 'var(--t2)' }}>
             <span>{t('acw_count_availability', lang)}</span><span>{dryRunCounts.item_availability}</span>
@@ -178,7 +178,7 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
             <span>{t('acw_count_exchange_events', lang)}</span><span>{dryRunCounts.inter_org_exchange_events}</span>
           </div>
 
-          <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--brd)' }}>
+          <div className="nexus-cleanup-danger-zone" style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--brd)' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -238,7 +238,7 @@ export function AvailabilityCleanupWizard({ lang, role }: Props) {
       )}
 
       {executeResult && (
-        <div style={{ marginTop: '14px', background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', fontSize: '12px', color: 'var(--info)' }} dir="auto">
+        <div className="nexus-cleanup-success" style={{ marginTop: '14px', background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r2)', padding: '10px 14px', fontSize: '12px', color: 'var(--info)' }} dir="auto">
           {t('acw_execute_success', lang)} — {t('acw_count_availability', lang)}: {executeResult.item_availability}, {t('acw_count_movements', lang)}: {executeResult.item_availability_movements}
         </div>
       )}

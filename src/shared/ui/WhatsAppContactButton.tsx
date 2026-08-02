@@ -59,7 +59,7 @@ export function WhatsAppContactButton({ phone, message, lang, label }: Props) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '6px',
         padding: '7px 12px', minHeight: '38px', borderRadius: 'var(--r2)',
-        border: '1px solid #25D366', background: '#e9fbf1', color: '#0d7a3f',
+        border: '1px solid var(--whatsapp-brand)', background: 'var(--whatsapp-brand-bg)', color: 'var(--whatsapp-brand-ink)',
         fontSize: '11.5px', fontWeight: 700, whiteSpace: 'nowrap',
         textDecoration: 'none', cursor: 'pointer',
       }}

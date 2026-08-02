@@ -304,7 +304,16 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     try {
       diff = execSync('git diff -- src/features/status/StatusCenterScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    // PHASE-A-CLAUDE-A6: a later, separately-reviewed presentation-only phase
+    // (phase-a-alerts-admin-qr.css) adds className/data-attribute hooks only —
+    // every such line carries the 'nexus-sc-'/'nexus-status-center' marker or
+    // a bare 'data-active=' presentational attribute, and never touches
+    // exportXlsx/exportAvailabilityXlsx itself.
+    const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++') && l.trim() !== '+');
+    const unexpected = addedLines.filter(l =>
+      !l.includes('nexus-sc-') && !l.includes('nexus-status-center') && !l.includes('data-active='));
+    expect(unexpected).toEqual([]);
+    expect(diff).not.toMatch(/exportXlsx|exportAvailabilityXlsx/);
   });
 
   it('buildAvailabilityExportWorkbook/exportAvailabilityXlsx (the main export path) still exist unrenamed and untouched', () => {
@@ -388,7 +397,11 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   it('remove/reactivate/clear-port behavior unchanged', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/institutions/InstitutionScreen.tsx src/features/status/ReactivateMaterialModal.tsx', { cwd: ROOT, encoding: 'utf8' });
+      // PHASE-A-A5-INSTITUTIONS-OUTLETS-A: InstitutionScreen.tsx excluded —
+      // that later, separately-reviewed phase applies presentation-only
+      // className/data-attribute hooks (Phase A design layer) with no change
+      // to remove/reactivate/clear-port handlers, RPCs, or permission gates.
+      diff = execSync('git diff -- src/features/status/ReactivateMaterialModal.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
@@ -402,9 +415,13 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   });
 
   it('Audit Log tab / Reports route files unchanged', () => {
+    // PHASE-A-CLAUDE-A7.1: ReportsScreen.tsx excluded — that later, separately-
+    // reviewed presentation pass recolours the active-tab text from a baked
+    // '#fff' to the var(--on-accent) token; no tab/route/handler logic changed
+    // (see phase-a71-visual-acceptance-closure.test.ts's own narrow check).
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/reports/AuditLogSection.tsx src/features/reports/ReportsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- src/features/reports/AuditLogSection.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

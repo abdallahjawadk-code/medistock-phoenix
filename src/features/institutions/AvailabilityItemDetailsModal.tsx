@@ -56,7 +56,7 @@ function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: '1px solid var(--brd)', fontSize: '12.5px' }}>
+    <div className="nexus-io-avail-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: '1px solid var(--brd)', fontSize: '12.5px' }}>
       <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{label}</span>
       <span style={{ color: 'var(--t1)', textAlign: 'end' }} dir="auto">{children}</span>
     </div>
@@ -95,7 +95,7 @@ export function AvailabilityItemDetailsModal({ open, onClose, row, lang, pointNa
         </button>
       </div>
 
-      <div>
+      <div className="nexus-io-avail-details">
         <Row label={t('avail_scientific_name', lang)}>{textOrDash(row.scientific_name)}</Row>
         <Row label={t('avail_trade_name', lang)}>{textOrDash(row.trade_name)}</Row>
         <Row label={t('avail_dosage_form', lang)}>{textOrDash(row.dosage_form)}</Row>

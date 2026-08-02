@@ -742,9 +742,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
   const td = { padding: '7px 8px', fontSize: '11.5px', borderBottom: '1px solid var(--brd)', whiteSpace: 'nowrap' as const };
 
   return (
-    <div style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
+    <div className="nexus-status-center" style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+      <div className="nexus-sc-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         <div>
           <h2 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: 700, letterSpacing: '-.3px' }}>
             {t('nav_status_center', lang)}
@@ -759,14 +759,18 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           existed below (availability filters/table/outlet view/exports/
           movement report); 'audit' renders the reusable read-only
           AuditLogSection. Purely a display switch — no data/filter changes. */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+      <div className="nexus-sc-tabs" style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
         <button
+          className="nexus-sc-tab"
+          data-active={mainTab === 'live'}
           onClick={() => setMainTab('live')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'live' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'live' ? 'var(--pd)' : 'var(--t)' }}
         >
           <PhoenixIcon name="clipboard" size={14} inline /> {t('nav_status_center', lang)}
         </button>
         <button
+          className="nexus-sc-tab"
+          data-active={mainTab === 'audit'}
           onClick={() => setMainTab('audit')}
           style={{ ...btnStyle, padding: '7px 14px', background: mainTab === 'audit' ? 'var(--p2)' : 'var(--s)', color: mainTab === 'audit' ? 'var(--pd)' : 'var(--t)' }}
         >
@@ -786,12 +790,12 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       </div>
 
       {/* Notice: reporting only — no auto-transfer (safety disclaimer) */}
-      <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="nexus-sc-notice" style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <PhoenixIcon name="info" size={15} inline /> {t('sc_no_exchange', lang)}
       </div>
 
       {/* Report header card (printable info) */}
-      <PhoenixCard padding="16px" style={{ marginBottom: '16px' }}>
+      <PhoenixCard className="nexus-sc-summary-card" padding="16px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '16px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="clipboard" size={16} inline /> {t('sc_report_title', lang)}</span>
           <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ok)', background: 'var(--ok2)', border: '1px solid var(--ok)', borderRadius: 'var(--rpill)', padding: '1px 8px' }}>LIVE</span>
@@ -802,9 +806,9 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
           <span>Σ {t('sc_total_rows', lang)}: {rows.length}</span>
         </div>
         {/* Counts by status */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+        <div className="nexus-sc-status-counts" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
           {CANONICAL_STATUSES.map(s => (
-            <div key={s} style={{ flex: '1 1 90px', minWidth: '90px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 10px' }}>
+            <div key={s} className={`nexus-sc-status-chip nexus-sc-status-chip--${s}`} style={{ flex: '1 1 90px', minWidth: '90px', background: 'var(--s2)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 10px' }}>
               <div style={{ fontSize: '18px', fontWeight: 800, lineHeight: 1 }}>{counts[s]}</div>
               <div style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('cond_' + s, lang)}</div>
             </div>
@@ -823,7 +827,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       </div>
 
       {/* Filters + export/print actions */}
-      <PhoenixCard padding="14px" style={{ marginBottom: '16px' }}>
+      <PhoenixCard className="nexus-sc-filter-card" padding="14px" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as CanonicalStatus | '')} style={{ ...fieldStyle, minWidth: '150px', appearance: 'none', cursor: 'pointer' }} aria-label={t('sc_effective_status', lang)}>
             <option value="">{t('sc_all_statuses', lang)}</option>
@@ -854,14 +858,16 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         {/* AVAILABILITY-ALERTS-QR-POLISH-B: table / outlet-grouped view toggle —
             both modes render the exact same filtered `rows`; export/print
             always use the table's column definitions regardless of view mode. */}
-        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+        <div className="nexus-sc-view-toggle" style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
           <button
+            data-active={viewMode === 'table'}
             onClick={() => setViewMode('table')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'table' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'table' ? 'var(--pd)' : 'var(--t)' }}
           >
             <PhoenixIcon name="clipboard" size={14} inline /> {t('sc_view_table', lang)}
           </button>
           <button
+            data-active={viewMode === 'outlet'}
             onClick={() => setViewMode('outlet')}
             style={{ ...btnStyle, padding: '5px 12px', background: viewMode === 'outlet' ? 'var(--p2)' : 'var(--s)', color: viewMode === 'outlet' ? 'var(--pd)' : 'var(--t)' }}
           >
@@ -986,8 +992,8 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
         <OutletMaterialGroups rows={rows} />
       )}
       {!live.loading && !live.error && rows.length > 0 && viewMode === 'table' && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>
+        <div className="nexus-sc-table-wrap" style={{ overflowX: 'auto' }}>
+          <table className="nexus-sc-table" style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--s)', borderRadius: 'var(--r2)' }}>
             <thead>
               <tr>
                 <th style={th}>{t('sc_lm_port', lang)}</th>
@@ -1011,7 +1017,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                 const eff = effOf(r);
                 const isRemoved = r.removed_at != null;
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={`nexus-sc-row nexus-sc-row--${eff}${isRemoved ? ' nexus-sc-row--removed' : ''}`}>
                     <td style={td} dir="auto">{dpNameOf(r, lang)}</td>
                     <td style={td} dir="auto">{r.scientific_name || '—'}</td>
                     <td style={td} dir="auto">{r.trade_name || '—'}</td>
@@ -1065,6 +1071,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           {isRemoved ? (
                             canReactivate && (
                               <button
+                                className="nexus-sc-action nexus-sc-action--reactivate"
                                 onClick={() => setReactivateRow(r as unknown as ReactivateRow)}
                                 aria-label={t('sc_reactivate_action', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--ok)', background: 'var(--s)', color: 'var(--ok)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1075,6 +1082,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           ) : (
                             canCorrectStock && (
                               <button
+                                className="nexus-sc-action nexus-sc-action--correct"
                                 onClick={() => setCorrectRow(r as unknown as AvailabilityCorrectionRow)}
                                 aria-label={t('sc_correct_stock_action', lang)}
                                 style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1085,6 +1093,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
                           )}
                           {canViewMovementHistory && (
                             <button
+                              className="nexus-sc-action nexus-sc-action--history"
                               onClick={() => setHistoryRow(r)}
                               aria-label={t('mvmt_history_action', lang)}
                               style={{ padding: '5px 10px', borderRadius: 'var(--r1)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t2)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1159,7 +1168,7 @@ export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number
       </div>
 
       {/* Material Exchange Command Center CTA */}
-      <div style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+      <div className="nexus-sc-exchange-cta" style={{ marginTop: '28px', background: 'var(--p2)', border: '1px solid var(--p)', borderRadius: 'var(--r3)', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)', display: 'flex', alignItems: 'center', gap: '6px' }}><PhoenixIcon name="refresh" size={15} inline /> {t('material_exchange_center', lang)}</div>
           <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '3px', opacity: 0.85 }}>{t('duplicate_exchange_moved_notice', lang)}</div>

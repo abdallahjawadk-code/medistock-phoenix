@@ -1,0 +1,742 @@
+/* ─── PHASE A — ALERTS, ADMINISTRATION + PUBLIC QR (A6) ──────────────────────
+   Presentation-only layer for: the Status Center live-operations surface
+   (StatusCenterScreen.tsx, its InternalAlertsSection and OutletMaterialGroups
+   sub-views), User Administration (UserManagementScreen.tsx master-detail +
+   its lifecycle modals), the Platform Broadcast admin panel + gate, the
+   Availability Cleanup wizard, and the anonymous Public QR page. It changes
+   no data, computation, RBAC, or routing — every selector is gated by the
+   Phase A document marker and hooks only into named className/data-attribute
+   hooks added to each surface's existing DOM (never new data, handlers, or
+   props).
+
+   Follows the exact contract established for A4.1/A5.1: a banded header, a
+   distinct context/control strip, denser row/card composition, a clear
+   severity hierarchy for alerts/broadcasts, an explicit visual split between
+   routine and destructive actions, and richer empty/error/loading treatment —
+   while never fighting PhoenixCard's own inline border/background/box-shadow/
+   padding (author-inline always wins the cascade); accents are added via
+   ::before/::after pseudo-elements and non-inline properties instead.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] {
+  --phase-a-aq-hairline: color-mix(in srgb, var(--cyan) 14%, var(--brd));
+  --phase-a-aq-accent-line: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 55%, var(--line)), transparent);
+  --phase-a-aq-glow: color-mix(in srgb, var(--cyan) 10%, transparent);
+  --phase-a-aq-warmth: color-mix(in srgb, var(--gold) 8%, transparent);
+  --phase-a-aq-row-hover: color-mix(in srgb, var(--cyan) 6%, transparent);
+  --phase-a-aq-danger-glow: color-mix(in srgb, var(--err) 14%, transparent);
+  --phase-a-aq-caution-glow: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+/* ── Shared entrance + card/hairline language across every A6 surface ────── */
+html[data-phoenix-ui-phase='a'] .nexus-status-center,
+html[data-phoenix-ui-phase='a'] .nexus-user-admin,
+html[data-phoenix-ui-phase='a'] .nexus-qr-public {
+  animation: phase-a-aq-enter var(--phoenix-page-enter-duration, 360ms) var(--ease-standard) both;
+}
+
+@keyframes phase-a-aq-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-status-center .phoenix-card,
+html[data-phoenix-ui-phase='a'] .nexus-user-admin .phoenix-card,
+html[data-phoenix-ui-phase='a'] .nexus-qr-public .phoenix-card {
+  border-color: var(--phase-a-aq-hairline);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-status-center .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-status-center .nexus-error,
+html[data-phoenix-ui-phase='a'] .nexus-user-admin .nexus-empty,
+html[data-phoenix-ui-phase='a'] .nexus-user-admin .nexus-error {
+  border-color: var(--phase-a-aq-hairline);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATUS CENTER
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Header: a proper banded region, not a bare heading. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-header {
+  position: relative;
+  padding: clamp(14px, 1.8vw, 20px) clamp(16px, 2vw, 22px);
+  border: 1px solid var(--phase-a-aq-hairline);
+  border-radius: var(--r4);
+  overflow: hidden;
+  background:
+    radial-gradient(34rem 20rem at 6% -30%, var(--phase-a-aq-glow), transparent 72%),
+    radial-gradient(26rem 16rem at 100% 120%, var(--phase-a-aq-warmth), transparent 74%),
+    linear-gradient(140deg, var(--s2), var(--s));
+}
+
+/* Live/Audit segmented tab track. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-tabs {
+  padding: 5px;
+  background: var(--s2);
+  border: 1px solid var(--phase-a-aq-hairline);
+  border-radius: var(--r4);
+  width: fit-content;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-tab {
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-tab[data-active='true'] {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--cyan) 16%, transparent);
+}
+
+/* Reporting-only safety notice. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-notice {
+  position: relative;
+  padding-inline-start: 16px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-notice::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--info);
+}
+
+/* Summary card: printable report identity. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-summary-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-summary-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-aq-accent-line);
+}
+
+/* Counts-by-status chips: quiet color coding from the SAME canonical status
+   field the badge below already uses — never a fabricated severity. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--t3);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--available::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--surplus::before {
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--low_stock::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--near_expiry::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--missing::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip--expired::before {
+  background: var(--err);
+}
+
+/* Filter card + view toggle. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-filter-card {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-view-toggle {
+  padding: 4px;
+  background: var(--s2);
+  border: 1px solid var(--phase-a-aq-hairline);
+  border-radius: var(--r3);
+  width: fit-content;
+}
+
+/* Table: quiet header wash + zebra rows, readability first. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-table {
+  border: 1px solid var(--phase-a-aq-hairline);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-table thead th {
+  background: color-mix(in srgb, var(--cyan) 7%, var(--s2));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--s2) 55%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-sc-table tbody tr:hover {
+    background: var(--phase-a-aq-row-hover);
+  }
+}
+
+/* Row accent from the real effective-status field only. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-row {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row > td:first-child {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row > td:first-child::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--t3);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--available > td:first-child::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--surplus > td:first-child::before {
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--low_stock > td:first-child::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--near_expiry > td:first-child::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--missing > td:first-child::before,
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--expired > td:first-child::before {
+  background: var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-row--removed {
+  opacity: .82;
+}
+
+/* Row actions: correction is a cautionary secondary action, reactivate is a
+   recovery action, history is neutral — three distinct visual weights. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-action {
+  transition: opacity 140ms ease, box-shadow 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-action--correct {
+  opacity: .88;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-action--reactivate {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ok) 18%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-sc-action--correct:hover {
+    opacity: 1;
+  }
+}
+
+/* Exchange-center CTA banner. */
+html[data-phoenix-ui-phase='a'] .nexus-sc-exchange-cta {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-sc-exchange-cta::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-aq-accent-line);
+}
+
+/* ── Internal alerts: severity hierarchy from the real m.severity field ──── */
+html[data-phoenix-ui-phase='a'] .nexus-alerts-panel {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alerts-summary {
+  padding-inline-end: 2px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alert-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alert-card::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alert-card--high::before {
+  background: var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alert-card--high {
+  box-shadow: 0 2px 10px var(--phase-a-aq-danger-glow);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alert-card--medium::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-alerts-empty {
+  position: relative;
+}
+
+/* ── Outlet-grouped alternate view ────────────────────────────────────────── */
+html[data-phoenix-ui-phase='a'] .nexus-outlet-groups-empty {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-outlet-group-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-outlet-group-card::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-outlet-group-card--attention::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-outlet-group-row {
+  transition: background 140ms ease;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   USER ADMINISTRATION — master/detail composition
+   ───────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-header {
+  position: relative;
+  padding: clamp(14px, 1.8vw, 20px) clamp(16px, 2vw, 22px);
+  border: 1px solid var(--phase-a-aq-hairline);
+  border-radius: var(--r4);
+  overflow: hidden;
+  background:
+    radial-gradient(34rem 20rem at 6% -30%, var(--phase-a-aq-glow), transparent 72%),
+    linear-gradient(140deg, var(--s2), var(--s));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-notice {
+  position: relative;
+  padding-inline-start: 16px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-notice::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--info);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-filters {
+  padding-block-end: 4px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-layout {
+  align-items: start;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-list {
+  position: relative;
+}
+
+/* User cards: status accent from the real u.status field, selected state a
+   clear elevated treatment. */
+html[data-phoenix-ui-phase='a'] .nexus-ua-user-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-user-card::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--t3);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-user-card--active::before {
+  background: var(--ok);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-user-card--suspended::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-user-card--selected {
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--cyan) 14%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-ua-user-card:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Lifecycle action row: a visually distinct strip so routine account actions
+   (enable/rotate) read differently from the destructive delete affordance
+   sitting right next to them — PhoenixButton's own data-variant="danger"
+   already carries the color; this only tightens the strip that holds them. */
+html[data-phoenix-ui-phase='a'] .nexus-ua-lifecycle-actions {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-lifecycle-actions .phoenix-button[data-variant='danger'] {
+  box-shadow: 0 2px 8px var(--phase-a-aq-danger-glow);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-detail {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-profile-card,
+html[data-phoenix-ui-phase='a'] .nexus-ua-permission-matrix {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-profile-card::before,
+html[data-phoenix-ui-phase='a'] .nexus-ua-permission-matrix::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-aq-accent-line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-sensitive-warning {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-perm-module {
+  transition: border-color 140ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-perm-dangerous {
+  letter-spacing: .01em;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-form-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-form-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+/* Lifecycle modal overlays: an explicit visual split between a routine
+   confirmation (enable/disable), a caution-tier operation (rotate password,
+   recycle account — both reversible-ish but identity-altering), and the
+   irreversible hard-delete modal. */
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-overlay {
+  backdrop-filter: blur(2px);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-panel::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-aq-accent-line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-panel--caution::before {
+  background: linear-gradient(90deg, transparent, var(--warn), transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-panel--danger::before {
+  background: linear-gradient(90deg, transparent, var(--err), transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-ua-modal-panel--danger {
+  box-shadow: 0 8px 28px var(--phase-a-aq-danger-glow), var(--sh-xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PLATFORM BROADCAST — institutional messages, clear severity
+   ───────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-admin {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-admin::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--phase-a-aq-accent-line);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-compose {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-list {
+  position: relative;
+}
+
+/* Each stored broadcast: a quiet accent from the real severity field. */
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-item {
+  position: relative;
+  padding-inline-start: 14px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-item::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--info);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-item--warning::before,
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-item--important::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-item--urgent::before {
+  background: var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-ack-details {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-delete-confirm {
+  position: relative;
+}
+
+/* The full-screen acknowledgement gate: the SAME severity vocabulary as the
+   admin list above, scaled up since this is the one-at-a-time modal an
+   operator must actually read before dismissing. */
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate {
+  position: relative;
+  padding-inline-start: 16px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  border-radius: 99px;
+  background: var(--info);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate--warning::before,
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate--important::before {
+  background: var(--warn);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate--urgent::before {
+  background: var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-broadcast-gate--urgent {
+  box-shadow: 0 4px 16px var(--phase-a-aq-danger-glow);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   AVAILABILITY CLEANUP WIZARD — routine vs. destructive, unmistakably
+   ───────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-wizard {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-wizard::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--err), transparent);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-warning {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-counts {
+  position: relative;
+}
+
+/* The dry-run-confirmed, backup-acknowledged, typed-confirmation execute
+   zone: visually fenced off from the rest of the wizard as the one place a
+   destructive RPC can actually fire. */
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-danger-zone {
+  position: relative;
+  padding-inline-start: 14px;
+  border-inline-start: 3px solid var(--err);
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-cleanup-success {
+  position: relative;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PUBLIC QR — anonymous, phone-first, fast and legible
+   ───────────────────────────────────────────────────────────────────────── */
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-public {
+  min-height: 100dvh;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-header {
+  position: relative;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-org-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-org-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-summary {
+  padding-inline-end: 2px;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-search input {
+  min-height: var(--touch-target);
+}
+
+/* Item cards: a quiet accent from the real item.condition field — never a
+   fabricated risk level, and never anything for a hidden/unlisted status. */
+html[data-phoenix-ui-phase='a'] .nexus-qr-item {
+  position: relative;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-item[data-condition='near_expiry'] {
+  box-shadow: 0 2px 10px var(--phase-a-aq-caution-glow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-phoenix-ui-phase='a'] .nexus-qr-item:hover {
+    transform: translateY(-1px);
+  }
+}
+
+html[data-phoenix-ui-phase='a'] .nexus-qr-trust-note {
+  position: relative;
+}
+
+/* ── Responsive contract ─────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'] .nexus-sc-header,
+  html[data-phoenix-ui-phase='a'] .nexus-ua-header {
+    padding: clamp(14px, 4vw, 20px);
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-sc-tabs,
+  html[data-phoenix-ui-phase='a'] .nexus-sc-view-toggle {
+    width: 100%;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-ua-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* !important is required here: StatusCenterScreen's local btnStyle object
+     inline-sets minHeight (38px), which otherwise outranks any external rule
+     regardless of cascade order — the same conflict A5.1's .nexus-io-tabs
+     padding override already solved the same way. */
+  html[data-phoenix-ui-phase='a'] .nexus-sc-tab,
+  html[data-phoenix-ui-phase='a'] .nexus-sc-view-toggle button,
+  html[data-phoenix-ui-phase='a'] .nexus-sc-action,
+  html[data-phoenix-ui-phase='a'] .nexus-ua-lifecycle-actions .phoenix-button,
+  html[data-phoenix-ui-phase='a'] .nexus-qr-header button {
+    min-height: var(--touch-target) !important;
+  }
+}
+
+/* ── Accessibility and low-power behavior ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html[data-phoenix-ui-phase='a'] .nexus-status-center,
+  html[data-phoenix-ui-phase='a'] .nexus-user-admin,
+  html[data-phoenix-ui-phase='a'] .nexus-qr-public {
+    animation: none;
+  }
+
+  html[data-phoenix-ui-phase='a'] .nexus-sc-status-chip,
+  html[data-phoenix-ui-phase='a'] .nexus-alert-card,
+  html[data-phoenix-ui-phase='a'] .nexus-ua-user-card,
+  html[data-phoenix-ui-phase='a'] .nexus-ua-perm-module,
+  html[data-phoenix-ui-phase='a'] .nexus-outlet-group-row,
+  html[data-phoenix-ui-phase='a'] .nexus-qr-item,
+  html[data-phoenix-ui-phase='a'] .nexus-sc-tab,
+  html[data-phoenix-ui-phase='a'] .nexus-sc-action {
+    transition: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    html[data-phoenix-ui-phase='a'] .nexus-ua-user-card:hover,
+    html[data-phoenix-ui-phase='a'] .nexus-qr-item:hover {
+      transform: none;
+    }
+  }
+}

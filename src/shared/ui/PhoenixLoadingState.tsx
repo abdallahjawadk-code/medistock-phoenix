@@ -1,5 +1,5 @@
 import { MasarCopyrightSeal } from './MasarCopyrightSeal';
-import { PharmacyPulseLoader } from './PharmacyPulseLoader';
+import { PhoenixPharmacyEmblem } from './PhoenixPharmacyEmblem';
 
 interface Props {
   label?: string;
@@ -15,8 +15,10 @@ interface Props {
 export function PhoenixLoadingState({ label = '...', fullScreen = false }: Props) {
   const content = (
     <div className="nexus-loading" role="status" aria-live="polite">
-      {/* نبض الصيدلة — Bowl of Hygieia pulse (PHARMACY-PULSE-LOADER). */}
-      <PharmacyPulseLoader size="full" />
+      <div className="nexus-loading__mark nexus-loading__mark--phoenix" aria-hidden="true">
+        <span className="nexus-loading__orbit" />
+        <PhoenixPharmacyEmblem variant="compact-gold" size={42} priority />
+      </div>
       <span>{label}</span>
     </div>
   );

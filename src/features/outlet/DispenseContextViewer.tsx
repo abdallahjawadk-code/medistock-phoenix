@@ -18,7 +18,7 @@ const typeLabelKey: Record<DispenseContext['beneficiaryType'], string> = {
  */
 export function DispenseContextViewer({ context, lang }: { context: DispenseContext; lang: 'ar' | 'en' }) {
   return (
-    <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', fontSize: '11.5px' }} data-testid="dispense-context-viewer">
+    <div className="nexus-io-context-viewer" style={{ marginTop: '6px', padding: '8px 10px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s2)', fontSize: '11.5px' }} data-testid="dispense-context-viewer">
       <div style={{ fontWeight: 700, marginBottom: '4px' }} dir="auto">
         {t(typeLabelKey[context.beneficiaryType], lang)}
       </div>

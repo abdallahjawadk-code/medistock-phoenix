@@ -25,6 +25,17 @@ const USER_OTHER = '00000000-0000-0000-0000-0000000ab403';
 const WH_CENTRAL = '00000000-0000-0000-0000-0000000ab102';
 const ROUTE = '00000000-0000-0000-0000-0000000ab201';
 
+// CI-484-FIX: these batches must read as comfortably 'available' (never
+// 'near_expiry' or 'expired') for as long as this suite exists. A fixed
+// absolute date ('2027-05-01') was safely beyond migration 073's fixed
+// 270-day near_expiry window when this file was authored, but ages past
+// that window as real time passes — proven by CI run #484 (2026-08-01),
+// where the same literal had drifted to within 3 days of the boundary and
+// tipped 'available' over to 'near_expiry'. No assertion here checks a
+// specific expiry_date value, only condition/usable_quantity, so a date
+// computed relative to execution time is equivalent and never expires.
+const FAR_FUTURE_EXPIRY = new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 run('083 — inventory-derived availability projection (dynamic)', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
@@ -60,7 +71,7 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
   });
 
   it('one usable batch: exact quantity and audited condition', async () => {
-    await rig.asAdmin((c: any) => seedLot(c, DP, 'B1', '2027-05-01', 30));
+    await rig.asAdmin((c: any) => seedLot(c, DP, 'B1', FAR_FUTURE_EXPIRY, 30));
     const r = await project(rig.superAdminId, DP);
     const b1 = r.items.find((i: any) => i.batch_number === 'B1');
     expect(b1.available_quantity).toBe(30);
@@ -71,8 +82,8 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
 
   it('multiple batches aggregate without double counting; reserved and expired excluded from usable', async () => {
     await rig.asAdmin(async (c: any) => {
-      await seedLot(c, DP, 'BA', '2027-05-01', 30, 0);   // usable 30
-      await seedLot(c, DP, 'BB', '2027-06-01', 20, 5);   // available 15, usable 15 (reserved excluded)
+      await seedLot(c, DP, 'BA', FAR_FUTURE_EXPIRY, 30, 0);   // usable 30
+      await seedLot(c, DP, 'BB', FAR_FUTURE_EXPIRY, 20, 5);   // available 15, usable 15 (reserved excluded)
       await seedLot(c, DP, 'BX', '2020-01-01', 40, 0);   // expired → usable 0
     });
     const r = await project(rig.superAdminId, DP);
@@ -93,7 +104,7 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
     // Canonical model: a repeated receipt of the same batch increments the one
     // lot's on_hand (it does not create a second identity row).
     await rig.asAdmin(async (c: any) => {
-      await seedLot(c, DP, 'BR', '2027-05-01', 10);
+      await seedLot(c, DP, 'BR', FAR_FUTURE_EXPIRY, 10);
       await c.query(`UPDATE outlet_stock SET on_hand_quantity = on_hand_quantity + 25
                       WHERE distribution_point_id=$1 AND batch_number='BR'`, [DP]);
     });
@@ -106,7 +117,7 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
 
   it('catalogue visibility is independent: a hidden item_availability row does not change physical availability', async () => {
     await rig.asAdmin(async (c: any) => {
-      await seedLot(c, DP, 'BV', '2027-05-01', 12);
+      await seedLot(c, DP, 'BV', FAR_FUTURE_EXPIRY, 12);
       // A removed/hidden catalogue row must not affect the physical projection.
       await c.query(`INSERT INTO item_availability (distribution_point_id,organization_id,port_name,scientific_name,quantity,condition,batch_number,removed_at,removed_by,removal_reason)
                      VALUES ($1,$2,'O','Amoxicillin',0,'missing','BV',now(),$3,'hidden by operator')`,
@@ -122,7 +133,7 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
   });
 
   it('forbidden scope: a foreign org sees the same empty result as a nonexistent point', async () => {
-    await rig.asAdmin((c: any) => seedLot(c, DP, 'BF', '2027-05-01', 9));
+    await rig.asAdmin((c: any) => seedLot(c, DP, 'BF', FAR_FUTURE_EXPIRY, 9));
     const foreign = await project(USER_OTHER, DP);
     expect(foreign.items).toEqual([]);                       // forbidden → empty
     const nonexistent = await project(USER_OTHER, randomUUID());
@@ -133,7 +144,7 @@ run('083 — inventory-derived availability projection (dynamic)', () => {
   it('reflects a REAL dispatch→receive chain (canonical derivation, not a manual write)', async () => {
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const call = (fn: string, a: any[]) => c.query(`SELECT public.${fn}(${a.map((_, i) => `$${i + 1}`).join(',')}) r`, a).then((r: any) => r.rows[0].r);
-      const rc = await call('phoenix_receive_warehouse_stock_guarded', [randomUUID(), WH, 'Ceftriaxone', 40, true, false, 0, null, 'Rocephin', '1g', 'vial', 'vial', null, 'RB', '2027-09-01', null, null, null, null, 'DOC', null]);
+      const rc = await call('phoenix_receive_warehouse_stock_guarded', [randomUUID(), WH, 'Ceftriaxone', 40, true, false, 0, null, 'Rocephin', '1g', 'vial', 'vial', null, 'RB', FAR_FUTURE_EXPIRY, null, null, null, null, 'DOC', null]);
       const dsp = await call('phoenix_create_warehouse_dispatch', [WH, DP, randomUUID().slice(0, 8), null, null, null]);
       const did = dsp.dispatch_id;
       await call('phoenix_add_dispatch_line', [did, rc.warehouse_stock_id, 25]);

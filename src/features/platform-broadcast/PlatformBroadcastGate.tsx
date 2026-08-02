@@ -123,6 +123,7 @@ export function PlatformBroadcastGate() {
 
   return (
     <PhoenixDialog open onClose={() => { /* no dismiss without acknowledging, by design */ }} title={t('pbc_popup_title', lang)} maxWidth={480}>
+      <div className={`nexus-broadcast-gate nexus-broadcast-gate--${current.severity}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
         <PhoenixStatusBadge variant={SEVERITY_BADGE[current.severity]} label={t(`pbc_severity_${current.severity}`, lang)} />
         <span style={{ fontSize: '11px', color: 'var(--t2)' }}>
@@ -146,6 +147,7 @@ export function PlatformBroadcastGate() {
       <PhoenixButton variant="primary" size="md" fullWidth loading={ackBusy} onClick={onAcknowledge}>
         {t('pbc_acknowledge_button', lang)}
       </PhoenixButton>
+      </div>
     </PhoenixDialog>
   );
 }

@@ -190,7 +190,11 @@ describe('8. No QR generation/cancel/recreate logic changed, no export/print/use
       !l.includes('Renders null internally') && !l.includes('is already the safest') &&
       !l.includes('PlatformBroadcastAdminPanel') && !l.includes('PHASE3-PLATFORM-BROADCAST-NOTICES-A') &&
       !l.includes('same convention as AvailabilityCleanupWizard above') &&
-      !l.includes('AUTHENTICATED-SCREEN-SPLIT-B') && !l.includes('Suspense') && !l.includes('normalizeRole(role)'));
+      !l.includes('AUTHENTICATED-SCREEN-SPLIT-B') && !l.includes('Suspense') && !l.includes('normalizeRole(role)') &&
+      // PHASE-A-CLAUDE-A6: a later, separately-reviewed presentation-only phase
+      // (phase-a-alerts-admin-qr.css) adds className/data-attribute hooks only —
+      // every such line carries the 'nexus-ua-' or 'nexus-user-admin' marker.
+      !l.includes('nexus-ua-') && !l.includes('nexus-user-admin'));
     expect(unexpected).toEqual([]);
   });
 });

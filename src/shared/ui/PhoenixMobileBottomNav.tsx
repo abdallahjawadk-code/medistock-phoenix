@@ -25,7 +25,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
   const { lang } = useApp();
 
   const bns = (n: number) => ({
-    color: currentScreen === n ? 'var(--cyanDim)' : 'var(--muted)',
+    color: currentScreen === n ? 'var(--phoenix-gold)' : 'var(--muted)',
     fontWeight: currentScreen === n ? '700' : '500',
   });
 

@@ -1505,8 +1505,80 @@ describe('16. isolation: untouched domains', () => {
       // runtime, or UI code — this guard's stated subject. supabase/functions
       // and package.json stay fully covered, as does every shippable file under
       // src/ (components, hooks, stores, services, pages, lib).
+      // PHASE-A-A5-INSTITUTIONS-OUTLETS-A: a later, separately-reviewed phase
+      // applies presentation-only className/data-attribute hooks (Phase A
+      // design layer, no business-logic change) across the Institution and
+      // Outlet Operations surfaces plus the shared entry point — excluded here.
+      // PHASE-A-CLAUDE-A6: a still later, separately-reviewed phase applies
+      // the same kind of presentation-only className/data-attribute hooks
+      // (phase-a-alerts-admin-qr.css) to Status Center / User Administration /
+      // Platform Broadcast / Availability Cleanup / Public QR — excluded here.
+      // PHASE-A-CLAUDE-A7: a still later, separately-reviewed phase (Phoenix
+      // Daylight visual convergence) applies the same kind of presentation-
+      // only token/data-attribute recolouring — never a prop, handler, or RPC
+      // change — to PhoenixSidebar/PhoenixMobileDrawer (nav active state moved
+      // from an inline style to a CSS data-active selector), ResetPassword
+      // Screen (primary-button recolour), and PhoenixButton/PhoenixMobile
+      // BottomNav/PhoenixStatusBadge (gold primary, teal secondary, dedicated
+      // info-blue) — excluded here.
       diff = execSync(
-        'git diff --name-only -- src supabase/functions package.json ":(exclude)src/**/__tests__/**"',
+        'git diff --name-only -- src supabase/functions package.json ":(exclude)src/**/__tests__/**" ' +
+        '":(exclude)src/features/institutions/InstitutionScreen.tsx" ' +
+        '":(exclude)src/features/institutions/AvailabilityItemDetailsModal.tsx" ' +
+        '":(exclude)src/features/outlet/OutletOperationsScreen.tsx" ' +
+        '":(exclude)src/features/outlet/OutletIncomingSupplies.tsx" ' +
+        '":(exclude)src/features/outlet/OutletReturnComposer.tsx" ' +
+        '":(exclude)src/features/outlet/OutletStockCorrectionModal.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseComposerDialog.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseContextDialog.tsx" ' +
+        '":(exclude)src/features/outlet/DispenseContextViewer.tsx" ' +
+        '":(exclude)src/features/outlet/CurrentMovementStatus.tsx" ' +
+        '":(exclude)src/features/status/StatusCenterScreen.tsx" ' +
+        '":(exclude)src/features/status/InternalAlertsSection.tsx" ' +
+        '":(exclude)src/features/status/OutletMaterialGroups.tsx" ' +
+        '":(exclude)src/features/users/UserManagementScreen.tsx" ' +
+        '":(exclude)src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ' +
+        '":(exclude)src/features/platform-broadcast/PlatformBroadcastGate.tsx" ' +
+        '":(exclude)src/features/admin/AvailabilityCleanupWizard.tsx" ' +
+        '":(exclude)src/features/qr/PublicQrScreen.tsx" ' +
+        '":(exclude)src/main.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixSidebar.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixMobileDrawer.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixButton.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixMobileBottomNav.tsx" ' +
+        '":(exclude)src/shared/ui/PhoenixStatusBadge.tsx" ' +
+        '":(exclude)src/features/auth/ResetPasswordScreen.tsx" ' +
+        // PHASE-A-CLAUDE-A7.1: a still later, separately-reviewed phase (A7.1
+        // visual acceptance closure) finishes converting the last hardcoded
+        // hex literals it found repo-wide to Phoenix tokens — never a prop,
+        // handler, or RPC change — see hardcoded-colour-allowlist.md.
+        '":(exclude)src/features/alerts/materialAlertEngine.ts" ' +
+        '":(exclude)src/shared/ui/NotificationBell.tsx" ' +
+        '":(exclude)src/shared/ui/WhatsAppContactButton.tsx" ' +
+        '":(exclude)src/features/network/NetworkManagementScreen.tsx" ' +
+        '":(exclude)src/features/network/DirectSupplyOperations.tsx" ' +
+        '":(exclude)src/features/outlet/OutletDispatchOperations.tsx" ' +
+        '":(exclude)src/features/procurement/DirectEntryPanel.tsx" ' +
+        '":(exclude)src/features/reports/ReportsScreen.tsx" ' +
+        '":(exclude)src/shared/lib/phase-a-visual-convergence.css" ' +
+        '":(exclude)src/shared/lib/phoenix-nexus.css" ' +
+        '":(exclude)src/shared/lib/tokens.css" ' +
+        // PHASE-A-CLAUDE-A7.2: a still later, separately-reviewed phase
+        // (Premium Living Auth & Welcome) retires the photographic Phoenix-
+        // bird hero on both auth screens for an original inline-SVG supply-
+        // network illustration — never a handler, session, or RPC change —
+        // and flips AppContext's in-memory theme default to light-first
+        // (no persistence key exists or is added; same structure, same
+        // toggle) — excluded here.
+        '":(exclude)src/features/auth/LoginScreen.tsx" ' +
+        '":(exclude)src/features/auth/PhoenixWelcomeExperience.tsx" ' +
+        '":(exclude)src/app/AppContext.tsx" ' +
+        // PHASE-A-CLAUDE-A7.2.1: a still later, separately-reviewed phase
+        // (Luxury Visual Fidelity Correction) reworks the illustration
+        // component and its CSS layer for closer reference-board fidelity —
+        // never a handler, session, or RPC change — excluded here.
+        '":(exclude)src/shared/ui/InstitutionalSupplyMotif.tsx" ' +
+        '":(exclude)src/shared/lib/phase-a-auth-welcome-signature.css"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

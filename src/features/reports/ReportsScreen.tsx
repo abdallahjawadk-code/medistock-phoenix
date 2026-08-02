@@ -53,7 +53,7 @@ export function ReportsScreen() {
   const tabStyle = (active: boolean) => ({
     flex: 1, minWidth: '80px', padding: '8px 10px', borderRadius: 'var(--r2)', border: 'none',
     background: active ? 'var(--p)' : 'transparent',
-    color: active ? '#fff' : 'var(--t2)',
+    color: active ? 'var(--on-accent)' : 'var(--t2)',
     fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 150ms', whiteSpace: 'nowrap' as const,
   });
 

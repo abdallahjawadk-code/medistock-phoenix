@@ -168,7 +168,7 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
 
             {/* 117 — advisory-only, never blocks creating a new material. */}
             {duplicates.length > 0 && (
-              <div data-testid="subpurchase-duplicate-hint" role="status" style={{ padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--warn-bg, #fff7e6)', border: '1px solid var(--warn, #d9a441)', display: 'grid', gap: '6px' }}>
+              <div data-testid="subpurchase-duplicate-hint" role="status" style={{ padding: '8px 12px', borderRadius: 'var(--r2)', background: 'var(--warn2)', border: '1px solid var(--warn)', display: 'grid', gap: '6px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700 }} dir="auto">{t('sp_duplicate_hint_title', lang)}</div>
                 <div style={{ display: 'grid', gap: '4px' }}>
                   {duplicates.map(d => (

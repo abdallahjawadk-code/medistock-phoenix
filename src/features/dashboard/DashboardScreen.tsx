@@ -116,7 +116,7 @@ export function DashboardScreen({ onNavigate }: Props) {
     : [];
 
   return (
-    <div className="premium-page premium-dashboard" style={{ maxWidth: '1320px', animation: 'fs .3s ease' }}>
+    <div className="premium-page premium-dashboard nexus-command-center nexus-command-center--dashboard" style={{ maxWidth: '1320px', animation: 'fs .3s ease' }}>
       {/* Hero band — design-source Dashboard header: a reported-availability
           ring and headline readouts derived from the live metrics, over the
           Phoenix hero gradient. The ring reports manually reported availability

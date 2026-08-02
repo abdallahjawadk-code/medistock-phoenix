@@ -366,6 +366,13 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   font-size: 18px;
   flex-shrink: 0;
 }
+.premium-pwa-install__icon--phoenix {
+  width: 44px;
+  height: 44px;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
 .premium-pwa-install__body { flex: 1; min-width: 0; }
 .premium-pwa-install__title {
   font-size: 13px;

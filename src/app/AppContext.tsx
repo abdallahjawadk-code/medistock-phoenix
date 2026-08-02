@@ -115,10 +115,14 @@ interface AppProviderProps {
 
 export function AppProvider({ children, skipAuthBootstrap = false }: AppProviderProps) {
   const [lang, setLangState]   = useState<Lang>('ar');
-  // Dark-first: the Phoenix design source ships dark as its default theme, and
-  // index.html sets data-theme="dark" on <html> so the first paint agrees.
-  // Light stays fully supported through the topbar toggle.
-  const [theme, setThemeState] = useState<Theme>('dark');
+  // PHASE-A7.2-LIGHT-FIRST: light-first — there is no persisted theme
+  // preference anywhere in this app (no storage key ever existed for it;
+  // this was always a fresh in-memory default each load), so "respect a
+  // saved preference" has nothing to override here — every session IS a
+  // session with no saved preference. index.html sets data-theme="light" on
+  // <html> so the first paint agrees. Dark stays fully supported, same
+  // structure, through the existing topbar toggle.
+  const [theme, setThemeState] = useState<Theme>('light');
 
   const [authReady, setAuthReady] = useState(false);
   const authReadyRef = useRef(false);
