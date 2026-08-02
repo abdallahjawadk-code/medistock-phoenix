@@ -65,16 +65,12 @@ describe('the app shell has exactly one scroll owner and the final control is re
     );
   });
 
-  it('RIGHTS-SEAL-IN-FLOW: the seal is a REAL footer in normal flow — never fixed/sticky', () => {
-    // The footer lives INSIDE the main scroller, after the growing content.
+  it('the shell ends with page content and no copyright footer or reserved block', () => {
     expect(appShell).toContain("<div style={{ flex: '1 0 auto', minWidth: 0 }}>{children}</div>");
-    expect(appShell).toMatch(/<footer className="nexus-shell__brand"/);
-    // No fixed/sticky/absolute positioning anywhere in the seal rules.
-    const sealRules = nexusCss.split('.nexus-shell__brand').slice(1).map(x => x.slice(0, 400)).join(' ');
-    expect(sealRules).not.toContain('position: fixed');
-    expect(sealRules).not.toContain('position: sticky');
-    expect(sealRules).not.toContain('position: absolute');
-    expect(sealRules).not.toContain('transform: scale');
+    expect(appShell).not.toContain('MasarCopyrightSeal');
+    expect(appShell).not.toContain('nexus-shell__brand');
+    expect(nexusCss).not.toContain('.nexus-shell__brand');
+    expect(nexusCss).not.toContain('.masar-seal');
   });
 
   it('the floating search clears the bottom nav and retreats when the keyboard opens', () => {

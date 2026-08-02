@@ -149,8 +149,6 @@ describe('Login screen: technical badges removed', () => {
 });
 
 describe('Login screen: professional rights block, supervision credit login-side only', () => {
-  // RIGHTS-SEAL-SCOPE: the MASAR seal must NEVER return to Login or Welcome —
-  // the single seal lives in the shell footer only.
   // STAGE1-SUPERVISION-ATTRIBUTION-A: PHASE3-LIVING-INTERFACE-CREDIT-REMOVAL-A
   // removed the supervision credit from BOTH surfaces. An explicit later
   // instruction reinstated it on the WELCOME/splash surface only, so the split
@@ -165,8 +163,10 @@ describe('Login screen: professional rights block, supervision credit login-side
     expect(welcome).not.toContain('MasarCopyrightSeal');
     // The approved issuer credit line stays verbatim.
     expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
-    // Exactly ONE mounted seal remains: the shell footer.
-    expect(appShell).toContain('<MasarCopyrightSeal');
+    expect(appShell).not.toContain('MasarCopyrightSeal');
+    const loadingState = readSrc('shared/ui/PhoenixLoadingState.tsx');
+    expect(loadingState).not.toContain('MasarCopyrightSeal');
+    expect(loadingState).not.toContain('nexus-state__brand');
   });
 
   it('login_supervision_line key no longer exists in strings.ts', () => {

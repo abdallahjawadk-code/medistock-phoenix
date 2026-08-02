@@ -7,7 +7,6 @@ import { PhoenixTopbar } from './PhoenixTopbar';
 import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
-import { MasarCopyrightSeal } from './MasarCopyrightSeal';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
@@ -135,8 +134,8 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
             flex: 1,
             // MOBILE-SCROLL-OWNER-HOTFIX-A: minHeight 0 + the shell's fixed
             // dvh frame make THIS element the single scroll owner. The mobile
-            // bottom padding clears the fixed bottom nav, the pinned seal and
-            // the device safe area, so the final control of every screen can
+            // bottom padding clears the fixed bottom nav and the device safe
+            // area, so the final control of every screen can
             // always be scrolled fully into view.
             minHeight: 0,
             overflowY: 'auto',
@@ -149,19 +148,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
             flexDirection: 'column',
           }}
         >
-          {/* The page content grows; the footer below it stays in NORMAL flow. */}
           <div style={{ flex: '1 0 auto', minWidth: 0 }}>{children}</div>
-
-          {/* PART 5 choke point: exactly ONE MASAR copyright seal per
-              operational route, inherited by every screen — a REAL footer in
-              normal document flow at the END of the scrollable content. On a
-              short page the flex column pushes it to the bottom of the
-              scroller; on a long page it appears only when the operator
-              reaches the end. It never floats, never covers a card/button or
-              the bottom navigation, and scrolls WITH the page. */}
-          <footer className="nexus-shell__brand" aria-label={lang === 'ar' ? 'حقوق النشر' : 'Copyright'}>
-            <MasarCopyrightSeal variant={isMobile ? 'minimal' : 'compact'} />
-          </footer>
         </main>
       </div>
 

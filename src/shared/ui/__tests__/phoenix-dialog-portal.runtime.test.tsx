@@ -5,9 +5,8 @@
  *
  * A real authenticated E2E session found this live: opening
  * DispenseComposerDialog (one of PhoenixDialog's 22 real consumers) within
- * ~0.4s of the underlying screen re-rendering put the page's own copyright
- * <footer class="nexus-shell__brand"> ahead of the dialog's submit button
- * in pointer-event hit-testing, even though the dialog declares
+ * ~0.4s of the underlying screen re-rendering put a later page sibling ahead
+ * of the dialog's submit button in pointer-event hit-testing, even though the dialog declares
  * `z-index: 300`. Root cause: `.premium-main`'s entrance animation
  * (nexus-page-enter, animating opacity/transform/filter — each of which
  * independently forces a new CSS stacking context per spec) transiently
@@ -15,7 +14,7 @@
  * context for the animation's duration. A dialog rendered INLINE inside
  * one of those children has its z-index scoped to that temporary,
  * isolated context — it can never out-rank a LATER SIBLING of that
- * ancestor (like the footer) via z-index, because that comparison never
+ * ancestor via z-index, because that comparison never
  * reaches the document root while the animation is active.
  *
  * The fix (PhoenixDialog.tsx): render via createPortal to document.body,
