@@ -8,6 +8,7 @@ import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperien
 import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { AuthRecoveryState } from '@/shared/ui/AuthRecoveryState';
 import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
 import { MeshScreen } from '@/features/mesh/MeshScreen';
@@ -44,7 +45,10 @@ function ForbiddenScreen() {
 }
 
 export function AuthenticatedApp() {
-  const { authReady, session, profile, signOut, passwordRecovery, role } = useApp();
+  const {
+    authReady, session, profile, signOut, passwordRecovery, role, lang,
+    authStatus, retryAuthBootstrap, retryProfileLoad,
+  } = useApp();
   // Keep explicit navigation scoped to the profile that created it. A later
   // session on the same workstation must derive its own role-safe landing
   // instead of inheriting the previous user's screen.
@@ -58,6 +62,22 @@ export function AuthenticatedApp() {
   // ── Password recovery (from reset email) — takes priority over the app ──
   if (passwordRecovery) {
     return <ResetPasswordScreen />;
+  }
+
+  // ── PHASE-B1-AUTH-RESILIENCE ──
+  // The session read FAILED: we do not know whether anyone is signed in. This
+  // must be said, before the `!session` branch below could otherwise present a
+  // login form as if the answer were "nobody" — and before `!authReady`, which
+  // would otherwise show the same spinner the failure was meant to end.
+  // No sign-out is offered here: there is no established session to end.
+  if (authStatus === 'bootstrap_failed') {
+    return (
+      <AuthRecoveryState
+        title={t('auth_boot_failed_title', lang)}
+        message={t('auth_boot_failed_msg', lang)}
+        onRetry={() => { void retryAuthBootstrap(); }}
+      />
+    );
   }
 
   // ── Wait for the session check before deciding login vs app ──
@@ -76,6 +96,41 @@ export function AuthenticatedApp() {
   } catch {
     // Privacy-restricted browsers may deny sessionStorage. The in-memory
     // completion state still prevents the sequence from looping.
+  }
+
+  // The one sign-out path, shared by the app shell and by the recovery states
+  // below — a stranded operator gets exactly the same logout the shell offers,
+  // not a weaker copy of it. Moved out of the shell's JSX unchanged.
+  const handleLogout = () => {
+    try {
+      window.sessionStorage.removeItem(welcomeKey);
+    } catch {
+      // A restricted storage environment needs no cleanup.
+    }
+    setWelcomeCompletedFor(null);
+    void signOut();
+    setNavigation(null);
+  };
+
+  // ── PHASE-B1-AUTH-RESILIENCE ──
+  // A session exists but its profile is unreadable. This used to fall through
+  // to the `!profile` spinner below and stay there forever, with no retry and
+  // no way to sign out. It is checked BEFORE the welcome sequence so a stuck
+  // operator is not made to sit through an animation first.
+  //   • failed  — the read could not complete; retrying is meaningful.
+  //   • missing — the read completed and there is no readable profile row;
+  //               retry stays available (an administrator may fix it while
+  //               this screen is open) but sign-out is the real way out.
+  if (authStatus === 'profile_failed' || authStatus === 'profile_missing') {
+    const missing = authStatus === 'profile_missing';
+    return (
+      <AuthRecoveryState
+        title={t(missing ? 'auth_profile_missing_title' : 'auth_profile_failed_title', lang)}
+        message={t(missing ? 'auth_profile_missing_msg' : 'auth_profile_failed_msg', lang)}
+        onRetry={() => { void retryProfileLoad(); }}
+        onSignOut={handleLogout}
+      />
+    );
   }
 
   if (!welcomeSeen && welcomeCompletedFor !== session.user.id) {
@@ -200,16 +255,7 @@ export function AuthenticatedApp() {
     <PhoenixAppShell
       currentScreen={screen}
       onNavigate={setScreen}
-      onLogout={() => {
-        try {
-          window.sessionStorage.removeItem(welcomeKey);
-        } catch {
-          // A restricted storage environment needs no cleanup.
-        }
-        setWelcomeCompletedFor(null);
-        void signOut();
-        setNavigation(null);
-      }}
+      onLogout={handleLogout}
     >
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
           renders screenContent() unchanged and only observes. It gates solely

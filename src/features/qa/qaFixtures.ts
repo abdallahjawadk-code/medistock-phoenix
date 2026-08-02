@@ -223,6 +223,13 @@ export function buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId
 
     configured: true,
     authReady: true,
+    // PHASE-B1-AUTH-RESILIENCE: the harness renders screens for a persona that
+    // is, by construction, already signed in with a loaded profile — so it
+    // reports the terminal state and never a failure the fixtures cannot
+    // produce. Both retries are the same no-op as every other auth action here.
+    authStatus: 'authenticated',
+    retryAuthBootstrap: noop,
+    retryProfileLoad: noop,
     // QA ONLY: a minimal session shape — enough for UI that reads user.id.
     session: { user: { id: persona.profile.id } } as unknown as AppState['session'],
     profile: persona.profile,

@@ -4,14 +4,16 @@ import type { Lang, Theme, Role } from '@/shared/lib/types';
 import { supabaseConfigured } from '@/shared/supabase/client';
 import { roleDefaults, PERMISSION_KEY_SET } from '@/shared/lib/permissions';
 import {
-  getSession,
+  getSessionResult,
   onAuthChange,
-  getMyProfile,
+  getMyProfileResult,
   signIn as authSignIn,
   signOut as authSignOut,
   requestPasswordReset as authRequestReset,
   updatePassword as authUpdatePassword,
   type Profile,
+  type ProfileLoad,
+  type SessionLoad,
   type SignInResult,
 } from '@/shared/supabase/services/auth.service';
 import { getEffectivePermissions } from '@/shared/supabase/services/users.service';
@@ -24,6 +26,33 @@ import {
   type ScopedRbacMode, type ScopedRbacModeDiagnostic,
 } from '@/shared/authz/mode';
 import type { RbacTelemetryStore } from '@/shared/authz/telemetry';
+
+/**
+ * PHASE-B1-AUTH-RESILIENCE — the explicit authentication state contract.
+ *
+ * Before this phase there were only two observable states — "authReady or not"
+ * and "session or not" — so three genuinely different situations (still
+ * booting / the boot FAILED / nobody is signed in) shared one spinner, and two
+ * more (profile still loading / profile unreadable) shared another. Each one
+ * below now has a name, so the UI can never again answer a failure with an
+ * endless spinner or with a login form.
+ *
+ *  bootstrap_pending — the first session read has not settled yet.
+ *  no_session        — the read settled and nobody is signed in.
+ *  bootstrap_failed  — the read could not complete; we do NOT know either way.
+ *  profile_loading   — a session exists, its profile is being read.
+ *  profile_failed    — the profile read could not complete (retry is useful).
+ *  profile_missing   — the read completed; no profile row is readable.
+ *  authenticated     — session and profile are both present.
+ */
+export type AuthStatus =
+  | 'bootstrap_pending'
+  | 'no_session'
+  | 'bootstrap_failed'
+  | 'profile_loading'
+  | 'profile_failed'
+  | 'profile_missing'
+  | 'authenticated';
 
 interface AppState {
   // ── UI prefs ──
@@ -38,6 +67,20 @@ interface AppState {
   // ── Auth / session ──
   configured: boolean;
   authReady: boolean;
+  /**
+   * PHASE-B1-AUTH-RESILIENCE: the single state every auth-dependent surface
+   * reads. `authReady`/`session`/`profile` are unchanged and still exported —
+   * this is a strictly additive, derived view of them plus the two failure
+   * facts they could not express.
+   */
+  authStatus: AuthStatus;
+  /**
+   * Re-attempt the initial session read exactly ONCE per call. Never called
+   * automatically, never loops, and never signs anybody in or out.
+   */
+  retryAuthBootstrap: () => Promise<void>;
+  /** Re-attempt the profile read exactly ONCE per call. */
+  retryProfileLoad: () => Promise<void>;
   session: Session | null;
   profile: Profile | null;
   role: Role;
@@ -93,6 +136,31 @@ interface AppState {
 
 const AppContext = createContext<AppState | null>(null);
 
+/**
+ * PHASE-B1-AUTH-RESILIENCE: last-resort guards.
+ *
+ * getSessionResult/getMyProfileResult already convert their own errors into a
+ * `failed` result, so these wrappers exist for one thing only: a rejection
+ * that never reaches those try/catch blocks (a mocked/replaced module, a
+ * bundler edge) must still settle into a stated state rather than an
+ * unhandled rejection that leaves the app booting forever.
+ */
+async function readSessionOutcome(): Promise<SessionLoad> {
+  try {
+    return await getSessionResult();
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
+async function readProfileOutcome(): Promise<ProfileLoad> {
+  try {
+    return await getMyProfileResult();
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
 // VISUAL-QA-HARNESS-A: exported ONLY so the DEV/TEST-only visual-QA harness can
 // supply a deterministic fixture context (src/features/qa). Production code must
 // keep using <AppProvider> — this export grants no new capability at runtime.
@@ -126,6 +194,11 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   const [authReady, setAuthReady] = useState(false);
   const authReadyRef = useRef(false);
+  // PHASE-B1-AUTH-RESILIENCE: the two facts `authReady` alone cannot carry —
+  // whether the session read FAILED, and how the profile read ended.
+  const [bootstrapFailed, setBootstrapFailed] = useState(false);
+  const [profileStatus, setProfileStatus] =
+    useState<'idle' | 'loading' | 'ready' | 'failed' | 'missing'>('idle');
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
@@ -216,22 +289,45 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     }
   }, []);
 
+  /**
+   * PHASE-B1-AUTH-RESILIENCE: apply one profile-read outcome.
+   *
+   * The unreadable branches (failed / missing) deliberately clear activeOrgId
+   * and the permission set as well as the profile. The previous code cleared
+   * only the profile, so a failed reload could leave the PREVIOUS profile's
+   * organization scope pinned — the org id every scoped query is built from.
+   * Nothing about the successful branch changed.
+   */
+  const applyProfileOutcome = useCallback(async (outcome: ProfileLoad) => {
+    if (outcome.status !== 'ok') {
+      setProfile(null);
+      setActiveOrgId(null);
+      setProfileStatus(outcome.status);
+      await loadPermissions(null);
+      return;
+    }
+    const p = outcome.profile;
+    setProfile(p);
+    // Non-super_admin users are scoped to their own org; super_admin starts global.
+    if (p.role !== 'super_admin') {
+      setActiveOrgId(p.organization_id);
+    }
+    setProfileStatus('ready');
+    await loadPermissions(p);
+  }, [loadPermissions]);
+
   // Load profile for a session, pinning org scope for non-super_admin roles.
   const loadProfile = useCallback(async (s: Session | null) => {
     if (!s) {
       setProfile(null);
       setActiveOrgId(null);
+      setProfileStatus('idle');
       await loadPermissions(null);
       return;
     }
-    const p = await getMyProfile();
-    setProfile(p);
-    // Non-super_admin users are scoped to their own org; super_admin starts global.
-    if (p && p.role !== 'super_admin') {
-      setActiveOrgId(p.organization_id);
-    }
-    await loadPermissions(p);
-  }, [loadPermissions]);
+    setProfileStatus('loading');
+    await applyProfileOutcome(await readProfileOutcome());
+  }, [applyProfileOutcome, loadPermissions]);
 
   // Establish session on mount + subscribe to auth changes.
   // Recovery callback landing (/auth/callback) is handled entirely by
@@ -250,6 +346,9 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
         passwordRecoveryRef.current = true;
         setPasswordRecovery(true);
       }
+      // A live auth event is proof the auth layer is reachable, so it clears a
+      // previously failed bootstrap.
+      setBootstrapFailed(false);
       setSession(s);
       // Skip profile loading during recovery — ResetPasswordScreen is standalone
       if (!passwordRecoveryRef.current) {
@@ -261,11 +360,23 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
       }
     });
 
-    getSession().then(async (s) => {
+    // PHASE-B1-AUTH-RESILIENCE: the initial read now reports failure instead of
+    // resolving to a null session, and the promise can no longer leave the app
+    // pending forever — every path below settles authReady exactly once.
+    readSessionOutcome().then(async (res) => {
       if (!active) return;
-      setSession(s);
+      if (res.status === 'failed') {
+        setBootstrapFailed(true);
+        if (!authReadyRef.current) {
+          authReadyRef.current = true;
+          setAuthReady(true);
+        }
+        return;
+      }
+      setBootstrapFailed(false);
+      setSession(res.session);
       if (!passwordRecoveryRef.current) {
-        await loadProfile(s);
+        await loadProfile(res.session);
       }
       if (!authReadyRef.current) {
         authReadyRef.current = true;
@@ -343,10 +454,34 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   }, []);
 
   const reloadProfile = useCallback(async () => {
-    const p = await getMyProfile();
-    setProfile(p);
-    await loadPermissions(p);
-  }, [loadPermissions]);
+    setProfileStatus('loading');
+    await applyProfileOutcome(await readProfileOutcome());
+  }, [applyProfileOutcome]);
+
+  /**
+   * PHASE-B1-AUTH-RESILIENCE: one manual re-attempt of the initial session
+   * read. It re-reads the session ONLY — it never re-subscribes, never signs
+   * anybody in or out, and schedules nothing, so it cannot become a loop. One
+   * click, one attempt.
+   */
+  const retryAuthBootstrap = useCallback(async () => {
+    setBootstrapFailed(false);
+    authReadyRef.current = false;
+    setAuthReady(false);
+    const res = await readSessionOutcome();
+    if (res.status === 'failed') {
+      setBootstrapFailed(true);
+      authReadyRef.current = true;
+      setAuthReady(true);
+      return;
+    }
+    setSession(res.session);
+    if (!passwordRecoveryRef.current) {
+      await loadProfile(res.session);
+    }
+    authReadyRef.current = true;
+    setAuthReady(true);
+  }, [loadProfile]);
 
   const reloadMyPermissions = useCallback(async () => {
     await loadPermissions(profile);
@@ -360,6 +495,10 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     setPasswordRecovery(false);
     setMyPermissions(new Set());
     setMyPermissionsMigrationMissing(false);
+    // PHASE-B1-AUTH-RESILIENCE: leaving a stale failure state behind would
+    // strand the next visitor on an error screen instead of the login form.
+    setProfileStatus('idle');
+    setBootstrapFailed(false);
   }, []);
 
   const requestPasswordReset = useCallback(
@@ -386,12 +525,28 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   const role: Role = profile?.role ?? 'outlet_officer';
 
+  /**
+   * PHASE-B1-AUTH-RESILIENCE: the seven-state contract, derived — no new
+   * source of truth. Order matters: a failed bootstrap is reported as a
+   * failure and NEVER as `no_session`, because "we could not read the session"
+   * and "there is no session" call for opposite responses from the UI.
+   */
+  const authStatus: AuthStatus =
+    bootstrapFailed          ? 'bootstrap_failed'
+    : !authReady             ? 'bootstrap_pending'
+    : session === null       ? 'no_session'
+    : profileStatus === 'failed'  ? 'profile_failed'
+    : profileStatus === 'missing' ? 'profile_missing'
+    : profile !== null       ? 'authenticated'
+    : 'profile_loading';
+
   return (
     <AppContext.Provider value={{
       lang, theme, setLang, setTheme, toggleLang, toggleTheme,
       dir: lang === 'ar' ? 'rtl' : 'ltr',
       configured: supabaseConfigured,
-      authReady, session, profile, role,
+      authReady, authStatus, retryAuthBootstrap, retryProfileLoad: reloadProfile,
+      session, profile, role,
       activeOrgId, setActiveOrgId,
       signIn, signOut, reloadProfile,
       myPermissions, myPermissionsMigrationMissing, reloadMyPermissions,

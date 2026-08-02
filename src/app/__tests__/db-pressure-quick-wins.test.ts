@@ -70,10 +70,22 @@ describe('Public QR route skips AppContext auth bootstrap', () => {
     expect(appContext).toContain('}, [loadProfile, skipAuthBootstrap]);');
   });
 
-  it('getSession/onAuthChange/getMyProfile/getEffectivePermissions calls themselves are unchanged (still present, still only guarded by the new flag)', () => {
+  /**
+   * PHASE-B1-AUTH-RESILIENCE: the session and profile reads now go through the
+   * result-returning variants (getSessionResult / getMyProfileResult), because
+   * `Session | null` and `Profile | null` could not tell a FAILED read apart
+   * from "nobody is signed in" / "still loading" — which is how a failed boot
+   * became a permanent spinner.
+   *
+   * What THIS test exists to guarantee is unchanged and still asserted below:
+   * all four reads still happen here, in this effect, gated by nothing except
+   * the skipAuthBootstrap flag. Only the names of two of them moved.
+   */
+  it('getSession/onAuthChange/getMyProfile/getEffectivePermissions calls themselves are still present and still only guarded by the new flag', () => {
     expect(appContext).toContain('onAuthChange(async (event, s) => {');
-    expect(appContext).toContain('getSession().then(async (s) => {');
-    expect(appContext).toContain('const p = await getMyProfile();');
+    expect(appContext).toContain('readSessionOutcome().then(async (res) => {');
+    expect(appContext).toContain('getSessionResult()');
+    expect(appContext).toContain('getMyProfileResult()');
     expect(appContext).toContain('const res = await getEffectivePermissions(p.id);');
   });
 

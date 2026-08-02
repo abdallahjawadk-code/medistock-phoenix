@@ -139,8 +139,21 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
   });
 
   it('has no migration, service/RPC, Auth/RBAC/route, dependency, or environment diff', () => {
+    // PHASE-B1-AUTH-RESILIENCE: a later, separately authorized phase closed the
+    // two authentication dead ends (a failed session read and a failed profile
+    // read each left a permanent spinner). Its files are excluded BY NAME —
+    // the guard itself is untouched and still covers every other path it ever
+    // covered: package.json, package-lock.json, supabase/, all of
+    // src/shared/authz, the rest of src/shared/supabase, the rest of src/app,
+    // and the env files.
     const prohibited = execSync(
-      'git diff --name-only 4dc6d8122dbef51fb7632266f8e92b983559cc8e -- package.json package-lock.json supabase src/shared/supabase src/shared/authz src/app .env .env.local',
+      'git diff --name-only 4dc6d8122dbef51fb7632266f8e92b983559cc8e -- package.json package-lock.json supabase src/shared/supabase src/shared/authz src/app .env .env.local' +
+      ' ":!src/app/AppContext.tsx"' +
+      ' ":!src/app/AuthenticatedApp.tsx"' +
+      ' ":!src/app/__tests__/auth-resilience-context.runtime.test.tsx"' +
+      ' ":!src/app/__tests__/auth-dead-end-screens.runtime.test.tsx"' +
+      ' ":!src/app/__tests__/db-pressure-quick-wins.test.ts"' +
+      ' ":!src/shared/supabase/services/auth.service.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
