@@ -513,3 +513,76 @@ describe('LOGOUT — local invalidation happens before the remote sign-out', () 
     expect(val('profile')).toBe('user-B');
   });
 });
+
+describe('AUTH SESSION MISSING — stale profile reads stay silent', () => {
+  it('drops five overlapping stale missing-session outcomes without console errors', async () => {
+    const requests = Array.from({ length: 5 }, () => deferred<ProfileLoad>());
+    const pending = [...requests];
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    getSessionResult.mockResolvedValue({ status: 'ok', session: SESSION_A });
+    getMyProfileResult.mockImplementation(() => {
+      const next = pending.shift();
+      if (!next) throw new Error('unexpected sixth profile read');
+      return next.promise;
+    });
+
+    mount();
+    await waitFor(() => expect(getMyProfileResult).toHaveBeenCalledTimes(1));
+
+    await emitAuthEvent('INITIAL_SESSION', SESSION_A);
+    await emitAuthEvent('SIGNED_IN', SESSION_A);
+    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    await emitAuthEvent('USER_UPDATED', SESSION_A);
+    expect(getMyProfileResult).toHaveBeenCalledTimes(5);
+
+    await emitAuthEvent('SIGNED_OUT', null);
+    expect(status()).toBe('no_session');
+
+    await act(async () => {
+      for (const request of requests) {
+        const error = Object.assign(new Error('Auth session missing!'), {
+          name: 'AuthSessionMissingError',
+        });
+        request.resolve({ status: 'session_missing', error });
+        await request.promise;
+      }
+    });
+
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+    expect(errorLog).not.toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
+  it('keeps a missing-session mismatch diagnosable while the session is still expected', async () => {
+    const error = Object.assign(new Error('Auth session missing!'), {
+      name: 'AuthSessionMissingError',
+    });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    getSessionResult.mockResolvedValue({ status: 'ok', session: SESSION_A });
+    getMyProfileResult.mockResolvedValue({ status: 'session_missing', error });
+
+    mount();
+
+    await waitFor(() => expect(status()).toBe('profile_failed'));
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    expect(errorLog).toHaveBeenCalledWith('[phoenix] profile load failed:', error);
+    expectNoIdentityResidue();
+    errorLog.mockRestore();
+  });
+
+  it('treats repeated INITIAL_SESSION=null as idempotent no-session without profile reads', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    getSessionResult.mockResolvedValue({ status: 'ok', session: null });
+
+    mount();
+    await waitFor(() => expect(status()).toBe('no_session'));
+    await emitAuthEvent('INITIAL_SESSION', null);
+    await emitAuthEvent('INITIAL_SESSION', null);
+
+    expect(status()).toBe('no_session');
+    expect(getMyProfileResult).not.toHaveBeenCalled();
+    expect(errorLog).not.toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+});

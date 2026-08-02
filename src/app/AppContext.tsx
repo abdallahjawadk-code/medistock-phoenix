@@ -380,6 +380,17 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
     if (superseded()) return;
 
+    if (outcome.status === 'session_missing') {
+      // A missing session is silent only when a newer auth generation already
+      // retired this profile read (handled by superseded() above). If the app
+      // still expects this exact session, the mismatch is real and remains a
+      // stated, diagnosable failure rather than being disguised as logout.
+      console.error('[phoenix] profile load failed:', outcome.error);
+      clearIdentityState();
+      setProfileStatus('failed');
+      return;
+    }
+
     if (outcome.status !== 'ok') {
       clearIdentityState();
       setProfileStatus(outcome.status);

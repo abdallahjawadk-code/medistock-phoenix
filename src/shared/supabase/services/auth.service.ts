@@ -1,5 +1,5 @@
 import { supabase, supabaseConfigured } from '../client';
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { isAuthSessionMissingError, type AuthChangeEvent, type Session } from '@supabase/supabase-js';
 import type { Role } from '../../lib/types';
 
 /** SPA path that handles the Supabase recovery/confirmation redirect. */
@@ -201,6 +201,12 @@ export async function setSessionFromTokens(accessToken: string, refreshToken: st
 export type ProfileLoad =
   | { status: 'ok'; profile: Profile }
   | { status: 'missing' }
+  /**
+   * `getUser()` found no auth session. The AppContext generation guard decides
+   * whether this is an expected, superseded no-session result or a real
+   * mismatch against the session it is still holding.
+   */
+  | { status: 'session_missing'; error: unknown }
   | { status: 'failed' };
 
 /**
@@ -215,6 +221,12 @@ export async function getMyProfileResult(): Promise<ProfileLoad> {
   try {
     const { data: auth, error: authError } = await supabase.auth.getUser();
     if (authError) {
+      // Missing auth during a profile read can be the normal end of a stale
+      // request after SIGNED_OUT. Do not log before AppContext has checked
+      // whether this request still belongs to the current auth generation.
+      if (isAuthSessionMissingError(authError)) {
+        return { status: 'session_missing', error: authError };
+      }
       console.error('[phoenix] profile load failed:', authError);
       return { status: 'failed' };
     }
@@ -238,6 +250,9 @@ export async function getMyProfileResult(): Promise<ProfileLoad> {
     if (!data) return { status: 'missing' };
     return { status: 'ok', profile: data as Profile };
   } catch (err) {
+    if (isAuthSessionMissingError(err)) {
+      return { status: 'session_missing', error: err };
+    }
     console.error('[phoenix] profile load threw:', err);
     return { status: 'failed' };
   }
