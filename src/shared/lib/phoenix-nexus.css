@@ -351,14 +351,6 @@ html body {
   transform: translateY(-2px);
 }
 
-.nexus-shell .premium-command-trigger {
-  color: var(--p) !important;
-  border-color: color-mix(in srgb, var(--p) 28%, var(--brd)) !important;
-  background: color-mix(in srgb, var(--nx-surface-raised) 94%, transparent) !important;
-  box-shadow: var(--nx-shadow-soft), 0 0 0 5px color-mix(in srgb, var(--p) 6%, transparent) !important;
-  backdrop-filter: blur(18px);
-}
-
 .nexus-command-backdrop {
   background: rgba(3, 10, 20, .58) !important;
   backdrop-filter: blur(10px) saturate(120%);
@@ -439,18 +431,6 @@ html body {
     padding-inline: 12px !important;
   }
 
-  .nexus-shell .premium-command-trigger {
-    bottom: calc(var(--bnh) + 12px + env(safe-area-inset-bottom, 0px)) !important;
-    inset-inline-end: 14px !important;
-  }
-
-  /* MOBILE-SCROLL-OWNER-HOTFIX-A: when the on-screen keyboard is open the
-     floating search control retreats entirely (App sets data-keyboard="open"
-     on <html> from visualViewport) so it never floats over a focused field. */
-  html[data-keyboard="open"] .nexus-shell .premium-command-trigger {
-    opacity: 0;
-    pointer-events: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

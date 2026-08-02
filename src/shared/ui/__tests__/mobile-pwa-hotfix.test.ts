@@ -73,14 +73,11 @@ describe('the app shell has exactly one scroll owner and the final control is re
     expect(nexusCss).not.toContain('.masar-seal');
   });
 
-  it('the floating search clears the bottom nav and retreats when the keyboard opens', () => {
-    expect(nexusCss).toContain(
-      'bottom: calc(var(--bnh) + 12px + env(safe-area-inset-bottom, 0px)) !important;',
-    );
-    expect(nexusCss).toContain('html[data-keyboard="open"] .nexus-shell .premium-command-trigger');
-    // The shell maintains the marker from the visual viewport.
-    expect(appShell).toContain('window.visualViewport');
-    expect(appShell).toContain("setAttribute('data-keyboard', 'open')");
+  it('the retired floating search leaves no overlay CSS or keyboard marker behind', () => {
+    expect(nexusCss).not.toContain('premium-command-trigger');
+    expect(nexusCss).not.toContain('html[data-keyboard="open"]');
+    expect(appShell).not.toContain('window.visualViewport');
+    expect(appShell).not.toContain("setAttribute('data-keyboard', 'open')");
   });
 
   it('the viewport meta exposes safe-area insets and keeps Android keyboard resizing honest', () => {
@@ -179,8 +176,8 @@ describe('Arabic/English search normalization', () => {
   });
 });
 
-describe('one context-aware search controller — never two competing surfaces', () => {
-  it('the floating control routes to the local field when one exists, else the palette', () => {
+describe('one keyboard search controller — never two competing surfaces', () => {
+  it('the `/` shortcut routes to the local field when one exists, else the palette', () => {
     expect(palette).toContain("'.premium-main input[type=\"search\"], .premium-main [data-phoenix-local-search]'");
     const smartOpen = palette.slice(palette.indexOf('const smartOpen'), palette.indexOf('useEffect(() => {\n    function isTypingContext'));
     expect(smartOpen).toContain('findLocalSearchField()');
@@ -188,8 +185,7 @@ describe('one context-aware search controller — never two competing surfaces',
     expect(smartOpen).toContain('focus({ preventScroll: true })');
     expect(smartOpen).toContain('return;'); // local field found -> NO palette
     expect(smartOpen).toContain('setOpen(true)');
-    // The floating button uses the smart entry point, not a bare open.
-    expect(palette).toContain('onClick={smartOpen}');
+    expect(palette).not.toContain('premium-command-trigger');
   });
 
   it('supports `/` (outside typing contexts) and Ctrl/Cmd+K, with Esc to close', () => {

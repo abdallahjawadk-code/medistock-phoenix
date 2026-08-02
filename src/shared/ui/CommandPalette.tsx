@@ -10,11 +10,11 @@ import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
  * UX-COMMAND-CENTER-SMART-A + SMART-SEARCH-HOTFIX-A — ONE smart search
  * controller for the whole shell.
  *
- * The floating magnifier is context-aware: on a screen that already renders
- * its own local search field (`input[type="search"]` or
- * `[data-phoenix-local-search]` inside the main region), tapping it scrolls
- * that field into view and focuses it — never a second competing search
- * surface. On every other screen it opens this palette.
+ * The `/` shortcut is context-aware: on a screen that already renders its own
+ * local search field (`input[type="search"]` or `[data-phoenix-local-search]`
+ * inside the main region), it scrolls that field into view and focuses it —
+ * never a second competing search surface. On every other screen it opens
+ * this palette.
  *
  * The palette searches two things, both already permitted to the caller:
  *   1. the static navigation targets below (no backend read), and
@@ -24,8 +24,9 @@ import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
  * Arabic matches are normalized (hamza seats, ة/ه, ى/ي, harakat, tatweel) and
  * English matches case-insensitively; hits are highlighted in place.
  *
- * Keyboard: Ctrl/Cmd+K toggles the palette, `/` triggers the same smart
- * behavior as the floating button, Esc closes.
+ * Keyboard: Ctrl/Cmd+K toggles the palette, `/` triggers the context-aware
+ * local-search behavior, Esc closes. There is deliberately no floating visual
+ * trigger; the palette remains a keyboard surface.
  */
 
 interface PaletteItem {
@@ -192,8 +193,8 @@ export function CommandPalette({ onNavigate }: Props) {
     setDebouncedQuery('');
   }, []);
 
-  // The context-aware entry point shared by the floating button and `/`:
-  // focus the screen's own search when one exists, otherwise open the palette.
+  // The context-aware `/` entry point: focus the screen's own search when one
+  // exists, otherwise open the palette.
   const smartOpen = useCallback(() => {
     const local = findLocalSearchField();
     if (local) {
@@ -239,26 +240,6 @@ export function CommandPalette({ onNavigate }: Props) {
 
   return (
     <>
-      {/* The single floating search action. Context-aware (see smartOpen);
-          CSS retreats it while the on-screen keyboard is open. */}
-      <button
-        type="button"
-        onClick={smartOpen}
-        aria-label={t('cc_palette_open', lang)}
-        title={t('cc_palette_hint', lang)}
-        className="premium-focus-ring premium-command-trigger"
-        style={{
-          position: 'fixed', insetInlineEnd: '16px', bottom: 'calc(var(--bnh, 0px) + 18px)',
-          zIndex: 60, width: '44px', height: '44px', minWidth: '44px', minHeight: '44px',
-          borderRadius: 'var(--rpill)', border: '1px solid var(--brd)',
-          background: 'var(--s)', color: 'var(--t)', fontSize: '18px',
-          cursor: 'pointer', boxShadow: 'var(--sh-md)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <PhoenixIcon name="search" size={19} />
-      </button>
-
       {open && (
         <div
           role="dialog"

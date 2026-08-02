@@ -210,9 +210,9 @@ describe('17. Mobile layout classes/wrapping exist', () => {
     expect(quickActionGrid).toContain('repeat(auto-fit, minmax(140px, 1fr))');
   });
 
-  it('palette trigger button and palette items meet the 44px minimum touch target', () => {
-    expect(palette).toContain("minHeight: '44px'");
-    expect(palette).toContain("width: '44px', height: '44px'");
+  it('palette input and items retain the 44px minimum touch target without a floating trigger', () => {
+    expect((palette.match(/minHeight: '44px'/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(palette).not.toContain('premium-command-trigger');
   });
 });
 

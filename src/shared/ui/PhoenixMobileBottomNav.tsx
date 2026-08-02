@@ -1,4 +1,5 @@
 import { useApp } from '@/app/AppContext';
+import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
@@ -22,7 +23,12 @@ interface Props {
 }
 
 export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
-  const { lang } = useApp();
+  const { lang, role } = useApp();
+  const instAccess = institutionsScreenAccess(role);
+  const visibleItems = BOTTOM_NAV
+    .filter(item => item.screen !== 11 || instAccess !== false)
+    .map(item => item.screen === 11 && instAccess === 'own'
+      ? { ...item, labelKey: 'nav_my_organization' } : item);
 
   const bns = (n: number) => ({
     color: currentScreen === n ? 'var(--phoenix-gold)' : 'var(--muted)',
@@ -47,7 +53,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
       zIndex: 'var(--z-sticky)',
       boxShadow: 'none',
     }} aria-label="Bottom Navigation">
-      {BOTTOM_NAV.map(item => {
+      {visibleItems.map(item => {
         const s = bns(item.screen);
         return (
           <button

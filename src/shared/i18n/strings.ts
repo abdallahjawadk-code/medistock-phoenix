@@ -48,7 +48,7 @@ export const T: Dict = {
   demoData:       { ar: 'بيانات تجريبية',                     en: 'Demo Data' },
   demoOnly:       { ar: 'للأغراض التجريبية فقط',              en: 'Demo purposes only — no real connection' },
   demoSession:    { ar: 'جلسة تجريبية',                       en: 'Demo Session' },
-  logout:         { ar: 'خروج',                               en: 'Exit Demo' },
+  logout:         { ar: 'خروج',                               en: 'Sign out' },
   close:          { ar: 'إغلاق',                               en: 'Close' },
   menu:           { ar: 'القائمة',                             en: 'Menu' },
 
