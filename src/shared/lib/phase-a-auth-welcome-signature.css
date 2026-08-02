@@ -431,3 +431,156 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__
    universal descendant selector, and the welcome progress rail is a
    descendant of it — so it stops there without restating the media query.
    Likewise the hidden-tab pause contract. ──────────────────────────────── */
+
+/* A7.2.5 · MICRO LUXURY POLISH — presentation-only, logically positioned. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__brand {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__brand::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inline-size: 118px;
+  block-size: 118px;
+  inset-inline-start: -18px;
+  inset-block-start: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--phoenix-gold) 18%, transparent), color-mix(in srgb, var(--teal) 7%, transparent) 45%, transparent 72%);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--surface) 72%, transparent)) drop-shadow(0 8px 18px color-mix(in srgb, var(--phoenix-gold) 24%, transparent)) drop-shadow(0 18px 30px color-mix(in srgb, var(--teal) 10%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+  background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--surface) 72%, transparent), transparent 34%), linear-gradient(148deg, color-mix(in srgb, var(--surface) 94%, var(--surface2) 6%), color-mix(in srgb, var(--surface2) 91%, var(--phoenix-gold) 9%));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='dark'] .nexus-login__auth {
+  background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--phoenix-gold) 7%, transparent), transparent 34%), linear-gradient(148deg, color-mix(in srgb, var(--surface) 96%, var(--surface2) 4%), color-mix(in srgb, var(--surface2) 94%, var(--teal) 6%));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card {
+  border-color: color-mix(in srgb, var(--phoenix-gold) 19%, var(--brd));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 97%, var(--surface2) 3%), color-mix(in srgb, var(--surface2) 94%, var(--phoenix-gold) 6%));
+  box-shadow: 0 28px 72px color-mix(in srgb, var(--text) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--phoenix-gold) 7%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card-heading h2,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__title {
+  text-wrap: balance;
+  font-variation-settings: 'wght' 720;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card-heading p,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-department,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__lede { text-wrap: pretty; }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap {
+  min-block-size: 52px;
+  border-color: color-mix(in srgb, var(--teal) 15%, var(--brd));
+  background: color-mix(in srgb, var(--field) 88%, var(--surface) 12%);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 6%, transparent), 0 1px 0 color-mix(in srgb, var(--surface) 65%, transparent);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--teal) 68%, var(--phoenix-gold));
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 13%, transparent), 0 8px 22px color-mix(in srgb, var(--teal) 8%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap[data-invalid='true'] {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 60%, var(--brd));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 9%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field:disabled,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:disabled { cursor: wait; opacity: .58; }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  flex: 0 0 44px;
+  margin-inline-end: -9px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:hover,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle[aria-pressed='true'] {
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 9%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:focus-visible {
+  color: var(--teal);
+  outline: 2px solid color-mix(in srgb, var(--teal) 72%, var(--phoenix-gold));
+  outline-offset: 1px;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-eye {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-eye[data-hidden='true']::after {
+  content: '';
+  position: absolute;
+  inline-size: 20px;
+  block-size: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+@media (min-width: 901px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth::before {
+    content: '';
+    position: absolute;
+    z-index: 5;
+    inset-block: 7%;
+    inset-inline-start: 0;
+    inline-size: 1px;
+    background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--phoenix-gold) 58%, transparent) 25%, color-mix(in srgb, var(--teal) 66%, transparent) 72%, transparent);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--phoenix-gold) 18%, transparent);
+    pointer-events: none;
+  }
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar {
+  box-shadow: 18px 0 46px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 24%, transparent), inset -1px 0 color-mix(in srgb, var(--phoenix-gold) 10%, transparent);
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar-brand { background: linear-gradient(180deg, color-mix(in srgb, var(--phoenix-sidebar-text-strong) 5%, transparent), transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item { transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item[data-active='true'] { box-shadow: 0 8px 20px color-mix(in srgb, var(--phoenix-gold) 14%, transparent), inset 0 1px color-mix(in srgb, var(--phoenix-sidebar-text-strong) 32%, transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-mobile-drawer { outline: 1px solid color-mix(in srgb, var(--phoenix-gold) 32%, var(--phoenix-sidebar-border)); outline-offset: -1px; filter: drop-shadow(28px 0 40px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 52%, transparent)); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-drawer-backdrop { background: color-mix(in srgb, var(--phoenix-sidebar-bg) 54%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__mark { filter: drop-shadow(0 12px 22px color-mix(in srgb, var(--phoenix-gold) 18%, transparent)); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__orbit { border-color: color-mix(in srgb, var(--teal) 22%, transparent); border-block-start-color: var(--phoenix-gold); box-shadow: 0 0 18px color-mix(in srgb, var(--teal) 12%, transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-pwa-install { border-color: color-mix(in srgb, var(--phoenix-gold) 25%, var(--brd)); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 24px 58px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 18%, transparent), inset 0 1px color-mix(in srgb, var(--surface) 60%, transparent); }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card { animation: phase-a725-arrive 420ms cubic-bezier(.22, .8, .24, 1) both; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card { animation-delay: 70ms; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome[data-phase='rise'] .nexus-welcome__content { animation: phase-a725-welcome-rise 520ms cubic-bezier(.22, .8, .24, 1) both; }
+
+@keyframes phase-a725-arrive { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes phase-a725-welcome-rise { from { opacity: .2; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }

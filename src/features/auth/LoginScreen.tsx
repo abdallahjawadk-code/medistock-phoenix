@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
@@ -11,12 +11,47 @@ export function LoginScreen() {
   const [mode, setMode] = useState<'signin' | 'reset'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   // Local-username accounts have no deliverable email — show guidance instead
   // of calling the reset API (LOCAL-CREDENTIALS-MODE-A, Part G).
   const [localResetNote, setLocalResetNote] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const passwordSelectionRef = useRef<{
+    start: number | null;
+    end: number | null;
+    direction: 'forward' | 'backward' | 'none' | null;
+    restoreFocus: boolean;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const input = passwordInputRef.current;
+    const selection = passwordSelectionRef.current;
+    if (!input || !selection) return;
+
+    input.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+    if (selection.restoreFocus) input.focus({ preventScroll: true });
+    passwordSelectionRef.current = null;
+  }, [passwordVisible]);
+
+  const passwordToggleLabel = passwordVisible
+    ? (lang === 'ar' ? 'إخفاء كلمة المرور' : 'Hide password')
+    : (lang === 'ar' ? 'إظهار كلمة المرور' : 'Show password');
+
+  const togglePasswordVisibility = () => {
+    const input = passwordInputRef.current;
+    if (input) {
+      passwordSelectionRef.current = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        direction: input.selectionDirection,
+        restoreFocus: document.activeElement === input,
+      };
+    }
+    setPasswordVisible(visible => !visible);
+  };
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -54,6 +89,8 @@ export function LoginScreen() {
     setBusy(false);
     if (!res.ok) {
       setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('invalid_creds', lang));
+    } else {
+      setPasswordVisible(false);
     }
   }
 
@@ -62,6 +99,7 @@ export function LoginScreen() {
     setResetSent(false);
     setLocalResetNote(false);
     setError(null);
+    setPasswordVisible(false);
   };
 
   return (
@@ -118,7 +156,7 @@ export function LoginScreen() {
           </div>
         </div>
 
-        <form className="nexus-login__card" onSubmit={onSubmit}>
+        <form className="nexus-login__card" onSubmit={onSubmit} onReset={() => setPasswordVisible(false)}>
           <div className="nexus-login__card-heading">
             <span className="nexus-login__secure-icon"><PhoenixIcon name="lock" size={18} /></span>
             <div>
@@ -156,7 +194,7 @@ export function LoginScreen() {
               <label htmlFor="login-email" className="nexus-login__label">
                 {t('login_identifier', lang)}
               </label>
-              <div className="nexus-login__field-wrap">
+              <div className="nexus-login__field-wrap" data-invalid={error ? 'true' : undefined}>
                 <PhoenixIcon name="account" size={17} />
                 <input
                   id="login-email"
@@ -166,6 +204,9 @@ export function LoginScreen() {
                   className="premium-field nexus-login__field"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  disabled={busy}
+                  aria-invalid={error ? 'true' : undefined}
+                  aria-describedby={error ? 'login-error' : undefined}
                 />
               </div>
 
@@ -174,20 +215,40 @@ export function LoginScreen() {
                   <label htmlFor="login-password" className="nexus-login__label">
                     {t('password', lang)}
                   </label>
-                  <div className="nexus-login__field-wrap">
+                  <div className="nexus-login__field-wrap nexus-login__field-wrap--password" data-invalid={error ? 'true' : undefined}>
                     <PhoenixIcon name="lock" size={17} />
                     <input
+                      ref={passwordInputRef}
                       id="login-password"
-                      type="password"
+                      type={passwordVisible ? 'text' : 'password'}
                       dir="ltr"
                       autoComplete="current-password"
                       className="premium-field nexus-login__field"
                       value={password}
                       onChange={e => setPassword(e.target.value)}
+                      disabled={busy}
+                      aria-invalid={error ? 'true' : undefined}
+                      aria-describedby={error ? 'login-error' : undefined}
                     />
+                    <button
+                      type="button"
+                      className="nexus-login__password-toggle premium-focus-ring"
+                      onPointerDown={event => {
+                        if (document.activeElement === passwordInputRef.current) event.preventDefault();
+                      }}
+                      onClick={togglePasswordVisibility}
+                      disabled={busy}
+                      aria-pressed={passwordVisible}
+                      aria-label={passwordToggleLabel}
+                      title={passwordToggleLabel}
+                    >
+                      <span className="nexus-login__password-eye" data-hidden={passwordVisible ? 'true' : undefined} aria-hidden="true">
+                        <PhoenixIcon name="eye" size={18} />
+                      </span>
+                    </button>
                   </div>
                   <div className="nexus-login__forgot">
-                    <button type="button" onClick={() => { setMode('reset'); setError(null); }}>
+                    <button type="button" onClick={() => { setMode('reset'); setError(null); setPasswordVisible(false); }}>
                       {t('forgot_password', lang)}
                     </button>
                   </div>
@@ -195,7 +256,7 @@ export function LoginScreen() {
               )}
 
               {error && (
-                <div className="nexus-login__notice nexus-login__notice--error" role="alert">
+                <div id="login-error" className="nexus-login__notice nexus-login__notice--error" role="alert">
                   <PhoenixIcon name="warning" size={17} />
                   <span>{error}</span>
                 </div>
