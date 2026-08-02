@@ -44,7 +44,13 @@ describe('authenticated landing is role-safe and session-scoped', () => {
 
   it('waits for the real profile and never reuses navigation from another profile', () => {
     const app = read('app/AuthenticatedApp.tsx');
-    expect(app).toContain('if (!profile) {');
+    // PHASE-B1-AUTH-RESILIENCE-RACE: the wait this test pins got STRICTER, not
+    // weaker. `!profile` alone would open the shell on any profile object that
+    // happened to be in state — including one left over from the previous user
+    // while the current session's read is still in flight. The gate is now the
+    // `authenticated` state, which additionally requires the loaded profile to
+    // belong to THIS session.
+    expect(app).toContain("if (authStatus !== 'authenticated' || !profile) {");
     expect(app).toContain('navigation?.profileId === profile.id');
     expect(app).toContain('roleLandingScreen(profile.role)');
     expect(app).toContain('setNavigation({ profileId: profile.id, screen: nextScreen })');

@@ -44,20 +44,31 @@ describe('AppContext: myPermissions is loaded from the DB, not the hardcoded rol
     expect(ctx).toContain('loadPermissions');
   });
 
+  /* PHASE-B1-AUTH-RESILIENCE-RACE: the RPC + roleDefaults fallback logic these
+     three tests pin is unchanged; it moved from loadPermissions into
+     readPermissions, which RETURNS the set instead of writing it. The split
+     exists so a profile request that has been superseded (a newer session
+     arrived while the RPC was in flight) can drop its answer — a function that
+     sets state itself cannot be cancelled. loadPermissions still exists and
+     still applies. Every guarantee below is asserted, just at its new home. */
+
   it('falls back to roleDefaults() only when the RPC has no data (migration missing)', () => {
-    const block = ctx.slice(ctx.indexOf('const loadPermissions'), ctx.indexOf('const loadProfile'));
+    const block = ctx.slice(ctx.indexOf('const readPermissions'), ctx.indexOf('const loadPermissions'));
     expect(block).toContain('if (res.permissions)');
     expect(block).toContain('roleDefaults(p.role)');
     expect(block).toContain('migrationMissing');
   });
 
   it('reloads permissions every time the profile loads (login) and on reloadProfile', () => {
-    expect(ctx).toContain('await loadPermissions(p)');
+    expect(ctx).toContain('await readPermissions(p)');
+    expect(ctx).toContain('setMyPermissions(perms)');
   });
 
   it('clears permissions on signOut (no stale state carried across sessions)', () => {
-    const block = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 400);
-    expect(block).toContain('setMyPermissions(new Set())');
+    const signOutBlock = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 800);
+    expect(signOutBlock).toContain('clearIdentityState()');
+    const clearBlock = ctx.slice(ctx.indexOf('const clearIdentityState'), ctx.indexOf('const clearIdentityState') + 400);
+    expect(clearBlock).toContain('setMyPermissions(new Set())');
   });
 
   it('exposes myPermissions and reloadMyPermissions on the context', () => {

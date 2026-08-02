@@ -152,7 +152,12 @@ export function AuthenticatedApp() {
   // Do not render any role-sensitive screen from AppContext's display fallback:
   // wait for the real profile, then synchronously select the safe landing so
   // outlet_officer never mounts the reports screen, even for one frame.
-  if (!profile) {
+  //
+  // PHASE-B1-AUTH-RESILIENCE-RACE: the shell opens on `authenticated` — which
+  // additionally requires the loaded profile to belong to THIS session — and
+  // not merely on "a profile object exists". A profile left over from another
+  // user is not a licence to render an operational screen.
+  if (authStatus !== 'authenticated' || !profile) {
     return <PhoenixLoadingState fullScreen />;
   }
 

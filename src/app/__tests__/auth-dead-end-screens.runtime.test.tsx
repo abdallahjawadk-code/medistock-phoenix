@@ -157,6 +157,21 @@ describe('C2 — an unreadable profile renders a stated state with a way out', (
     expect(recoveryPanel()).not.toBeNull();
   });
 
+  it('profile_loading never mounts the shell even if a stale profile object is still around', () => {
+    // PHASE-B1-AUTH-RESILIENCE-RACE: the shell must key off `authenticated`,
+    // not off "a profile exists" — otherwise user B's session could render
+    // user A's leftover profile for as long as B's read is in flight.
+    window.sessionStorage.setItem('medistock-phoenix-welcome:user-1', 'complete');
+    setState('profile_loading', {
+      session: SESSION,
+      profile: { ...PROFILE, id: 'someone-else' },
+    } as Partial<AppState>);
+    render(<AuthenticatedApp />);
+
+    expect(screen.queryByTestId('app-shell')).toBeNull();
+    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
+  });
+
   it('profile_loading still shows the spinner (unchanged) and no shell', () => {
     setState('profile_loading', { session: SESSION } as Partial<AppState>);
     // Welcome already seen, so the loading branch is the one under test.

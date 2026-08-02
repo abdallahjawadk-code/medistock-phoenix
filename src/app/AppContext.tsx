@@ -201,6 +201,34 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     useState<'idle' | 'loading' | 'ready' | 'failed' | 'missing'>('idle');
   const [session, setSession]     = useState<Session | null>(null);
   const [profile, setProfile]     = useState<Profile | null>(null);
+
+  /* PHASE-B1-AUTH-RESILIENCE-RACE ────────────────────────────────────────────
+     Two independent async producers write the same auth state: the
+     onAuthChange subscription and the standalone session read (plus its manual
+     retry). Nothing ordered them, so the LAST promise to resolve won — which
+     let a slow, stale or failed read overwrite a newer, successful auth event,
+     and let user A's profile stay live under user B's session.
+
+     Three refs, read at the moment a result is applied rather than captured in
+     a closure when it was requested, decide whether a result is still current:
+
+       authGeneration  — bumped by every auth event. A session read that
+                         started before the bump is stale by definition.
+       profileRequest  — bumped by every profile request. Only the newest may
+                         write.
+       sessionUserId   — who we currently hold a session for. A profile read
+                         requested for someone else can never be applied.
+
+     profileUserId records whose profile is currently APPLIED, so a same-user
+     refresh can be told apart from a different-user takeover.
+
+     Refs, not state, on purpose: these must be readable synchronously by an
+     async continuation, and must not schedule a render of their own. There are
+     no timers and no timing assumptions anywhere in this mechanism. */
+  const authGenerationRef  = useRef(0);
+  const profileRequestRef  = useRef(0);
+  const sessionUserIdRef   = useRef<string | null>(null);
+  const profileUserIdRef   = useRef<string | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [myPermissions, setMyPermissions] = useState<Set<string>>(new Set());
   const [myPermissionsMigrationMissing, setMyPermissionsMigrationMissing] = useState(false);
@@ -244,11 +272,17 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   // + their own profile_permission_overrides). Falls back to the hardcoded
   // role-default table only if the permission-matrix RPC is unavailable —
   // never the other way around (DB is the source of truth once reachable).
-  const loadPermissions = useCallback(async (p: Profile | null) => {
+  //
+  // PHASE-B1-AUTH-RESILIENCE-RACE: this now RETURNS the permission set instead
+  // of writing it directly. The RPC is an await inside the profile pipeline,
+  // so a caller that has been superseded (a newer session arrived meanwhile)
+  // must be able to drop the answer on the floor. A function that sets state
+  // itself cannot be cancelled — the resolution order alone decided who won.
+  const readPermissions = useCallback(async (
+    p: Profile | null,
+  ): Promise<{ perms: Set<string>; migrationMissing: boolean }> => {
     if (!p) {
-      setMyPermissions(new Set());
-      setMyPermissionsMigrationMissing(false);
-      return;
+      return { perms: new Set<string>(), migrationMissing: false };
     }
     const res = await getEffectivePermissions(p.id);
     if (res.permissions) {
@@ -270,23 +304,46 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
           source: 'rpc',
         });
       }
-      setMyPermissions(perms);
-      setMyPermissionsMigrationMissing(false);
-    } else {
-      const fallback = roleDefaults(p.role);
-      if (import.meta.env.DEV) {
-        console.warn('[phoenix] loadPermissions: RPC fallback to roleDefaults', {
-          profileId: p.id, role: p.role,
-          migrationMissing: res.migrationMissing,
-          loadError: res.loadError,
-          fallbackPermCount: fallback.size,
-          hasPortsCreate: fallback.has('ports.create'),
-          source: 'fallback',
-        });
-      }
-      setMyPermissions(fallback);
-      setMyPermissionsMigrationMissing(res.migrationMissing);
+      return { perms, migrationMissing: false };
     }
+    const fallback = roleDefaults(p.role);
+    if (import.meta.env.DEV) {
+      console.warn('[phoenix] loadPermissions: RPC fallback to roleDefaults', {
+        profileId: p.id, role: p.role,
+        migrationMissing: res.migrationMissing,
+        loadError: res.loadError,
+        fallbackPermCount: fallback.size,
+        hasPortsCreate: fallback.has('ports.create'),
+        source: 'fallback',
+      });
+    }
+    return { perms: fallback, migrationMissing: res.migrationMissing };
+  }, []);
+
+  /** Read and apply. Used where there is no session race to lose. */
+  const loadPermissions = useCallback(async (p: Profile | null) => {
+    const { perms, migrationMissing } = await readPermissions(p);
+    setMyPermissions(perms);
+    setMyPermissionsMigrationMissing(migrationMissing);
+  }, [readPermissions]);
+
+  /**
+   * The one place `session` is written. Keeping the ref in lockstep with the
+   * state is what lets an async continuation ask "is this still the session I
+   * was loading for?" without reading a stale closure.
+   */
+  const setSessionTracked = useCallback((s: Session | null) => {
+    sessionUserIdRef.current = s?.user?.id ?? null;
+    setSession(s);
+  }, []);
+
+  /** Drop every trace of whoever was loaded before. Never partial. */
+  const clearIdentityState = useCallback(() => {
+    profileUserIdRef.current = null;
+    setProfile(null);
+    setActiveOrgId(null);
+    setMyPermissions(new Set());
+    setMyPermissionsMigrationMissing(false);
   }, []);
 
   /**
@@ -296,38 +353,90 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
    * and the permission set as well as the profile. The previous code cleared
    * only the profile, so a failed reload could leave the PREVIOUS profile's
    * organization scope pinned — the org id every scoped query is built from.
-   * Nothing about the successful branch changed.
+   *
+   * PHASE-B1-AUTH-RESILIENCE-RACE: an outcome is applied ONLY if it is still
+   * the answer to the question currently being asked. Two independent facts
+   * decide that, and both are read from refs at the moment of application, not
+   * from a closure captured when the request started:
+   *   • requestId    — a newer profile request has since begun;
+   *   • expectedUser — the session this profile was requested for is no longer
+   *                    the session we hold (a different user signed in, or
+   *                    everyone signed out).
+   * The permission RPC is a second await, so the check runs again after it.
    */
-  const applyProfileOutcome = useCallback(async (outcome: ProfileLoad) => {
-    if (outcome.status !== 'ok') {
-      setProfile(null);
-      setActiveOrgId(null);
-      setProfileStatus(outcome.status);
-      await loadPermissions(null);
-      return;
-    }
-    const p = outcome.profile;
-    setProfile(p);
-    // Non-super_admin users are scoped to their own org; super_admin starts global.
-    if (p.role !== 'super_admin') {
-      setActiveOrgId(p.organization_id);
-    }
-    setProfileStatus('ready');
-    await loadPermissions(p);
-  }, [loadPermissions]);
+  const applyProfileOutcome = useCallback(async (
+    outcome: ProfileLoad,
+    requestId: number,
+    expectedUserId: string | null,
+  ) => {
+    const superseded = () =>
+      profileRequestRef.current !== requestId || sessionUserIdRef.current !== expectedUserId;
 
-  // Load profile for a session, pinning org scope for non-super_admin roles.
-  const loadProfile = useCallback(async (s: Session | null) => {
-    if (!s) {
-      setProfile(null);
-      setActiveOrgId(null);
-      setProfileStatus('idle');
-      await loadPermissions(null);
+    if (superseded()) return;
+
+    if (outcome.status !== 'ok') {
+      clearIdentityState();
+      setProfileStatus(outcome.status);
       return;
+    }
+
+    const p = outcome.profile;
+    // A profile that does not belong to this session must never be applied,
+    // whatever the transport returned. Reported as a failure so the operator
+    // gets a retry and a sign-out rather than a screen full of someone else.
+    if (p.id !== expectedUserId) {
+      clearIdentityState();
+      setProfileStatus('failed');
+      return;
+    }
+
+    const { perms, migrationMissing } = await readPermissions(p);
+    if (superseded()) return;
+
+    profileUserIdRef.current = p.id;
+    setProfile(p);
+    // Non-super_admin users are scoped to their own org; super_admin is global.
+    // The super_admin branch clears explicitly instead of leaving whatever the
+    // previous profile pinned — a stale org id is a scoped query on the wrong
+    // organization, not a cosmetic leftover.
+    setActiveOrgId(p.role === 'super_admin' ? null : p.organization_id);
+    setMyPermissions(perms);
+    setMyPermissionsMigrationMissing(migrationMissing);
+    setProfileStatus('ready');
+  }, [clearIdentityState, readPermissions]);
+
+  /**
+   * Load the profile belonging to `expectedUserId`, pinning org scope for
+   * non-super_admin roles.
+   *
+   * PHASE-B1-AUTH-RESILIENCE-RACE: when the incoming session belongs to a
+   * DIFFERENT person than the profile currently applied, the previous identity
+   * is dropped synchronously, before the read even starts — so user A's
+   * profile, org scope and permissions cannot stay live for a single frame
+   * while user B's profile is in flight. A same-user refresh (a password
+   * change, a manual retry) deliberately does not clear, so it cannot flash
+   * the shell back to a loading state.
+   */
+  const loadProfileFor = useCallback(async (expectedUserId: string | null) => {
+    const requestId = ++profileRequestRef.current;
+
+    if (expectedUserId === null) {
+      clearIdentityState();
+      setProfileStatus('idle');
+      return;
+    }
+
+    if (profileUserIdRef.current !== null && profileUserIdRef.current !== expectedUserId) {
+      clearIdentityState();
     }
     setProfileStatus('loading');
-    await applyProfileOutcome(await readProfileOutcome());
-  }, [applyProfileOutcome, loadPermissions]);
+
+    await applyProfileOutcome(await readProfileOutcome(), requestId, expectedUserId);
+  }, [applyProfileOutcome, clearIdentityState]);
+
+  const loadProfile = useCallback(async (s: Session | null) => {
+    await loadProfileFor(s?.user?.id ?? null);
+  }, [loadProfileFor]);
 
   // Establish session on mount + subscribe to auth changes.
   // Recovery callback landing (/auth/callback) is handled entirely by
@@ -346,10 +455,15 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
         passwordRecoveryRef.current = true;
         setPasswordRecovery(true);
       }
+      // PHASE-B1-AUTH-RESILIENCE-RACE: an auth event is the authoritative,
+      // most recent answer about who is signed in. Bumping the generation
+      // retires any session read still in flight, so a slow or failed read
+      // cannot overwrite this newer truth when it finally resolves.
+      authGenerationRef.current += 1;
       // A live auth event is proof the auth layer is reachable, so it clears a
       // previously failed bootstrap.
       setBootstrapFailed(false);
-      setSession(s);
+      setSessionTracked(s);
       // Skip profile loading during recovery — ResetPasswordScreen is standalone
       if (!passwordRecoveryRef.current) {
         await loadProfile(s);
@@ -363,8 +477,21 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     // PHASE-B1-AUTH-RESILIENCE: the initial read now reports failure instead of
     // resolving to a null session, and the promise can no longer leave the app
     // pending forever — every path below settles authReady exactly once.
+    const bootstrapGeneration = authGenerationRef.current;
     readSessionOutcome().then(async (res) => {
       if (!active) return;
+      // PHASE-B1-AUTH-RESILIENCE-RACE: an auth event landed while this read was
+      // in flight. Its answer is newer, so this one is discarded entirely —
+      // including a `failed` status, which must never demote a live session to
+      // an error screen or a login form. authReady is still settled here so a
+      // discarded result can never leave the app booting forever.
+      if (authGenerationRef.current !== bootstrapGeneration) {
+        if (!authReadyRef.current) {
+          authReadyRef.current = true;
+          setAuthReady(true);
+        }
+        return;
+      }
       if (res.status === 'failed') {
         setBootstrapFailed(true);
         if (!authReadyRef.current) {
@@ -374,7 +501,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
         return;
       }
       setBootstrapFailed(false);
-      setSession(res.session);
+      setSessionTracked(res.session);
       if (!passwordRecoveryRef.current) {
         await loadProfile(res.session);
       }
@@ -453,35 +580,48 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     return res;
   }, []);
 
+  // Re-reads the profile of the session currently held. Same-user, so it does
+  // not clear the applied identity first — and it is still generation-guarded,
+  // so it loses to anything newer.
   const reloadProfile = useCallback(async () => {
-    setProfileStatus('loading');
-    await applyProfileOutcome(await readProfileOutcome());
-  }, [applyProfileOutcome]);
+    await loadProfileFor(sessionUserIdRef.current);
+  }, [loadProfileFor]);
 
   /**
    * PHASE-B1-AUTH-RESILIENCE: one manual re-attempt of the initial session
    * read. It re-reads the session ONLY — it never re-subscribes, never signs
    * anybody in or out, and schedules nothing, so it cannot become a loop. One
    * click, one attempt.
+   *
+   * PHASE-B1-AUTH-RESILIENCE-RACE: it obeys the same generation rule as the
+   * boot read. A retry started before an auth event must not be able to undo
+   * that event when it resolves afterwards.
    */
   const retryAuthBootstrap = useCallback(async () => {
+    const generation = authGenerationRef.current;
     setBootstrapFailed(false);
     authReadyRef.current = false;
     setAuthReady(false);
     const res = await readSessionOutcome();
+    if (authGenerationRef.current !== generation) {
+      // Superseded by a live auth event — discard, but never stay pending.
+      authReadyRef.current = true;
+      setAuthReady(true);
+      return;
+    }
     if (res.status === 'failed') {
       setBootstrapFailed(true);
       authReadyRef.current = true;
       setAuthReady(true);
       return;
     }
-    setSession(res.session);
+    setSessionTracked(res.session);
     if (!passwordRecoveryRef.current) {
       await loadProfile(res.session);
     }
     authReadyRef.current = true;
     setAuthReady(true);
-  }, [loadProfile]);
+  }, [loadProfile, setSessionTracked]);
 
   const reloadMyPermissions = useCallback(async () => {
     await loadPermissions(profile);
@@ -489,17 +629,20 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   const signOut = useCallback(async () => {
     await authSignOut();
-    setSession(null);
-    setProfile(null);
-    setActiveOrgId(null);
+    // PHASE-B1-AUTH-RESILIENCE-RACE: retire both in-flight pipelines FIRST. A
+    // profile read that was already running must not be able to restore a
+    // profile, an org scope or a permission set after the operator has signed
+    // out — the one moment where a late write is not merely stale but wrong.
+    authGenerationRef.current += 1;
+    profileRequestRef.current += 1;
+    setSessionTracked(null);
+    clearIdentityState();
     setPasswordRecovery(false);
-    setMyPermissions(new Set());
-    setMyPermissionsMigrationMissing(false);
     // PHASE-B1-AUTH-RESILIENCE: leaving a stale failure state behind would
     // strand the next visitor on an error screen instead of the login form.
     setProfileStatus('idle');
     setBootstrapFailed(false);
-  }, []);
+  }, [clearIdentityState, setSessionTracked]);
 
   const requestPasswordReset = useCallback(
     (email: string) => authRequestReset(email),
@@ -515,13 +658,17 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const clearRecovery = useCallback(async () => {
     setPasswordRecovery(false);
     await authSignOut();
-    setSession(null);
+    // Same visible behaviour as before; setSessionTracked keeps the identity
+    // ref truthful so no in-flight profile read can outlive this.
+    authGenerationRef.current += 1;
+    profileRequestRef.current += 1;
+    setSessionTracked(null);
     setProfile(null);
     // Strip the recovery hash/path so a refresh doesn't re-enter recovery.
     if (typeof window !== 'undefined') {
       window.history.replaceState(null, '', '/');
     }
-  }, []);
+  }, [setSessionTracked]);
 
   const role: Role = profile?.role ?? 'outlet_officer';
 
@@ -531,13 +678,26 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
    * failure and NEVER as `no_session`, because "we could not read the session"
    * and "there is no session" call for opposite responses from the UI.
    */
+  /*
+   * PHASE-B1-AUTH-RESILIENCE-RACE: `authenticated` requires all four facts to
+   * agree — status ready, a profile, a session, and the profile belonging to
+   * THAT session. Nothing may be treated as signed in on the strength of a
+   * profile left over from a previous user; the identity check here is the
+   * last line, behind the apply-time guards that already prevent it.
+   */
+  const authenticated =
+    profileStatus === 'ready' &&
+    profile !== null &&
+    session !== null &&
+    profile.id === session.user.id;
+
   const authStatus: AuthStatus =
     bootstrapFailed          ? 'bootstrap_failed'
     : !authReady             ? 'bootstrap_pending'
     : session === null       ? 'no_session'
     : profileStatus === 'failed'  ? 'profile_failed'
     : profileStatus === 'missing' ? 'profile_missing'
-    : profile !== null       ? 'authenticated'
+    : authenticated          ? 'authenticated'
     : 'profile_loading';
 
   return (

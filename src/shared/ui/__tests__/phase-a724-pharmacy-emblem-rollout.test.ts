@@ -152,8 +152,13 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!src/app/AuthenticatedApp.tsx"' +
       ' ":!src/app/__tests__/auth-resilience-context.runtime.test.tsx"' +
       ' ":!src/app/__tests__/auth-dead-end-screens.runtime.test.tsx"' +
+      ' ":!src/app/__tests__/auth-session-race.runtime.test.tsx"' +
       ' ":!src/app/__tests__/db-pressure-quick-wins.test.ts"' +
-      ' ":!src/shared/supabase/services/auth.service.ts"',
+      ' ":!src/shared/supabase/services/auth.service.ts"' +
+      ' ":!src/shared/supabase/__tests__/permission-persistence.test.ts"' +
+      ' ":!src/shared/supabase/__tests__/permission-matrix-readiness.test.ts"' +
+      ' ":!src/shared/supabase/__tests__/permission-save-diagnostics.test.ts"' +
+      ' ":!src/shared/authz/__tests__/screen-access.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
