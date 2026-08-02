@@ -71,6 +71,40 @@ export async function getSession(): Promise<Session | null> {
   return data.session ?? null;
 }
 
+/**
+ * PHASE-B1-AUTH-RESILIENCE: the outcome of reading the stored session.
+ *
+ * `getSession()` above collapses every outcome into `Session | null`, so a
+ * transport failure, an expired refresh token and "nobody is signed in" all
+ * look identical to the caller — which is how a failed boot became an
+ * indistinguishable "no session" and, upstream, a permanent spinner. This
+ * result keeps the two apart: `failed` means we do NOT know whether a session
+ * exists, and the caller must say so rather than present a login form.
+ *
+ * `getSession()` itself is deliberately left byte-for-byte unchanged —
+ * ResetPasswordScreen's independent recovery flow keeps its exact contract.
+ */
+export type SessionLoad =
+  | { status: 'ok'; session: Session | null }
+  | { status: 'failed' };
+
+/** Read the stored session, reporting failure instead of hiding it as `null`. */
+export async function getSessionResult(): Promise<SessionLoad> {
+  // An unconfigured build genuinely has no session; that is not a failure.
+  if (!supabaseConfigured) return { status: 'ok', session: null };
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error('[phoenix] session load failed:', error);
+      return { status: 'failed' };
+    }
+    return { status: 'ok', session: data.session ?? null };
+  } catch (err) {
+    console.error('[phoenix] session load threw:', err);
+    return { status: 'failed' };
+  }
+}
+
 /** Subscribe to auth changes. Returns an unsubscribe function. */
 export function onAuthChange(
   cb: (event: AuthChangeEvent, session: Session | null) => void,
@@ -140,27 +174,72 @@ export async function setSessionFromTokens(accessToken: string, refreshToken: st
 }
 
 /**
+ * PHASE-B1-AUTH-RESILIENCE: the outcome of loading the caller's own profile.
+ *
+ * `missing` — the read completed and there is no profile row this session may
+ *             read (deleted row, or RLS hides it). Retrying will not help.
+ * `failed`  — the read could not complete (transport, auth, RLS error). The
+ *             row may well exist; a retry is meaningful.
+ *
+ * Collapsing both into `null` (see getMyProfile below) is what made a failed
+ * profile read indistinguishable from "still loading" upstream.
+ */
+export type ProfileLoad =
+  | { status: 'ok'; profile: Profile }
+  | { status: 'missing' }
+  | { status: 'failed' };
+
+/**
+ * Loads the current user's profile (role + org) from public.profiles, and says
+ * which of the three outcomes happened. RLS ensures a user can only read their
+ * own profile row — this function widens the REPORTING of the result only, and
+ * grants no additional read.
+ */
+export async function getMyProfileResult(): Promise<ProfileLoad> {
+  if (!supabaseConfigured) return { status: 'missing' };
+
+  try {
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      console.error('[phoenix] profile load failed:', authError);
+      return { status: 'failed' };
+    }
+    const uid = auth.user?.id;
+    // No authenticated user id: there is no profile to read, and no error to
+    // retry away either.
+    if (!uid) return { status: 'missing' };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password, whatsapp_phone')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[phoenix] profile load failed:', error);
+      return { status: 'failed' };
+    }
+    // maybeSingle() returns null rows without raising — that is the honest
+    // "no readable profile" signal single() used to turn into an error.
+    if (!data) return { status: 'missing' };
+    return { status: 'ok', profile: data as Profile };
+  } catch (err) {
+    console.error('[phoenix] profile load threw:', err);
+    return { status: 'failed' };
+  }
+}
+
+/**
  * Loads the current user's profile (role + org) from public.profiles.
  * RLS ensures a user can only read their own profile row.
+ *
+ * Kept as the historical convenience contract for callers that genuinely have
+ * nothing different to do for "missing" vs "failed". Callers that must tell
+ * those apart use getMyProfileResult() above.
  */
 export async function getMyProfile(): Promise<Profile | null> {
-  if (!supabaseConfigured) return null;
-
-  const { data: auth } = await supabase.auth.getUser();
-  const uid = auth.user?.id;
-  if (!uid) return null;
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, organization_id, full_name, role, status, username, login_mode, contact_email, must_change_password, whatsapp_phone')
-    .eq('id', uid)
-    .single();
-
-  if (error) {
-    console.error('[phoenix] profile load failed:', error);
-    return null;
-  }
-  return data as Profile;
+  const res = await getMyProfileResult();
+  return res.status === 'ok' ? res.profile : null;
 }
 
 /**

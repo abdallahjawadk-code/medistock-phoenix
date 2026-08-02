@@ -248,14 +248,21 @@ describe('Permission-save diagnostic fix: global guardrails still hold', () => {
 describe('AppContext: logout/login DB-backed permission loading remains intact', () => {
   const ctx = readSrc('app/AppContext.tsx');
 
+  /* PHASE-B1-AUTH-RESILIENCE-RACE: same guarantees, new call sites —
+     readPermissions returns the set (so a superseded profile request can drop
+     it) and clearIdentityState performs the sign-out clear. */
+
   it('still loads myPermissions via getEffectivePermissions on every profile load', () => {
     expect(ctx).toContain('getEffectivePermissions');
-    expect(ctx).toContain('await loadPermissions(p)');
+    expect(ctx).toContain('await readPermissions(p)');
+    expect(ctx).toContain('setMyPermissions(perms)');
   });
 
   it('still clears myPermissions on signOut', () => {
-    const block = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 400);
-    expect(block).toContain('setMyPermissions(new Set())');
+    const signOutBlock = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 800);
+    expect(signOutBlock).toContain('clearIdentityState()');
+    const clearBlock = ctx.slice(ctx.indexOf('const clearIdentityState'), ctx.indexOf('const clearIdentityState') + 400);
+    expect(clearBlock).toContain('setMyPermissions(new Set())');
   });
 
   it('still exposes reloadMyPermissions for on-demand refresh', () => {

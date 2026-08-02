@@ -202,14 +202,22 @@ describe('Migration 010: column names and capability are independent of exact pe
 describe('AppContext: still loads myPermissions from the DB on every login (unaffected by this fix)', () => {
   const ctx = readSrc('app/AppContext.tsx');
 
+  /* PHASE-B1-AUTH-RESILIENCE-RACE: the DB-backed load still happens on every
+     profile load and is still cleared on sign-out. It reads through
+     readPermissions (returns the set, so a superseded request can drop it) and
+     clears through clearIdentityState (which also drops the org scope). */
+
   it('loadPermissions calls getEffectivePermissions and is invoked on every profile load', () => {
     expect(ctx).toContain('getEffectivePermissions');
-    expect(ctx).toContain('await loadPermissions(p)');
+    expect(ctx).toContain('await readPermissions(p)');
+    expect(ctx).toContain('setMyPermissions(perms)');
   });
 
   it('myPermissions is cleared on signOut (no stale cross-session state)', () => {
-    const block = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 400);
-    expect(block).toContain('setMyPermissions(new Set())');
+    const signOutBlock = ctx.slice(ctx.indexOf('const signOut'), ctx.indexOf('const signOut') + 800);
+    expect(signOutBlock).toContain('clearIdentityState()');
+    const clearBlock = ctx.slice(ctx.indexOf('const clearIdentityState'), ctx.indexOf('const clearIdentityState') + 400);
+    expect(clearBlock).toContain('setMyPermissions(new Set())');
   });
 });
 

@@ -1599,6 +1599,18 @@ export const T: Dict = {
      establish a decision — recoverable, never a dead end. */
   authz_pilot_unavailable_title: { ar: 'تعذّر التحقق من الصلاحيات',                          en: 'Permission check unavailable' },
 
+  /* ── PHASE-B1-AUTH-RESILIENCE ────────────────────────────────────────────
+     Shown instead of a permanent spinner when the app cannot finish reading
+     the session or the caller's own profile. Deliberately GENERIC: no
+     Supabase message, no HTTP status, no network detail ever reaches the
+     operator — the console keeps the technical cause for support. */
+  auth_boot_failed_title:   { ar: 'تعذّر بدء تشغيل التطبيق',                       en: 'The application could not start' },
+  auth_boot_failed_msg:     { ar: 'لم نتمكّن من التحقّق من حالة تسجيل الدخول. تحقّق من الاتصال ثم أعد المحاولة.', en: 'We could not verify your sign-in status. Check your connection and try again.' },
+  auth_profile_failed_title:{ ar: 'تعذّر تحميل بيانات حسابك',                      en: 'Your account details could not be loaded' },
+  auth_profile_failed_msg:  { ar: 'الجلسة نشطة، لكن تعذّر تحميل بيانات الحساب. أعد المحاولة، أو سجّل الخروج والدخول من جديد.', en: 'Your session is active, but your account details could not be loaded. Try again, or sign out and sign in again.' },
+  auth_profile_missing_title:{ ar: 'لا توجد بيانات حساب متاحة',                    en: 'No account details available' },
+  auth_profile_missing_msg: { ar: 'لا يوجد حساب متاح لهذه الجلسة. يرجى تسجيل الخروج ومراجعة مدير النظام.', en: 'No account is available for this session. Please sign out and contact your administrator.' },
+
   /* ── Inventory Intelligence (migration 072 · INVENTORY-INTELLIGENCE-FRONTEND-A) ──
      Read-only intelligence + advisory layer. Suggestions are RECOMMENDATIONS
      only — there is no Accept and no stock movement anywhere in this feature. */
