@@ -623,25 +623,73 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     setAuthReady(true);
   }, [loadProfile, setSessionTracked]);
 
+  /**
+   * PHASE-B1-AUTH-RESILIENCE-LOGOUT: an on-demand permission refresh is an RPC,
+   * and an RPC is a window in which the operator can sign out or a different
+   * user's session can arrive. The answer is applied only if all four facts
+   * that made the question meaningful still hold — captured before the call,
+   * re-read from refs after it.
+   */
   const reloadMyPermissions = useCallback(async () => {
-    await loadPermissions(profile);
-  }, [loadPermissions, profile]);
+    const target = profile;
+    if (!target) {
+      // Unchanged behaviour for "no profile": nothing to load means no
+      // permissions. Synchronous, so there is no window to guard.
+      await loadPermissions(null);
+      return;
+    }
+
+    const requestId         = profileRequestRef.current;
+    const expectedUserId    = sessionUserIdRef.current;
+    const expectedProfileId = profileUserIdRef.current;
+
+    // Refuse to even ask on behalf of a profile that is not this session's own.
+    if (expectedUserId === null || target.id !== expectedUserId) return;
+
+    const { perms, migrationMissing } = await readPermissions(target);
+
+    // Sign-out, a session switch, or a newer profile request all invalidate
+    // this answer completely.
+    if (
+      profileRequestRef.current !== requestId ||
+      sessionUserIdRef.current  !== expectedUserId ||
+      profileUserIdRef.current  !== expectedProfileId ||
+      target.id !== sessionUserIdRef.current
+    ) return;
+
+    setMyPermissions(perms);
+    setMyPermissionsMigrationMissing(migrationMissing);
+  }, [loadPermissions, profile, readPermissions]);
 
   const signOut = useCallback(async () => {
-    await authSignOut();
-    // PHASE-B1-AUTH-RESILIENCE-RACE: retire both in-flight pipelines FIRST. A
-    // profile read that was already running must not be able to restore a
-    // profile, an org scope or a permission set after the operator has signed
-    // out — the one moment where a late write is not merely stale but wrong.
+    // PHASE-B1-AUTH-RESILIENCE-LOGOUT: retire both in-flight pipelines and drop
+    // the local identity SYNCHRONOUSLY, before the first await. Doing this
+    // after `await authSignOut()` meant that for the whole duration of the
+    // remote call — and forever if it failed or hung — the previous user's
+    // profile, org scope and permissions were still live, and a profile read
+    // that resolved in that window could write them straight back.
+    //
+    // Order matters: generations first (so anything in flight is already
+    // retired), then the session, then the identity, then the status flags.
     authGenerationRef.current += 1;
     profileRequestRef.current += 1;
     setSessionTracked(null);
     clearIdentityState();
-    setPasswordRecovery(false);
     // PHASE-B1-AUTH-RESILIENCE: leaving a stale failure state behind would
     // strand the next visitor on an error screen instead of the login form.
     setProfileStatus('idle');
     setBootstrapFailed(false);
+    setPasswordRecovery(false);
+
+    // Only now the network. A failure here means the refresh token may outlive
+    // the tab, which is the server's problem to reject — it must never be a
+    // reason to keep this person signed in locally. Any SIGNED_OUT event that
+    // arrives later is idempotent: it clears state that is already cleared.
+    try {
+      await authSignOut();
+    } catch (err) {
+      console.error('[phoenix] remote sign-out failed:', err);
+    }
   }, [clearIdentityState, setSessionTracked]);
 
   const requestPasswordReset = useCallback(
@@ -656,19 +704,28 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   // After a successful reset, drop the recovery session and return to login.
   const clearRecovery = useCallback(async () => {
-    setPasswordRecovery(false);
-    await authSignOut();
-    // Same visible behaviour as before; setSessionTracked keeps the identity
-    // ref truthful so no in-flight profile read can outlive this.
+    // PHASE-B1-AUTH-RESILIENCE-LOGOUT: same rule as signOut — invalidate and
+    // clear locally before the remote call, and clear the whole identity
+    // (org scope and permissions included), not just the profile object.
     authGenerationRef.current += 1;
     profileRequestRef.current += 1;
     setSessionTracked(null);
-    setProfile(null);
+    clearIdentityState();
+    setProfileStatus('idle');
+    setBootstrapFailed(false);
+    setPasswordRecovery(false);
+
+    try {
+      await authSignOut();
+    } catch (err) {
+      console.error('[phoenix] remote sign-out failed:', err);
+    }
+
     // Strip the recovery hash/path so a refresh doesn't re-enter recovery.
     if (typeof window !== 'undefined') {
       window.history.replaceState(null, '', '/');
     }
-  }, [setSessionTracked]);
+  }, [clearIdentityState, setSessionTracked]);
 
   const role: Role = profile?.role ?? 'outlet_officer';
 

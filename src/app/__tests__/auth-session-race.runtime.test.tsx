@@ -83,6 +83,8 @@ function Probe() {
       <span data-testid="perms">{app.myPermissions.size}</span>
       <span data-testid="session">{app.session?.user.id ?? 'null'}</span>
       <button onClick={() => void app.signOut()}>sign-out</button>
+      <button onClick={() => void app.reloadMyPermissions()}>reload-perms</button>
+      <button onClick={() => void app.clearRecovery()}>clear-recovery</button>
     </div>
   );
 }
@@ -307,6 +309,152 @@ describe('BLOCKER 2 — a profile may only be applied to the session that asked 
 
     await waitFor(() => expect(status()).toBe('authenticated'));
     expect(val('session')).toBe('user-B');
+    expect(val('profile')).toBe('user-B');
+  });
+});
+
+// ── LOGOUT INVALIDATION ORDER ───────────────────────────────────────────────
+//
+// Signing out must retire the local identity BEFORE the remote call, not after
+// it. Every test here holds the remote sign-out pending on purpose: that is the
+// window in which the previous behaviour left a full profile, org scope and
+// permission set live, and in which a late read could write them back.
+
+describe('LOGOUT — local invalidation happens before the remote sign-out', () => {
+  /** Sign in as A and settle, leaving `getMyProfileResult` free for the caller. */
+  async function signedInAsA() {
+    getSessionResult.mockResolvedValue({ status: 'ok', session: SESSION_A });
+    getMyProfileResult.mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A });
+    mount();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(val('perms')).toBe('1');
+  }
+
+  it('a pending profile read cannot survive a sign-out whose remote call is still hanging', async () => {
+    const pendingProfile = deferred<ProfileLoad>();
+    const remoteSignOut  = deferred<void>();
+
+    await signedInAsA();
+    getMyProfileResult.mockReturnValueOnce(pendingProfile.promise);
+    signOut.mockReturnValue(remoteSignOut.promise);
+
+    // A refresh starts a profile read that will not settle yet.
+    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    expect(status()).toBe('profile_loading');
+
+    // The operator signs out. The network call hangs — and must not matter.
+    await act(async () => { screen.getByText('sign-out').click(); });
+
+    expect(val('session')).toBe('null');
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    // The earlier read lands while the remote sign-out is STILL pending.
+    await act(async () => {
+      pendingProfile.resolve({ status: 'ok', profile: PROFILE_A });
+      await pendingProfile.promise;
+    });
+
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    // The remote call finally completes; nothing comes back.
+    await act(async () => { remoteSignOut.resolve(); await remoteSignOut.promise; });
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+  });
+
+  it('a permission RPC in flight cannot restore permissions after sign-out', async () => {
+    const pendingPerms  = deferred<{ permissions: Record<string, boolean> | null }>();
+    const remoteSignOut = deferred<void>();
+
+    await signedInAsA();
+
+    // An on-demand refresh whose RPC will not answer yet.
+    getEffectivePermissions.mockReturnValueOnce(pendingPerms.promise);
+    await act(async () => { screen.getByText('reload-perms').click(); });
+
+    signOut.mockReturnValue(remoteSignOut.promise);
+    await act(async () => { screen.getByText('sign-out').click(); });
+    expect(val('perms')).toBe('0');
+
+    // The RPC answers generously, after the sign-out. It must be discarded.
+    await act(async () => {
+      pendingPerms.resolve({ permissions: { 'reports.view': true, 'users.view': true } });
+      await pendingPerms.promise;
+    });
+
+    expect(val('perms')).toBe('0');
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    await act(async () => { remoteSignOut.resolve(); await remoteSignOut.promise; });
+    expect(val('perms')).toBe('0');
+  });
+
+  it('clearRecovery invalidates locally first and cleans the URL after the remote call', async () => {
+    const pendingProfile = deferred<ProfileLoad>();
+    const remoteSignOut  = deferred<void>();
+    const replaceState   = vi.spyOn(window.history, 'replaceState');
+
+    await signedInAsA();
+    getMyProfileResult.mockReturnValueOnce(pendingProfile.promise);
+    signOut.mockReturnValue(remoteSignOut.promise);
+
+    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    expect(status()).toBe('profile_loading');
+
+    await act(async () => { screen.getByText('clear-recovery').click(); });
+
+    // Identity is gone immediately — org scope and permissions included.
+    expect(val('session')).toBe('null');
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+    // The URL is cleaned only after the remote call, exactly as before.
+    expect(replaceState).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pendingProfile.resolve({ status: 'ok', profile: PROFILE_A });
+      await pendingProfile.promise;
+    });
+    expectNoIdentityResidue();
+
+    await act(async () => { remoteSignOut.resolve(); await remoteSignOut.promise; });
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/');
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    replaceState.mockRestore();
+  });
+
+  it("session A's permission refresh is never applied to session B", async () => {
+    const pendingPerms = deferred<{ permissions: Record<string, boolean> | null }>();
+
+    await signedInAsA();
+
+    // A asks for a refresh; its RPC hangs.
+    getEffectivePermissions.mockReturnValueOnce(pendingPerms.promise);
+    await act(async () => { screen.getByText('reload-perms').click(); });
+
+    // B signs in and completes normally with two permissions.
+    getMyProfileResult.mockResolvedValueOnce({ status: 'ok', profile: PROFILE_B });
+    getEffectivePermissions.mockResolvedValueOnce({
+      permissions: { 'reports.view': true, 'users.view': true },
+    });
+    await emitAuthEvent('SIGNED_IN', SESSION_B);
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(val('profile')).toBe('user-B');
+    expect(val('perms')).toBe('2');
+
+    // A's answer arrives late, with a different set. B must be untouched.
+    await act(async () => {
+      pendingPerms.resolve({
+        permissions: { 'reports.view': true, 'users.view': true, 'users.edit_scope': true },
+      });
+      await pendingPerms.promise;
+    });
+
+    expect(val('perms')).toBe('2');
     expect(val('profile')).toBe('user-B');
   });
 });
