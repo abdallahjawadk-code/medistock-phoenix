@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
+import { MediStockMark } from '@/shared/ui/MediStockMark';
+import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 
 interface Props {
   onComplete: () => void;
@@ -10,14 +12,19 @@ const SEQUENCE_MS = 6000;
 const REDUCED_MS = 900;
 
 /**
- * Phoenix rebirth welcome. The approved clean-plate master IS the dominant
- * full-screen artwork (obsidian, no white overexposure) — it is never replaced
- * by a WebGL reconstruction. Motion is a controlled cinematic reveal: a gentle
- * fade-in, a slow camera push, and drifting embers over the plate. The title and
- * the exact issuance/supervision credits are always live React text — never baked
- * into the texture. Skip is available from the first frame; the sequence shows
- * once per session (gated by the caller). On reduced-motion it holds the still
- * keyframe with only a short fade.
+ * Premium living welcome (A7.2.2). A bounded institutional hero — the
+ * original pharmaceutical-supply scene, never a Phoenix-bird photograph, a
+ * fire/ember identity or a WebGL reconstruction — with a calm reveal for the
+ * masthead/credits beneath it and a progress rail paced by this file's own
+ * SEQUENCE_MS. The title, lede and the exact issuance/supervision credits
+ * are always live React text — never baked into an image. Skip is available
+ * from the first frame; the sequence shows once per session (gated by the
+ * caller). On reduced-motion it holds the still keyframe with only a short
+ * fade.
+ *
+ * Behaviour is unchanged from A7.2: same timing constants, same finish
+ * callback, same once-per-session gating, same reduced-motion path — this
+ * pass changed presentation only.
  */
 export function PhoenixWelcomeExperience({ onComplete }: Props) {
   const { lang } = useApp();
@@ -50,41 +57,44 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       aria-modal="true"
       aria-label={lang === 'ar' ? 'مرحبًا بك في ميدي ستوك فينيكس' : 'Welcome to MediStock Phoenix'}
     >
-      {/* Dominant full-screen approved Phoenix (clean-plate master, AVIF→WebP). */}
+      {/* Full-bleed institutional hero — the production pharmaceutical-supply
+          photography, never a Phoenix-bird photograph and never a fire/ember
+          identity. The scrim is what makes the live text over it legible in
+          both themes without baking any text into the artwork. */}
       <div className="nexus-welcome__stage" aria-hidden="true">
-        <picture>
-          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.avif" type="image/avif" />
-          <source srcSet="/assets/phoenix/runtime/phoenix-welcome-clean.webp" type="image/webp" />
-          <img
-            className="nexus-welcome__plate"
-            src="/assets/phoenix/runtime/phoenix-welcome-clean.webp"
-            alt=""
-            width={1680}
-            height={941}
-            decoding="async"
-            loading="eager"
-          />
-        </picture>
+        <AuthSupplyHero className="nexus-welcome__hero" />
         <div className="nexus-welcome__scrim" />
-        <div className="nexus-welcome__embers">
-          {Array.from({ length: 18 }, (_, i) => (
-            <span
-              key={i}
-              className="nexus-welcome__particle"
-              style={{ '--particle-index': i } as CSSProperties}
-            />
-          ))}
-        </div>
       </div>
 
       <button type="button" className="nexus-welcome__skip nexus-control" onClick={finish}>
         {lang === 'ar' ? 'تخطي' : 'Skip'}
       </button>
 
+      <div className="nexus-welcome__content">
       <header className="nexus-welcome__masthead">
-        <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
+        <div className="nexus-welcome__brand">
+          <MediStockMark size={88} className="nexus-welcome__emblem" title="" />
+          <div className="nexus-welcome__kicker">MEDISTOCK PHOENIX</div>
+        </div>
         <h1 className="nexus-welcome__title" dir="rtl">دائرة صحة بابل - قسم الصيدلة</h1>
+        <p className="nexus-welcome__lede" dir="auto">
+          {lang === 'ar'
+            ? 'منظومة الإمداد الدوائي — من قسم الصيدلة إلى منفذ الصرف.'
+            : 'Medication Supply Network — From the Pharmacy Department to the Dispensing Point.'}
+        </p>
       </header>
+
+      {/* Calm progress rail. Presentation only: its duration is read from the
+          SAME SEQUENCE_MS the completion timer uses, so it can never drift
+          from the real sequence, and the phase's global reduced-motion rule
+          collapses it exactly like every other animation. */}
+      <div
+        className="nexus-welcome__progress"
+        aria-hidden="true"
+        style={{ '--welcome-duration': `${SEQUENCE_MS}ms` } as CSSProperties}
+      >
+        <span className="nexus-welcome__progress-fill" />
+      </div>
 
       {/* Approved issuance credit — the EXACT approved Arabic text, verbatim
           per the authoritative handoff. Do not paraphrase.
@@ -104,6 +114,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
         <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
         {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
             single seal lives in the authenticated shell footer. */}
+      </div>
       </div>
     </div>
   );

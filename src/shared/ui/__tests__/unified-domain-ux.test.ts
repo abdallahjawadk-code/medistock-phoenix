@@ -195,14 +195,13 @@ describe('search and loader', () => {
     expect(qr).not.toContain('batch_number');
   });
 
-  it('نبض الصيدلة replaces the generic orbit spinner', () => {
+  it('the exact Phoenix Pharmacy emblem brands the loading state', () => {
     const loading = read('shared/ui/PhoenixLoadingState.tsx');
-    expect(loading).toContain('PharmacyPulseLoader');
-    expect(loading).not.toContain('nexus-loading__orbit');
+    expect(loading).toContain('PhoenixPharmacyEmblem');
+    expect(loading).toContain('variant="compact-gold"');
+    expect(loading).toContain('nexus-loading__orbit');
     const css = read('shared/lib/phoenix-nexus.css');
-    expect(css).toContain('.nexus-pulse__serpent');
-    expect(css).toContain('animation: nexus-pulse-reveal .01s linear .3s forwards');
     expect(css).toContain('prefers-reduced-motion: reduce');
-    expect(css).toContain('html[data-page-hidden] .nexus-pulse *');
+    expect(css).toContain('.nexus-loading__orbit');
   });
 });

@@ -1,21 +1,57 @@
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
-import { PhoenixMark } from '@/shared/ui/PhoenixMark';
+import { MediStockMark } from '@/shared/ui/MediStockMark';
+import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
   const [mode, setMode] = useState<'signin' | 'reset'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   // Local-username accounts have no deliverable email — show guidance instead
   // of calling the reset API (LOCAL-CREDENTIALS-MODE-A, Part G).
   const [localResetNote, setLocalResetNote] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const passwordSelectionRef = useRef<{
+    start: number | null;
+    end: number | null;
+    direction: 'forward' | 'backward' | 'none' | null;
+    restoreFocus: boolean;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const input = passwordInputRef.current;
+    const selection = passwordSelectionRef.current;
+    if (!input || !selection) return;
+
+    input.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+    if (selection.restoreFocus) input.focus({ preventScroll: true });
+    passwordSelectionRef.current = null;
+  }, [passwordVisible]);
+
+  const passwordToggleLabel = passwordVisible
+    ? (lang === 'ar' ? 'إخفاء كلمة المرور' : 'Hide password')
+    : (lang === 'ar' ? 'إظهار كلمة المرور' : 'Show password');
+
+  const togglePasswordVisibility = () => {
+    const input = passwordInputRef.current;
+    if (input) {
+      passwordSelectionRef.current = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        direction: input.selectionDirection,
+        restoreFocus: document.activeElement === input,
+      };
+    }
+    setPasswordVisible(visible => !visible);
+  };
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -53,6 +89,8 @@ export function LoginScreen() {
     setBusy(false);
     if (!res.ok) {
       setError(res.error === 'NOT_CONFIGURED' ? t('config_missing', lang) : t('invalid_creds', lang));
+    } else {
+      setPasswordVisible(false);
     }
   }
 
@@ -61,6 +99,7 @@ export function LoginScreen() {
     setResetSent(false);
     setLocalResetNote(false);
     setError(null);
+    setPasswordVisible(false);
   };
 
   return (
@@ -78,52 +117,38 @@ export function LoginScreen() {
         </button>
       </div>
 
-      {/* Two-column layout: the form panel stays on the LEFT; the approved
-          photoreal Phoenix master (AVIF→WebP) dominates the RIGHT art panel. It is
-          the permanent hero — never a procedural point-cloud. object-fit:cover +
-          object-position keep the COMPLETE bird (fiery wing, gold/pearl wing and
-          the teal medical chest) in frame; only restrained CSS embers move over
-          it, and three.js stays off the login critical path. Being the first
-          in-flow child, this panel resolves to the inline-start (physical right)
-          column under RTL. */}
-      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شعار طائر الفينيكس' : 'Phoenix emblem'}>
-        <picture>
-          <source srcSet="/assets/phoenix/runtime/phoenix-login.avif" type="image/avif" />
-          <source srcSet="/assets/phoenix/runtime/phoenix-login.webp" type="image/webp" />
-          <img
-            className="nexus-login__plate"
-            src="/assets/phoenix/runtime/phoenix-login.webp"
-            alt=""
-            width={1680}
-            height={941}
-            decoding="async"
-            loading="eager"
-          />
-        </picture>
-        <div className="nexus-login__art-embers" aria-hidden="true">
-          {Array.from({ length: 14 }, (_, i) => (
-            <span key={i} className="nexus-login__ember" style={{ '--ember-index': i } as CSSProperties} />
-          ))}
-        </div>
+      {/* Two-column layout: the form panel stays on the LEFT; a light,
+          institutional supply-network illustration (original SVG, no image
+          asset, no Phoenix bird) dominates the RIGHT art panel — the "Premium
+          Living Pharmaceutical Supply" identity from the approved reference
+          board. Being the first in-flow child, this panel resolves to the
+          inline-start (physical right) column under RTL. */}
+      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
+        <AuthSupplyHero className="nexus-login__hero" priority />
         <div className="nexus-login__art-caption">
           <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
           <h1>
             {lang === 'ar'
-              ? 'منظومة الإمداد الدوائي — من المخزن المركزي إلى منفذ الصرف.'
-              : 'The medicine supply fabric — from central store to dispensing outlet.'}
+              ? 'منظومة الإمداد الدوائي — من قسم الصيدلة إلى منفذ الصرف.'
+              : 'Medication Supply Network — From the Pharmacy Department to the Dispensing Point.'}
           </h1>
+          <p className="nexus-login__art-lede" dir="auto">
+            {lang === 'ar'
+              ? 'متابعة مؤسسية واحدة لحركة الدواء عبر مخازن قسم الصيدلة والمستشفيات ومنافذ الصرف.'
+              : 'One institutional view of medicine moving through pharmacy-department stores, hospitals and dispensing points.'}
+          </p>
           <div className="nexus-login__trust-row">
-            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'نطاقات آمنة' : 'Scoped security'}</span>
-            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'تدفق مترابط' : 'Connected flow'}</span>
-            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تدقيق فوري' : 'Live audit'}</span>
+            <span><PhoenixIcon name="lock" size={14} /> {lang === 'ar' ? 'تدفق آمن' : 'Secure flow'}</span>
+            <span><PhoenixIcon name="network" size={14} /> {lang === 'ar' ? 'شبكة مترابطة' : 'Connected network'}</span>
+            <span><PhoenixIcon name="status" size={14} /> {lang === 'ar' ? 'تتبع تشغيلي' : 'Operational tracking'}</span>
           </div>
         </div>
       </section>
 
       <main className="nexus-login__auth">
         <div className="nexus-login__brand">
-          <div className="nexus-brand-mark nexus-login__brand-mark">
-            <PhoenixMark size={44} title="" />
+          <div className="nexus-login__brand-emblem">
+            <MediStockMark size={80} className="nexus-login__emblem" title="" />
           </div>
           <div>
             <div className="nexus-login__brand-name">MediStock-Babil Phoenix</div>
@@ -131,7 +156,7 @@ export function LoginScreen() {
           </div>
         </div>
 
-        <form className="nexus-login__card" onSubmit={onSubmit}>
+        <form className="nexus-login__card" onSubmit={onSubmit} onReset={() => setPasswordVisible(false)}>
           <div className="nexus-login__card-heading">
             <span className="nexus-login__secure-icon"><PhoenixIcon name="lock" size={18} /></span>
             <div>
@@ -169,7 +194,7 @@ export function LoginScreen() {
               <label htmlFor="login-email" className="nexus-login__label">
                 {t('login_identifier', lang)}
               </label>
-              <div className="nexus-login__field-wrap">
+              <div className="nexus-login__field-wrap" data-invalid={error ? 'true' : undefined}>
                 <PhoenixIcon name="account" size={17} />
                 <input
                   id="login-email"
@@ -179,6 +204,9 @@ export function LoginScreen() {
                   className="premium-field nexus-login__field"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  disabled={busy}
+                  aria-invalid={error ? 'true' : undefined}
+                  aria-describedby={error ? 'login-error' : undefined}
                 />
               </div>
 
@@ -187,20 +215,40 @@ export function LoginScreen() {
                   <label htmlFor="login-password" className="nexus-login__label">
                     {t('password', lang)}
                   </label>
-                  <div className="nexus-login__field-wrap">
+                  <div className="nexus-login__field-wrap nexus-login__field-wrap--password" data-invalid={error ? 'true' : undefined}>
                     <PhoenixIcon name="lock" size={17} />
                     <input
+                      ref={passwordInputRef}
                       id="login-password"
-                      type="password"
+                      type={passwordVisible ? 'text' : 'password'}
                       dir="ltr"
                       autoComplete="current-password"
                       className="premium-field nexus-login__field"
                       value={password}
                       onChange={e => setPassword(e.target.value)}
+                      disabled={busy}
+                      aria-invalid={error ? 'true' : undefined}
+                      aria-describedby={error ? 'login-error' : undefined}
                     />
+                    <button
+                      type="button"
+                      className="nexus-login__password-toggle premium-focus-ring"
+                      onPointerDown={event => {
+                        if (document.activeElement === passwordInputRef.current) event.preventDefault();
+                      }}
+                      onClick={togglePasswordVisibility}
+                      disabled={busy}
+                      aria-pressed={passwordVisible}
+                      aria-label={passwordToggleLabel}
+                      title={passwordToggleLabel}
+                    >
+                      <span className="nexus-login__password-eye" data-hidden={passwordVisible ? 'true' : undefined} aria-hidden="true">
+                        <PhoenixIcon name="eye" size={18} />
+                      </span>
+                    </button>
                   </div>
                   <div className="nexus-login__forgot">
-                    <button type="button" onClick={() => { setMode('reset'); setError(null); }}>
+                    <button type="button" onClick={() => { setMode('reset'); setError(null); setPasswordVisible(false); }}>
                       {t('forgot_password', lang)}
                     </button>
                   </div>
@@ -208,7 +256,7 @@ export function LoginScreen() {
               )}
 
               {error && (
-                <div className="nexus-login__notice nexus-login__notice--error" role="alert">
+                <div id="login-error" className="nexus-login__notice nexus-login__notice--error" role="alert">
                   <PhoenixIcon name="warning" size={17} />
                   <span>{error}</span>
                 </div>

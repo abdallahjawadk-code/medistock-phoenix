@@ -105,7 +105,7 @@ export function NetworkManagementScreen({
               padding: '9px 14px', minHeight: '44px', borderRadius: 'var(--r2)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
               background: activeTab === x.id ? 'var(--p)' : 'var(--s)',
-              color: activeTab === x.id ? '#fff' : 'var(--t2)',
+              color: activeTab === x.id ? 'var(--on-accent)' : 'var(--t2)',
             }}
           >
             {t(x.labelKey, lang)}
@@ -134,9 +134,9 @@ function StatusLine({ msg, error }: { msg: string | null; error: boolean }) {
   return (
     <div role="status" style={{
       margin: '10px 0', padding: '9px 12px', borderRadius: 'var(--r2)', fontSize: '12.5px',
-      background: error ? 'var(--err2)' : 'var(--ok2, #ecfdf5)',
-      color: error ? 'var(--err)' : 'var(--ok, #047857)',
-      border: `1px solid ${error ? 'var(--err)' : 'var(--ok, #047857)'}`,
+      background: error ? 'var(--err2)' : 'var(--ok2)',
+      color: error ? 'var(--err)' : 'var(--ok)',
+      border: `1px solid ${error ? 'var(--err)' : 'var(--ok)'}`,
     }}>
       {msg}
     </div>
@@ -525,8 +525,8 @@ function ScopeForm({ lang, profiles, warehouses, outlets, onCancel, onDone }: {
 // ─── tiny badge ──────────────────────────────────────────────────────────────
 
 function Badge({ text, tone }: { text: string; tone: 'p' | 'ok' | 'muted' }) {
-  const bg = tone === 'p' ? 'var(--p2)' : tone === 'ok' ? 'var(--ok2, #ecfdf5)' : 'var(--s2, #f1f5f9)';
-  const fg = tone === 'p' ? 'var(--pd)' : tone === 'ok' ? 'var(--ok, #047857)' : 'var(--t2)';
+  const bg = tone === 'p' ? 'var(--p2)' : tone === 'ok' ? 'var(--ok2)' : 'var(--s2)';
+  const fg = tone === 'p' ? 'var(--pd)' : tone === 'ok' ? 'var(--ok)' : 'var(--t2)';
   return (
     <span style={{
       display: 'inline-block', padding: '1px 7px', borderRadius: 'var(--rpill)', fontSize: '10px',

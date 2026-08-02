@@ -66,18 +66,11 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
   // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
   const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
 
-  /* Same state map as PhoenixSidebar, so the drawer and the desktop rail agree
-     on what "active" looks like: --chip fill, --cyanDim text, weight 700 and a
-     3px ember rail on the inline start. */
-  const ns = (n: number) => {
-    const active = currentScreen === n;
-    return {
-      background: active ? 'var(--chip)' : 'transparent',
-      color:      active ? 'var(--cyanDim)' : 'var(--muted)',
-      fontWeight: active ? 700 : 500,
-      borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`,
-    };
-  };
+  /* PHASE-A7-VISUAL-CONVERGENCE: same data-active contract as PhoenixSidebar —
+     fill/colour live in phase-a-visual-convergence.css so the drawer and the
+     desktop rail agree on what "active" looks like without either fighting
+     an inline style. */
+  const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
   return (
     <div
@@ -123,8 +116,8 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
 
         <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px' }}>
           <div className="nexus-brand-lockup">
-            <div className="nexus-brand-mark">
-              <PhoenixMark size={39} title="" />
+            <div className="nexus-brand-mark nexus-brand-mark--phoenix">
+              <PhoenixMark size={44} title="" />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="nexus-brand-title">MediStock-Babil Phoenix</div>

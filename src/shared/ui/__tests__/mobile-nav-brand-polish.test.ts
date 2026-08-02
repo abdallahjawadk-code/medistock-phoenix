@@ -23,6 +23,9 @@ const sidebar    = readSrc('shared/ui/PhoenixSidebar.tsx');
 const topbar     = readSrc('shared/ui/PhoenixTopbar.tsx');
 const appShell   = readSrc('shared/ui/PhoenixAppShell.tsx');
 const strings    = readSrc('shared/i18n/strings.ts');
+// PHASE-A-CLAUDE-A7: the active/inactive fill this file's own tests below
+// check now lives here instead of in ns()'s inline style (see that test).
+const convergenceCss = readSrc('shared/lib/phase-a-visual-convergence.css');
 
 describe('Mobile bottom nav: "More / المزيد" item removed', () => {
   it('does not render the hamburger icon (☰) anywhere', () => {
@@ -148,14 +151,19 @@ describe('Mobile drawer active-route styling still exists', () => {
     expect(sidebar).toContain('data-active={currentScreen === item.screen}');
   });
 
-  it('active nav item still gets a distinct background/color/fontWeight via the ns() helper', () => {
-    // ns() is now block-bodied and also returns the ember rail, so the active
-    // item reads by shape as well as by fill, colour and weight.
-    expect(drawer).toMatch(/const ns = \(n: number\) => \{/);
-    expect(drawer).toContain("background: active ? 'var(--chip)' : 'transparent'");
-    expect(drawer).toContain("color:      active ? 'var(--cyanDim)' : 'var(--muted)'");
-    expect(drawer).toContain('active ? 700 : 500');
-    expect(drawer).toContain("borderInlineStart: `3px solid ${active ? 'var(--ember)' : 'transparent'}`");
+  it('active nav item still gets a distinct background/color/fontWeight — now via data-active + the Phase A7 CSS layer, not an inline style', () => {
+    // PHASE-A-CLAUDE-A7: a later, separately-reviewed phase (Phoenix Daylight
+    // visual convergence) moved this exact fill/colour/weight distinction out
+    // of ns()'s inline style and into phase-a-visual-convergence.css, keyed
+    // off the SAME data-active attribute this file's previous test already
+    // asserts both drawer and sidebar render — a real, rendered-and-verified
+    // bug fix (removing the inline style with no CSS replacement left inactive
+    // items on the browser's native <button> face) forced this relocation.
+    // ns() itself is now a one-line helper that returns only fontWeight.
+    expect(drawer).toMatch(/const ns = \(n: number\) => \(\{ fontWeight: currentScreen === n \? 700 : 500 \}\);/);
+    expect(convergenceCss).toMatch(/\.premium-sidebar \.premium-nav-item\[data-active="true"\]\s*\{[^}]*background:\s*var\(--phoenix-sidebar-active-bg\)/);
+    expect(convergenceCss).toMatch(/\.premium-sidebar \.premium-nav-item\[data-active="true"\]\s*\{[^}]*color:\s*var\(--phoenix-sidebar-active-text\)/);
+    expect(convergenceCss).toMatch(/\.premium-sidebar \.premium-nav-item\[data-active="true"\]\s*\{[^}]*font-weight:\s*var\(--fw-bold\)/);
   });
 });
 

@@ -34,13 +34,47 @@ describe('Phase A auth and welcome presentation contract', () => {
   it('preserves the existing sign-in, reset, session welcome, and approved artwork contracts', () => {
     expect(login).toContain('signIn(resolveLoginIdentifier(email), password)');
     expect(login).toContain('requestPasswordReset(email)');
-    expect(login).toContain('/assets/phoenix/runtime/phoenix-login.avif');
     expect(login).not.toContain("supabase.from(");
 
     expect(welcome).toContain('onComplete');
-    expect(welcome).toContain('/assets/phoenix/runtime/phoenix-welcome-clean.avif');
     expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
     expect(welcome).toContain('بإشراف الصيدلاني باسم كاظم رمح');
     expect(welcome).not.toContain("supabase.from(");
+  });
+
+  // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
+  // Auth & Welcome) deliberately retires the photographic Phoenix-bird hero
+  // art on BOTH screens — the reference board's own explicit "no Phoenix bird
+  // as hero" contract — replacing it with an original inline-SVG illustration
+  // (no image asset, no new dependency). The two asset-path assertions above
+  // are superseded by this stronger check.
+  // PHASE-A-CLAUDE-A7.2.2: that phase's first illustration
+  // (<InstitutionalSupplyMotif>) read as a flat teaching diagram rather than
+  // a premium institutional environment, so a further corrective round
+  // replaced it with real photography via <AuthSupplyHero> (A7.2.3) and retired the vector files
+  // entirely; the same round also replaced the Phoenix-bird APP ICON in the
+  // Login brand lockup with <MediStockMark>. A7.2.4 supersedes the geometric
+  // cube with the owner-supplied Phoenix Pharmacy emblem while preserving the
+  // wrapper and every auth interaction.
+  it('the Phoenix-bird photo hero is retired from both screens in favour of the original institutional scene (A7.2 → A7.2.2)', () => {
+    expect(login).toContain('AuthSupplyHero');
+    expect(welcome).toContain('AuthSupplyHero');
+    expect(login).not.toContain('/assets/phoenix/runtime/phoenix-login');
+    expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
+    // The retired motif must not creep back in alongside the scene.
+    expect(login).not.toContain('InstitutionalSupplyMotif');
+    expect(welcome).not.toContain('InstitutionalSupplyMotif');
+  });
+
+  it('the auth lockup keeps MediStockMark while navigation keeps its PhoenixMark wrapper (A7.2.4)', () => {
+    expect(login).toContain('MediStockMark');
+    expect(login).not.toContain('PhoenixMark');
+    expect(welcome).toContain('MediStockMark');
+    // Both wrappers now resolve to exact raster variants without changing the
+    // existing screen contracts.
+    const sidebar = read('shared/ui/PhoenixSidebar.tsx');
+    const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
+    expect(sidebar).toContain('PhoenixMark');
+    expect(drawer).toContain('PhoenixMark');
   });
 });

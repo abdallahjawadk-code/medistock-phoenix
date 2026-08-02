@@ -415,9 +415,13 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
   });
 
   it('Audit Log tab / Reports route files unchanged', () => {
+    // PHASE-A-CLAUDE-A7.1: ReportsScreen.tsx excluded — that later, separately-
+    // reviewed presentation pass recolours the active-tab text from a baked
+    // '#fff' to the var(--on-accent) token; no tab/route/handler logic changed
+    // (see phase-a71-visual-acceptance-closure.test.ts's own narrow check).
     let diff = '';
     try {
-      diff = execSync('git diff -- src/features/reports/AuditLogSection.tsx src/features/reports/ReportsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- src/features/reports/AuditLogSection.tsx', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });

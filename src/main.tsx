@@ -18,6 +18,8 @@ import '@/shared/lib/phase-a-command-center.css';
 import '@/shared/lib/phase-a-inventory-transfers.css';
 import '@/shared/lib/phase-a-institutions-outlets.css';
 import '@/shared/lib/phase-a-alerts-admin-qr.css';
+import '@/shared/lib/phase-a-visual-convergence.css';
+import '@/shared/lib/phase-a-auth-welcome-signature.css';
 import { App } from '@/app/App';
 import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
 
@@ -25,6 +27,14 @@ import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
 // presentation layer remain isolated and removable. It changes no application
 // state and is intentionally set before the first React paint.
 document.documentElement.dataset.phoenixUiPhase = 'a';
+
+// PHASE-A7-VISUAL-CONVERGENCE: names the visual language explicitly (as
+// opposed to the previous unnamed cinematic layer) so the daylight contract
+// is greppable/testable as its own concern. Always "daylight" for Phase A —
+// it does not track the light/dark theme toggle, which keeps full ownership
+// of data-theme; this marker only says which STRUCTURAL design language the
+// phase uses, in both themes.
+document.documentElement.dataset.phoenixVisual = 'daylight';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

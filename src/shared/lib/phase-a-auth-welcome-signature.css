@@ -1,0 +1,586 @@
+/* ─── PHASE A7.2.3 — PREMIUM LIVING AUTH & WELCOME SIGNATURE ────────────────
+   Presentation-only, imported LAST (after phase-a-visual-convergence.css).
+   Every selector is gated behind BOTH Phase A markers, exactly like that
+   file. It changes no routing, auth, session, RBAC/RLS, RPC, or data.
+
+   WHY THIS FILE EXISTS: the reference board replaces the photographic
+   Phoenix-bird hero with a light-first "Premium Living Pharmaceutical
+   Supply" identity — warm ivory, institutional teal, gold accents.
+
+   A7.2.3 supersedes every earlier hero attempt. A7.2's flat motif and
+   A7.2.1/A7.2.2's isometric vector scene were both rejected as reading like
+   diagrams rather than a premium environment; both components are now
+   deleted. The hero is real photography — a daylight dispensing hall with
+   medicine shelving, palletised consignments and a delivery vehicle —
+   supplied as two separately composed masters (landscape for desktop,
+   portrait for phones) and served through <AuthSupplyHero>.
+
+   The compositions are therefore rebuilt around a FULL-BLEED image with
+   live text over a scrim, which is how the reference boards themselves are
+   built — and which also removes the class of bugs the stacked-layout
+   versions kept producing (intrinsic-height overflow, letterboxing, and
+   an unexplained grey gap under a bounded stage).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 · THE HERO IMAGE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Warm ivory paint under the image: it is what shows during decode and
+     behind any transparent edge, so the panel never flashes grey/white. */
+  background: var(--surface2);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The pharmacist, the pallet and the truck all sit left-of-centre in the
+     landscape master; biasing the crop toward that side keeps the subject
+     in frame as the panel narrows instead of drifting to empty floor. */
+  object-position: 38% 50%;
+}
+
+/* Dark theme keeps the SAME image and the same DOM — it is dimmed and
+   slightly cooled rather than swapped or inverted, so the structure is
+   identical across themes and no second asset has to be shipped. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='dark'] .auth-supply-hero__img {
+  filter: brightness(.72) saturate(.9);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 · THE BRAND MARK
+   A7.2.4: exact owner-supplied transparent raster, free-standing without a tile.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  flex: 0 0 80px;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem {
+  width: 80px;
+  height: 80px;
+  filter: drop-shadow(0 5px 9px color-mix(in srgb, var(--phoenix-gold) 20%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 6px 12px color-mix(in srgb, var(--phoenix-gold) 24%, transparent));
+}
+
+@media (max-width: 900px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem {
+    width: 62px;
+    height: 62px;
+    flex-basis: 62px;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem {
+    width: 62px;
+    height: 62px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 · LOGIN COMPOSITION
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── DESKTOP (>900px, matching phase-a-auth.css's own mobile switch) ───────
+   ONE continuous sheet at the reference board's 65/35 hero/panel split. The
+   hairline is an INSET ring, never a real border: the shell already sits at
+   min-height:100dvh, so a 1px border would add 2px of layout height and
+   force the page to scroll on an exact-height desktop viewport. */
+@media (min-width: 901px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-login.nexus-login {
+    grid-template-columns: minmax(360px, 35fr) minmax(0, 65fr);
+    gap: 0;
+    border-radius: var(--phase-a-auth-radius);
+    overflow: hidden;
+    box-shadow: var(--phase-a-auth-shadow), inset 0 0 0 1px var(--brd);
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art,
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* The art panel is now a frame for the photograph, not a padded column. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+/* The old cinematic vignette/frame assumed a dark plate needing legibility
+   darkening; the photograph carries its own light. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art::after {
+  content: none;
+}
+
+/* Caption over the photograph, on an ivory scrim that fades UP from the
+   panel's inline edge — this is what ties the image to the auth panel so the
+   two read as one sheet instead of a picture beside a form. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  max-width: none;
+  padding: clamp(80px, 14vh, 190px) clamp(28px, 3vw, 56px) clamp(24px, 3.4vh, 44px);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface2) 96%, transparent) 0%,
+    color-mix(in srgb, var(--surface2) 88%, transparent) 34%,
+    color-mix(in srgb, var(--surface2) 46%, transparent) 66%,
+    transparent 100%
+  );
+  pointer-events: auto;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__kicker {
+  color: var(--phoenix-gold);
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption h1 {
+  max-width: 22ch;
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: clamp(19px, 1.95vw, 33px);
+  line-height: 1.28;
+  letter-spacing: -.02em;
+  text-shadow: none;
+  text-wrap: balance;
+}
+
+/* English sets far fewer characters per line than Arabic at the same size,
+   so the shared clamp made the LTR headline run long and dominate. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][lang='en'] .nexus-login__art-caption h1 {
+  max-width: 28ch;
+  font-size: clamp(18px, 1.62vw, 27px);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-lede {
+  max-width: 46ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: clamp(12.5px, .92vw, 15px);
+  line-height: 1.7;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row {
+  margin-top: clamp(12px, 1.8vh, 22px);
+  pointer-events: auto;
+}
+
+/* Descriptive-only chips — no numbers, no claims */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row > span {
+  color: var(--text);
+  border: 1px solid var(--brd);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--sh-xs);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ─── LOGIN · MOBILE ───────────────────────────────────────────────────────
+   A real phone composition: a bounded portrait hero band above a full-width
+   form. The base layer hides the art panel entirely at this width, which
+   suited the retired vector hero but not the photographic identity. */
+@media (max-width: 900px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art {
+    display: block;
+    height: clamp(210px, 34vh, 320px);
+    min-height: 0;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .auth-supply-hero__img {
+    /* The portrait master frames the pharmacist centre-left; hold the
+       subject and the shelving, letting the floor crop away. */
+    object-position: 50% 42%;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption {
+    padding: clamp(48px, 12vh, 96px) 20px 18px;
+    text-align: center;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption h1 {
+    max-width: none;
+    font-size: clamp(17px, 4.4vw, 22px);
+  }
+
+  /* The lede and chips are desktop furniture — the phone needs the vertical
+     budget for the form itself. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-lede,
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__art-caption .nexus-login__trust-row {
+    display: none;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+    flex: 1 0 auto;
+    justify-content: flex-start;
+    padding-top: clamp(18px, 2.6vh, 28px);
+  }
+
+  /* The controls sit over the hero band on mobile, so the brand row no
+     longer needs to clear them. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand {
+    margin-top: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 · WELCOME COMPOSITION
+   A full-bleed hero experience: the photograph fills the viewport, the live
+   text sits over a scrim. Replaces the bounded stage-in-a-card layout whose
+   artwork letterboxed and which left a large grey gradient beneath it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+/* A7.1's layer made this a BOUNDED card in flow —
+   position:relative; inset:auto; width:min(100%,760px);
+   height:clamp(180px,32vh,320px); margin-top:clamp(44px,8vh,88px).
+   Restoring a full-bleed stage therefore has to unset height AND margin as
+   well as position/inset: overriding inset alone left the element absolute
+   but still 32vh tall and pushed down 8vh, which is exactly the pale empty
+   band that showed under the artwork (measured 245.75px tall at 61.4px top
+   in a 768px frame). Same specificity as that rule, later in the cascade. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: auto;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  aspect-ratio: auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface2);
+  box-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__stage::after {
+  content: none;
+}
+
+/* Ivory scrim rising from the foot of the frame — the only thing that makes
+   the credits and masthead legible over daylight photography, in both
+   themes, without baking any text into the artwork. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* The ramp stays LOW and short. A tall, gentle gradient washed the whole
+     frame to near-paper and left a large empty band above the text — the
+     photograph has to keep reading through the upper half, with the scrim
+     doing legibility work only where the copy actually sits. */
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface2) 97%, transparent) 0%,
+    color-mix(in srgb, var(--surface2) 92%, transparent) 22%,
+    color-mix(in srgb, var(--surface2) 62%, transparent) 38%,
+    color-mix(in srgb, var(--surface2) 16%, transparent) 52%,
+    transparent 64%
+  );
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.4vh, 18px);
+  width: min(100%, 760px);
+  padding: 0 clamp(20px, 4vw, 48px) clamp(26px, 5vh, 62px);
+  text-align: center;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__masthead {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  text-align: center;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__kicker {
+  color: var(--phoenix-gold);
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__title {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(21px, 2.5vw, 38px);
+  line-height: 1.24;
+  letter-spacing: -.02em;
+  text-shadow: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__lede {
+  max-width: 52ch;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: clamp(12.5px, 1vw, 15px);
+  line-height: 1.65;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__progress {
+  width: min(100%, 300px);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 20%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal), var(--phoenix-gold));
+  transform-origin: left center;
+  animation: phase-a-welcome-progress var(--welcome-duration, 6000ms) linear forwards;
+}
+
+/* Credits are a quiet inline block over the scrim, not a large standalone
+   card floating in empty space. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__credits {
+  position: static;
+  margin-top: clamp(4px, .8vh, 10px);
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  text-align: center;
+}
+
+@keyframes phase-a-welcome-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ─── WELCOME · MOBILE ─────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+    width: 66px;
+    height: 66px;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__content {
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The phone frame is much taller than it is wide, so the copy block needs
+     a proportionally taller ramp than the desktop one — but it still has to
+     stop well short of the top so the portrait master reads. */
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__scrim {
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--surface2) 98%, transparent) 0%,
+      color-mix(in srgb, var(--surface2) 94%, transparent) 30%,
+      color-mix(in srgb, var(--surface2) 66%, transparent) 46%,
+      color-mix(in srgb, var(--surface2) 18%, transparent) 60%,
+      transparent 72%
+    );
+  }
+}
+
+/* ─── MOTION NOTES ─────────────────────────────────────────────────────────
+   Reduced motion is inherited for free: phase-a-visual-convergence.css
+   already collapses every animation and transition under this SAME
+   html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] root via a
+   universal descendant selector, and the welcome progress rail is a
+   descendant of it — so it stops there without restating the media query.
+   Likewise the hidden-tab pause contract. ──────────────────────────────── */
+
+/* A7.2.5 · MICRO LUXURY POLISH — presentation-only, logically positioned. */
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__brand {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-emblem::before,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__brand::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inline-size: 118px;
+  block-size: 118px;
+  inset-inline-start: -18px;
+  inset-block-start: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--phoenix-gold) 18%, transparent), color-mix(in srgb, var(--teal) 7%, transparent) 45%, transparent 72%);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__emblem,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__emblem {
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--surface) 72%, transparent)) drop-shadow(0 8px 18px color-mix(in srgb, var(--phoenix-gold) 24%, transparent)) drop-shadow(0 18px 30px color-mix(in srgb, var(--teal) 10%, transparent));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth {
+  background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--surface) 72%, transparent), transparent 34%), linear-gradient(148deg, color-mix(in srgb, var(--surface) 94%, var(--surface2) 6%), color-mix(in srgb, var(--surface2) 91%, var(--phoenix-gold) 9%));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='dark'] .nexus-login__auth {
+  background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--phoenix-gold) 7%, transparent), transparent 34%), linear-gradient(148deg, color-mix(in srgb, var(--surface) 96%, var(--surface2) 4%), color-mix(in srgb, var(--surface2) 94%, var(--teal) 6%));
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card {
+  border-color: color-mix(in srgb, var(--phoenix-gold) 19%, var(--brd));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 97%, var(--surface2) 3%), color-mix(in srgb, var(--surface2) 94%, var(--phoenix-gold) 6%));
+  box-shadow: 0 28px 72px color-mix(in srgb, var(--text) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--phoenix-gold) 7%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card-heading h2,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__title {
+  text-wrap: balance;
+  font-variation-settings: 'wght' 720;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card-heading p,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand-department,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome__lede { text-wrap: pretty; }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap {
+  min-block-size: 52px;
+  border-color: color-mix(in srgb, var(--teal) 15%, var(--brd));
+  background: color-mix(in srgb, var(--field) 88%, var(--surface) 12%);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 6%, transparent), 0 1px 0 color-mix(in srgb, var(--surface) 65%, transparent);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--teal) 68%, var(--phoenix-gold));
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 13%, transparent), 0 8px 22px color-mix(in srgb, var(--teal) 8%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field-wrap[data-invalid='true'] {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 60%, var(--brd));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 9%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__field:disabled,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:disabled { cursor: wait; opacity: .58; }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  flex: 0 0 44px;
+  margin-inline-end: -9px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:hover,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle[aria-pressed='true'] {
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 9%, transparent);
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-toggle:focus-visible {
+  color: var(--teal);
+  outline: 2px solid color-mix(in srgb, var(--teal) 72%, var(--phoenix-gold));
+  outline-offset: 1px;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-eye {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__password-eye[data-hidden='true']::after {
+  content: '';
+  position: absolute;
+  inline-size: 20px;
+  block-size: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+@media (min-width: 901px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__auth::before {
+    content: '';
+    position: absolute;
+    z-index: 5;
+    inset-block: 7%;
+    inset-inline-start: 0;
+    inline-size: 1px;
+    background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--phoenix-gold) 58%, transparent) 25%, color-mix(in srgb, var(--teal) 66%, transparent) 72%, transparent);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--phoenix-gold) 18%, transparent);
+    pointer-events: none;
+  }
+}
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar {
+  box-shadow: 18px 0 46px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 24%, transparent), inset -1px 0 color-mix(in srgb, var(--phoenix-gold) 10%, transparent);
+}
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar-brand { background: linear-gradient(180deg, color-mix(in srgb, var(--phoenix-sidebar-text-strong) 5%, transparent), transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item { transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar .premium-nav-item[data-active='true'] { box-shadow: 0 8px 20px color-mix(in srgb, var(--phoenix-gold) 14%, transparent), inset 0 1px color-mix(in srgb, var(--phoenix-sidebar-text-strong) 32%, transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-mobile-drawer { outline: 1px solid color-mix(in srgb, var(--phoenix-gold) 32%, var(--phoenix-sidebar-border)); outline-offset: -1px; filter: drop-shadow(28px 0 40px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 52%, transparent)); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-drawer-backdrop { background: color-mix(in srgb, var(--phoenix-sidebar-bg) 54%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__mark { filter: drop-shadow(0 12px 22px color-mix(in srgb, var(--phoenix-gold) 18%, transparent)); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__orbit { border-color: color-mix(in srgb, var(--teal) 22%, transparent); border-block-start-color: var(--phoenix-gold); box-shadow: 0 0 18px color-mix(in srgb, var(--teal) 12%, transparent); }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-pwa-install { border-color: color-mix(in srgb, var(--phoenix-gold) 25%, var(--brd)); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 24px 58px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 18%, transparent), inset 0 1px color-mix(in srgb, var(--surface) 60%, transparent); }
+
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__brand,
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card { animation: phase-a725-arrive 420ms cubic-bezier(.22, .8, .24, 1) both; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-login__card { animation-delay: 70ms; }
+html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-welcome[data-phase='rise'] .nexus-welcome__content { animation: phase-a725-welcome-rise 520ms cubic-bezier(.22, .8, .24, 1) both; }
+
+@keyframes phase-a725-arrive { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes phase-a725-welcome-rise { from { opacity: .2; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }

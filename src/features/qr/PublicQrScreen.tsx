@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PhoenixPharmacyEmblem } from '@/shared/ui/PhoenixPharmacyEmblem';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getPublicQrPayload } from '@/shared/supabase/services/qr.service';
@@ -199,7 +200,7 @@ export function PublicQrScreen({ publicId }: Props) {
         {/* Header */}
         <div className="nexus-qr-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: 'var(--r3)', background: 'var(--p)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}><PhoenixIcon name="medical" size={20} /></div>
+            <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PhoenixPharmacyEmblem variant="compact-teal" size={48} /></div>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700 }}>{t('public_title', lang)}</div>
               <div style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('public_sub', lang)}</div>

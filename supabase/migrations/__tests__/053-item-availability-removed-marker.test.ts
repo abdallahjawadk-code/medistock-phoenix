@@ -578,7 +578,33 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
         // the same kind of presentation-only className/data-attribute hooks
         // (phase-a-alerts-admin-qr.css) to the Status Center's internal
         // alerts / outlet-grouped views — excluded here.
-        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/features/institutions/AvailabilityItemDetailsModal.tsx" ":!src/features/outlet/OutletOperationsScreen.tsx" ":!src/features/outlet/OutletIncomingSupplies.tsx" ":!src/features/outlet/OutletReturnComposer.tsx" ":!src/features/outlet/OutletStockCorrectionModal.tsx" ":!src/features/outlet/DispenseComposerDialog.tsx" ":!src/features/outlet/DispenseContextDialog.tsx" ":!src/features/outlet/DispenseContextViewer.tsx" ":!src/features/outlet/CurrentMovementStatus.tsx" ":!src/main.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/features/status/InternalAlertsSection.tsx" ":!src/features/status/OutletMaterialGroups.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx" ":!src/features/platform-broadcast/PlatformBroadcastGate.tsx" ":!src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ":!src/shared/supabase/services/platform-broadcast.service.ts" ":!src/app/App.tsx" ":!src/app/AuthenticatedApp.tsx" ":!src/app/AppContext.tsx" ":!src/shared/supabase/services/organizations.service.ts" ":!src/shared/supabase/services/lifecycle.service.ts" ":!src/features/qr/PublicQrScreen.tsx"',
+        // PHASE-A-CLAUDE-A7: a still later, separately-reviewed phase (Phoenix
+        // Daylight visual convergence) applies the same kind of presentation-
+        // only token/data-attribute recolouring — never a prop, handler, or
+        // RPC change — to ResetPasswordScreen.tsx (primary-button recolour)
+        // and PhoenixButton/PhoenixMobileBottomNav/PhoenixStatusBadge (gold
+        // primary, teal secondary, dedicated info-blue) — excluded here.
+        // PHASE-A-CLAUDE-A7.1: a still later, separately-reviewed phase (A7.1
+        // visual acceptance closure) finishes converting the last hardcoded
+        // hex literals it found repo-wide to Phoenix tokens — never a prop,
+        // handler, or RPC change — in materialAlertEngine.ts (expiry-risk
+        // tokens), NotificationBell.tsx / WhatsAppContactButton.tsx (on-accent
+        // / WhatsApp-brand tokens), and the NetworkManagementScreen /
+        // DirectSupplyOperations / OutletDispatchOperations / DirectEntryPanel
+        // tab-active and status-line tokens — excluded here. See
+        // docs/phoenix/visual-evidence/a71/hardcoded-colour-allowlist.md.
+        // PHASE-A-CLAUDE-A7.2: a still later, separately-reviewed phase
+        // (Premium Living Auth & Welcome) retires the photographic Phoenix-
+        // bird hero on both auth screens for an original inline-SVG supply-
+        // network illustration — never a handler, session, or RPC change —
+        // in LoginScreen.tsx and PhoenixWelcomeExperience.tsx — excluded here.
+        // PHASE-A-CLAUDE-A7.2.1: a still later, separately-reviewed phase
+        // (Luxury Visual Fidelity Correction) reworks that same illustration
+        // component's geometry for closer reference-board fidelity — never a
+        // handler, session, or RPC change — InstitutionalSupplyMotif.tsx
+        // excluded here (it is a NEW component; the CSS file that also
+        // changed is not a .ts/.tsx and is out of this glob's scope already).
+        'git diff -- "src/**/*.ts" "src/**/*.tsx" ":!src/**/__tests__/**" ":!src/shared/supabase/services/dashboard.service.ts" ":!src/shared/supabase/services/availability.service.ts" ":!src/features/institutions/InstitutionScreen.tsx" ":!src/features/institutions/AvailabilityItemDetailsModal.tsx" ":!src/features/outlet/OutletOperationsScreen.tsx" ":!src/features/outlet/OutletIncomingSupplies.tsx" ":!src/features/outlet/OutletReturnComposer.tsx" ":!src/features/outlet/OutletStockCorrectionModal.tsx" ":!src/features/outlet/DispenseComposerDialog.tsx" ":!src/features/outlet/DispenseContextDialog.tsx" ":!src/features/outlet/DispenseContextViewer.tsx" ":!src/features/outlet/CurrentMovementStatus.tsx" ":!src/main.tsx" ":!src/shared/lib/types.ts" ":!src/features/status/StatusCenterScreen.tsx" ":!src/features/status/InternalAlertsSection.tsx" ":!src/features/status/OutletMaterialGroups.tsx" ":!src/shared/lib/professional-export.ts" ":!src/shared/i18n/strings.ts" ":!src/features/reports/ReportsScreen.tsx" ":!src/shared/ui/PhoenixSidebar.tsx" ":!src/shared/ui/PhoenixMobileDrawer.tsx" ":!src/features/status/OutletAvailabilityReportModal.tsx" ":!src/features/users/UserManagementScreen.tsx" ":!src/features/admin/AvailabilityCleanupWizard.tsx" ":!src/shared/ui/PhoenixAppShell.tsx" ":!src/features/platform-broadcast/PlatformBroadcastGate.tsx" ":!src/features/platform-broadcast/PlatformBroadcastAdminPanel.tsx" ":!src/shared/supabase/services/platform-broadcast.service.ts" ":!src/app/App.tsx" ":!src/app/AuthenticatedApp.tsx" ":!src/app/AppContext.tsx" ":!src/shared/supabase/services/organizations.service.ts" ":!src/shared/supabase/services/lifecycle.service.ts" ":!src/features/qr/PublicQrScreen.tsx" ":!src/features/auth/ResetPasswordScreen.tsx" ":!src/shared/ui/PhoenixButton.tsx" ":!src/shared/ui/PhoenixMobileBottomNav.tsx" ":!src/shared/ui/PhoenixStatusBadge.tsx" ":!src/features/alerts/materialAlertEngine.ts" ":!src/shared/ui/NotificationBell.tsx" ":!src/shared/ui/WhatsAppContactButton.tsx" ":!src/features/network/NetworkManagementScreen.tsx" ":!src/features/network/DirectSupplyOperations.tsx" ":!src/features/outlet/OutletDispatchOperations.tsx" ":!src/features/procurement/DirectEntryPanel.tsx" ":!src/features/auth/LoginScreen.tsx" ":!src/features/auth/PhoenixWelcomeExperience.tsx" ":!src/shared/ui/InstitutionalSupplyMotif.tsx"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

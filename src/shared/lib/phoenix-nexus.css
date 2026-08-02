@@ -166,6 +166,13 @@ html body {
   min-width: 0;
 }
 
+.phoenix-pharmacy-emblem {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+  flex: none;
+}
+
 .nexus-brand-mark {
   position: relative;
   display: grid;
@@ -1589,20 +1596,20 @@ html body {
 }
 .nexus-pulse--sm { vertical-align: middle; }
 @keyframes nexus-pulse-reveal { to { opacity: 1; } }
-.nexus-pulse__bowl { stroke: var(--gold, #DDBA63); }
+.nexus-pulse__bowl { stroke: var(--gold); }
 .nexus-pulse__serpent {
-  stroke: color-mix(in srgb, var(--gold, #DDBA63) 55%, var(--sec, #24C5AA));
+  stroke: color-mix(in srgb, var(--gold) 55%, var(--sec));
   stroke-dasharray: 64;
   stroke-dashoffset: 64;
   animation: nexus-pulse-coil 2.4s cubic-bezier(.45,.05,.35,.95) infinite;
 }
 .nexus-pulse__head {
-  fill: var(--sec, #24C5AA);
+  fill: var(--sec);
   opacity: 0;
   animation: nexus-pulse-head 2.4s linear infinite;
 }
 .nexus-pulse__halo {
-  stroke: color-mix(in srgb, var(--sec, #24C5AA) 60%, transparent);
+  stroke: color-mix(in srgb, var(--sec) 60%, transparent);
   stroke-width: 1.5;
   opacity: 0;
   transform-origin: 50% 47%;
@@ -1662,6 +1669,17 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
 .nexus-loading__mark svg {
   position: relative;
   z-index: 2;
+}
+
+.nexus-loading__mark--phoenix::before {
+  content: none;
+}
+
+.nexus-loading__mark--phoenix .phoenix-pharmacy-emblem,
+.nexus-loading__mark--phoenix > img {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--nx-gold) 24%, transparent));
 }
 
 .nexus-loading__orbit {

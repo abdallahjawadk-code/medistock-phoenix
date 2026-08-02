@@ -352,12 +352,16 @@ describe('P) Guard tests: no QR/availability/movement/Deep-Clean/Reports/Status-
         // that later, separately-reviewed phase applies presentation-only
         // className/data-attribute hooks (Phase A design layer), no change to
         // remove/reactivate/clear-port handlers, RPCs, or permission gates.
+        // PHASE-A-CLAUDE-A7.1: ReportsScreen.tsx and WhatsAppContactButton.tsx
+        // excluded — that later, separately-reviewed presentation pass moves
+        // their inline colour literals to Phoenix tokens only (see
+        // hardcoded-colour-allowlist.md); no handler/RPC/route changed.
         'git diff -- src/shared/supabase/services/qr.service.ts ' +
         'src/shared/supabase/services/availability.service.ts ' +
         'src/features/status/MovementHistoryModal.tsx src/features/status/MovementReportSection.tsx ' +
         'supabase/migrations/055_phoenix_clean_availability_data.sql ' +
-        'src/features/reports/ReportsScreen.tsx src/features/status/OutletAvailabilityReportModal.tsx ' +
-        'src/shared/lib/whatsapp.ts src/shared/ui/WhatsAppContactButton.tsx ' +
+        'src/features/status/OutletAvailabilityReportModal.tsx ' +
+        'src/shared/lib/whatsapp.ts ' +
         'src/features/alerts/InterInstitutionAlertsScreen.tsx src/shared/supabase/services/dashboard.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );

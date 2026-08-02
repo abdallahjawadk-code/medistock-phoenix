@@ -119,10 +119,31 @@ describe('the complete Phoenix survives every viewport', () => {
     expect(welcomeRoot).toContain('overflow-y: auto;');
   });
 
-  it('the plate is the existing canonical runtime master — no new art, no repaint', () => {
+  // PHASE-A-CLAUDE-A7.2: a later, separately-reviewed phase (Premium Living
+  // Auth & Welcome) deliberately retires this photographic plate — the
+  // reference board's own "no Phoenix bird as hero" contract — for an
+  // original inline-SVG supply-network illustration. The historical concern
+  // this test guarded (a mobile-portrait crop amputating part of the bird)
+  // no longer applies to a vector illustration the same way; the STRONGER
+  // replacement is InstitutionalSupplyMotif's own safe-band layout contract,
+  // asserted directly against its source below.
+  // PHASE-A-CLAUDE-A7.2.3: the A7.2/A7.2.2 vector illustrations were both
+  // superseded by real photography served through <AuthSupplyHero>, and both
+  // vector files were deleted. The hero is now legitimately an <img>, so the
+  // old "contains no <img>" clause no longer expresses anything meaningful.
+  // The invariant it actually existed to protect — the Welcome hero is never
+  // fetched from off-origin at runtime — is asserted directly instead, which
+  // is strictly stronger than a tag check.
+  it('the Welcome hero is served from local build-hashed assets, never fetched at runtime', () => {
     const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
-    expect(welcome).toContain('/assets/phoenix/runtime/phoenix-welcome-clean.avif');
-    expect(welcome).toContain('/assets/phoenix/runtime/phoenix-welcome-clean.webp');
+    const scene = read('shared/ui/AuthSupplyHero.tsx');
+    expect(welcome).toContain('AuthSupplyHero');
+    expect(welcome).not.toContain('/assets/phoenix/runtime/phoenix-welcome-clean');
+    expect(scene).not.toMatch(/https?:\/\//);
+    expect(scene).not.toMatch(/data:image/);
+    expect(scene).not.toMatch(/fetch\(|XMLHttpRequest/);
+    // Sources arrive only as static imports Vite hashes into the bundle.
+    expect(scene).toMatch(/import \w+ from '@\/assets\/auth-welcome\//);
   });
 });
 
