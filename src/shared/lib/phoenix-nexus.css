@@ -2269,112 +2269,6 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
   }
 }
 
-/* ─── MASAR COPYRIGHT SEAL ───────────────────────────────────────────────────
-   Approved gold emblem on its original navy, paired with LIVE copyright text.
-   Restrained dark-navy glass plaque + thin gold border in BOTH themes. The whole
-   seal is inert (pointer-events:none, no focusable/animated-by-default parts) so
-   it never blocks or competes with application controls. ─────────────────── */
-.masar-seal {
-  --seal-mark: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  max-width: 100%;
-  padding: 8px 14px 8px 10px;
-  border: 1px solid rgba(221, 186, 99, .42);
-  border-radius: 13px;
-  background: linear-gradient(150deg, rgba(11, 22, 40, .9), rgba(6, 13, 24, .92));
-  box-shadow: 0 6px 20px rgba(2, 6, 12, .38), inset 0 1px 0 rgba(221, 186, 99, .12);
-  pointer-events: none; /* never intercept app controls */
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* Emblem: the approved square master, never cropped or stretched. */
-.masar-seal__emblem {
-  position: relative;
-  flex: 0 0 auto;
-  display: block;
-  border-radius: 9px;
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(221, 186, 99, .3);
-}
-.masar-seal__mark {
-  display: block;
-  width: var(--seal-mark);
-  height: var(--seal-mark);
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-}
-
-/* Optional one-shot metallic sheen — static by default, motion only when allowed. */
-.masar-seal__sheen {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(115deg, transparent 38%, rgba(255, 246, 214, .34) 50%, transparent 62%);
-  transform: translateX(-120%);
-  opacity: 0;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .masar-seal__sheen { animation: masar-sheen 1100ms ease-out .35s 1; }
-}
-@keyframes masar-sheen {
-  0% { transform: translateX(-120%); opacity: 0; }
-  22% { opacity: 1; }
-  100% { transform: translateX(120%); opacity: 0; }
-}
-
-.masar-seal__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  line-height: 1.15;
-  /* Latin brand lockup reads LTR regardless of surrounding RTL text flow. */
-  direction: ltr;
-  text-align: start;
-}
-.masar-seal__name {
-  color: #efe3c6; /* ivory on navy plaque ≈ 12:1 — theme-independent */
-  font-size: 12px;
-  font-weight: 680;
-  letter-spacing: .01em;
-  white-space: normal; /* wrap the full name rather than truncate it */
-  overflow-wrap: normal;
-}
-.masar-seal__year {
-  color: #ddba63; /* heritage gold on navy ≈ 8:1 */
-  font-size: 10.5px;
-  font-weight: 620;
-  letter-spacing: .04em;
-}
-
-/* Variants */
-.masar-seal--compact { --seal-mark: 40px; }
-.masar-seal--credit {
-  --seal-mark: 52px;
-  gap: 13px;
-  padding: 10px 18px 10px 12px;
-}
-.masar-seal--credit .masar-seal__name { font-size: 13px; }
-.masar-seal--credit .masar-seal__year { font-size: 11px; }
-.masar-seal--minimal {
-  --seal-mark: 34px;
-  gap: 9px;
-  padding: 6px 12px 6px 8px;
-  border-radius: 11px;
-}
-.masar-seal--minimal .masar-seal__year { font-size: 11px; }
-
-/* Theme: the plaque stays navy in light mode too, so the gold emblem and the
-   ivory/gold text keep their premium look and WCAG contrast on light pages. */
-[data-theme="light"] .masar-seal,
-:root:not([data-theme="dark"]) .masar-seal {
-  border-color: rgba(180, 148, 66, .5);
-  box-shadow: 0 6px 18px rgba(20, 30, 48, .18), inset 0 1px 0 rgba(221, 186, 99, .14);
-}
-
 /* ─── Login contrast — text on the DARK surfaces (rail + art) ─────────────────
    These elements sit on the always-dark navy rail / Phoenix art, so they use the
    fixed Login inks rather than the theme tokens (which would turn dark-on-dark in
@@ -2392,41 +2286,8 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
   backdrop-filter: blur(4px);
 }
 
-/* Seal placement in the Login/Welcome credit areas (once per screen, centered). */
 .nexus-login__rights { display: flex; flex-direction: column; align-items: center; }
-.nexus-login__seal { margin: 2px 0 12px; }
-.nexus-welcome__seal { margin: 16px auto 0; }
-
-/* ─── Shell copyright footer (compact desktop strip / minimal mobile pin) ────── */
-.nexus-shell__brand {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 8px 20px;
-  border-top: 1px solid var(--nx-line);
-  background: color-mix(in srgb, var(--nx-surface) 72%, transparent);
-}
-@media (max-width: 767px) {
-  /* RIGHTS-SEAL-IN-FLOW: the mobile seal is part of the page's normal flow
-     (end of the main scroller) — no fixed/sticky/absolute positioning. It can
-     never cover content and respects the device safe area via the scroller's
-     own padding. Aspect ratio preserved (no transforms). */
-  .nexus-shell__brand {
-    justify-content: center;
-    padding: 10px 0 2px;
-    border-top: 1px solid var(--nx-line);
-    background: transparent;
-  }
-}
-/* Full-screen state surfaces: minimal seal below the state content. */
-.nexus-state__brand {
-  display: flex;
-  justify-content: center;
-  margin-top: 26px;
-}
-
-/* Full-screen (shell-absent) state wrapper: centered content + minimal seal. */
+/* Full-screen (shell-absent) state wrapper: centered loading content. */
 .nexus-state-screen {
   min-height: 100dvh;
   display: flex;

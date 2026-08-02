@@ -1,14 +1,8 @@
-import { MasarCopyrightSeal } from './MasarCopyrightSeal';
 import { PhoenixPharmacyEmblem } from './PhoenixPharmacyEmblem';
 
 interface Props {
   label?: string;
-  /**
-   * Render as a centered full-screen state (shell absent — boot / auth / route
-   * fallback). In that mode the minimal MASAR seal sits below the state content;
-   * inline usage inside the authenticated shell stays seal-free (the shell footer
-   * already carries exactly one seal).
-   */
+  /** Render as a centered full-screen state (shell absent — boot / auth / route fallback). */
   fullScreen?: boolean;
 }
 
@@ -28,9 +22,6 @@ export function PhoenixLoadingState({ label = '...', fullScreen = false }: Props
   return (
     <div className="nexus-state-screen">
       {content}
-      <div className="nexus-state__brand">
-        <MasarCopyrightSeal variant="minimal" />
-      </div>
     </div>
   );
 }
