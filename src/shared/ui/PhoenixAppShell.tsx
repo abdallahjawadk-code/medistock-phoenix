@@ -68,26 +68,6 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
     };
   }, []);
 
-  // MOBILE-SCROLL-OWNER-HOTFIX-A: mark the document while the on-screen
-  // keyboard is open (visual viewport shrinks well below the layout viewport)
-  // so CSS can retreat the floating search control and nothing floats over a
-  // focused field. Purely presentational; browsers without visualViewport
-  // simply never set the attribute.
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const onViewport = () => {
-      const keyboardOpen = viewport.height < window.innerHeight * 0.75;
-      if (keyboardOpen) document.documentElement.setAttribute('data-keyboard', 'open');
-      else document.documentElement.removeAttribute('data-keyboard');
-    };
-    viewport.addEventListener('resize', onViewport);
-    return () => {
-      viewport.removeEventListener('resize', onViewport);
-      document.documentElement.removeAttribute('data-keyboard');
-    };
-  }, []);
-
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);
 
   return (

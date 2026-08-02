@@ -12,7 +12,7 @@ const topbar = read('shared/ui/PhoenixTopbar.tsx');
 const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
 
 // W1 a11y closure — the interactive shell chrome (language + theme toggles,
-// mobile menu/drawer-close, bottom nav, command trigger) must offer a ≥44px hit
+// mobile menu/drawer-close and bottom nav) must offer a ≥44px hit
 // area, expose a real keyboard focus indicator, and never introduce horizontal
 // overflow. These are source-scan contracts in the repo's established style.
 describe('W1 shell — touch targets ≥44px', () => {
@@ -42,7 +42,7 @@ describe('W1 shell — touch targets ≥44px', () => {
     expect(drawer).not.toMatch(/width:\s*'34px'/);
   });
 
-  it('keeps bottom-nav and command-trigger targets at ≥44px', () => {
+  it('keeps bottom-nav and command-palette targets at ≥44px without restoring the removed trigger', () => {
     const bottomNav = read('shared/ui/PhoenixMobileBottomNav.tsx');
     const palette = read('shared/ui/CommandPalette.tsx');
     // The bottom nav now expresses the minimum through --touch-target (44px,
@@ -50,8 +50,8 @@ describe('W1 shell — touch targets ≥44px', () => {
     // taller than the minimum at 52px, as the design source does.
     expect(bottomNav).toMatch(/minWidth:\s*'var\(--touch-target\)'/);
     expect(bottomNav).toMatch(/minHeight:\s*'52px'/);
-    expect(palette).toMatch(/minWidth:\s*'44px'/);
     expect(palette).toMatch(/minHeight:\s*'44px'/);
+    expect(palette).not.toMatch(/premium-command-trigger/);
   });
 });
 
