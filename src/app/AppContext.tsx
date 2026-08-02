@@ -231,6 +231,10 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const profileRequestRef  = useRef(0);
   const sessionUserIdRef   = useRef<string | null>(null);
   const profileUserIdRef   = useRef<string | null>(null);
+  // Once an operator starts signing out, no delayed non-null auth event may
+  // resurrect that session. Only a new explicit sign-in attempt, or the
+  // already-established recovery flow, opens the barrier again.
+  const signedOutLocallyRef = useRef(false);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [myPermissions, setMyPermissions] = useState<Set<string>>(new Set());
   const [myPermissionsMigrationMissing, setMyPermissionsMigrationMissing] = useState(false);
@@ -464,9 +468,15 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     const unsub = onAuthChange(async (event, s) => {
       if (!active) return;
       if (event === 'PASSWORD_RECOVERY') {
+        // A recovery event is accepted only while the app is already in an
+        // explicit recovery flow. A late recovery event after clearRecovery
+        // must obey the same logout barrier as every other non-null event.
+        if (!passwordRecoveryRef.current && signedOutLocallyRef.current) return;
+        signedOutLocallyRef.current = false;
         passwordRecoveryRef.current = true;
         setPasswordRecovery(true);
       }
+      if (signedOutLocallyRef.current && s !== null) return;
       // PHASE-B1-AUTH-RESILIENCE-RACE: an auth event is the authoritative,
       // most recent answer about who is signed in. Bumping the generation
       // retires any session read still in flight, so a slow or failed read
@@ -587,6 +597,10 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   }, [authz, session, profile, myPermissions]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    // Open session acceptance only for a new, explicit sign-in attempt. Bump
+    // the generation so an older bootstrap answer cannot win this attempt.
+    signedOutLocallyRef.current = false;
+    authGenerationRef.current += 1;
     const res = await authSignIn(email, password);
     // session + profile arrive via onAuthChange subscription.
     return res;
@@ -674,15 +688,9 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   }, [loadPermissions, profile, readPermissions]);
 
   const signOut = useCallback(async () => {
-    // PHASE-B1-AUTH-RESILIENCE-LOGOUT: retire both in-flight pipelines and drop
-    // the local identity SYNCHRONOUSLY, before the first await. Doing this
-    // after `await authSignOut()` meant that for the whole duration of the
-    // remote call — and forever if it failed or hung — the previous user's
-    // profile, org scope and permissions were still live, and a profile read
-    // that resolved in that window could write them straight back.
-    //
-    // Order matters: generations first (so anything in flight is already
-    // retired), then the session, then the identity, then the status flags.
+    // Close the event barrier and retire every local identity pipeline before
+    // the first await. A remote failure must never preserve or restore access.
+    signedOutLocallyRef.current = true;
     authGenerationRef.current += 1;
     profileRequestRef.current += 1;
     setSessionTracked(null);
@@ -693,10 +701,8 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     setBootstrapFailed(false);
     setPasswordRecovery(false);
 
-    // Only now the network. A failure here means the refresh token may outlive
-    // the tab, which is the server's problem to reject — it must never be a
-    // reason to keep this person signed in locally. Any SIGNED_OUT event that
-    // arrives later is idempotent: it clears state that is already cleared.
+    // Only now the network. SIGNED_OUT remains idempotent; non-null delayed
+    // events remain blocked until an explicit sign-in or valid recovery.
     try {
       await authSignOut();
     } catch (err) {
@@ -719,6 +725,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     // PHASE-B1-AUTH-RESILIENCE-LOGOUT: same rule as signOut — invalidate and
     // clear locally before the remote call, and clear the whole identity
     // (org scope and permissions included), not just the profile object.
+    signedOutLocallyRef.current = true;
     authGenerationRef.current += 1;
     profileRequestRef.current += 1;
     setSessionTracked(null);

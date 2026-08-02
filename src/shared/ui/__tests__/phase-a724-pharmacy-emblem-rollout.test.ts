@@ -157,6 +157,7 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!src/app/screen-continuity.ts"' +
       ' ":!src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts"' +
       ' ":!src/shared/supabase/services/auth.service.ts"' +
+      ' ":!src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts"' +
       ' ":!src/shared/supabase/__tests__/permission-persistence.test.ts"' +
       ' ":!src/shared/supabase/__tests__/permission-matrix-readiness.test.ts"' +
       ' ":!src/shared/supabase/__tests__/permission-save-diagnostics.test.ts"' +

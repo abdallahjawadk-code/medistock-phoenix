@@ -62,7 +62,21 @@ export async function signIn(email: string, password: string): Promise<SignInRes
 
 export async function signOut(): Promise<void> {
   if (!supabaseConfigured) return;
-  await supabase.auth.signOut();
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (!error) return;
+    console.error('[phoenix] global sign-out failed; clearing the local session:', error);
+  } catch (err) {
+    console.error('[phoenix] global sign-out threw; clearing the local session:', err);
+  }
+
+  try {
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) throw error;
+  } catch (err) {
+    console.error('[phoenix] local sign-out fallback failed:', err);
+    throw err;
+  }
 }
 
 export async function getSession(): Promise<Session | null> {

@@ -28,18 +28,20 @@ describe('PHASE B4 — safe profile-scoped screen continuity', () => {
   it('uses browser history for back/forward without adding a route loop', () => {
     const push = vi.spyOn(window.history, 'pushState');
     rememberScreen(USER_A, 3, 'replace');
+    const firstState = window.history.state;
     rememberScreen(USER_A, 15, 'push');
-    expect(screenFromPopState({ medistockPhoenixScreen: { profileId: USER_A, screen: 3 } }, USER_A, 'warehouse_officer', new Set())).toBe(3);
-    expect(screenFromPopState({ medistockPhoenixScreen: { profileId: USER_A, screen: 15 } }, USER_A, 'warehouse_officer', new Set())).toBe(15);
+    const secondState = window.history.state;
+    expect(screenFromPopState(firstState, USER_A, 'warehouse_officer', new Set())).toBe(3);
+    expect(screenFromPopState(secondState, USER_A, 'warehouse_officer', new Set())).toBe(15);
     expect(push).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the role landing for invalid and unauthorized restored state', () => {
-    window.history.replaceState({ medistockPhoenixScreen: { profileId: USER_A, screen: 999 } }, '');
+    rememberScreen(USER_A, 999, 'replace');
     expect(resolveRestoredScreen(USER_A, 'warehouse_officer', new Set())).toBe(21);
-    window.history.replaceState({ medistockPhoenixScreen: { profileId: USER_A, screen: 11 } }, '');
+    rememberScreen(USER_A, 11, 'replace');
     expect(resolveRestoredScreen(USER_A, 'warehouse_officer', new Set())).toBe(21);
-    window.history.replaceState({ medistockPhoenixScreen: { profileId: USER_A, screen: 14 } }, '');
+    rememberScreen(USER_A, 14, 'replace');
     expect(resolveRestoredScreen(USER_A, 'outlet_officer', new Set())).toBe(18);
   });
 
@@ -54,6 +56,40 @@ describe('PHASE B4 — safe profile-scoped screen continuity', () => {
     expect(window.sessionStorage.getItem(`medistock-phoenix-screen:${USER_A}`)).toBeNull();
     expect(window.history.state).toBeNull();
     expect(resolveRestoredScreen(USER_A, 'warehouse_officer', new Set())).toBe(21);
+  });
+
+  it('rejects every history entry from the previous session, even for the same user', () => {
+    rememberScreen(USER_A, 15, 'replace');
+    const previousSessionState = window.history.state;
+
+    clearRememberedScreen(USER_A);
+    rememberScreen(USER_A, 21, 'replace');
+
+    expect(screenFromPopState(
+      previousSessionState,
+      USER_A,
+      'warehouse_officer',
+      new Set(),
+    )).toBe(21);
+  });
+
+  it('fails closed to the role landing when continuity storage is restricted', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked');
+    });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked');
+    });
+
+    expect(resolveRestoredScreen(USER_A, 'outlet_officer', new Set())).toBe(18);
+    rememberScreen(USER_A, 15, 'replace');
+    expect(resolveRestoredScreen(USER_A, 'outlet_officer', new Set())).toBe(15);
+
+    clearRememberedScreen(USER_A);
+    expect(screenFromPopState(window.history.state, USER_A, 'outlet_officer', new Set())).toBe(18);
+
+    getItem.mockRestore();
+    setItem.mockRestore();
   });
 
   it('preserves existing permissions and keeps every B3-hidden screen non-restorable', () => {
