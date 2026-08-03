@@ -72,11 +72,22 @@ export interface MovementTimelineResult {
 }
 
 /**
+ * PHASE-C2-ORG-SCOPE: `orgId` is REQUIRED, not optional — RLS alone is not
+ * enough here, because a super_admin's RLS-visible set spans every
+ * organization, while the reports screen's selected-organization scope
+ * (PhoenixOrgScope) is a UI contract, not a permission boundary. Without
+ * this explicit filter a super_admin viewing org B would still see (and
+ * export) org A's custody documents. Every non-super_admin's RLS-visible
+ * set is already exactly their one organization, so this filter is a no-op
+ * for them — defense in depth, not a behavior change.
+ */
+
+/**
  * Every dispatch RLS-visible to the caller's organization EXCEPT drafts —
  * custody starts at the real send event, not at document creation.
  */
-export async function listCustodyDispatches(): Promise<WarehouseDispatch[]> {
-  const rows = await getWarehouseDispatches();
+export async function listCustodyDispatches(orgId: string): Promise<WarehouseDispatch[]> {
+  const rows = await getWarehouseDispatches(undefined, orgId);
   return rows.filter(d => d.status !== 'draft');
 }
 
@@ -84,14 +95,14 @@ export async function listCustodyDispatches(): Promise<WarehouseDispatch[]> {
  * Every outlet return REQUEST RLS-visible to the caller's organization
  * EXCEPT drafts — custody starts at the real dispatched/sent event.
  */
-export async function listCustodyReturnRequests(): Promise<OutletReturnRequest[]> {
-  const rows = await getOutletReturnRequests();
+export async function listCustodyReturnRequests(orgId: string): Promise<OutletReturnRequest[]> {
+  const rows = await getOutletReturnRequests(undefined, orgId);
   return rows.filter(r => r.status !== 'draft');
 }
 
 /** Every outlet return SHIPMENT (any status) RLS-visible to the caller's organization — a shipment row only ever exists once a real send has happened, so no draft filter applies here. */
-export function listCustodyReturnShipments(): Promise<OutletReturnShipment[]> {
-  return getOutletReturnShipments();
+export function listCustodyReturnShipments(orgId: string): Promise<OutletReturnShipment[]> {
+  return getOutletReturnShipments(undefined, orgId);
 }
 
 /** The full known event trail for one document — honest about incompleteness. */

@@ -51,17 +51,30 @@ interface OutletCorrectionDbRow {
   applied_movement_id: string | null;
 }
 
-/** Every warehouse + outlet correction request (any status) in the caller's org (RLS-scoped). */
-export async function listCorrectionHistory(): Promise<CorrectionHistoryRow[]> {
+/**
+ * PHASE-C2-ORG-SCOPE: `orgId` is REQUIRED, not optional — RLS alone is not
+ * enough, since a super_admin's RLS-visible set spans every organization
+ * while the reports screen's selected-organization scope (PhoenixOrgScope)
+ * is a UI contract, not a permission boundary. Without this explicit filter
+ * a super_admin viewing org B would still see (and export) org A's
+ * correction history. Every non-super_admin's RLS-visible set is already
+ * exactly their one organization, so this filter is a no-op for them —
+ * defense in depth, not a behavior change.
+ *
+ * Every warehouse + outlet correction request (any status) in orgId (RLS-scoped AND explicitly org-filtered).
+ */
+export async function listCorrectionHistory(orgId: string): Promise<CorrectionHistoryRow[]> {
   if (!supabaseConfigured) return [];
 
   const [wh, outlet] = await Promise.all([
     supabase.from('phoenix_warehouse_correction_requests')
       .select('id, warehouse_stock_id, on_hand_before, new_quantity, variance, reason, status, decision_reason, proposed_by, proposed_at, decided_at, applied_movement_id')
+      .eq('organization_id', orgId)
       .order('proposed_at', { ascending: false })
       .limit(200),
     supabase.from('phoenix_stock_correction_requests')
       .select('id, outlet_stock_id, on_hand_before, counted_quantity, variance, reason, status, decision_reason, proposed_by, proposed_at, decided_at, applied_movement_id')
+      .eq('organization_id', orgId)
       .order('proposed_at', { ascending: false })
       .limit(200),
   ]);

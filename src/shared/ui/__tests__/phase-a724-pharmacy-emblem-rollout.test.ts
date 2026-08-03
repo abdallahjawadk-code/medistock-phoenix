@@ -161,7 +161,20 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!src/shared/supabase/__tests__/permission-persistence.test.ts"' +
       ' ":!src/shared/supabase/__tests__/permission-matrix-readiness.test.ts"' +
       ' ":!src/shared/supabase/__tests__/permission-save-diagnostics.test.ts"' +
-      ' ":!src/shared/authz/__tests__/screen-access.test.ts"',
+      ' ":!src/shared/authz/__tests__/screen-access.test.ts"' +
+      // PHASE-C2-ORG-SCOPE: a still later, separately authorized phase adds a
+      // narrow-by-name exclusion (this same "narrow exclusion, never delete"
+      // maintenance pattern) to four migration ISOLATION GUARD tests under
+      // supabase/migrations/__tests__ — those guards assert no *product*
+      // src/ file was touched by their own migration; C2 legitimately
+      // touches reports/outlet src/ files, so each guard's own exclusion
+      // list gained five entries. The guard test FILES themselves are
+      // test-maintenance, not a migration/schema/RLS change — excluded here
+      // by name, same as the auth-resilience test files above.
+      ' ":!supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts"' +
+      ' ":!supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts"' +
+      ' ":!supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts"' +
+      ' ":!supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

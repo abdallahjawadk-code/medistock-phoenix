@@ -232,6 +232,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
       {activeTab === 'custody' && (
         <ReportsTabErrorBoundary key={`custody:${activeOrgId}`} lang={lang}>
           <CustodyChainTab
+            orgId={activeOrgId}
             lang={lang}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
@@ -251,6 +252,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
       {activeTab === 'corrections' && (
         <ReportsTabErrorBoundary key={`corrections:${activeOrgId}`} lang={lang}>
           <CorrectionsHistoryTab
+            orgId={activeOrgId}
             lang={lang}
             onToast={showToast}
             onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
@@ -1464,12 +1466,13 @@ function MaterialsAndBatchesTab({
  * and the resulting balance are exactly what the approval RPCs already
  * computed and stored.
  */
-export function CorrectionsHistoryTab({ lang, onToast, onMobilePrint }: {
+export function CorrectionsHistoryTab({ orgId, lang, onToast, onMobilePrint }: {
+  orgId: string;
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
 }) {
-  const history = useAsync(() => listCorrectionHistory(), []);
+  const history = useAsync(() => listCorrectionHistory(orgId), [orgId]);
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
   // `?? []` so `rows`/`outletIds` are stable on EVERY render (including the
@@ -1615,14 +1618,15 @@ interface CustodyTraceEventRow {
   reference: string | null; provenance: string; hasDispenseContext: boolean;
 }
 
-export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
+export function CustodyChainTab({ orgId, lang, onToast, onMobilePrint }: {
+  orgId: string;
   lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
 }) {
-  const dispatches = useAsync(() => listCustodyDispatches(), []);
-  const returnRequests = useAsync(() => listCustodyReturnRequests(), []);
-  const returnShipments = useAsync(() => listCustodyReturnShipments(), []);
+  const dispatches = useAsync(() => listCustodyDispatches(orgId), [orgId]);
+  const returnRequests = useAsync(() => listCustodyReturnRequests(orgId), [orgId]);
+  const returnShipments = useAsync(() => listCustodyReturnShipments(orgId), [orgId]);
   const [traceOpenFor, setTraceOpenFor] = useState<string | null>(null);
   const [traceCache, setTraceCache] = useState<Record<string, MovementTimelineResult>>({});
   const [traceError, setTraceError] = useState<string | null>(null);
@@ -1635,6 +1639,26 @@ export function CustodyChainTab({ lang, onToast, onMobilePrint }: {
   const [contextForMovement, setContextForMovement] = useState<string | null>(null);
   const [dispenseContext, setDispenseContext] = useState<DispenseContext | null>(null);
   const [dispenseContextError, setDispenseContextError] = useState<string | null>(null);
+
+  /**
+   * PHASE-C2-ORG-SCOPE: the three useAsync reads above already re-fetch
+   * org-scoped rows on an orgId change (deps=[orgId]) — but the trace
+   * drill-down (open row, cached timeline, masked dispense-context) is
+   * plain useState, not tied to those reads. Without this, switching
+   * org A -> B would leave A's expanded trace/cache/beneficiary-context
+   * state sitting around (harmless today since ids never collide across
+   * orgs, but an explicit clear is the honest contract here, not an
+   * accident of UUID uniqueness). The parent screen also remounts this
+   * whole tab via a `key` keyed on activeOrgId, which already clears
+   * every hook here — this effect is defense in depth for this component
+   * in isolation, not the only thing standing between orgs.
+   */
+  useEffect(() => {
+    setTraceOpenFor(null);
+    setTraceCache({});
+    setTraceError(null);
+    setContextForMovement(null);
+  }, [orgId]);
 
   useEffect(() => {
     if (!contextForMovement) { setDispenseContext(null); setDispenseContextError(null); return; }

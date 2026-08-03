@@ -18,15 +18,15 @@ import type { WarehouseDispatch } from '@/features/outlet/dispatch.service';
 import type { OutletReturnRequest, OutletReturnShipment } from '@/features/outlet/outlet-return.service';
 import type { MovementTimelineResult } from '../custody-chain.service';
 
-const listCustodyDispatches = vi.fn<() => Promise<WarehouseDispatch[]>>();
-const listCustodyReturnRequests = vi.fn<() => Promise<OutletReturnRequest[]>>();
-const listCustodyReturnShipments = vi.fn<() => Promise<OutletReturnShipment[]>>();
+const listCustodyDispatches = vi.fn<(orgId: string) => Promise<WarehouseDispatch[]>>();
+const listCustodyReturnRequests = vi.fn<(orgId: string) => Promise<OutletReturnRequest[]>>();
+const listCustodyReturnShipments = vi.fn<(orgId: string) => Promise<OutletReturnShipment[]>>();
 const getMovementTimeline = vi.fn<(id: string) => Promise<MovementTimelineResult>>();
 
 vi.mock('../custody-chain.service', () => ({
-  listCustodyDispatches: () => listCustodyDispatches(),
-  listCustodyReturnRequests: () => listCustodyReturnRequests(),
-  listCustodyReturnShipments: () => listCustodyReturnShipments(),
+  listCustodyDispatches: (orgId: string) => listCustodyDispatches(orgId),
+  listCustodyReturnRequests: (orgId: string) => listCustodyReturnRequests(orgId),
+  listCustodyReturnShipments: (orgId: string) => listCustodyReturnShipments(orgId),
   getMovementTimeline: (id: string) => getMovementTimeline(id),
 }));
 
@@ -39,6 +39,22 @@ const getPaperReferencesFor = vi.fn(async (_documentType: string, _documentIds: 
 vi.mock('@/features/movement/paper-reference.service', () => ({
   getPaperReferencesFor: (documentType: string, documentIds: readonly string[]) => getPaperReferencesFor(documentType, documentIds),
 }));
+
+// PHASE-C2-ORG-SCOPE export tests: stub the shared export module so a click
+// never touches the real XLSX/print machinery, and its call args can be
+// inspected directly (same pattern as corrections-history-tab.runtime.test.tsx).
+const exportProfessionalXlsx = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+const exportProfessionalMultiSheetXlsx = vi.fn<(...args: unknown[]) => Promise<boolean>>(async () => true);
+const triggerProfessionalPrint = vi.fn<(...args: unknown[]) => { ok: boolean; mobileHtml: string | undefined }>(() => ({ ok: true, mobileHtml: undefined }));
+vi.mock('@/shared/lib/professional-export', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/shared/lib/professional-export')>();
+  return {
+    ...actual,
+    exportProfessionalXlsx: (...a: unknown[]) => exportProfessionalXlsx(...a),
+    exportProfessionalMultiSheetXlsx: (...a: unknown[]) => exportProfessionalMultiSheetXlsx(...a),
+    triggerProfessionalPrint: (...a: unknown[]) => triggerProfessionalPrint(...a),
+  };
+});
 
 const DISPATCH: WarehouseDispatch = {
   id: 'd1', organizationId: 'org1', warehouseId: 'w1', destinationDistributionPointId: 'dp1',
@@ -107,7 +123,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     // try/catch needed here: an unhandled hook-order violation would fail
     // this test via an uncaught rejection/console.error assertion is not
     // even necessary, the render commit itself would throw.
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     // Initial render: data not resolved yet.
     expect(document.body.textContent).toBeTruthy();
@@ -120,6 +136,13 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     // the whole point of R01 is that the app shell must not disappear.
     expect(screen.getByTestId('custody-chain-tab')).toBeInTheDocument();
     expect(screen.getByText('RET-0001')).toBeInTheDocument();
+
+    // PHASE-C2-ORG-SCOPE: every read must be called WITH the active org id —
+    // never a bare/global call that would fall through to RLS's full
+    // multi-org set for a super_admin.
+    expect(listCustodyDispatches).toHaveBeenCalledWith('org1');
+    expect(listCustodyReturnRequests).toHaveBeenCalledWith('org1');
+    expect(listCustodyReturnShipments).toHaveBeenCalledWith('org1');
   });
 
   it('renders cleanly with empty results from all three reads (no crash, no infinite loading)', async () => {
@@ -127,7 +150,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
 
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('custody-chain-tab')).toBeInTheDocument();
@@ -142,7 +165,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnShipments.mockResolvedValue([]);
     getMovementTimeline.mockResolvedValue(TIMELINE);
 
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => expect(screen.getByText('DSP-0001')).toBeInTheDocument());
 
@@ -159,7 +182,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
 
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => {
       expect(screen.getByText('network down')).toBeInTheDocument();
@@ -171,7 +194,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
     getMovementTimeline.mockResolvedValue(TIMELINE);
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     fireEvent.click(await screen.findByText('DSP-0001'));
     const ev = await screen.findByTestId('custody-trace-event');
@@ -188,7 +211,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
     getMovementTimeline.mockResolvedValue(TIMELINE_DERIVED);
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     fireEvent.click(await screen.findByText('DSP-0001'));
     const ev = await screen.findByTestId('custody-trace-event');
@@ -210,7 +233,7 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
       patientIdentityMasked: true, crashCartReference: null, internalOrderReference: null,
       notes: null, recordedBy: 'u1', recordedAt: '2026-07-20T00:00:00Z',
     });
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     fireEvent.click(await screen.findByText('DSP-0001'));
     const ev = await screen.findByTestId('custody-trace-event');
@@ -229,11 +252,109 @@ describe('CustodyChainTab — loading to loaded transition (runtime, not source-
     listCustodyReturnRequests.mockResolvedValue([]);
     listCustodyReturnShipments.mockResolvedValue([]);
     getMovementTimeline.mockResolvedValue(TIMELINE_DERIVED);
-    render(<CustodyChainTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CustodyChainTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     fireEvent.click(await screen.findByText('DSP-0001'));
     await screen.findByTestId('custody-trace-event');
     expect(screen.queryByRole('button', { name: /Beneficiary . View/i })).not.toBeInTheDocument();
     expect(getDispenseContext).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustodyChainTab — PHASE C2 organization scope + stale-result safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPaperReferencesFor.mockResolvedValue(new Map());
+  });
+  afterEach(cleanup);
+
+  const ORG_A_DISPATCH: WarehouseDispatch = { ...DISPATCH, id: 'dA', dispatchNumber: 'DSP-ORG-A', organizationId: 'orgA' };
+  const ORG_B_DISPATCH: WarehouseDispatch = { ...DISPATCH, id: 'dB', dispatchNumber: 'DSP-ORG-B', organizationId: 'orgB' };
+
+  it('a slow org-A response resolving AFTER a fast org-B response never overwrites B\'s rows with A\'s (race safety)', async () => {
+    let resolveA!: (rows: WarehouseDispatch[]) => void;
+    const pendingA = new Promise<WarehouseDispatch[]>(res => { resolveA = res; });
+    listCustodyDispatches.mockImplementation((orgId: string) => orgId === 'orgA' ? pendingA : Promise.resolve([ORG_B_DISPATCH]));
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+
+    const { rerender } = render(<CustodyChainTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    // Switch org BEFORE org A's request resolves — mirrors PhoenixOrgScope
+    // driving activeOrgId, which the parent screen turns into this exact
+    // prop change (on top of its own key-remount).
+    rerender(<CustodyChainTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-B')).toBeInTheDocument());
+
+    // NOW resolve the stale org-A promise — useAsync's own `active` flag
+    // (set false by the effect cleanup that fired when orgId changed) must
+    // have already disqualified this result from ever reaching setState.
+    resolveA([ORG_A_DISPATCH]);
+    await new Promise(r => setTimeout(r, 0));
+    expect(screen.queryByText('DSP-ORG-A')).not.toBeInTheDocument();
+    expect(screen.getByText('DSP-ORG-B')).toBeInTheDocument();
+  });
+
+  it('switching orgId re-issues all three reads with the NEW org id, never the previous one', async () => {
+    listCustodyDispatches.mockResolvedValue([ORG_A_DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+
+    const { rerender } = render(<CustodyChainTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-A')).toBeInTheDocument());
+
+    listCustodyDispatches.mockResolvedValue([ORG_B_DISPATCH]);
+    rerender(<CustodyChainTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-B')).toBeInTheDocument());
+
+    expect(screen.queryByText('DSP-ORG-A')).not.toBeInTheDocument();
+    expect(listCustodyDispatches).toHaveBeenCalledWith('orgA');
+    expect(listCustodyDispatches).toHaveBeenCalledWith('orgB');
+  });
+
+  it('an expanded trace/timeline for org A collapses and clears once orgId switches to B (no stale detail leak)', async () => {
+    listCustodyDispatches.mockResolvedValue([ORG_A_DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+    getMovementTimeline.mockResolvedValue(TIMELINE);
+
+    const { rerender } = render(<CustodyChainTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    fireEvent.click(await screen.findByText('DSP-ORG-A'));
+    await screen.findByTestId('custody-trace-event');
+
+    listCustodyDispatches.mockResolvedValue([ORG_B_DISPATCH]);
+    getMovementTimeline.mockClear();
+    rerender(<CustodyChainTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-B')).toBeInTheDocument());
+
+    // The old trace block is gone (collapsed) — switching org alone must not
+    // silently re-request or reuse org A's cached timeline.
+    expect(screen.queryByTestId('custody-trace-event')).not.toBeInTheDocument();
+    expect(getMovementTimeline).not.toHaveBeenCalled();
+
+    // Opening the SAME visual row position for org B must issue a genuinely
+    // fresh fetch (traceCache was cleared on the orgId switch), not serve
+    // org A's cached entry.
+    fireEvent.click(screen.getByText('DSP-ORG-B'));
+    await waitFor(() => expect(screen.getByTestId('custody-trace-event')).toBeInTheDocument());
+    expect(getMovementTimeline).toHaveBeenCalledWith('dB');
+  });
+
+  it('XLSX/print/full-detail export reflect ONLY the currently active org\'s rows after a switch', async () => {
+    listCustodyDispatches.mockResolvedValue([ORG_A_DISPATCH]);
+    listCustodyReturnRequests.mockResolvedValue([]);
+    listCustodyReturnShipments.mockResolvedValue([]);
+
+    const { rerender } = render(<CustodyChainTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-A')).toBeInTheDocument());
+
+    listCustodyDispatches.mockResolvedValue([ORG_B_DISPATCH]);
+    rerender(<CustodyChainTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('DSP-ORG-B')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Excel' }));
+    await waitFor(() => expect(exportProfessionalXlsx).toHaveBeenCalled());
+    const config = exportProfessionalXlsx.mock.calls.at(-1)![0] as { rows: Array<{ number: string }> };
+    expect(config.rows.map(r => r.number)).toEqual(['DSP-ORG-B']);
+    expect(config.rows.map(r => r.number)).not.toContain('DSP-ORG-A');
   });
 });

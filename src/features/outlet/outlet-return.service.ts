@@ -65,10 +65,15 @@ function mapReturnRequest(r: OutletReturnRequestRow): OutletReturnRequest {
   };
 }
 
-export async function getOutletReturnRequests(distributionPointId?: string): Promise<OutletReturnRequest[]> {
+/** `organizationId` is an explicit narrowing filter (on top of RLS) for callers — like the
+ *  reports screen — that must never show a super_admin's other RLS-visible organizations.
+ *  Matches EITHER side: 071's orr_same_org_chk keeps source/destination identical today,
+ *  but the OR is written against the real column pair, not that invariant. */
+export async function getOutletReturnRequests(distributionPointId?: string, organizationId?: string): Promise<OutletReturnRequest[]> {
   if (!supabaseConfigured) return [];
   let q = supabase.from('outlet_return_requests').select(RETURN_REQUEST_COLUMNS).order('created_at', { ascending: false });
   if (distributionPointId) q = q.eq('distribution_point_id', distributionPointId);
+  if (organizationId) q = q.or(`source_organization_id.eq.${organizationId},destination_organization_id.eq.${organizationId}`);
   const { data, error } = await q;
   if (error) throw error;
   // Concatenated const select → supabase-js infers GenericStringError[]; the shape
@@ -146,13 +151,18 @@ interface OutletReturnShipmentRow {
   destination_warehouse_id: string; shipment_number: string; status: string;
 }
 
-export async function getOutletReturnShipments(destinationWarehouseId?: string): Promise<OutletReturnShipment[]> {
+/** `organizationId` is an explicit narrowing filter (on top of RLS) for callers — like the
+ *  reports screen — that must never show a super_admin's other RLS-visible organizations.
+ *  Matches EITHER side: 071's ors_same_org_chk keeps source/destination identical today,
+ *  but the OR is written against the real column pair, not that invariant. */
+export async function getOutletReturnShipments(destinationWarehouseId?: string, organizationId?: string): Promise<OutletReturnShipment[]> {
   if (!supabaseConfigured) return [];
   let q = supabase
     .from('outlet_return_shipments')
     .select('id, return_request_id, distribution_point_id, destination_warehouse_id, shipment_number, status')
     .order('created_at', { ascending: false });
   if (destinationWarehouseId) q = q.eq('destination_warehouse_id', destinationWarehouseId);
+  if (organizationId) q = q.or(`source_organization_id.eq.${organizationId},destination_organization_id.eq.${organizationId}`);
   const { data, error } = await q;
   if (error) throw error;
   return (data as OutletReturnShipmentRow[] | null ?? []).map(r => ({

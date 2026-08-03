@@ -1125,7 +1125,20 @@ describe('15. isolation from out-of-scope domains', () => {
         // component and its CSS layer for closer reference-board fidelity —
         // never a handler, session, or RPC change — excluded here.
         '":(exclude)src/shared/ui/InstitutionalSupplyMotif.tsx" ' +
-        '":(exclude)src/shared/lib/phase-a-auth-welcome-signature.css"', {
+        '":(exclude)src/shared/lib/phase-a-auth-welcome-signature.css" ' +
+        // PHASE-C2-ORG-SCOPE: a still later, separately-reviewed phase scopes
+        // Custody Chain and Corrections History (Screen 21 reports tabs) to
+        // the selected organization — never a schema, RLS, or workflow
+        // change — in custody-chain.service.ts / differences-corrections.
+        // service.ts (new orgId param), dispatch.service.ts / outlet-return.
+        // service.ts (additive optional organizationId narrowing filter,
+        // backward-compatible), and DecisionIntelligenceReportsScreen.tsx
+        // (threads activeOrgId into the two tabs) — all excluded here.
+        '":(exclude)src/features/reports/custody-chain.service.ts" ' +
+        '":(exclude)src/features/reports/differences-corrections.service.ts" ' +
+        '":(exclude)src/features/reports/DecisionIntelligenceReportsScreen.tsx" ' +
+        '":(exclude)src/features/outlet/dispatch.service.ts" ' +
+        '":(exclude)src/features/outlet/outlet-return.service.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });
     } catch { /* ignore */ }

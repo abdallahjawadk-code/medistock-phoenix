@@ -141,6 +141,11 @@ describe('differences & corrections — service layer', () => {
   it('reads ALL statuses, not just pending — a report is a history, not an approval queue', () => {
     expect(correctionsService).not.toMatch(/\.eq\('status',\s*'pending'\)/);
   });
+
+  it('PHASE-C2-ORG-SCOPE: orgId is a REQUIRED parameter, and BOTH correction-request tables are filtered by organization_id inside the query itself', () => {
+    expect(correctionsService).toContain('export async function listCorrectionHistory(orgId: string): Promise<CorrectionHistoryRow[]>');
+    expect(correctionsService.match(/\.eq\('organization_id', orgId\)/g)?.length).toBe(2);
+  });
 });
 
 describe('custody chain — service layer', () => {
@@ -149,9 +154,9 @@ describe('custody chain — service layer', () => {
   it('reuses the EXACT header list functions the operational screens already call — no new list surface', () => {
     expect(custodyService).toContain("from '@/features/outlet/dispatch.service'");
     expect(custodyService).toContain("from '@/features/outlet/outlet-return.service'");
-    expect(custodyService).toContain('getWarehouseDispatches()');
-    expect(custodyService).toContain('getOutletReturnRequests()');
-    expect(custodyService).toContain('getOutletReturnShipments()');
+    expect(custodyService).toContain('getWarehouseDispatches(undefined, orgId)');
+    expect(custodyService).toContain('getOutletReturnRequests(undefined, orgId)');
+    expect(custodyService).toContain('getOutletReturnShipments(undefined, orgId)');
   });
 
   it('per-document drill-down reuses phoenix_movement_timeline verbatim — no reimplemented timeline logic', () => {
@@ -161,6 +166,33 @@ describe('custody chain — service layer', () => {
   it('never overstates completeness — the RPC own completeness signal is passed through, not discarded', () => {
     expect(custodyService).toContain('MovementTimelineResult');
     expect(custodyService).not.toMatch(/complete:\s*true/);
+  });
+
+  it('PHASE-C2-ORG-SCOPE: orgId is a REQUIRED parameter on all three list functions, not an optional narrowing filter — RLS alone is not the reports-screen scope contract', () => {
+    expect(custodyService).toContain('export async function listCustodyDispatches(orgId: string): Promise<WarehouseDispatch[]>');
+    expect(custodyService).toContain('export async function listCustodyReturnRequests(orgId: string): Promise<OutletReturnRequest[]>');
+    expect(custodyService).toContain('export function listCustodyReturnShipments(orgId: string): Promise<OutletReturnShipment[]>');
+  });
+});
+
+describe('custody chain read services — PHASE C2 organization-scope filter applied INSIDE the query', () => {
+  const dispatchService = readFileSync(join(FEAT, '../outlet/dispatch.service.ts'), 'utf8');
+  const outletReturnService = readFileSync(join(FEAT, '../outlet/outlet-return.service.ts'), 'utf8');
+
+  it('warehouse_dispatches is filtered by organization_id, the real column the table carries', () => {
+    expect(dispatchService).toContain("if (organizationId) q = q.eq('organization_id', organizationId);");
+  });
+
+  it('outlet_return_requests/shipments match EITHER side (source or destination org) — the caller-selected org can legitimately be either', () => {
+    expect(outletReturnService).toContain('q.or(`source_organization_id.eq.${organizationId},destination_organization_id.eq.${organizationId}`)');
+    // Two call sites: getOutletReturnRequests and getOutletReturnShipments.
+    expect(outletReturnService.match(/q\.or\(`source_organization_id\.eq\.\$\{organizationId\},destination_organization_id\.eq\.\$\{organizationId\}`\)/g)?.length).toBe(2);
+  });
+
+  it('the org filter is additive/optional on these shared functions — every pre-existing operational caller (no orgId arg) is unaffected', () => {
+    expect(dispatchService).toContain('export async function getWarehouseDispatches(warehouseId?: string, organizationId?: string)');
+    expect(outletReturnService).toContain('export async function getOutletReturnRequests(distributionPointId?: string, organizationId?: string)');
+    expect(outletReturnService).toContain('export async function getOutletReturnShipments(destinationWarehouseId?: string, organizationId?: string)');
   });
 });
 
@@ -347,5 +379,34 @@ describe('authorization/cross-org scoping — every new service call in this pas
   it('the supplementary-purchases full-export fetch is scoped to orders already returned by the org-scoped list — it never fetches a receipt by an id from outside `rows`', () => {
     const supplementary = screen.slice(screen.indexOf('function SupplementaryPurchasesTab'), screen.indexOf('function SupplementaryPurchaseDrilldown'));
     expect(supplementary).toContain('rows.map(async o => ({ order: o, receipts: await getReceipts(o.id) }))');
+  });
+
+  it('PHASE-C2: DIRC passes the same shared activeOrgId to Custody Chain and Corrections History — no per-tab org selector, no unscoped call', () => {
+    const custodyCallSite = screen.indexOf('<CustodyChainTab');
+    expect(custodyCallSite).toBeGreaterThan(-1);
+    expect(screen.slice(custodyCallSite, custodyCallSite + 200)).toContain('orgId={activeOrgId}');
+
+    const correctionsCallSite = screen.indexOf('<CorrectionsHistoryTab');
+    expect(correctionsCallSite).toBeGreaterThan(-1);
+    expect(screen.slice(correctionsCallSite, correctionsCallSite + 200)).toContain('orgId={activeOrgId}');
+  });
+
+  it('PHASE-C2: Custody Chain reads are keyed on [orgId] — an org switch re-runs the loader instead of caching the previous org\'s rows forever', () => {
+    const custody = screen.slice(screen.indexOf('function CustodyChainTab'), screen.indexOf('function SupplementaryPurchasesTab'));
+    expect(custody).toContain('useAsync(() => listCustodyDispatches(orgId), [orgId])');
+    expect(custody).toContain('useAsync(() => listCustodyReturnRequests(orgId), [orgId])');
+    expect(custody).toContain('useAsync(() => listCustodyReturnShipments(orgId), [orgId])');
+  });
+
+  it('PHASE-C2: Corrections History read is keyed on [orgId]', () => {
+    const corrections = screen.slice(screen.indexOf('function CorrectionsHistoryTab'), screen.indexOf('function CustodyChainTab'));
+    expect(corrections).toContain('useAsync(() => listCorrectionHistory(orgId), [orgId])');
+  });
+
+  it('PHASE-C2: Custody Chain clears trace/timeline/dispense-context drill-down state on an orgId change, independent of the parent\'s own key-remount', () => {
+    const custody = screen.slice(screen.indexOf('function CustodyChainTab'), screen.indexOf('function SupplementaryPurchasesTab'));
+    expect(custody).toMatch(
+      /setTraceOpenFor\(null\);\s*setTraceCache\(\{\}\);\s*setTraceError\(null\);\s*setContextForMovement\(null\);\s*\},\s*\[orgId\]\);/,
+    );
   });
 });
