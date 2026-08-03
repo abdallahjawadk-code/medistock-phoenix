@@ -36,6 +36,7 @@ import { useInventoryScopes } from '@/features/inventory/useInventoryScopes';
 import { useOutletCountPermission } from '@/features/inventory/useOutletCountPermission';
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
 import { useOutletDispensePermission } from '@/features/inventory/useOutletDispensePermission';
+import { useOutletReceivePermission } from '@/features/inventory/useOutletReceivePermission';
 import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
@@ -78,6 +79,9 @@ export function OutletOperationsScreen({
     [outlets, outletId],
   );
   const outletName = activeOutlet ? (lang === 'ar' ? (activeOutlet.nameAr || activeOutlet.name) : activeOutlet.name) : '';
+
+  const receivePerm = useOutletReceivePermission(activeOrgId, activeOutlet?.id ?? null);
+  const canReceiveIncoming = receivePerm.data === true;
 
   const header = (
     <div className="nexus-io-header nexus-io-header__row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -151,7 +155,7 @@ export function OutletOperationsScreen({
           key={activeOutlet.id}
           distributionPointId={activeOutlet.id}
           outletName={outletName}
-          canReceive
+          canReceive={canReceiveIncoming}
           lang={lang}
         />
       )}
