@@ -43,8 +43,8 @@ interface PaletteItem {
 // REPORTING-UNIFICATION: the former nav_status_center (screen 12)/
 // nav_monthly_status (screen 20)/nav_reports (screen 9, super_admin only)
 // entries are now the single nav_decision_reports (screen 21) entry below —
-// the screen self-gates on reports.view plus each moved-in section's own
-// original gate, re-checked server-side by every RPC.
+// Screen 21 preserves each moved-in section's original boundary instead of
+// inferring one shell-wide permission; server/RPC/RLS checks remain final.
 const PALETTE_ITEMS: PaletteItem[] = [
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },

@@ -55,9 +55,10 @@ const NAV_ITEMS: NavItem[] = [
   // keys, and every action is re-checked server-side.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   // DECISION-INTELLIGENCE-REPORTS-119/REPORTING-UNIFICATION: ungated like
-  // nav_editor — the screen self-gates on reports.view (already-seeded 062
-  // key) plus each moved-in section's own original gate (e.g. Monthly
-  // Position's status_center.* keys), re-checked server-side by every RPC.
+  // nav_editor. Screen 21 preserves each tab's original boundary: legacy
+  // authenticated reads remain RLS-authoritative, Movements uses
+  // status_center.view, Audit uses audit.view, and Global Search is
+  // super_admin-only.
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
 

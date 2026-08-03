@@ -13,7 +13,7 @@
  * shell survives a full sweep, not just each tab in isolation.
  */
 import '@testing-library/jest-dom/vitest';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { DecisionIntelligenceReportsScreen } from '../DecisionIntelligenceReportsScreen';
 import type { InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
@@ -84,10 +84,13 @@ vi.mock('@/features/inventory/useInventoryScopes', () => ({
   useInventoryScopes: () => ({ data: { manageableWarehouses: [], manageableOutlets: [] } }),
 }));
 
+let currentRole: string | null = 'super_admin';
+let permissions = new Set<string>(['reports.view', 'status_center.view', 'audit.view']);
+
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({
-    lang: 'en', dir: 'ltr', activeOrgId: 'org1', role: 'super_admin',
-    myPermissions: new Set<string>(),
+    lang: 'en', dir: 'ltr', activeOrgId: 'org1', role: currentRole,
+    myPermissions: permissions,
     authz: { getContext: () => ({ authenticated: false }) },
   }),
 }));
@@ -122,6 +125,10 @@ const TAB_SWEEP: Array<{ name: RegExp; testId: string }> = [
 ];
 
 describe('DIRC — full 11-tab sweep (REPORTING-UNIFICATION mission requirement)', () => {
+  beforeEach(() => {
+    currentRole = 'super_admin';
+    permissions = new Set(['reports.view', 'status_center.view', 'audit.view']);
+  });
   afterEach(cleanup);
 
   it('every tab opens cleanly: no blank page, no error-boundary fallback, no console.error', async () => {
@@ -171,5 +178,79 @@ describe('DIRC — full 11-tab sweep (REPORTING-UNIFICATION mission requirement)
       'Audit-Sensitive Actions', 'Monthly Inventory Position', 'Official Report Library',
       'Global Material Search',
     ]);
+  });
+});
+
+describe('DIRC Phase C3 — UNION tab authorization at runtime', () => {
+  beforeEach(() => {
+    currentRole = 'viewer';
+    permissions = new Set();
+    getExecutiveOverview.mockResolvedValue(OVERVIEW);
+    getInstitutionOverviews.mockResolvedValue(INSTITUTIONS);
+    getOpenMonthlyStatusReport.mockResolvedValue(null);
+    getLatestLockedMonthlyStatusReport.mockResolvedValue(null);
+    getMonthlyStatusLines.mockResolvedValue([]);
+  });
+  afterEach(cleanup);
+
+  it('does not hide legacy RLS-authoritative tabs behind reports.view', async () => {
+    permissions = new Set(['reports.view']);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
+      'Executive Overview', 'Institution Status', 'Materials & Batches', 'Custody Chain',
+      'Supplementary Purchases Traceability', 'Differences & Corrections',
+      'Monthly Inventory Position', 'Official Report Library',
+    ]);
+  });
+
+  it('adds only Movements for status_center.view and preserves an allowed requested tab', async () => {
+    permissions = new Set(['status_center.view']);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="movements" />);
+
+    await waitFor(() => expect(screen.getByTestId('movements-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Stock Movements' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('preserves Monthly for an existing workflow role without status_center.view', async () => {
+    currentRole = 'warehouse_officer';
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="monthly" />);
+
+    await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Monthly Inventory Position' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('adds Audit independently through audit.view', async () => {
+    permissions = new Set(['audit.view']);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="audit" />);
+
+    await waitFor(() => expect(screen.getByTestId('audit-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Audit-Sensitive Actions' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps Global Search hidden from a non-super-admin with every permission', async () => {
+    currentRole = 'institution_admin';
+    permissions = new Set(['reports.view', 'status_center.view', 'audit.view']);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
+    expect(screen.queryByRole('tab', { name: 'Global Material Search' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('global-search-stub')).not.toBeInTheDocument();
+  });
+
+  it('falls back from a forbidden requested tab to the first allowed tab', async () => {
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="global" />);
+
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Executive Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('renders ForbiddenScreen when no authenticated profile role allows any tab', () => {
+    currentRole = null;
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+
+    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 });

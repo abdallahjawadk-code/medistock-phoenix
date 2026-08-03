@@ -82,9 +82,10 @@ describe('The service layer never writes the new tables directly', () => {
 describe('The unified shell gates Monthly Position actions by role, mirroring the server, and reuses expiry-risk.ts', () => {
   it('imports normalizeRole and computes per-persona action flags', () => {
     expect(dirc).toContain("import { normalizeRole } from '@/shared/lib/roles'");
-    expect(dirc).toContain('warehouse_officer');
-    expect(dirc).toContain('institution_admin');
-    expect(dirc).toContain('central_warehouse_manager');
+    expect(dirc).toContain("const canPrepare  = normalizedRole === 'warehouse_officer' || normalizedRole === 'super_admin';");
+    expect(dirc).toContain('const canClassify = canPrepare;');
+    expect(dirc).toContain("const canSubmit   = normalizedRole === 'institution_admin' || normalizedRole === 'super_admin';");
+    expect(dirc).toContain("const canReview   = normalizedRole === 'central_warehouse_manager' || normalizedRole === 'super_admin';");
   });
 
   it('reuses the existing expiry-risk tier classifier rather than reimplementing it', () => {
