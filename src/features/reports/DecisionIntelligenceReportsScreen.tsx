@@ -18,7 +18,7 @@
  * docs/phoenix/proposals/unified-reporting-status-center-equivalence.md
  * for the full per-section equivalence matrix that justified each move.
  */
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, type KeyboardEvent } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -122,6 +122,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [toast, setToast] = useState<string | null>(null);
   const [mobilePrint, setMobilePrint] = useState<{ html: string; title: string; fileNameBase: string } | null>(null);
+  const tabButtonRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const openMobilePrint = (html: string, title: string, fileNameBase: string) => setMobilePrint({ html, title, fileNameBase });
@@ -132,6 +133,25 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   useEffect(() => {
     if (activeTab !== null && activeTab !== tab) setTab(activeTab);
   }, [activeTab, tab]);
+
+  /**
+   * PHASE-C4-TAB-ACCESSIBILITY: when the active tab disappears from the
+   * allowed set (a role/permission change mid-session), the fallback effect
+   * above already re-targets `tab`. This only prevents focus from being
+   * stranded on document.body once the old tab button unmounts — it moves
+   * focus to the NEW active tab's button, and only when focus was already
+   * on document.body or on one of this tablist's own buttons, so it never
+   * steals focus from something the user is interacting with elsewhere on
+   * the page.
+   */
+  useEffect(() => {
+    if (!activeTab) return;
+    const activeEl = document.activeElement;
+    const wasInTablist = Object.values(tabButtonRefs.current).some(btn => btn !== null && btn === activeEl);
+    if (activeEl === document.body || wasInTablist) {
+      tabButtonRefs.current[activeTab]?.focus();
+    }
+  }, [activeTab]);
 
   const header = (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -169,16 +189,52 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   ];
   const tabs = allTabs.filter(item => allowedTabs.includes(item.id));
 
+  /**
+   * PHASE-C4-TAB-ACCESSIBILITY: WAI-ARIA horizontal tab pattern, "automatic
+   * activation" variant — moving focus with the arrow keys also activates
+   * that tab (matches the mission's own explicit contract), so there is no
+   * separate "focus vs select" state to track. Only ever cycles through
+   * `tabs` (already filtered to allowedTabs) — a disallowed or unmounted
+   * tab can never be reached this way. RTL/LTR only flips which arrow key
+   * means "next" vs "previous" in VISUAL order; the underlying index math
+   * (wrap-around via modulo) is identical either way.
+   */
+  function handleTabKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const count = tabs.length;
+    if (count === 0) return;
+    const isRtl = dir === 'rtl';
+    let nextIndex: number | null = null;
+    if (e.key === 'ArrowRight') {
+      nextIndex = isRtl ? (index - 1 + count) % count : (index + 1) % count;
+    } else if (e.key === 'ArrowLeft') {
+      nextIndex = isRtl ? (index + 1) % count : (index - 1 + count) % count;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = count - 1;
+    }
+    if (nextIndex === null) return;
+    e.preventDefault();
+    const nextTab = tabs[nextIndex].id;
+    setTab(nextTab);
+    tabButtonRefs.current[nextTab]?.focus();
+  }
+
   return (
     <div dir={dir} className="nexus-command-center nexus-command-center--reports">
       {header}
-      <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        {tabs.map(x => (
+      <div role="tablist" aria-label={t('dir_tablist_label', lang)} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        {tabs.map((x, index) => (
           <button
             key={x.id}
+            ref={el => { tabButtonRefs.current[x.id] = el; }}
+            id={`dirc-tab-${x.id}`}
             role="tab"
             aria-selected={activeTab === x.id}
+            aria-controls={`dirc-tabpanel-${x.id}`}
+            tabIndex={activeTab === x.id ? 0 : -1}
             onClick={() => setTab(x.id)}
+            onKeyDown={e => handleTabKeyDown(e, index)}
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
@@ -192,93 +248,115 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
       </div>
 
       {activeTab === 'overview' && (
-        <ReportsTabErrorBoundary key={`overview:${activeOrgId}`} lang={lang}>
-          <ExecutiveOverviewTab
-            orgId={activeOrgId}
-            lang={lang}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_overview', lang), 'medistock-executive-overview')}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-overview" aria-labelledby="dirc-tab-overview" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`overview:${activeOrgId}`} lang={lang}>
+            <ExecutiveOverviewTab
+              orgId={activeOrgId}
+              lang={lang}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_overview', lang), 'medistock-executive-overview')}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'institutions' && (
-        <ReportsTabErrorBoundary key={`institutions:${activeOrgId}`} lang={lang}>
-          <InstitutionStatusTab
-            lang={lang}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
-            onOpenMaterials={() => setTab('materials')}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-institutions" aria-labelledby="dirc-tab-institutions" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`institutions:${activeOrgId}`} lang={lang}>
+            <InstitutionStatusTab
+              lang={lang}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_institutions', lang), 'medistock-institution-status')}
+              onOpenMaterials={() => setTab('materials')}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'materials' && (
-        <ReportsTabErrorBoundary key={`materials:${activeOrgId}`} lang={lang}>
-          <MaterialsAndBatchesTab
-            orgId={activeOrgId}
-            lang={lang}
-            role={role}
-            myPermissions={myPermissions}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
-            onNavigate={onNavigate}
-            onOpenSuggestionDocument={onOpenSuggestionDocument}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-materials" aria-labelledby="dirc-tab-materials" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`materials:${activeOrgId}`} lang={lang}>
+            <MaterialsAndBatchesTab
+              orgId={activeOrgId}
+              lang={lang}
+              role={role}
+              myPermissions={myPermissions}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_materials', lang), 'medistock-materials-batches')}
+              onNavigate={onNavigate}
+              onOpenSuggestionDocument={onOpenSuggestionDocument}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'movements' && (
-        <ReportsTabErrorBoundary key={`movements:${activeOrgId}`} lang={lang}>
-          <div data-testid="movements-tab"><MovementReportSection /></div>
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-movements" aria-labelledby="dirc-tab-movements" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`movements:${activeOrgId}`} lang={lang}>
+            <div data-testid="movements-tab"><MovementReportSection /></div>
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'custody' && (
-        <ReportsTabErrorBoundary key={`custody:${activeOrgId}`} lang={lang}>
-          <CustodyChainTab
-            orgId={activeOrgId}
-            lang={lang}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-custody" aria-labelledby="dirc-tab-custody" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`custody:${activeOrgId}`} lang={lang}>
+            <CustodyChainTab
+              orgId={activeOrgId}
+              lang={lang}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_custody', lang), 'medistock-custody-chain')}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'supplementary' && (
-        <ReportsTabErrorBoundary key={`supplementary:${activeOrgId}`} lang={lang}>
-          <SupplementaryPurchasesTab
-            orgId={activeOrgId}
-            lang={lang}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_supplementary', lang), 'medistock-supplementary-purchases')}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-supplementary" aria-labelledby="dirc-tab-supplementary" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`supplementary:${activeOrgId}`} lang={lang}>
+            <SupplementaryPurchasesTab
+              orgId={activeOrgId}
+              lang={lang}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_supplementary', lang), 'medistock-supplementary-purchases')}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'corrections' && (
-        <ReportsTabErrorBoundary key={`corrections:${activeOrgId}`} lang={lang}>
-          <CorrectionsHistoryTab
-            orgId={activeOrgId}
-            lang={lang}
-            onToast={showToast}
-            onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
-          />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-corrections" aria-labelledby="dirc-tab-corrections" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`corrections:${activeOrgId}`} lang={lang}>
+            <CorrectionsHistoryTab
+              orgId={activeOrgId}
+              lang={lang}
+              onToast={showToast}
+              onMobilePrint={html => openMobilePrint(html, t('dir_tab_corrections', lang), 'medistock-differences-corrections')}
+            />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'audit' && (
-        <ReportsTabErrorBoundary key={`audit:${activeOrgId}`} lang={lang}>
-          <div data-testid="audit-tab"><AuditLogSection /></div>
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-audit" aria-labelledby="dirc-tab-audit" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`audit:${activeOrgId}`} lang={lang}>
+            <div data-testid="audit-tab"><AuditLogSection /></div>
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'monthly' && (
-        <ReportsTabErrorBoundary key={`monthly:${activeOrgId}`} lang={lang}>
-          <MonthlyPositionTab orgId={activeOrgId} lang={lang} role={role} onToast={showToast} />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-monthly" aria-labelledby="dirc-tab-monthly" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`monthly:${activeOrgId}`} lang={lang}>
+            <MonthlyPositionTab orgId={activeOrgId} lang={lang} role={role} onToast={showToast} />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'library' && (
-        <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
-          <ReportLibraryTab orgId={activeOrgId} lang={lang} />
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-library" aria-labelledby="dirc-tab-library" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
+            <ReportLibraryTab orgId={activeOrgId} lang={lang} />
+          </ReportsTabErrorBoundary>
+        </div>
       )}
       {activeTab === 'global' && role === 'super_admin' && (
-        <ReportsTabErrorBoundary key={`global:${activeOrgId}`} lang={lang}>
-          <div data-testid="global-search-tab"><GlobalMaterialSearchPanel /></div>
-        </ReportsTabErrorBoundary>
+        <div role="tabpanel" id="dirc-tabpanel-global" aria-labelledby="dirc-tab-global" tabIndex={0}>
+          <ReportsTabErrorBoundary key={`global:${activeOrgId}`} lang={lang}>
+            <div data-testid="global-search-tab"><GlobalMaterialSearchPanel /></div>
+          </ReportsTabErrorBoundary>
+        </div>
       )}
 
       {toast && <PhoenixToast message={toast} />}
@@ -308,7 +386,7 @@ function supplySourceRows(o: ExecutiveOverview, lang: 'ar' | 'en'): SupplyBucket
   return SUPPLY_KEYS.map(k => ({ key: k, label: t('dir_supply_' + k, lang), value: combined[k] ?? 0 }));
 }
 
-function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
+export function ExecutiveOverviewTab({ orgId, lang, onToast, onMobilePrint }: {
   orgId: string; lang: 'ar' | 'en';
   onToast: (msg: string) => void;
   onMobilePrint: (html: string) => void;
@@ -528,7 +606,11 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
   }
 
   async function exportXlsx() {
-    if (xlsxBusy) return;
+    // PHASE-C4-OUTPUT-INTEGRITY: `detail.data` is used both to render the
+    // table AND to build exportConfig()'s rows — a failed reload retains
+    // the previous (stale) detail.data, so exporting must be blocked
+    // exactly when the on-screen table is also hidden below (detail.error).
+    if (xlsxBusy || detail.error) return;
     setXlsxBusy(true);
     try {
       const ok = await exportProfessionalXlsx(exportConfig());
@@ -553,8 +635,13 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
         <div style={{ padding: '10px 12px' }}>
           {detail.loading && !detail.data ? <PhoenixLoadingState /> : null}
           {detail.error ? <PhoenixErrorState message={detail.error} onRetry={detail.reload} /> : null}
-          {detail.data && detail.data.length === 0 && <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />}
-          {detail.data && detail.data.length > 0 && (
+          {/* PHASE-C4-OUTPUT-INTEGRITY: both branches below now require
+              !detail.error — useAsync keeps the previous detail.data
+              through a failed reload, so without this guard the stale
+              table (and its export button) could render ALONGSIDE the
+              error message above, rather than the error replacing it. */}
+          {!detail.error && detail.data && detail.data.length === 0 && <PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} />}
+          {!detail.error && detail.data && detail.data.length > 0 && (
             <>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
@@ -758,7 +845,7 @@ function daysUntilExpiry(expiryDate: string | null, now: Date = new Date()): num
  * home in this shell's "movements" tab, and mounting it twice would just
  * show the same report in two tabs at once.
  */
-function MaterialsAndBatchesTab({
+export function MaterialsAndBatchesTab({
   orgId,
   lang,
   role,
@@ -1032,7 +1119,11 @@ function MaterialsAndBatchesTab({
   }
 
   function printReport() {
-    if (rows.length === 0) return;
+    // PHASE-C4-OUTPUT-INTEGRITY: `rows` derives from `live.data`, which
+    // useAsync retains through a FAILED reload — without the `live.error`
+    // check here too, a failed refresh could still print the previous
+    // (now stale) successful rows as if they were current.
+    if (rows.length === 0 || live.error) return;
     if (isLikelyMobilePrintContext()) {
       onMobilePrint(buildReportHtml());
       return;
@@ -1050,7 +1141,9 @@ function MaterialsAndBatchesTab({
   }
 
   async function exportXlsx() {
-    if (xlsxBusy) return;
+    // PHASE-C4-OUTPUT-INTEGRITY: same reasoning as printReport() above — a
+    // failed refresh must never export the previous, now-stale rows.
+    if (xlsxBusy || rows.length === 0 || live.error) return;
     setXlsxBusy(true);
     try {
       const exportRows: AvailabilityExportRow[] = rows
@@ -1172,9 +1265,9 @@ function MaterialsAndBatchesTab({
           <input type="search" dir="auto" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('search', lang)} style={{ ...materialsFieldStyle, flex: 1, minWidth: '150px' }} aria-label={t('search', lang)} />
 
           <div className="premium-action-bar" style={{ display: 'flex', gap: '6px', marginInlineStart: 'auto', flexWrap: 'wrap' }}>
-            <button onClick={() => void exportXlsx()} disabled={rows.length === 0 || xlsxBusy} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="reports" size={14} inline /> {t('sc_export_excel', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
-            <button onClick={printReport} disabled={rows.length === 0} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}</button>
+            <button onClick={() => void exportXlsx()} disabled={rows.length === 0 || xlsxBusy || !!live.error} aria-disabled={rows.length === 0 || xlsxBusy || !!live.error} aria-label={t('sc_export_excel', lang)} style={btnStyle}><PhoenixIcon name="reports" size={14} inline /> {t('sc_export_excel', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0 || !!live.error} aria-disabled={rows.length === 0 || !!live.error} aria-label={t('sc_print_report', lang)} style={btnStyle}><PhoenixIcon name="print" size={14} inline /> {t('sc_print_report', lang)}</button>
+            <button onClick={printReport} disabled={rows.length === 0 || !!live.error} aria-disabled={rows.length === 0 || !!live.error} aria-label={t('sc_print_pdf', lang)} style={btnStyle}><PhoenixIcon name="file" size={14} inline /> {t('sc_print_pdf', lang)}</button>
           </div>
         </div>
 
