@@ -129,6 +129,97 @@ describe('119 frontend — service layer', () => {
   });
 });
 
+describe('PHASE-C1-REPORT-INTEGRITY — getOrganizationDataMode is a real tri-state, never a lossy boolean (behavioral, not just source-scan)', () => {
+  function fakeDemoOrgClient(resultByOrg: Record<string, boolean | 'error' | 'malformed'>) {
+    return {
+      rpc(fn: string, args: Record<string, unknown>) {
+        if (fn === 'phoenix_is_demo_organization') {
+          const org = args.p_organization_id as string;
+          const outcome = resultByOrg[org];
+          if (outcome === 'error') return Promise.resolve({ data: null, error: { message: 'connection reset' } });
+          if (outcome === 'malformed') return Promise.resolve({ data: 'not-a-boolean', error: null });
+          return Promise.resolve({ data: outcome === true, error: null });
+        }
+        return Promise.resolve({ data: null, error: { message: `unexpected rpc ${fn}` } });
+      },
+    };
+  }
+
+  function withDemoClient<T>(resultByOrg: Record<string, boolean | 'error' | 'malformed'>, fn: () => Promise<T>): Promise<T> {
+    (globalThis as { __fakeSupabase?: unknown }).__fakeSupabase = fakeDemoOrgClient(resultByOrg);
+    return fn();
+  }
+
+  it('query success + demo=true -> demo', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const mode = await withDemoClient({ orgA: true }, () => getOrganizationDataMode('orgA'));
+    expect(mode).toEqual({ status: 'demo' });
+  });
+
+  it('query success + demo=false -> official', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const mode = await withDemoClient({ orgA: false }, () => getOrganizationDataMode('orgA'));
+    expect(mode).toEqual({ status: 'official' });
+  });
+
+  it('query failure -> unverified (never silently official)', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const mode = await withDemoClient({ orgA: 'error' }, () => getOrganizationDataMode('orgA'));
+    expect(mode.status).toBe('unverified');
+  });
+
+  it('a malformed/non-boolean RPC response -> unverified (never assumed official)', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const mode = await withDemoClient({ orgA: 'malformed' }, () => getOrganizationDataMode('orgA'));
+    expect(mode).toEqual({ status: 'unverified' });
+  });
+
+  it('a missing organizationId -> unverified without ever issuing the RPC', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const mode = await withDemoClient({}, () => getOrganizationDataMode(null));
+    expect(mode).toEqual({ status: 'unverified' });
+  });
+
+  it('never uses a bare catch-and-return-false — the source itself no longer contains that fail-silent shape', () => {
+    expect(service).not.toMatch(/if\s*\(error\)\s*return\s*false\s*;/);
+    expect(service).toContain("export type OrganizationDataMode =");
+    expect(service).toContain("| { status: 'demo' }");
+    expect(service).toContain("| { status: 'official' }");
+    expect(service).toContain("| { status: 'unverified'; error?: unknown };");
+  });
+
+  it('two independent organizations resolve to their OWN state — a failure for one never contaminates the other', async () => {
+    const { getOrganizationDataMode } = await import('../decision-intelligence.service');
+    const [demo, official, unverified] = await withDemoClient(
+      { orgDemo: true, orgOfficial: false, orgBroken: 'error' },
+      () => Promise.all([
+        getOrganizationDataMode('orgDemo'),
+        getOrganizationDataMode('orgOfficial'),
+        getOrganizationDataMode('orgBroken'),
+      ]),
+    );
+    expect(demo).toEqual({ status: 'demo' });
+    expect(official).toEqual({ status: 'official' });
+    expect(unverified.status).toBe('unverified');
+  });
+});
+
+describe('PHASE-C1-REPORT-INTEGRITY — Monthly Position and demo-state detection are fully independent reads', () => {
+  it('MonthlyPositionTab never imports or calls getOrganizationDataMode / the demo-state RPC — the two features share no code path', () => {
+    const monthly = screen.slice(screen.indexOf('export function MonthlyPositionTab'), screen.indexOf('function InstitutionStatusTab'));
+    expect(monthly).not.toContain('getOrganizationDataMode');
+    expect(monthly).not.toContain('isDemoOrganization');
+    expect(monthly).not.toContain('phoenix_is_demo_organization');
+  });
+
+  it('ReportLibraryTab (the only getOrganizationDataMode consumer) never reads Monthly Position\'s report/lines services', () => {
+    const library = screen.slice(screen.indexOf('export function ReportLibraryTab'));
+    expect(library).not.toContain('getOpenMonthlyStatusReport');
+    expect(library).not.toContain('getLatestLockedMonthlyStatusReport');
+    expect(library).not.toContain('getMonthlyStatusLines');
+  });
+});
+
 describe('differences & corrections — service layer', () => {
   const correctionsService = readFileSync(join(FEAT, 'differences-corrections.service.ts'), 'utf8');
 

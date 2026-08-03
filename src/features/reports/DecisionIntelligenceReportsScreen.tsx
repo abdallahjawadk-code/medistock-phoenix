@@ -89,8 +89,9 @@ import {
 } from '@/shared/supabase/services/monthly-status.service';
 import {
   getExecutiveOverview, createReportSnapshot, listReportSnapshots, newRequestId,
-  getSupplySourcesDetail, checkSnapshotParity, isDemoOrganization,
+  getSupplySourcesDetail, checkSnapshotParity, getOrganizationDataMode,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
+  type OrganizationDataMode,
 } from './decision-intelligence.service';
 import {
   allowedReportTabs,
@@ -2230,7 +2231,7 @@ const MST_CLASSIFICATION_VARIANT: Record<MaterialClassification, 'ok' | 'warn' |
  * Uses the shared onToast rather than its own toast state, since this now
  * lives inside a shell that already renders one toast for every tab.
  */
-function MonthlyPositionTab({ orgId, lang, role, onToast }: {
+export function MonthlyPositionTab({ orgId, lang, role, onToast }: {
   orgId: string;
   lang: 'ar' | 'en';
   role: string | null;
@@ -2394,11 +2395,38 @@ function MonthlyPositionTab({ orgId, lang, role, onToast }: {
   const allClassified = lines.length > 0 && lines.every(l => l.classification !== null);
   const anyUnconfirmedMissing = lines.some(l => l.classification === 'suspected_missing' && !l.confirmed_missing);
 
+  /**
+   * PHASE-C1-REPORT-INTEGRITY: a real read failure must never fall through
+   * to the "no open report" empty state below, and a failed reload must
+   * never leave the PREVIOUS report rendered as if it were still current —
+   * useAsync retains the last-good `data` through a failed reload, so this
+   * error check runs before any report-shaped content below ever renders.
+   * linesState only escalates to this shared error path once a report
+   * exists — the report's own line items are load-bearing content of that
+   * one open report, not an independent "empty" result of their own.
+   * lockedState (the separate locked-history read feeding only the Amend
+   * panel further down) is intentionally NOT part of this primary gate —
+   * its own failure is secondary and must never hide an otherwise-successful
+   * open report; see its own inline error notice near the Amend panel.
+   */
+  const anyLoading = (reportState.loading && reportState.data === null)
+    || (report !== null && linesState.loading && linesState.data === null);
+  if (anyLoading) return <div data-testid="monthly-position-tab"><PhoenixLoadingState /></div>;
+
+  const firstErrored = reportState.error ? reportState
+    : (report && linesState.error) ? linesState
+    : null;
+  if (firstErrored) {
+    return (
+      <div data-testid="monthly-position-tab">
+        <PhoenixErrorState message={firstErrored.error!} onRetry={firstErrored.reload} />
+      </div>
+    );
+  }
+
   return (
     <div data-testid="monthly-position-tab" style={{ maxWidth: '1200px', animation: 'fs .3s ease' }}>
-      {reportState.loading && <PhoenixLoadingState />}
-
-      {!reportState.loading && !report && (
+      {!report && (
         <PhoenixCard padding="16px">
           <PhoenixEmptyState icon="clipboard" title={t('mst_no_open_report', lang)} description={t('mst_no_open_report_desc', lang)} />
           {canPrepare && (
@@ -2593,7 +2621,13 @@ function MonthlyPositionTab({ orgId, lang, role, onToast }: {
         </PhoenixCard>
       )}
 
-      {canReview && lockedState.data && (
+      {canReview && lockedState.error && (
+        <PhoenixCard padding="16px" style={{ marginTop: '16px' }}>
+          <PhoenixErrorState title={t('load_error', lang)} message={lockedState.error} onRetry={lockedState.reload} />
+        </PhoenixCard>
+      )}
+
+      {canReview && !lockedState.error && lockedState.data && (
         <PhoenixCard padding="16px" style={{ marginTop: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('mst_amend_title', lang)}</h3>
           <p style={{ fontSize: '11.5px', color: 'var(--t2)', marginBottom: '8px' }}>
@@ -2709,13 +2743,23 @@ function InstitutionStatusTab({ lang, onToast, onMobilePrint, onOpenMaterials }:
 
 export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 'en' }) {
   const snapshots = useAsync(() => listReportSnapshots(orgId), [orgId]);
-  const demo = useAsync(() => isDemoOrganization(orgId), [orgId]);
+  const demo = useAsync(() => getOrganizationDataMode(orgId), [orgId]);
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (snapshots.loading && !snapshots.data) return <PhoenixLoadingState />;
   if (snapshots.error) return <PhoenixErrorState message={snapshots.error} onRetry={snapshots.reload} />;
   const rows = snapshots.data ?? [];
-  const isDemo = demo.data === true;
+  /**
+   * PHASE-C1-REPORT-INTEGRITY: while `demo` is still resolving for the first
+   * time, orgMode is null (no badge shown yet, avoiding a wrong flash). Once
+   * settled, it is ALWAYS one of the three real states — a hook-level
+   * exception (rather than the service's own internal failure handling)
+   * still resolves to 'unverified', never silently to 'official'.
+   */
+  const orgMode: OrganizationDataMode | null = demo.loading && !demo.data ? null
+    : demo.data ?? { status: 'unverified', error: demo.error };
+  const isDemo = orgMode?.status === 'demo';
+  const isUnverified = orgMode?.status === 'unverified';
   // Wrapped in the tab's own data-testid — see the corrections tab above
   // for why an empty result must still be provable as non-blank content.
   if (rows.length === 0) return <div data-testid="dir-report-library"><PhoenixEmptyState icon="package" title={t('dir_library_empty', lang)} /></div>;
@@ -2735,6 +2779,20 @@ export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 
           <span style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('demo_report_watermark_note', lang)}</span>
         </div>
       )}
+      {isUnverified && (
+        <div
+          data-testid="dir-report-library-unverified-notice"
+          style={{
+            padding: '10px 14px', borderRadius: 'var(--r2)',
+            border: '1px solid var(--brd)', background: 'var(--s2)',
+            display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--t2)' }}>{t('org_status_unverified', lang)}</span>
+          <span style={{ fontSize: '11px', color: 'var(--t2)' }}>{t('org_status_unverified_note', lang)}</span>
+          <PhoenixButton variant="ghost" size="sm" onClick={demo.reload}>{t('org_status_unverified_retry', lang)}</PhoenixButton>
+        </div>
+      )}
       {rows.map((s: ReportSnapshotRow) => (
         <PhoenixCard key={s.id}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2744,6 +2802,11 @@ export function ReportLibraryTab({ orgId, lang }: { orgId: string; lang: 'ar' | 
                 {isDemo && (
                   <span style={{ fontSize: '9.5px', fontWeight: 800, color: 'var(--warn)', border: '1px solid var(--warn)', borderRadius: '4px', padding: '1px 6px' }}>
                     {t('demo_report_watermark', lang)}
+                  </span>
+                )}
+                {isUnverified && (
+                  <span style={{ fontSize: '9.5px', fontWeight: 800, color: 'var(--t2)', border: '1px solid var(--brd)', borderRadius: '4px', padding: '1px 6px' }}>
+                    {t('org_status_unverified', lang)}
                   </span>
                 )}
               </div>

@@ -1591,7 +1591,15 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/reports/differences-corrections.service.ts" ' +
         '":(exclude)src/features/reports/DecisionIntelligenceReportsScreen.tsx" ' +
         '":(exclude)src/features/outlet/dispatch.service.ts" ' +
-        '":(exclude)src/features/outlet/outlet-return.service.ts"',
+        '":(exclude)src/features/outlet/outlet-return.service.ts" ' +
+        // PHASE-C1-REPORT-INTEGRITY: a still later, separately-reviewed phase
+        // fixes Monthly Position's error-swallowing and replaces
+        // isDemoOrganization's lossy boolean with a real demo/official/
+        // unverified tri-state — never a schema, RLS, or workflow change —
+        // in decision-intelligence.service.ts (new type/function, new i18n
+        // keys in strings.ts) — excluded here.
+        '":(exclude)src/features/reports/decision-intelligence.service.ts" ' +
+        '":(exclude)src/shared/i18n/strings.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
