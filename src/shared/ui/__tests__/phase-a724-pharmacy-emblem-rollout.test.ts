@@ -174,7 +174,29 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts"' +
       ' ":!supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts"' +
       ' ":!supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts"' +
-      ' ":!supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts"',
+      ' ":!supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts"' +
+      // PHASE-D1A-TRANSFER-PRIVILEGE-LOCKDOWN: a still later, separately
+      // authorized phase adds a genuine new migration (154) plus its own
+      // dedicated static/dynamic test files and a manifest-registry update —
+      // a real, in-scope backend change for THAT phase, excluded here by
+      // name for the same reason every entry above is: it has nothing to do
+      // with this (much earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/154_phoenix_transfer_corridor_privilege_lockdown.sql"' +
+      ' ":!supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/helpers/reviewed-migrations.ts"' +
+      ' ":!supabase/migrations/__tests__/reviewed-migration-manifest.test.ts"' +
+      // PHASE-D1A-BRACE-EXPANSION-AUDIT-FIX: the same D1A phase's own CI
+      // corrective commit bumps the pre-existing package.json override
+      // (added 2026-07-25, commit 95b89e2, for a prior brace-expansion
+      // advisory) from "5.0.8" to "5.0.9" to close GHSA-rgw5-rvv9-x895, a
+      // bypass of that same mitigation, plus the matching single
+      // package-lock.json node. A dependency-only lockfile fix, excluded
+      // here by name for the same reason every entry above is: it has
+      // nothing to do with this (much earlier, UI-only) pharmacy-emblem
+      // phase.
+      ' ":!package.json"' +
+      ' ":!package-lock.json"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
