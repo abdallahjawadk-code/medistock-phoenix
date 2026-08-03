@@ -52,21 +52,36 @@ export async function getExecutiveOverview(organizationId: string): Promise<Exec
 }
 
 /**
- * PHOENIX-DEMO-ORGANIZATION-WATERMARK-145 — whether an organization belongs
- * to the PHOENIX_DEMO_V1 dataset, so a report/snapshot derived from it can be
- * visibly watermarked ("تجريبي — غير رسمي") rather than presented as an
- * official record. Fails closed to `false` on any error — an ordinary
- * (non-demo) organization must never be misclassified as demo, but a genuine
- * demo org that briefly fails this check just loses its watermark rather
- * than breaking the report.
+ * PHOENIX-DEMO-ORGANIZATION-WATERMARK-145 / PHASE-C1-REPORT-INTEGRITY — whether
+ * an organization belongs to the PHOENIX_DEMO_V1 dataset, so a report/snapshot
+ * derived from it can be visibly watermarked ("تجريبي — غير رسمي") rather than
+ * presented as an official record.
+ *
+ * Tri-state, not a boolean: a failed or malformed check is genuinely
+ * `unverified`, never silently folded into `official`. A `false` return here
+ * used to mean both "confirmed not demo" and "couldn't tell" — those are not
+ * the same claim, and only the caller's downstream Official-report handling
+ * can decide whether unverified is safe to treat leniently.
  */
-export async function isDemoOrganization(organizationId: string | null | undefined): Promise<boolean> {
-  if (!supabaseConfigured || !organizationId) return false;
+export type OrganizationDataMode =
+  | { status: 'demo' }
+  | { status: 'official' }
+  | { status: 'unverified'; error?: unknown };
+
+export async function getOrganizationDataMode(organizationId: string | null | undefined): Promise<OrganizationDataMode> {
+  if (!organizationId || !supabaseConfigured) return { status: 'unverified' };
   const { data, error } = await supabase.rpc('phoenix_is_demo_organization', {
     p_organization_id: organizationId,
   });
-  if (error) return false;
-  return data === true;
+  if (error) {
+    console.error('[phoenix] organization data mode check failed:', error);
+    return { status: 'unverified', error };
+  }
+  if (data === true) return { status: 'demo' };
+  if (data === false) return { status: 'official' };
+  // Neither true nor false — a malformed/unexpected RPC response is treated
+  // the same as a failure: unverified, never assumed official.
+  return { status: 'unverified' };
 }
 
 export interface CreateSnapshotResult {

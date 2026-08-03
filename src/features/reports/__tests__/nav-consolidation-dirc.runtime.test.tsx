@@ -39,7 +39,7 @@ vi.mock('../decision-intelligence.service', () => ({
   newRequestId: () => 'req-1',
   getSupplySourcesDetail: async () => [],
   checkSnapshotParity: vi.fn(),
-  isDemoOrganization: async () => false,
+  getOrganizationDataMode: async () => ({ status: 'official' as const }),
 }));
 vi.mock('../custody-chain.service', () => ({
   listCustodyDispatches: async () => [],
