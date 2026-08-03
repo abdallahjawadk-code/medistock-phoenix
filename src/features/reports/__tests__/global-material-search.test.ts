@@ -38,7 +38,8 @@ const mobileDrawer = readFileSync(
 
 describe('super-admin global material search boundary', () => {
   it('renders the tab and panel only for super_admin', () => {
-    expect(tabAccess).toContain("tab === 'global' && role === 'super_admin'");
+    expect(tabAccess).toContain("global: { kind: 'role', role: 'super_admin' }");
+    expect(tabAccess).toContain('return role === rule.role');
     expect(dirc).toContain("activeTab === 'global' && role === 'super_admin'");
     expect(panel).toContain("if (role !== 'super_admin') return null");
   });

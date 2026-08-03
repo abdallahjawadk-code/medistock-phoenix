@@ -17,8 +17,9 @@ import { PhoenixMark } from './PhoenixMark';
 // REPORTING-UNIFICATION: mirrors the desktop sidebar's single entry — the
 // former nav_reports (screen 9, super_admin only)/nav_status_center (screen
 // 12)/nav_monthly_status (screen 20)/nav_decision_reports (screen 21) are
-// now one entry; the screen self-gates on reports.view plus each moved-in
-// section's own original gate, re-checked server-side by every RPC.
+// now one entry. Screen 21 preserves per-tab parity: legacy authenticated
+// reads remain RLS-authoritative, while Movements, Audit, and Global Search
+// retain their explicit permission/role gates.
 const ALL_NAV: {
   screen: number;
   icon: PhoenixIconName;

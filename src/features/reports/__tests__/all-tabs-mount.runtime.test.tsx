@@ -84,7 +84,7 @@ vi.mock('@/features/inventory/useInventoryScopes', () => ({
   useInventoryScopes: () => ({ data: { manageableWarehouses: [], manageableOutlets: [] } }),
 }));
 
-let currentRole = 'super_admin';
+let currentRole: string | null = 'super_admin';
 let permissions = new Set<string>(['reports.view', 'status_center.view', 'audit.view']);
 
 vi.mock('@/app/AppContext', () => ({
@@ -193,42 +193,40 @@ describe('DIRC Phase C3 — UNION tab authorization at runtime', () => {
   });
   afterEach(cleanup);
 
-  it('shows only reporting tabs to a user with reports.view', async () => {
+  it('does not hide legacy RLS-authoritative tabs behind reports.view', async () => {
     permissions = new Set(['reports.view']);
     render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      'Executive Overview', 'Institution Status', 'Custody Chain',
+      'Executive Overview', 'Institution Status', 'Materials & Batches', 'Custody Chain',
       'Supplementary Purchases Traceability', 'Differences & Corrections',
-      'Official Report Library',
+      'Monthly Inventory Position', 'Official Report Library',
     ]);
   });
 
-  it('falls back from a forbidden requested tab to the first status-center tab', async () => {
+  it('adds only Movements for status_center.view and preserves an allowed requested tab', async () => {
     permissions = new Set(['status_center.view']);
-    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="overview" />);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="movements" />);
 
-    await waitFor(() => expect(screen.getByTestId('materials-batches-tab')).toBeInTheDocument());
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      'Materials & Batches', 'Stock Movements', 'Monthly Inventory Position',
-    ]);
+    await waitFor(() => expect(screen.getByTestId('movements-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Stock Movements' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('preserves an explicitly requested tab when that tab is allowed', async () => {
-    permissions = new Set(['status_center.view']);
+  it('preserves Monthly for an existing workflow role without status_center.view', async () => {
+    currentRole = 'warehouse_officer';
     render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="monthly" />);
 
     await waitFor(() => expect(screen.getByTestId('monthly-position-tab')).toBeInTheDocument());
     expect(screen.getByRole('tab', { name: 'Monthly Inventory Position' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('allows audit by itself without reports.view or status_center.view', async () => {
+  it('adds Audit independently through audit.view', async () => {
     permissions = new Set(['audit.view']);
-    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="audit" />);
 
     await waitFor(() => expect(screen.getByTestId('audit-tab')).toBeInTheDocument());
-    expect(screen.getAllByRole('tab')).toHaveLength(1);
+    expect(screen.getByRole('tab', { name: 'Audit-Sensitive Actions' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('keeps Global Search hidden from a non-super-admin with every permission', async () => {
@@ -238,9 +236,18 @@ describe('DIRC Phase C3 — UNION tab authorization at runtime', () => {
 
     await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
     expect(screen.queryByRole('tab', { name: 'Global Material Search' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('global-search-stub')).not.toBeInTheDocument();
   });
 
-  it('renders ForbiddenScreen when UNION grants no tab', () => {
+  it('falls back from a forbidden requested tab to the first allowed tab', async () => {
+    render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} initialTab="global" />);
+
+    await waitFor(() => expect(screen.getByTestId('executive-overview-tab')).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Executive Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('renders ForbiddenScreen when no authenticated profile role allows any tab', () => {
+    currentRole = null;
     render(<DecisionIntelligenceReportsScreen onNavigate={vi.fn()} />);
 
     expect(screen.getByText('You do not have access to this page')).toBeInTheDocument();
