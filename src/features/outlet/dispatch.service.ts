@@ -73,11 +73,14 @@ function mapDispatch(r: WarehouseDispatchRow): WarehouseDispatch {
   };
 }
 
-/** Dispatches FROM an institution warehouse (the officer's outbound queue). RLS-scoped. */
-export async function getWarehouseDispatches(warehouseId?: string): Promise<WarehouseDispatch[]> {
+/** Dispatches FROM an institution warehouse (the officer's outbound queue). RLS-scoped.
+ *  `organizationId` is an explicit narrowing filter (on top of RLS) for callers — like the
+ *  reports screen — that must never show a super_admin's other RLS-visible organizations. */
+export async function getWarehouseDispatches(warehouseId?: string, organizationId?: string): Promise<WarehouseDispatch[]> {
   if (!supabaseConfigured) return [];
   let q = supabase.from('warehouse_dispatches').select(DISPATCH_COLUMNS).order('created_at', { ascending: false });
   if (warehouseId) q = q.eq('warehouse_id', warehouseId);
+  if (organizationId) q = q.eq('organization_id', organizationId);
   const { data, error } = await q;
   if (error) throw error;
   // Concatenated const select → supabase-js infers GenericStringError[]; the shape

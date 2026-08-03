@@ -13,9 +13,9 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import { CorrectionsHistoryTab } from '../DecisionIntelligenceReportsScreen';
 import type { CorrectionHistoryRow } from '../differences-corrections.service';
 
-const listCorrectionHistory = vi.fn<() => Promise<CorrectionHistoryRow[]>>();
+const listCorrectionHistory = vi.fn<(orgId: string) => Promise<CorrectionHistoryRow[]>>();
 vi.mock('../differences-corrections.service', () => ({
-  listCorrectionHistory: () => listCorrectionHistory(),
+  listCorrectionHistory: (orgId: string) => listCorrectionHistory(orgId),
 }));
 
 const getPaperReferencesFor = vi.fn(async (_documentType: string, _documentIds: readonly string[]) => new Map());
@@ -60,19 +60,24 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
   it('renders a loading state first, then resolves to loaded content, with no thrown hook-order error (R02)', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
 
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => {
       expect(screen.getByText('Paracetamol')).toBeInTheDocument();
     });
     expect(screen.getByTestId('corrections-history-tab')).toBeInTheDocument();
     expect(screen.getByText('Amoxicillin')).toBeInTheDocument();
+
+    // PHASE-C2-ORG-SCOPE: the read must be called WITH the active org id —
+    // never a bare/global call that would fall through to RLS's full
+    // multi-org set for a super_admin.
+    expect(listCorrectionHistory).toHaveBeenCalledWith('org1');
   });
 
   it('renders the empty state cleanly when there is no correction history (no crash)', async () => {
     listCorrectionHistory.mockResolvedValue([]);
 
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => {
       // The empty state renders instead of the table-bearing tab root.
@@ -84,7 +89,7 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
   it('shows a non-technical recorded marker for an approved correction, and no UUID', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
 
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
     expect(screen.getByText('Recorded')).toBeInTheDocument();
@@ -97,7 +102,7 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
   it('only fetches paper references for outlet-scope rows, never warehouse-scope (110 does not cover warehouse corrections)', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
 
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
     expect(getPaperReferencesFor).toHaveBeenCalledWith('stock_correction_request', ['c1']);
@@ -106,7 +111,7 @@ describe('CorrectionsHistoryTab — loading to loaded transition (runtime, not s
   it('shows an error state (with retry) when the history read fails', async () => {
     listCorrectionHistory.mockRejectedValue(new Error('load failed'));
 
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
 
     await waitFor(() => {
       expect(screen.getByText('load failed')).toBeInTheDocument();
@@ -123,7 +128,7 @@ describe('CorrectionsHistoryTab — export/print carry REAL row content (not jus
 
   it('Export Excel hands the real, currently-loaded rows to the shared export module — actual material names and variances, not an empty/stub config', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Export Excel' }));
@@ -138,7 +143,7 @@ describe('CorrectionsHistoryTab — export/print carry REAL row content (not jus
 
   it('Print hands the same real rows to the shared print trigger', async () => {
     listCorrectionHistory.mockResolvedValue([OUTLET_ROW, WAREHOUSE_ROW]);
-    render(<CorrectionsHistoryTab lang="en" onToast={noop} onMobilePrint={noop} />);
+    render(<CorrectionsHistoryTab orgId="org1" lang="en" onToast={noop} onMobilePrint={noop} />);
     await waitFor(() => expect(screen.getByText('Paracetamol')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Print' }));
@@ -147,5 +152,61 @@ describe('CorrectionsHistoryTab — export/print carry REAL row content (not jus
     const config = triggerProfessionalPrint.mock.calls[0][0] as { rows: CorrectionHistoryRow[] };
     expect(config.rows).toHaveLength(2);
     expect(config.rows.map(r => r.batchNumber)).toEqual(['B1', 'B2']);
+  });
+});
+
+describe('CorrectionsHistoryTab — PHASE C2 organization scope + stale-result safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPaperReferencesFor.mockResolvedValue(new Map());
+  });
+  afterEach(cleanup);
+
+  const ORG_A_ROW: CorrectionHistoryRow = { ...OUTLET_ROW, id: 'cA', scientificName: 'OrgA-Drug' };
+  const ORG_B_ROW: CorrectionHistoryRow = { ...OUTLET_ROW, id: 'cB', scientificName: 'OrgB-Drug' };
+
+  it('a slow org-A response resolving AFTER a fast org-B response never overwrites B\'s rows with A\'s (race safety)', async () => {
+    let resolveA!: (rows: CorrectionHistoryRow[]) => void;
+    const pendingA = new Promise<CorrectionHistoryRow[]>(res => { resolveA = res; });
+    listCorrectionHistory.mockImplementation((orgId: string) => orgId === 'orgA' ? pendingA : Promise.resolve([ORG_B_ROW]));
+
+    const { rerender } = render(<CorrectionsHistoryTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    rerender(<CorrectionsHistoryTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('OrgB-Drug')).toBeInTheDocument());
+
+    resolveA([ORG_A_ROW]);
+    await new Promise(r => setTimeout(r, 0));
+    expect(screen.queryByText('OrgA-Drug')).not.toBeInTheDocument();
+    expect(screen.getByText('OrgB-Drug')).toBeInTheDocument();
+  });
+
+  it('switching orgId re-issues the read with the NEW org id, never the previous one', async () => {
+    listCorrectionHistory.mockResolvedValue([ORG_A_ROW]);
+    const { rerender } = render(<CorrectionsHistoryTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('OrgA-Drug')).toBeInTheDocument());
+
+    listCorrectionHistory.mockResolvedValue([ORG_B_ROW]);
+    rerender(<CorrectionsHistoryTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('OrgB-Drug')).toBeInTheDocument());
+
+    expect(screen.queryByText('OrgA-Drug')).not.toBeInTheDocument();
+    expect(listCorrectionHistory).toHaveBeenCalledWith('orgA');
+    expect(listCorrectionHistory).toHaveBeenCalledWith('orgB');
+  });
+
+  it('XLSX export reflects ONLY the currently active org\'s rows after a switch', async () => {
+    listCorrectionHistory.mockResolvedValue([ORG_A_ROW]);
+    const { rerender } = render(<CorrectionsHistoryTab orgId="orgA" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('OrgA-Drug')).toBeInTheDocument());
+
+    listCorrectionHistory.mockResolvedValue([ORG_B_ROW]);
+    rerender(<CorrectionsHistoryTab orgId="orgB" lang="en" onToast={noop} onMobilePrint={noop} />);
+    await waitFor(() => expect(screen.getByText('OrgB-Drug')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Excel' }));
+    await waitFor(() => expect(exportProfessionalXlsx).toHaveBeenCalled());
+    const config = exportProfessionalXlsx.mock.calls.at(-1)![0] as { rows: CorrectionHistoryRow[] };
+    expect(config.rows.map(r => r.scientificName)).toEqual(['OrgB-Drug']);
+    expect(config.rows.map(r => r.scientificName)).not.toContain('OrgA-Drug');
   });
 });
