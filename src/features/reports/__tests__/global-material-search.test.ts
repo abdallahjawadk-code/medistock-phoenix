@@ -23,6 +23,10 @@ const dirc = readFileSync(
   new URL('../DecisionIntelligenceReportsScreen.tsx', import.meta.url),
   'utf8',
 );
+const tabAccess = readFileSync(
+  new URL('../report-tab-access.ts', import.meta.url),
+  'utf8',
+);
 const sidebar = readFileSync(
   new URL('../../../shared/ui/PhoenixSidebar.tsx', import.meta.url),
   'utf8',
@@ -34,8 +38,8 @@ const mobileDrawer = readFileSync(
 
 describe('super-admin global material search boundary', () => {
   it('renders the tab and panel only for super_admin', () => {
-    expect(dirc).toContain("role === 'super_admin'");
-    expect(dirc).toContain("tab === 'global' && role === 'super_admin'");
+    expect(tabAccess).toContain("tab === 'global' && role === 'super_admin'");
+    expect(dirc).toContain("activeTab === 'global' && role === 'super_admin'");
     expect(panel).toContain("if (role !== 'super_admin') return null");
   });
 

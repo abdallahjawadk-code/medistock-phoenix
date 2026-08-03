@@ -87,7 +87,7 @@ vi.mock('@/features/inventory/useInventoryScopes', () => ({
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({
     lang: 'en', dir: 'ltr', activeOrgId: 'org1', role: 'super_admin',
-    myPermissions: new Set<string>(),
+    myPermissions: new Set(['reports.view', 'status_center.view', 'audit.view']),
     authz: { getContext: () => ({ authenticated: false }) },
   }),
 }));

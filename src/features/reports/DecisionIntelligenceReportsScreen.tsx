@@ -39,6 +39,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
+import { ForbiddenScreen } from '@/shared/ui/ForbiddenScreen';
 import { MobilePrintFallbackModal } from '@/shared/ui/MobilePrintFallbackModal';
 import {
   exportProfessionalXlsx, exportProfessionalMultiSheetXlsx, triggerProfessionalPrint,
@@ -91,8 +92,11 @@ import {
   getSupplySourcesDetail, checkSnapshotParity, isDemoOrganization,
   type ExecutiveOverview, type ReportSnapshotRow, type SupplySourceDetailRow, type SnapshotParityResult,
 } from './decision-intelligence.service';
-
-type Tab = 'overview' | 'institutions' | 'materials' | 'movements' | 'custody' | 'supplementary' | 'corrections' | 'audit' | 'monthly' | 'library' | 'global';
+import {
+  allowedReportTabs,
+  resolveAllowedReportTab,
+  type ReportTab as Tab,
+} from './report-tab-access';
 
 const CLASSIFICATION_KEYS = ['available', 'low_stock', 'missing', 'surplus', 'near_expiry', 'expired'] as const;
 const SUPPLY_KEYS = ['kimadia', 'aid', 'purchase_central', 'purchase_supplementary', 'unclassified'] as const;
@@ -121,6 +125,13 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const openMobilePrint = (html: string, title: string, fileNameBase: string) => setMobilePrint({ html, title, fileNameBase });
 
+  const allowedTabs = useMemo(() => allowedReportTabs(myPermissions, role), [myPermissions, role]);
+  const activeTab = resolveAllowedReportTab(tab, allowedTabs);
+
+  useEffect(() => {
+    if (activeTab !== null && activeTab !== tab) setTab(activeTab);
+  }, [activeTab, tab]);
+
   const header = (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
       <div>
@@ -131,6 +142,8 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
     </div>
   );
 
+  if (activeTab === null) return <ForbiddenScreen />;
+
   if (!activeOrgId) {
     return (
       <div dir={dir} className="nexus-command-center nexus-command-center--reports">
@@ -140,7 +153,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
     );
   }
 
-  const tabs: Array<{ id: Tab; labelKey: string }> = [
+  const allTabs: Array<{ id: Tab; labelKey: string }> = [
     { id: 'overview', labelKey: 'dir_tab_overview' },
     { id: 'institutions', labelKey: 'dir_tab_institutions' },
     { id: 'materials', labelKey: 'dir_tab_materials' },
@@ -151,12 +164,9 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
     { id: 'audit', labelKey: 'dir_tab_audit' },
     { id: 'monthly', labelKey: 'dir_tab_monthly' },
     { id: 'library', labelKey: 'dir_tab_library' },
-    // REPORTING-UNIFICATION: moved verbatim from ReportsScreen.tsx (screen
-    // 9), which gated this tab identically -- role === 'super_admin' at the
-    // tab-visibility level, with GlobalMaterialSearchPanel's own internal
-    // check as defense-in-depth, unchanged.
-    ...(role === 'super_admin' ? [{ id: 'global' as Tab, labelKey: 'dir_tab_global' }] : []),
+    { id: 'global', labelKey: 'dir_tab_global' },
   ];
+  const tabs = allTabs.filter(item => allowedTabs.includes(item.id));
 
   return (
     <div dir={dir} className="nexus-command-center nexus-command-center--reports">
@@ -166,13 +176,13 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           <button
             key={x.id}
             role="tab"
-            aria-selected={tab === x.id}
+            aria-selected={activeTab === x.id}
             onClick={() => setTab(x.id)}
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
               border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
-              background: tab === x.id ? 'var(--p2)' : 'var(--s)',
-              color: tab === x.id ? 'var(--pd)' : 'var(--t2)',
+              background: activeTab === x.id ? 'var(--p2)' : 'var(--s)',
+              color: activeTab === x.id ? 'var(--pd)' : 'var(--t2)',
             }}
           >
             {t(x.labelKey, lang)}
@@ -180,7 +190,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
         ))}
       </div>
 
-      {tab === 'overview' && (
+      {activeTab === 'overview' && (
         <ReportsTabErrorBoundary key={`overview:${activeOrgId}`} lang={lang}>
           <ExecutiveOverviewTab
             orgId={activeOrgId}
@@ -190,7 +200,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'institutions' && (
+      {activeTab === 'institutions' && (
         <ReportsTabErrorBoundary key={`institutions:${activeOrgId}`} lang={lang}>
           <InstitutionStatusTab
             lang={lang}
@@ -200,7 +210,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'materials' && (
+      {activeTab === 'materials' && (
         <ReportsTabErrorBoundary key={`materials:${activeOrgId}`} lang={lang}>
           <MaterialsAndBatchesTab
             orgId={activeOrgId}
@@ -214,12 +224,12 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'movements' && (
+      {activeTab === 'movements' && (
         <ReportsTabErrorBoundary key={`movements:${activeOrgId}`} lang={lang}>
           <div data-testid="movements-tab"><MovementReportSection /></div>
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'custody' && (
+      {activeTab === 'custody' && (
         <ReportsTabErrorBoundary key={`custody:${activeOrgId}`} lang={lang}>
           <CustodyChainTab
             lang={lang}
@@ -228,7 +238,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'supplementary' && (
+      {activeTab === 'supplementary' && (
         <ReportsTabErrorBoundary key={`supplementary:${activeOrgId}`} lang={lang}>
           <SupplementaryPurchasesTab
             orgId={activeOrgId}
@@ -238,7 +248,7 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'corrections' && (
+      {activeTab === 'corrections' && (
         <ReportsTabErrorBoundary key={`corrections:${activeOrgId}`} lang={lang}>
           <CorrectionsHistoryTab
             lang={lang}
@@ -247,22 +257,22 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
           />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'audit' && (
+      {activeTab === 'audit' && (
         <ReportsTabErrorBoundary key={`audit:${activeOrgId}`} lang={lang}>
           <div data-testid="audit-tab"><AuditLogSection /></div>
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'monthly' && (
+      {activeTab === 'monthly' && (
         <ReportsTabErrorBoundary key={`monthly:${activeOrgId}`} lang={lang}>
           <MonthlyPositionTab orgId={activeOrgId} lang={lang} role={role} onToast={showToast} />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'library' && (
+      {activeTab === 'library' && (
         <ReportsTabErrorBoundary key={`library:${activeOrgId}`} lang={lang}>
           <ReportLibraryTab orgId={activeOrgId} lang={lang} />
         </ReportsTabErrorBoundary>
       )}
-      {tab === 'global' && role === 'super_admin' && (
+      {activeTab === 'global' && role === 'super_admin' && (
         <ReportsTabErrorBoundary key={`global:${activeOrgId}`} lang={lang}>
           <div data-testid="global-search-tab"><GlobalMaterialSearchPanel /></div>
         </ReportsTabErrorBoundary>

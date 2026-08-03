@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
-import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { institutionsScreenAccess } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
@@ -9,6 +8,7 @@ import { ResetPasswordScreen } from '@/features/auth/ResetPasswordScreen';
 import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { AuthRecoveryState } from '@/shared/ui/AuthRecoveryState';
+import { ForbiddenScreen } from '@/shared/ui/ForbiddenScreen';
 import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
 import { RegistryScreen } from '@/features/registry/RegistryScreen';
 import { MeshScreen } from '@/features/mesh/MeshScreen';
@@ -45,12 +45,7 @@ import {
  * QR route (App.tsx / PublicQrScreen). Moved verbatim out of App.tsx — no
  * auth/session/business logic changed, only the file it lives in.
  */
-/** ROLE-REORG-§5: a role-refused screen (e.g. non-admin hitting institutions). */
-function ForbiddenScreen() {
-  const { lang } = useApp();
-  return <PhoenixEmptyState icon="lock" title={t('access_forbidden_title', lang)} description={t('access_forbidden_hint', lang)} />;
-}
-
+/** Authenticated application shell and screen router. */
 export function AuthenticatedApp() {
   const {
     authReady, session, profile, signOut, passwordRecovery, role, lang,
