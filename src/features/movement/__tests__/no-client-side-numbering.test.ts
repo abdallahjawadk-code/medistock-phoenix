@@ -421,13 +421,21 @@ describe('no client-side document-number sequence exists', () => {
     // 153 only retires EXECUTE on the legacy exchange status writer. It
     // creates no function, sequence, allocator, or document number.
     // Ceiling -> 154.
-    const beyond = migrations.filter(f => /^(15[4-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 154 (TRANSFER-CORRIDOR-PRIVILEGE-LOCKDOWN-154) adds NO document
+    // numbering -- it is a pure REVOKE of INSERT/UPDATE/DELETE/TRUNCATE/
+    // TRIGGER/REFERENCES on four existing transfer-corridor tables
+    // (warehouse_transfer_requests/_lines, warehouse_transfers/_lines) from
+    // authenticated/anon/PUBLIC. No function, sequence, allocator, or
+    // document string of any kind is created, touched, or referenced.
+    // Ceiling -> 155.
+    const beyond = migrations.filter(f => /^(15[5-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');
     expect(migrations).toContain('152_phoenix_suggestion_action_read_model.sql');
     expect(migrations).toContain('153_phoenix_retire_inter_org_exchange_status_writer.sql');
+    expect(migrations).toContain('154_phoenix_transfer_corridor_privilege_lockdown.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.
