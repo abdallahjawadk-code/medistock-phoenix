@@ -215,6 +215,15 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '152_phoenix_suggestion_action_read_model.sql',
   '153_phoenix_retire_inter_org_exchange_status_writer.sql',
   '154_phoenix_transfer_corridor_privilege_lockdown.sql',
+  // NOTE: 155 (TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS, PR #87) and 156
+  // (OUTLET-RETURN-LINE-IDEMPOTENCY, PR #89) are sibling in-flight PRs
+  // branched from the same 154 base; this branch was cut before either
+  // merged, so 157 (this phase, D1B-5) is registered directly after 154
+  // here. If #87 and/or #89 merge to master first, this file will need a
+  // trivial rebase to insert their entries between 154 and 157 before this
+  // PR can merge — expected for parallel migration-adding branches, not a
+  // defect.
+  '157_phoenix_outlet_return_exception_resolution.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

@@ -196,7 +196,19 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // nothing to do with this (much earlier, UI-only) pharmacy-emblem
       // phase.
       ' ":!package.json"' +
-      ' ":!package-lock.json"',
+      ' ":!package-lock.json"' +
+      // PHASE-D1B-5-OUTLET-RETURN-EXCEPTION-RESOLUTION: a still later,
+      // separately authorized phase adds a genuine new migration (157) plus
+      // its own dedicated static/dynamic test files — a real, in-scope
+      // backend change for THAT phase, excluded here by name for the same
+      // reason every entry above is: it has nothing to do with this (much
+      // earlier, UI-only) pharmacy-emblem phase. (This branch was cut before
+      // sibling PRs #87's migration 155 and #89's migration 156 merged, so
+      // no 155/156 exclusion is needed here — those entries live in their
+      // own branches.)
+      ' ":!supabase/migrations/157_phoenix_outlet_return_exception_resolution.sql"' +
+      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
