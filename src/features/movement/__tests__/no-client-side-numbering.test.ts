@@ -460,7 +460,13 @@ describe('no client-side document-number sequence exists', () => {
     // 160 (DEMO-PURGE-OUTBOX-COMPATIBILITY-160) adds NO document numbering
     // at all -- it only redefines phoenix_demo_purgeable_tables() (143), a
     // pure table-name array with no numbering concept of any kind. Ceiling -> 161.
-    const beyond = migrations.filter(f => /^(16[1-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 161 (MOVEMENT-OUTBOX-PRODUCER-161) adds NO document numbering -- it
+    // redefines phoenix_capture_movement_posted() to additionally append one
+    // outbox event per accepted movement, keyed by 'movement:' plus the SAME
+    // pre-existing dedupe_key (NEW.id::text || ':posted') -- an idempotency
+    // key over an already-existing value, never a new document/reference
+    // number of any kind. Ceiling -> 162.
+    const beyond = migrations.filter(f => /^(16[2-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -473,6 +479,8 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('157_phoenix_outlet_return_exception_resolution.sql');
     expect(migrations).toContain('158_phoenix_transactional_outbox_foundation.sql');
     expect(migrations).toContain('159_phoenix_lifecycle_outbox_producer.sql');
+    expect(migrations).toContain('160_phoenix_demo_purge_outbox_compatibility.sql');
+    expect(migrations).toContain('161_phoenix_movement_outbox_producer.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

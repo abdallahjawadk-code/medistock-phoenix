@@ -256,7 +256,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // do with this (much earlier, UI-only) pharmacy-emblem phase.
       ' ":!supabase/migrations/160_phoenix_demo_purge_outbox_compatibility.sql"' +
       ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility.dynamic.test.ts"' +
+      // PHASE-D2-3-MOVEMENT-OUTBOX-PRODUCER: a still later, separately
+      // authorized phase adds a genuine new migration (161) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/161_phoenix_movement_outbox_producer.sql"' +
+      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

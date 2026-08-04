@@ -290,6 +290,27 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
     }
   }, { commit: true });
 
+  // 161's movement-outbox producer emits the SAME movements' second canonical
+  // event, into phoenix_outbox_events — discovered the same way (from the
+  // ledger rows we already own), constrained to exactly the D2-3 movement
+  // contract (aggregate_type = 'warehouse_stock_movements') so this never
+  // matches an unrelated producer's event for a coincidentally-shared id.
+  // Unlike phoenix_movement_events (081 grants authenticated SELECT),
+  // phoenix_outbox_events grants no client role any access at all (158's own
+  // deliberate lockdown) — the lookup itself must run as asAdmin, exactly
+  // how ownership.mjs's own diff-capture already reads this table; only the
+  // registration (own(), a SECURITY DEFINER RPC call) runs as the actor.
+  {
+    const ids = stockRows.map(s => s.movementId).filter(Boolean);
+    if (ids.length > 0) {
+      const ev = await io.asAdmin((c) => c.query(
+        `SELECT id FROM public.phoenix_outbox_events WHERE aggregate_id = ANY($1::uuid[]) AND aggregate_type = 'warehouse_stock_movements'`, [ids]));
+      await io.asUser(superAdminId, async (c) => {
+        for (const row of ev.rows) await own(c, 'phoenix_outbox_events', row.id, 'event:intake:outbox');
+      }, { commit: true });
+    }
+  }
+
   // The intake RPC also writes its own audit_logs row per receive, whose
   // entity_id does not resolve back to the stock/movement id it logged —
   // diff-registration is the only reliable way to own it.
