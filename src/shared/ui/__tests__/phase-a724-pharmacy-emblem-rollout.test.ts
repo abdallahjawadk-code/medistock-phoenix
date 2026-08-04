@@ -239,7 +239,24 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // UI-only) pharmacy-emblem phase.
       ' ":!supabase/migrations/158_phoenix_transactional_outbox_foundation.sql"' +
       ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation.dynamic.test.ts"' +
+      // PHASE-D2-2-LIFECYCLE-OUTBOX-PRODUCER: a still later, separately
+      // authorized phase adds a genuine new migration (159) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/159_phoenix_lifecycle_outbox_producer.sql"' +
+      ' ":!supabase/migrations/__tests__/159-lifecycle-outbox-producer-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/159-lifecycle-outbox-producer.dynamic.test.ts"' +
+      // PHASE-D2-2-DEMO-PURGE-OUTBOX-COMPATIBILITY: the same D2-2 phase's own
+      // corrective migration (160) plus its own dedicated static/dynamic test
+      // files — a real, in-scope backend change for THAT phase, excluded here
+      // by name for the same reason every entry above is: it has nothing to
+      // do with this (much earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/160_phoenix_demo_purge_outbox_compatibility.sql"' +
+      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
