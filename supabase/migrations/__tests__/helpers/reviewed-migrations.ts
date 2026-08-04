@@ -215,12 +215,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '152_phoenix_suggestion_action_read_model.sql',
   '153_phoenix_retire_inter_org_exchange_status_writer.sql',
   '154_phoenix_transfer_corridor_privilege_lockdown.sql',
-  // NOTE: 155 (TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS) is a sibling
-  // in-flight PR (#87) branched from the same 154 base; this branch was cut
-  // before it merged, so 156 (this phase, D1B-6) is registered directly
-  // after 154 here. If #87 merges to master first, this file will need a
-  // trivial rebase to insert 155's entry between 154 and 156 before this PR
-  // can merge — expected for parallel migration-adding branches, not a defect.
+  '155_phoenix_transfer_send_receive_lifecycle_notifications.sql',
   '156_phoenix_outlet_return_line_idempotency.sql',
 ]);
 

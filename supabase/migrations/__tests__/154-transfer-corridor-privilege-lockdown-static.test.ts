@@ -33,6 +33,7 @@ const load = (name: string) => {
 describe('1. migration numbering and sequencing', () => {
   it('154 is registered', () => {
     // "is the current reviewed maximum" was dropped from this assertion:
+    // TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS-155 and
     // OUTLET-RETURN-LINE-IDEMPOTENCY-156 (this branch) moved the ceiling
     // forward, and that ceiling is reviewed-migration-manifest.test.ts's own
     // claim to track (section 3), not a fact this file should duplicate and
