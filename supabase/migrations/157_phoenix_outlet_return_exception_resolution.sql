@@ -263,6 +263,11 @@ DECLARE
   v_after        integer;
   v_wh_movement_id uuid;
   v_q_movement_id  uuid;
+  -- A genuinely NEW, out-of-band correction — deliberately NOT chained to
+  -- the original send/receive causal thread (that thread's own row is never
+  -- updated by this RPC). Root operation: fresh correlation_id, no
+  -- causation_id, same shape as 126's phoenix_receive_warehouse_stock.
+  v_correlation_id uuid := gen_random_uuid();
   v_result       jsonb;
 BEGIN
   IF v_actor IS NULL THEN
@@ -459,7 +464,8 @@ BEGIN
       source_document_number, actor_id, actor_role, actor_name,
       scientific_name_snapshot, concentration_snapshot,
       dosage_form_snapshot, batch_number_snapshot,
-      internal_batch_reference_snapshot
+      internal_batch_reference_snapshot,
+      correlation_id
     ) VALUES (
       v_stock.id, v_stock.organization_id, v_stock.warehouse_id, 'correction',
       v_before, p_corrected_quantity, v_after,
@@ -468,7 +474,8 @@ BEGIN
       NULL, v_actor, v_actor_role, v_actor_name,
       v_stock.scientific_name, v_stock.concentration,
       v_stock.dosage_form, v_stock.batch_number,
-      v_stock.internal_batch_reference
+      v_stock.internal_batch_reference,
+      v_correlation_id
     )
     RETURNING id INTO v_wh_movement_id;
   ELSE
@@ -536,7 +543,8 @@ BEGIN
       source_document_number, actor_id, actor_role, actor_name,
       scientific_name_snapshot, concentration_snapshot,
       dosage_form_snapshot, batch_number_snapshot,
-      internal_batch_reference_snapshot
+      internal_batch_reference_snapshot,
+      correlation_id
     ) VALUES (
       v_quarantine.id, v_quarantine.organization_id, v_quarantine.warehouse_id, 'quarantine_correction',
       v_before, p_corrected_quantity, v_after,
@@ -544,7 +552,8 @@ BEGIN
       NULL, v_actor, v_actor_role, v_actor_name,
       v_quarantine.scientific_name, v_quarantine.concentration,
       v_quarantine.dosage_form, v_quarantine.batch_number,
-      v_quarantine.internal_batch_reference
+      v_quarantine.internal_batch_reference,
+      v_correlation_id
     )
     RETURNING id INTO v_q_movement_id;
   END IF;
