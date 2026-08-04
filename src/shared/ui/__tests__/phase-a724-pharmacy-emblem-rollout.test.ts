@@ -196,7 +196,41 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // nothing to do with this (much earlier, UI-only) pharmacy-emblem
       // phase.
       ' ":!package.json"' +
-      ' ":!package-lock.json"',
+      ' ":!package-lock.json"' +
+      // PHASE-D1B-1-LIFECYCLE-NOTIFICATION-COMPLETENESS: a still later,
+      // separately authorized phase adds a genuine new migration (155) plus
+      // its own dedicated static/dynamic test files — a real, in-scope
+      // backend change for THAT phase, excluded here by name for the same
+      // reason every entry above is: it has nothing to do with this (much
+      // earlier, UI-only) pharmacy-emblem phase. reviewed-migrations.ts and
+      // reviewed-migration-manifest.test.ts are already excluded above (D1A)
+      // and need no second entry.
+      ' ":!supabase/migrations/155_phoenix_transfer_send_receive_lifecycle_notifications.sql"' +
+      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications.dynamic.test.ts"' +
+      // PHASE-D1B-6-OUTLET-RETURN-LINE-IDEMPOTENCY: a still later, separately
+      // authorized phase adds a genuine new migration (156) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/156_phoenix_outlet_return_line_idempotency.sql"' +
+      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency.dynamic.test.ts"' +
+      // PHASE-D1B-5-OUTLET-RETURN-EXCEPTION-RESOLUTION: a still later,
+      // separately authorized phase adds a genuine new migration (157) plus
+      // its own dedicated static/dynamic test files — a real, in-scope
+      // backend change for THAT phase, excluded here by name for the same
+      // reason every entry above is: it has nothing to do with this (much
+      // earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/157_phoenix_outlet_return_exception_resolution.sql"' +
+      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution.dynamic.test.ts"' +
+      // 157 also registers its new writer in the shared movement-writer-
+      // contract registry/guard — test-maintenance, not new application
+      // logic, same as every other __tests__/helpers exclusion above.
+      ' ":!supabase/migrations/__tests__/helpers/reviewed-movement-writers.ts"' +
+      ' ":!supabase/migrations/__tests__/movement-writer-completeness.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

@@ -255,6 +255,22 @@ export const REVIEWED_MOVEMENT_WRITERS: readonly ReviewedWriter[] = Object.freez
     idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
     clientCallable: true,
   },
+  // ── Group J — outlet return exception resolution ────────────────────────
+  {
+    // Only writes a ledger row on the corrected_receipt path (exactly one of
+    // the two, per p_disposition_decision) — confirmed_no_stock writes
+    // neither (a mandatory-reason administrative closure, no stock movement
+    // of any kind). A genuinely NEW, out-of-band correction, deliberately
+    // NOT chained to the original send/receive causal thread (that thread's
+    // own row, custody_state='exception_pending', is never updated) — hence
+    // correlation:'fresh', causation:null, same as a genuine root operation.
+    fn: 'phoenix_resolve_outlet_return_exception', group: 'J', migration: 157,
+    ledgers: ['warehouse_stock_movements', 'warehouse_quarantine_stock_movements'],
+    reasonCode: { kind: 'propagated', from: 'outlet_return_request_lines.reason_code' },
+    correlation: 'fresh', causation: null,
+    idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
+    clientCallable: true,
+  },
 ]);
 
 export interface ExcludedWriter {
@@ -312,5 +328,5 @@ export const writersInGroup = (group: string): readonly ReviewedWriter[] =>
 
 /** The domain groups the contract is organised into, in slice order. */
 export const CONTRACT_GROUPS: readonly string[] = Object.freeze([
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
 ]);

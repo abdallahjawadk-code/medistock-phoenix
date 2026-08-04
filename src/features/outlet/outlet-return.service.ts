@@ -227,6 +227,55 @@ export async function getReturnShipmentLinesForShipments(shipmentIds: string[]):
   }));
 }
 
+/**
+ * OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — unresolved exception_pending lines
+ * for one destination warehouse.
+ *
+ * 157's own RPC NEVER updates outlet_return_shipment_lines.custody_state —
+ * it stays 'exception_pending' forever, even after resolution (the original
+ * zero-quantity receipt is never rewritten; the resolution is a separate,
+ * additive row). So "still needs resolving" cannot be read off custody_state
+ * alone — it requires excluding lines that already have a row in
+ * phoenix_outlet_return_exception_resolutions, keyed by
+ * return_shipment_line_id (071/157: at most one resolution per line).
+ */
+export async function getExceptionPendingLines(destinationWarehouseId: string): Promise<OutletReturnShipmentLine[]> {
+  if (!supabaseConfigured || !destinationWarehouseId) return [];
+
+  const { data: shipments, error: shipmentsErr } = await supabase
+    .from('outlet_return_shipments')
+    .select('id')
+    .eq('destination_warehouse_id', destinationWarehouseId);
+  if (shipmentsErr) throw shipmentsErr;
+  const shipmentIds = (shipments ?? []).map(s => s.id as string);
+  if (shipmentIds.length === 0) return [];
+
+  const { data: lines, error: linesErr } = await supabase
+    .from('outlet_return_shipment_lines')
+    .select('id, shipment_id, return_request_line_id, original_dispatch_line_id, scientific_name, batch_number, expiry_date, sent_quantity, received_quantity, status, difference_reason, disposition, custody_state')
+    .in('shipment_id', shipmentIds)
+    .eq('custody_state', 'exception_pending')
+    .order('scientific_name', { ascending: true });
+  if (linesErr) throw linesErr;
+  const rows = lines as OutletReturnShipmentLineRow[] | null ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: resolutions, error: resolutionsErr } = await supabase
+    .from('phoenix_outlet_return_exception_resolutions')
+    .select('return_shipment_line_id')
+    .in('return_shipment_line_id', rows.map(r => r.id));
+  if (resolutionsErr) throw resolutionsErr;
+  const resolved = new Set((resolutions ?? []).map(r => r.return_shipment_line_id as string));
+
+  return rows.filter(r => !resolved.has(r.id)).map(r => ({
+    id: r.id, shipmentId: r.shipment_id, returnRequestLineId: r.return_request_line_id,
+    originalDispatchLineId: r.original_dispatch_line_id, scientificName: r.scientific_name,
+    batchNumber: r.batch_number, expiryDate: r.expiry_date, sentQuantity: r.sent_quantity,
+    receivedQuantity: r.received_quantity, status: r.status, differenceReason: r.difference_reason,
+    disposition: r.disposition, custodyState: r.custody_state,
+  }));
+}
+
 // ─── Mutations (071 RPCs) ────────────────────────────────────────────────────
 
 export function requestOutletReturn(input: {
@@ -250,10 +299,17 @@ export function recallOutletStock(input: {
   });
 }
 
-/** Adds one provenance-anchored return line (original dispatch line is mandatory). */
+/**
+ * Adds one provenance-anchored return line (original dispatch line is
+ * mandatory). `requestId` (156) is a stable, caller-derived idempotency
+ * token — see operation-token.ts — passed through to the RPC's optional
+ * p_request_id so a lost-response retry of the same logical add-line
+ * attempt replays the original result instead of re-running validation or
+ * hitting a bare unique-constraint error.
+ */
 export function addOutletReturnLine(input: {
   returnRequestId: string; originalDispatchLineId: string; requestedQuantity: number;
-  reasonCode: string; reasonText?: string | null;
+  reasonCode: string; reasonText?: string | null; requestId: string;
 }): Promise<RpcResult> {
   return callRpc('phoenix_add_outlet_return_request_line', {
     p_return_request_id: input.returnRequestId,
@@ -261,6 +317,7 @@ export function addOutletReturnLine(input: {
     p_requested_quantity: input.requestedQuantity,
     p_reason_code: input.reasonCode,
     p_reason_text: input.reasonText ?? null,
+    p_request_id: input.requestId,
   });
 }
 
@@ -317,6 +374,30 @@ export function receiveOutletReturnShipmentLine(input: {
     p_received_quantity: input.receivedQuantity,
     p_difference_reason: input.differenceReason ?? null,
     p_notes: input.notes ?? null,
+    p_disposition_decision: input.dispositionDecision ?? null,
+  });
+}
+
+/**
+ * OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolves a stuck exception_pending
+ * line via one of two owner-mandated paths: 'corrected_receipt' (a real
+ * quantity did arrive — requires correctedQuantity + dispositionDecision) or
+ * 'confirmed_no_stock' (genuinely nothing arrived — neither field is sent).
+ * `requestId` is a MANDATORY, caller-derived idempotency token (this RPC has
+ * no optional/backward-compatible request_id design like 106/156 — see
+ * migration 157's own header). Never mutates the original exception line;
+ * the RPC records this in a separate, additive resolution ledger.
+ */
+export function resolveOutletReturnException(input: {
+  requestId: string; returnShipmentLineId: string; resolutionKind: 'corrected_receipt' | 'confirmed_no_stock';
+  reason: string; correctedQuantity?: number | null; dispositionDecision?: 'restockable' | 'quarantined' | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_resolve_outlet_return_exception', {
+    p_request_id: input.requestId,
+    p_return_shipment_line_id: input.returnShipmentLineId,
+    p_resolution_kind: input.resolutionKind,
+    p_reason: input.reason,
+    p_corrected_quantity: input.correctedQuantity ?? null,
     p_disposition_decision: input.dispositionDecision ?? null,
   });
 }

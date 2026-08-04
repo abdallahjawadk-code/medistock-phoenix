@@ -409,7 +409,10 @@ describe('10. every contract group has at least one reviewed writer', () => {
   it('every reviewed writer names the migration that made it compliant, within the reviewed range', () => {
     for (const w of REVIEWED_MOVEMENT_WRITERS) {
       expect(w.migration, w.fn).toBeGreaterThanOrEqual(126);
-      expect(w.migration, w.fn).toBeLessThanOrEqual(150);
+      // Upper bound moved 150 -> 157: OUTLET-RETURN-EXCEPTION-RESOLUTION-157
+      // (this branch) adds phoenix_resolve_outlet_return_exception as a new
+      // Group J writer.
+      expect(w.migration, w.fn).toBeLessThanOrEqual(157);
     }
   });
 });
