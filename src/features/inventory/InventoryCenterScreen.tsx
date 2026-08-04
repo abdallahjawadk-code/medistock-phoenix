@@ -14,12 +14,14 @@ import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
 import { OutletDispatchOperations } from '@/features/outlet/OutletDispatchOperations';
 import { InstitutionReturnReceipts } from '@/features/outlet/InstitutionReturnReceipts';
+import { OutletReturnExceptions } from '@/features/outlet/OutletReturnExceptions';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { getAllCentralItems } from '@/shared/supabase/services/registry.service';
 import { toCatalogMaterials } from './ocr/catalog-adapter';
 import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
+import { useOutletReturnExceptionResolvePermission } from './useOutletReturnExceptionResolvePermission';
 import { useQuarantinePermission } from './useQuarantinePermission';
 import { QuarantinePanel } from './QuarantinePanel';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
@@ -56,7 +58,7 @@ import type { SuggestionDocumentTarget } from './suggestion-document-navigation'
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'quarantine' | 'corrections';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'return_exceptions' | 'quarantine' | 'corrections';
 
 export function InventoryCenterScreen({
   initialSuggestionDocument,
@@ -95,6 +97,14 @@ export function InventoryCenterScreen({
   // destination warehouse), never a role name. The RPC re-checks server-side.
   const returnReceive = useReturnReceivePermission(activeOrgId, activeWarehouseId || null);
   const canReceiveReturns = returnReceive.data ?? false;
+
+  // OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolving stuck exception_pending
+  // outlet-return lines at THIS warehouse. Gated on the distinct scoped key
+  // 157's resolution RPC checks (outlet_stock.resolve_return_exception on the
+  // destination warehouse), never a role name or the adjacent return_receive
+  // key. The RPC re-checks server-side.
+  const resolveException = useOutletReturnExceptionResolvePermission(activeOrgId, activeWarehouseId || null);
+  const canResolveExceptions = resolveException.data ?? false;
 
   // QUARANTINE-DISPOSITION — gated on the exact scoped key 099's release/
   // destroy RPCs check (warehouse_transfer.return_request on the quarantine
@@ -231,6 +241,10 @@ export function InventoryCenterScreen({
           // §071 — receiving outlet returns into this warehouse, for holders of
           // the scoped outlet_stock.return_receive permission on it.
           ...(canReceiveReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
+          // OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolving stuck
+          // exception_pending lines, for holders of the scoped
+          // outlet_stock.resolve_return_exception permission on it.
+          ...(canResolveExceptions ? [{ id: 'return_exceptions' as const, labelKey: 'inv_tab_return_exceptions' }] : []),
           // QUARANTINE-DISPOSITION — for holders of the scoped
           // warehouse_transfer.return_request permission on it (099/105).
           ...(canDisposeQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
@@ -319,6 +333,13 @@ export function InventoryCenterScreen({
           destinationWarehouseId={activeWarehouseId}
           warehouseName={activeWarehouseName}
           canReceive={canReceiveReturns}
+          lang={lang}
+        />
+      ) : tab === 'return_exceptions' && canResolveExceptions ? (
+        <OutletReturnExceptions
+          destinationWarehouseId={activeWarehouseId}
+          warehouseName={activeWarehouseName}
+          canResolve={canResolveExceptions}
           lang={lang}
         />
       ) : tab === 'quarantine' && canDisposeQuarantine ? (
