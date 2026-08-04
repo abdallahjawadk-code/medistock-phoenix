@@ -28,6 +28,10 @@ import {
   type Transfer, type ReturnRequest, type ReturnRequestLine, type ReturnShipment,
 } from './network.service';
 import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
+import { getFefoAlternatives, type FefoBatch } from '@/features/outlet/dispatch.service';
+import { FefoOverrideDialog } from '@/features/outlet/FefoOverrideDialog';
+import { useFefoOverridePermission } from '@/features/inventory/useFefoOverridePermission';
+import type { StockCandidate } from '@/features/movement/composer-model';
 import { DirectSupplyComposer } from '@/features/movement/DirectSupplyComposer';
 import { DirectReturnComposer } from '@/features/movement/DirectReturnComposer';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
@@ -63,6 +67,7 @@ const FORWARD_CREATE = { draftFirst: true };
 const writeTransferSend: TokenedWriter<{
   transferRequestId: string; warehouseStockId: string; quantity: number;
   transferNumber: string; transferRequestLineId: string;
+  fefoOverride?: boolean; overrideReason?: string | null;
 }> = (requestId, p) => sendDirectTransferLine({ requestId, ...p });
 
 const writeTransferReceive: TokenedWriter<{
@@ -499,7 +504,8 @@ function ForwardDetail({ lang, request, whById, orgNameById, onBack, onStatus, s
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
         {(lines.data ?? []).map(l => (
           <ForwardLineRow key={l.id} lang={lang} line={l} isDraft={isDraft} canSend={canSend}
-            stock={stock.data ?? []} onDone={set} />
+            stock={stock.data ?? []} onDone={set}
+            organizationId={request.sourceOrganizationId} warehouseId={request.sourceWarehouseId} />
         ))}
       </div>
 
@@ -589,9 +595,10 @@ function AddForwardLineForm({ lang, requestId, onDone }: {
   );
 }
 
-function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone }: {
+function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone, organizationId, warehouseId }: {
   lang: Lang; line: TransferRequestLine; isDraft: boolean; canSend: boolean;
   stock: import('./network.service').WarehouseStockBatch[]; onDone: (r: RpcResult) => void;
+  organizationId: string; warehouseId: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [sending, setSending] = useState(false);
@@ -637,6 +644,7 @@ function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone }: {
 
       {sending && (
         <SendForwardLineForm lang={lang} line={line} remaining={remaining} stock={stock}
+          organizationId={organizationId} warehouseId={warehouseId}
           onCancel={() => setSending(false)}
           onDone={(r) => { setSending(false); onDone(r); }} />
       )}
@@ -644,18 +652,66 @@ function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone }: {
   );
 }
 
-function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }: {
+function SendForwardLineForm({ lang, line, remaining, stock, organizationId, warehouseId, onCancel, onDone }: {
   lang: Lang; line: TransferRequestLine; remaining: number;
-  stock: import('./network.service').WarehouseStockBatch[]; onCancel: () => void; onDone: (r: RpcResult) => void;
+  stock: import('./network.service').WarehouseStockBatch[];
+  organizationId: string; warehouseId: string;
+  onCancel: () => void; onDone: (r: RpcResult) => void;
 }) {
   const candidates = stock.filter(s => s.scientificName.toLowerCase() === line.scientificName.toLowerCase() && s.availableQuantity > 0);
   const [stockId, setStockId] = useState('');
   const [qty, setQty] = useState(String(remaining));
   const [number, setNumber] = useState('');
   const [busy, setBusy] = useState(false);
+  // FEFO-REASONED-OVERRIDE-097/102/150 — Route 1's own guarded RPC already
+  // enforces FEFO server-side (150); this dialog is the same preflight UX
+  // Route 2 already has (FefoOverrideDialog.tsx / useFefoOverridePermission),
+  // reused verbatim rather than building a second one.
+  const [fefoPrompt, setFefoPrompt] = useState<{ picked: StockCandidate; alternatives: FefoBatch[] } | null>(null);
+  const canOverrideFefo = useFefoOverridePermission(organizationId, warehouseId).data ?? false;
   const effStock = candidates.some(s => s.id === stockId) ? stockId : (candidates[0]?.id ?? '');
   const n = parseInt(qty, 10);
   const canSend = effStock !== '' && Number.isFinite(n) && n > 0 && n <= remaining && number.trim() !== '' && !busy;
+
+  const doSend = async (fefoOverride: boolean, overrideReason: string | null) => {
+    setBusy(true);
+    const res = await runStockMutation(writeTransferSend, 'transfer_line_send', {
+      entityId: line.id,
+      generation: line.fulfilledQuantity,
+      payload: {
+        transferRequestId: line.transferRequestId, warehouseStockId: effStock,
+        quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
+        fefoOverride, overrideReason,
+      },
+    });
+    setBusy(false); onDone(res);
+  };
+
+  const handleSendClick = async () => {
+    const picked = candidates.find(s => s.id === effStock);
+    if (!picked) return;
+    setBusy(true);
+    let alternatives: FefoBatch[] = [];
+    try {
+      alternatives = await getFefoAlternatives(organizationId, warehouseId, picked.scientificName, picked.nationalCode);
+    } catch { /* fail open to the RPC's own server-side gate — this is UX-preflight only */ }
+    setBusy(false);
+    const earliest = alternatives[0] ?? null;
+    if (earliest !== null && earliest.stockId !== picked.id) {
+      setFefoPrompt({
+        picked: {
+          warehouseStockId: picked.id, centralItemId: null, scientificName: picked.scientificName,
+          tradeName: null, concentration: null, dosageForm: null, unit: null,
+          nationalCode: picked.nationalCode, batchNumber: picked.batchNumber, internalBatchReference: null,
+          expiryDate: picked.expiryDate, onHandQuantity: picked.onHandQuantity,
+          reservedQuantity: picked.reservedQuantity, availableQuantity: picked.availableQuantity,
+        },
+        alternatives,
+      });
+      return;
+    }
+    await doSend(false, null);
+  };
 
   return (
     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--brd)' }}>
@@ -671,22 +727,24 @@ function SendForwardLineForm({ lang, line, remaining, stock, onCancel, onDone }:
           <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
           <PhoenixInput label={t('net_op_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
           <div style={{ display: 'flex', gap: '6px' }}>
-            <PhoenixButton size="sm" loading={busy} disabled={!canSend} onClick={async () => {
-              setBusy(true);
-              const res = await runStockMutation(writeTransferSend, 'transfer_line_send', {
-                entityId: line.id,
-                generation: line.fulfilledQuantity,
-                payload: {
-                  transferRequestId: line.transferRequestId, warehouseStockId: effStock,
-                  quantity: n, transferNumber: number.trim(), transferRequestLineId: line.id,
-                },
-              });
-              setBusy(false); onDone(res);
-            }}>{t('net_op_send', lang)}</PhoenixButton>
+            <PhoenixButton size="sm" loading={busy} disabled={!canSend} onClick={() => void handleSendClick()}>
+              {t('net_op_send', lang)}
+            </PhoenixButton>
             <PhoenixButton size="sm" variant="ghost" onClick={onCancel}>{t('net_cancel', lang)}</PhoenixButton>
           </div>
         </div>
       )}
+
+      <FefoOverrideDialog
+        open={fefoPrompt !== null}
+        picked={fefoPrompt?.picked ?? null}
+        alternatives={fefoPrompt?.alternatives ?? []}
+        canOverride={canOverrideFefo}
+        onCancel={() => setFefoPrompt(null)}
+        onConfirmOverride={(reason) => { setFefoPrompt(null); void doSend(true, reason); }}
+        onUseAlternative={(stockIdToUse) => { setFefoPrompt(null); setStockId(stockIdToUse); }}
+        lang={lang}
+      />
     </div>
   );
 }

@@ -228,12 +228,20 @@ export function reviewTransferRequest(
 }
 
 /** Ships one line of a DIRECT request. `requestId` is a fresh idempotency token. */
+/**
+ * Always calls the FEFO-GUARDED variant (150) — `fefoOverride`/`overrideReason`
+ * default to the non-override case (false/null), reproducing the base RPC's
+ * exact behavior byte-for-byte when omitted. 150's own gate re-checks
+ * `inventory.fefo_override` server-side on every call regardless of this UI;
+ * see useFefoOverridePermission.ts.
+ */
 export function sendDirectTransferLine(input: {
   requestId: string; transferRequestId: string; warehouseStockId: string;
   quantity: number; transferNumber: string; transferRequestLineId?: string | null;
   documentNumber?: string | null; notes?: string | null;
+  fefoOverride?: boolean; overrideReason?: string | null;
 }): Promise<RpcResult> {
-  return callRpc('phoenix_send_direct_warehouse_transfer_line', {
+  return callRpc('phoenix_send_direct_warehouse_transfer_line_fefo_guarded', {
     p_request_id: input.requestId,
     p_transfer_request_id: input.transferRequestId,
     p_warehouse_stock_id: input.warehouseStockId,
@@ -242,6 +250,8 @@ export function sendDirectTransferLine(input: {
     p_transfer_request_line_id: input.transferRequestLineId ?? null,
     p_document_number: input.documentNumber ?? null,
     p_notes: input.notes ?? null,
+    p_fefo_override: input.fefoOverride ?? false,
+    p_override_reason: input.overrideReason ?? null,
   });
 }
 
