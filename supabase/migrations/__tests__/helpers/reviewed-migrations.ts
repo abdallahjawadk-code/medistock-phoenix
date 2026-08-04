@@ -218,6 +218,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '155_phoenix_transfer_send_receive_lifecycle_notifications.sql',
   '156_phoenix_outlet_return_line_idempotency.sql',
   '157_phoenix_outlet_return_exception_resolution.sql',
+  '158_phoenix_transactional_outbox_foundation.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
