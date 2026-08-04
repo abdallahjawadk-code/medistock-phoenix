@@ -446,7 +446,12 @@ describe('no client-side document-number sequence exists', () => {
     // numbering -- p_request_id is a caller-derived IDEMPOTENCY key, never a
     // document/reference number, stored only in the new
     // phoenix_outlet_return_exception_resolutions ledger. Ceiling -> 158.
-    const beyond = migrations.filter(f => /^(15[8-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 158 (TRANSACTIONAL-OUTBOX-FOUNDATION-158) adds NO document numbering --
+    // event_key is a producer-supplied deterministic idempotency key (D2-1
+    // architecture audit), never a document/reference number of any kind,
+    // and no trigger or business writer references this migration's table
+    // or helper yet (foundation only). Ceiling -> 159.
+    const beyond = migrations.filter(f => /^(159|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -457,6 +462,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('155_phoenix_transfer_send_receive_lifecycle_notifications.sql');
     expect(migrations).toContain('156_phoenix_outlet_return_line_idempotency.sql');
     expect(migrations).toContain('157_phoenix_outlet_return_exception_resolution.sql');
+    expect(migrations).toContain('158_phoenix_transactional_outbox_foundation.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

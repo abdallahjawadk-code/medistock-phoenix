@@ -230,7 +230,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // contract registry/guard — test-maintenance, not new application
       // logic, same as every other __tests__/helpers exclusion above.
       ' ":!supabase/migrations/__tests__/helpers/reviewed-movement-writers.ts"' +
-      ' ":!supabase/migrations/__tests__/movement-writer-completeness.test.ts"',
+      ' ":!supabase/migrations/__tests__/movement-writer-completeness.test.ts"' +
+      // PHASE-D2-1-TRANSACTIONAL-OUTBOX-FOUNDATION: a still later, separately
+      // authorized phase adds a genuine new migration (158) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/158_phoenix_transactional_outbox_foundation.sql"' +
+      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
