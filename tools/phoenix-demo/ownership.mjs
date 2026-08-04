@@ -28,6 +28,9 @@ const ORG_SCOPED = new Set([
   'procurement_orders', 'procurement_receipts', 'procurement_suppliers',
   'procurement_returns',
   'inventory_status_reports', 'stocktakes', 'phoenix_movement_events',
+  // 158/159/160: same organization-scoped, RESTRICT-FK leaf shape as
+  // phoenix_movement_events immediately above.
+  'phoenix_outbox_events',
   'audit_logs', 'phoenix_notifications',
   'phoenix_stock_correction_requests', 'phoenix_warehouse_correction_requests',
   'item_availability', 'item_availability_movements',

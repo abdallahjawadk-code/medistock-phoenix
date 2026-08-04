@@ -451,7 +451,16 @@ describe('no client-side document-number sequence exists', () => {
     // architecture audit), never a document/reference number of any kind,
     // and no trigger or business writer references this migration's table
     // or helper yet (foundation only). Ceiling -> 159.
-    const beyond = migrations.filter(f => /^(159|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 159 (LIFECYCLE-OUTBOX-PRODUCER-159) adds NO document numbering --
+    // it redefines phoenix_capture_lifecycle_event() to additionally append
+    // one outbox event per accepted transition, keyed by 'lifecycle:' plus
+    // the SAME pre-existing dedupe_key (NEW.id::text || ':' || status) —
+    // an idempotency key over already-existing values, never a new document/
+    // reference number of any kind. Ceiling -> 160.
+    // 160 (DEMO-PURGE-OUTBOX-COMPATIBILITY-160) adds NO document numbering
+    // at all -- it only redefines phoenix_demo_purgeable_tables() (143), a
+    // pure table-name array with no numbering concept of any kind. Ceiling -> 161.
+    const beyond = migrations.filter(f => /^(16[1-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -463,6 +472,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('156_phoenix_outlet_return_line_idempotency.sql');
     expect(migrations).toContain('157_phoenix_outlet_return_exception_resolution.sql');
     expect(migrations).toContain('158_phoenix_transactional_outbox_foundation.sql');
+    expect(migrations).toContain('159_phoenix_lifecycle_outbox_producer.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

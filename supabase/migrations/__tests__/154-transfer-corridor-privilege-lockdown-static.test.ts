@@ -35,7 +35,8 @@ describe('1. migration numbering and sequencing', () => {
     // "is the current reviewed maximum" was dropped from this assertion:
     // TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS-155,
     // OUTLET-RETURN-LINE-IDEMPOTENCY-156, OUTLET-RETURN-EXCEPTION-RESOLUTION-
-    // 157, and TRANSACTIONAL-OUTBOX-FOUNDATION-158 (this branch) moved the
+    // 157, TRANSACTIONAL-OUTBOX-FOUNDATION-158, LIFECYCLE-OUTBOX-PRODUCER-
+    // 159, and DEMO-PURGE-OUTBOX-COMPATIBILITY-160 (this branch) moved the
     // ceiling forward, and that ceiling is reviewed-migration-manifest.
     // test.ts's own claim to track (section 3), not a fact this file should
     // duplicate and inevitably go stale on again at the next migration.
