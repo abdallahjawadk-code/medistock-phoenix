@@ -207,7 +207,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // and need no second entry.
       ' ":!supabase/migrations/155_phoenix_transfer_send_receive_lifecycle_notifications.sql"' +
       ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications.dynamic.test.ts"' +
+      // PHASE-D1B-6-OUTLET-RETURN-LINE-IDEMPOTENCY: a still later, separately
+      // authorized phase adds a genuine new migration (156) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/156_phoenix_outlet_return_line_idempotency.sql"' +
+      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
