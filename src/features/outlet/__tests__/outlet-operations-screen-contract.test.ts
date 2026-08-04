@@ -62,6 +62,28 @@ describe('visibility is by scope, never a raw role name', () => {
   });
 });
 
+describe('receive permission on the Incoming tab is scoped, never hardcoded', () => {
+  it('imports and calls useOutletReceivePermission, scoped to the active org and outlet', () => {
+    const code = stripComments(screen);
+    expect(code).toContain("import { useOutletReceivePermission } from '@/features/inventory/useOutletReceivePermission'");
+    expect(code).toMatch(/useOutletReceivePermission\(activeOrgId,\s*activeOutlet\?\.id\s*\?\?\s*null\)/);
+  });
+
+  it('passes the derived permission into OutletIncomingSupplies, never a bare/hardcoded canReceive', () => {
+    const code = stripComments(screen);
+    // Not `canReceive` alone (JSX shorthand for canReceive={true}) and not an
+    // explicit `canReceive={true}` — both were the pre-fix hardcode.
+    expect(code).not.toMatch(/canReceive\s*(\n\s*)?(lang=|\/>)/);
+    expect(code).not.toContain('canReceive={true}');
+    expect(code).toMatch(/canReceive=\{canReceiveIncoming\}/);
+  });
+
+  it('carries no raw role-name gate for the receive affordance', () => {
+    const code = stripComments(screen);
+    expect(code).not.toMatch(/canReceiveIncoming\s*=\s*.*role\s*===/);
+  });
+});
+
 describe('the four tabs exist and host no unsafe path', () => {
   it('names all four tabs', () => {
     for (const key of ['or_tab_incoming', 'or_tab_stock', 'or_tab_returns', 'or_tab_history']) {

@@ -31,11 +31,44 @@ import {
 } from './outlet-return-draft';
 import { loadOutletReturnableSources } from './outlet-return-sources';
 import { requestOutletReturn, addOutletReturnLine, getOutletReturnRequestLines } from './outlet-return.service';
+import { operationToken } from '@/shared/lib/operation-token';
+import { canonicalIntent } from '@/shared/lib/canonical-intent';
 
 const newKey = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+/**
+ * 156's server-side idempotency key for one add-line attempt, derived the
+ * same way OutletDispatchComposer.tsx's deriveDispatchLineRequestId derives
+ * its own (operation-token.ts): stable across a retry of the identical
+ * attempt (same draft line), but a DIFFERENT value the instant any
+ * mutation-relevant field of that same line changes. `generation` is a
+ * constant 0 for the same reason it is there: add-line only ever CREATES a
+ * new row, never advances an existing one, so there is no canonical
+ * "already partially done" measure to fold in.
+ *
+ * Fails closed: if Web Crypto is unavailable, this throws
+ * (OperationTokenUnavailableError) rather than falling back to an unguarded
+ * call — the caller must not add a return line it cannot safely retry.
+ */
+async function deriveOutletReturnLineRequestId(line: {
+  idempotencyKey: string; originalDispatchLineId: string; quantity: number;
+  reasonCode: string; reasonText: string | null;
+}): Promise<string> {
+  return operationToken({
+    kind: 'outlet_return_add_line',
+    entityId: line.idempotencyKey,
+    generation: 0,
+    intent: canonicalIntent({
+      originalDispatchLineId: line.originalDispatchLineId,
+      quantity: line.quantity,
+      reasonCode: line.reasonCode,
+      reasonText: line.reasonText,
+    }),
+  });
+}
 
 interface Props {
   /** The outlet composing the return (already scope-checked upstream). */
@@ -109,13 +142,30 @@ export function OutletReturnComposer({
         returnNumber: externalReference.trim(),
         notes: notes.trim() || null,
       }),
-      addLine: (returnRequestId, line) => addOutletReturnLine({
-        returnRequestId,
-        originalDispatchLineId: line.originalDispatchLineId,
-        requestedQuantity: line.quantity,
-        reasonCode: line.reasonCode,
-        reasonText: line.reasonText,
-      }),
+      addLine: async (returnRequestId, line) => {
+        let addLineRequestId: string;
+        try {
+          addLineRequestId = await deriveOutletReturnLineRequestId({
+            idempotencyKey: line.idempotencyKey,
+            originalDispatchLineId: line.originalDispatchLineId,
+            quantity: line.quantity,
+            reasonCode: line.reasonCode,
+            reasonText: line.reasonText,
+          });
+        } catch {
+          // Fail closed, matching operation-token.ts's own rule: a line that
+          // cannot derive a stable retry key must not be added at all.
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addOutletReturnLine({
+          returnRequestId,
+          originalDispatchLineId: line.originalDispatchLineId,
+          requestedQuantity: line.quantity,
+          reasonCode: line.reasonCode,
+          reasonText: line.reasonText,
+          requestId: addLineRequestId,
+        });
+      },
       onProgress: setProgress,
     });
 
@@ -156,13 +206,28 @@ export function OutletReturnComposer({
     const retried = await commitDraft<OutletReturnDraftLine>(plan.toSend, {
       // The return request exists — creating another would duplicate it.
       createHeader: () => Promise.resolve({ ok: true, data: { id: requestId } }),
-      addLine: (returnRequestId, line) => addOutletReturnLine({
-        returnRequestId,
-        originalDispatchLineId: line.originalDispatchLineId,
-        requestedQuantity: line.quantity,
-        reasonCode: line.reasonCode,
-        reasonText: line.reasonText,
-      }),
+      addLine: async (returnRequestId, line) => {
+        let addLineRequestId: string;
+        try {
+          addLineRequestId = await deriveOutletReturnLineRequestId({
+            idempotencyKey: line.idempotencyKey,
+            originalDispatchLineId: line.originalDispatchLineId,
+            quantity: line.quantity,
+            reasonCode: line.reasonCode,
+            reasonText: line.reasonText,
+          });
+        } catch {
+          return { ok: false, error: 'operation_token_unavailable' };
+        }
+        return addOutletReturnLine({
+          returnRequestId,
+          originalDispatchLineId: line.originalDispatchLineId,
+          requestedQuantity: line.quantity,
+          reasonCode: line.reasonCode,
+          reasonText: line.reasonText,
+          requestId: addLineRequestId,
+        });
+      },
       onProgress: setProgress,
     });
 

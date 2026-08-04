@@ -428,7 +428,25 @@ describe('no client-side document-number sequence exists', () => {
     // authenticated/anon/PUBLIC. No function, sequence, allocator, or
     // document string of any kind is created, touched, or referenced.
     // Ceiling -> 155.
-    const beyond = migrations.filter(f => /^(15[5-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
+    // 155 (TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS-155) adds NO
+    // document numbering -- it redefines phoenix_capture_lifecycle_event()
+    // (an existing 082/094 trigger function) to also read the EXISTING
+    // transfer_number column (created by 068, populated by the operator at
+    // SEND time, already a required NOT NULL parameter of
+    // phoenix_send_direct_warehouse_transfer_line) into its notification
+    // label, and attaches that same trigger to warehouse_transfers. No new
+    // sequence, allocator, or server/client-computed identifier of any kind
+    // is introduced. Ceiling -> 156.
+    // 156 (OUTLET-RETURN-LINE-IDEMPOTENCY-156) adds NO document numbering --
+    // p_request_id is a caller-derived IDEMPOTENCY key (operation-token.ts),
+    // never a document/reference number of any kind, and is stored only in
+    // the new phoenix_outlet_return_line_requests dedup ledger, never
+    // surfaced as a document identifier. Ceiling -> 157.
+    // 157 (OUTLET-RETURN-EXCEPTION-RESOLUTION-157) adds NO document
+    // numbering -- p_request_id is a caller-derived IDEMPOTENCY key, never a
+    // document/reference number, stored only in the new
+    // phoenix_outlet_return_exception_resolutions ledger. Ceiling -> 158.
+    const beyond = migrations.filter(f => /^(15[8-9]|1[6-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -436,6 +454,9 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('152_phoenix_suggestion_action_read_model.sql');
     expect(migrations).toContain('153_phoenix_retire_inter_org_exchange_status_writer.sql');
     expect(migrations).toContain('154_phoenix_transfer_corridor_privilege_lockdown.sql');
+    expect(migrations).toContain('155_phoenix_transfer_send_receive_lifecycle_notifications.sql');
+    expect(migrations).toContain('156_phoenix_outlet_return_line_idempotency.sql');
+    expect(migrations).toContain('157_phoenix_outlet_return_exception_resolution.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.

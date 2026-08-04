@@ -37,10 +37,15 @@ export interface OutletReturnableLine extends ReturnableSource {
 /** One composed return line, before anything is persisted. */
 export interface OutletReturnDraftLine {
   /**
-   * Stable per-line key generated ONCE when the line is added. It is NOT the
-   * add-line idempotency token (071's add-line is idempotent-by-conflict on the
-   * unique (return_request_id, original_dispatch_line_id) index, not by token);
-   * it is the local trace key for retry reconciliation and table identity.
+   * Stable per-line key generated ONCE when the line is added. Serves two
+   * roles: the local trace key for retry reconciliation and table identity,
+   * AND (156) the entityId fed into operation-token.ts's operationToken() to
+   * derive the RPC's p_request_id — stable across a retry of this exact
+   * line, different the instant any of its mutation-relevant fields change.
+   * 071's add-line is still structurally idempotent-by-conflict on the
+   * unique (return_request_id, original_dispatch_line_id) index regardless;
+   * 156's token turns a retry of that conflict into a clean replay instead
+   * of a raw 23505.
    */
   idempotencyKey: string;
   /** The mandatory 071 provenance anchor. */
