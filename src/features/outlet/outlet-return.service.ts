@@ -299,10 +299,17 @@ export function recallOutletStock(input: {
   });
 }
 
-/** Adds one provenance-anchored return line (original dispatch line is mandatory). */
+/**
+ * Adds one provenance-anchored return line (original dispatch line is
+ * mandatory). `requestId` (156) is a stable, caller-derived idempotency
+ * token — see operation-token.ts — passed through to the RPC's optional
+ * p_request_id so a lost-response retry of the same logical add-line
+ * attempt replays the original result instead of re-running validation or
+ * hitting a bare unique-constraint error.
+ */
 export function addOutletReturnLine(input: {
   returnRequestId: string; originalDispatchLineId: string; requestedQuantity: number;
-  reasonCode: string; reasonText?: string | null;
+  reasonCode: string; reasonText?: string | null; requestId: string;
 }): Promise<RpcResult> {
   return callRpc('phoenix_add_outlet_return_request_line', {
     p_return_request_id: input.returnRequestId,
@@ -310,6 +317,7 @@ export function addOutletReturnLine(input: {
     p_requested_quantity: input.requestedQuantity,
     p_reason_code: input.reasonCode,
     p_reason_text: input.reasonText ?? null,
+    p_request_id: input.requestId,
   });
 }
 
