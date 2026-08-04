@@ -265,7 +265,24 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // UI-only) pharmacy-emblem phase.
       ' ":!supabase/migrations/161_phoenix_movement_outbox_producer.sql"' +
       ' ":!supabase/migrations/__tests__/161-movement-outbox-producer-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer.dynamic.test.ts"' +
+      // PHASE-D2-4-STOCKTAKE-AND-EXCEPTION-OUTBOX-PRODUCERS: a still later,
+      // separately authorized phase adds a genuine new migration (162) plus
+      // its own dedicated static/dynamic test files — a real, in-scope
+      // backend change for THAT phase, excluded here by name for the same
+      // reason every entry above is: it has nothing to do with this (much
+      // earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/162_phoenix_stocktake_and_exception_outbox_producers.sql"' +
+      ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers.dynamic.test.ts"' +
+      // D2-4 also narrowly extends the shared PHOENIX_DEMO_V1 seed-lifecycle
+      // proof with a regression guard for a real, pre-existing demo-seeder
+      // bug discovered while verifying 162 (stocktakeAndCorrection used the
+      // wrong actor tag and the wrong RPC line-payload shape, so it silently
+      // created zero stocktakes rows since the group was written) — test-
+      // maintenance for demo tooling, not a migration/schema/RLS change,
+      // excluded here by name for the same reason every entry above is.
+      ' ":!supabase/migrations/__tests__/phoenix-demo-seed-lifecycle.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

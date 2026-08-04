@@ -93,6 +93,17 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
     expect(countOf(s, 'organizations')).toBe(SCALE.institutions);
     expect(countOf(s, 'warehouse_stock')).toBeGreaterThan(0);
     expect(countOf(s, 'warehouse_stock_movements')).toBeGreaterThan(0);
+    // Regression guard for a real bug found during D2-4: stocktakeAndCorrection
+    // (workflows.mjs) looked up the wrong actor tag ('wo'/central_warehouse_
+    // manager instead of 'wof'/warehouse_officer, the only role granted 092's
+    // status_center.confirm_missing) and built the wrong line-payload shape
+    // (warehouse_stock_id/counted_quantity instead of the RPC's own
+    // scientific_name/national_code/counted_qty) — phoenix_status_record_
+    // stocktake silently failed every single time, swallowed by a catch{}
+    // block, so this group had created zero real stocktakes rows since it was
+    // written. If either bug recurs, this count regresses to zero silently
+    // unless asserted here.
+    expect(countOf(s, 'stocktakes')).toBeGreaterThan(0);
 
     // Surface what each workflow group actually produced, so a silently
     // skipped corridor is visible rather than passing as a green no-op.
@@ -199,7 +210,7 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
 
     const after = await summary();
     for (const table of ['organizations', 'warehouses', 'distribution_points',
-                         'warehouse_stock', 'warehouse_stock_movements']) {
+                         'warehouse_stock', 'warehouse_stock_movements', 'stocktakes']) {
       expect(countOf(after, table)).toBe(countOf(before, table));
     }
     let balancesAfter: any[] = [];

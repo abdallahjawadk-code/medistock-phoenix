@@ -439,10 +439,18 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   });
 
   // F/G: stocktake with a real discrepancy, then a second-person correction.
+  // The officer performing BOTH halves must hold status_center.confirm_
+  // missing (092: warehouse_officer only, tag 'wof') for the stocktake call
+  // AND warehouse_stock.correct (062/066: both warehouse_officer and
+  // central_warehouse_manager) for the correction-request call — tag 'wo'
+  // (central_warehouse_manager) lacks the former, so phoenix_status_record_
+  // stocktake always threw not_authorized_status_center_confirm_missing,
+  // silently swallowed by stocktakeAndCorrection's own catch{} block: zero
+  // stocktakes rows were ever actually created by this group.
   await runGroup('stocktake_correction', async () => {
     let n = 0;
     for (const w of warehouses) {
-      const officer = actors.find(a => a.tag === 'wo' && a.index === w.index);
+      const officer = actors.find(a => a.tag === 'wof' && a.index === w.index);
       if (!officer) continue;
       const r = await stocktakeAndCorrection(io, {}, {
         officer, approver: { id: superAdminId }, orgId: w.orgId,

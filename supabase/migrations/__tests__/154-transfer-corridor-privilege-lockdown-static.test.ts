@@ -36,9 +36,10 @@ describe('1. migration numbering and sequencing', () => {
     // TRANSFER-SEND-RECEIVE-LIFECYCLE-NOTIFICATIONS-155,
     // OUTLET-RETURN-LINE-IDEMPOTENCY-156, OUTLET-RETURN-EXCEPTION-RESOLUTION-
     // 157, TRANSACTIONAL-OUTBOX-FOUNDATION-158, LIFECYCLE-OUTBOX-PRODUCER-
-    // 159, DEMO-PURGE-OUTBOX-COMPATIBILITY-160, and MOVEMENT-OUTBOX-
-    // PRODUCER-161 (this branch) moved the ceiling forward, and that
-    // ceiling is reviewed-migration-manifest.
+    // 159, DEMO-PURGE-OUTBOX-COMPATIBILITY-160, MOVEMENT-OUTBOX-
+    // PRODUCER-161, and STOCKTAKE-AND-EXCEPTION-OUTBOX-PRODUCERS-162 (this
+    // branch) moved the ceiling forward, and that ceiling is
+    // reviewed-migration-manifest.
     // test.ts's own claim to track (section 3), not a fact this file should
     // duplicate and inevitably go stale on again at the next migration.
     expect(REVIEWED_MIGRATION_FILES).toContain(NAME);

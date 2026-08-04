@@ -466,7 +466,15 @@ describe('no client-side document-number sequence exists', () => {
     // pre-existing dedupe_key (NEW.id::text || ':posted') -- an idempotency
     // key over an already-existing value, never a new document/reference
     // number of any kind. Ceiling -> 162.
-    const beyond = migrations.filter(f => /^(16[2-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 162 (STOCKTAKE-AND-EXCEPTION-OUTBOX-PRODUCERS-162) adds NO document
+    // numbering -- it redefines phoenix_capture_stocktake_recorded() and
+    // phoenix_resolve_outlet_return_exception(...) to additionally append
+    // outbox events keyed by 'stocktake:' plus the SAME pre-existing
+    // dedupe_key, and by 'outlet-return-exception-resolution:' plus the
+    // RPC's own already-existing p_request_id -- idempotency keys over
+    // already-existing/already-caller-supplied values, never a new
+    // document/reference number of any kind. Ceiling -> 163.
+    const beyond = migrations.filter(f => /^(16[3-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -481,6 +489,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('159_phoenix_lifecycle_outbox_producer.sql');
     expect(migrations).toContain('160_phoenix_demo_purge_outbox_compatibility.sql');
     expect(migrations).toContain('161_phoenix_movement_outbox_producer.sql');
+    expect(migrations).toContain('162_phoenix_stocktake_and_exception_outbox_producers.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.
