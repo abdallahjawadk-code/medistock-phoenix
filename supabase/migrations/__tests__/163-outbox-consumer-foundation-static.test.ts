@@ -44,6 +44,89 @@ describe('registration and discipline', () => {
   });
 });
 
+describe('verification-only hardening: corrected LISTEN/NOTIFY regex', () => {
+  // PostgreSQL's regex engine (ARE) does not treat \b as a PCRE-style word
+  // boundary -- empirically confirmed against a live Postgres session:
+  // 'listen test' ~ '\blisten\b' returns FALSE. The original committed form
+  // of this assertion could therefore never have detected a literal LISTEN
+  // or NOTIFY token; only the plain pg_notify alternative ever worked. Fixed
+  // to the Postgres-native \m/\M word-boundary form -- the regex BEHAVIOR
+  // proof (standalone LISTEN/NOTIFY match, 'listener'/'notification' do not,
+  // pg_notify(...) matches) is in 163-verification-hardening.dynamic.test.ts,
+  // since it requires executing real Postgres regex, not JS regex.
+  it('no longer contains the defective \\blisten\\b|\\bnotify\\b pattern anywhere', () => {
+    expect(sql).not.toContain(String.raw`\blisten\b|\bnotify\b`);
+  });
+  it('contains the corrected \\m(listen|notify)\\M|pg_notify pattern', () => {
+    expect(sql).toContain(String.raw`\m(listen|notify)\M|pg_notify`);
+  });
+});
+
+describe('verification-only hardening: exact OID resolution, never bare proname', () => {
+  it('no longer resolves any D2 producer or exception-resolution RPC by bare proname in PRECONDITION/VERIFY', () => {
+    expect(code).not.toMatch(/p\.proname = 'phoenix_capture_lifecycle_event'/);
+    expect(code).not.toMatch(/p\.proname = 'phoenix_capture_movement_posted'/);
+    expect(code).not.toMatch(/p\.proname = 'phoenix_capture_stocktake_recorded'/);
+    expect(code).not.toMatch(/WHERE proname = 'phoenix_resolve_outlet_return_exception'/);
+  });
+  it('no longer resolves the four new D3-1 functions by proname IN (...) in either VERIFY loop', () => {
+    expect(code).not.toMatch(/WHERE proname IN \('phoenix_outbox_claim_batch'/);
+  });
+  it('resolves every D2 producer and the exception-resolution RPC by exact to_regprocedure() signature', () => {
+    expect(code).toContain(`to_regprocedure('public.phoenix_capture_lifecycle_event()')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_capture_movement_posted()')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_capture_stocktake_recorded()')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_resolve_outlet_return_exception(uuid,uuid,text,text,integer,text)')`);
+  });
+  it('resolves all four new D3-1 functions by exact to_regprocedure() signature', () => {
+    expect(code).toContain(`to_regprocedure('public.phoenix_outbox_claim_batch(text,uuid,integer)')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_outbox_mark_completed(text,uuid,uuid)')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_outbox_mark_failed(text,uuid,uuid,text,text)')`);
+    expect(code).toContain(`to_regprocedure('public.phoenix_outbox_release_lease(text,uuid,uuid)')`);
+  });
+});
+
+describe('verification-only hardening: exact schema-qualified trigger-table sets', () => {
+  it('checks the lifecycle producer against the exact 11 approved public tables, not just a count', () => {
+    for (const t of [
+      'public.inventory_status_reports', 'public.outlet_return_requests', 'public.outlet_return_shipments',
+      'public.phoenix_stock_correction_requests', 'public.phoenix_warehouse_correction_requests',
+      'public.procurement_orders', 'public.warehouse_dispatches', 'public.warehouse_return_requests',
+      'public.warehouse_return_shipments', 'public.warehouse_transfer_requests', 'public.warehouse_transfers',
+    ]) {
+      expect(code).toContain(`'${t}'`);
+    }
+  });
+  it('checks the movement producer against the exact 3 approved public tables', () => {
+    for (const t of ['public.outlet_stock_movements', 'public.warehouse_quarantine_stock_movements', 'public.warehouse_stock_movements']) {
+      expect(code).toContain(`'${t}'`);
+    }
+  });
+  it('checks the stocktake producer against exactly public.stocktakes', () => {
+    expect(code).toContain(`ARRAY['public.stocktakes']::text[]`);
+  });
+  it('the trigger-set hardening appears in both PRECONDITION and VERIFY (aligned, not just one block)', () => {
+    const occurrences = code.split("'public.inventory_status_reports'").length - 1;
+    expect(occurrences).toBe(2);
+  });
+  it('still preserves the original trigger COUNT assertions alongside the new exact-set assertions', () => {
+    expect(code).toMatch(/159''s 11 lifecycle trigger attachments (intact before 163|must remain unchanged)/);
+    expect(code).toMatch(/161''s 3 movement trigger attachments (intact before 163|must remain unchanged)/);
+    expect(code).toMatch(/162''s 1 stocktake trigger attachment (intact before 163|must remain unchanged)/);
+  });
+});
+
+describe('verification-only hardening: no DDL or runtime contract drift', () => {
+  it('still contains exactly two CREATE TABLE and four CREATE FUNCTION statements (unchanged scope)', () => {
+    expect([...code.matchAll(/CREATE TABLE/g)].length).toBe(2);
+    expect([...code.matchAll(/CREATE FUNCTION/g)].length).toBe(4);
+  });
+  it('the hardening added no chr(10)/chr(13)-anchored assertion (CRLF portability preserved)', () => {
+    expect(code).not.toContain('chr(10)');
+    expect(code).not.toContain('chr(13)');
+  });
+});
+
 describe('scope boundary: exactly two new tables, four new functions, nothing else', () => {
   it('contains exactly two CREATE TABLE statements', () => {
     const matches = [...code.matchAll(/CREATE TABLE/g)];
