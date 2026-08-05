@@ -275,6 +275,14 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/migrations/162_phoenix_stocktake_and_exception_outbox_producers.sql"' +
       ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers-static.test.ts"' +
       ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers.dynamic.test.ts"' +
+      // 162-CRLF-PORTABLE-VERIFICATION-HOTFIX: a still later, separately
+      // authorized hotfix narrowly edits 162's own already-excluded VERIFY
+      // block (CRLF-portability only, no business/event-contract change) and
+      // adds its own dedicated regression test — a real, in-scope backend
+      // change for THAT hotfix, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts"' +
       // D2-4 also narrowly extends the shared PHOENIX_DEMO_V1 seed-lifecycle
       // proof with a regression guard for a real, pre-existing demo-seeder
       // bug discovered while verifying 162 (stocktakeAndCorrection used the

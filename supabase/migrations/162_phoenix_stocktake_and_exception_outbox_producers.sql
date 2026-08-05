@@ -780,6 +780,14 @@ BEGIN
 
   SELECT pg_get_functiondef(oid) INTO v_fn_src
     FROM pg_proc WHERE proname = 'phoenix_capture_stocktake_recorded';
+  -- CRLF-portability hotfix: normalize this LOCAL verification-only copy
+  -- before any newline-anchored assertion below runs, so a source stored
+  -- with CRLF line endings (e.g. pasted through a Windows SQL editor, which
+  -- Postgres stores byte-for-byte in pg_proc.prosrc with no normalization
+  -- of its own) verifies identically to one stored with plain LF. This
+  -- never touches the actual stored function definition, only the text
+  -- this DO block reads it into for assertion purposes.
+  v_fn_src := replace(v_fn_src, chr(13), '');
 
   ASSERT (SELECT prosecdef FROM pg_proc WHERE proname = 'phoenix_capture_stocktake_recorded'),
     'phoenix_capture_stocktake_recorded must remain SECURITY DEFINER';
@@ -824,6 +832,11 @@ BEGIN
 
   SELECT pg_get_functiondef(oid) INTO v_fn_src
     FROM pg_proc WHERE proname = 'phoenix_resolve_outlet_return_exception';
+  -- CRLF-portability hotfix: see identical comment on the stocktake fetch
+  -- above. This is the fetch whose assertions actually failed on Production
+  -- (the 'p_request_id' || chr(10) check below), because it is anchored to
+  -- a bare LF immediately after the final argument on its own line.
+  v_fn_src := replace(v_fn_src, chr(13), '');
 
   ASSERT (SELECT prosecdef FROM pg_proc WHERE proname = 'phoenix_resolve_outlet_return_exception'),
     'phoenix_resolve_outlet_return_exception must remain SECURITY DEFINER';
