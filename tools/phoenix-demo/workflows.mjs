@@ -325,19 +325,37 @@ export async function stocktakeAndCorrection(io, ctx, opts) {
   const created = { stocktakes: 0, corrections: 0, approvals: 0 };
 
   await io.asUser(officer.id, async (c) => {
+    // stocktakes carries no unique/idempotency constraint of any kind beyond
+    // its own gen_random_uuid() primary key, and phoenix_status_record_
+    // stocktake (092) takes no request_id — a second seed run must check
+    // existing state itself (the same convention every other group in this
+    // file already uses) or it would record a second, genuinely duplicate
+    // stocktake every time seedDemoDataset() re-runs.
+    const already = await c.query(
+      `SELECT 1 FROM stocktakes WHERE organization_id=$1 AND scope_kind='warehouse' AND scope_id=$2 LIMIT 1`,
+      [orgId, warehouseId]);
+    if (already.rows.length > 0) return;
+
     const lots = await c.query(
-      `SELECT id, scientific_name, on_hand_quantity FROM warehouse_stock
+      `SELECT id, scientific_name, national_code, on_hand_quantity FROM warehouse_stock
         WHERE warehouse_id=$1 ORDER BY id LIMIT 3`, [warehouseId]);
     if (lots.rows.length === 0) return;
+    // phoenix_status_record_stocktake (092) reads each line by
+    // scientific_name/national_code/counted_qty — not warehouse_stock_id/
+    // counted_quantity, which it silently ignores (jsonb ->> on a missing
+    // key), previously always raising scientific_name_required underneath
+    // the officer-permission bug this same fix corrects above.
     const lines = lots.rows.map(l => ({
-      warehouse_stock_id: l.id,
-      counted_quantity: Math.max(0, l.on_hand_quantity - 1),   // a real discrepancy
+      scientific_name: l.scientific_name,
+      national_code: l.national_code,
+      counted_qty: Math.max(0, l.on_hand_quantity - 1),   // a real discrepancy
     }));
-    try {
-      await c.query(`SELECT public.phoenix_status_record_stocktake($1,'warehouse',$2,$3,$4::jsonb)`,
-        [orgId, warehouseId, 'جرد تجريبي', j(lines)]);
-      created.stocktakes++;
-    } catch { /* already recorded */ }
+    // A genuine failure here must surface, not disappear — no swallowing
+    // catch, matching the "no catch block silently hides this failure"
+    // requirement this whole fix was written to satisfy.
+    await c.query(`SELECT public.phoenix_status_record_stocktake($1,'warehouse',$2,$3,$4::jsonb)`,
+      [orgId, warehouseId, 'جرد تجريبي', j(lines)]);
+    created.stocktakes++;
   }, { commit: true });
 
   // A correction REQUEST by one actor, APPROVED by a different one — the
