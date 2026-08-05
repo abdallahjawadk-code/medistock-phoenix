@@ -474,7 +474,16 @@ describe('no client-side document-number sequence exists', () => {
     // RPC's own already-existing p_request_id -- idempotency keys over
     // already-existing/already-caller-supplied values, never a new
     // document/reference number of any kind. Ceiling -> 163.
-    const beyond = migrations.filter(f => /^(16[3-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 163 (OUTBOX-CONSUMER-STATE-FOUNDATION-163) adds NO document numbering
+    // -- it adds two new tables (a consumer registry and a per-consumer
+    // delivery-state machine) and four internal claim/complete/fail/release
+    // functions. lease_owner_token is a caller-supplied lease-ownership
+    // token (a distributed-lock/idempotency handle, exactly like every
+    // other request-id/idempotency key this guard already excludes above),
+    // never a document/reference number of any kind, and delivery_state
+    // rows are never surfaced as a document identifier anywhere. Ceiling ->
+    // 164.
+    const beyond = migrations.filter(f => /^(16[4-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
@@ -490,6 +499,7 @@ describe('no client-side document-number sequence exists', () => {
     expect(migrations).toContain('160_phoenix_demo_purge_outbox_compatibility.sql');
     expect(migrations).toContain('161_phoenix_movement_outbox_producer.sql');
     expect(migrations).toContain('162_phoenix_stocktake_and_exception_outbox_producers.sql');
+    expect(migrations).toContain('163_phoenix_outbox_consumer_foundation.sql');
     expect(migrations).toContain('088_phoenix_canonical_supply_provenance.sql');
     // 089 allocates SERVER-side numbers (SP-/PR- sequences inside a SECURITY
     // DEFINER RPC) — exactly the safe direction; no client numbering exists.
