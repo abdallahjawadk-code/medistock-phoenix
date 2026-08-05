@@ -135,6 +135,15 @@ BEGIN;
 -- ── PRECONDITIONS ───────────────────────────────────────────────────────────
 
 DO $precond$
+DECLARE
+  -- Every D2 producer this precondition inspects is resolved to its exact
+  -- OID here, once, via to_regprocedure() with its full signature -- never
+  -- a bare proname lookup. A same-named function in another schema, or a
+  -- same-named overload with a different signature, cannot be silently
+  -- substituted for the real one.
+  v_lifecycle_oid  regprocedure;
+  v_movement_oid   regprocedure;
+  v_stocktake_oid  regprocedure;
 BEGIN
   IF to_regclass('public.phoenix_outbox_events') IS NULL THEN
     RAISE EXCEPTION 'precondition failed: phoenix_outbox_events is missing — apply 158 first';
@@ -152,21 +161,59 @@ BEGIN
     RAISE EXCEPTION 'precondition failed: phoenix_outbox_claim_batch already exists (163 already applied?)';
   END IF;
 
+  v_lifecycle_oid := to_regprocedure('public.phoenix_capture_lifecycle_event()');
+  v_movement_oid  := to_regprocedure('public.phoenix_capture_movement_posted()');
+  v_stocktake_oid := to_regprocedure('public.phoenix_capture_stocktake_recorded()');
+  IF v_lifecycle_oid IS NULL THEN
+    RAISE EXCEPTION 'precondition failed: phoenix_capture_lifecycle_event() is missing — apply 082/159 first';
+  END IF;
+  IF v_movement_oid IS NULL THEN
+    RAISE EXCEPTION 'precondition failed: phoenix_capture_movement_posted() is missing — apply 123/161 first';
+  END IF;
+  IF v_stocktake_oid IS NULL THEN
+    RAISE EXCEPTION 'precondition failed: phoenix_capture_stocktake_recorded() is missing — apply 123/162 first';
+  END IF;
+
   -- D2 baseline, re-confirmed exactly as 162 left it, before this migration
   -- touches anything (it touches nothing belonging to D2 — this is a
   -- starting-state snapshot, not a dependency this migration modifies).
-  IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-       WHERE p.proname = 'phoenix_capture_lifecycle_event' AND NOT t.tgisinternal) <> 11 THEN
+  -- Both the COUNT and the exact schema-qualified TABLE SET are checked --
+  -- a count alone cannot prove the attachments are still on the right
+  -- tables, only that the right number of attachments exist.
+  IF (SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_lifecycle_oid AND NOT t.tgisinternal) <> 11 THEN
     RAISE EXCEPTION 'precondition failed: expected 159''s 11 lifecycle trigger attachments intact before 163';
   END IF;
-  IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-       WHERE p.proname = 'phoenix_capture_movement_posted' AND NOT t.tgisinternal) <> 3 THEN
+  IF (SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+        FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE t.tgfoid = v_lifecycle_oid AND NOT t.tgisinternal) IS DISTINCT FROM ARRAY[
+      'public.inventory_status_reports','public.outlet_return_requests','public.outlet_return_shipments',
+      'public.phoenix_stock_correction_requests','public.phoenix_warehouse_correction_requests',
+      'public.procurement_orders','public.warehouse_dispatches','public.warehouse_return_requests',
+      'public.warehouse_return_shipments','public.warehouse_transfer_requests','public.warehouse_transfers'
+    ]::text[] THEN
+    RAISE EXCEPTION 'precondition failed: lifecycle trigger attachments are not exactly the 11 approved public tables';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_movement_oid AND NOT t.tgisinternal) <> 3 THEN
     RAISE EXCEPTION 'precondition failed: expected 161''s 3 movement trigger attachments intact before 163';
   END IF;
-  IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-       WHERE p.proname = 'phoenix_capture_stocktake_recorded' AND NOT t.tgisinternal) <> 1 THEN
+  IF (SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+        FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE t.tgfoid = v_movement_oid AND NOT t.tgisinternal) IS DISTINCT FROM ARRAY[
+      'public.outlet_stock_movements','public.warehouse_quarantine_stock_movements','public.warehouse_stock_movements'
+    ]::text[] THEN
+    RAISE EXCEPTION 'precondition failed: movement trigger attachments are not exactly the 3 approved public tables';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_stocktake_oid AND NOT t.tgisinternal) <> 1 THEN
     RAISE EXCEPTION 'precondition failed: expected 162''s 1 stocktake trigger attachment intact before 163';
   END IF;
+  IF (SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+        FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE t.tgfoid = v_stocktake_oid AND NOT t.tgisinternal) IS DISTINCT FROM ARRAY['public.stocktakes']::text[] THEN
+    RAISE EXCEPTION 'precondition failed: stocktake trigger attachment is not exactly public.stocktakes';
+  END IF;
+
   IF to_regprocedure('public.phoenix_resolve_outlet_return_exception(uuid,uuid,text,text,integer,text)') IS NULL THEN
     RAISE EXCEPTION 'precondition failed: phoenix_resolve_outlet_return_exception is missing — apply 157/162 first';
   END IF;
@@ -636,8 +683,25 @@ DECLARE
   v_policy_count   int;
   v_fn_src         text;
   v_fn_name        text;
+  v_fn_oid         regprocedure;
   v_outbox_cols    text[];
+  -- Every D2 producer and every new D3-1 function this block inspects is
+  -- resolved to its exact OID here, once, via to_regprocedure() with its
+  -- full signature -- never a bare proname lookup. A same-named function in
+  -- another schema, or a same-named overload with a different signature,
+  -- cannot be silently substituted for the real one.
+  v_lifecycle_oid          regprocedure := to_regprocedure('public.phoenix_capture_lifecycle_event()');
+  v_movement_oid           regprocedure := to_regprocedure('public.phoenix_capture_movement_posted()');
+  v_stocktake_oid          regprocedure := to_regprocedure('public.phoenix_capture_stocktake_recorded()');
+  v_exception_resolve_oid  regprocedure := to_regprocedure('public.phoenix_resolve_outlet_return_exception(uuid,uuid,text,text,integer,text)');
+  v_claim_batch_oid        regprocedure := to_regprocedure('public.phoenix_outbox_claim_batch(text,uuid,integer)');
+  v_mark_completed_oid     regprocedure := to_regprocedure('public.phoenix_outbox_mark_completed(text,uuid,uuid)');
+  v_mark_failed_oid        regprocedure := to_regprocedure('public.phoenix_outbox_mark_failed(text,uuid,uuid,text,text)');
+  v_release_lease_oid      regprocedure := to_regprocedure('public.phoenix_outbox_release_lease(text,uuid,uuid)');
+  v_new_fn_oids            regprocedure[];
 BEGIN
+  v_new_fn_oids := ARRAY[v_claim_batch_oid, v_mark_completed_oid, v_mark_failed_oid, v_release_lease_oid];
+
   -- ── 1. phoenix_outbox_events (158) is completely untouched ──────────────
   SELECT array_agg(column_name::text ORDER BY column_name::text) INTO v_outbox_cols
   FROM information_schema.columns
@@ -653,19 +717,41 @@ BEGIN
   ), 'phoenix_outbox_events must carry no trigger of any kind after 163';
 
   -- ── 2. Every D2 producer completely unchanged ────────────────────────────
+  -- Both the COUNT and the exact schema-qualified TABLE SET are checked --
+  -- a count alone cannot prove the attachments are still on the right
+  -- tables, only that the right number of attachments exist.
   ASSERT (
-    SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-     WHERE p.proname = 'phoenix_capture_lifecycle_event' AND NOT t.tgisinternal
+    SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_lifecycle_oid AND NOT t.tgisinternal
   ) = 11, '159''s 11 lifecycle trigger attachments must remain unchanged';
   ASSERT (
-    SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-     WHERE p.proname = 'phoenix_capture_movement_posted' AND NOT t.tgisinternal
+    SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE t.tgfoid = v_lifecycle_oid AND NOT t.tgisinternal
+  ) = ARRAY[
+    'public.inventory_status_reports','public.outlet_return_requests','public.outlet_return_shipments',
+    'public.phoenix_stock_correction_requests','public.phoenix_warehouse_correction_requests',
+    'public.procurement_orders','public.warehouse_dispatches','public.warehouse_return_requests',
+    'public.warehouse_return_shipments','public.warehouse_transfer_requests','public.warehouse_transfers'
+  ]::text[], '159''s lifecycle trigger attachments must remain on exactly the 11 approved public tables';
+  ASSERT (
+    SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_movement_oid AND NOT t.tgisinternal
   ) = 3, '161''s 3 movement trigger attachments must remain unchanged';
   ASSERT (
-    SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-     WHERE p.proname = 'phoenix_capture_stocktake_recorded' AND NOT t.tgisinternal
+    SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE t.tgfoid = v_movement_oid AND NOT t.tgisinternal
+  ) = ARRAY[
+    'public.outlet_stock_movements','public.warehouse_quarantine_stock_movements','public.warehouse_stock_movements'
+  ]::text[], '161''s movement trigger attachments must remain on exactly the 3 approved public tables';
+  ASSERT (
+    SELECT count(*) FROM pg_trigger t WHERE t.tgfoid = v_stocktake_oid AND NOT t.tgisinternal
   ) = 1, '162''s 1 stocktake trigger attachment must remain unchanged';
-  SELECT pg_get_functiondef(oid) INTO v_fn_src FROM pg_proc WHERE proname = 'phoenix_resolve_outlet_return_exception';
+  ASSERT (
+    SELECT array_agg(DISTINCT n.nspname || '.' || c.relname ORDER BY n.nspname || '.' || c.relname)
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE t.tgfoid = v_stocktake_oid AND NOT t.tgisinternal
+  ) = ARRAY['public.stocktakes']::text[], '162''s stocktake trigger attachment must remain on exactly public.stocktakes';
+  SELECT pg_get_functiondef(v_exception_resolve_oid) INTO v_fn_src;
   ASSERT (LENGTH(v_fn_src) - LENGTH(REPLACE(v_fn_src, 'phoenix_append_outbox_event_internal', '')))
            / LENGTH('phoenix_append_outbox_event_internal') = 2,
     '162''s exception-resolution RPC must still contain exactly two outbox-helper references';
@@ -724,16 +810,24 @@ BEGIN
 
   -- ── 6. Every new function: correct security posture, and structurally ───
   -- ── free of network/scheduler/LISTEN-NOTIFY code (grep on own body). ────
+  -- Iterates over the exact OID array resolved above, never proname IN (...)
+  -- -- a same-named function elsewhere cannot be read by mistake.
   FOR v_fn_src IN
-    SELECT pg_get_functiondef(oid) FROM pg_proc
-    WHERE proname IN ('phoenix_outbox_claim_batch', 'phoenix_outbox_mark_completed',
-                       'phoenix_outbox_mark_failed', 'phoenix_outbox_release_lease')
+    SELECT pg_get_functiondef(oid) FROM pg_proc WHERE oid = ANY(v_new_fn_oids)
   LOOP
     ASSERT lower(v_fn_src) !~ 'pg_net|http_post|http_get|net\.http',
       'no D3-1 function may reference pg_net or perform HTTP delivery';
     ASSERT lower(v_fn_src) !~ 'cron\.schedule|pg_cron',
       'no D3-1 function may reference pg_cron';
-    ASSERT lower(v_fn_src) !~ '\blisten\b|\bnotify\b|pg_notify',
+    -- PostgreSQL's regex engine (ARE) does NOT treat \b as a PCRE-style
+    -- word boundary -- empirically confirmed: 'listen test' ~ '\blisten\b'
+    -- returns FALSE, so the previous form of this assertion could never
+    -- have detected a literal LISTEN or NOTIFY token (only the plain
+    -- pg_notify alternative ever worked). \m / \M are Postgres's own
+    -- native beginning-of-word / end-of-word constraint escapes -- verified
+    -- to match 'listen'/'notify' standalone while NOT matching 'listener'
+    -- or 'notification'.
+    ASSERT lower(v_fn_src) !~ '\m(listen|notify)\M|pg_notify',
       'no D3-1 function may use LISTEN/NOTIFY';
     ASSERT lower(v_fn_src) !~ 'insert[[:space:]]+into[[:space:]]+(public[.])?phoenix_outbox_events',
       'no D3-1 function may INSERT into phoenix_outbox_events';
@@ -741,32 +835,30 @@ BEGIN
       'no D3-1 function may UPDATE or DELETE phoenix_outbox_events';
   END LOOP;
 
-  ASSERT to_regprocedure('public.phoenix_outbox_claim_batch(text,uuid,integer)') IS NOT NULL,
+  ASSERT v_claim_batch_oid IS NOT NULL,
     'phoenix_outbox_claim_batch must exist with its exact signature';
-  ASSERT to_regprocedure('public.phoenix_outbox_mark_completed(text,uuid,uuid)') IS NOT NULL,
+  ASSERT v_mark_completed_oid IS NOT NULL,
     'phoenix_outbox_mark_completed must exist with its exact signature';
-  ASSERT to_regprocedure('public.phoenix_outbox_mark_failed(text,uuid,uuid,text,text)') IS NOT NULL,
+  ASSERT v_mark_failed_oid IS NOT NULL,
     'phoenix_outbox_mark_failed must exist with its exact signature';
-  ASSERT to_regprocedure('public.phoenix_outbox_release_lease(text,uuid,uuid)') IS NOT NULL,
+  ASSERT v_release_lease_oid IS NOT NULL,
     'phoenix_outbox_release_lease must exist with its exact signature';
 
-  FOR v_fn_name IN
-    SELECT proname FROM pg_proc
-    WHERE proname IN ('phoenix_outbox_claim_batch', 'phoenix_outbox_mark_completed',
-                       'phoenix_outbox_mark_failed', 'phoenix_outbox_release_lease')
+  -- Security-posture loop, also driven by the exact OID array -- the inner
+  -- checks now read the loop's own resolved oid/proname pair directly,
+  -- never re-querying pg_proc by a bare name.
+  FOR v_fn_oid, v_fn_name IN
+    SELECT oid, proname FROM pg_proc WHERE oid = ANY(v_new_fn_oids)
   LOOP
-    ASSERT (SELECT prosecdef FROM pg_proc WHERE proname = v_fn_name),
+    ASSERT (SELECT prosecdef FROM pg_proc WHERE oid = v_fn_oid),
       format('%s must be SECURITY DEFINER', v_fn_name);
-    ASSERT (SELECT proconfig @> ARRAY['search_path=public, pg_temp']::text[] FROM pg_proc WHERE proname = v_fn_name),
+    ASSERT (SELECT proconfig @> ARRAY['search_path=public, pg_temp']::text[] FROM pg_proc WHERE oid = v_fn_oid),
       format('%s must keep search_path pinned to public, pg_temp', v_fn_name);
-    ASSERT NOT has_function_privilege('authenticated',
-      (SELECT oid FROM pg_proc WHERE proname = v_fn_name), 'EXECUTE'),
+    ASSERT NOT has_function_privilege('authenticated', v_fn_oid, 'EXECUTE'),
       format('authenticated must not be able to execute %s', v_fn_name);
-    ASSERT NOT has_function_privilege('anon',
-      (SELECT oid FROM pg_proc WHERE proname = v_fn_name), 'EXECUTE'),
+    ASSERT NOT has_function_privilege('anon', v_fn_oid, 'EXECUTE'),
       format('anon must not be able to execute %s', v_fn_name);
-    ASSERT has_function_privilege('service_role',
-      (SELECT oid FROM pg_proc WHERE proname = v_fn_name), 'EXECUTE'),
+    ASSERT has_function_privilege('service_role', v_fn_oid, 'EXECUTE'),
       format('service_role must retain its normal default EXECUTE on %s', v_fn_name);
   END LOOP;
 END $$;

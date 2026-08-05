@@ -292,6 +292,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/migrations/163_phoenix_outbox_consumer_foundation.sql"' +
       ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation-static.test.ts"' +
       ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation.dynamic.test.ts"' +
+      // 163-VERIFICATION-HARDENING-HOTFIX: a still later, separately
+      // authorized hotfix narrowly edits 163's own PRECONDITION/VERIFY
+      // blocks only (a defective \b LISTEN/NOTIFY regex, and bare-proname
+      // D2/D3-1 function lookups, both fixed before 163 was ever applied to
+      // Production — no DDL, no runtime function body, no signature
+      // changed) and adds its own dedicated regression test — a real,
+      // in-scope backend change for THAT hotfix, excluded here by name for
+      // the same reason every entry above is: it has nothing to do with
+      // this (much earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/__tests__/163-verification-hardening.dynamic.test.ts"' +
       // D2-4 also narrowly extends the shared PHOENIX_DEMO_V1 seed-lifecycle
       // proof with a regression guard for a real, pre-existing demo-seeder
       // bug discovered while verifying 162 (stocktakeAndCorrection used the
