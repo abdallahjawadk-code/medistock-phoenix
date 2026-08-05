@@ -283,6 +283,15 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
       ' ":!supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts"' +
+      // D3-1-OUTBOX-CONSUMER-STATE-FOUNDATION: a still later, separately
+      // authorized phase adds a genuine new migration (163) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above is: it has nothing to do with this (much earlier,
+      // UI-only) pharmacy-emblem phase.
+      ' ":!supabase/migrations/163_phoenix_outbox_consumer_foundation.sql"' +
+      ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation.dynamic.test.ts"' +
       // D2-4 also narrowly extends the shared PHOENIX_DEMO_V1 seed-lifecycle
       // proof with a regression guard for a real, pre-existing demo-seeder
       // bug discovered while verifying 162 (stocktakeAndCorrection used the
