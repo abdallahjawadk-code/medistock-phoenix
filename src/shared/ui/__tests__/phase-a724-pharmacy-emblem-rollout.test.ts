@@ -349,7 +349,21 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter_test.ts"' +
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation.ts"' +
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation_test.ts"' +
-      ' ":!supabase/migrations/__tests__/163-d3-2c-rpc-result-shape.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/163-d3-2c-rpc-result-shape.dynamic.test.ts"' +
+      // D3-2D-OUTBOX-DISPATCHER-RUNTIME: the next, separately authorized slice
+      // wires that adapter into the Edge Function's request path DISABLED BY
+      // DEFAULT, adding the activation/configuration parser, the single
+      // client-construction site, the runtime gate, their tests, and a
+      // verify_jwt entry in supabase/config.toml scoped to this one function.
+      // Still no migration, no schema, no RLS and no product src/ file —
+      // excluded here by name for the same reason every entry above is: it has
+      // nothing to do with this (much earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-client.ts"' +
+      ' ":!supabase/config.toml"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

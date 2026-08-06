@@ -674,21 +674,32 @@ Deno.test("D3-2B does not reference or wire itself into the D3-2A HTTP surface",
   }
 });
 
-Deno.test("the D3-2A HTTP handler and entry point are unchanged by D3-2B and do not know about it", () => {
+Deno.test("the D3-2A handler is unchanged, and the entry point reaches dispatch ONLY through the D3-2D gate", () => {
   const handler = Deno.readTextFileSync(join(LIB_DIR, "handler.ts"));
   const index = Deno.readTextFileSync(join(FUNCTION_DIR, "index.ts"));
 
-  // Still exactly the D3-2A surface...
+  // handler.ts is still exactly the D3-2A surface and still knows nothing
+  // about dispatch. D3-2D did not touch this file, and nothing below relaxes
+  // that: the runtime gate WRAPS the handler rather than modifying it.
   assert.ok(
     handler.includes("export function handleDispatcherRequest("),
     "handler.ts must still export handleDispatcherRequest",
   );
+
+  // index.ts now delegates to the disabled-by-default runtime gate, which is
+  // the one and only D3-2D change to the HTTP entry point. It must reach
+  // dispatch through that gate and never directly.
   assert.ok(
-    index.includes("handleDispatcherRequest"),
-    "index.ts must still call handleDispatcherRequest",
+    index.includes("handleDispatcherRuntime"),
+    "index.ts must call the runtime gate",
+  );
+  assert.ok(
+    index.includes("./lib/runtime.ts"),
+    "index.ts must import the runtime gate by name",
   );
 
-  // ...and neither has acquired any D3-2B wiring.
+  // Neither file may name the orchestrator, the client contract, or the
+  // adapter directly — reaching them is lib/runtime.ts's exclusive job.
   for (const source of [handler, index]) {
     for (
       const forbidden of [
@@ -696,6 +707,8 @@ Deno.test("the D3-2A HTTP handler and entry point are unchanged by D3-2B and do 
         "./dispatch.ts",
         "./rpc-client.ts",
         "OutboxRpcClient",
+        "supabase-rpc-adapter",
+        "createClient(",
       ]
     ) {
       assert.ok(
@@ -703,5 +716,20 @@ Deno.test("the D3-2A HTTP handler and entry point are unchanged by D3-2B and do 
         `the D3-2A HTTP path must not reference "${forbidden}"`,
       );
     }
+  }
+
+  // handler.ts additionally stays free of every activation identifier, so the
+  // enable/disable decision cannot migrate back into the pure D3-2A gate.
+  for (
+    const forbidden of [
+      "handleDispatcherRuntime",
+      "./runtime.ts",
+      "PHOENIX_OUTBOX_DISPATCH_ENABLED",
+    ]
+  ) {
+    assert.ok(
+      !handler.includes(forbidden),
+      `handler.ts must not reference "${forbidden}"`,
+    );
   }
 });

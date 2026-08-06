@@ -4,8 +4,15 @@
 > Long-lived decisions live in [ARCHITECTURE.md](ARCHITECTURE.md).
 > Finished stage reports are appended to [HISTORY/](HISTORY/).
 
-**Updated:** 2026-07-31
+**Updated:** 2026-08-06
 **Canonical decision memory:** v13 (supersedes v12, v11, v10 and all earlier plans)
+
+> **Two independent tracks.** Most of this file describes the **R0 pre-launch
+> purge/release** program, which is still gated and unstarted. The **D3-2 Outbox
+> dispatcher** track is separate, is further along, and has now touched
+> Production. See [D3-2 — Outbox dispatcher](#d3-2--outbox-dispatcher-authoritative)
+> for its authoritative state. Statements elsewhere in this file apply to the R0
+> track unless they say otherwise.
 
 ---
 
@@ -35,21 +42,54 @@ git log for the exact new head). Production remains untouched throughout.
 | SSL enforcement | enabled | Management API |
 | network restrictions | `0.0.0.0/0`, `::/0` | Management API |
 
-**Production has never been connected to.** No dump, purge, migration, merge or
-deployment has occurred.
+**No dump, purge, or destructive release has occurred, and no R0 stage has run.**
+That remains true and is what the rest of this file is about.
 
-## Production — NOT yet proven
+**Production HAS been contacted, deliberately and under explicit owner
+authorization, by the separate D3-2 track.** A read-only database preflight was
+executed through the Supabase SQL Editor, and one Edge Function was deployed in a
+disabled state. Superseded on 2026-08-06 — earlier revisions of this file stated
+"Production has never been connected to", which is no longer accurate. Details in
+[D3-2 — Outbox dispatcher](#d3-2--outbox-dispatcher-authoritative).
 
-Per v11 §2.4 these remain assumptions until a successful read-only probe:
-migration ceiling 147 · keeper uniqueness · keeper is active global super_admin ·
-RBAC 130/415 · Storage empty · all business data is test data.
+## Production — proven vs. still assumed
+
+**Proven read-only on 2026-08-06** (Supabase SQL Editor, aggregates only):
+
+| fact | value |
+|---|---|
+| migration history | **exactly 001–163**, no gaps, no duplicates |
+| Migration 163 | present **exactly once** |
+| Migration 164+ | **none** |
+| `phoenix_outbox_events` / `_consumers` / `_delivery_state` | exist, **0 rows each** |
+| eligible rows · active leases · organizations | **0 · 0 · 0** |
+| organization-isolation mismatches | **0** |
+
+> The previously assumed **migration ceiling 147 is superseded**: the real
+> ceiling is **163**. Any R0 material below that reasons from 147 — including
+> `ops/targets/production.json` (`expected_initial_ceiling: 147`,
+> `expected_final_ceiling: 153`) and the purge/restore rigs — must be
+> re-derived against 163 before an R0 stage is authorized. This is an open R0
+> blocker, recorded below.
+
+**Still assumed** (unchanged, pending their own read-only probe): keeper
+uniqueness · keeper is active global super_admin · RBAC 130/415 · Storage empty ·
+all business data is test data. Note that `organizations_total = 0` is now proven,
+which is consistent with "all business data is test data" but does not prove the
+keeper/RBAC/Storage items.
 
 ## Open blockers
 
-1. **No PostgreSQL 17 client locally.** Only 18.4 (scoop + Program Files). v11
-   §3.4 requires the client major to match Production (17); the engine enforces
-   equality, so it refuses until PG17 tooling exists. These are **two separate
-   requirements** — a container does not satisfy the first:
+1. ~~**No PostgreSQL 17 client locally.**~~ **RESOLVED 2026-08-06.** An official
+   PostgreSQL **17.10** Windows x64 client is installed at
+   `D:\phoenix-tools\postgresql-17\bin\psql.exe` (client binaries only — no
+   server, no service, no `initdb`, no pgAdmin, and deliberately **not** on
+   `PATH`, so every caller must use the exact path). Source: postgresql.org →
+   EDB binaries ZIP, Defender-scanned, archive
+   SHA-256 `EF9B1E5E23D2E8A83914BA13D9DC536A72210FBA53FD1808FF1F7E06BB22B106`.
+   The PG17 **server** for a rehearsal clone is still a separate need — the
+   original two-requirement note is retained below because only the first half
+   is satisfied:
 
    | need | why | how |
    |---|---|---|
@@ -59,14 +99,21 @@ RBAC 130/415 · Storage empty · all business data is test data.
    A container provides the *server* only. The engine still needs a real
    `psql.exe` on this machine for every target, clone included.
 
-2. **No CA certificate pinned.** Each target has its own:
-   `ops/certs/production-ca.crt` (+ committed `.sha256`) and
-   `ops/certs/staging-ca.crt`. *Owner action: download each from its own
-   dashboard, then `ops\pin-supabase-ca.ps1 -Target production` (and `-Target
-   staging`).* The local clone needs none — it is loopback without TLS.
+2. **CA pinning — production RESOLVED, staging still missing.**
+   `ops/certs/production-ca.crt` is now present locally (gitignored by design)
+   and its SHA-256 matches the committed pin
+   `700723581420DD1AC98FD7E9AC529F0EF210EADCAF87FC868A3AD7D114C2F3B7` exactly.
+   `ops\pin-supabase-ca.ps1` was **not** run and the committed `.sha256` was
+   **not** modified — the downloaded certificate was verified *against* the
+   existing pin. `verify-full` using it has been confirmed working against the
+   live Production endpoint. `ops/certs/staging-ca.crt` remains absent because
+   no staging project exists. The local clone needs none — loopback without TLS.
 3. **No Staging project.** Creating one is an account/billing action for the
    owner; the runbook is written and ready.
 4. **Restore is unproven.** A dump is not a backup until restored (v11 §R0-3).
+5. **R0 ceiling arithmetic is stale.** Every R0 artifact that assumes an initial
+   ceiling of 147 must be re-derived against the proven ceiling **163** before
+   any R0 stage is authorized.
 
 ## Local proof status
 
@@ -198,9 +245,55 @@ naming the exact database, never auto-answered. Every destructive statement
 uses a safely double-quoted identifier. All of this is local-only: no
 Production or Staging connection, no live migration, no real restore/purge.
 
+## D3-2 — Outbox dispatcher (authoritative)
+
+Separate from the R0 track above. **Closed through D3-2E; D3-2F not begun.**
+
+| fact | value |
+|---|---|
+| Production project ref | `eyrzxgfkvqybjdgyphap` |
+| Production migration history | exactly **001–163** · 163 present once · no 164+ |
+| **D3-1** | **CLOSED — must not be reopened.** Migration 163 is applied and must not be re-applied, repaired, or modified |
+| D3-2D runtime source commit | `d8433b92034bb5c828926b64c586ba87e3752553` |
+| D3-2E evidence commit | `7c66182d843388ba5fee42a98179ace07aa4c436` |
+| Function | `phoenix-outbox-dispatcher` |
+| Deployment ID | `c30a5c51-b5ba-4fda-9cff-8bc7cf7a642f` |
+| Status | **ACTIVE** |
+| Version | **2** — v1 at deploy, refreshed to v2 by Supabase metadata after the secret rotation; **no second deployment** |
+| Deployed source | verified **byte-identical to `d8433b92`** (12 bundled modules downloaded and compared; 0 differing) |
+| `verify_jwt` | `false` — **this function only**; the seven other deployed functions remain `true` |
+| `PHOENIX_OUTBOX_DISPATCH_SECRET` | **configured** — value **never disclosed**, not recoverable from this repository |
+| `PHOENIX_OUTBOX_DISPATCH_ENABLED` | **ABSENT** |
+| Dispatch | **DISABLED** |
+| PR | **#100**, open, **Draft**, unmerged, base `master` |
+
+**Hosted verification (D3-2E), all disabled-state:**
+
+| test | result |
+|---|---|
+| missing `X-Phoenix-Dispatch-Secret` | `401 NOT_AUTHENTICATED` ✅ |
+| incorrect secret | `401 NOT_AUTHENTICATED` ✅ |
+| correct secret while disabled | `200` D3-2A health payload, returned verbatim ✅ |
+
+**What did NOT happen.** No enabled dispatch · no `phoenix_outbox_*` RPC of any
+kind · no Supabase database client constructed · no SQL or direct table access ·
+no database mutation · no synthetic data · no consumer · no organization · no
+event · no delivery-state row · no lease · no scheduler, cron, timer, queue or
+background task · no historical backlog existed to process.
+
+Full evidence, including the zero-RPC argument:
+[D3-2E-HOSTED-DISABLED-VERIFICATION.md](D3-2E-HOSTED-DISABLED-VERIFICATION.md).
+
+**D3-2F has not begun and remains separately owner-gated.** Activation would
+require at minimum: registering a consumer, setting
+`PHOENIX_OUTBOX_DISPATCH_ENABLED`, and deciding the invocation mechanism.
+
 ## Next action
 
-Close the blockers above, then execute the rehearsal in
+**D3-2 track:** decide the PR #100 merge gate, then D3-2F activation — each its
+own owner gate. Nothing further is authorized.
+
+**R0 track:** close the blockers above, then execute the rehearsal in
 [staging-rehearsal-runbook.md](staging-rehearsal-runbook.md), generate the
 evidence chain, and record an explicit Go decision per
 [adr/ADR-001-purge-vs-new-production.md](adr/ADR-001-purge-vs-new-production.md).
