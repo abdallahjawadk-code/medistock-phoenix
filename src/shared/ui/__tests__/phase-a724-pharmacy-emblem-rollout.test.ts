@@ -309,7 +309,47 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // created zero stocktakes rows since the group was written) — test-
       // maintenance for demo tooling, not a migration/schema/RLS change,
       // excluded here by name for the same reason every entry above is.
-      ' ":!supabase/migrations/__tests__/phoenix-demo-seed-lifecycle.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/phoenix-demo-seed-lifecycle.dynamic.test.ts"' +
+      // D3-2A-OUTBOX-DISPATCHER-AUTH-HEALTH-FOUNDATION: a still later,
+      // separately authorized phase adds a new Edge Function directory
+      // (phoenix-outbox-dispatcher) with its own dedicated unit and static
+      // guard tests — a real, in-scope backend change for THAT phase, adding
+      // no migration, no schema, no RLS and no product src/ file, excluded
+      // here by name for the same reason every entry above is: it has nothing
+      // to do with this (much earlier, UI-only) pharmacy-emblem phase.
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/README.md"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/index.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/auth.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/auth_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/config.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/config_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/handler.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/handler_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/health.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/health_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/request.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/request_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/static_guards_test.ts"' +
+      // D3-2B-OUTBOX-DISPATCH-ORCHESTRATION: the next, separately authorized
+      // slice of that same phase adds the pure orchestration module, its
+      // portable RPC type contract, and its own disposable pg-rig integration
+      // test — again no migration, no schema, no RLS and no product src/
+      // file, excluded here by name for the same reason.
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-client.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/dispatch.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/dispatch_test.ts"' +
+      ' ":!supabase/migrations/__tests__/163-d3-2b-dispatch-integration.dynamic.test.ts"' +
+      // D3-2C-PRODUCTION-RPC-ADAPTER: the next, separately authorized slice of
+      // that same phase adds the unwired, dependency-injected production RPC
+      // adapter, its pure runtime result validators, their unit tests, and its
+      // own disposable pg-rig result-shape test — again no migration, no
+      // schema, no RLS and no product src/ file, excluded here by name for the
+      // same reason.
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter_test.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation.ts"' +
+      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation_test.ts"' +
+      ' ":!supabase/migrations/__tests__/163-d3-2c-rpc-result-shape.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
