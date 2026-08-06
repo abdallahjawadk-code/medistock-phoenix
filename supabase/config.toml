@@ -385,6 +385,27 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# D3-2D — scoped to this ONE function, and to no other.
+#
+# phoenix-outbox-dispatcher is the only server-to-server endpoint in this
+# repository: its caller is a scheduler, never a browser, so it has no user
+# JWT to verify. The modern publishable/secret keys are not JWTs, Edge
+# Functions verify JWTs only via the legacy anon/service_role keys, and the
+# platform does not verify the `apikey` header — so leaving verify_jwt on
+# would reject every legitimate call while adding no authentication.
+#
+# The real authentication factor is the dedicated X-Phoenix-Dispatch-Secret
+# header, resolved fail-closed in lib/config.ts (>= 32 characters, no
+# fallback, no default) and compared in lib/auth.ts before any work is done.
+# A missing or malformed server-side secret returns 500 and authenticates
+# nobody.
+#
+# The three admin-* functions are deliberately NOT listed here: they are
+# browser-called, they do verify user JWTs, and this setting must never widen
+# beyond the one function that justifies it.
+[functions.phoenix-outbox-dispatcher]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -68,6 +68,24 @@ const PROHIBITED_D3_1_TABLE_IDENTIFIERS = [
 const ADAPTER_RELATIVE = "lib/supabase-rpc-adapter.ts";
 const VALIDATION_RELATIVE = "lib/rpc-result-validation.ts";
 
+// D3-2D adds exactly two more allow-listed paths, each for exactly one
+// capability, each bounded by its own positive guard below:
+//
+//   * RUNTIME_RELATIVE is the only production file that may reach the adapter
+//     and the dispatch orchestrator — it is the disabled-by-default gate;
+//   * CLIENT_RELATIVE is the only production file that may import a remote
+//     module or call createClient(, and the specifier it imports must be the
+//     EXACT pinned version, never a range.
+//
+// index.ts and lib/handler.ts remain free of every one of these identifiers,
+// exactly as before: the runtime is reached through lib/runtime.ts by name,
+// and the guard at the bottom of this file still proves it.
+const RUNTIME_RELATIVE = "lib/runtime.ts";
+const CLIENT_RELATIVE = "lib/supabase-client.ts";
+
+// The one remote dependency this function is permitted to carry, in full.
+const PINNED_SUPABASE_JS = "https://esm.sh/@supabase/supabase-js@2.108.2";
+
 // Matches a remote-procedure call WITH OR WITHOUT an explicit type argument.
 // The plain /\.rpc\s*\(/ form silently misses `.rpc<T>(...)`, which is the
 // shape a typed client is normally called with — a hole this guard closes.
@@ -191,12 +209,15 @@ for (const file of SOURCE_FILES) {
   });
 
   Deno.test(`static guard [${relative}]: no Supabase client construction, RPC call, or table access`, () => {
-    // createClient( stays prohibited in EVERY production file, including the
-    // adapter — D3-2C injects its transport and constructs no client.
-    assert.ok(
-      !/createClient\s*\(/.test(source),
-      `${relative} must not call createClient(`,
-    );
+    // D3-2D narrows this for EXACTLY ONE new path. createClient( remains
+    // prohibited in every other production file, including the adapter, which
+    // still constructs nothing and still takes its transport by injection.
+    if (relative !== CLIENT_RELATIVE) {
+      assert.ok(
+        !/createClient\s*\(/.test(source),
+        `${relative} must not call createClient(`,
+      );
+    }
     // Table access stays prohibited everywhere, including the adapter.
     assert.ok(
       !/\.from\s*\(\s*['"]/.test(source),
@@ -334,21 +355,35 @@ Deno.test(`D3-2C guard [${ADAPTER_RELATIVE}]: the adapter's own prohibitions sti
   );
 });
 
-Deno.test("D3-2C guard: no non-test production file imports the adapter or the validation module", () => {
+Deno.test("D3-2D guard: exactly the two allow-listed production files import the adapter", () => {
+  const importers: string[] = [];
   for (const file of SOURCE_FILES) {
     const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
-    if (relative === ADAPTER_RELATIVE) continue; // the adapter may import the validators
     const source = Deno.readTextFileSync(file);
-    assert.ok(
-      !importsModule(source, "supabase-rpc-adapter"),
-      `${relative} must not import the adapter — it stays unreachable`,
-    );
-    if (relative === VALIDATION_RELATIVE) continue;
-    assert.ok(
-      !importsModule(source, "rpc-result-validation"),
-      `${relative} must not import the validation module`,
-    );
+    if (importsModule(source, "supabase-rpc-adapter")) importers.push(relative);
   }
+  assert.deepEqual(
+    importers.sort(),
+    [CLIENT_RELATIVE, RUNTIME_RELATIVE].sort(),
+    "only the runtime gate and the client factory may reach the adapter",
+  );
+});
+
+Deno.test("D3-2C guard: the validation module is reachable only from the adapter", () => {
+  const importers: string[] = [];
+  for (const file of SOURCE_FILES) {
+    const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
+    if (relative === VALIDATION_RELATIVE) continue;
+    const source = Deno.readTextFileSync(file);
+    if (importsModule(source, "rpc-result-validation")) {
+      importers.push(relative);
+    }
+  }
+  assert.deepEqual(
+    importers,
+    [ADAPTER_RELATIVE],
+    "only the adapter may import the validation module",
+  );
 });
 
 Deno.test("D3-2C guard: the validation module is pure and imports nothing remote", () => {
@@ -549,6 +584,136 @@ Deno.test("D3-2C hardening: a second file acquiring a routine identifier or .rpc
     ["lib/sneaky.ts"],
   );
   assert.deepEqual(carriersOf([]), []);
+});
+
+// ── D3-2D runtime-wiring guards ─────────────────────────────────────────────
+//
+// The wiring slice adds exactly two capabilities to this function — reaching
+// the adapter, and constructing a real client from a remote module. These
+// guards bound both to one file each and prove the disabled-by-default gate
+// cannot be bypassed structurally.
+
+Deno.test("D3-2D guard: exactly ONE production file constructs a Supabase client", () => {
+  const constructors: string[] = [];
+  for (const file of SOURCE_FILES) {
+    const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
+    const source = Deno.readTextFileSync(file);
+    if (/createClient\s*\(/.test(source)) constructors.push(relative);
+  }
+  assert.deepEqual(constructors, [CLIENT_RELATIVE]);
+});
+
+Deno.test("D3-2D guard: exactly ONE production file imports a remote module, at the EXACT pinned version", () => {
+  const remoteImporters: string[] = [];
+  for (const file of SOURCE_FILES) {
+    const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
+    const source = Deno.readTextFileSync(file);
+    const remote = importSpecifiers(source).filter((s) =>
+      /^(npm:|jsr:|https?:)/.test(s)
+    );
+    if (remote.length === 0) continue;
+    remoteImporters.push(relative);
+    assert.deepEqual(
+      remote,
+      [PINNED_SUPABASE_JS],
+      `${relative} may import only the exact pinned supabase-js`,
+    );
+  }
+  assert.deepEqual(remoteImporters, [CLIENT_RELATIVE]);
+
+  // An exact version, never a range: "@2", "^2", "~2", "@2.x" and "@latest"
+  // all allow the deployed code to change without a commit.
+  assert.ok(
+    /@\d+\.\d+\.\d+$/.test(PINNED_SUPABASE_JS),
+    "the pinned specifier must end in an exact major.minor.patch version",
+  );
+  // Checked against the comment-stripped source, so the file may DISCUSS the
+  // floating specifiers it deliberately avoids without tripping this guard.
+  const clientCode = stripComments(readSource(CLIENT_RELATIVE));
+  for (const loose of ['supabase-js@2"', "supabase-js@latest", "@^", "@~"]) {
+    assert.ok(
+      !clientCode.includes(loose),
+      `${CLIENT_RELATIVE} must not carry the floating specifier "${loose}"`,
+    );
+  }
+});
+
+Deno.test("D3-2D guard: the client factory constructs a client and nothing else", () => {
+  const source = readSource(CLIENT_RELATIVE);
+  for (
+    const needle of [
+      ".rpc(",
+      ".from(",
+      "fetch(",
+      "Deno.env",
+      "process.env",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "console.log",
+      "console.error",
+      ...PROHIBITED_D3_1_FUNCTION_IDENTIFIERS,
+    ]
+  ) {
+    assert.ok(
+      !source.includes(needle),
+      `${CLIENT_RELATIVE} must not contain "${needle}"`,
+    );
+  }
+});
+
+Deno.test("D3-2D guard: no production file schedules, polls, or runs background work", () => {
+  for (const file of SOURCE_FILES) {
+    const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
+    const source = Deno.readTextFileSync(file);
+    for (
+      const needle of [
+        "setInterval",
+        "setTimeout",
+        "Deno.cron",
+        "queueMicrotask",
+        "EdgeRuntime.waitUntil",
+        "waitUntil(",
+      ]
+    ) {
+      assert.ok(
+        !source.includes(needle),
+        `${relative} must not contain "${needle}" — no scheduler, no background task`,
+      );
+    }
+  }
+});
+
+Deno.test("D3-2D guard: the runtime gate reaches dispatch only through the disabled-by-default check", () => {
+  const source = readSource(RUNTIME_RELATIVE);
+  // The unchanged D3-2A handler runs first and its non-200 result is returned
+  // verbatim, so no gate can be skipped by reordering.
+  assert.ok(source.includes("handleDispatcherRequest("));
+  assert.ok(source.includes("gate.status !== 200"));
+  // Activation is checked before configuration, construction, or dispatch.
+  const activationAt = source.indexOf("isDispatchEnabled(");
+  const configAt = source.indexOf("resolveRuntimeConfig(");
+  const constructAt = source.indexOf("createSupabaseOutboxRpcClient(");
+  const dispatchAt = source.indexOf("runDispatchCycle(");
+  assert.ok(activationAt > 0, "activation must be checked");
+  assert.ok(
+    activationAt < configAt && configAt < constructAt &&
+      constructAt < dispatchAt,
+    "order must be: activation -> configuration -> construction -> dispatch",
+  );
+  // No retry and no second cycle in the wiring layer. Checked against the
+  // comment-stripped source, so the file may explain WHY it does not retry
+  // without its own prose tripping the guard.
+  const code = stripComments(source);
+  assert.equal(
+    code.split("runDispatchCycle(").length - 1,
+    1,
+    "exactly one dispatch-cycle call site",
+  );
+  for (const needle of ["for (", "while (", "retry", "backoff", ".repeat("]) {
+    assert.ok(
+      !code.includes(needle),
+      `${RUNTIME_RELATIVE} must not contain "${needle}" — no loop, no retry`,
+    );
+  }
 });
 
 Deno.test("static guard: the three existing Edge Functions are not imported or referenced by this function", () => {

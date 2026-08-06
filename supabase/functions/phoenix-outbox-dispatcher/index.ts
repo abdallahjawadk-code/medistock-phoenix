@@ -26,9 +26,20 @@
 // origin to permit.
 // =============================================================================
 
+// D3-2D UPDATE — runtime wiring, DISABLED BY DEFAULT.
+//   -> 200 { service, status: "dispatched", version, timestamp, claimed,
+//            completed, failed, released }   (only when explicitly enabled)
+//   -> 500 { ok: false, error: "DISPATCH_FAILED" }
+//
+// With PHOENIX_OUTBOX_DISPATCH_ENABLED unset — the default, and the only state
+// this repository has ever deployed — every response above is byte-for-byte
+// the D3-2A behavior documented here. lib/runtime.ts runs the unchanged D3-2A
+// handler first and returns its response verbatim unless dispatch is
+// explicitly switched on. No scheduler, consumer, or secret exists.
+
 // @ts-nocheck — Deno edge runtime types are not part of the app's tsconfig.
-import { handleDispatcherRequest } from "./lib/handler.ts";
+import { handleDispatcherRuntime } from "./lib/runtime.ts";
 
 Deno.serve((req: Request) =>
-  handleDispatcherRequest(req, (name) => Deno.env.get(name))
+  handleDispatcherRuntime(req, (name) => Deno.env.get(name))
 );
