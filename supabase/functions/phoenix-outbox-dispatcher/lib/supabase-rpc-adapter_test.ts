@@ -494,6 +494,192 @@ Deno.test("an error with no safe fields still rejects, without serializing the o
   assert.ok(!err.message.includes("{"), "must not serialize the error object");
 });
 
+// ── Transport error-code boundary (D3-2C hardening, LOW-1) ──────────────────
+
+// One case per admitted shape and per rejection class. A rejected code must
+// leave `code` null AND must not appear anywhere in the thrown message.
+const ACCEPTED_CODES = ["23505", "42501", "P0001", "PGRST116", "PGRST202"];
+
+const REJECTED_CODES: Array<[string, unknown]> = [
+  ["empty string", ""],
+  ["lowercase sqlstate", "23a05"],
+  ["lowercase pgrst prefix", "pgrst116"],
+  ["mixed-case pgrst prefix", "PgRsT116"],
+  ["too short", "2350"],
+  ["too long", "235051"],
+  ["pgrst with too few digits", "PGRST11"],
+  ["pgrst with too many digits", "PGRST1160"],
+  ["leading space", " 23505"],
+  ["trailing space", "23505 "],
+  ["inner space", "235 05"],
+  ["newline suffix", "23505\n"],
+  ["newline prefix", "\n23505"],
+  ["tab suffix", "23505\t"],
+  ["carriage return", "23505\r"],
+  ["embedded null byte", "2350\u0000"],
+  ["control character", "2350\u0007"],
+  ["punctuation", "23505;"],
+  ["underscore", "23_05"],
+  ["hyphen", "2-505"],
+  ["very long value", "A".repeat(4096)],
+  ["secret-bearing value", `sb_secret_${"x".repeat(40)}`],
+  ["url-bearing value", "https://probe.example.invalid/rest/v1/rpc"],
+  ["payload-bearing value", "row (id)=(00000000-0000-0000-0000-0000032c0009)"],
+  ["safe code embedded in prose", "failed with 23505 while writing row 9"],
+  ["object", { code: "23505" }],
+  ["array", ["23505"]],
+  ["number", 23505],
+  ["boolean", true],
+  ["null", null],
+  ["undefined", undefined],
+];
+
+Deno.test("an admitted SQLSTATE or PostgREST code is preserved exactly", async () => {
+  for (const code of ACCEPTED_CODES) {
+    const h = makeHarness(() => ({ data: null, error: { code } }));
+    const err = await assertRejects(
+      () =>
+        build(h).claimBatch({
+          consumerKey: CONSUMER,
+          leaseToken: LEASE,
+          batchSize: 10,
+        }),
+      `accepted ${code}`,
+    );
+    assert.ok(err instanceof OutboxRpcTransportError);
+    assert.equal(
+      (err as OutboxRpcTransportError).code,
+      code,
+      `${code}: must be preserved verbatim`,
+    );
+    assert.ok(err.message.includes(code), `${code}: must reach the message`);
+  }
+});
+
+Deno.test("any other code value is omitted, never normalized, and never echoed", async () => {
+  for (const [label, code] of REJECTED_CODES) {
+    const h = makeHarness(() => ({ data: null, error: { code } }));
+    const err = await assertRejects(
+      () =>
+        build(h).claimBatch({
+          consumerKey: CONSUMER,
+          leaseToken: LEASE,
+          batchSize: 10,
+        }),
+      `rejected ${label}`,
+    );
+    assert.ok(
+      err instanceof OutboxRpcTransportError,
+      `${label}: still a transport error`,
+    );
+    assert.equal(
+      (err as OutboxRpcTransportError).code,
+      null,
+      `${label}: code must be omitted, not repaired`,
+    );
+    if (typeof code === "string" && code.length > 0) {
+      assert.ok(
+        !err.message.includes(code),
+        `${label}: the rejected value must not appear in the message`,
+      );
+    }
+    assert.ok(
+      !err.message.includes("{"),
+      `${label}: must not serialize the error object`,
+    );
+    assert.equal(
+      err.message,
+      "outbox rpc claimBatch failed",
+      `${label}: must fall back to the bare operation message`,
+    );
+  }
+});
+
+Deno.test("a rejected code still leaves a safe snake_case reason intact", async () => {
+  const h = makeHarness(() => ({
+    data: null,
+    error: { code: "not a code at all", message: "consumer_disabled" },
+  }));
+  const err = await assertRejects(
+    () =>
+      build(h).claimBatch({
+        consumerKey: CONSUMER,
+        leaseToken: LEASE,
+        batchSize: 10,
+      }),
+    "rejected code with safe reason",
+  );
+  assert.equal((err as OutboxRpcTransportError).code, null);
+  assert.equal((err as OutboxRpcTransportError).reason, "consumer_disabled");
+  assert.ok(!err.message.includes("not a code at all"));
+});
+
+Deno.test("a throwing getter neither leaks its value nor replaces the transport failure", async () => {
+  const secret = "sb_secret_probe_value_must_never_surface";
+  const h = makeHarness(() => ({
+    data: null,
+    error: Object.defineProperties({}, {
+      code: {
+        enumerable: true,
+        get() {
+          throw new Error(`boom ${secret}`);
+        },
+      },
+      message: {
+        enumerable: true,
+        get() {
+          throw new Error(`boom ${secret}`);
+        },
+      },
+    }),
+  }));
+  const err = await assertRejects(
+    () =>
+      build(h).markCompleted({
+        consumerKey: CONSUMER,
+        deliveryStateId: DS_ID,
+        leaseToken: LEASE,
+      }),
+    "throwing getter",
+  );
+  assert.ok(
+    err instanceof OutboxRpcTransportError,
+    "the original transport failure must survive",
+  );
+  assert.equal((err as OutboxRpcTransportError).code, null);
+  assert.equal((err as OutboxRpcTransportError).reason, null);
+  assert.ok(!err.message.includes(secret), "must not leak the thrown value");
+  assert.ok(!err.message.includes("boom"), "must not adopt the thrown message");
+  assert.equal(err.message, "outbox rpc markCompleted failed");
+});
+
+Deno.test("a Proxy that throws on property access is handled identically", async () => {
+  const secret = "sb_secret_proxy_value_must_never_surface";
+  const hostile = new Proxy({}, {
+    get(_target, property) {
+      throw new Error(`proxy trap ${String(property)} ${secret}`);
+    },
+    has() {
+      throw new Error(`proxy has ${secret}`);
+    },
+  });
+  const h = makeHarness(() => ({ data: null, error: hostile }));
+  const err = await assertRejects(
+    () =>
+      build(h).releaseLease({
+        consumerKey: CONSUMER,
+        deliveryStateId: DS_ID,
+        leaseToken: LEASE,
+      }),
+    "throwing proxy",
+  );
+  assert.ok(err instanceof OutboxRpcTransportError);
+  assert.equal((err as OutboxRpcTransportError).code, null);
+  assert.equal((err as OutboxRpcTransportError).reason, null);
+  assert.ok(!err.message.includes(secret), "must not leak the trap value");
+  assert.equal(err.message, "outbox rpc releaseLease failed");
+});
+
 Deno.test("no thrown message ever contains the credential, url or lease token", async () => {
   const harnesses = [
     makeHarness(() => ({ data: null, error: { code: "42501" } })),

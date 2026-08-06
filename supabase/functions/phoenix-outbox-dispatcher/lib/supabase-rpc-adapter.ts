@@ -88,8 +88,9 @@ export type AbortSignalFactory = (timeoutMs: number) => AbortSignal;
 /**
  * A sanitized transport/database failure.
  *
- * Carries the SQLSTATE-style `code` when the transport supplied one, plus a
- * `reason` ONLY when the database's own message is a bare snake_case
+ * Carries the `code` ONLY when the transport supplied one in a shape this
+ * system can actually produce (see SAFE_SQLSTATE_SHAPE / SAFE_PGRST_SHAPE),
+ * plus a `reason` ONLY when the database's own message is a bare snake_case
  * identifier — which is exactly the form Migration 163 raises
  * (`consumer_disabled`, `stale_or_foreign_lease_token`, `consumer_not_found`,
  * `delivery_state_not_found`, `batch_size_out_of_bounds`, ...). Any richer
@@ -128,22 +129,67 @@ export class OutboxRpcConfigurationError extends Error {
 // as potentially value-bearing and discarded.
 const SAFE_REASON_SHAPE = /^[a-z][a-z0-9_]{0,63}$/;
 
+// A transport `code` is admitted ONLY in one of the two shapes this stack can
+// actually produce. Everything else — a prose sentence, a URL, a credential, a
+// row value, a control character, an over-long string — is dropped rather than
+// trusted, exactly as a rich `message` already is. These anchors are strict:
+// JavaScript `$` (without the `m` flag) matches end-of-input only, so a
+// trailing newline cannot smuggle a payload past them, and neither character
+// class admits whitespace, punctuation, or control characters.
+//
+// A rejected value is DISCARDED, never repaired: nothing here trims, upcases,
+// truncates, or otherwise normalizes an unsafe value into a safe one, because
+// a normalized value still originated outside this boundary.
+const SAFE_SQLSTATE_SHAPE = /^[0-9A-Z]{5}$/; // e.g. 23505, 42501, P0001
+const SAFE_PGRST_SHAPE = /^PGRST[0-9]{3}$/; // e.g. PGRST116, PGRST202
+
 // Upper bound on an injected deadline. A dispatch cycle that has not returned
 // within five minutes has already outlived any reasonable lease, and an
 // unbounded timeout would let one stuck call pin a worker indefinitely.
 export const MAX_TIMEOUT_MS = 300_000;
 
+/**
+ * Reads one property without letting the source decide what happens next.
+ *
+ * A throwing getter, or a Proxy whose `get` trap throws, is treated exactly
+ * like an absent property: the thrown value is swallowed unread — never
+ * inspected, never serialized, never re-thrown — so a hostile or merely broken
+ * error object cannot replace the real transport failure with a message of its
+ * own choosing, and cannot smuggle a value out through an exception.
+ */
+function readOwnProperty(source: unknown, key: string): unknown {
+  if (typeof source !== "object" || source === null) return undefined;
+  try {
+    return (source as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
 function readSafeString(source: unknown, key: string): string | null {
-  if (typeof source !== "object" || source === null) return null;
-  const value = (source as Record<string, unknown>)[key];
+  const value = readOwnProperty(source, key);
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Fail-closed code extraction: a code is preserved only when it matches one of
+ * the two admitted shapes. Absent stays absent, non-string is dropped, and
+ * anything else — including a value that merely contains a safe-looking code —
+ * is omitted entirely rather than trimmed or truncated into acceptance.
+ */
+function readSafeCode(error: unknown): string | null {
+  const value = readSafeString(error, "code");
+  if (value === null) return null;
+  return SAFE_SQLSTATE_SHAPE.test(value) || SAFE_PGRST_SHAPE.test(value)
+    ? value
+    : null;
 }
 
 function toTransportError(
   operation: string,
   error: unknown,
 ): OutboxRpcTransportError {
-  const code = readSafeString(error, "code");
+  const code = readSafeCode(error);
   const rawMessage = readSafeString(error, "message");
   const reason = rawMessage !== null && SAFE_REASON_SHAPE.test(rawMessage)
     ? rawMessage

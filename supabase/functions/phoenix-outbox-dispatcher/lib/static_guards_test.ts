@@ -75,10 +75,103 @@ const RPC_CALL = /\.rpc\s*(<[^>]*>)?\s*\(/;
 
 // Reachability is about IMPORTS, not mentions: a module named in a comment is
 // documentation, while a module named in an import specifier is a live edge in
-// the dependency graph. These match only the latter.
+// the dependency graph. Everything below matches only the latter.
+//
+// D3-2C HARDENING (LOW-2). The previous detector was a pair of substring
+// patterns covering `from "…"` and `import("…")`. It had two holes:
+//
+//   * a BARE SIDE-EFFECT import (`import "./module.ts";`) is a real dependency
+//     edge with no `from` and no parentheses, so it matched neither pattern;
+//   * matching was by substring anywhere in the specifier, so a neighbouring
+//     module whose name merely CONTAINS an allow-listed name would have been
+//     reported as an edge to it.
+//
+// Both are closed below, without falling back to a broad substring scan — that
+// would report every comment and doc string as a dependency.
+
+/**
+ * Removes line and block comments while leaving string literals intact, so a
+ * specifier quoted inside prose or a commented-out import is never mistaken
+ * for a live edge. Deliberately small: it tracks quotes and backslash escapes
+ * — enough that neither a `//` inside a string nor an escaped slash inside a
+ * regex literal can open a false comment — and is not a JavaScript parser.
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let quote: string | null = null;
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "\\") {
+      out += ch + (next ?? "");
+      i += 2;
+      continue;
+    }
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (
+        i < source.length && !(source[i] === "*" && source[i + 1] === "/")
+      ) {
+        i += 1;
+      }
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+// Every LITERAL form that creates a dependency edge: default / named /
+// namespace / type imports and both re-export forms (all carry `from "…"`),
+// dynamic literal imports (`import("…")`), and bare side-effect imports
+// (`import "…"`). Single and double quotes and ordinary multiline whitespace
+// are all accepted. A COMPUTED specifier is deliberately NOT resolved: this
+// guard reads source, it never executes it.
+const IMPORT_SPECIFIER_PATTERNS: readonly RegExp[] = [
+  /\bfrom\s+(["'])([^"'\n]*)\1/g,
+  /\bimport\s*\(\s*(["'])([^"'\n]*)\1/g,
+  /\bimport\s+(["'])([^"'\n]*)\1/g,
+];
+
+function importSpecifiers(source: string): string[] {
+  const code = stripComments(source);
+  const found: string[] = [];
+  for (const pattern of IMPORT_SPECIFIER_PATTERNS) {
+    for (const match of code.matchAll(pattern)) found.push(match[2]);
+  }
+  return found;
+}
+
+// Compare the FINAL PATH SEGMENT, so `./supabase-rpc-adapter.ts` is an edge
+// while `./legacy-supabase-rpc-adapter.ts` is a different module entirely.
+// Both separators are split on, so a Windows-style specifier can neither
+// evade the check nor widen the exact allow-list.
+const finalSegment = (specifier: string): string =>
+  specifier.split(/[\\/]/).pop() ?? specifier;
+
 const importsModule = (source: string, moduleName: string): boolean =>
-  new RegExp(`from\\s+["'][^"']*${moduleName}`).test(source) ||
-  new RegExp(`import\\s*\\(\\s*["'][^"']*${moduleName}`).test(source);
+  importSpecifiers(source).some((specifier) =>
+    finalSegment(specifier) === `${moduleName}.ts`
+  );
 
 for (const file of SOURCE_FILES) {
   const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
@@ -171,18 +264,31 @@ Deno.test("D3-2C guard: the allow-listed adapter really is the file that carries
   );
 });
 
-Deno.test("D3-2C guard: exactly ONE production file carries the D3-1 routine identifiers or .rpc(", () => {
+/**
+ * Which of the given sources name a D3-1 routine or call `.rpc(`. Pure, so the
+ * real scan below and the synthetic regression fixtures at the bottom of this
+ * file exercise the SAME logic rather than two drifting copies.
+ */
+function carriersOf(
+  entries: ReadonlyArray<{ relative: string; source: string }>,
+): string[] {
   const carriers: string[] = [];
-  for (const file of SOURCE_FILES) {
-    const relative = file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/");
-    const source = Deno.readTextFileSync(file);
+  for (const { relative, source } of entries) {
     const carriesName = PROHIBITED_D3_1_FUNCTION_IDENTIFIERS.some((id) =>
       source.includes(id)
     );
     if (carriesName || RPC_CALL.test(source)) carriers.push(relative);
   }
+  return carriers;
+}
+
+Deno.test("D3-2C guard: exactly ONE production file carries the D3-1 routine identifiers or .rpc(", () => {
+  const entries = SOURCE_FILES.map((file) => ({
+    relative: file.slice(FUNCTION_DIR.length + 1).replace(/\\/g, "/"),
+    source: Deno.readTextFileSync(file),
+  }));
   assert.deepEqual(
-    carriers,
+    carriersOf(entries),
     [ADAPTER_RELATIVE],
     "only the allow-listed adapter may name a D3-1 routine or call .rpc(",
   );
@@ -288,6 +394,161 @@ Deno.test("D3-2C guard: index.ts and handler.ts remain free of every dispatch an
       );
     }
   }
+});
+
+// ── D3-2C hardening regression fixtures (LOW-2) ─────────────────────────────
+//
+// These exercise the DETECTOR itself against synthetic sources. Nothing here
+// is written to disk and nothing here is a production file: the point is that
+// a future edit which narrows the detector fails HERE, loudly, instead of
+// silently letting a real import edge through the reachability guard.
+
+const ADAPTER_MODULE = "supabase-rpc-adapter";
+const VALIDATION_MODULE = "rpc-result-validation";
+
+const DETECTED_IMPORT_FORMS: ReadonlyArray<[string, string]> = [
+  ["default import", `import adapter from "./supabase-rpc-adapter.ts";`],
+  [
+    "named import",
+    `import { createSupabaseOutboxRpcClient } from "./supabase-rpc-adapter.ts";`,
+  ],
+  [
+    "namespace import",
+    `import * as adapter from "./supabase-rpc-adapter.ts";`,
+  ],
+  [
+    "type-only import",
+    `import type { RpcResult } from "./supabase-rpc-adapter.ts";`,
+  ],
+  [
+    "named re-export",
+    `export { createSupabaseOutboxRpcClient } from "./supabase-rpc-adapter.ts";`,
+  ],
+  ["star re-export", `export * from "./supabase-rpc-adapter.ts";`],
+  ["dynamic import", `const m = await import("./supabase-rpc-adapter.ts");`],
+  ["bare side-effect import", `import "./supabase-rpc-adapter.ts";`],
+  ["single-quoted specifier", `import './supabase-rpc-adapter.ts';`],
+  [
+    "multiline named import",
+    `import {\n  createSupabaseOutboxRpcClient,\n}\n  from\n  "./supabase-rpc-adapter.ts";`,
+  ],
+  ["parent-relative path", `import "../lib/supabase-rpc-adapter.ts";`],
+  // A Windows-style specifier as it would really appear in source: the string
+  // literal escapes each separator, so the SOURCE TEXT carries two backslashes.
+  ["windows separator path", `import "..\\\\lib\\\\supabase-rpc-adapter.ts";`],
+];
+
+const NON_EDGE_SOURCES: ReadonlyArray<[string, string]> = [
+  [
+    "line comment naming the module",
+    `// see ./supabase-rpc-adapter.ts (D3-2D)`,
+  ],
+  [
+    "line comment quoting a future import",
+    `// D3-2D adds: import { x } from "./supabase-rpc-adapter.ts";`,
+  ],
+  ["commented-out import", `// import "./supabase-rpc-adapter.ts";`],
+  [
+    "block comment containing an import",
+    `/*\n  import "./supabase-rpc-adapter.ts";\n*/`,
+  ],
+  [
+    "ordinary string prose",
+    `const note = "supabase-rpc-adapter.ts is wired in D3-2D";`,
+  ],
+  [
+    "documentation url",
+    `// https://example.invalid/lib/supabase-rpc-adapter.ts`,
+  ],
+  ["similarly named module", `import "./legacy-supabase-rpc-adapter.ts";`],
+  ["suffixed module", `import "./supabase-rpc-adapter-extra.ts";`],
+  ["different extension", `import "./supabase-rpc-adapter.js";`],
+  ["unrelated module", `import { join } from "node:path";`],
+];
+
+Deno.test("D3-2C hardening: every prohibited import form is detected, including a bare side-effect import", () => {
+  for (const [label, source] of DETECTED_IMPORT_FORMS) {
+    assert.ok(
+      importsModule(source, ADAPTER_MODULE),
+      `${label}: must be detected as an import edge`,
+    );
+  }
+  // The same detector protects the validation module.
+  assert.ok(
+    importsModule(`import "./rpc-result-validation.ts";`, VALIDATION_MODULE),
+    "bare side-effect import of the validation module must be detected",
+  );
+});
+
+Deno.test("D3-2C hardening: comments, prose, and similarly named modules are not import edges", () => {
+  for (const [label, source] of NON_EDGE_SOURCES) {
+    assert.ok(
+      !importsModule(source, ADAPTER_MODULE),
+      `${label}: must NOT be treated as an import edge`,
+    );
+  }
+});
+
+Deno.test("D3-2C hardening: neither path separator widens or evades the exact allow-list", () => {
+  for (
+    const specifier of [
+      "./supabase-rpc-adapter.ts",
+      "../lib/supabase-rpc-adapter.ts",
+      ".\\supabase-rpc-adapter.ts",
+      "..\\lib\\supabase-rpc-adapter.ts",
+    ]
+  ) {
+    assert.equal(
+      finalSegment(specifier),
+      `${ADAPTER_MODULE}.ts`,
+      `${specifier}: must resolve to the exact module name`,
+    );
+  }
+  for (
+    const specifier of [
+      "./legacy-supabase-rpc-adapter.ts",
+      "./supabase-rpc-adapter-extra.ts",
+      "..\\lib\\supabase-rpc-adapter-extra.ts",
+      "./supabase-rpc-adapter.ts.bak",
+    ]
+  ) {
+    assert.notEqual(
+      finalSegment(specifier),
+      `${ADAPTER_MODULE}.ts`,
+      `${specifier}: must not widen the allow-list`,
+    );
+  }
+});
+
+Deno.test("D3-2C hardening: a second file acquiring a routine identifier or .rpc( is detected", () => {
+  // The allow-listed adapter alone is the expected steady state.
+  assert.deepEqual(
+    carriersOf([
+      {
+        relative: ADAPTER_RELATIVE,
+        source: `rpc("phoenix_outbox_claim_batch")`,
+      },
+      { relative: "lib/config.ts", source: "export const A = 1;" },
+    ]),
+    [ADAPTER_RELATIVE],
+  );
+  // A second production file naming any of the four routines is caught.
+  for (const id of PROHIBITED_D3_1_FUNCTION_IDENTIFIERS) {
+    assert.deepEqual(
+      carriersOf([{ relative: "lib/sneaky.ts", source: `const n = "${id}";` }]),
+      ["lib/sneaky.ts"],
+      `${id}: a second carrier must be reported`,
+    );
+  }
+  // So is a call with an explicit type argument, which the pre-D3-2C pattern
+  // /\.rpc\s*\(/ silently missed.
+  assert.deepEqual(
+    carriersOf([
+      { relative: "lib/sneaky.ts", source: "client.rpc<Row[]>(name, args);" },
+    ]),
+    ["lib/sneaky.ts"],
+  );
+  assert.deepEqual(carriersOf([]), []);
 });
 
 Deno.test("static guard: the three existing Edge Functions are not imported or referenced by this function", () => {
