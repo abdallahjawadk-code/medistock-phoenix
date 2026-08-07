@@ -560,7 +560,7 @@ export const T: Dict = {
   port_type_returns:    { ar: 'مرتجعات',                         en: 'Returns' },
   port_type_emergency:  { ar: 'طوارئ',                           en: 'Emergency' },
   port_type_pharmacy:      { ar: 'صيدلية',                         en: 'Pharmacy' },
-  port_type_crash_cabinet: { ar: 'دولاب صدمة',                     en: 'Crash cabinet' },
+  port_type_crash_cabinet: { ar: 'دولاب الصدمة',                   en: 'Crash cabinet' },
   port_type_rescue_cart:   { ar: 'عربة إنقاذ',                     en: 'Rescue cart' },
   port_operational_fix_required: {
     ar: 'يلزم ربط المنفذ بمذخر مؤسسة واختيار نوع تشغيلي معتمد',
