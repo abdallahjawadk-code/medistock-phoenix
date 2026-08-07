@@ -497,7 +497,18 @@ describe('no client-side document-number sequence exists', () => {
     // generated, never sequential, and never a movement/document number. No
     // sequence, no counter, no max()+1, and no generated numeric identity is
     // introduced anywhere in the migration. Ceiling -> 165.
-    const beyond = migrations.filter(f => /^(16[5-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 165 (SECTOR-HEALTH-CENTER-SUPPLY-AND-RETURN-165) adds NO document
+    // numbering -- it is exactly two CREATE OR REPLACE statements over the two
+    // existing direct-corridor endpoint validators
+    // (phoenix_assert_direct_supply_endpoints /
+    // phoenix_assert_direct_return_endpoints), each gaining one narrow,
+    // facility-pinned branch. It creates no table, no column, no sequence, no
+    // counter, no max()+1 and no generated identity of any kind, and it reads
+    // only warehouse_kind/status/facility_id/institution_class plus the
+    // pre-existing warehouse_transfers provenance row. Every transfer, return
+    // and shipment number it interacts with is caller-supplied exactly as
+    // before. Ceiling -> 166.
+    const beyond = migrations.filter(f => /^(16[6-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
