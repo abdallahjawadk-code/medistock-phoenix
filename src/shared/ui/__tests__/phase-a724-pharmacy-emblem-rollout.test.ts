@@ -363,7 +363,19 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config.ts"' +
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config_test.ts"' +
       ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-client.ts"' +
-      ' ":!supabase/config.toml"',
+      ' ":!supabase/config.toml"' +
+      // STAGE-E-2 FACILITY-IDENTITY-AND-ROUTING-FOUNDATION: a still later,
+      // separately authorized phase adds a genuine new migration (164 — the
+      // subordinate-facility identity table, the warehouse->facility link, two
+      // classification columns and the replenishment-route authority) plus its
+      // own dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason every
+      // entry above is: it has nothing to do with this (much earlier, UI-only)
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted migration/schema/RLS/service change.
+      ' ":!supabase/migrations/164_phoenix_facility_identity_and_routing_foundation.sql"' +
+      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
