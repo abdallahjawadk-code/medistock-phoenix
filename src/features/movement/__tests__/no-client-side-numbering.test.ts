@@ -483,7 +483,21 @@ describe('no client-side document-number sequence exists', () => {
     // never a document/reference number of any kind, and delivery_state
     // rows are never surfaced as a document identifier anywhere. Ceiling ->
     // 164.
-    const beyond = migrations.filter(f => /^(16[4-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 164 (FACILITY-IDENTITY-AND-ROUTING-FOUNDATION-164) adds NO document
+    // numbering -- it is Stage E's metadata foundation: two classification
+    // columns (organizations.institution_class,
+    // distribution_points.clinical_location_kind), one nullable link column
+    // (warehouses.facility_id), and two tables (organization_facilities,
+    // outlet_replenishment_routes). Neither table carries a document,
+    // reference, dispatch, transfer, return or shipment number, and neither
+    // is ever surfaced as a document identifier. The one identifier-shaped
+    // column, organization_facilities.code, is an OPTIONAL, caller-supplied
+    // administrative label unique per organization -- exactly the shape of
+    // the long-existing organizations.code (001) and warehouses.code, never
+    // generated, never sequential, and never a movement/document number. No
+    // sequence, no counter, no max()+1, and no generated numeric identity is
+    // introduced anywhere in the migration. Ceiling -> 165.
+    const beyond = migrations.filter(f => /^(16[5-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
