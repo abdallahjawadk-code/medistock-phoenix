@@ -3,6 +3,11 @@
 Status: **hosted verification complete with dispatch DISABLED. No activation, no
 event processing, no synthetic data. D3-2F remains owner-gated.**
 
+> **Superseded status note (2026-08-07).** D3-2F has since run under its own owner
+> gate and is **CLOSED — Production verified**; see
+> [D3-2F-PRODUCTION-ACTIVATION-VERIFICATION.md](D3-2F-PRODUCTION-ACTIVATION-VERIFICATION.md).
+> The D3-2E findings recorded below are unchanged and remain accurate **for D3-2E**.
+
 This document records the D3-2E hosted verification of `phoenix-outbox-dispatcher`
 against the real pre-launch Production project. Every value below is a
 non-sensitive identifier or an aggregate. No secret value, token, database URL,

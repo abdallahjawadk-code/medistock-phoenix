@@ -4,13 +4,14 @@
 > Long-lived decisions live in [ARCHITECTURE.md](ARCHITECTURE.md).
 > Finished stage reports are appended to [HISTORY/](HISTORY/).
 
-**Updated:** 2026-08-06
+**Updated:** 2026-08-07
 **Canonical decision memory:** v13 (supersedes v12, v11, v10 and all earlier plans)
 
 > **Two independent tracks.** Most of this file describes the **R0 pre-launch
 > purge/release** program, which is still gated and unstarted. The **D3-2 Outbox
-> dispatcher** track is separate, is further along, and has now touched
-> Production. See [D3-2 — Outbox dispatcher](#d3-2--outbox-dispatcher-authoritative)
+> dispatcher** track is separate and is now **CLOSED**: D3-2F passed its bounded
+> Production verification and every runtime change it made was reverted, closing
+> **Stage D**. See [D3-2 — Outbox dispatcher](#d3-2--outbox-dispatcher-authoritative)
 > for its authoritative state. Statements elsewhere in this file apply to the R0
 > track unless they say otherwise.
 
@@ -247,7 +248,9 @@ Production or Staging connection, no live migration, no real restore/purge.
 
 ## D3-2 — Outbox dispatcher (authoritative)
 
-Separate from the R0 track above. **Closed through D3-2E; D3-2F not begun.**
+Separate from the R0 track above. **CLOSED through D3-2F — Production verified.**
+Stage D is closed; see
+[HISTORY/2026-08-07-d-stage-closure.md](HISTORY/2026-08-07-d-stage-closure.md).
 
 | fact | value |
 |---|---|
@@ -259,13 +262,16 @@ Separate from the R0 track above. **Closed through D3-2E; D3-2F not begun.**
 | Function | `phoenix-outbox-dispatcher` |
 | Deployment ID | `c30a5c51-b5ba-4fda-9cff-8bc7cf7a642f` |
 | Status | **ACTIVE** |
-| Version | **2** — v1 at deploy, refreshed to v2 by Supabase metadata after the secret rotation; **no second deployment** |
+| Bundle SHA256 (`ezbr_sha256`) | **`a28bb6fbf4e8d7acd1112ec3f9746f3fd0e81b440d9a91c4a639b7cea51633f0`** — code-integrity invariant |
+| Version | **informational only** — last observed **13**. Supabase increments it on every environment/secret mutation even when the bundle is byte-identical. **Do not gate on it; do not expect 2.** |
 | Deployed source | verified **byte-identical to `d8433b92`** (12 bundled modules downloaded and compared; 0 differing) |
 | `verify_jwt` | `false` — **this function only**; the seven other deployed functions remain `true` |
 | `PHOENIX_OUTBOX_DISPATCH_SECRET` | **configured** — value **never disclosed**, not recoverable from this repository |
 | `PHOENIX_OUTBOX_DISPATCH_ENABLED` | **ABSENT** |
+| `PHOENIX_OUTBOX_CONSUMER_KEY` / `PHOENIX_OUTBOX_BATCH_SIZE` | **ABSENT** — set only for the D3-2F probe, then removed |
 | Dispatch | **DISABLED** |
-| PR | **#100**, open, **Draft**, unmerged, base `master` |
+| Scheduler / cron / timer / queue | **none** |
+| PR | **#100**, **MERGED** 2026-08-06 into `master` as `0c24b590` |
 
 **Hosted verification (D3-2E), all disabled-state:**
 
@@ -275,23 +281,67 @@ Separate from the R0 track above. **Closed through D3-2E; D3-2F not begun.**
 | incorrect secret | `401 NOT_AUTHENTICATED` ✅ |
 | correct secret while disabled | `200` D3-2A health payload, returned verbatim ✅ |
 
-**What did NOT happen.** No enabled dispatch · no `phoenix_outbox_*` RPC of any
-kind · no Supabase database client constructed · no SQL or direct table access ·
-no database mutation · no synthetic data · no consumer · no organization · no
-event · no delivery-state row · no lease · no scheduler, cron, timer, queue or
-background task · no historical backlog existed to process.
+**What did NOT happen *during D3-2E*.** No enabled dispatch · no
+`phoenix_outbox_*` RPC of any kind · no Supabase database client constructed · no
+SQL or direct table access · no database mutation · no synthetic data · no
+consumer · no organization · no event · no delivery-state row · no lease · no
+scheduler, cron, timer, queue or background task · no historical backlog existed
+to process.
 
 Full evidence, including the zero-RPC argument:
 [D3-2E-HOSTED-DISABLED-VERIFICATION.md](D3-2E-HOSTED-DISABLED-VERIFICATION.md).
 
-**D3-2F has not begun and remains separately owner-gated.** Activation would
-require at minimum: registering a consumer, setting
-`PHOENIX_OUTBOX_DISPATCH_ENABLED`, and deciding the invocation mechanism.
+**D3-2F — CLOSED, Production verified.** One bounded, owner-gated probe ran and
+every runtime change it made was reverted.
+
+| fact | value |
+|---|---|
+| Result | `D3_2F_PRODUCTION_PROBE_PASS` |
+| Probe outcome | `claimed=1  completed=0  failed=0  released=1` |
+| Verified | durable Outbox **plumbing**: discovery → org-scoped consumer → claim → lease → processor → release |
+| **Not** verified | **no external or business delivery.** The default processor `releaseEveryRow` performs no side effect, so `completed=0` is correct |
+| Consumer cursor | advanced **0 → 1**; one claim, one lease lifecycle, lease released, `attempt_count` still 0 |
+| Evidence SHA256 | `52cef39eaa5ff24d6e26c2021591d74a86ceb6f36530d2082ffce60ddcd855fb` |
+| Plan v2 SHA256 | `9cbce8089908df0486f547d5fafcb1ca3824d3660399c3170e0eb53048a419dc` |
+| Plan v1 SHA256 | `fc8e97498da54dca5b4a8b6232c45896f9b22f84e86c3d642c5be1a1a440bcb2` — **VOID** |
+| Non-processing halt evidence | `fbc78905041dfc7c693c2d5b83685ef12132a43510e7baeaa81f5e1012cbcd33` |
+| Local CI-equivalence evidence | `9ef31bfda225d056888cb8f6907ace84a2e3defd6c6e8dbc2077ed6c9ac77718` |
+
+Retained verification artifacts (permanent labelled retention; **no
+`phoenix_demo_purger`, no `PHOENIX_DEMO_V1` enrolment, no invented `DELETE`**):
+organization `4e792f87-52d0-418e-9e80-cd238947ff78` (**inactive**), consumer
+`ad609477-c1d5-47ec-a547-1979d9ceb909` / `phoenix_d3_2f_verify_dispatcher`
+(**disabled**), event `4c639b11-b2a5-4ba7-a7c0-39a771d868af`, delivery state
+`6bcbe7bf-86ec-4aa6-bacc-c7f1fcd2c47d`, correlation
+`f452bcc5-3685-4e1a-8747-861b04b4d320`.
+
+No business-data impact · no active lease · no scheduler · migrations still
+**001–163** with no 164+.
+
+Full evidence:
+[D3-2F-PRODUCTION-ACTIVATION-VERIFICATION.md](D3-2F-PRODUCTION-ACTIVATION-VERIFICATION.md).
 
 ## Next action
 
-**D3-2 track:** decide the PR #100 merge gate, then D3-2F activation — each its
-own owner gate. Nothing further is authorized.
+**D3-2 track: CLOSED.** PR #100 is merged and D3-2F passed its bounded Production
+verification, closing **Stage D**. Nothing further on this track is authorized.
+
+**Remaining programme roadmap** — unchanged, not to be collapsed or skipped:
+
+```
+E — Outlets & Emergency Replenishment
+F — Patient Dispensing
+G — Availability, QR, Search & CQRS
+H — Reports, Audit & Reconciliation
+I — Durable Operations        (AI portion CANCELLED — must not be reintroduced)
+J — Observability, Security & Rollout
+
+then: Restore / Staging / Owner GO / Production evidence
+then: final whole-programme comprehensive audit and closure
+```
+
+Long-lived phase table: [ARCHITECTURE.md](ARCHITECTURE.md) §6.
+**Stage E has not begun** and is separately owner-gated.
 
 **R0 track:** close the blockers above, then execute the rehearsal in
 [staging-rehearsal-runbook.md](staging-rehearsal-runbook.md), generate the
