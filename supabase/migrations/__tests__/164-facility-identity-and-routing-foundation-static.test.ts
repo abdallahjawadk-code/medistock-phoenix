@@ -36,8 +36,14 @@ describe('164 registration and shape', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f === NAME)).toEqual([NAME]);
   });
 
-  it('is the highest reviewed migration', () => {
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
+  it('is registered immediately after 163', () => {
+    // Deliberately NOT "is the highest reviewed migration": that held only
+    // until the next migration landed, so asserting it would force every later
+    // subphase to edit this file. Position relative to its predecessor is the
+    // stable invariant.
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(i).toBeGreaterThan(0);
+    expect(REVIEWED_MIGRATION_FILES[i - 1]).toBe('163_phoenix_outbox_consumer_foundation.sql');
   });
 
   it('is a single transaction', () => {

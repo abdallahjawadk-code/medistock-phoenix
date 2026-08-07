@@ -375,7 +375,17 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // OTHER unlisted migration/schema/RLS/service change.
       ' ":!supabase/migrations/164_phoenix_facility_identity_and_routing_foundation.sql"' +
       ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation.dynamic.test.ts"' +
+      // STAGE-E-3 SECTOR-HEALTH-CENTER-SUPPLY-AND-RETURN: the next, separately
+      // authorized phase adds migration 165 (two CREATE OR REPLACE endpoint
+      // validators, no new schema object) plus its own dedicated static/dynamic
+      // test files -- a real, in-scope backend change for THAT phase, excluded
+      // here by name for the same reason every entry above is: it has nothing
+      // to do with this (much earlier, UI-only) pharmacy-emblem phase. Named
+      // exactly, so this guard still catches any OTHER unlisted change.
+      ' ":!supabase/migrations/165_phoenix_sector_health_center_supply_and_return.sql"' +
+      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
