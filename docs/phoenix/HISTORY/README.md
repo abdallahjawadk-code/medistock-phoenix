@@ -18,6 +18,7 @@ YYYY-MM-DD-<stage>-<short-slug>.md
 | date | stage | summary |
 |---|---|---|
 | 2026-07-30 | R0 (part) | [Purge package and runner hardening](2026-07-30-r0-purge-package.md) |
+| 2026-08-07 | D | [Stage D closure after D3-2F Production verification](2026-08-07-d-stage-closure.md) |
 
 ## Earlier material
 
