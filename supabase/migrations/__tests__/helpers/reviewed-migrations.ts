@@ -224,6 +224,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '161_phoenix_movement_outbox_producer.sql',
   '162_phoenix_stocktake_and_exception_outbox_producers.sql',
   '163_phoenix_outbox_consumer_foundation.sql',
+  '164_phoenix_facility_identity_and_routing_foundation.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
