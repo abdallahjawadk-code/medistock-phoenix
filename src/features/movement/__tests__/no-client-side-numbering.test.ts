@@ -508,8 +508,21 @@ describe('no client-side document-number sequence exists', () => {
     // pre-existing warehouse_transfers provenance row. Every transfer, return
     // and shipment number it interacts with is caller-supplied exactly as
     // before. Ceiling -> 166.
-    const beyond = migrations.filter(f => /^(16[6-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 167 (DISPATCH-LINE-FULL-REJECTION-RECONCILIATION-167) adds NO document
+    // numbering — it reconciles one existing CHECK constraint branch
+    // (warehouse_dispatch_lines_decision_chk's 'rejected' case) to match the
+    // receive writer's own long-standing received_quantity = 0, and backfills
+    // any legacy NULL-quantity rejected row to the same value. It creates no
+    // table, no column, no sequence, no counter, no max()+1 and no generated
+    // numeric identity of any kind, and it replaces no function — the receive
+    // RPC and its 149 delegate are byte-for-byte unchanged. Migration 166 is
+    // deliberately ABSENT here: it belongs to Stage E's separate, still-
+    // unmerged initial-provisioning-invariant migration (PR #107), and 167 is
+    // independent of it — it neither reads nor writes anything 166 creates.
+    // The ceiling moves to 168.
+    const beyond = migrations.filter(f => /^(166|168|169|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');
