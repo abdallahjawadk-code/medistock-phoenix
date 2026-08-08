@@ -419,7 +419,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // still catches any OTHER unlisted migration/schema/RLS/service change.
       ' ":!supabase/migrations/168_phoenix_atomic_emergency_outlet_replenishment.sql"' +
       ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment.dynamic.test.ts"' +
+      // STAGE-E-E6-169: Migration 169 (outlet-replenishment reversal) plus its
+      // own dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above exists: this guard freezes an earlier, UI-only
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted migration/schema/RLS/service change.
+      ' ":!supabase/migrations/169_phoenix_outlet_replenishment_reversal.sql"' +
+      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

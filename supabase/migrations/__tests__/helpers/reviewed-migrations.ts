@@ -238,8 +238,11 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // Both are now reviewed and registered; the next unreviewed number is 168.
   '167_phoenix_dispatch_line_full_rejection_reconciliation.sql',
   // 168 (ATOMIC-EMERGENCY-OUTLET-REPLENISHMENT) — Stage E / E-5. Backend-only
-  // forward corridor. The next unreviewed number is 169.
+  // forward corridor.
   '168_phoenix_atomic_emergency_outlet_replenishment.sql',
+  // 169 (OUTLET-REPLENISHMENT-REVERSAL) — Stage E / E-6. Backend-only reversal
+  // corridor. The next unreviewed number is 170.
+  '169_phoenix_outlet_replenishment_reversal.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

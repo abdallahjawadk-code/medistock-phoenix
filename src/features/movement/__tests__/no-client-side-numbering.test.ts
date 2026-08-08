@@ -534,11 +534,16 @@ describe('no client-side document-number sequence exists', () => {
     // 168 (ATOMIC-EMERGENCY-OUTLET-REPLENISHMENT-168) adds replenish_send /
     // replenish_receive movement types and the atomic E-5 RPC, but introduces
     // no client-side document numbering, sequence, counter, or max()+1.
-    // Ceiling moves to 169.
-    const beyond = migrations.filter(f => /^(169|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 169 (OUTLET-REPLENISHMENT-REVERSAL-169) adds the E-6 reversal once-index,
+    // a read-only reversible-batches helper, and the atomic reversal RPC. It
+    // reuses returned_quantity (071) as the reversal cap and creates no
+    // document numbering, sequence, counter, or max()+1 of any kind.
+    // Ceiling moves to 170.
+    const beyond = migrations.filter(f => /^(170|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('168_phoenix_atomic_emergency_outlet_replenishment.sql');
+    expect(migrations).toContain('169_phoenix_outlet_replenishment_reversal.sql');
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');

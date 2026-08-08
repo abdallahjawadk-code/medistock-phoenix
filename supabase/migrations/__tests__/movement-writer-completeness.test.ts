@@ -409,10 +409,10 @@ describe('10. every contract group has at least one reviewed writer', () => {
   it('every reviewed writer names the migration that made it compliant, within the reviewed range', () => {
     for (const w of REVIEWED_MOVEMENT_WRITERS) {
       expect(w.migration, w.fn).toBeGreaterThanOrEqual(126);
-      // Upper bound moved 157 -> 168: ATOMIC-EMERGENCY-OUTLET-REPLENISHMENT-168
-      // (Stage E / E-5) adds phoenix_replenish_emergency_outlet as a new
-      // Group K writer.
-      expect(w.migration, w.fn).toBeLessThanOrEqual(168);
+      // Upper bound moved 168 -> 169: OUTLET-REPLENISHMENT-REVERSAL-169
+      // (Stage E / E-6) adds phoenix_reverse_outlet_replenishment as a new
+      // Group L writer.
+      expect(w.migration, w.fn).toBeLessThanOrEqual(169);
     }
   });
 });

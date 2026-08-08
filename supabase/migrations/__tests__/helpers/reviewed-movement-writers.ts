@@ -283,6 +283,31 @@ export const REVIEWED_MOVEMENT_WRITERS: readonly ReviewedWriter[] = Object.freez
     idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
     clientCallable: true,
   },
+  // ── Group L — Stage E / E-6 emergency-outlet→pharmacy replenishment ────
+  // ── reversal ─────────────────────────────────────────────────────────
+  {
+    // Atomic reversal corridor: one replenish_send (emergency outlet, losing
+    // stock back) + one replenish_receive (original pharmacy, regaining it)
+    // on outlet_stock_movements, shared reference_id=p_request_id under the
+    // 'outlet_replenishment_reversal' namespace, freshly generated
+    // correlation_id (same idiom as 168, NOT inherited from the original
+    // forward operation's own correlation_id). causation_id (124) is left
+    // NULL like 168 — the link back to the exact original replenish_receive
+    // leg is recorded structurally via the (reference_type, reference_id)
+    // pairing lookup this RPC performs at call time, and is captured for
+    // human/audit traceability in audit_logs.payload
+    // (original_receive_movement_id / original_send_movement_id /
+    // original_forward_reference_id) rather than as a stored FK column on a
+    // request/line table — there is no such table for this corridor, matching
+    // 168's own precedent of leaving causation_id unset for a Group K/L root
+    // write. No warehouse ledger write. No new column.
+    fn: 'phoenix_reverse_outlet_replenishment', group: 'L', migration: 169,
+    ledgers: ['outlet_stock_movements'],
+    reasonCode: { kind: 'literal', value: 'transferred' },
+    correlation: 'fresh', causation: null,
+    idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
+    clientCallable: true,
+  },
 ]);
 
 export interface ExcludedWriter {
@@ -340,5 +365,5 @@ export const writersInGroup = (group: string): readonly ReviewedWriter[] =>
 
 /** The domain groups the contract is organised into, in slice order. */
 export const CONTRACT_GROUPS: readonly string[] = Object.freeze([
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
 ]);

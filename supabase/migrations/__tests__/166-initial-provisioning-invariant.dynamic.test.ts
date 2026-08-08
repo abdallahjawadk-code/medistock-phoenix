@@ -833,18 +833,18 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       });
     });
 
-    it('no E-6 or later reversal object exists', async () => {
-      // This suite drives the full effective chain on disk (buildRig({})). Once
-      // Migration 168 (E-5) is present, phoenix_replenish_emergency_outlet and
-      // the replenish_* movement types are expected. E-4 ownership still forbids
-      // E-6 reversal execution objects.
+    it('E-6 reversal objects exist now that 169 is on the effective chain tip', async () => {
+      // This suite drives the full effective chain on disk (buildRig({})).
+      // Migration 169 (E-6) is now present, so phoenix_reverse_outlet_replenishment
+      // and phoenix_outlet_replenishment_reversible_batches are expected. E-4
+      // ownership itself creates neither — this only reflects the tip advancing.
       await rig.asAdmin(async (c: any) => {
         for (const sig of [
           'public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)',
           'public.phoenix_outlet_replenishment_reversible_batches(uuid,uuid)',
         ]) {
           const r = await c.query(`SELECT to_regprocedure($1) AS r`, [sig]);
-          expect(r.rows[0].r, `${sig} must not exist before E-6`).toBeNull();
+          expect(r.rows[0].r, `${sig} must exist once 169 is on the chain`).not.toBeNull();
         }
       });
     });
