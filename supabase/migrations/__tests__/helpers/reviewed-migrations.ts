@@ -226,6 +226,18 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '163_phoenix_outbox_consumer_foundation.sql',
   '164_phoenix_facility_identity_and_routing_foundation.sql',
   '165_phoenix_sector_health_center_supply_and_return.sql',
+  // 166 is deliberately ABSENT: it belongs to Stage E's INITIAL-PROVISIONING-
+  // INVARIANT migration, authored on its own branch and not yet merged. 167
+  // does not wait for it — the two changes are independent — and taking 167
+  // rather than 166 is what keeps 166 free, so the in-flight migration never
+  // has to renumber the way 148 once did.
+  //
+  // The resulting 166 hole is intentional and safe: per the SECURITY MODEL note
+  // at the top of this file, a migration is never approved for being
+  // "numerically contiguous with its peers", so a gap grants nothing and denies
+  // nothing. Registry↔disk agreement is what the manifest test enforces, and
+  // both sides simply lack 166.
+  '167_phoenix_dispatch_line_full_rejection_reconciliation.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
