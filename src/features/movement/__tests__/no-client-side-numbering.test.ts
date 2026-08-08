@@ -531,9 +531,14 @@ describe('no client-side document-number sequence exists', () => {
     // on its own branch concurrently with 166 and is independent of it — it
     // neither reads nor writes anything 166 creates. Both are now reviewed
     // and registered in their real numeric order. The ceiling moves to 168.
-    const beyond = migrations.filter(f => /^(168|169|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 168 (ATOMIC-EMERGENCY-OUTLET-REPLENISHMENT-168) adds replenish_send /
+    // replenish_receive movement types and the atomic E-5 RPC, but introduces
+    // no client-side document numbering, sequence, counter, or max()+1.
+    // Ceiling moves to 169.
+    const beyond = migrations.filter(f => /^(169|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
+    expect(migrations).toContain('168_phoenix_atomic_emergency_outlet_replenishment.sql');
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');

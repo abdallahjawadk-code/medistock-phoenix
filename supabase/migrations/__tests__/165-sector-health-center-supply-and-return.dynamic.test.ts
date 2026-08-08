@@ -543,6 +543,9 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
     });
 
     it('warehouse_kind, movement vocabulary and Availability are untouched', async () => {
+      // E-3 itself never widens outlet_stock_movements_type_chk. The effective
+      // chain tip may include Migration 168 (E-5) which adds replenish_*; assert
+      // the pre-E-5 core types and warehouse_kind / Availability invariants.
       const { rows } = await rig.asAdmin((c: any) => c.query(`
         SELECT (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='warehouses_warehouse_kind_chk') AS wk,
                (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='outlet_stock_movements_type_chk') AS mv,
@@ -550,7 +553,8 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
                  WHERE conrelid='public.item_availability'::regclass
                    AND pg_get_constraintdef(oid) LIKE '%near_expiry%' LIMIT 1) AS av`));
       expect(rows[0].wk).toBe("CHECK ((warehouse_kind = ANY (ARRAY['central'::text, 'institution'::text])))");
-      expect(rows[0].mv).not.toMatch(/replenish/);
+      expect(rows[0].mv).toMatch(/dispense/);
+      expect(rows[0].mv).toMatch(/dispatch_receive/);
       expect(rows[0].av).not.toMatch(/near_stockout/);
     });
 

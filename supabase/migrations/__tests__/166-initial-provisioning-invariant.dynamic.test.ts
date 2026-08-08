@@ -9,14 +9,11 @@
  * state machine — which Migration 166 alone introduces — against that real,
  * current schema.
  *
- * Concretely, that means this suite also picks up Migration 167 once it is
- * present on disk: 167 is a separate, independently authored migration that
- * reconciles a PRE-EXISTING, pre-166 defect (a full-rejection receipt could
- * not commit at all — see rule D below for the historical detail and exact
- * attribution). 166 neither causes nor repairs that defect and owns none of
- * 167's logic; this suite simply verifies the E-4 invariant continues to hold
- * once the corridor it sits on top of is reachable end to end, rather than
- * freezing itself to an artificially stale, no-longer-effective schema.
+ * Concretely, that means this suite also picks up later migrations once they
+ * are present on disk (167's rejection reconciliation, 168's E-5 replenishment
+ * corridor, …). 166 neither causes nor owns those later objects; this suite
+ * verifies the E-4 invariant continues to hold on the effective chain tip
+ * rather than freezing itself to an artificially stale schema.
  *
  * The evidence that matters most is rules C and F: a header-status-only
  * predicate would get BOTH wrong, because
@@ -836,25 +833,34 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       });
     });
 
-    it('no E-5 or later object exists', async () => {
+    it('no E-6 or later reversal object exists', async () => {
+      // This suite drives the full effective chain on disk (buildRig({})). Once
+      // Migration 168 (E-5) is present, phoenix_replenish_emergency_outlet and
+      // the replenish_* movement types are expected. E-4 ownership still forbids
+      // E-6 reversal execution objects.
       await rig.asAdmin(async (c: any) => {
         for (const sig of [
-          'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)',
           'public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)',
           'public.phoenix_outlet_replenishment_reversible_batches(uuid,uuid)',
         ]) {
           const r = await c.query(`SELECT to_regprocedure($1) AS r`, [sig]);
-          expect(r.rows[0].r, `${sig} must not exist in E-4`).toBeNull();
+          expect(r.rows[0].r, `${sig} must not exist before E-6`).toBeNull();
         }
       });
     });
 
-    it('the outlet movement vocabulary is unchanged — no replenishment types', async () => {
+    it('the outlet movement vocabulary admits E-5 replenishment types when 168 is present', async () => {
       await rig.asAdmin(async (c: any) => {
         const r = await c.query(
           `SELECT pg_get_constraintdef(oid) d FROM pg_constraint WHERE conname='outlet_stock_movements_type_chk'`,
         );
-        expect(r.rows[0].d).not.toMatch(/replenish/);
+        // This suite drives the effective chain tip, which includes 168, so
+        // both E-5 types must be present. E-4 itself never widens this CHECK;
+        // the core pre-E-5 vocabulary must also survive unchanged.
+        expect(r.rows[0].d).toMatch(/dispense/);
+        expect(r.rows[0].d).toMatch(/dispatch_receive/);
+        expect(r.rows[0].d).toMatch(/replenish_send/);
+        expect(r.rows[0].d).toMatch(/replenish_receive/);
       });
     });
 

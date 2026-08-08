@@ -410,7 +410,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       ' ":!supabase/migrations/167_phoenix_dispatch_line_full_rejection_reconciliation.sql"' +
       ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-backfill.dynamic.test.ts"' +
       ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation.dynamic.test.ts"' +
+      // STAGE-E-E5-168: Migration 168 (atomic pharmacy→emergency-outlet
+      // replenishment) plus its own dedicated static/dynamic test files — a
+      // real, in-scope backend change for THAT phase, excluded here by name
+      // for the same reason every entry above exists: this guard freezes an
+      // earlier, UI-only pharmacy-emblem phase. Named exactly, so this guard
+      // still catches any OTHER unlisted migration/schema/RLS/service change.
+      ' ":!supabase/migrations/168_phoenix_atomic_emergency_outlet_replenishment.sql"' +
+      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

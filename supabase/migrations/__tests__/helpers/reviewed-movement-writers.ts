@@ -271,6 +271,18 @@ export const REVIEWED_MOVEMENT_WRITERS: readonly ReviewedWriter[] = Object.freez
     idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
     clientCallable: true,
   },
+  // ── Group K — Stage E / E-5 pharmacy→emergency-outlet replenishment ─────
+  {
+    // Atomic forward corridor: one replenish_send + one replenish_receive on
+    // outlet_stock_movements, shared reference_id=p_request_id, shared
+    // correlation_id (freshly generated). No warehouse ledger write.
+    fn: 'phoenix_replenish_emergency_outlet', group: 'K', migration: 168,
+    ledgers: ['outlet_stock_movements'],
+    reasonCode: { kind: 'literal', value: 'transferred' },
+    correlation: 'fresh', causation: null,
+    idempotency: 'request_fingerprint', concurrency: 'advisory-lock+row-lock',
+    clientCallable: true,
+  },
 ]);
 
 export interface ExcludedWriter {
@@ -328,5 +340,5 @@ export const writersInGroup = (group: string): readonly ReviewedWriter[] =>
 
 /** The domain groups the contract is organised into, in slice order. */
 export const CONTRACT_GROUPS: readonly string[] = Object.freeze([
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
 ]);
