@@ -198,6 +198,26 @@ describe('3. RPC contract — revalidation, locks, ledger, RBAC', () => {
     expect(rpcBody).toContain('phoenix_project_outlet_availability');
   });
 
+  it('enforces active-profile + outlet_stock.replenish BEFORE any idempotent replay return', () => {
+    // Independent review finding (PR #109): a SECURITY DEFINER replay must
+    // never return success before current authorization. Structurally prove
+    // the permission and active-profile gates precede the replay return.
+    const replayReturn = rpcBody.indexOf("'idempotent_replay', true");
+    const permissionGate = rpcBody.indexOf('phoenix_profile_has_scoped_permission');
+    const profileGate = rpcBody.indexOf('active_profile_required');
+    expect(replayReturn).toBeGreaterThan(-1);
+    expect(permissionGate).toBeGreaterThan(-1);
+    expect(profileGate).toBeGreaterThan(-1);
+    expect(permissionGate).toBeLessThan(replayReturn);
+    expect(profileGate).toBeLessThan(replayReturn);
+    // The route share-lock (authorization scope source) also precedes it.
+    const routeLock = rpcBody.search(
+      /FROM public\.outlet_replenishment_routes[\s\S]{0,120}FOR SHARE/,
+    );
+    expect(routeLock).toBeGreaterThan(-1);
+    expect(routeLock).toBeLessThan(replayReturn);
+  });
+
   it('implements fingerprint idempotency without a dedup table', () => {
     expect(rpcBody).toContain('_phoenix_replenishment_fingerprint_v1');
     expect(rpcBody).toContain('request_id_conflict');

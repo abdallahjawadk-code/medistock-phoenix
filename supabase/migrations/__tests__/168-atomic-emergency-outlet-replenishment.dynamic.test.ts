@@ -55,6 +55,7 @@ const CART_SPECIAL = '00000000-0000-0000-0000-000000168316';
 const CAB_SPECIAL = '00000000-0000-0000-0000-000000168317';
 
 const NOBODY = '00000000-0000-0000-0000-000000168901';
+const SLEEPER = '00000000-0000-0000-0000-000000168902';
 
 let seq = 0;
 const uniq = (p: string) => `${p}-${Date.now()}-${++seq}`;
@@ -137,6 +138,12 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       UPDATE profiles
          SET role='outlet_officer', status='active', organization_id='${ORG_HOSPITAL}'
        WHERE id='${NOBODY}';
+
+      INSERT INTO auth.users (id, email) VALUES ('${SLEEPER}', 'sleeper168@rig.test')
+      ON CONFLICT (id) DO NOTHING;
+      UPDATE profiles
+         SET role='outlet_officer', status='suspended', organization_id='${ORG_HOSPITAL}'
+       WHERE id='${SLEEPER}';
     `));
   });
 
@@ -838,6 +845,106 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       const msg = await rejects(() => replenish(routeId, srcId, 1, randomUUID(), null, null, NOBODY));
       expect(msg).toMatch(/forbidden_outlet_stock_replenish/);
       expect(await onHand(srcId)).toBe(before);
+    });
+  });
+
+  // ══ Replay authorization (independent review finding, PR #109) ═════════════
+  // Every successful return from the SECURITY DEFINER RPC — INCLUDING
+  // idempotent_replay = true — must re-prove an active profile holding
+  // outlet_stock.replenish. A matching request_id must never leak operation
+  // details or success semantics to an unauthorized caller.
+  describe('replay authorization — idempotent replay never bypasses RBAC', () => {
+    async function totalAudits(): Promise<number> {
+      const r = await rig.asAdmin((c: any) =>
+        c.query(`SELECT count(*)::int n FROM audit_logs WHERE action='outlet_stock.replenish'`));
+      return r.rows[0].n;
+    }
+
+    it('CASE A: unauthorized fresh request is rejected with zero mutation', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-RA-A'), qty: 8,
+      });
+      const requestId = randomUUID();
+      const before = await snapshots(srcId, CART_HOSP, requestId);
+      const auditsBefore = await totalAudits();
+      const msg = await rejects(() =>
+        replenish(routeId, srcId, 2, requestId, null, null, NOBODY));
+      expect(msg).toMatch(/forbidden_outlet_stock_replenish/);
+      const after = await snapshots(srcId, CART_HOSP, requestId);
+      expect(after.srcQty).toBe(before.srcQty);
+      expect(after.dstQty).toBe(before.dstQty);
+      expect(after.legs).toHaveLength(0);
+      expect(await totalAudits()).toBe(auditsBefore);
+    });
+
+    it('CASE B: unauthorized replay of an existing request is rejected — no details, no mutation', async () => {
+      // 1. Authorized caller performs a valid replenishment.
+      const { routeId, srcId, requestId } =
+        await assertSuccess('RA-B', PH_HOSP, CART_HOSP, ORG_HOSPITAL, 3);
+      const srcAfterSuccess = await onHand(srcId);
+      const dstId = await destStockId(srcId, CART_HOSP);
+      const dstAfterSuccess = await onHand(dstId!);
+      const legsAfterSuccess = await movementLegs(requestId);
+      const auditsAfterSuccess = await totalAudits();
+
+      // 2. A different authenticated user WITHOUT outlet_stock.replenish
+      //    replays the exact same request_id + exact same payload.
+      const msg = await rejects(() =>
+        replenish(routeId, srcId, 3, requestId, null, 'note-RA-B', NOBODY));
+
+      // 3. Authorization error — never an idempotent_replay success, and no
+      //    operation details disclosed as a successful response.
+      expect(msg).toMatch(/forbidden_outlet_stock_replenish/);
+      expect(msg).not.toMatch(/idempotent_replay/);
+      expect(msg).not.toMatch(/movement_id/);
+
+      // Zero new mutations of any kind.
+      expect(await onHand(srcId)).toBe(srcAfterSuccess);
+      expect(await onHand(dstId!)).toBe(dstAfterSuccess);
+      expect(await movementLegs(requestId)).toHaveLength(legsAfterSuccess.length);
+      expect(await totalAudits()).toBe(auditsAfterSuccess);
+    });
+
+    it('CASE C: inactive-profile replay is rejected with zero mutation', async () => {
+      const { routeId, srcId, requestId } =
+        await assertSuccess('RA-C', PH_HOSP, CART_HOSP, ORG_HOSPITAL, 2);
+      const srcAfterSuccess = await onHand(srcId);
+      const legsAfterSuccess = await movementLegs(requestId);
+      const auditsAfterSuccess = await totalAudits();
+
+      const msg = await rejects(() =>
+        replenish(routeId, srcId, 2, requestId, null, 'note-RA-C', SLEEPER));
+      expect(msg).toMatch(/active_profile_required/);
+
+      expect(await onHand(srcId)).toBe(srcAfterSuccess);
+      expect(await movementLegs(requestId)).toHaveLength(legsAfterSuccess.length);
+      expect(await totalAudits()).toBe(auditsAfterSuccess);
+    });
+
+    it('CASE D: authorized exact replay still returns the canonical safe replay', async () => {
+      const { routeId, srcId, requestId, result } =
+        await assertSuccess('RA-D', PH_HOSP, CART_HOSP, ORG_HOSPITAL, 4);
+      const srcAfterSuccess = await onHand(srcId);
+      const dstId = await destStockId(srcId, CART_HOSP);
+      const dstAfterSuccess = await onHand(dstId!);
+      const legsAfterSuccess = await movementLegs(requestId);
+      const auditsAfterSuccess = await totalAudits();
+
+      const replay = await replenish(routeId, srcId, 4, requestId, null, 'note-RA-D');
+      expect(replay.ok).toBe(true);
+      expect(replay.idempotent_replay).toBe(true);
+      expect(replay.send_movement_id).toBe(result.send_movement_id);
+      expect(replay.receive_movement_id).toBe(result.receive_movement_id);
+      expect(replay.quantity).toBe(4);
+
+      // AUTHORIZED_REPLAY_STOCK_DELTA = 0
+      expect(await onHand(srcId)).toBe(srcAfterSuccess);
+      expect(await onHand(dstId!)).toBe(dstAfterSuccess);
+      // AUTHORIZED_REPLAY_MOVEMENT_DELTA = 0
+      expect(await movementLegs(requestId)).toHaveLength(legsAfterSuccess.length);
+      // AUTHORIZED_REPLAY_AUDIT_DELTA = 0
+      expect(await totalAudits()).toBe(auditsAfterSuccess);
     });
   });
 

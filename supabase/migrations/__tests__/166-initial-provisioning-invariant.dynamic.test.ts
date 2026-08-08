@@ -854,10 +854,13 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
         const r = await c.query(
           `SELECT pg_get_constraintdef(oid) d FROM pg_constraint WHERE conname='outlet_stock_movements_type_chk'`,
         );
-        // Pre-168: no replenish_*. With 168 on the effective chain: both present.
-        // E-4 itself never widens this CHECK; the assertion tracks the chain tip.
+        // This suite drives the effective chain tip, which includes 168, so
+        // both E-5 types must be present. E-4 itself never widens this CHECK;
+        // the core pre-E-5 vocabulary must also survive unchanged.
         expect(r.rows[0].d).toMatch(/dispense/);
         expect(r.rows[0].d).toMatch(/dispatch_receive/);
+        expect(r.rows[0].d).toMatch(/replenish_send/);
+        expect(r.rows[0].d).toMatch(/replenish_receive/);
       });
     });
 

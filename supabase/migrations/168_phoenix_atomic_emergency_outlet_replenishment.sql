@@ -234,7 +234,43 @@ BEGIN
   -- 1. Advisory lock FIRST (salt 168168 — distinct from 067/106/156).
   PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 168168));
 
+  -- 2. Route row share-lock BEFORE the replay probe. Authorization scope
+  --    derives from the route row, and EVERY successful return from this
+  --    SECURITY DEFINER function — including idempotent_replay = true —
+  --    must first prove an active profile holding outlet_stock.replenish
+  --    for the source pharmacy scope. Lock order stays advisory → route →
+  --    points → stocks (V4 §14 / §19.2); moving the route acquisition ahead
+  --    of the replay probe does not invert any pair in that order.
+  SELECT * INTO v_route
+  FROM public.outlet_replenishment_routes
+  WHERE id = p_route_id
+  FOR SHARE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'route_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Authorization — existing key only; scoped to the route's source pharmacy.
+  -- Enforced BEFORE any replay return so an unauthorized caller can never
+  -- obtain successful replay semantics or operation details for an existing
+  -- request_id. The fresh path later re-proves that the route's organization
+  -- still equals the CURRENT canonical organization of both endpoints, so
+  -- this route-scoped check is equivalent for every executable request.
+  SELECT p.role, p.full_name INTO v_actor_role, v_actor_name
+  FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT public.phoenix_profile_has_scoped_permission(
+    v_actor, 'outlet_stock.replenish', v_route.organization_id,
+    NULL, v_route.source_point_id
+  ) THEN
+    RAISE EXCEPTION 'forbidden_outlet_stock_replenish' USING ERRCODE = '42501';
+  END IF;
+
   -- Idempotent replay probe — no dedup table (V4 §14 / 070:342 idiom).
+  -- Reached only by an authorized, active caller (above).
   SELECT * INTO v_send_existing
   FROM public.outlet_stock_movements m
   WHERE m.reference_type = 'outlet_replenishment'
@@ -276,15 +312,9 @@ BEGIN
     );
   END IF;
 
-  -- 2. Route row share-lock.
-  SELECT * INTO v_route
-  FROM public.outlet_replenishment_routes
-  WHERE id = p_route_id
-  FOR SHARE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'route_not_found' USING ERRCODE = 'P0002';
-  END IF;
+  -- Fresh execution from here on (route already share-locked above). A route
+  -- deactivated AFTER a request completed must not break the authorized
+  -- replay of that completed request, so is_active gates only fresh work.
   IF NOT v_route.is_active THEN
     RAISE EXCEPTION 'route_not_active' USING ERRCODE = '23514';
   END IF;
@@ -393,19 +423,9 @@ BEGIN
     RAISE EXCEPTION 'unsupported_institution_class_for_route' USING ERRCODE = '23514';
   END IF;
 
-  -- Authorization — existing key only; scoped to the source pharmacy.
-  IF NOT public.phoenix_profile_has_scoped_permission(
-    v_actor, 'outlet_stock.replenish', v_src_ctx.o_organization_id,
-    NULL, v_route.source_point_id
-  ) THEN
-    RAISE EXCEPTION 'forbidden_outlet_stock_replenish' USING ERRCODE = '42501';
-  END IF;
-
-  SELECT p.role, p.full_name INTO v_actor_role, v_actor_name
-  FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'active_profile_required' USING ERRCODE = '42501';
-  END IF;
+  -- Authorization already enforced above (before the replay probe) against
+  -- the route's organization/source point; the cross-organization check just
+  -- above proves that scope equals the CURRENT canonical organization.
 
   -- Resolve source stock WITHOUT locking yet (lock order requires both stock
   -- rows FOR UPDATE ascending id after destination identity is known).
