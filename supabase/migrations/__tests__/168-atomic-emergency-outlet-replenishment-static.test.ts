@@ -274,3 +274,70 @@ describe('4. non-goals — nothing outside E-5', () => {
     expect(sql167).toContain('DISPATCH-LINE-FULL-REJECTION');
   });
 });
+
+describe('5. destination canonical material identity (PR #109 correction)', () => {
+  // The Migration-150 canonical boundary is the generated material_identity_key
+  // (central_item_id, scientific_name, national_code, concentration,
+  // dosage_form, unit). A destination lookup that only compares a subset of
+  // those fields (e.g. scientific_name/national_code/concentration/
+  // dosage_form) can resolve a DIFFERENT canonical material that happens to
+  // share the same lot/provenance tuple. This locks the destination
+  // resolution onto material_identity_key so central_item_id and unit are
+  // inherently covered, without duplicating Migration 150's algorithm here.
+  const dstSelect = (() => {
+    const start = rpcBody.indexOf('SELECT s.id INTO v_dst_stock_id');
+    expect(start).toBeGreaterThan(-1);
+    const end = rpcBody.indexOf(';', start);
+    return rpcBody.slice(start, end);
+  })();
+
+  it('MATERIAL_IDENTITY_KEY_STATIC_PROOF: keys the destination lookup off the generated material_identity_key', () => {
+    expect(dstSelect).toContain(
+      's.material_identity_key = v_src_stock.material_identity_key',
+    );
+  });
+
+  it('does not resolve destination identity from the withdrawn partial field list', () => {
+    // Scoped to the RPC body only (never the VERIFY block, which legitimately
+    // names this exact partial predicate as a NEGATIVE regression guard).
+    expect(rpcBody).not.toMatch(
+      /s\.scientific_name\s*=\s*v_src_stock\.scientific_name/,
+    );
+    expect(rpcBody).not.toMatch(
+      /COALESCE\(s\.national_code,\s*''\)\s*=\s*COALESCE\(v_src_stock\.national_code/,
+    );
+    expect(rpcBody).not.toMatch(
+      /COALESCE\(s\.concentration,\s*''\)\s*=\s*COALESCE\(v_src_stock\.concentration/,
+    );
+    expect(rpcBody).not.toMatch(
+      /COALESCE\(s\.dosage_form,\s*''\)\s*=\s*COALESCE\(v_src_stock\.dosage_form/,
+    );
+  });
+
+  it('retains the exact lot/provenance tuple required by outlet_stock_identity_v150_uniq', () => {
+    expect(dstSelect).toMatch(
+      /s\.distribution_point_id\s*=\s*v_route\.destination_point_id/,
+    );
+    expect(dstSelect).toMatch(
+      /COALESCE\(s\.batch_number, ''\)\s*=\s*COALESCE\(v_src_stock\.batch_number, ''\)/,
+    );
+    expect(dstSelect).toMatch(
+      /COALESCE\(s\.expiry_date, DATE '0001-01-01'\)\s*\n?\s*=\s*COALESCE\(v_src_stock\.expiry_date, DATE '0001-01-01'\)/,
+    );
+    expect(dstSelect).toMatch(
+      /COALESCE\(s\.internal_batch_reference, ''\)\s*\n?\s*=\s*COALESCE\(v_src_stock\.internal_batch_reference, ''\)/,
+    );
+    expect(dstSelect).toMatch(
+      /COALESCE\(s\.supply_type, ''\)\s*=\s*COALESCE\(v_src_stock\.supply_type, ''\)/,
+    );
+    expect(dstSelect).toMatch(
+      /COALESCE\(s\.purchase_origin, ''\)\s*=\s*COALESCE\(v_src_stock\.purchase_origin, ''\)/,
+    );
+  });
+
+  it('the in-transaction VERIFY block re-asserts the canonical predicate is present', () => {
+    expect(active).toContain(
+      's.material_identity_key = v_src_stock.material_identity_key',
+    );
+  });
+});

@@ -475,6 +475,19 @@ BEGIN
 
   -- Resolve (or create) destination outlet_stock with exact material identity
   -- including supply_type / purchase_origin (V4 §14 / §19.2 provenance).
+  --
+  -- CORRECTION (independent review, PR #109): Migration 150 makes
+  -- material_identity_key (central_item_id, scientific_name, national_code,
+  -- concentration, dosage_form, unit) the canonical material boundary, and
+  -- outlet_stock_identity_v150_uniq allows two destination rows to coexist
+  -- for the SAME distribution_point_id + lot/provenance tuple when their
+  -- material_identity_key differs (e.g. unit='box' vs unit='strip', or a
+  -- different central_item_id). The resolution below MUST therefore key off
+  -- the generated material_identity_key — never rebuild identity from a
+  -- partial field list — combined with the exact lot/provenance tuple the
+  -- unique index enforces, so it can never match a different canonical
+  -- material that merely shares scientific_name/national_code/concentration/
+  -- dosage_form/batch/expiry/provenance.
   INSERT INTO public.outlet_stock (
     organization_id, distribution_point_id, point_type, central_item_id,
     scientific_name, trade_name, concentration, dosage_form, unit,
@@ -503,10 +516,8 @@ BEGIN
   SELECT s.id INTO v_dst_stock_id
   FROM public.outlet_stock s
   WHERE s.distribution_point_id = v_route.destination_point_id
-    AND s.scientific_name = v_src_stock.scientific_name
-    AND COALESCE(s.concentration, '') = COALESCE(v_src_stock.concentration, '')
-    AND COALESCE(s.dosage_form, '')   = COALESCE(v_src_stock.dosage_form, '')
-    AND COALESCE(s.national_code, '') = COALESCE(v_src_stock.national_code, '')
+    AND s.organization_id = v_src_stock.organization_id
+    AND s.material_identity_key = v_src_stock.material_identity_key
     AND COALESCE(s.batch_number, '')  = COALESCE(v_src_stock.batch_number, '')
     AND COALESCE(s.expiry_date, DATE '0001-01-01')
         = COALESCE(v_src_stock.expiry_date, DATE '0001-01-01')
@@ -791,6 +802,16 @@ BEGIN
   END IF;
   IF v_rpc_def NOT LIKE '%outlet_replenishment%' OR v_rpc_def NOT LIKE '%transferred%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (168): reference_type/reason_code missing';
+  END IF;
+  -- CORRECTION (PR #109): destination-row resolution must key off the
+  -- Migration-150 canonical material_identity_key — never a partial field
+  -- list that a different canonical material variant (e.g. a different unit
+  -- or central_item_id) could also satisfy.
+  IF v_rpc_def NOT LIKE '%s.material_identity_key = v_src_stock.material_identity_key%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (168): destination resolution must key off material_identity_key';
+  END IF;
+  IF v_rpc_def LIKE '%s.scientific_name = v_src_stock.scientific_name%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (168): destination resolution must not reintroduce the partial scientific_name/national_code/concentration/dosage_form predicate';
   END IF;
   -- No E-6 reverse RPC, no E-4 writes.
   IF to_regprocedure('public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)') IS NOT NULL THEN

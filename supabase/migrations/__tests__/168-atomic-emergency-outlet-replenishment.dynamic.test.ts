@@ -177,6 +177,8 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
     expiryDays?: number;
     supplyType?: string | null;
     purchaseOrigin?: string | null;
+    unit?: string;
+    centralItemId?: string | null;
   }): Promise<string> {
     // phoenix_inventory_fefo_batches (outlet scope) only returns lots that have
     // an accepted dispatch_receive provenance chain (150 exact helper JOIN).
@@ -185,6 +187,8 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
     const expiryDays = opts.expiryDays ?? 365;
     const supplyType = opts.supplyType ?? 'aid';
     const purchaseOrigin = opts.purchaseOrigin ?? null;
+    const unit = opts.unit ?? 'box';
+    const centralItemId = opts.centralItemId ?? null;
     const whStockId = randomUUID();
     const dispatchId = randomUUID();
     const lineId = randomUUID();
@@ -203,26 +207,26 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
           supply_type, purchase_origin
         ) VALUES (
           $1,$2,$3,
-          $4,'10mg','tablet','box',
+          $4,'10mg','tablet',$10,
           NULL, true,
           $5, false,
           current_date + $6::int, $7, 0,
           $8, $9
         )
       `, [whStockId, opts.org, warehouseId, opts.sci, batch, expiryDays, opts.qty,
-        supplyType, purchaseOrigin]);
+        supplyType, purchaseOrigin, unit]);
 
       await c.query(`
         INSERT INTO outlet_stock (
-          id, organization_id, distribution_point_id, point_type,
+          id, organization_id, distribution_point_id, point_type, central_item_id,
           scientific_name, concentration, dosage_form, unit,
           national_code, has_no_national_code,
           batch_number, has_no_batch_number,
           expiry_date, on_hand_quantity, reserved_quantity, movement_seq,
           supply_type, purchase_origin
         ) VALUES (
-          $1,$2,$3,'pharmacy',
-          $4,'10mg','tablet','box',
+          $1,$2,$3,'pharmacy',$10,
+          $4,'10mg','tablet',$11,
           NULL, true,
           $5, false,
           current_date + $6::int, $7, 0, 1,
@@ -230,7 +234,7 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         )
       `, [
         id, opts.org, opts.pharmacy, opts.sci, batch, expiryDays, opts.qty,
-        supplyType, purchaseOrigin,
+        supplyType, purchaseOrigin, centralItemId, unit,
       ]);
 
       await c.query(`
@@ -285,16 +289,24 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
     return Number(r.rows[0]?.on_hand_quantity ?? -1);
   }
 
+  // CORRECTION (independent review, PR #109): this helper used to mirror the
+  // migration's original partial destination-identity predicate (scientific
+  // name / national code / concentration / dosage form only), which meant a
+  // buggy implementation and this test helper could agree on the WRONG
+  // destination row and the test would still pass. It now resolves the
+  // destination the same canonical way Migration 150 requires: exact
+  // material_identity_key equality (which is itself generated from
+  // central_item_id, scientific_name, national_code, concentration,
+  // dosage_form, unit — see 150) combined with the exact lot/provenance
+  // tuple enforced by outlet_stock_identity_v150_uniq.
   async function destStockId(pharmacyStockId: string, destPoint: string): Promise<string | null> {
     const r = await rig.asAdmin((c: any) => c.query(`
       SELECT d.id
       FROM outlet_stock s
       JOIN outlet_stock d
         ON d.distribution_point_id = $2
-       AND d.scientific_name = s.scientific_name
-       AND COALESCE(d.concentration,'') = COALESCE(s.concentration,'')
-       AND COALESCE(d.dosage_form,'') = COALESCE(s.dosage_form,'')
-       AND COALESCE(d.national_code,'') = COALESCE(s.national_code,'')
+       AND d.organization_id = s.organization_id
+       AND d.material_identity_key = s.material_identity_key
        AND COALESCE(d.batch_number,'') = COALESCE(s.batch_number,'')
        AND COALESCE(d.expiry_date, DATE '0001-01-01') = COALESCE(s.expiry_date, DATE '0001-01-01')
        AND COALESCE(d.internal_batch_reference,'') = COALESCE(s.internal_batch_reference,'')
@@ -303,6 +315,50 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       WHERE s.id = $1
     `, [pharmacyStockId, destPoint]));
     return r.rows[0]?.id ?? null;
+  }
+
+  // Directly seeds a pre-existing destination-side stock row (no dispatch
+  // chain — this is only ever used to plant a DIFFERENT canonical material
+  // variant at the destination point so a regression can prove the RPC does
+  // not pick it by accident. It's never read via FEFO.)
+  async function seedDestinationStock(opts: {
+    id?: string;
+    org: string;
+    point: string;
+    pointType: string;
+    sci: string;
+    unit?: string;
+    centralItemId?: string | null;
+    batch: string;
+    expiryDays: number;
+    qty: number;
+    supplyType?: string | null;
+    purchaseOrigin?: string | null;
+  }): Promise<string> {
+    const id = opts.id ?? randomUUID();
+    await rig.asAdmin((c: any) => c.query(`
+      INSERT INTO outlet_stock (
+        id, organization_id, distribution_point_id, point_type, central_item_id,
+        scientific_name, concentration, dosage_form, unit,
+        national_code, has_no_national_code,
+        batch_number, has_no_batch_number,
+        expiry_date, on_hand_quantity, reserved_quantity, movement_seq,
+        supply_type, purchase_origin
+      ) VALUES (
+        $1,$2,$3,$4,$5,
+        $6,'10mg','tablet',$7,
+        NULL, true,
+        $8, false,
+        current_date + $9::int, $10, 0, 1,
+        $11, $12
+      )
+    `, [
+      id, opts.org, opts.point, opts.pointType, opts.centralItemId ?? null,
+      opts.sci, opts.unit ?? 'box',
+      opts.batch, opts.expiryDays, opts.qty,
+      opts.supplyType ?? 'aid', opts.purchaseOrigin ?? null,
+    ]));
+    return id;
   }
 
   async function movementLegs(requestId: string) {
@@ -770,6 +826,137 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         `SELECT supply_type, purchase_origin FROM outlet_stock WHERE id=$1`, [dstId]));
       expect(row.rows[0].supply_type).toBe('purchase');
       expect(row.rows[0].purchase_origin).toBe('supplementary');
+    });
+  });
+
+  // ══ Canonical material identity isolation (independent review, PR #109) ═══
+  // Migration 150 makes material_identity_key — generated from central_item_id,
+  // scientific_name, national_code, concentration, dosage_form, unit — the
+  // canonical material boundary. outlet_stock_identity_v150_uniq therefore
+  // permits two destination rows to legitimately coexist at the SAME
+  // distribution_point_id with the SAME lot/provenance tuple when their
+  // material_identity_key differs. A destination resolution that only
+  // compares scientific_name / national_code / concentration / dosage_form
+  // (omitting central_item_id and unit) can match the WRONG variant. These
+  // regressions plant a different canonical variant at the destination ONLY
+  // (never the source — the source-side FEFO helper fails closed with
+  // material_identity_ambiguous on its own if a collision were placed there,
+  // which is out of scope for this destination-credit correction).
+  describe('canonical material identity isolation at the destination (PR #109)', () => {
+    it('UNIT_VARIANT_DYNAMIC_PROOF: a same-lot destination row differing only by unit is never credited', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const sci = uniq('SCI-MATID-UNIT');
+      const batch = uniq('BMATID-UNIT');
+      const expiryDays = 200;
+      const supplyType = 'aid';
+      const purchaseOrigin: string | null = null;
+
+      // Variant A — the real source identity (unit = box).
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci, qty: 10, batch, expiryDays,
+        supplyType, purchaseOrigin, unit: 'box',
+      });
+
+      // Variant B — pre-existing DIFFERENT canonical material at the SAME
+      // destination point, with the SAME scientific_name / national_code /
+      // concentration / dosage_form / batch / expiry / internal_batch_reference
+      // / supply_type / purchase_origin, differing only by unit. Migration 150
+      // allows both to coexist because material_identity_key differs.
+      const wrongVariantId = await seedDestinationStock({
+        org: ORG_SECTOR, point: CAB_A, pointType: 'crash_cabinet', sci,
+        unit: 'strip', batch, expiryDays, qty: 7, supplyType, purchaseOrigin,
+      });
+
+      const requestId = randomUUID();
+      const qty = 3;
+      const result = await replenish(routeId, srcId, qty, requestId, null, 'unit-variant');
+      expect(result.ok, 'UNIT_VARIANT_DYNAMIC_PROOF').toBe(true);
+      expect(result.idempotent_replay).toBe(false);
+
+      const correctDestId = await destStockId(srcId, CAB_A);
+      expect(correctDestId).toBeTruthy();
+      expect(correctDestId).not.toBe(wrongVariantId);
+      expect(result.destination_outlet_stock_id).toBe(correctDestId);
+
+      // Source A debited exactly the requested quantity.
+      expect(await onHand(srcId)).toBe(10 - qty);
+      // Destination A (exact material_identity_key) credited exactly qty.
+      expect(await onHand(correctDestId!)).toBe(qty);
+      // WRONG_VARIANT_DESTINATION_DELTA = 0
+      expect(await onHand(wrongVariantId)).toBe(7);
+
+      const legs = await movementLegs(requestId);
+      expect(legs).toHaveLength(2);
+      const send = legs.find((l: any) => l.movement_type === 'replenish_send');
+      const recv = legs.find((l: any) => l.movement_type === 'replenish_receive');
+      expect(send.outlet_stock_id).toBe(srcId);
+      // RECEIVE_MOVEMENT_EXACT_DESTINATION_RESULT
+      expect(recv.outlet_stock_id).toBe(correctDestId);
+      expect(recv.outlet_stock_id).not.toBe(wrongVariantId);
+      expect(Number(send.on_hand_delta) + Number(recv.on_hand_delta)).toBe(0);
+
+      // AUDIT_EXACT_DESTINATION_RESULT
+      const audit = await rig.asAdmin((c: any) => c.query(`
+        SELECT payload->>'destination_outlet_stock_id' AS dst
+        FROM audit_logs
+        WHERE action='outlet_stock.replenish' AND payload->>'request_id'=$1
+      `, [requestId]));
+      expect(audit.rows[0].dst).toBe(correctDestId);
+      expect(audit.rows[0].dst).not.toBe(wrongVariantId);
+    });
+
+    it('a same-lot, same-unit destination row differing only by central_item_id is never credited', async () => {
+      const routeId = await upsertRoute(PH_SPECIAL, CAB_SPECIAL, true);
+      const sci = uniq('SCI-MATID-CENTRAL');
+      const batch = uniq('BMATID-CENTRAL');
+      const expiryDays = 180;
+      const supplyType = 'aid';
+      const purchaseOrigin: string | null = null;
+
+      const centralA = randomUUID();
+      const centralB = randomUUID();
+      await rig.asAdmin((c: any) => c.query(`
+        INSERT INTO central_items (id, name, name_ar) VALUES
+          ($1, 'Central A 168', 'Central A 168'),
+          ($2, 'Central B 168', 'Central B 168')
+      `, [centralA, centralB]));
+
+      // Source pharmacy stock's canonical identity is pinned to centralA.
+      const srcId = await seedPharmacyStock({
+        org: ORG_SPECIAL, pharmacy: PH_SPECIAL, sci, qty: 10, batch, expiryDays,
+        supplyType, purchaseOrigin, centralItemId: centralA,
+      });
+
+      // Pre-existing destination variant pinned to centralB — identical in
+      // every other lot/provenance field, including unit.
+      const wrongVariantId = await seedDestinationStock({
+        org: ORG_SPECIAL, point: CAB_SPECIAL, pointType: 'crash_cabinet', sci,
+        batch, expiryDays, qty: 9, supplyType, purchaseOrigin,
+        centralItemId: centralB,
+      });
+
+      const requestId = randomUUID();
+      const qty = 2;
+      const result = await replenish(routeId, srcId, qty, requestId, null, 'central-variant');
+      expect(result.ok).toBe(true);
+
+      const correctDestId = await destStockId(srcId, CAB_SPECIAL);
+      expect(correctDestId).toBeTruthy();
+      expect(correctDestId).not.toBe(wrongVariantId);
+      expect(result.destination_outlet_stock_id).toBe(correctDestId);
+
+      expect(await onHand(srcId)).toBe(10 - qty);
+      expect(await onHand(correctDestId!)).toBe(qty);
+      expect(await onHand(wrongVariantId)).toBe(9);
+
+      const legs = await movementLegs(requestId);
+      const recv = legs.find((l: any) => l.movement_type === 'replenish_receive');
+      expect(recv.outlet_stock_id).toBe(correctDestId);
+      expect(recv.outlet_stock_id).not.toBe(wrongVariantId);
+
+      const destRow = await rig.asAdmin((c: any) => c.query(
+        `SELECT central_item_id FROM outlet_stock WHERE id=$1`, [correctDestId]));
+      expect(destRow.rows[0].central_item_id).toBe(centralA);
     });
   });
 
