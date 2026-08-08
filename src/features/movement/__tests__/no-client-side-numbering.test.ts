@@ -508,7 +508,19 @@ describe('no client-side document-number sequence exists', () => {
     // pre-existing warehouse_transfers provenance row. Every transfer, return
     // and shipment number it interacts with is caller-supplied exactly as
     // before. Ceiling -> 166.
-    const beyond = migrations.filter(f => /^(16[6-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 166 (INITIAL-PROVISIONING-INVARIANT-166) adds NO document numbering. It
+    // adds two FLAG columns to warehouse_dispatches (is_initial_provisioning
+    // boolean, initial_provisioning_consumed_at timestamptz), one CHECK, one
+    // partial unique index keyed on destination_distribution_point_id, one new
+    // RPC that DELEGATES creation to the existing
+    // phoenix_create_warehouse_dispatch (070), and one CREATE OR REPLACE of the
+    // 149 receive wrapper. Neither column is an identifier: one is a boolean
+    // marker, the other a consumption timestamp. No sequence, no counter, no
+    // max()+1 and no generated numeric identity is introduced, and the
+    // dispatch_number every path uses remains caller-supplied exactly as
+    // before -- the new RPC forwards p_dispatch_number to 070 untouched.
+    // Ceiling -> 167.
+    const beyond = migrations.filter(f => /^(16[7-9]|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
