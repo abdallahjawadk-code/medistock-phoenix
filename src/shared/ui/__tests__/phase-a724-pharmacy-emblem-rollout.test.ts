@@ -397,7 +397,20 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // OTHER unlisted change.
       ' ":!supabase/migrations/166_phoenix_initial_provisioning_invariant.sql"' +
       ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant.dynamic.test.ts"' +
+      // FIX-DISPATCH-REJECTION-167: authored on its own branch concurrently
+      // with 166, migration 167 (reconciles the 'rejected' branch of
+      // warehouse_dispatch_lines_decision_chk to the receive writer's
+      // long-standing received_quantity = 0; no function touched) plus its own
+      // dedicated static/dynamic test files — a real, in-scope backend change
+      // for THAT phase, excluded here by name for the same reason every entry
+      // above is: it has nothing to do with this (much earlier, UI-only)
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted migration/schema/RLS/service change.
+      ' ":!supabase/migrations/167_phoenix_dispatch_line_full_rejection_reconciliation.sql"' +
+      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-backfill.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

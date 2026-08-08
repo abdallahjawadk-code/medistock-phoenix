@@ -1,10 +1,22 @@
 /**
  * 166 · INITIAL-PROVISIONING INVARIANT (Stage E · E-4) — dynamic proof.
  *
- * Builds a disposable Postgres through 001->166 and drives the REAL RPC chain
- * (central receive -> routed transfer -> dispatch create -> add line -> send ->
- * outlet receive) exactly as the frontend would, then proves rules A-G of the
- * initial-provisioning state machine against the real objects.
+ * Builds a disposable Postgres through the full current EFFECTIVE migration
+ * chain on disk (buildRig({}) — 001 through whatever is present, not a frozen
+ * 001->166 snapshot) and drives the REAL RPC chain (central receive -> routed
+ * transfer -> dispatch create -> add line -> send -> outlet receive) exactly
+ * as the frontend would, then proves rules A-G of the initial-provisioning
+ * state machine — which Migration 166 alone introduces — against that real,
+ * current schema.
+ *
+ * Concretely, that means this suite also picks up Migration 167 once it is
+ * present on disk: 167 is a separate, independently authored migration that
+ * reconciles a PRE-EXISTING, pre-166 defect (a full-rejection receipt could
+ * not commit at all — see rule D below for the historical detail and exact
+ * attribution). 166 neither causes nor repairs that defect and owns none of
+ * 167's logic; this suite simply verifies the E-4 invariant continues to hold
+ * once the corridor it sits on top of is reachable end to end, rather than
+ * freezing itself to an artificially stale, no-longer-effective schema.
  *
  * The evidence that matters most is rules C and F: a header-status-only
  * predicate would get BOTH wrong, because
@@ -49,6 +61,7 @@ const DP = {
   F_DELTA: '00000000-0000-0000-0000-000000166316',
   ONCE: '00000000-0000-0000-0000-000000166317',
   D_ORD: '00000000-0000-0000-0000-000000166318',
+  MIXED: '00000000-0000-0000-0000-000000166319',
 };
 
 /** A profile with NO dispatch permissions — the RBAC negative control. */
@@ -163,6 +176,16 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
           `SELECT status, is_initial_provisioning, initial_provisioning_consumed_at
              FROM warehouse_dispatches WHERE id=$1`,
           [dispatchId],
+        ),
+      )
+      .then((r: any) => r.rows[0]);
+
+  const line = (lineId: string) =>
+    rig
+      .asAdmin((c: any) =>
+        c.query(
+          `SELECT status, sent_quantity, received_quantity FROM warehouse_dispatch_lines WHERE id=$1`,
+          [lineId],
         ),
       )
       .then((r: any) => r.rows[0]);
@@ -371,57 +394,84 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
 
   describe('rule D — a FULLY REJECTED lifecycle delivered nothing and frees the outlet', () => {
     /**
-     * PRE-EXISTING BASELINE DEFECT, independent of E-4 and NOT fixed here.
+     * HISTORICAL NOTE — the defect this rule once had to route around.
      *
-     * A zero-quantity receipt cannot complete on canonical master. The receive
-     * delegate sets `received_quantity = 0` on the rejection branch, while
-     * warehouse_dispatch_lines_decision_chk (061:746) requires
-     * `received_quantity IS NULL` for status 'rejected'. Every full line
-     * rejection therefore aborts with a check-constraint violation.
+     * Before Migration 167, a zero-quantity receipt could not complete on
+     * canonical master: the receive delegate sets `received_quantity = 0` on
+     * the rejection branch, while warehouse_dispatch_lines_decision_chk
+     * (061:746) required `received_quantity IS NULL` for status 'rejected'.
+     * Every full line rejection therefore aborted with a check-constraint
+     * violation — independent of E-4, and outside E-4's authorized scope to
+     * repair (that would have meant editing an immutable migration's
+     * constraint or the 131 delegate).
      *
-     * Verified by direct attribution against a rig built with upTo:165 — i.e.
-     * exactly canonical master's migration set, with 166 never applied — where
-     * the identical call fails identically. Migration 166 neither causes nor
-     * repairs it; repairing it would mean editing an immutable migration's
-     * constraint or the 131 delegate, both outside E-4's authorized scope.
-     *
-     * Rule D is consequently proven at the level of the object that actually
-     * implements it — the partial unique index — by driving the header to the
-     * terminal-empty state the (currently unreachable) rejection path would
-     * produce, and asserting the outlet is freed.
+     * Migration 167 (a separate, later-merged migration) reconciles that
+     * constraint to the writer. This suite runs against the current
+     * EFFECTIVE chain (buildRig({}) — see the file header), so once 167 is
+     * present the real rejection RPC is exercised directly below, rather than
+     * manufactured by updating the header by hand.
      */
-    it('a lifecycle that ended rejected with nothing delivered frees the outlet', async () => {
+    it('a real full rejection through the canonical RPC frees the outlet', async () => {
       const stock = await provisionInstitutionStock('D1', 8);
       const created = await createInitialProvisioning(DP.E, 'D1');
-      await addLinesAndSend(created.dispatch_id, stock, [4, 4]);
+      const lines = await addLinesAndSend(created.dispatch_id, stock, [8]);
 
-      await rig.asAdmin((c: any) =>
-        c.query(`UPDATE warehouse_dispatches SET status='rejected' WHERE id=$1`, [created.dispatch_id]),
-      );
+      // The RPC succeeds — no 23514, no violates check constraint.
+      const res: any = await receive(lines[0], 0);
+      expect(res.ok).toBe(true);
+      expect(res.line_status).toBe('rejected');
+      expect(res.outlet_stock_id).toBeNull();
+      expect(res.movement_id).toBeNull();
+      expect(res.quantity_after).toBe(0);
+
+      const l = await line(lines[0]);
+      expect(l.status).toBe('rejected');
+      expect(l.received_quantity).toBe(0);
 
       const h = await header(created.dispatch_id);
       expect(h.status).toBe('rejected');
       expect(h.is_initial_provisioning).toBe(true);
       expect(h.initial_provisioning_consumed_at).toBeNull(); // nothing was ever delivered
 
-      // The outlet is free again.
+      // No delivered outlet stock and no phantom movement for the refused line.
+      await rig.asAdmin(async (c: any) => {
+        const stockRow = await c.query(
+          `SELECT count(*)::int AS n FROM outlet_stock WHERE distribution_point_id=$1`,
+          [DP.E],
+        );
+        expect(stockRow.rows[0].n).toBe(0);
+        const mv = await c.query(
+          `SELECT count(*)::int AS n FROM outlet_stock_movements WHERE distribution_point_id=$1`,
+          [DP.E],
+        );
+        expect(mv.rows[0].n).toBe(0);
+      });
+
+      // A lifecycle that delivered NOTHING did not consume the entitlement —
+      // the outlet is free again.
       const second = await createInitialProvisioning(DP.E, 'D2');
       expect(second.ok).toBe(true);
       expect(second.dispatch_id).not.toBe(created.dispatch_id);
     });
 
-    it('the zero-quantity receive path is blocked by a pre-existing baseline constraint, not by E-4', async () => {
+    it('an ordinary dispatch\'s real full rejection does not touch E-4 semantics', async () => {
       const stock = await provisionInstitutionStock('D3', 4);
       const ordinary = await createOrdinary(DP.D_ORD, 'D3');
       const lines = await addLinesAndSend(ordinary.dispatch_id, stock, [4]);
 
-      const msg = await rejects(() => receive(lines[0], 0));
-      // Attributed to 061's decision CHECK — nothing in 166 appears here.
-      expect(msg).toMatch(/warehouse_dispatch_lines_decision_chk/);
-      expect(msg).not.toMatch(/initial_provisioning/);
+      // Migration 167's repaired rejection path must not accidentally invoke
+      // any E-4 initial-provisioning semantics for an ordinary dispatch.
+      const res: any = await receive(lines[0], 0);
+      expect(res.ok).toBe(true);
+      expect(res.line_status).toBe('rejected');
 
-      // And the failed rejection stamped nothing on an ordinary dispatch.
+      const l = await line(lines[0]);
+      expect(l.status).toBe('rejected');
+      expect(l.received_quantity).toBe(0);
+
       const h = await header(ordinary.dispatch_id);
+      expect(h.status).toBe('rejected');
+      expect(h.is_initial_provisioning).toBe(false);
       expect(h.initial_provisioning_consumed_at).toBeNull();
     });
   });
@@ -447,12 +497,13 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
 
   describe('rule F — a MIXED outcome with at least one positive receipt is a consumption', () => {
     /**
-     * The genuine "one accepted + one rejected" header cannot be produced
-     * end-to-end while the baseline rejection defect documented under rule D
-     * stands. What rule F actually requires, though, is that consumption is
-     * read from consumed_at and NEVER from the header — and that is proven
-     * here in its sharpest form: two lifecycles carrying the SAME header
-     * status produce OPPOSITE outcomes, decided solely by consumed_at.
+     * What rule F requires is that consumption is read from consumed_at and
+     * NEVER from the header. Proven two ways below: first in its sharpest
+     * form — two SEPARATE lifecycles carrying the SAME terminal header status
+     * produce OPPOSITE outcomes, decided solely by consumed_at — then in its
+     * most direct form, a genuine single lifecycle with one accepted line and
+     * one fully rejected line, now reachable end to end since Migration 167
+     * reconciled the rejection path (see rule D).
      *
      * 'partially_accepted' is the value 070 emits BOTH for "still open"
      * (070:203) and for "all decided, mixed" (070:206), so a predicate that
@@ -472,15 +523,18 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       const blocked = await rejects(() => createInitialProvisioning(DP.G, 'F2'));
       expect(blocked).toMatch(/initial_provisioning_already_exists_for_outlet/);
 
-      // Free: also terminal, but nothing was ever delivered.
+      // Free: also terminal, but nothing was ever delivered — a real full
+      // rejection through the canonical RPC (rule D), not a manufactured
+      // header.
       const stockFree = await provisionInstitutionStock('F3', 10);
       const free = await createInitialProvisioning(DP.F_FREE, 'F3');
-      await addLinesAndSend(free.dispatch_id, stockFree, [5, 5]);
-      await rig.asAdmin((c: any) =>
-        c.query(`UPDATE warehouse_dispatches SET status='rejected' WHERE id=$1`, [free.dispatch_id]),
-      );
+      const freeLines = await addLinesAndSend(free.dispatch_id, stockFree, [10]);
+      const freeRes: any = await receive(freeLines[0], 0);
+      expect(freeRes.ok).toBe(true);
+      expect(freeRes.line_status).toBe('rejected');
 
       const freeHeader = await header(free.dispatch_id);
+      expect(freeHeader.status).toBe('rejected');
       expect(freeHeader.initial_provisioning_consumed_at).toBeNull();
 
       // Both lifecycles are over. Only the recorded consumption differs, and
@@ -488,6 +542,50 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       // of the index and wrongly re-opened the consumed one.
       const allowed = await createInitialProvisioning(DP.F_FREE, 'F4');
       expect(allowed.ok).toBe(true);
+    });
+
+    it('a real mixed outcome — one accepted line and one fully rejected line — still consumes the lifecycle', async () => {
+      const stock = await provisionInstitutionStock('F6', 11);
+      const created = await createInitialProvisioning(DP.MIXED, 'F6');
+      const lines = await addLinesAndSend(created.dispatch_id, stock, [4, 7]);
+
+      // One line refused outright, the other accepted in full — the real
+      // mixed outcome Migration 167 makes reachable for the first time.
+      const rejected: any = await receive(lines[0], 0);
+      expect(rejected.ok).toBe(true);
+      expect(rejected.line_status).toBe('rejected');
+      const accepted: any = await receive(lines[1], 7);
+      expect(accepted.ok).toBe(true);
+      expect(accepted.line_status).toBe('accepted');
+
+      const h = await header(created.dispatch_id);
+      // 070:206 — all decided, but a mix.
+      expect(h.status).toBe('partially_accepted');
+      // Positive stock actually arrived, so the lifecycle IS consumed.
+      expect(h.initial_provisioning_consumed_at).not.toBeNull();
+
+      // The one-shot entitlement is gone — refused with the same error a
+      // fully-accepted or fully-open lifecycle produces.
+      const msg = await rejects(() => createInitialProvisioning(DP.MIXED, 'F7'));
+      expect(msg).toMatch(/initial_provisioning_already_exists_for_outlet/);
+
+      // Quantity conservation: the rejected line delivered nothing, the
+      // accepted line delivered exactly what it sent — no phantom quantity.
+      const rejectedLine = await line(lines[0]);
+      expect(rejectedLine.status).toBe('rejected');
+      expect(rejectedLine.received_quantity).toBe(0);
+      const acceptedLine = await line(lines[1]);
+      expect(acceptedLine.status).toBe('accepted');
+      expect(acceptedLine.received_quantity).toBe(7);
+
+      await rig.asAdmin(async (c: any) => {
+        const stockRow = await c.query(
+          `SELECT on_hand_quantity FROM outlet_stock WHERE distribution_point_id=$1`,
+          [DP.MIXED],
+        );
+        expect(stockRow.rows).toHaveLength(1);
+        expect(stockRow.rows[0].on_hand_quantity).toBe(7);
+      });
     });
 
     it('a positive receipt stamps consumption driven by the reported quantity_delta', async () => {
