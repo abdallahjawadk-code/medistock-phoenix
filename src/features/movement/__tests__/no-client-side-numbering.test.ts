@@ -508,6 +508,18 @@ describe('no client-side document-number sequence exists', () => {
     // pre-existing warehouse_transfers provenance row. Every transfer, return
     // and shipment number it interacts with is caller-supplied exactly as
     // before. Ceiling -> 166.
+    // 166 (INITIAL-PROVISIONING-INVARIANT-166) adds NO document numbering. It
+    // adds two FLAG columns to warehouse_dispatches (is_initial_provisioning
+    // boolean, initial_provisioning_consumed_at timestamptz), one CHECK, one
+    // partial unique index keyed on destination_distribution_point_id, one new
+    // RPC that DELEGATES creation to the existing
+    // phoenix_create_warehouse_dispatch (070), and one CREATE OR REPLACE of the
+    // 149 receive wrapper. Neither column is an identifier: one is a boolean
+    // marker, the other a consumption timestamp. No sequence, no counter, no
+    // max()+1 and no generated numeric identity is introduced, and the
+    // dispatch_number every path uses remains caller-supplied exactly as
+    // before -- the new RPC forwards p_dispatch_number to 070 untouched.
+    // Ceiling -> 167.
     // 167 (DISPATCH-LINE-FULL-REJECTION-RECONCILIATION-167) adds NO document
     // numbering — it reconciles one existing CHECK constraint branch
     // (warehouse_dispatch_lines_decision_chk's 'rejected' case) to match the
@@ -515,12 +527,11 @@ describe('no client-side document-number sequence exists', () => {
     // any legacy NULL-quantity rejected row to the same value. It creates no
     // table, no column, no sequence, no counter, no max()+1 and no generated
     // numeric identity of any kind, and it replaces no function — the receive
-    // RPC and its 149 delegate are byte-for-byte unchanged. Migration 166 is
-    // deliberately ABSENT here: it belongs to Stage E's separate, still-
-    // unmerged initial-provisioning-invariant migration (PR #107), and 167 is
-    // independent of it — it neither reads nor writes anything 166 creates.
-    // The ceiling moves to 168.
-    const beyond = migrations.filter(f => /^(166|168|169|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // RPC and its 149 delegate are byte-for-byte unchanged. 167 was authored
+    // on its own branch concurrently with 166 and is independent of it — it
+    // neither reads nor writes anything 166 creates. Both are now reviewed
+    // and registered in their real numeric order. The ceiling moves to 168.
+    const beyond = migrations.filter(f => /^(168|169|1[7-9]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
