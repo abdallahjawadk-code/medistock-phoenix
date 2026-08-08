@@ -257,6 +257,54 @@ describe('4. reversal RPC contract — provenance, cap, lock order, RBAC', () =>
     expect(rpcBody).not.toMatch(/v_route\.is_active/);
   });
 
+  // Independent review finding, PR #110: stock conservation alone is
+  // insufficient — the supplied route must be the EXACT historical route the
+  // original forward pair moved through. Structural proof, scoped to the
+  // actual assertion (not whitespace-fragile), and proven to run AFTER both
+  // origin movements are resolved and BEFORE the historical is_active
+  // exemption is undermined.
+  it('binds the reversal to the exact historical route of the original forward pair', () => {
+    expect(rpcBody).toContain('origin_forward_route_mismatch');
+    // recv-side destination and send-side source, each checked against the
+    // route — order-independent, tolerant of reformatting.
+    expect(rpcBody).toMatch(
+      /v_origin_recv\.distribution_point_id\s+IS\s+DISTINCT\s+FROM\s+v_route\.destination_point_id/,
+    );
+    expect(rpcBody).toMatch(
+      /v_origin_send\.distribution_point_id\s+IS\s+DISTINCT\s+FROM\s+v_route\.source_point_id/,
+    );
+    // Organization consistency on both legs.
+    expect(rpcBody).toMatch(
+      /v_origin_recv\.organization_id\s+IS\s+DISTINCT\s+FROM\s+v_route\.organization_id/,
+    );
+    expect(rpcBody).toMatch(
+      /v_origin_send\.organization_id\s+IS\s+DISTINCT\s+FROM\s+v_route\.organization_id/,
+    );
+
+    // Ordering: both origin movements must already be resolved (the send-side
+    // check needs v_origin_send) before this assertion can run, and the
+    // assertion itself must precede the cap check and the mutation.
+    const pairedSendResolved = rpcBody.indexOf("movement_type = 'replenish_send'");
+    const routeMismatchCheck = rpcBody.indexOf('origin_forward_route_mismatch');
+    const capCheck = rpcBody.indexOf('reversal_quantity_exceeds_remaining_cap');
+    const firstMutation = rpcBody.search(/UPDATE public\.outlet_stock\b/);
+    expect(pairedSendResolved).toBeGreaterThan(-1);
+    expect(routeMismatchCheck).toBeGreaterThan(pairedSendResolved);
+    expect(capCheck).toBeGreaterThan(routeMismatchCheck);
+    expect(firstMutation).toBeGreaterThan(routeMismatchCheck);
+
+    // The original paired movements remain the stock-provenance authority —
+    // this is an ADDITIONAL invariant, not a replacement: the pharmacy stock
+    // row is still resolved from v_origin_send.outlet_stock_id, never from
+    // v_route directly.
+    expect(rpcBody).toMatch(/v_src_stock[\s\S]{0,120}v_origin_send\.outlet_stock_id/);
+
+    // Still no route.is_active gate — historical reversibility of an
+    // inactive OLD route is preserved even with this correction.
+    expect(rpcBody).not.toMatch(/route_not_active/);
+    expect(rpcBody).not.toMatch(/v_route\.is_active/);
+  });
+
   it('enforces active-profile + outlet_stock.replenish_reverse BEFORE any idempotent replay return', () => {
     // Independent-review discipline established for 168 (PR #109), repeated
     // here from the first draft.

@@ -491,6 +491,28 @@ BEGIN
     RAISE EXCEPTION 'paired_original_send_not_found' USING ERRCODE = 'P0002';
   END IF;
 
+  -- CORRECTION (independent review, PR #110): stock conservation alone is
+  -- insufficient — the supplied route must be the EXACT historical route the
+  -- original forward pair actually moved through, not merely a route that
+  -- happens to share the same current destination. Without this, a caller
+  -- could submit a currently-active route NEW (Pharmacy B -> Cart X) against
+  -- a destination stock whose reversible origin was actually created through
+  -- a DIFFERENT, since-deactivated route OLD (Pharmacy A -> Cart X): stock
+  -- would still conserve and credit the correct Pharmacy A row (derived
+  -- purely from the origin pair, untouched by this check), but the
+  -- reversal would be fingerprinted, ledgered, and audited under the wrong
+  -- route. The original paired movements remain the sole stock-provenance
+  -- authority; this is an ADDITIONAL route-provenance invariant on top of
+  -- that, not a replacement for it. Deliberately NOT a route.is_active gate
+  -- (see this migration's header) — an inactive OLD route whose movements
+  -- originated through it remains fully reversible.
+  IF v_origin_recv.distribution_point_id IS DISTINCT FROM v_route.destination_point_id
+     OR v_origin_send.distribution_point_id IS DISTINCT FROM v_route.source_point_id
+     OR v_origin_recv.organization_id IS DISTINCT FROM v_route.organization_id
+     OR v_origin_send.organization_id IS DISTINCT FROM v_route.organization_id THEN
+    RAISE EXCEPTION 'origin_forward_route_mismatch' USING ERRCODE = '23514';
+  END IF;
+
   v_remaining_cap := v_origin_recv.on_hand_delta - v_origin_recv.returned_quantity;
   IF p_quantity > v_remaining_cap THEN
     RAISE EXCEPTION 'reversal_quantity_exceeds_remaining_cap' USING ERRCODE = '23514';
@@ -798,6 +820,19 @@ BEGIN
   END IF;
   IF v_rpc_def NOT LIKE '%returned_quantity%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (169): returned_quantity cap missing';
+  END IF;
+  -- CORRECTION (PR #110): the supplied route must be the exact historical
+  -- route the original forward pair moved through — recv-side destination
+  -- and send-side source must each be checked against the route, plus
+  -- organization consistency on both legs.
+  IF v_rpc_def NOT LIKE '%origin_forward_route_mismatch%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (169): cross-route historical provenance assertion missing';
+  END IF;
+  IF v_rpc_def NOT LIKE '%v_origin_recv.distribution_point_id%v_route.destination_point_id%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (169): origin receive destination-point assertion missing';
+  END IF;
+  IF v_rpc_def NOT LIKE '%v_origin_send.distribution_point_id%v_route.source_point_id%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (169): origin send source-point assertion missing';
   END IF;
   IF v_rpc_def NOT LIKE '%replenish_send%' OR v_rpc_def NOT LIKE '%replenish_receive%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (169): movement types missing from RPC body';
