@@ -500,11 +500,17 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(rows[0].n).toBe(0);
     });
 
-    it('the outlet movement vocabulary is untouched by E-2', async () => {
+    it('the outlet movement vocabulary still carries the pre-E-2 core types', async () => {
+      // E-2 itself never widens outlet_stock_movements_type_chk. The effective
+      // chain tip may include Migration 168 (E-5), which adds replenish_*.
+      // Assert the core pre-E-5 types remain rather than forbidding later
+      // authorized widenings.
       const { rows } = await rig.asAdmin((c: any) => c.query(`
         SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
         WHERE conname='outlet_stock_movements_type_chk'`));
-      expect(rows[0].d).not.toMatch(/replenish/);
+      for (const t of ['dispense', 'dispatch_receive', 'return_send', 'set_exact']) {
+        expect(rows[0].d).toContain(t);
+      }
     });
 
     it('the Availability vocabulary is untouched', async () => {

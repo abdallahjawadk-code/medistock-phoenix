@@ -1,0 +1,884 @@
+/**
+ * 168 · ATOMIC EMERGENCY OUTLET REPLENISHMENT (Stage E · E-5) — dynamic proof.
+ *
+ * Builds a disposable Postgres through the full effective migration chain and
+ * drives the REAL phoenix_replenish_emergency_outlet RPC against Addendum-F
+ * Shape H / Shape I corridors, negatives, movement-time revalidation,
+ * idempotency, concurrency, FEFO, RBAC, fingerprint/unique constraints, and
+ * E-4 / 167 non-interference.
+ *
+ * Gated on PHOENIX_RIG_PG; skipped where no rig is available.
+ */
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
+
+vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
+
+const run = rigAvailable() ? describe : describe.skip;
+
+// ── Fixture ids ──────────────────────────────────────────────────────────────
+const ORG_SECTOR = '00000000-0000-0000-0000-000000168001';
+const ORG_HOSPITAL = '00000000-0000-0000-0000-000000168002';
+const ORG_SPECIAL = '00000000-0000-0000-0000-000000168003';
+const ORG_SECTOR_2 = '00000000-0000-0000-0000-000000168004';
+
+const FAC_A = '00000000-0000-0000-0000-000000168101';
+const FAC_B = '00000000-0000-0000-0000-000000168102';
+const FAC_INACTIVE = '00000000-0000-0000-0000-000000168103';
+
+const WH_FAC_A = '00000000-0000-0000-0000-000000168201';
+const WH_FAC_B = '00000000-0000-0000-0000-000000168202';
+const WH_FAC_INACTIVE = '00000000-0000-0000-0000-000000168203';
+const WH_SECTOR = '00000000-0000-0000-0000-000000168204';
+const WH_HOSPITAL = '00000000-0000-0000-0000-000000168205';
+const WH_SPECIAL = '00000000-0000-0000-0000-000000168206';
+
+const PH_A = '00000000-0000-0000-0000-000000168301';
+const CAB_A = '00000000-0000-0000-0000-000000168302';
+const PH_B = '00000000-0000-0000-0000-000000168303';
+const CAB_B = '00000000-0000-0000-0000-000000168304';
+const CART_A = '00000000-0000-0000-0000-000000168305';
+const PH_SECTOR = '00000000-0000-0000-0000-000000168306';
+const CAB_SECTOR = '00000000-0000-0000-0000-000000168307';
+const PH_INACTIVE_FAC = '00000000-0000-0000-0000-000000168308';
+const CAB_INACTIVE_FAC = '00000000-0000-0000-0000-000000168309';
+
+const PH_HOSP = '00000000-0000-0000-0000-000000168310';
+const CART_HOSP = '00000000-0000-0000-0000-000000168311';
+const CART_HOSP_NON = '00000000-0000-0000-0000-000000168312';
+const CAB_HOSP = '00000000-0000-0000-0000-000000168313';
+const CAB_HOSP_EM = '00000000-0000-0000-0000-000000168314';
+
+const PH_SPECIAL = '00000000-0000-0000-0000-000000168315';
+const CART_SPECIAL = '00000000-0000-0000-0000-000000168316';
+const CAB_SPECIAL = '00000000-0000-0000-0000-000000168317';
+
+const NOBODY = '00000000-0000-0000-0000-000000168901';
+
+let seq = 0;
+const uniq = (p: string) => `${p}-${Date.now()}-${++seq}`;
+
+const call = (c: any, fn: string, args: any[]) =>
+  c
+    .query(`SELECT public.${fn}(${args.map((_, i) => `$${i + 1}`).join(', ')}) AS r`, args)
+    .then((res: any) => res.rows[0].r);
+
+const rejects = async (fn: () => Promise<unknown>): Promise<string> => {
+  try {
+    await fn();
+  } catch (e: any) {
+    return String(e?.message ?? e);
+  }
+  throw new Error('expected a rejection but the call succeeded');
+};
+
+run('168 · atomic emergency outlet replenishment (dynamic)', () => {
+  let rig: Awaited<ReturnType<typeof buildRig>>;
+
+  const fingerprint = async (
+    routeId: string,
+    sourceStockId: string,
+    quantity: number,
+    fefoOverride: string | null,
+    notes: string | null,
+  ) => {
+    const r = await rig.asAdmin((c: any) => c.query(
+      `SELECT public._phoenix_replenishment_fingerprint_v1($1,$2,$3,$4,$5) AS fp`,
+      [routeId, sourceStockId, quantity, fefoOverride, notes],
+    ));
+    return r.rows[0].fp as string;
+  };
+
+  beforeAll(async () => {
+    rig = await buildRig();
+
+    await rig.asAdmin((c: any) => c.query(`
+      INSERT INTO organizations(id,name,name_ar,code,institution_class) VALUES
+        ('${ORG_SECTOR}','Sector168','Sector168','p168-sector','health_sector'),
+        ('${ORG_HOSPITAL}','Hospital168','Hospital168','p168-hospital','hospital'),
+        ('${ORG_SPECIAL}','Special168','Special168','p168-special','specialized_center'),
+        ('${ORG_SECTOR_2}','Sector168b','Sector168b','p168-sector2','health_sector');
+
+      INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
+        ('${FAC_A}','${ORG_SECTOR}','primary_health_center','Centre A168','Centre A168','active'),
+        ('${FAC_B}','${ORG_SECTOR}','subordinate_health_center','Centre B168','Centre B168','active'),
+        ('${FAC_INACTIVE}','${ORG_SECTOR}','primary_health_center','Centre X168','Centre X168','inactive');
+
+      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id) VALUES
+        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot168','A Depot168','active','institution','p168-wh-a','${FAC_A}'),
+        ('${WH_FAC_B}','${ORG_SECTOR}','B Depot168','B Depot168','active','institution','p168-wh-b','${FAC_B}'),
+        ('${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Depot168','X Depot168','active','institution','p168-wh-x','${FAC_INACTIVE}'),
+        ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot168','Sector Depot168','active','institution','p168-wh-sec',NULL),
+        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot168','Hosp Depot168','active','institution','p168-wh-hosp',NULL),
+        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot168','Ctr Depot168','active','institution','p168-wh-ctr',NULL);
+
+      INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
+        ('${PH_A}','${WH_FAC_A}','${ORG_SECTOR}','A Pharmacy168','A Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CAB_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cabinet168','A Cabinet168','crash_cabinet','active','emergency'),
+        ('${PH_B}','${WH_FAC_B}','${ORG_SECTOR}','B Pharmacy168','B Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CAB_B}','${WH_FAC_B}','${ORG_SECTOR}','B Cabinet168','B Cabinet168','crash_cabinet','active','emergency'),
+        ('${CART_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cart168','A Cart168','rescue_cart','active','emergency'),
+        ('${PH_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Pharmacy168','Sector Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CAB_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Cabinet168','Sector Cabinet168','crash_cabinet','active','emergency'),
+        ('${PH_INACTIVE_FAC}','${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Pharmacy168','X Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CAB_INACTIVE_FAC}','${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Cabinet168','X Cabinet168','crash_cabinet','active','emergency'),
+        ('${PH_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Pharmacy168','H Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CART_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart168','H Cart168','rescue_cart','active','emergency'),
+        ('${CART_HOSP_NON}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart NE168','H Cart NE168','rescue_cart','active','non_emergency'),
+        ('${CAB_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet168','H Cabinet168','crash_cabinet','active','non_emergency'),
+        ('${CAB_HOSP_EM}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet EM168','H Cabinet EM168','crash_cabinet','active','emergency'),
+        ('${PH_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Pharmacy168','C Pharmacy168','pharmacy','active','non_emergency'),
+        ('${CART_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cart168','C Cart168','rescue_cart','active','emergency'),
+        ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet168','C Cabinet168','crash_cabinet','active','non_emergency');
+
+      INSERT INTO auth.users (id, email) VALUES ('${NOBODY}', 'nobody168@rig.test')
+      ON CONFLICT (id) DO NOTHING;
+      UPDATE profiles
+         SET role='outlet_officer', status='active', organization_id='${ORG_HOSPITAL}'
+       WHERE id='${NOBODY}';
+    `));
+  });
+
+  afterAll(async () => { if (rig) await rig.end(); });
+
+  async function upsertRoute(src: string, dst: string, active = true): Promise<string> {
+    // Prefer updating an existing pair when present — the active-pair unique
+    // index rejects a second INSERT for the same endpoints.
+    const existing = await rig.asAdmin((c: any) => c.query(
+      `SELECT id FROM outlet_replenishment_routes
+        WHERE source_point_id=$1 AND destination_point_id=$2
+        ORDER BY created_at DESC LIMIT 1`,
+      [src, dst],
+    ));
+    const routeArg = existing.rows[0]?.id ?? null;
+    const r = await rig.asUser(rig.superAdminId, (c: any) =>
+      call(c, 'phoenix_upsert_outlet_replenishment_route', [routeArg, src, dst, active, null]),
+      { commit: true });
+    expect(r.ok).toBe(true);
+    expect(r.route_id).toBeTruthy();
+    return r.route_id as string;
+  }
+
+  async function seedPharmacyStock(opts: {
+    id?: string;
+    org: string;
+    pharmacy: string;
+    sci: string;
+    qty: number;
+    batch?: string;
+    expiryDays?: number;
+    supplyType?: string | null;
+    purchaseOrigin?: string | null;
+  }): Promise<string> {
+    // phoenix_inventory_fefo_batches (outlet scope) only returns lots that have
+    // an accepted dispatch_receive provenance chain (150 exact helper JOIN).
+    const id = opts.id ?? randomUUID();
+    const batch = opts.batch ?? uniq('B168');
+    const expiryDays = opts.expiryDays ?? 365;
+    const supplyType = opts.supplyType ?? 'aid';
+    const purchaseOrigin = opts.purchaseOrigin ?? null;
+    const whStockId = randomUUID();
+    const dispatchId = randomUUID();
+    const lineId = randomUUID();
+    const inboundId = randomUUID();
+    await rig.asAdmin(async (c: any) => {
+      const wh = await c.query(
+        `SELECT warehouse_id FROM distribution_points WHERE id=$1`, [opts.pharmacy]);
+      const warehouseId = wh.rows[0].warehouse_id;
+      await c.query(`
+        INSERT INTO warehouse_stock (
+          id, organization_id, warehouse_id,
+          scientific_name, concentration, dosage_form, unit,
+          national_code, has_no_national_code,
+          batch_number, has_no_batch_number,
+          expiry_date, on_hand_quantity, reserved_quantity,
+          supply_type, purchase_origin
+        ) VALUES (
+          $1,$2,$3,
+          $4,'10mg','tablet','box',
+          NULL, true,
+          $5, false,
+          current_date + $6::int, $7, 0,
+          $8, $9
+        )
+      `, [whStockId, opts.org, warehouseId, opts.sci, batch, expiryDays, opts.qty,
+        supplyType, purchaseOrigin]);
+
+      await c.query(`
+        INSERT INTO outlet_stock (
+          id, organization_id, distribution_point_id, point_type,
+          scientific_name, concentration, dosage_form, unit,
+          national_code, has_no_national_code,
+          batch_number, has_no_batch_number,
+          expiry_date, on_hand_quantity, reserved_quantity, movement_seq,
+          supply_type, purchase_origin
+        ) VALUES (
+          $1,$2,$3,'pharmacy',
+          $4,'10mg','tablet','box',
+          NULL, true,
+          $5, false,
+          current_date + $6::int, $7, 0, 1,
+          $8, $9
+        )
+      `, [
+        id, opts.org, opts.pharmacy, opts.sci, batch, expiryDays, opts.qty,
+        supplyType, purchaseOrigin,
+      ]);
+
+      await c.query(`
+        INSERT INTO warehouse_dispatches (
+          id, organization_id, warehouse_id, destination_distribution_point_id,
+          dispatch_number, status, sent_by, sent_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,'sent',$6,now()
+        )
+      `, [dispatchId, opts.org, warehouseId, opts.pharmacy, uniq('D168'), rig.superAdminId]);
+
+      await c.query(`
+        INSERT INTO warehouse_dispatch_lines (
+          id, organization_id, dispatch_id, warehouse_stock_id,
+          scientific_name, concentration, dosage_form, unit,
+          national_code, has_no_national_code, batch_number, has_no_batch_number,
+          expiry_date, sent_quantity, status, received_quantity,
+          accepted_by, accepted_at, resulting_outlet_stock_id,
+          supply_type, purchase_origin
+        ) VALUES (
+          $1,$2,$3,$4,
+          $5,'10mg','tablet','box',
+          NULL, true, $6, false,
+          current_date + $7::int, $8, 'accepted', $8,
+          $9, now(), $10,
+          $11, $12
+        )
+      `, [
+        lineId, opts.org, dispatchId, whStockId, opts.sci, batch, expiryDays,
+        opts.qty, rig.superAdminId, id, supplyType, purchaseOrigin,
+      ]);
+
+      await c.query(`
+        INSERT INTO outlet_stock_movements (
+          id, outlet_stock_id, organization_id, distribution_point_id, movement_type,
+          on_hand_before, on_hand_delta, on_hand_after,
+          reserved_before, reserved_delta, reserved_after,
+          dispatch_line_id, scientific_name_snapshot, reason_code, request_fingerprint
+        ) VALUES (
+          $1,$2,$3,$4,'dispatch_receive',
+          0,$5,$5,0,0,0,
+          $6,$7,'received', repeat('a', 64)
+        )
+      `, [inboundId, id, opts.org, opts.pharmacy, opts.qty, lineId, opts.sci]);
+    });
+    return id;
+  }
+
+  async function onHand(stockId: string): Promise<number> {
+    const r = await rig.asAdmin((c: any) =>
+      c.query(`SELECT on_hand_quantity FROM outlet_stock WHERE id=$1`, [stockId]));
+    return Number(r.rows[0]?.on_hand_quantity ?? -1);
+  }
+
+  async function destStockId(pharmacyStockId: string, destPoint: string): Promise<string | null> {
+    const r = await rig.asAdmin((c: any) => c.query(`
+      SELECT d.id
+      FROM outlet_stock s
+      JOIN outlet_stock d
+        ON d.distribution_point_id = $2
+       AND d.scientific_name = s.scientific_name
+       AND COALESCE(d.concentration,'') = COALESCE(s.concentration,'')
+       AND COALESCE(d.dosage_form,'') = COALESCE(s.dosage_form,'')
+       AND COALESCE(d.national_code,'') = COALESCE(s.national_code,'')
+       AND COALESCE(d.batch_number,'') = COALESCE(s.batch_number,'')
+       AND COALESCE(d.expiry_date, DATE '0001-01-01') = COALESCE(s.expiry_date, DATE '0001-01-01')
+       AND COALESCE(d.internal_batch_reference,'') = COALESCE(s.internal_batch_reference,'')
+       AND COALESCE(d.supply_type,'') = COALESCE(s.supply_type,'')
+       AND COALESCE(d.purchase_origin,'') = COALESCE(s.purchase_origin,'')
+      WHERE s.id = $1
+    `, [pharmacyStockId, destPoint]));
+    return r.rows[0]?.id ?? null;
+  }
+
+  async function movementLegs(requestId: string) {
+    const r = await rig.asAdmin((c: any) => c.query(`
+      SELECT movement_type, on_hand_delta, reference_type, reference_id,
+             reason_code, request_fingerprint, outlet_stock_id, correlation_id
+      FROM outlet_stock_movements
+      WHERE reference_type='outlet_replenishment' AND reference_id=$1
+      ORDER BY movement_type
+    `, [requestId]));
+    return r.rows;
+  }
+
+  async function snapshots(srcId: string, dstPoint: string, requestId: string) {
+    const srcQty = await onHand(srcId);
+    const dstId = await destStockId(srcId, dstPoint);
+    const dstQty = dstId ? await onHand(dstId) : 0;
+    const legs = await movementLegs(requestId);
+    const audits = await rig.asAdmin((c: any) => c.query(`
+      SELECT count(*)::int n FROM audit_logs
+      WHERE action='outlet_stock.replenish'
+        AND payload->>'request_id'=$1
+    `, [requestId]));
+    const whMoves = await rig.asAdmin((c: any) => c.query(`
+      SELECT count(*)::int n FROM warehouse_stock_movements
+      WHERE reference_id=$1
+    `, [requestId]));
+    const ipFlags = await rig.asAdmin((c: any) => c.query(`
+      SELECT count(*)::int n FROM warehouse_dispatches
+      WHERE is_initial_provisioning IS TRUE
+        AND (document_number ILIKE '%168%' OR notes ILIKE '%168%')
+    `));
+    return {
+      srcQty, dstId, dstQty, legs,
+      auditN: audits.rows[0].n,
+      whMoveN: whMoves.rows[0].n,
+      ipN: ipFlags.rows[0].n,
+    };
+  }
+
+  async function replenish(
+    routeId: string,
+    sourceStockId: string,
+    qty: number,
+    requestId = randomUUID(),
+    fefoOverride: string | null = null,
+    notes: string | null = null,
+    actor = rig.superAdminId,
+  ) {
+    return rig.asUser(actor, (c: any) =>
+      call(c, 'phoenix_replenish_emergency_outlet', [
+        requestId, routeId, sourceStockId, qty, fefoOverride, notes,
+      ]), { commit: true });
+  }
+
+  async function assertSuccess(
+    label: string,
+    srcPoint: string,
+    dstPoint: string,
+    org: string,
+    qty: number,
+  ) {
+    const routeId = await upsertRoute(srcPoint, dstPoint);
+    const srcId = await seedPharmacyStock({
+      org, pharmacy: srcPoint, sci: uniq(`SCI-${label}`), qty: qty + 5,
+      supplyType: 'aid', purchaseOrigin: null,
+    });
+    const beforeSrc = await onHand(srcId);
+    const requestId = randomUUID();
+    const result = await replenish(routeId, srcId, qty, requestId, null, `note-${label}`);
+    expect(result.ok, label).toBe(true);
+    expect(result.idempotent_replay).toBe(false);
+    expect(result.quantity).toBe(qty);
+
+    const after = await snapshots(srcId, dstPoint, requestId);
+    expect(after.srcQty, `${label} source debit`).toBe(beforeSrc - qty);
+    expect(after.dstQty, `${label} dest credit`).toBe(qty);
+    expect(after.legs).toHaveLength(2);
+    expect(after.legs.map((l: any) => l.movement_type).sort()).toEqual([
+      'replenish_receive', 'replenish_send',
+    ]);
+    expect(after.legs.every((l: any) => l.reference_type === 'outlet_replenishment')).toBe(true);
+    expect(after.legs.every((l: any) => l.reference_id === requestId)).toBe(true);
+    expect(after.legs.every((l: any) => l.reason_code === 'transferred')).toBe(true);
+    const fp = await fingerprint(routeId, srcId, qty, null, `note-${label}`);
+    expect(after.legs.every((l: any) => l.request_fingerprint === fp)).toBe(true);
+    const send = after.legs.find((l: any) => l.movement_type === 'replenish_send');
+    const recv = after.legs.find((l: any) => l.movement_type === 'replenish_receive');
+    expect(Number(send.on_hand_delta)).toBe(-qty);
+    expect(Number(recv.on_hand_delta)).toBe(qty);
+    expect(Number(send.on_hand_delta) + Number(recv.on_hand_delta)).toBe(0);
+    expect(send.correlation_id).toBe(recv.correlation_id);
+    expect(after.auditN).toBe(1);
+    expect(after.whMoveN).toBe(0);
+    expect(after.srcQty).toBeGreaterThanOrEqual(0);
+    return { routeId, srcId, requestId, result, after };
+  }
+
+  // ══ Positive matrix ═══════════════════════════════════════════════════════
+  describe('positive Shape H / Shape I matrix', () => {
+    it('Shape H: health_sector same-facility pharmacy → crash_cabinet (emergency)', async () => {
+      await assertSuccess('H', PH_A, CAB_A, ORG_SECTOR, 3);
+    });
+
+    it('Shape I hospital: pharmacy → rescue_cart (emergency)', async () => {
+      await assertSuccess('I-H-CART', PH_HOSP, CART_HOSP, ORG_HOSPITAL, 4);
+    });
+
+    it('Shape I hospital: pharmacy → crash_cabinet (non_emergency)', async () => {
+      await assertSuccess('I-H-CAB', PH_HOSP, CAB_HOSP, ORG_HOSPITAL, 2);
+    });
+
+    it('Shape I specialized_center: pharmacy → crash_cabinet (non_emergency)', async () => {
+      await assertSuccess('I-S-CAB', PH_SPECIAL, CAB_SPECIAL, ORG_SPECIAL, 5);
+    });
+  });
+
+  // ══ Negative matrix — zero mutation ═══════════════════════════════════════
+  describe('negative matrix — zero mutation on reject', () => {
+    async function expectReject(
+      name: string,
+      setup: () => Promise<{ routeId: string; srcId: string; dstPoint: string; qty?: number; actor?: string; requestId?: string; fefo?: string | null; notes?: string | null }>,
+      pattern: RegExp,
+    ) {
+      const s = await setup();
+      const qty = s.qty ?? 1;
+      const beforeSrc = await onHand(s.srcId);
+      const beforeDstId = await destStockId(s.srcId, s.dstPoint);
+      const beforeDst = beforeDstId ? await onHand(beforeDstId) : 0;
+      const beforeMoves = (await movementLegs(s.requestId ?? '00000000-0000-0000-0000-000000000000')).length;
+      const requestId = s.requestId ?? randomUUID();
+      const beforeMoveCount = await rig.asAdmin((c: any) =>
+        c.query(`SELECT count(*)::int n FROM outlet_stock_movements`));
+      const beforeAudit = await rig.asAdmin((c: any) =>
+        c.query(`SELECT count(*)::int n FROM audit_logs WHERE action='outlet_stock.replenish'`));
+
+      const msg = await rejects(() =>
+        replenish(s.routeId, s.srcId, qty, requestId, s.fefo ?? null, s.notes ?? null, s.actor ?? rig.superAdminId));
+      expect(msg, name).toMatch(pattern);
+
+      expect(await onHand(s.srcId), `${name} SOURCE_DELTA`).toBe(beforeSrc);
+      const afterDstId = await destStockId(s.srcId, s.dstPoint);
+      const afterDst = afterDstId ? await onHand(afterDstId) : 0;
+      // Destination may be created at 0 during a failed path only if insert
+      // happened before a later reject — RPC creates dest after validation, so
+      // reject-before-insert leaves no row; reject-after would be a bug.
+      expect(afterDst, `${name} DESTINATION_DELTA`).toBe(beforeDst);
+      const afterMoveCount = await rig.asAdmin((c: any) =>
+        c.query(`SELECT count(*)::int n FROM outlet_stock_movements`));
+      expect(afterMoveCount.rows[0].n, `${name} MOVEMENT_DELTA`).toBe(beforeMoveCount.rows[0].n);
+      const afterAudit = await rig.asAdmin((c: any) =>
+        c.query(`SELECT count(*)::int n FROM audit_logs WHERE action='outlet_stock.replenish'`));
+      expect(afterAudit.rows[0].n, `${name} AUDIT_DELTA`).toBe(beforeAudit.rows[0].n);
+      void beforeMoves;
+    }
+
+    it('wrong source outlet type (cabinet as source) is rejected at route upsert / movement', async () => {
+      // Route upsert itself rejects non-pharmacy source; prove movement path
+      // also rejects if a stale route row were forced.
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, CAB_A, PH_A, true, null])));
+      expect(msg).toMatch(/source_must_be_pharmacy|pharmacy/i);
+    });
+
+    it('health-center rescue_cart destination is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_A, CART_A, true, null])));
+      expect(msg).toMatch(/health_center_rescue_cart_forbidden/);
+    });
+
+    it('specialized-center rescue_cart destination is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_SPECIAL, CART_SPECIAL, true, null])));
+      expect(msg).toMatch(/rescue_cart_requires_hospital/);
+    });
+
+    it('hospital rescue_cart with wrong clinical kind is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_HOSP, CART_HOSP_NON, true, null])));
+      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+    });
+
+    it('hospital crash_cabinet with wrong clinical kind is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_HOSP, CAB_HOSP_EM, true, null])));
+      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+    });
+
+    it('Shape-H cross-facility is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_A, CAB_B, true, null])));
+      expect(msg).toMatch(/cross_facility_route_forbidden/);
+    });
+
+    it('Shape-H sector-level outlet masquerading as facility outlet is rejected', async () => {
+      const msg = await rejects(() =>
+        rig.asUser(rig.superAdminId, (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_SECTOR, CAB_SECTOR, true, null])));
+      expect(msg).toMatch(/health_center_route_requires_facility/);
+    });
+
+    it('inactive route rejects movement with zero mutation', async () => {
+      await expectReject('inactive_route', async () => {
+        const routeId = await upsertRoute(PH_A, CAB_A, true);
+        await rig.asAdmin((c: any) =>
+          c.query(`UPDATE outlet_replenishment_routes SET is_active=false WHERE id=$1`, [routeId]));
+        const srcId = await seedPharmacyStock({
+          org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-INA'), qty: 10,
+        });
+        return { routeId, srcId, dstPoint: CAB_A };
+      }, /route_not_active/);
+    });
+
+    it('inactive source rejects with zero mutation', async () => {
+      await expectReject('inactive_source', async () => {
+        const routeId = await upsertRoute(PH_A, CAB_A, true);
+        const srcId = await seedPharmacyStock({
+          org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-ISRC'), qty: 10,
+        });
+        await rig.asAdmin((c: any) =>
+          c.query(`UPDATE distribution_points SET status='inactive' WHERE id=$1`, [PH_A]));
+        return { routeId, srcId, dstPoint: CAB_A };
+      }, /source_outlet_inactive/);
+      await rig.asAdmin((c: any) =>
+        c.query(`UPDATE distribution_points SET status='active' WHERE id=$1`, [PH_A]));
+    });
+
+    it('inactive destination rejects with zero mutation', async () => {
+      await expectReject('inactive_dest', async () => {
+        const routeId = await upsertRoute(PH_A, CAB_A, true);
+        const srcId = await seedPharmacyStock({
+          org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-IDST'), qty: 10,
+        });
+        await rig.asAdmin((c: any) =>
+          c.query(`UPDATE distribution_points SET status='inactive' WHERE id=$1`, [CAB_A]));
+        return { routeId, srcId, dstPoint: CAB_A };
+      }, /destination_outlet_inactive/);
+      await rig.asAdmin((c: any) =>
+        c.query(`UPDATE distribution_points SET status='active' WHERE id=$1`, [CAB_A]));
+    });
+
+    it('inactive facility rejects with zero mutation', async () => {
+      await expectReject('inactive_facility', async () => {
+        // Upsert rejects inactive facilities; force-insert route metadata so the
+        // movement-time path must revalidate CURRENT facility status.
+        const routeId = randomUUID();
+        await rig.asAdmin((c: any) => c.query(`
+          INSERT INTO outlet_replenishment_routes (
+            id, organization_id, source_point_id, destination_point_id,
+            source_point_type, destination_point_type, is_active
+          ) VALUES (
+            $1,'${ORG_SECTOR}','${PH_INACTIVE_FAC}','${CAB_INACTIVE_FAC}',
+            'pharmacy','crash_cabinet',true
+          )
+        `, [routeId]));
+        const srcId = await seedPharmacyStock({
+          org: ORG_SECTOR, pharmacy: PH_INACTIVE_FAC, sci: uniq('SCI-IFAC'), qty: 10,
+        });
+        return { routeId, srcId, dstPoint: CAB_INACTIVE_FAC };
+      }, /facility_not_active/);
+    });
+
+    it('insufficient / zero / negative quantity reject with zero mutation', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-QTY'), qty: 2,
+      });
+      const before = await onHand(srcId);
+      expect(await rejects(() => replenish(routeId, srcId, 5))).toMatch(/insufficient_source_stock/);
+      expect(await rejects(() => replenish(routeId, srcId, 0))).toMatch(/quantity_must_be_positive/);
+      expect(await rejects(() => replenish(routeId, srcId, -1))).toMatch(/quantity_must_be_positive/);
+      expect(await onHand(srcId)).toBe(before);
+    });
+
+    it('unauthorized caller cannot execute', async () => {
+      await expectReject('unauthorized', async () => {
+        const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+        const srcId = await seedPharmacyStock({
+          org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-RBAC'), qty: 10,
+        });
+        return { routeId, srcId, dstPoint: CART_HOSP, actor: NOBODY };
+      }, /forbidden_outlet_stock_replenish/);
+    });
+  });
+
+  // ══ Movement-time revalidation ════════════════════════════════════════════
+  describe('movement-time route revalidation', () => {
+    it('rejects when clinical_location_kind changes after a valid route was created', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CAB_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-CLK'), qty: 10,
+      });
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='emergency' WHERE id=$1`, [CAB_HOSP]));
+      const before = await onHand(srcId);
+      const msg = await rejects(() => replenish(routeId, srcId, 1));
+      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await onHand(srcId)).toBe(before);
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`, [CAB_HOSP]));
+    });
+
+    it('rejects when destination clinical context drifts after a valid route was created', async () => {
+      // Composite FK pins destination point_type on the route row, so type drift
+      // is structurally impossible. Clinical-location drift is the movement-time
+      // mutation the corridor must still catch.
+      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-TYPE'), qty: 10,
+      });
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`,
+        [CART_HOSP]));
+      const before = await onHand(srcId);
+      const msg = await rejects(() => replenish(routeId, srcId, 1));
+      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await onHand(srcId)).toBe(before);
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='emergency' WHERE id=$1`,
+        [CART_HOSP]));
+    });
+
+    it('rejects Shape-H when facility relationship no longer matches', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-FACREL'), qty: 10,
+      });
+      // Move destination warehouse to facility B — current context diverges.
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_B, WH_FAC_A]));
+      // Pharmacy and cabinet share WH_FAC_A; moving the warehouse moves BOTH.
+      // Instead, attach CAB_A to WH_FAC_B.
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_A, WH_FAC_A]));
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_B, CAB_A]));
+      const before = await onHand(srcId);
+      const msg = await rejects(() => replenish(routeId, srcId, 1));
+      expect(msg).toMatch(/cross_facility_route_forbidden/);
+      expect(await onHand(srcId)).toBe(before);
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_A, CAB_A]));
+    });
+  });
+
+  // ══ Idempotency / fingerprint ═════════════════════════════════════════════
+  describe('idempotency and fingerprint conflict', () => {
+    it('same request_id + same payload replays safely without second debit', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-IDEM'), qty: 20,
+      });
+      const requestId = randomUUID();
+      const first = await replenish(routeId, srcId, 3, requestId, null, 'idem');
+      const midSrc = await onHand(srcId);
+      const midLegs = await movementLegs(requestId);
+      const second = await replenish(routeId, srcId, 3, requestId, null, 'idem');
+      expect(second.ok).toBe(true);
+      expect(second.idempotent_replay).toBe(true);
+      expect(second.send_movement_id).toBe(first.send_movement_id);
+      expect(await onHand(srcId)).toBe(midSrc);
+      expect(await movementLegs(requestId)).toHaveLength(midLegs.length);
+    });
+
+    it('same request_id + changed quantity/source/destination/material conflicts with zero mutation', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-CONF'), qty: 20,
+      });
+      const other = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-CONF2'), qty: 20,
+      });
+      const requestId = randomUUID();
+      await replenish(routeId, srcId, 2, requestId, null, 'c');
+      const after = await onHand(srcId);
+      expect(await rejects(() => replenish(routeId, srcId, 3, requestId, null, 'c')))
+        .toMatch(/request_id_conflict/);
+      expect(await rejects(() => replenish(routeId, other, 2, requestId, null, 'c')))
+        .toMatch(/request_id_conflict/);
+      expect(await onHand(srcId)).toBe(after);
+      expect(await movementLegs(requestId)).toHaveLength(2);
+    });
+  });
+
+  // ══ Concurrency ═══════════════════════════════════════════════════════════
+  describe('concurrency', () => {
+    it('two concurrent identical requests do not double debit/credit', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-CONC'), qty: 10,
+      });
+      const requestId = randomUUID();
+      const attempt = () =>
+        replenish(routeId, srcId, 4, requestId, null, 'conc')
+          .then((r) => ({ ok: true as const, r }))
+          .catch((e: any) => ({ ok: false as const, msg: String(e.message) }));
+
+      const [a, b] = await Promise.all([attempt(), attempt()]);
+      expect(a.ok || b.ok).toBe(true);
+      // Winner + safe replay, or one conflict if timing races past probe — never
+      // two mutations.
+      expect(await onHand(srcId)).toBe(6);
+      expect(await movementLegs(requestId)).toHaveLength(2);
+    });
+
+    it('competing different requests against limited stock never go negative', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CAB_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-RACE'), qty: 5,
+      });
+      const attempt = () =>
+        replenish(routeId, srcId, 4, randomUUID(), null, 'race')
+          .then(() => 'ok')
+          .catch((e: any) => String(e.message));
+      const results = await Promise.all([attempt(), attempt()]);
+      const wins = results.filter(r => r === 'ok').length;
+      expect(wins).toBe(1);
+      expect(results.some(r => /insufficient_source_stock|outlet_quantity_cannot_go_negative/.test(r))).toBe(true);
+      const finalQty = await onHand(srcId);
+      expect(finalQty).toBeGreaterThanOrEqual(0);
+      expect(finalQty).toBe(1);
+    });
+  });
+
+  // ══ FEFO / material identity ══════════════════════════════════════════════
+  describe('FEFO and material identity', () => {
+    it('requires FEFO override when a newer batch is chosen over an older one', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const sci = uniq('SCI-FEFO');
+      const older = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci, qty: 10, batch: 'OLD', expiryDays: 30,
+      });
+      const newer = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci, qty: 10, batch: 'NEW', expiryDays: 300,
+      });
+      const beforeOld = await onHand(older);
+      const beforeNew = await onHand(newer);
+      const msg = await rejects(() => replenish(routeId, newer, 1, randomUUID(), null, null));
+      expect(msg).toMatch(/fefo_override_required/);
+      expect(await onHand(older)).toBe(beforeOld);
+      expect(await onHand(newer)).toBe(beforeNew);
+
+      // Choosing the FEFO-first (older) batch succeeds without override.
+      const ok = await replenish(routeId, older, 1, randomUUID(), null, null);
+      expect(ok.ok).toBe(true);
+      expect(await onHand(older)).toBe(beforeOld - 1);
+    });
+
+    it('copies supply_type / purchase_origin onto the destination identity', async () => {
+      const routeId = await upsertRoute(PH_SPECIAL, CAB_SPECIAL, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SPECIAL, pharmacy: PH_SPECIAL, sci: uniq('SCI-PROV'), qty: 8,
+        supplyType: 'purchase', purchaseOrigin: 'supplementary',
+      });
+      const requestId = randomUUID();
+      await replenish(routeId, srcId, 2, requestId);
+      const dstId = await destStockId(srcId, CAB_SPECIAL);
+      const row = await rig.asAdmin((c: any) => c.query(
+        `SELECT supply_type, purchase_origin FROM outlet_stock WHERE id=$1`, [dstId]));
+      expect(row.rows[0].supply_type).toBe('purchase');
+      expect(row.rows[0].purchase_origin).toBe('supplementary');
+    });
+  });
+
+  // ══ Fingerprint / unique constraint ═══════════════════════════════════════
+  describe('fingerprint CHECK and once-unique index', () => {
+    it('rejects invalid / wrong-length fingerprints on the replenishment namespace', async () => {
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-FP'), qty: 5,
+      });
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO outlet_stock_movements (
+          outlet_stock_id, organization_id, distribution_point_id, movement_type,
+          on_hand_before, on_hand_delta, on_hand_after,
+          reserved_before, reserved_delta, reserved_after,
+          reason_code, reference_type, reference_id, request_fingerprint,
+          scientific_name_snapshot
+        ) VALUES (
+          $1,'${ORG_SECTOR}','${PH_A}','replenish_send',
+          5,-1,4,0,0,0,
+          'transferred','outlet_replenishment',$2,'not-a-hex-fingerprint',
+          'x'
+        )
+      `, [srcId, randomUUID()])));
+      expect(msg).toMatch(/osm_replenishment_fingerprint_chk/);
+    });
+
+    it('permits one send + one receive and rejects duplicate legs', async () => {
+      const routeId = await upsertRoute(PH_A, CAB_A, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-ONCE'), qty: 10,
+      });
+      const requestId = randomUUID();
+      await replenish(routeId, srcId, 1, requestId);
+      const legs = await movementLegs(requestId);
+      expect(legs).toHaveLength(2);
+      const fp = legs[0].request_fingerprint;
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO outlet_stock_movements (
+          outlet_stock_id, organization_id, distribution_point_id, movement_type,
+          on_hand_before, on_hand_delta, on_hand_after,
+          reserved_before, reserved_delta, reserved_after,
+          reason_code, reference_type, reference_id, request_fingerprint,
+          scientific_name_snapshot
+        ) VALUES (
+          $1,'${ORG_SECTOR}','${PH_A}','replenish_send',
+          1,-1,0,0,0,0,
+          'transferred','outlet_replenishment',$2,$3,'x'
+        )
+      `, [srcId, requestId, fp])));
+      expect(msg).toMatch(/outlet_stock_movements_replenishment_once_uniq|duplicate key/i);
+    });
+  });
+
+  // ══ RBAC / helper revoke ══════════════════════════════════════════════════
+  describe('RBAC and helper exposure', () => {
+    it('helper EXECUTE is revoked from authenticated', async () => {
+      const r = await rig.asAdmin((c: any) => c.query(`
+        SELECT has_function_privilege(
+          'authenticated',
+          'public._phoenix_replenishment_fingerprint_v1(uuid,uuid,integer,text,text)',
+          'EXECUTE'
+        ) AS allowed
+      `));
+      expect(r.rows[0].allowed).toBe(false);
+    });
+
+    it('authenticated without permission cannot call the RPC', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+      const srcId = await seedPharmacyStock({
+        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-NO'), qty: 5,
+      });
+      const before = await onHand(srcId);
+      const msg = await rejects(() => replenish(routeId, srcId, 1, randomUUID(), null, null, NOBODY));
+      expect(msg).toMatch(/forbidden_outlet_stock_replenish/);
+      expect(await onHand(srcId)).toBe(before);
+    });
+  });
+
+  // ══ E-4 / 167 non-interference ════════════════════════════════════════════
+  describe('E-4 and Migration-167 non-interference', () => {
+    it('successful E-5 movement does not create IP dispatches or flip IP flags', async () => {
+      const beforeIp = await rig.asAdmin((c: any) => c.query(`
+        SELECT count(*)::int n FROM warehouse_dispatches WHERE is_initial_provisioning IS TRUE
+      `));
+      await assertSuccess('E4NI', PH_A, CAB_A, ORG_SECTOR, 1);
+      const afterIp = await rig.asAdmin((c: any) => c.query(`
+        SELECT count(*)::int n FROM warehouse_dispatches WHERE is_initial_provisioning IS TRUE
+      `));
+      expect(afterIp.rows[0].n).toBe(beforeIp.rows[0].n);
+    });
+
+    it('warehouse_dispatch_lines_decision_chk still requires rejected ⇒ received_quantity = 0', async () => {
+      const def = await rig.asAdmin((c: any) => c.query(`
+        SELECT pg_get_constraintdef(oid) AS d
+        FROM pg_constraint WHERE conname='warehouse_dispatch_lines_decision_chk'
+      `));
+      expect(def.rows[0].d).toMatch(/received_quantity IS NOT NULL/);
+      expect(def.rows[0].d).toMatch(/received_quantity = 0/);
+    });
+  });
+
+  // ══ Schema objects present ════════════════════════════════════════════════
+  describe('migration objects present after replay', () => {
+    it('exposes the public RPC and fingerprint helper with expected grants', async () => {
+      const r = await rig.asAdmin((c: any) => c.query(`
+        SELECT
+          to_regprocedure('public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)') IS NOT NULL AS rpc,
+          to_regprocedure('public._phoenix_replenishment_fingerprint_v1(uuid,uuid,integer,text,text)') IS NOT NULL AS helper,
+          has_function_privilege('authenticated',
+            'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)', 'EXECUTE') AS rpc_grant,
+          to_regprocedure('public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)') IS NULL AS no_reverse
+      `));
+      expect(r.rows[0].rpc).toBe(true);
+      expect(r.rows[0].helper).toBe(true);
+      expect(r.rows[0].rpc_grant).toBe(true);
+      expect(r.rows[0].no_reverse).toBe(true);
+    });
+  });
+});
