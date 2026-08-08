@@ -77,6 +77,11 @@ const DP = {
   AUDIT: '00000000-0000-0000-0000-000000167309',
   RETURN: '00000000-0000-0000-0000-000000167310',
   CANCEL: '00000000-0000-0000-0000-000000167311',
+  // POST-E4-SYNC: combined 166 (initial-provisioning invariant) + 167
+  // (full-rejection reconciliation) interaction proof. One outlet per case,
+  // same isolation discipline as every entry above.
+  INIT_REJECT: '00000000-0000-0000-0000-000000167312',
+  INIT_RECEIPT: '00000000-0000-0000-0000-000000167313',
 };
 
 let seq = 0;
@@ -124,6 +129,15 @@ run('167 · dispatch-line full-rejection reconciliation (dynamic)', () => {
     rig.asUser(
       rig.superAdminId,
       (c: any) => call(c, 'phoenix_create_warehouse_dispatch', [WH_INST, dp, uniq(tag), null, null, null]),
+      { commit: true },
+    );
+
+  /** 166's one-shot creator — flags the dispatch is_initial_provisioning=true. */
+  const createInitialProvisioningDispatch = (dp: string, tag: string) =>
+    rig.asUser(
+      rig.superAdminId,
+      (c: any) =>
+        call(c, 'phoenix_create_initial_provisioning_dispatch', [WH_INST, dp, uniq(tag), null, null, null]),
       { commit: true },
     );
 
@@ -637,6 +651,133 @@ run('167 · dispatch-line full-rejection reconciliation (dynamic)', () => {
         expect(r.rows).toHaveLength(1);
         // Still the 070/131 body: it stores 0, which is now legal.
         expect(r.rows[0].def).toContain("SET status = 'rejected', received_quantity = 0");
+      });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5. COMBINED WITH E-4 INITIAL PROVISIONING (166 + 167 INTERACTION) —
+  //    POST-SYNC PROOF. Neither migration's own single-migration suite drives
+  //    the REAL 166 creator through the REAL 167-reconciled receive RPC in one
+  //    effective state; this does. Both cases use the real RPC path only.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('5. combined with E-4 initial provisioning (166 + 167 interaction)', () => {
+    const provisioningState = (dispatchId: string) =>
+      rig
+        .asAdmin((c: any) =>
+          c.query(
+            `SELECT status, is_initial_provisioning, initial_provisioning_consumed_at
+               FROM warehouse_dispatches WHERE id=$1`,
+            [dispatchId],
+          ),
+        )
+        .then((r: any) => r.rows[0]);
+
+    // ── CASE A — initial provisioning followed by FULL REJECTION ───────────
+    it('a fully rejected initial-provisioning lifecycle delivers nothing and does NOT consume the one-shot entitlement', async () => {
+      const stock = await provisionInstitutionStock('IPREJ', 5);
+      const created = await createInitialProvisioningDispatch(DP.INIT_REJECT, 'IPREJ');
+      expect(created.is_initial_provisioning).toBe(true);
+      const [lineId] = await addLinesAndSend(created.dispatch_id, stock, [5]);
+
+      // The RPC succeeds — no 23514, no violates check constraint.
+      const res: any = await receive(lineId, 0);
+      expect(res.ok).toBe(true);
+      expect(res.line_status).toBe('rejected');
+      expect(res.outlet_stock_id).toBeNull();
+      expect(res.movement_id).toBeNull();
+      expect(res.quantity_after).toBe(0);
+
+      const l = await line(lineId);
+      expect(l.status).toBe('rejected');
+      expect(l.received_quantity).toBe(0);
+      expect(l.rejection_reason).not.toBeNull();
+
+      // 166's flag survives; consumption was never stamped — nothing arrived.
+      const d = await provisioningState(created.dispatch_id);
+      expect(d.is_initial_provisioning).toBe(true);
+      expect(d.initial_provisioning_consumed_at).toBeNull();
+      expect(d.status).toBe('rejected');
+
+      // No delivered stock and no phantom/orphan movement for the refused
+      // consignment — identical to the ordinary-dispatch proof in section 1,
+      // now proven with an initial-provisioning-flagged header too.
+      await rig.asAdmin(async (c: any) => {
+        const stockRow = await c.query(
+          `SELECT count(*)::int AS n FROM outlet_stock WHERE distribution_point_id=$1`,
+          [DP.INIT_REJECT],
+        );
+        expect(stockRow.rows[0].n).toBe(0);
+        const mv = await c.query(
+          `SELECT count(*)::int AS n FROM outlet_stock_movements WHERE distribution_point_id=$1`,
+          [DP.INIT_REJECT],
+        );
+        expect(mv.rows[0].n).toBe(0);
+
+        // Both audit trails exist: 166's creation record and 167's rejection
+        // record, each exactly once.
+        const created166 = await c.query(
+          `SELECT count(*)::int AS n FROM audit_logs
+            WHERE entity_id=$1 AND action='warehouse_dispatch.initial_provisioning_created'`,
+          [created.dispatch_id],
+        );
+        expect(created166.rows[0].n).toBe(1);
+        const rejected167 = await c.query(
+          `SELECT count(*)::int AS n FROM audit_logs
+            WHERE entity_id=$1 AND action='outlet_stock.dispatch_rejected'`,
+          [lineId],
+        );
+        expect(rejected167.rows[0].n).toBe(1);
+      });
+
+      // A lifecycle that delivered NOTHING did not consume the entitlement —
+      // a second initial-provisioning lifecycle for the SAME outlet succeeds.
+      const second = await createInitialProvisioningDispatch(DP.INIT_REJECT, 'IPREJ2');
+      expect(second.ok).toBe(true);
+      expect(second.dispatch_id).not.toBe(created.dispatch_id);
+    });
+
+    // ── CASE B — initial provisioning with ACTUAL RECEIPT ───────────────────
+    it('an accepted initial-provisioning lifecycle consumes the entitlement and blocks a second one', async () => {
+      const stock = await provisionInstitutionStock('IPRCV', 6);
+      const created = await createInitialProvisioningDispatch(DP.INIT_RECEIPT, 'IPRCV');
+      const [lineId] = await addLinesAndSend(created.dispatch_id, stock, [6]);
+
+      const res: any = await receive(lineId, 6);
+      expect(res.ok).toBe(true);
+      expect(res.line_status).toBe('accepted');
+      expect(res.outlet_stock_id).not.toBeNull();
+      expect(res.movement_id).not.toBeNull();
+      expect(res.quantity_after).toBe(6);
+
+      const d = await provisioningState(created.dispatch_id);
+      expect(d.is_initial_provisioning).toBe(true);
+      expect(d.initial_provisioning_consumed_at).not.toBeNull();
+      expect(d.status).toBe('accepted');
+
+      // Canonical stock/movement conservation for the delivered quantity.
+      await rig.asAdmin(async (c: any) => {
+        const stockRow = await c.query(
+          `SELECT on_hand_quantity FROM outlet_stock WHERE distribution_point_id=$1`,
+          [DP.INIT_RECEIPT],
+        );
+        expect(stockRow.rows).toHaveLength(1);
+        expect(stockRow.rows[0].on_hand_quantity).toBe(6);
+        const mv = await c.query(
+          `SELECT count(*)::int AS n FROM outlet_stock_movements WHERE distribution_point_id=$1`,
+          [DP.INIT_RECEIPT],
+        );
+        expect(mv.rows[0].n).toBe(1);
+      });
+
+      // 166's one-shot rule (rule A / the partial unique index) still refuses
+      // a second lifecycle for the same outlet, proving 167 repaired
+      // rejection without weakening 166's invariant in the combined state.
+      await expect(
+        createInitialProvisioningDispatch(DP.INIT_RECEIPT, 'IPRCV2'),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('initial_provisioning_already_exists_for_outlet'),
       });
     });
   });

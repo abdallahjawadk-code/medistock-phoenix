@@ -74,16 +74,18 @@ const theirs = decisionBranches(sql061, 'warehouse_dispatch_lines_decision_chk')
 // ============================================================================
 
 describe('1. 167 registration and shape', () => {
-  it('is registered exactly once, immediately after 165', () => {
+  it('is registered exactly once, immediately after 166', () => {
     // Position relative to its predecessor, not "is last": asserting last would
-    // force the next migration to edit this file. Its predecessor is 165, not
-    // 166 — 166 belongs to a separate, unmerged migration and 167 deliberately
-    // did not wait for it.
+    // force the next migration to edit this file. 167 was authored on its own
+    // branch concurrently with Stage E's 166 (a separate, independent
+    // migration authored on its own branch) and did not wait for it; now that
+    // both are merged and registered in their real numeric order, 167's
+    // predecessor in the registry is 166.
     expect(REVIEWED_MIGRATION_FILES.filter(f => f === NAME)).toEqual([NAME]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(i).toBeGreaterThan(0);
     expect(REVIEWED_MIGRATION_FILES[i - 1])
-      .toBe('165_phoenix_sector_health_center_supply_and_return.sql');
+      .toBe('166_phoenix_initial_provisioning_invariant.sql');
   });
 
   it('is a single transaction, manual-apply only', () => {
