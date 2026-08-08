@@ -385,7 +385,19 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // exactly, so this guard still catches any OTHER unlisted change.
       ' ":!supabase/migrations/165_phoenix_sector_health_center_supply_and_return.sql"' +
       ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return.dynamic.test.ts"' +
+      // STAGE-E-4 INITIAL-PROVISIONING-INVARIANT: the next, separately
+      // authorized phase adds migration 166 (two flag columns on
+      // warehouse_dispatches, one CHECK, one partial unique index, one new
+      // create RPC and one CREATE OR REPLACE of the 149 receive wrapper) plus
+      // its own dedicated static/dynamic test files -- a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason every
+      // entry above is: it has nothing to do with this (much earlier, UI-only)
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted change.
+      ' ":!supabase/migrations/166_phoenix_initial_provisioning_invariant.sql"' +
+      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
