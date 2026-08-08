@@ -1161,18 +1161,22 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
   // ══ Schema objects present ════════════════════════════════════════════════
   describe('migration objects present after replay', () => {
     it('exposes the public RPC and fingerprint helper with expected grants', async () => {
+      // This suite drives the full effective chain on disk (buildRig()), which
+      // now includes 169 (E-6). The reversal RPC is therefore expected to be
+      // present — that reflects the tip advancing, not a 168 behaviour change.
+      // 168's OWN static suite is what proves 168 itself does not implement E-6.
       const r = await rig.asAdmin((c: any) => c.query(`
         SELECT
           to_regprocedure('public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)') IS NOT NULL AS rpc,
           to_regprocedure('public._phoenix_replenishment_fingerprint_v1(uuid,uuid,integer,text,text)') IS NOT NULL AS helper,
           has_function_privilege('authenticated',
             'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)', 'EXECUTE') AS rpc_grant,
-          to_regprocedure('public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)') IS NULL AS no_reverse
+          to_regprocedure('public.phoenix_reverse_outlet_replenishment(uuid,uuid,uuid,integer,text,text)') IS NOT NULL AS reverse_present
       `));
       expect(r.rows[0].rpc).toBe(true);
       expect(r.rows[0].helper).toBe(true);
       expect(r.rows[0].rpc_grant).toBe(true);
-      expect(r.rows[0].no_reverse).toBe(true);
+      expect(r.rows[0].reverse_present).toBe(true);
     });
   });
 });
