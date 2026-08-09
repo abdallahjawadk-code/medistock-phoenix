@@ -1000,12 +1000,26 @@ async function main() {
       await page.getByText('Routine Replenishment').or(page.getByText('التعويض الدوري')).first().click().catch(() => {});
       await settle(1200);
 
-      const batchSelectCount = await page.getByLabel('Batch').or(page.getByLabel('الدفعة')).count().catch(() => 0);
+      // The reversal card's Batch select cannot be reached by label.
+      // PhoenixSelect derives its DOM id from the label text —
+      //   selectId = id ?? label?.toLowerCase().replace(/\s+/g,'-') ?? useId()
+      // — so ReplenishForm's and ReverseForm's Batch selects are both
+      // id="الدفعة". Duplicate ids mean BOTH <label for> point at the first
+      // one, and getByLabel therefore only ever yields a single element no
+      // matter how many are rendered. (That duplicate id is a real
+      // accessibility defect in a shared component, but fixing it reaches
+      // every screen in the app and is well outside E7-2 — reported
+      // separately rather than changed here.)
+      //
+      // Anchor structurally on the reversal card instead: within it, the
+      // selects are [route, batch] in order, independent of any id.
+      const reverseCard = page.locator('div').filter({ hasText: 'Reverse Replenishment' })
+        .or(page.locator('div').filter({ hasText: 'عكس التعويض' })).last();
       const noReversible = await page.getByText('Nothing is currently reversible')
         .or(page.getByText('لا توجد كميات قابلة للعكس')).count().catch(() => 0);
-      console.log(`DIAGNOSTIC — batch selects on page: ${batchSelectCount}; "nothing reversible" shown: ${noReversible > 0}`);
+      console.log(`DIAGNOSTIC — selects inside the reversal card: ${await reverseCard.locator('select').count().catch(() => 0)}; "nothing reversible" shown: ${noReversible > 0}`);
 
-      const reverseBatchSelect = page.getByLabel('Batch').or(page.getByLabel('الدفعة')).nth(1);
+      const reverseBatchSelect = reverseCard.locator('select').nth(1);
       const match = await waitForOption(reverseBatchSelect, seed.stageE.replenishSourceLot, 25000);
       record('the reversal form lists the just-created replenishment as reversible',
         Boolean(match), match ?? '');
