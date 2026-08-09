@@ -173,6 +173,7 @@ export function OutletOperationsScreen({
           key={activeOutlet.id}
           orgId={activeOrgId}
           distributionPointId={activeOutlet.id}
+          outletName={outletName}
           lang={lang}
         />
       )}

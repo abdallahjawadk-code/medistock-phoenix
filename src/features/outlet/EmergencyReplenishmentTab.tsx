@@ -8,6 +8,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useEmergencyReplenishmentPermission } from '@/features/inventory/useEmergencyReplenishmentPermission';
+import { InitialProvisioningLauncher } from './InitialProvisioningLauncher';
 import { getOutletStock } from './outlet-stock.service';
 import {
   getReversibleBatches,
@@ -43,10 +44,12 @@ import {
 export function EmergencyReplenishmentTab({
   orgId,
   distributionPointId,
+  outletName,
   lang,
 }: {
   orgId: string;
   distributionPointId: string;
+  outletName: string;
   lang: 'ar' | 'en';
 }) {
   const perms = useEmergencyReplenishmentPermission(orgId, distributionPointId);
@@ -74,6 +77,13 @@ export function EmergencyReplenishmentTab({
           <p style={{ fontSize: '12.5px', color: 'var(--t1)' }}>{toast}</p>
         </PhoenixCard>
       )}
+
+      <InitialProvisioningLauncher
+        orgId={orgId}
+        distributionPointId={distributionPointId}
+        outletName={outletName}
+        lang={lang}
+      />
 
       {outgoing.length === 0 ? (
         <PhoenixEmptyState

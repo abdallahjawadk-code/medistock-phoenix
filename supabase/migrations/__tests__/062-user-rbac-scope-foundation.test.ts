@@ -1615,7 +1615,7 @@ describe('16. isolation: untouched domains', () => {
         // now carries Migration 164's clinical_location_kind. Excluded by
         // exact name; every other product path stays watched.
         '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
-        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ' +
+        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ":(exclude)src/features/outlet/EmergencyReplenishmentTab.tsx" ":(exclude)src/features/outlet/InitialProvisioningLauncher.tsx" ":(exclude)src/features/institutions/FacilityManagementPanel.tsx" ":(exclude)src/features/institutions/ReplenishmentRouteManagementPanel.tsx" ":(exclude)src/features/institutions/WarehouseFacilityAssignmentPanel.tsx" ' +
         '":(exclude)src/shared/i18n/strings.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );

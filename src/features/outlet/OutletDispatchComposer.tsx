@@ -26,7 +26,7 @@ import {
   draftLineFromStock, validateDraft, draftIsConfirmable, revalidateAgainstFreshStock,
   type DraftLine, type StockCandidate,
 } from '@/features/movement/composer-model';
-import { commitDraft, planRetry, type CommitResult, type CommitProgress } from '@/features/movement/movement-commit';
+import { commitDraft, planRetry, type CommitResult, type CommitProgress, type RpcOutcome } from '@/features/movement/movement-commit';
 import { MovementComposerShell, type ComposerStep } from '@/features/movement/ui/MovementComposerShell';
 import { StockMaterialPicker } from '@/features/movement/ui/StockMaterialPicker';
 import { MovementLineTable } from '@/features/movement/ui/MovementLineTable';
@@ -36,6 +36,7 @@ import {
   createWarehouseDispatch, addDispatchLine, getWarehouseDispatchLines,
   getFefoAlternatives, type FefoBatch,
 } from './dispatch.service';
+import { createInitialProvisioningDispatch } from './emergency-replenishment.service';
 import { FefoOverrideDialog } from './FefoOverrideDialog';
 import { useFefoOverridePermission } from '@/features/inventory/useFefoOverridePermission';
 import { operationToken } from '@/shared/lib/operation-token';
@@ -99,10 +100,23 @@ interface Props {
   outlets: ReadonlyArray<{ id: string; name: string }>;
   onCancel: () => void;
   onCreated: (dispatchId: string) => void;
+  /**
+   * STAGE-E-E7-2: when true, the header is created via Migration 166's
+   * `phoenix_create_initial_provisioning_dispatch` (التجهيز الأولي) instead of
+   * the ordinary `phoenix_create_warehouse_dispatch` (070) — a distinct RPC,
+   * so this dispatch is flagged `is_initial_provisioning` and counts against
+   * the outlet's own one-shot lifecycle slot. Every other step (FEFO material
+   * picker, line commit, retry protocol) is identical on purpose: this is the
+   * same battle-tested composer, not a second implementation of dispatch
+   * creation. Callers are responsible for only offering this when the
+   * destination outlet has not already consumed its slot.
+   */
+  isInitialProvisioning?: boolean;
 }
 
 export function OutletDispatchComposer({
   sourceWarehouseId, sourceWarehouseName, outlets, onCancel, onCreated,
+  isInitialProvisioning = false,
 }: Props) {
   const { lang, dir, activeOrgId } = useApp();
 
@@ -218,12 +232,23 @@ export function OutletDispatchComposer({
     setError(null);
 
     const outcome = await commitDraft(lines, {
-      createHeader: () => createWarehouseDispatch({
-        warehouseId: sourceWarehouseId,
-        destinationDistributionPointId: outletId,
-        dispatchNumber: externalReference.trim(),
-        notes: notes.trim() || null,
-      }),
+      createHeader: () => isInitialProvisioning
+        ? createInitialProvisioningDispatch({
+            warehouseId: sourceWarehouseId,
+            destinationDistributionPointId: outletId,
+            dispatchNumber: externalReference.trim(),
+            notes: notes.trim() || null,
+          }).then((r): RpcOutcome => ({
+            ok: r.ok,
+            error: r.error,
+            data: (r.data as unknown as Record<string, unknown> | undefined) ?? null,
+          }))
+        : createWarehouseDispatch({
+            warehouseId: sourceWarehouseId,
+            destinationDistributionPointId: outletId,
+            dispatchNumber: externalReference.trim(),
+            notes: notes.trim() || null,
+          }),
       addLine: async (dispatchId, line) => {
         const fefoOverride = line.idempotencyKey in lineOverrides;
         const overrideReason = lineOverrides[line.idempotencyKey] ?? null;
@@ -343,7 +368,7 @@ export function OutletDispatchComposer({
     <MovementComposerShell
       lang={lang}
       dir={dir}
-      title={t('mv_doc_outlet_dispatch', lang)}
+      title={isInitialProvisioning ? t('prov_initial', lang) : t('mv_doc_outlet_dispatch', lang)}
       step={step}
       onStep={next => { if (next === 'review') void enterReview(); else setStep(next); }}
       canAdvance={step === 'parties' ? partiesComplete : lines.length > 0}

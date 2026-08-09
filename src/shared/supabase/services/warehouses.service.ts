@@ -10,6 +10,9 @@ export interface Warehouse {
   status: string;
   organizationId: string;
   warehouseKind: WarehouseKind;
+  /** STAGE-E-E7-2: the subordinate facility this warehouse is assigned to
+   *  (Migration 164/170). Null until assigned via phoenix_assign_warehouse_facility. */
+  facilityId: string | null;
 }
 
 export interface DistributionPoint {
@@ -47,7 +50,7 @@ export async function getWarehouses(orgId: string): Promise<Warehouse[]> {
 
   const { data, error } = await supabase
     .from('warehouses')
-    .select('id, name, name_ar, status, organization_id, warehouse_kind')
+    .select('id, name, name_ar, status, organization_id, warehouse_kind, facility_id')
     .eq('organization_id', orgId)
     .neq('status', 'archived')
     .order('name_ar');
@@ -57,6 +60,7 @@ export async function getWarehouses(orgId: string): Promise<Warehouse[]> {
     id: r.id, name: r.name, name_ar: r.name_ar,
     status: r.status, organizationId: r.organization_id,
     warehouseKind: r.warehouse_kind as WarehouseKind,
+    facilityId: r.facility_id ?? null,
   }));
 }
 

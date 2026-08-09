@@ -39,6 +39,10 @@ import {
   getQrForPoint,
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
+import { listOrganizationFacilities } from './facilities.service';
+import { FacilityManagementPanel } from './FacilityManagementPanel';
+import { WarehouseFacilityAssignmentPanel } from './WarehouseFacilityAssignmentPanel';
+import { ReplenishmentRouteManagementPanel } from './ReplenishmentRouteManagementPanel';
 import {
   archiveEntity,
   getEntityPurgeImpact,
@@ -493,6 +497,20 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
   const o = org.data;
   const ptCount = points.data?.length ?? 0;
 
+  // STAGE-E-E7-2: facility management is legal ONLY for a health_sector
+  // organization — Migration 164's own composite FK (of_parent_class_fk)
+  // structurally forbids any other institution_class, and a
+  // pharmacy_department_authority (institution_class always NULL, Migration
+  // 171) can never match it either. Gated here so the panel is never even
+  // mounted for an organization the database will always refuse.
+  const isHealthSector = o?.organizationKind === 'care_institution' && o?.institutionClass === 'health_sector';
+  const canManageFacilities = actorPermissions.has('organization_facilities.manage');
+  const canManageRoutes = actorPermissions.has('replenishment_routes.manage');
+  const facilities = useAsync(
+    () => isHealthSector ? listOrganizationFacilities(orgId) : Promise.resolve([]),
+    [orgId, isHealthSector],
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Org info card */}
@@ -595,6 +613,25 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         )}
       </div>
 
+      {/* STAGE-E-E7-2: facility management + warehouse-facility assignment —
+          health_sector organizations only (see isHealthSector above). */}
+      {isHealthSector && (
+        <div>
+          <FacilityManagementPanel orgId={orgId} lang={lang} canManage={canManageFacilities} />
+          {canManageFacilities && operationalWarehouses.length > 0 && (
+            <div style={{ marginTop: '10px' }}>
+              <WarehouseFacilityAssignmentPanel
+                warehouses={operationalWarehouses}
+                facilities={facilities.data ?? []}
+                lang={lang}
+                canManage={canManageFacilities}
+                onAssigned={() => { warehouses.reload(); }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Ports section */}
       {canViewPorts ? (
         <PortSection
@@ -622,6 +659,18 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         <div style={{ fontSize: '12px', color: 'var(--t2)', padding: '12px', background: 'var(--s2)', borderRadius: 'var(--r2)' }}>
           {t('perm_no_view_ports', lang)}
         </div>
+      )}
+
+      {/* STAGE-E-E7-2: replenishment route management. Not gated to
+          health_sector — hospital/specialized_center routes (Shape I) are
+          equally legal; the RPC itself enforces both shapes. */}
+      {canViewPorts && (
+        <ReplenishmentRouteManagementPanel
+          orgId={orgId}
+          points={points.data ?? []}
+          lang={lang}
+          canManage={canManageRoutes}
+        />
       )}
 
       {/* Organization cleanup wizard */}

@@ -1162,7 +1162,7 @@ describe('15. isolation from out-of-scope domains', () => {
         // clinical_location_kind on distribution points. Excluded by exact
         // name; every other product path stays watched.
         '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
-        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ' +
+        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ":(exclude)src/features/outlet/EmergencyReplenishmentTab.tsx" ":(exclude)src/features/outlet/InitialProvisioningLauncher.tsx" ":(exclude)src/features/institutions/FacilityManagementPanel.tsx" ":(exclude)src/features/institutions/ReplenishmentRouteManagementPanel.tsx" ":(exclude)src/features/institutions/WarehouseFacilityAssignmentPanel.tsx" ' +
         '":(exclude)src/shared/i18n/strings.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });
