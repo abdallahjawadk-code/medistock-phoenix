@@ -98,7 +98,17 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
   const restCalls = [];
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('pageerror', err => consoleErrors.push(String(err)));
-  page.on('requestfailed', req => failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText}`));
+  page.on('requestfailed', req => {
+    const errorText = req.failure()?.errorText ?? '';
+    // net::ERR_ABORTED is the browser cancelling a request the page itself no
+    // longer wants — a count probe still in flight when the view that issued
+    // it unmounts, which is exactly what moving between screens does. It is
+    // not a server or transport fault, and treating it as one would fail any
+    // flow that navigates promptly. Every other errorText still counts, and
+    // real server faults are caught by the >= 500 check below regardless.
+    if (errorText === 'net::ERR_ABORTED') return;
+    failedRequests.push(`${req.method()} ${req.url()} — ${errorText}`);
+  });
   page.on('response', res => {
     if (res.status() >= 500) failedRequests.push(`${res.status()} ${res.url()}`);
     // DIAGNOSTIC (temporary): capture every Supabase REST call's status +
@@ -237,6 +247,40 @@ async function openOrganizationScreen(page) {
     JSON.stringify(rendered),
   );
   return false;
+}
+
+/**
+ * Advances MovementComposerShell one step.
+ *
+ * The shell renders each step's name TWICE: once as a `role="tab"` chip and
+ * once as the forward button in the footer. The chips are deliberately
+ * backward-only — the one for a step you have not reached yet is `disabled` —
+ * and it is the chip that comes first in the DOM. A plain getByText(...).first()
+ * therefore binds to a permanently disabled element and silently never
+ * advances, so this targets the footer button explicitly.
+ */
+async function advanceComposerStep(page, labels) {
+  for (const label of labels) {
+    const btn = page.locator('button:not([role="tab"])').filter({ hasText: label }).first();
+    if ((await btn.count()) === 0) continue;
+    if (!(await btn.isEnabled().catch(() => false))) continue;
+    await btn.click();
+    await settle(900);
+    return true;
+  }
+  console.log(`DIAGNOSTIC — no enabled composer step button among [${labels.join(', ')}]`);
+  return false;
+}
+
+/**
+ * Picks an outlet on screen 18. The screen only renders the selector when the
+ * profile manages more than one outlet, so a missing selector is not by itself
+ * a failure — the caller asserts on the outlet that actually ended up active.
+ */
+async function selectOutlet(page, labels) {
+  const outletSelect = page.getByLabel('Select outlet').or(page.getByLabel('اختر المنفذ')).first();
+  if ((await outletSelect.count().catch(() => 0)) === 0) return false;
+  return await selectByLabel(outletSelect, labels).then(() => true).catch(() => false);
 }
 
 async function openSuggestionMaterials(page, { mobile = false } = {}) {
@@ -648,8 +692,8 @@ async function main() {
     await page.close();
   }
 
-  // ── 3c. STAGE-E-E7-2: route -> initial provisioning -> replenishment ->
-  //        reversal, driven by institution_admin through the real UI ────────
+  // ── 3c. STAGE-E-E7-2: replenishment route management, driven by
+  //        institution_admin through the real UI ─────────────────────────────
   let routeId = null;
   {
     const { page, consoleErrors, failedRequests } = await freshPage(browser);
@@ -704,16 +748,30 @@ async function main() {
       record('DB read-model verification for route creation', true, 'DATABASE_URL not provided — UI-level check only');
     }
 
-    // -- Initial Provisioning: WH_A -> E2E Rescue Cart A (Migration 166 RPC)
+    record('route-management session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    record('route-management session has no failed/5xx requests', failedRequests.length === 0, failedRequests.slice(0, 3).join(' | '));
+    await page.close();
+  }
+
+  // ── 3d. STAGE-E-E7-2: initial provisioning -> routine replenishment ->
+  //        reversal on screen 18, over the route created above ───────────────
+  {
+    // Screen 18 scopes itself to the profile's migration-062 outlet
+    // assignments (useInventoryScopes.manageableOutlets), NEVER to a role
+    // name: institutionAdminA is seeded with no distribution-point assignment
+    // at all, so it legitimately manages zero outlets there — which is also
+    // what section 2 above already asserts when it proves that same actor is
+    // not offered Dispense. The corridor therefore runs as the seeded
+    // super_admin, who holds every scope in org A; each RPC still re-checks
+    // that scope server-side, so nothing here is taken on the client's word.
+    const { page, consoleErrors, failedRequests } = await freshPage(browser);
+    await login(page, seed.users.fixtureAdmin.email, seed.password);
+
+    // -- Initial Provisioning: WH_A -> E2E Rescue Cart A (Migration 166 RPC).
+    //    Provisioning targets the CART, so the cart must be the active outlet.
     await openOutletOperations(page);
-    // institution_admin manages the whole org — select the rescue cart if a
-    // selector is offered (multiple outlets in scope).
-    const outletSelect = page.getByLabel('Select outlet').or(page.getByLabel('اختر المنفذ')).first();
-    const hasOutletSelect = await outletSelect.count().then(c => c > 0).catch(() => false);
-    if (hasOutletSelect) {
-      await selectByLabel(outletSelect, ['E2E Rescue Cart A', 'عربة إنقاذ أ']).catch(() => {});
-      await settle(500);
-    }
+    await selectOutlet(page, ['E2E Rescue Cart A', 'عربة إنقاذ أ']);
+    await settle(500);
     const replenishTab = page.getByText('Routine Replenishment').or(page.getByText('التعويض الدوري')).first();
     await replenishTab.click().catch(() => {});
     await settle(800);
@@ -732,20 +790,26 @@ async function main() {
 
       const extRef = page.getByLabel(/external document number/i).or(page.getByLabel(/رقم الكتاب أو المستند الخارجي/)).first();
       await extRef.fill(`E2E-IP-${Date.now()}`).catch(() => {});
-      const nextToMaterials = page.getByText('Material selection').or(page.getByText('اختيار المواد')).first();
-      await nextToMaterials.click().catch(() => {});
-      await settle(800);
+      record('the provisioning composer advances to material selection',
+        await advanceComposerStep(page, ['Material selection', 'اختيار المواد']));
 
-      const materialCard = page.locator('div', { hasText: 'E2E Initial Provisioning Material' }).first();
-      const qtyField = materialCard.getByLabel('Quantity received').or(materialCard.getByLabel('الكمية المستلمة')).first();
+      // WH_A also carries the Phase 8 suggestion lot, so the picker renders
+      // more than one card. Narrow it the way an operator does — through the
+      // picker's own search box — rather than positionally, which could bind
+      // the quantity field and Add button to the wrong lot entirely.
+      const materialSearch = page.getByLabel('Search warehouse stock').or(page.getByLabel('ابحث في مواد المخزن')).first();
+      await materialSearch.fill('E2E Initial Provisioning Material').catch(() => {});
+      await settle(700);
+      const pickerResults = page.locator('[data-testid="stock-picker-results"]');
+      const qtyField = pickerResults.getByLabel('Quantity received').or(pickerResults.getByLabel('الكمية المستلمة')).first();
       await qtyField.fill('5').catch(() => {});
-      const addLineBtn = materialCard.getByText('Add', { exact: true }).or(materialCard.getByText('إضافة', { exact: true })).first();
+      const addLineBtn = pickerResults.getByRole('button', { name: 'Add', exact: true })
+        .or(pickerResults.getByRole('button', { name: 'إضافة', exact: true })).first();
       await addLineBtn.click().catch(() => {});
-      await settle(500);
+      await settle(600);
 
-      const toReview = page.getByText('Review').or(page.getByText('المراجعة')).first();
-      await toReview.click().catch(() => {});
-      await settle(800);
+      record('the provisioning composer advances to review',
+        await advanceComposerStep(page, ['Review', 'المراجعة']));
       const confirmBtn = page.locator('[data-testid="confirm-create-outlet-dispatch"]');
       const confirmVisible = await confirmBtn.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
       record('the initial-provisioning composer reaches a confirmable review step', confirmVisible);
@@ -776,7 +840,18 @@ async function main() {
     //    the route just created. Source stock: the Ibuprofen lot (30 seeded,
     //    5 already dispensed in section 1, 25 remain — untouched by anything
     //    else in this script).
-    const replenishSection = page.getByText('Routine Replenishment', { exact: true }).or(page.getByText('التعويض الدوري', { exact: true }));
+    //
+    //    EmergencyReplenishmentTab only offers the replenish/reverse forms for
+    //    routes whose SOURCE is the active outlet — the pharmacy feeds the
+    //    cart, never the other way round. So the active outlet has to move
+    //    from the cart (which owns the provisioning slot above) to the source
+    //    pharmacy here; both legs cannot be driven from one selection.
+    const movedToSource = await selectOutlet(page, ['E2E Outlet A', 'منفذ أ']);
+    record('the source pharmacy can be selected as the active outlet', movedToSource);
+    await settle(700);
+    await page.getByText('Routine Replenishment').or(page.getByText('التعويض الدوري')).first().click().catch(() => {});
+    await settle(900);
+
     const routeSelect = page.getByLabel('Route').or(page.getByLabel('المسار')).first();
     const routeSelectVisible = await routeSelect.count().then(c => c > 0).catch(() => false);
     record('the routine-replenishment form is offered now that an active route exists', routeSelectVisible);
