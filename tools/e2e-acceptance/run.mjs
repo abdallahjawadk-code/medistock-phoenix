@@ -973,10 +973,38 @@ async function main() {
 
     // -- Reversal: return the just-performed replenishment to its real source
     if (replenishedOutletStockId || routeSelectVisible) {
-      // The reversible list is refetched only once the replenishment bumps the
-      // tab's reloadKey, and until that lands ReverseForm renders its
-      // "nothing reversible" state with no <select> at all. Poll for the
-      // option instead of reading once behind a fixed delay.
+      // Read-only probe of exactly what Migration 169's reversible-batches
+      // query filters on, so an empty list in the UI can be told apart from
+      // an empty result on the server without guessing.
+      if (dbPool) {
+        const probe = await dbQuery(
+          `SELECT recv.id AS recv_id, recv.reference_type, recv.reference_id,
+                  recv.distribution_point_id, recv.organization_id,
+                  recv.on_hand_delta, recv.returned_quantity, send.id AS send_id
+             FROM outlet_stock_movements recv
+             LEFT JOIN outlet_stock_movements send
+               ON send.reference_type = recv.reference_type
+              AND send.reference_id = recv.reference_id
+              AND send.movement_type = 'replenish_send'
+            WHERE recv.movement_type = 'replenish_receive'
+            ORDER BY recv.created_at DESC LIMIT 3`,
+        ).catch(e => ({ rows: [`probe failed: ${String(e)}`] }));
+        console.log('DIAGNOSTIC — replenish_receive rows 169 would match:', JSON.stringify(probe?.rows ?? null));
+      }
+
+      // Force a genuine remount so the reversible list is refetched rather
+      // than read from whatever the post-submit render happened to leave
+      // behind: leave the tab and come back, as an operator would.
+      await page.getByText('Movement History').or(page.getByText('سجل وتتبع الحركة')).first().click().catch(() => {});
+      await settle(800);
+      await page.getByText('Routine Replenishment').or(page.getByText('التعويض الدوري')).first().click().catch(() => {});
+      await settle(1200);
+
+      const batchSelectCount = await page.getByLabel('Batch').or(page.getByLabel('الدفعة')).count().catch(() => 0);
+      const noReversible = await page.getByText('Nothing is currently reversible')
+        .or(page.getByText('لا توجد كميات قابلة للعكس')).count().catch(() => 0);
+      console.log(`DIAGNOSTIC — batch selects on page: ${batchSelectCount}; "nothing reversible" shown: ${noReversible > 0}`);
+
       const reverseBatchSelect = page.getByLabel('Batch').or(page.getByLabel('الدفعة')).nth(1);
       const match = await waitForOption(reverseBatchSelect, seed.stageE.replenishSourceLot, 25000);
       record('the reversal form lists the just-created replenishment as reversible',
