@@ -197,6 +197,48 @@ async function openOutletOperations(page, { mobile = false } = {}) {
   console.log('DIAGNOSTIC — post-navigation url:', page.url());
 }
 
+/**
+ * STAGE-E-E7-2 — screen 11's nav entry is deliberately relabelled per role:
+ * institutionsScreenAccess() (src/shared/authz/screen-access.ts) returns
+ * 'directory' for a platform admin, who sees "Institutions", and 'own' for an
+ * institution admin, whom PhoenixSidebar shows the very same entry as
+ * "My Organization". Both labels are correct product behaviour, so the
+ * acceptance run has to accept whichever one the acting role is actually
+ * shown instead of assuming the directory wording.
+ */
+const ORG_NAV_LABELS = ['Institutions', 'إدارة المؤسسات', 'My Organization', 'إعدادات مؤسستي'];
+
+/**
+ * Opens screen 11 under whichever of its role-correct labels is rendered.
+ * Returns false — after logging the nav labels that were actually present —
+ * rather than throwing an opaque locator timeout: a hard throw here aborts
+ * the entire acceptance run before the remaining sections ever execute, and
+ * says nothing about what the role was really offered.
+ */
+async function openOrganizationScreen(page) {
+  const navItems = page.locator('nav button.premium-nav-item');
+  // The shell mounts asynchronously after login; let the nav render at all
+  // before deciding which of the legal labels it carries.
+  await navItems.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+  for (const label of ORG_NAV_LABELS) {
+    const candidate = navItems.filter({ hasText: label }).first();
+    if ((await candidate.count()) === 0) continue;
+    const visible = await candidate.waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true).catch(() => false);
+    if (!visible) continue;
+    await candidate.click();
+    await settle(1200);
+    console.log(`DIAGNOSTIC — organization nav opened via "${label}" — url: ${page.url()}`);
+    return true;
+  }
+  const rendered = await navItems.allTextContents().catch(() => []);
+  console.log(
+    `DIAGNOSTIC — no organization nav entry among [${ORG_NAV_LABELS.join(', ')}]. Rendered nav items:`,
+    JSON.stringify(rendered),
+  );
+  return false;
+}
+
 async function openSuggestionMaterials(page, { mobile = false } = {}) {
   await openOutletOperations(page, { mobile });
   await page.getByText(seed.phase8.material, { exact: true }).first()
@@ -614,12 +656,10 @@ async function main() {
     await login(page, seed.users.institutionAdminA.email, seed.password);
 
     // -- Route Management: pharmacy (E2E Outlet A) -> rescue cart (E2E Rescue Cart A)
-    const instNav = page.locator('nav button.premium-nav-item', { hasText: 'Institutions' }).or(
-      page.locator('nav button.premium-nav-item', { hasText: 'إدارة المؤسسات' }),
-    ).first();
-    await instNav.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-    await instNav.click();
-    await settle(800);
+    // institution_admin reaches screen 11 as "My Organization", not the
+    // platform admin's "Institutions" directory — see openOrganizationScreen.
+    const orgNavOpened = await openOrganizationScreen(page);
+    record('institution_admin reaches the organization screen via its role-correct nav entry', orgNavOpened);
     const orgCard = page.locator('div', { hasText: 'E2E Hospital A' }).or(page.locator('div', { hasText: 'مستشفى أ للاختبار' })).first();
     await orgCard.click().catch(() => {});
     await settle(800);
