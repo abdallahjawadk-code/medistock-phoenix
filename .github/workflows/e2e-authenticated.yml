@@ -216,11 +216,8 @@ jobs:
           done
           curl -sf http://127.0.0.1:4173 >/dev/null || { echo "::error::preview server never became ready"; cat /tmp/vite-preview.log; exit 1; }
 
-      - name: Run authenticated browser acceptance (including Phase 8, Stage E)
-        run: |
-          DATABASE_URL="$(cat /tmp/sb-db-url.txt)"
-          export DATABASE_URL
-          node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
+      - name: Run authenticated browser acceptance (including Phase 8)
+        run: node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
 
       - name: Stop preview server
         if: always()

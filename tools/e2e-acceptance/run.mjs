@@ -55,7 +55,10 @@ const settle = (ms) => new Promise(r => setTimeout(r, ms));
  * anything that isn't a recognized local address, or that mentions the
  * Production project ref.
  */
-const DATABASE_URL = process.env.DATABASE_URL;
+// Sourced from the seed file first (seed.mjs already validated it there and
+// passes it through — see its own comment beside `databaseUrl` in the summary
+// object), falling back to an env var for local ad-hoc runs.
+const DATABASE_URL = seed.databaseUrl || process.env.DATABASE_URL;
 let dbPool = null;
 if (DATABASE_URL) {
   const isLocal = /127\.0\.0\.1|localhost/.test(DATABASE_URL);

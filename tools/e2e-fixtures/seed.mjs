@@ -274,6 +274,14 @@ async function main() {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
       password: FIXED_PASSWORD,
+      // STAGE-E-E7-2: run.mjs performs read-only DB verification AFTER a real
+      // UI action already happened — it needs the same local-only connection
+      // string this script already validated above. Passed via the seed file
+      // (same discipline as `password` immediately above: never printed to
+      // stdout/CI logs, written only into the output file) rather than a new
+      // workflow env var, so no additional repository permission is needed to
+      // wire this up.
+      databaseUrl: DATABASE_URL,
       lots: lotIds,
       phase8: {
         suggestionId,
@@ -297,7 +305,7 @@ async function main() {
     const OUTPUT_PATH = process.env.E2E_SEED_OUTPUT_PATH || 'e2e-seed.json';
     writeFileSync(OUTPUT_PATH, JSON.stringify(summary, null, 2));
     console.log(`\nSeed complete. Fixture summary (password redacted) written to ${OUTPUT_PATH}:`);
-    console.log(JSON.stringify({ ...summary, password: '***REDACTED***' }, null, 2));
+    console.log(JSON.stringify({ ...summary, password: '***REDACTED***', databaseUrl: '***REDACTED***' }, null, 2));
   } finally {
     client.release();
     await pool.end();
