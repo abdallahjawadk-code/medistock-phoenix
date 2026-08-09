@@ -9,6 +9,7 @@
  * Gated on PHOENIX_RIG_PG; skipped where no rig is available.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 vi.setConfig({ testTimeout: 60000 });
@@ -19,8 +20,15 @@ const run = rigAvailable() ? describe : describe.skip;
 const ORG_SECTOR = '00000000-0000-0000-0000-000000164001';
 const ORG_HOSPITAL = '00000000-0000-0000-0000-000000164002';
 const ORG_SPECIAL = '00000000-0000-0000-0000-000000164003';
-const ORG_UNCLASSIFIED = '00000000-0000-0000-0000-000000164004';
 const ORG_SECTOR_2 = '00000000-0000-0000-0000-000000164005';
+// Disposable single-purpose orgs for the CHECK-admits-all-three-values proof
+// below. Pre-170 that proof mutated ORG_UNCLASSIFIED's institution_class
+// through each value in turn; 170's immutability trigger (once set, never
+// changes) makes that mutation-based approach impossible now, so each value
+// gets its own throwaway org instead.
+const ORG_ACCEPT_HOSPITAL = '00000000-0000-0000-0000-000000164006';
+const ORG_ACCEPT_SPECIAL = '00000000-0000-0000-0000-000000164007';
+const ORG_ACCEPT_SECTOR = '00000000-0000-0000-0000-000000164008';
 
 const FAC_A = '00000000-0000-0000-0000-000000164101'; // primary health centre
 const FAC_B = '00000000-0000-0000-0000-000000164102'; // subordinate health centre
@@ -33,7 +41,6 @@ const WH_FAC_A2 = '00000000-0000-0000-0000-000000164203'; // 2nd depot, same fac
 const WH_FAC_B = '00000000-0000-0000-0000-000000164204';
 const WH_HOSPITAL = '00000000-0000-0000-0000-000000164205';
 const WH_SPECIAL = '00000000-0000-0000-0000-000000164206';
-const WH_UNCLASSIFIED = '00000000-0000-0000-0000-000000164207';
 
 const PH_A = '00000000-0000-0000-0000-000000164301';
 const CAB_A = '00000000-0000-0000-0000-000000164302';
@@ -51,8 +58,6 @@ const CAB_HOSP_EM = '00000000-0000-0000-0000-000000164313'; // emergency
 const PH_SPECIAL = '00000000-0000-0000-0000-000000164314';
 const CART_SPECIAL = '00000000-0000-0000-0000-000000164315'; // emergency
 const CAB_SPECIAL = '00000000-0000-0000-0000-000000164316'; // non_emergency
-const PH_UNCL = '00000000-0000-0000-0000-000000164317';
-const CAB_UNCL = '00000000-0000-0000-0000-000000164318';
 
 const call = (c: any, fn: string, args: any[]) =>
   c.query(
@@ -81,8 +86,7 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         ('${ORG_SECTOR}','Sector','Sector','p164-sector','health_sector'),
         ('${ORG_HOSPITAL}','Hospital','Hospital','p164-hospital','hospital'),
         ('${ORG_SPECIAL}','Center','Center','p164-special','specialized_center'),
-        ('${ORG_SECTOR_2}','Sector2','Sector2','p164-sector2','health_sector'),
-        ('${ORG_UNCLASSIFIED}','Unclassified','Unclassified','p164-unclassified',NULL);
+        ('${ORG_SECTOR_2}','Sector2','Sector2','p164-sector2','health_sector');
 
       INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
         ('${FAC_A}','${ORG_SECTOR}','primary_health_center','Centre A','Centre A','active'),
@@ -96,8 +100,7 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         ('${WH_FAC_A2}','${ORG_SECTOR}','A Depot 2','A Depot 2','active','institution','p164-wh-a2','${FAC_A}'),
         ('${WH_FAC_B}','${ORG_SECTOR}','B Depot','B Depot','active','institution','p164-wh-b','${FAC_B}'),
         ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot','Hosp Depot','active','institution','p164-wh-hosp',NULL),
-        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot','Ctr Depot','active','institution','p164-wh-ctr',NULL),
-        ('${WH_UNCLASSIFIED}','${ORG_UNCLASSIFIED}','U Depot','U Depot','active','institution','p164-wh-u',NULL);
+        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot','Ctr Depot','active','institution','p164-wh-ctr',NULL);
 
       INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${PH_A}','${WH_FAC_A}','${ORG_SECTOR}','A Pharmacy','A Pharmacy','pharmacy','active','non_emergency'),
@@ -115,9 +118,7 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         ('${CAB_HOSP_EM}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet EM','H Cabinet EM','crash_cabinet','active','emergency'),
         ('${PH_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Pharmacy','C Pharmacy','pharmacy','active','non_emergency'),
         ('${CART_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cart','C Cart','rescue_cart','active','emergency'),
-        ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet','C Cabinet','crash_cabinet','active','non_emergency'),
-        ('${PH_UNCL}','${WH_UNCLASSIFIED}','${ORG_UNCLASSIFIED}','U Pharmacy','U Pharmacy','pharmacy','active','non_emergency'),
-        ('${CAB_UNCL}','${WH_UNCLASSIFIED}','${ORG_UNCLASSIFIED}','U Cabinet','U Cabinet','crash_cabinet','active','non_emergency');
+        ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet','C Cabinet','crash_cabinet','active','non_emergency');
     `));
   });
 
@@ -132,17 +133,32 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
     it.each(['primary_health_center', 'subordinate_health_center'])(
       'rejects %s — a health centre is a facility, never an institution class',
       async (value) => {
+        // Proved via a fresh INSERT, not an UPDATE of an already-classified
+        // org: 170's immutability trigger (BEFORE UPDATE OF institution_class)
+        // would now intercept an UPDATE on ORG_HOSPITAL before the CHECK is
+        // ever reached. INSERT never fires that trigger, so this still proves
+        // the CHECK constraint itself rejects a facility-class value.
         const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
-          `UPDATE organizations SET institution_class=$1 WHERE id=$2`, [value, ORG_HOSPITAL])));
+          `INSERT INTO organizations(id,name,name_ar,code,institution_class)
+           VALUES ($1,'Rejects','Rejects',$2,$3)`,
+          [randomUUID(), `p164-rejects-${value}`, value])));
         expect(msg).toMatch(/organizations_institution_class_chk/);
       },
     );
 
-    it.each(['hospital', 'specialized_center', 'health_sector'])('accepts %s', async (value) => {
+    it.each([
+      ['hospital', ORG_ACCEPT_HOSPITAL],
+      ['specialized_center', ORG_ACCEPT_SPECIAL],
+      ['health_sector', ORG_ACCEPT_SECTOR],
+    ])('accepts %s', async (value, id) => {
+      // 170 made institution_class immutable once set, so this can no longer
+      // prove admission by mutating one row through all three values in turn
+      // (the pre-170 approach) — a disposable single-purpose org per value
+      // proves the same CHECK-constraint admission instead.
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE organizations SET institution_class=$1 WHERE id=$2`, [value, ORG_UNCLASSIFIED]));
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE organizations SET institution_class=NULL WHERE id=$1`, [ORG_UNCLASSIFIED]));
+        `INSERT INTO organizations(id,name,name_ar,code,institution_class)
+         VALUES ($1,'Accepts','Accepts',$2,$3) ON CONFLICT (id) DO NOTHING`,
+        [id, `p164-accepts-${value}`, value]));
     });
   });
 
@@ -162,12 +178,11 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(msg).toMatch(/of_parent_class_fk/);
     });
 
-    it('rejects a facility under an UNCLASSIFIED organization — NULL gains nothing', async () => {
-      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
-        INSERT INTO organization_facilities(organization_id,facility_class,name,name_ar)
-        VALUES('${ORG_UNCLASSIFIED}','primary_health_center','X','X')`)));
-      expect(msg).toMatch(/of_parent_class_fk/);
-    });
+    // "rejects a facility under an UNCLASSIFIED organization — NULL gains
+    // nothing" removed: Migration 170 makes institution_class NOT NULL, so an
+    // organization with NULL institution_class can no longer exist in the
+    // database at all — this scenario is now structurally unreachable, not
+    // merely untested.
 
     it('rejects an invalid facility_class', async () => {
       const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
@@ -218,9 +233,17 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
     });
 
     it('rejects a warehouse linked to a facility in ANOTHER organization', async () => {
-      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+      // Routed through an authenticated super_admin, not rig.asAdmin: 170's
+      // warehouse-facility guard trigger (BEFORE UPDATE OF facility_id) now
+      // requires authentication for ANY facility_id change and runs before
+      // the FK, so an unauthenticated raw UPDATE would fail on that boundary
+      // instead of proving the cross-organization rejection this test is
+      // actually about. The guard's own validation independently rejects the
+      // cross-org target (target_facility_organization_mismatch) before ever
+      // reaching the FK — both are the same invariant, just enforced earlier.
+      const msg = await rejects(() => rig.asUser(rig.superAdminId, (c: any) => c.query(
         `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_OTHER_SECTOR, WH_FAC_B])));
-      expect(msg).toMatch(/warehouses_facility_org_fk|violates foreign key/i);
+      expect(msg).toMatch(/target_facility_organization_mismatch|warehouses_facility_org_fk|violates foreign key/i);
     });
   });
 
@@ -309,10 +332,10 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
   });
 
   describe('NULL classification grants no capability', () => {
-    it('rejects a route when the organization is unclassified', async () => {
-      const msg = await rejects(() => route(PH_UNCL, CAB_UNCL));
-      expect(msg).toMatch(/organization_institution_class_required/);
-    });
+    // "rejects a route when the organization is unclassified" removed:
+    // Migration 170 makes institution_class NOT NULL, so an unclassified
+    // organization can no longer exist in the database — this scenario is
+    // now structurally unreachable, not merely untested.
 
     it('rejects a route when the destination clinical context is unclassified', async () => {
       await rig.asAdmin((c: any) => c.query(
@@ -428,12 +451,10 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(msg).toMatch(/facility_parent_must_be_health_sector/);
     });
 
-    it('refuses an UNCLASSIFIED parent', async () => {
-      const msg = await rejects(() => rig.asUser(rig.superAdminId, (c: any) =>
-        call(c, 'phoenix_upsert_organization_facility',
-          [null, ORG_UNCLASSIFIED, 'primary_health_center', 'X', 'X', null, true])));
-      expect(msg).toMatch(/organization_institution_class_required/);
-    });
+    // "refuses an UNCLASSIFIED parent" removed: Migration 170 makes
+    // institution_class NOT NULL, so an unclassified organization can no
+    // longer exist in the database — this scenario is now structurally
+    // unreachable, not merely untested.
 
     it('refuses an invalid facility class', async () => {
       const msg = await rejects(() => rig.asUser(rig.superAdminId, (c: any) =>

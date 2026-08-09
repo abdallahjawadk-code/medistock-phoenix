@@ -89,9 +89,9 @@ async function main() {
   try {
     console.log('Seeding organizations/warehouses/outlets...');
     await client.query(
-      `INSERT INTO organizations (id, name, name_ar, code) VALUES
-         ($1, 'E2E Hospital A', 'مستشفى أ للاختبار', 'e2e-org-a'),
-         ($2, 'E2E Hospital B', 'مستشفى ب للاختبار', 'e2e-org-b')
+      `INSERT INTO organizations (id, name, name_ar, code, institution_class) VALUES
+         ($1, 'E2E Hospital A', 'مستشفى أ للاختبار', 'e2e-org-a', 'hospital'),
+         ($2, 'E2E Hospital B', 'مستشفى ب للاختبار', 'e2e-org-b', 'hospital')
        ON CONFLICT (id) DO NOTHING`,
       [ORG_A, ORG_B],
     );

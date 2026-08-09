@@ -64,8 +64,8 @@ run('117 — sub-purchase duplicate candidates (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG}','Dup117','تكرار 117','dc-117'),('${ORG_OTHER}','DupOther117','أخرى 117','dc-117-o')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ('${ORG}','Dup117','تكرار 117','dc-117','hospital'),('${ORG_OTHER}','DupOther117','أخرى 117','dc-117-o','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH}','${ORG}','Dup WH','مذخر','active','institution','dc-117-w'),

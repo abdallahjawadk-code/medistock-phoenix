@@ -692,13 +692,13 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       const srcId = await seedPharmacyStock({
         org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-FACREL'), qty: 10,
       });
-      // Move destination warehouse to facility B — current context diverges.
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_B, WH_FAC_A]));
-      // Pharmacy and cabinet share WH_FAC_A; moving the warehouse moves BOTH.
-      // Instead, attach CAB_A to WH_FAC_B.
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_A, WH_FAC_A]));
+      // Pharmacy and cabinet share WH_FAC_A; moving the WAREHOUSE's facility
+      // would move both (and, since Migration 170, requires an authenticated
+      // super_admin through the sole supported corridor — raw-mutating it
+      // here would be exactly the kind of unsupported bypass Migration 170
+      // exists to close). Attach CAB_A to WH_FAC_B instead: that diverges
+      // only the cabinet's current facility context, which is all this test
+      // needs, and never touches warehouses.facility_id at all.
       await rig.asAdmin((c: any) => c.query(
         `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_B, CAB_A]));
       const before = await onHand(srcId);

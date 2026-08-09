@@ -438,7 +438,24 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // OTHER unlisted migration/schema/RLS/service change.
       ' ":!supabase/migrations/170_phoenix_organization_class_and_warehouse_facility_assignment.sql"' +
       ' ":!supabase/migrations/__tests__/170-organization-class-and-warehouse-facility-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/170-organization-class-and-warehouse-facility.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/170-organization-class-and-warehouse-facility.dynamic.test.ts"' +
+      // STAGE-E-E7-1-170-COMPAT: a follow-up compatibility correction, once
+      // Migration 170 made organizations.institution_class NOT NULL, updates
+      // these pre-existing predecessor fixture-test files (all pre-dating 164)
+      // to specify institution_class on the organizations their own fixtures
+      // create — no assertion or business behavior changes, excluded here by
+      // name for the same reason every entry above exists: this guard freezes
+      // an earlier, UI-only pharmacy-emblem phase. Named exactly, so this
+      // guard still catches any OTHER unlisted migration/schema/RLS/service
+      // change.
+      ' ":!supabase/migrations/__tests__/115-central-intake-catalog-lockdown.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/117-subpurchase-duplicate-candidates.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/119-report-snapshots-and-executive-overview.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/120-supply-sources-detail.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/141-demo-immutable-exemption.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/141-demo-org-blocked-parent.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/142-demo-profile-detach.dynamic.test.ts"' +
+      ' ":!supabase/migrations/__tests__/145-demo-organization-watermark.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');

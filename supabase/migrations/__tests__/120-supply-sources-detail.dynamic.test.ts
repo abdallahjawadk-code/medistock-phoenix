@@ -39,9 +39,9 @@ run('120 — supply sources detail (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG}','Detail Org','مؤسسة التفصيل','sd-120'),
-        ('${ORG_OTHER}','Other Org','أخرى','sd-120-o')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ('${ORG}','Detail Org','مؤسسة التفصيل','sd-120','hospital'),
+        ('${ORG_OTHER}','Other Org','أخرى','sd-120-o','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH}','${ORG}','Central WH','مذخر مركزي','active','central','sd-120-w')

@@ -49,7 +49,7 @@ run('141 organization blocked-parent preflight (dynamic)', () => {
   async function makeDemoOrg(tag: string) {
     const id = randomUUID();
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,$2,'تجريبي',$3)`,
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES ($1,$2,'تجريبي',$3,'hospital')`,
         [id, `Demo ${tag}`, `bp-${tag}-${Date.now()}`]);
     });
     await rig.asUser(SA, async (c: any) => { await register(c, 'organizations', id); }, { commit: true });
@@ -75,7 +75,7 @@ run('141 organization blocked-parent preflight (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,'Home','الرئيسية','bp-home')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES ($1,'Home','الرئيسية','bp-home','hospital')
         ON CONFLICT (id) DO NOTHING`, [HOME_ORG]);
       await c.query(`INSERT INTO auth.users (id,email) VALUES ($1,'bp-sa@rig') ON CONFLICT (id) DO NOTHING`, [SA]);
       // The super_admin lives OUTSIDE the demo orgs, so its own profile never
