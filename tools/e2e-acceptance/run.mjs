@@ -273,14 +273,47 @@ async function advanceComposerStep(page, labels) {
 }
 
 /**
- * Picks an outlet on screen 18. The screen only renders the selector when the
- * profile manages more than one outlet, so a missing selector is not by itself
- * a failure — the caller asserts on the outlet that actually ended up active.
+ * Chooses the active organization through PhoenixOrgScope.
+ *
+ * AppContext pins activeOrgId to the profile's own organization for every
+ * role EXCEPT super_admin, which it deliberately leaves null
+ * (`p.role === 'super_admin' ? null : p.organization_id`) — a platform admin
+ * belongs to no single organization and has to say which one it is acting on.
+ * Until it does, every org-scoped screen renders its no-scope empty state,
+ * so this is a required step for that role, not a convenience.
+ */
+async function selectOrganizationScope(page, labels) {
+  const orgSelect = page.getByLabel('Select organization').or(page.getByLabel('اختر المؤسسة')).first();
+  if ((await orgSelect.count().catch(() => 0)) === 0) {
+    console.log('DIAGNOSTIC — no organization scope selector rendered');
+    return false;
+  }
+  const ok = await selectByLabel(orgSelect, labels).then(() => true).catch(() => false);
+  if (!ok) {
+    const opts = await orgSelect.locator('option').allTextContents().catch(() => []);
+    console.log(`DIAGNOSTIC — org [${labels.join(', ')}] not among options:`, JSON.stringify(opts));
+  }
+  await settle(1500);
+  return ok;
+}
+
+/**
+ * Picks an outlet on screen 18. The selector only renders when the profile
+ * manages more than one outlet, so log what was actually on offer whenever
+ * the wanted one cannot be chosen.
  */
 async function selectOutlet(page, labels) {
   const outletSelect = page.getByLabel('Select outlet').or(page.getByLabel('اختر المنفذ')).first();
-  if ((await outletSelect.count().catch(() => 0)) === 0) return false;
-  return await selectByLabel(outletSelect, labels).then(() => true).catch(() => false);
+  if ((await outletSelect.count().catch(() => 0)) === 0) {
+    console.log('DIAGNOSTIC — no outlet selector rendered: screen 18 sees one or zero manageable outlets');
+    return false;
+  }
+  const ok = await selectByLabel(outletSelect, labels).then(() => true).catch(() => false);
+  if (!ok) {
+    const opts = await outletSelect.locator('option').allTextContents().catch(() => []);
+    console.log(`DIAGNOSTIC — outlet [${labels.join(', ')}] not among options:`, JSON.stringify(opts));
+  }
+  return ok;
 }
 
 async function openSuggestionMaterials(page, { mobile = false } = {}) {
@@ -770,7 +803,10 @@ async function main() {
     // -- Initial Provisioning: WH_A -> E2E Rescue Cart A (Migration 166 RPC).
     //    Provisioning targets the CART, so the cart must be the active outlet.
     await openOutletOperations(page);
-    await selectOutlet(page, ['E2E Rescue Cart A', 'عربة إنقاذ أ']);
+    record('super_admin scopes the outlet screen to org A',
+      await selectOrganizationScope(page, ['E2E Hospital A', 'مستشفى أ للاختبار']));
+    record('the rescue cart can be selected as the active outlet',
+      await selectOutlet(page, ['E2E Rescue Cart A', 'عربة إنقاذ أ']));
     await settle(500);
     const replenishTab = page.getByText('Routine Replenishment').or(page.getByText('التعويض الدوري')).first();
     await replenishTab.click().catch(() => {});
