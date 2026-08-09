@@ -489,6 +489,12 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       'src/shared/supabase/services/organizations.service.ts',
       'src/shared/supabase/services/warehouses.service.ts',
       'supabase/migrations/__tests__/172-e7-2-stage-e-wiring.dynamic.test.ts',
+      // E7-2's behavioural test for the organization writer. It lives beside
+      // the service it covers, which puts it under the watched
+      // src/shared/supabase prefix. `git diff` cannot see an UNTRACKED file,
+      // so this one stayed invisible to the guard locally and only surfaced
+      // once committed — CI caught it, which is the guard working correctly.
+      'src/shared/supabase/services/__tests__/organization-classification-writer.test.ts',
     ];
 
     const changed = execSync(
