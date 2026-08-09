@@ -117,6 +117,13 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
     if (res.url().includes('/rest/v1/')) {
       res.text().then(body => {
         restCalls.push(`${res.status()} ${res.url().replace(/^.*\/rest\/v1\//, '')} -> ${body.slice(0, 300)}`);
+        // A rejected canonical RPC carries the server's own message and
+        // SQLSTATE. Without it a status code alone cannot tell a business
+        // rule firing as designed apart from an internal fault, which is
+        // exactly the distinction triage needs.
+        if (res.status() >= 400 && res.url().includes('/rpc/')) {
+          console.log(`DIAGNOSTIC — RPC ${res.status()} ${res.url().replace(/^.*\/rpc\//, '')} -> ${body.slice(0, 400)}`);
+        }
       }).catch(() => {});
     }
   });
@@ -823,6 +830,18 @@ async function main() {
       await selectByLabel(whSelect, ['E2E Warehouse A', 'مخزن أ']).catch(() => {});
       await startProvBtn.click().catch(() => {});
       await settle(800);
+
+      // The composer's parties step gates advancing on
+      // `Boolean(sourceWarehouseId && outletId)`. The warehouse is fixed by
+      // the launcher, but the destination select still starts on its
+      // placeholder, so it has to be chosen explicitly even though initial
+      // provisioning offers exactly one outlet. Exact-matching the label
+      // matters: screen 18's own selector is "اختر المنفذ", which a
+      // substring match on "المنفذ" would also hit.
+      const composerOutlet = page.getByLabel('Outlet', { exact: true })
+        .or(page.getByLabel('المنفذ', { exact: true })).first();
+      await selectByLabel(composerOutlet, ['E2E Rescue Cart A', 'عربة إنقاذ أ']).catch(() => {});
+      await settle(400);
 
       const extRef = page.getByLabel(/external document number/i).or(page.getByLabel(/رقم الكتاب أو المستند الخارجي/)).first();
       await extRef.fill(`E2E-IP-${Date.now()}`).catch(() => {});
