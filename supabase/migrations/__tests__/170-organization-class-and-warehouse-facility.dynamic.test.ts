@@ -2,13 +2,26 @@
  * 170 · ORGANIZATION CLASS + WAREHOUSE FACILITY ASSIGNMENT (Stage E · E7-1) —
  * dynamic proof.
  *
- * Builds a disposable Postgres through 169, then applies 170 directly (see
- * "why not buildRig({upTo:170})" below), and drives the REAL
- * organizations.institution_class NOT NULL/immutability guarantees and the
- * REAL phoenix_assign_warehouse_facility RPC + its hard trigger boundary
- * against every case the E7-1 gate requires: class create/reject/immutable,
- * facility PASS/REJECT, raw-UPDATE bypass regression, the full 19-table
- * operational-dependency guard, and exactly-once audit semantics.
+ * PR #111 replay + concurrency correction: the primary success path is now a
+ * genuine, unmodified clean replay of the real chain — buildRig({upTo:170})
+ * — with NO external test-side workaround. Migration 170's own preflight now
+ * performs CANONICAL_DEMO_FIXTURE_RECONCILIATION: it reconciles ONLY the two
+ * fixed-UUID Migration-004 demo-seed organizations (both unambiguously named
+ * hospitals in 004 itself) from NULL to 'hospital', and only when found with
+ * a byte-identical Migration-004 identity fingerprint; every other
+ * organization is untouched, and a single remaining NULL row anywhere still
+ * fails the whole migration closed (proved in describe blocks F and G below,
+ * each on its own isolated fresh rig at ceiling 169).
+ *
+ * Drives the REAL organizations.institution_class NOT NULL/immutability
+ * guarantees and the REAL phoenix_assign_warehouse_facility RPC + its hard
+ * trigger boundary against every case the E7-1 gate requires: class
+ * create/reject/immutable, facility PASS/REJECT, raw-UPDATE bypass
+ * regression, the full 19-table operational-dependency guard, exactly-once
+ * audit semantics, and (describe block E) genuine two-transaction
+ * concurrency races proving the trigger-local row lock makes the raw-UPDATE
+ * path no weaker than the RPC path against a concurrently-created dependency,
+ * in both possible commit orderings.
  *
  * Gated on PHOENIX_RIG_PG; skipped where no rig is available.
  */
@@ -16,11 +29,60 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildRig, rigAvailable, MIGRATIONS_DIR } from '../../../tools/pg-rig/rig.mjs';
+import {
+  buildRig, rigAvailable, MIGRATIONS_DIR,
+  freshRigDb, migrationFiles, shimSql,
+} from '../../../tools/pg-rig/rig.mjs';
 
 vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
 
 const run = rigAvailable() ? describe : describe.skip;
+
+const MIGRATION_170_SQL = readFileSync(
+  join(MIGRATIONS_DIR, '170_phoenix_organization_class_and_warehouse_facility_assignment.sql'),
+  'utf8',
+);
+
+const SEED_AFTER_001 = `
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES ('00000000-0000-0000-0000-0000000000a1', 'root@rig.local',
+          jsonb_build_object('full_name','Rig Root','role','super_admin'))
+  ON CONFLICT (id) DO NOTHING;
+  UPDATE public.profiles SET role='super_admin', status='active'
+   WHERE id='00000000-0000-0000-0000-0000000000a1';
+`;
+
+/** A dedicated, isolated fresh rig at ceiling 169 (its own throwaway
+ * database, matching the established technique in e.g.
+ * 163-verification-hardening.dynamic.test.ts's buildTo162()) — used only by
+ * describe blocks F and G below, which each apply migration 170's raw SQL
+ * text directly and need full manual transaction control (an explicit
+ * ROLLBACK after an expected rejection) rather than the shared pool-based
+ * `rig` used everywhere else in this file. */
+async function buildTo169() {
+  const c = await freshRigDb();
+  for (const f of migrationFiles(169)) {
+    const raw = readFileSync(join(MIGRATIONS_DIR, f), 'utf8');
+    await c.query(shimSql(f, raw));
+    if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
+  }
+  return c;
+}
+
+/** Races a promise against a short timeout to determine whether it is still
+ * blocked (pending) — used by describe block E's concurrency proofs to
+ * assert that one side of a race is genuinely waiting on a Postgres row
+ * lock before resolving the other side. Catches rejections too, so a query
+ * that fails fast is never misreported as "pending". */
+function pending<T>(
+  p: Promise<T>,
+  ms = 500,
+): Promise<'pending' | { ok: true; value: T } | { ok: false; error: unknown }> {
+  return Promise.race([
+    p.then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error })),
+    new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), ms)),
+  ]);
+}
 
 // ── Fixture ids ──────────────────────────────────────────────────────────────
 const ORG_SECTOR = '00000000-0000-0000-0000-000000170001';
@@ -60,38 +122,17 @@ run('170 · organization class + warehouse facility assignment (dynamic)', () =>
   let rig: Awaited<ReturnType<typeof buildRig>>;
 
   beforeAll(async () => {
-    // buildRig({upTo:170}) (or the no-arg default, which applies every file on
-    // disk) would apply migration 004's permanent demo-seed organizations
-    // ('Babil General Hospital' / 'Al-Hilla Teaching Hospital', fixed ids
-    // ...0001/...0002) BEFORE 170's own SET NOT NULL runs. Those two rows
-    // predate 164 (institution_class did not exist yet) and have always
-    // carried institution_class = NULL through every migration's own test
-    // history since — this is not data 170 introduces or is responsible for.
-    // 170's preflight is deliberately fail-closed with NO backfill (exactly
-    // as the accepted Production pre-launch reset already resolved this same
-    // condition for real Production data), so it correctly refuses to apply
-    // on top of them. This mirrors the REAL deployment order precisely: the
-    // reset happens first (already accepted, out of scope here), THEN 170
-    // applies to a clean baseline. Rather than editing the immutable 004 seed
-    // or weakening 170's own preflight, this suite builds to 169, reclassifies
-    // ONLY those two known fixture rows (never deletes them — other dynamic
-    // suites in this repository reference them by id in their OWN separately
-    // isolated rig instances), then applies 170's unmodified file content
-    // directly on top.
-    rig = await buildRig({ upTo: 169 });
-
-    await rig.asAdmin((c: any) => c.query(`
-      UPDATE organizations SET institution_class = 'hospital'
-      WHERE id IN ('00000000-0000-0000-0000-000000000001',
-                    '00000000-0000-0000-0000-000000000002')
-        AND institution_class IS NULL;
-    `));
-
-    const migration170Sql = readFileSync(
-      join(MIGRATIONS_DIR, '170_phoenix_organization_class_and_warehouse_facility_assignment.sql'),
-      'utf8',
-    );
-    await rig.asAdmin((c: any) => c.query(migration170Sql));
+    // Clean replay of the real chain, unmodified, no external workaround.
+    // Migration 170's own preflight now performs
+    // CANONICAL_DEMO_FIXTURE_RECONCILIATION: it reconciles ONLY the two
+    // fixed-UUID Migration-004 demo-seed organizations ('Babil General
+    // Hospital' / 'Al-Hilla Teaching Hospital', ids ...0001/...0002 — both
+    // unambiguously named as hospitals in 004 itself) from NULL to
+    // 'hospital', and only because they still carry a byte-identical
+    // Migration-004 identity fingerprint. No other organization is touched,
+    // and the global zero-NULL gate still runs afterward (see describe
+    // blocks F and G below for the two ways this still fails closed).
+    rig = await buildRig({ upTo: 170 });
 
     // Shared fixture graph.
     await rig.asAdmin((c: any) => c.query(`
@@ -157,6 +198,30 @@ run('170 · organization class + warehouse facility assignment (dynamic)', () =>
     ));
     return r.rows[0].n;
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 0. clean replay 001->170 — primary success proof (MIGRATION_REPLAY)
+  // ══════════════════════════════════════════════════════════════════════
+  describe('0. clean replay 001->170', () => {
+    it('MIGRATION_REPLAY_001_TO_170: both Migration-004 canonical demo organizations are reconciled to hospital, institution_class is hard NOT NULL', async () => {
+      const r = await rig.asAdmin((c: any) => c.query(
+        `SELECT id, name, institution_class FROM organizations
+         WHERE id IN ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')
+         ORDER BY id`,
+      ));
+      expect(r.rows).toHaveLength(2);
+      expect(r.rows[0].name).toBe('Babil General Hospital');
+      expect(r.rows[0].institution_class).toBe('hospital');
+      expect(r.rows[1].name).toBe('Al-Hilla Teaching Hospital');
+      expect(r.rows[1].institution_class).toBe('hospital');
+
+      const col = await rig.asAdmin((c: any) => c.query(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='organizations' AND column_name='institution_class'`,
+      ));
+      expect(col.rows[0].is_nullable).toBe('NO');
+    });
+  });
 
   // ══════════════════════════════════════════════════════════════════════
   // A. organizations.institution_class — NOT NULL + immutability
@@ -748,5 +813,207 @@ run('170 · organization class + warehouse facility assignment (dynamic)', () =>
       [ORG_SECTOR, pt, otherPt]));
     const msg = await rejects(() => assign(wh, FAC_PRIMARY));
     expect(msg).toContain('warehouse_facility_reassignment_blocked_operational_dependency');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // E. warehouse-facility concurrency — trigger-local lock closes the race
+  //    (WAREHOUSE_FACILITY_CONCURRENCY_RESULT / RAW_UPDATE_CONCURRENCY_RESULT)
+  // ══════════════════════════════════════════════════════════════════════
+  // Two genuinely concurrent transactions on two independent raw connections
+  // from the shared rig pool — real Postgres row-lock contention, not a
+  // simulated race. Required invariant: there is no commit ordering in which
+  // a facility assignment observes "unused" AND a concurrently-established
+  // operational dependency commits without being respected. Both entry paths
+  // (the RPC and a raw super_admin UPDATE) and both orderings (facility
+  // mutation first, dependency creation first) are proven for two
+  // representative dependency tables: distribution_points (a direct FK to
+  // warehouses(id)) and warehouse_stock (a composite FK to warehouses(id,
+  // organization_id)).
+  interface ConcurrencyCase {
+    label: string;
+    mutate: (t1: any, wh: string, fac: string) => Promise<unknown>;
+    seedDependency: (t2: any, wh: string, org: string) => Promise<unknown>;
+  }
+
+  const seedDistributionPoint = (t2: any, wh: string, org: string) => t2.query(
+    `INSERT INTO distribution_points(id,organization_id,warehouse_id,name,name_ar,point_type,status)
+     VALUES (gen_random_uuid(),$1,$2,'RaceDP','RaceDP','pharmacy','active')`,
+    [org, wh],
+  );
+  const seedWarehouseStock = (t2: any, wh: string, org: string) => t2.query(
+    `INSERT INTO warehouse_stock(id,organization_id,warehouse_id,scientific_name,has_no_batch_number,has_no_national_code,internal_batch_reference)
+     VALUES (gen_random_uuid(),$1,$2,'RaceStock',true,true,'IBR-RACE')`,
+    [org, wh],
+  );
+  const mutateViaRpc = (t1: any, wh: string, fac: string) => call(t1, 'phoenix_assign_warehouse_facility', [wh, fac]);
+  const mutateViaRawUpdate = (t1: any, wh: string, fac: string) => t1.query(
+    `UPDATE public.warehouses SET facility_id = $1 WHERE id = $2`, [fac, wh],
+  );
+
+  const concurrencyCases: ConcurrencyCase[] = [
+    { label: 'A/B1. RPC vs concurrent distribution_point creation', mutate: mutateViaRpc, seedDependency: seedDistributionPoint },
+    { label: 'B. RAW super_admin UPDATE vs concurrent distribution_point creation', mutate: mutateViaRawUpdate, seedDependency: seedDistributionPoint },
+    { label: 'C. RPC vs concurrent warehouse_stock creation', mutate: mutateViaRpc, seedDependency: seedWarehouseStock },
+    { label: 'D. RAW super_admin UPDATE vs concurrent warehouse_stock creation', mutate: mutateViaRawUpdate, seedDependency: seedWarehouseStock },
+  ];
+
+  async function rawClient(): Promise<any> {
+    return rig.pool.connect();
+  }
+  async function beginAsUser(userId: string): Promise<any> {
+    const c = await rawClient();
+    await c.query('BEGIN');
+    await c.query('SET LOCAL ROLE authenticated');
+    await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [userId]);
+    return c;
+  }
+
+  describe.each(concurrencyCases)('E. concurrency — $label', ({ mutate, seedDependency }) => {
+    it('facility mutation obtains serialization first: concurrent dependency creation waits, then proceeds only against the new, already-committed facility context', async () => {
+      const wh = await makeWarehouse(ORG_SECTOR);
+      const t1 = await beginAsUser(SUPER_ADMIN);
+      await mutate(t1, wh, FAC_PRIMARY); // runs to completion inside t1's still-open txn; holds FOR UPDATE
+
+      const t2 = await rawClient();
+      await t2.query('BEGIN');
+      const insertPromise = seedDependency(t2, wh, ORG_SECTOR);
+      const race = await pending(insertPromise, 500);
+      expect(race).toBe('pending'); // T2 must be blocked on T1's row lock, not free to proceed
+
+      await t1.query('COMMIT');
+      t1.release();
+
+      await insertPromise; // now resolves — dependency created strictly after the facility commit
+      await t2.query('COMMIT');
+      t2.release();
+
+      const row = await rig.asAdmin((c: any) => c.query(`SELECT facility_id FROM warehouses WHERE id=$1`, [wh]));
+      expect(row.rows[0].facility_id).toBe(FAC_PRIMARY);
+    });
+
+    it('dependency creation obtains serialization first: concurrent facility mutation waits, then is rejected once it resumes and observes the committed dependency', async () => {
+      const wh = await makeWarehouse(ORG_SECTOR);
+      const t2 = await rawClient();
+      await t2.query('BEGIN');
+      await seedDependency(t2, wh, ORG_SECTOR); // completes immediately (nothing contends yet), not committed
+
+      const t1 = await beginAsUser(SUPER_ADMIN);
+      const mutatePromise = mutate(t1, wh, FAC_PRIMARY);
+      const race = await pending(mutatePromise, 500);
+      expect(race).toBe('pending'); // T1 must be blocked waiting for T2's FK-driven row lock
+
+      await t2.query('COMMIT');
+      t2.release();
+
+      const msg = await rejects(() => mutatePromise);
+      expect(msg).toContain('warehouse_facility_reassignment_blocked_operational_dependency');
+      await t1.query('ROLLBACK').catch(() => {});
+      t1.release();
+
+      const row = await rig.asAdmin((c: any) => c.query(`SELECT facility_id FROM warehouses WHERE id=$1`, [wh]));
+      expect(row.rows[0].facility_id).toBeNull(); // no partial/observed-stale assignment ever committed
+    });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// F. unknown NULL organization still fails closed (atomicity)
+//    (UNKNOWN_NULL_ORGANIZATION_RESULT / M170_FAILURE_ATOMICITY)
+// ════════════════════════════════════════════════════════════════════════
+run('170 · F. unknown NULL organization still fails closed', () => {
+  it('a third, non-fixture organization with NULL institution_class aborts the whole migration 170 transaction — nothing partial commits', async () => {
+    const c = await buildTo169();
+    try {
+      await c.query(
+        `INSERT INTO organizations(id,name,name_ar,code,status,city) VALUES
+         ('00000000-0000-0000-0000-000001700f01','Unknown Org','Unknown Org','unknown-170','active','X')`,
+      );
+
+      let rejected = false;
+      let message = '';
+      try {
+        await c.query(MIGRATION_170_SQL);
+      } catch (e: any) {
+        rejected = true;
+        message = String(e?.message ?? e);
+      }
+      expect(rejected).toBe(true);
+      expect(message).toMatch(/PREFLIGHT FAILED \(170\).*NULL institution_class/);
+      await c.query('ROLLBACK');
+
+      // Atomicity: NOTHING from the aborted migration committed.
+      const col = await c.query(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='organizations' AND column_name='institution_class'`,
+      );
+      expect(col.rows[0].is_nullable).toBe('YES'); // ALTER ... SET NOT NULL never committed
+
+      const rpc = await c.query(`SELECT to_regprocedure('public.phoenix_assign_warehouse_facility(uuid, uuid)') AS f`);
+      expect(rpc.rows[0].f).toBeNull(); // the RPC was never committed
+
+      const guardTrg = await c.query(
+        `SELECT 1 FROM pg_trigger t JOIN pg_class cl ON cl.oid = t.tgrelid
+         WHERE cl.relname = 'warehouses' AND t.tgname = 'warehouses_facility_assignment_guard_trg'`,
+      );
+      expect(guardTrg.rows).toHaveLength(0); // no trigger was committed either
+
+      // The two Migration-004 fixtures were NOT reconciled — rolled back with
+      // everything else in the same aborted transaction (no partial commit).
+      const fixtures = await c.query(
+        `SELECT institution_class FROM organizations WHERE id IN
+         ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')
+         ORDER BY id`,
+      );
+      expect(fixtures.rows).toHaveLength(2);
+      for (const row of fixtures.rows) expect(row.institution_class).toBeNull();
+    } finally {
+      await c.end();
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// G. tampered canonical fixture identity is rejected (atomicity)
+//    (TAMPERED_CANONICAL_FIXTURE_RESULT)
+// ════════════════════════════════════════════════════════════════════════
+run('170 · G. tampered canonical fixture identity is rejected', () => {
+  it('a Migration-004 fixture UUID whose identity no longer matches raises canonical_demo_fixture_identity_mismatch and rolls back entirely — a fixed UUID alone is not sufficient proof', async () => {
+    const c = await buildTo169();
+    try {
+      // Tamper ONE identity-defining field of one fixed fixture UUID, leaving
+      // institution_class NULL (as it always is at ceiling 169).
+      await c.query(
+        `UPDATE organizations SET code = 'tampered-code-170' WHERE id = '00000000-0000-0000-0000-000000000001'`,
+      );
+
+      let rejected = false;
+      let message = '';
+      try {
+        await c.query(MIGRATION_170_SQL);
+      } catch (e: any) {
+        rejected = true;
+        message = String(e?.message ?? e);
+      }
+      expect(rejected).toBe(true);
+      expect(message).toContain('canonical_demo_fixture_identity_mismatch');
+      await c.query('ROLLBACK');
+
+      // Full rollback: the ALTER never committed either.
+      const col = await c.query(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema='public' AND table_name='organizations' AND column_name='institution_class'`,
+      );
+      expect(col.rows[0].is_nullable).toBe('YES');
+
+      // The tampered row's institution_class also stayed NULL — not silently
+      // reclassified despite carrying the exact fixed UUID.
+      const tampered = await c.query(
+        `SELECT institution_class, code FROM organizations WHERE id = '00000000-0000-0000-0000-000000000001'`,
+      );
+      expect(tampered.rows[0].institution_class).toBeNull();
+      expect(tampered.rows[0].code).toBe('tampered-code-170');
+    } finally {
+      await c.end();
+    }
   });
 });

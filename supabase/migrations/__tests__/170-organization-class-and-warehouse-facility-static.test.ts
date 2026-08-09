@@ -76,11 +76,17 @@ describe('1. 170 registration and shape', () => {
     expect(sql).toMatch(/ROLLBACK \(manual/);
   });
 
-  it('the preflight refuses to proceed if any organization has NULL institution_class, with no backfill', () => {
+  it('the preflight refuses to proceed if any organization has NULL institution_class, with no generic backfill', () => {
     expect(active).toMatch(/institution_class IS NULL/);
     expect(active).toContain('SET NOT NULL refused');
-    // No backfill: no UPDATE of institution_class anywhere in the file.
-    expect(active).not.toMatch(/UPDATE\s+public\.organizations\s+SET\s+institution_class/i);
+    // No GENERIC backfill: exactly one UPDATE of institution_class anywhere
+    // in the file, and (proven in describe block 8 below) it is scoped to
+    // the two exact Migration-004 canonical fixture UUIDs, never a blanket
+    // condition. This replaces a prior blanket "no UPDATE of
+    // institution_class anywhere" assertion, which predated
+    // CANONICAL_DEMO_FIXTURE_RECONCILIATION.
+    const updates = active.match(/UPDATE\s+public\.organizations\s+SET\s+institution_class/gi) ?? [];
+    expect(updates.length).toBe(1);
   });
 });
 
@@ -111,7 +117,9 @@ describe('2. object inventory is EXACTLY the E7-1 set', () => {
     expect(active).not.toMatch(/ADD\s+CONSTRAINT\s+organizations_institution_class_chk/i);
   });
 
-  it('creates exactly two new functions with exact signatures', () => {
+  it('creates exactly three new functions with exact signatures (the immutability trigger function, the warehouse facility guard trigger function, and the phoenix_assign_warehouse_facility RPC)', () => {
+    const creates = active.match(/\bCREATE\s+FUNCTION\b/gi) ?? [];
+    expect(creates.length).toBe(3);
     expect(active).toContain(
       'CREATE FUNCTION public._phoenix_organizations_institution_class_immutable_v1()',
     );
@@ -332,5 +340,113 @@ describe('7. non-goals', () => {
   it('does not touch clinical_location_kind, outlet_replenishment_routes eligibility, or Shape H/I', () => {
     expect(active).not.toMatch(/clinical_location_kind/);
     expect(active).not.toMatch(/Shape H|Shape I/);
+  });
+});
+
+describe('8. canonical CHECK-constraint proof is exact-equality, not substring', () => {
+  // Migration 164's byte-identical definition: CHECK (institution_class IN
+  // ('hospital','specialized_center','health_sector')), rendered by
+  // pg_get_constraintdef() as `col = ANY (ARRAY[...])`. A prior version of
+  // this migration used a LIKE '%x%' substring check per value, which would
+  // still pass for a constraint admitting a 4th or 5th value alongside the
+  // three canonical ones.
+  const EXACT_CHK =
+    "CHECK ((institution_class = ANY (ARRAY[''hospital''::text, ''specialized_center''::text, ''health_sector''::text])))";
+
+  it('preflight and VERIFY both compare against the exact canonical constraint definition, appearing exactly twice', () => {
+    const escaped = EXACT_CHK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const occurrences = active.match(new RegExp(escaped, 'g')) ?? [];
+    expect(occurrences.length).toBe(2); // once in PREFLIGHT, once in VERIFY
+  });
+
+  it('no longer uses a LIKE substring check for the CHECK-constraint vocabulary', () => {
+    expect(active).not.toMatch(/v_chk_def\s+NOT\s+LIKE/i);
+  });
+});
+
+describe('9. CANONICAL_DEMO_FIXTURE_RECONCILIATION — narrow, not generic backfill', () => {
+  // The exact stable identity fields Migration 004 inserts for these two
+  // fixed rows (id, name, name_ar, code, status, city) — read directly from
+  // 004's own source below, not re-typed by hand, so this test cannot drift
+  // out of sync with the seed migration it cross-checks against.
+  const migration004 = readFileSync(join(ROOT, 'supabase/migrations', '004_phoenix_seed_demo_data.sql'), 'utf8');
+
+  it('reconciles ONLY the two fixed Migration-004 UUIDs — no other organization id appears as a reconciliation target', () => {
+    expect(active).toContain('00000000-0000-0000-0000-000000000001');
+    expect(active).toContain('00000000-0000-0000-0000-000000000002');
+    // Exactly one FOR loop drives the whole reconciliation — not a
+    // per-organization or blanket scan.
+    const forLoops = active.match(/\bFOR\s+v_fixture\s+IN\b/gi) ?? [];
+    expect(forLoops.length).toBe(1);
+  });
+
+  it('the reconciliation target is exactly \'hospital\', scoped by fixture id, never a blanket condition', () => {
+    expect(active).toMatch(
+      /UPDATE public\.organizations SET institution_class = 'hospital' WHERE id = v_fixture\.id/,
+    );
+    // The narrow scope proof: no OTHER predicate broadens this UPDATE (e.g.
+    // WHERE institution_class IS NULL alone, with no id filter).
+    expect(active).not.toMatch(
+      /UPDATE\s+public\.organizations\s+SET\s+institution_class\s*=\s*'hospital'\s+WHERE\s+institution_class\s+IS\s+NULL\s*;/i,
+    );
+  });
+
+  it('every identity-defining literal matches Migration 004 verbatim (name, name_ar, code, status, city for both fixtures)', () => {
+    // Cross-file consistency: these literals are typed once in 004 and must
+    // never silently drift from what 170 compares against.
+    const fixtureLiterals = [
+      'Babil General Hospital', 'مستشفى بابل العام', 'babil-main', 'Babil',
+      'Al-Hilla Teaching Hospital', 'مستشفى الحلة التعليمي', 'hilla-teaching', 'Al-Hilla',
+    ];
+    for (const literal of fixtureLiterals) {
+      expect(migration004).toContain(literal);
+      expect(active).toContain(literal);
+    }
+  });
+
+  it('compares the full identity fingerprint (name, name_ar, code, status, city) — a fixed UUID alone is never sufficient', () => {
+    expect(active).toMatch(/v_org\.name IS DISTINCT FROM v_fixture\.name/);
+    expect(active).toMatch(/v_org\.name_ar IS DISTINCT FROM v_fixture\.name_ar/);
+    expect(active).toMatch(/v_org\.code IS DISTINCT FROM v_fixture\.code/);
+    expect(active).toMatch(/v_org\.status IS DISTINCT FROM v_fixture\.status/);
+    expect(active).toMatch(/v_org\.city IS DISTINCT FROM v_fixture\.city/);
+  });
+
+  it('a fixture UUID with a mismatched identity aborts the whole migration — never silently reconciled or silently skipped', () => {
+    expect(active).toContain('canonical_demo_fixture_identity_mismatch');
+    const mismatchRaises = active.match(/canonical_demo_fixture_identity_mismatch/g) ?? [];
+    expect(mismatchRaises.length).toBe(1);
+  });
+
+  it('a fixture UUID already carrying a non-hospital, non-NULL class aborts the whole migration', () => {
+    expect(active).toContain('canonical_demo_fixture_unexpected_class');
+  });
+
+  it('a fixture UUID not present at all is a documented no-op — never INSERTed', () => {
+    expect(active).not.toMatch(/INSERT\s+INTO\s+public\.organizations/i);
+    expect(active).toMatch(/CONTINUE;/);
+  });
+
+  it('no generic name/code pattern inference exists anywhere (no ILIKE, no regex match against name/code)', () => {
+    expect(active).not.toMatch(/\bILIKE\b/i);
+    expect(active).not.toMatch(/name\s*~\*?\s*'/i);
+    expect(active).not.toMatch(/code\s*~\*?\s*'/i);
+  });
+
+  it('ordering: fixture reconciliation runs BEFORE the global zero-NULL gate, which runs BEFORE SET NOT NULL', () => {
+    const loopIdx = active.indexOf('FOR v_fixture IN');
+    const zeroNullIdx = active.indexOf('SET NOT NULL refused');
+    const alterIdx = active.indexOf('ALTER COLUMN institution_class SET NOT NULL');
+    expect(loopIdx).toBeGreaterThan(-1);
+    expect(zeroNullIdx).toBeGreaterThan(-1);
+    expect(alterIdx).toBeGreaterThan(-1);
+    expect(loopIdx).toBeLessThan(zeroNullIdx);
+    expect(zeroNullIdx).toBeLessThan(alterIdx);
+  });
+
+  it('on Production (zero organizations), this block is a documented pure no-op that never recreates demo fixtures', () => {
+    expect(sql).toContain('current Production has');
+    expect(sql).toContain('zero organizations');
+    expect(sql).toMatch(/pure no-op/);
   });
 });

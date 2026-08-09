@@ -27,6 +27,23 @@
 --      `health_center` (health centres remain `organization_facilities` rows
 --      under a `health_sector`, never a peer organization class).
 --
+--      CANONICAL_DEMO_FIXTURE_RECONCILIATION (narrow, not generic backfill):
+--      the preflight ALSO reconciles ONLY the two fixed-UUID Migration-004
+--      demo-seed organizations (`...0001` "Babil General Hospital", `...0002`
+--      "Al-Hilla Teaching Hospital" — both unambiguously named as hospitals in
+--      004 itself) from NULL to `hospital`, and ONLY when the row found under
+--      that exact UUID still carries a byte-identical Migration-004 identity
+--      fingerprint (name, name_ar, code, status, city). No other organization
+--      — by UUID, by name pattern, or by any other inference — is ever
+--      touched. A row found under one of these two UUIDs whose fingerprint
+--      does not match aborts the whole migration (`canonical_demo_fixture_
+--      identity_mismatch`) rather than being silently classified or silently
+--      skipped. A fixture UUID not present at all (current Production has
+--      zero organizations) is a pure no-op — this never INSERTs a row. The
+--      global zero-NULL gate below still runs AFTER this narrow step and
+--      still fails closed on any OTHER NULL row, with no backfill path for
+--      anything but these two exact identities.
+--
 --   B/C. `institution_class` becomes immutable once set: a
 --      `BEFORE UPDATE OF institution_class` trigger
 --      (`_phoenix_organizations_institution_class_immutable_v1`) rejects any
@@ -94,6 +111,8 @@ DO $preflight$
 DECLARE
   v_null_orgs   integer;
   v_chk_def     text;
+  v_fixture     RECORD;
+  v_org         RECORD;
 BEGIN
   IF to_regclass('public.organizations') IS NULL THEN
     RAISE EXCEPTION 'PREFLIGHT FAILED (170): public.organizations is absent';
@@ -112,10 +131,18 @@ BEGIN
   IF v_chk_def IS NULL THEN
     RAISE EXCEPTION 'PREFLIGHT FAILED (170): organizations_institution_class_chk (164) is absent';
   END IF;
-  IF v_chk_def NOT LIKE '%hospital%'
-     OR v_chk_def NOT LIKE '%health_sector%'
-     OR v_chk_def NOT LIKE '%specialized_center%' THEN
-    RAISE EXCEPTION 'PREFLIGHT FAILED (170): organizations_institution_class_chk no longer admits exactly the three canonical values';
+  -- Exact-equality proof, not mere substring containment: the constraint
+  -- must admit ONLY {hospital, specialized_center, health_sector} — nothing
+  -- more, nothing less. This is Migration 164's byte-identical definition
+  -- (`CHECK (institution_class IN ('hospital','specialized_center',
+  -- 'health_sector'))`), compared against Postgres's own normalized
+  -- pg_get_constraintdef() rendering of that same expression (a single-column
+  -- IN-list is always rendered as `col = ANY (ARRAY[...])`). A LIKE '%x%'
+  -- substring check would still pass for a constraint that admits a 4th or
+  -- 5th value alongside the three canonical ones; exact string equality does
+  -- not.
+  IF v_chk_def <> 'CHECK ((institution_class = ANY (ARRAY[''hospital''::text, ''specialized_center''::text, ''health_sector''::text])))' THEN
+    RAISE EXCEPTION 'PREFLIGHT FAILED (170): organizations_institution_class_chk no longer defines exactly {hospital, specialized_center, health_sector}';
   END IF;
 
   IF to_regclass('public.warehouses') IS NULL THEN
@@ -142,9 +169,72 @@ BEGIN
     RAISE EXCEPTION 'PREFLIGHT FAILED (170): public.profiles is absent';
   END IF;
 
-  -- The hard NOT NULL precondition: zero NULL institution_class rows. No
-  -- backfill, no inference from name/name_ar/code/city/warehouse/point/profile
-  -- is performed anywhere in this migration — a single NULL row aborts here.
+  -- ── CANONICAL_DEMO_FIXTURE_RECONCILIATION ────────────────────────────────
+  -- Reconciles ONLY the two fixed-UUID Migration-004 canonical demo-seed
+  -- organizations — both unambiguously named as hospitals in 004 itself
+  -- ("Babil General Hospital" / "Al-Hilla Teaching Hospital") — when, and
+  -- only when, they are found on this database with a byte-identical
+  -- Migration-004 identity fingerprint (name, name_ar, code, status, city;
+  -- the full set of stable identity columns 004 explicitly inserts). This is
+  -- NOT generic backfill, NOT legacy-organization classification, and NOT
+  -- name/code pattern inference: no organization other than these two exact
+  -- fixed UUIDs is ever inspected or written by this loop. A row found under
+  -- one of these UUIDs whose fingerprint does not match aborts the whole
+  -- migration (fail closed) rather than being silently reconciled or
+  -- silently skipped — a fixed UUID alone is never sufficient proof of
+  -- identity. On a database where Migration 004 never ran (current
+  -- Production has zero organizations at the time of writing), both lookups
+  -- find nothing and this block is a pure no-op: it only ever UPDATEs a
+  -- pre-existing row, it never INSERTs one.
+  FOR v_fixture IN
+    SELECT * FROM (VALUES
+      ('00000000-0000-0000-0000-000000000001'::uuid, 'Babil General Hospital'::text,
+       'مستشفى بابل العام'::text, 'babil-main'::text, 'active'::text, 'Babil'::text),
+      ('00000000-0000-0000-0000-000000000002'::uuid, 'Al-Hilla Teaching Hospital'::text,
+       'مستشفى الحلة التعليمي'::text, 'hilla-teaching'::text, 'active'::text, 'Al-Hilla'::text)
+    ) AS f(id, name, name_ar, code, status, city)
+  LOOP
+    SELECT o.id, o.name, o.name_ar, o.code, o.status, o.city, o.institution_class
+      INTO v_org
+      FROM public.organizations o
+      WHERE o.id = v_fixture.id;
+
+    IF NOT FOUND THEN
+      CONTINUE; -- no row under this fixed UUID (e.g. current Production) — nothing to reconcile
+    END IF;
+
+    IF v_org.name IS DISTINCT FROM v_fixture.name
+       OR v_org.name_ar IS DISTINCT FROM v_fixture.name_ar
+       OR v_org.code IS DISTINCT FROM v_fixture.code
+       OR v_org.status IS DISTINCT FROM v_fixture.status
+       OR v_org.city IS DISTINCT FROM v_fixture.city THEN
+      RAISE EXCEPTION 'canonical_demo_fixture_identity_mismatch' USING
+        ERRCODE = '23514',
+        DETAIL = format(
+          'organization %s does not match its Migration-004 canonical fixture identity — refusing to reconcile institution_class',
+          v_fixture.id
+        );
+    END IF;
+
+    IF v_org.institution_class IS NULL THEN
+      UPDATE public.organizations SET institution_class = 'hospital' WHERE id = v_fixture.id;
+    ELSIF v_org.institution_class <> 'hospital' THEN
+      RAISE EXCEPTION 'canonical_demo_fixture_unexpected_class' USING
+        ERRCODE = '23514',
+        DETAIL = format(
+          'organization %s (Migration-004 canonical hospital fixture) already has institution_class=%s, expected hospital or NULL',
+          v_fixture.id, v_org.institution_class
+        );
+    END IF;
+    -- ELSE: already 'hospital' — allowed unchanged (idempotent re-apply).
+  END LOOP;
+
+  -- The hard NOT NULL precondition: zero NULL institution_class rows remain,
+  -- evaluated AFTER the narrow canonical-fixture reconciliation immediately
+  -- above. No backfill, no inference from name/name_ar/code/city/warehouse/
+  -- point/profile is performed anywhere in this migration for any
+  -- organization OTHER than the two exact fixtures above — a single
+  -- remaining NULL row (fixtures aside) aborts here.
   SELECT count(*) INTO v_null_orgs FROM public.organizations WHERE institution_class IS NULL;
   IF v_null_orgs <> 0 THEN
     RAISE EXCEPTION 'PREFLIGHT FAILED (170): % organization row(s) still have NULL institution_class — SET NOT NULL refused', v_null_orgs;
@@ -234,6 +324,30 @@ BEGIN
   IF v_actor_role IS DISTINCT FROM 'super_admin' THEN
     RAISE EXCEPTION 'forbidden_warehouse_facility_assign' USING ERRCODE = '42501';
   END IF;
+
+  -- ── Concurrency: make the raw-UPDATE path no weaker than the RPC path ───
+  -- The RPC (D.2) already serializes against a concurrent INSERT into any of
+  -- the 12 directly-FK'd dependency tables, or a concurrent first
+  -- distribution_points INSERT (which transitively covers dependency classes
+  -- 14-19), because its own `SELECT ... FOR UPDATE` acquires a lock that
+  -- conflicts with the `FOR KEY SHARE` lock Postgres's own FK enforcement
+  -- takes on this row when such an INSERT references it. A raw client
+  -- UPDATE, however, only acquires the weaker `FOR NO KEY UPDATE` lock
+  -- Postgres gives automatically to a plain UPDATE that does not touch a
+  -- referenced key column — which does NOT conflict with `FOR KEY SHARE` —
+  -- so without this explicit escalation, a concurrent dependency-row INSERT
+  -- could commit invisibly between this trigger's snapshot and this
+  -- transaction's own commit (classic write-skew). Re-acquiring FOR UPDATE
+  -- here is always immediately granted when this transaction already holds
+  -- a weaker lock on its own row (lock upgrade, never a self-deadlock), and
+  -- is a harmless no-op when reached via the RPC (which already holds it).
+  -- Whichever side — this UPDATE or a concurrent dependency INSERT —
+  -- reaches this row's lock first now forces the other to wait, so the
+  -- dependency-guard EXISTS checks below always observe a fully serialized
+  -- view: either this facility change commits first and any dependency is
+  -- created afterward against the new context, or a concurrent dependency
+  -- commits first and this assignment is rejected by the checks below.
+  PERFORM 1 FROM public.warehouses WHERE id = NEW.id FOR UPDATE;
 
   -- ── Non-NULL target: facility/warehouse validity ────────────────────────
   IF NEW.facility_id IS NOT NULL THEN
@@ -395,6 +509,7 @@ DECLARE
   v_immutable_src  text;
   v_guard_src      text;
   v_rpc_src        text;
+  v_fixture_class  text;
 BEGIN
   -- A. NOT NULL applied, CHECK preserved
   SELECT is_nullable INTO v_col_nullable
@@ -406,11 +521,27 @@ BEGIN
 
   SELECT pg_get_constraintdef(oid) INTO v_chk_def
   FROM pg_constraint WHERE conname = 'organizations_institution_class_chk';
-  IF v_chk_def NOT LIKE '%hospital%'
-     OR v_chk_def NOT LIKE '%health_sector%'
-     OR v_chk_def NOT LIKE '%specialized_center%' THEN
-    RAISE EXCEPTION 'VERIFY FAILED (170): organizations_institution_class_chk no longer admits exactly the three canonical values';
+  -- Exact-equality proof — see the identical check in PREFLIGHT for why a
+  -- substring LIKE check is insufficient to prove "exactly these 3 values".
+  IF v_chk_def <> 'CHECK ((institution_class = ANY (ARRAY[''hospital''::text, ''specialized_center''::text, ''health_sector''::text])))' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (170): organizations_institution_class_chk no longer defines exactly {hospital, specialized_center, health_sector}';
   END IF;
+
+  -- CANONICAL_DEMO_FIXTURE_RECONCILIATION self-consistency: IF either fixed
+  -- Migration-004 fixture UUID exists on this database (it never does on a
+  -- fresh Production, which has zero organizations), its institution_class
+  -- must now be exactly 'hospital' — either PREFLIGHT's own reconciliation
+  -- just set it, or it was already 'hospital', or PREFLIGHT would have
+  -- raised before reaching this point. This is a redundant, defense-in-depth
+  -- re-proof, not a new code path.
+  FOR v_fixture_class IN
+    SELECT institution_class FROM public.organizations
+    WHERE id IN ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')
+  LOOP
+    IF v_fixture_class IS DISTINCT FROM 'hospital' THEN
+      RAISE EXCEPTION 'VERIFY FAILED (170): a canonical Migration-004 demo fixture organization does not have institution_class=hospital after reconciliation';
+    END IF;
+  END LOOP;
 
   -- B/C. immutability function + trigger
   IF to_regprocedure('public._phoenix_organizations_institution_class_immutable_v1()') IS NULL THEN
