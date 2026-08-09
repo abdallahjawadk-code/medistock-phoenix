@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ORGANIZATION_KINDS,
   INSTITUTION_CLASSES,
   FACILITY_CLASSES,
   CLINICAL_LOCATION_KINDS,
+  isOrganizationKind,
   isInstitutionClass,
   isFacilityClass,
   isClinicalLocationKind,
@@ -10,6 +12,13 @@ import {
 } from '../institution-hierarchy';
 
 describe('institution hierarchy vocabulary', () => {
+  it('exposes exactly the two organization kinds', () => {
+    expect([...ORGANIZATION_KINDS]).toEqual([
+      'care_institution',
+      'pharmacy_department_authority',
+    ]);
+  });
+
   it('exposes exactly the three top-level institution classes', () => {
     expect([...INSTITUTION_CLASSES]).toEqual([
       'hospital',
@@ -30,10 +39,33 @@ describe('institution hierarchy vocabulary', () => {
   });
 
   it('freezes every vocabulary so a caller cannot mutate it at runtime', () => {
+    expect(Object.isFrozen(ORGANIZATION_KINDS)).toBe(true);
     expect(Object.isFrozen(INSTITUTION_CLASSES)).toBe(true);
     expect(Object.isFrozen(FACILITY_CLASSES)).toBe(true);
     expect(Object.isFrozen(CLINICAL_LOCATION_KINDS)).toBe(true);
   });
+});
+
+describe('organization_kind and institution_class are orthogonal, not overlapping', () => {
+  it('keeps the two vocabularies fully disjoint', () => {
+    const overlap = (ORGANIZATION_KINDS as readonly string[])
+      .filter((k) => (INSTITUTION_CLASSES as readonly string[]).includes(k));
+    expect(overlap).toEqual([]);
+  });
+
+  it.each(['hospital', 'specialized_center', 'health_sector'])(
+    'rejects %s as an organization kind',
+    (value) => {
+      expect(isOrganizationKind(value)).toBe(false);
+    },
+  );
+
+  it.each(['care_institution', 'pharmacy_department_authority'])(
+    'rejects %s as an institution class',
+    (value) => {
+      expect(isInstitutionClass(value)).toBe(false);
+    },
+  );
 });
 
 describe('health centres are facilities, never institution classes', () => {
@@ -81,6 +113,10 @@ describe('guards are fail-closed', () => {
     ['hospital'],
   ];
 
+  it.each(NOT_VALUES)('isOrganizationKind rejects %o', (value) => {
+    expect(isOrganizationKind(value)).toBe(false);
+  });
+
   it.each(NOT_VALUES)('isInstitutionClass rejects %o', (value) => {
     expect(isInstitutionClass(value)).toBe(false);
   });
@@ -94,6 +130,7 @@ describe('guards are fail-closed', () => {
   });
 
   it('accepts each canonical token exactly', () => {
+    for (const k of ORGANIZATION_KINDS) expect(isOrganizationKind(k)).toBe(true);
     for (const c of INSTITUTION_CLASSES) expect(isInstitutionClass(c)).toBe(true);
     for (const c of FACILITY_CLASSES) expect(isFacilityClass(c)).toBe(true);
     for (const c of CLINICAL_LOCATION_KINDS) expect(isClinicalLocationKind(c)).toBe(true);

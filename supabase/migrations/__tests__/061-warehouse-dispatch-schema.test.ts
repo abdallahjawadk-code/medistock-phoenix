@@ -1146,6 +1146,14 @@ describe('15. isolation from out-of-scope domains', () => {
         // in decision-intelligence.service.ts (new type/function, new i18n
         // keys in strings.ts) — excluded here.
         '":(exclude)src/features/reports/decision-intelligence.service.ts" ' +
+        // STAGE-E-E7-1-171: a still later, separately-reviewed phase
+        // (Migration 171, organization_kind discriminator) adds a new
+        // exported type/vocabulary and doc comment to
+        // src/shared/lib/institution-hierarchy.ts — a pure types/vocabulary
+        // module with no database access, no service function, and no
+        // eligibility rule (per its own header) — never a schema, RLS, or
+        // workflow change — excluded here.
+        '":(exclude)src/shared/lib/institution-hierarchy.ts" ' +
         '":(exclude)src/shared/i18n/strings.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });

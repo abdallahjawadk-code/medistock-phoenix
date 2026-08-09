@@ -35,8 +35,8 @@ maybe('D1/D2 atomic account-lifecycle guard (rig)', () => {
     rig = await buildRig({ upTo: 999 });
     await rig.asAdmin(async (c) => {
       await c.query(
-        `insert into organizations (id, name, name_ar, code) values
-           ($1,'Org A','منظمة أ','rig-org-a'),($2,'Org B','منظمة ب','rig-org-b')
+        `insert into organizations (id, name, name_ar, code, institution_class) values
+           ($1,'Org A','منظمة أ','rig-org-a','hospital'),($2,'Org B','منظمة ب','rig-org-b','hospital')
          on conflict (id) do nothing`, [ORG_A, ORG_B]);
       for (const [id, role, org, name] of [
         [SA_TWO, 'super_admin', null, 'SA Two'],

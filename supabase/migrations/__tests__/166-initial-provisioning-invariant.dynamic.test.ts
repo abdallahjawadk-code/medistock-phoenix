@@ -199,8 +199,9 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG_CENTRAL}','C166','مركز','p166-c'),('${ORG_INST}','I166','مؤسسة','p166-i')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
+        ('${ORG_CENTRAL}','C166','مركز','p166-c','pharmacy_department_authority',NULL),
+        ('${ORG_INST}','I166','مؤسسة','p166-i','care_institution','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_CENTRAL}','${ORG_CENTRAL}','CWH166','مخزنC','active','central','p166-wc'),

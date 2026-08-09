@@ -88,13 +88,13 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
     rig = await buildRig();
 
     await rig.asAdmin((c: any) => c.query(`
-      INSERT INTO organizations(id,name,name_ar,code,institution_class) VALUES
-        ('${ORG_CENTRAL}','Central','Central','p165-central',NULL),
-        ('${ORG_SECTOR}','Sector','Sector','p165-sector','health_sector'),
-        ('${ORG_SECTOR_2}','Sector2','Sector2','p165-sector2','health_sector'),
-        ('${ORG_HOSPITAL}','Hospital','Hospital','p165-hospital','hospital'),
-        ('${ORG_SPECIAL}','Center','Center','p165-special','specialized_center'),
-        ('${ORG_UNCLASSIFIED}','Uncl','Uncl','p165-uncl',NULL);
+      INSERT INTO organizations(id,name,name_ar,code,organization_kind,institution_class) VALUES
+        ('${ORG_CENTRAL}','Central','Central','p165-central','pharmacy_department_authority',NULL),
+        ('${ORG_SECTOR}','Sector','Sector','p165-sector','care_institution','health_sector'),
+        ('${ORG_SECTOR_2}','Sector2','Sector2','p165-sector2','care_institution','health_sector'),
+        ('${ORG_HOSPITAL}','Hospital','Hospital','p165-hospital','care_institution','hospital'),
+        ('${ORG_SPECIAL}','Center','Center','p165-special','care_institution','specialized_center'),
+        ('${ORG_UNCLASSIFIED}','Uncl','Uncl','p165-uncl','pharmacy_department_authority',NULL);
 
       INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
         ('${FAC_A}','${ORG_SECTOR}','primary_health_center','A','A','active'),
@@ -117,8 +117,8 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
         ('${WH_HOSP_2}','${ORG_HOSPITAL}','Hosp WH2','Hosp WH2','active','institution','p165-wh-hosp2',NULL),
         ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr WH','Ctr WH','active','institution','p165-wh-ctr',NULL),
         ('${WH_SPECIAL_2}','${ORG_SPECIAL}','Ctr WH2','Ctr WH2','active','institution','p165-wh-ctr2',NULL),
-        ('${WH_UNCL}','${ORG_UNCLASSIFIED}','U WH','U WH','active','institution','p165-wh-u',NULL),
-        ('${WH_UNCL_FAC}','${ORG_UNCLASSIFIED}','U WH2','U WH2','active','institution','p165-wh-u2',NULL);
+        ('${WH_UNCL}','${ORG_UNCLASSIFIED}','U WH','U WH','active','central','p165-wh-u',NULL),
+        ('${WH_UNCL_FAC}','${ORG_UNCLASSIFIED}','U WH2','U WH2','active','central','p165-wh-u2',NULL);
 
       -- Provenance fixture: a REAL direct forward transfer sector -> FAC_A,
       -- with a received line whose resulting stock sits at FAC_A. Seeded
@@ -274,9 +274,16 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
     it('extra: a classified sector owning a facility cannot be silently un-classified', async () => {
       // Removing the class would strand the facility, so the same composite FK
       // refuses it — the sector branch cannot be disarmed after the fact.
+      // Migration 170 (STAGE-E-E7-1-170, applied after this test was
+      // originally written) added institution_class's own immutability
+      // trigger, which now intercepts ANY change away from a set class —
+      // including this one — before the row ever reaches the FK. Same
+      // invariant ("a classified sector cannot be un-classified"), now
+      // enforced one layer earlier and unconditionally, not just when a
+      // facility happens to exist; both error identifiers prove it.
       const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
         `UPDATE organizations SET institution_class=NULL WHERE id=$1`, [ORG_SECTOR])));
-      expect(msg).toMatch(/of_parent_class_fk|violates foreign key/i);
+      expect(msg).toMatch(/organization_institution_class_immutable|of_parent_class_fk|violates foreign key/i);
     });
 
     it('extra: a hospital organization can never own a facility either', async () => {
