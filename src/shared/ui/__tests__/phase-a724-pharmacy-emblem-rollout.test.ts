@@ -428,7 +428,17 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // OTHER unlisted migration/schema/RLS/service change.
       ' ":!supabase/migrations/169_phoenix_outlet_replenishment_reversal.sql"' +
       ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal.dynamic.test.ts"',
+      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal.dynamic.test.ts"' +
+      // STAGE-E-E7-1-170: Migration 170 (organization-class NOT NULL +
+      // immutability, warehouse-facility assignment RPC + hard guard) plus its
+      // own dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above exists: this guard freezes an earlier, UI-only
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted migration/schema/RLS/service change.
+      ' ":!supabase/migrations/170_phoenix_organization_class_and_warehouse_facility_assignment.sql"' +
+      ' ":!supabase/migrations/__tests__/170-organization-class-and-warehouse-facility-static.test.ts"' +
+      ' ":!supabase/migrations/__tests__/170-organization-class-and-warehouse-facility.dynamic.test.ts"',
       { cwd: ROOT, encoding: 'utf8' },
     );
     expect(prohibited.trim()).toBe('');
