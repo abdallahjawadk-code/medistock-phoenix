@@ -280,6 +280,25 @@ async function advanceComposerStep(page, labels) {
 }
 
 /**
+ * Waits for a <select> to offer an option containing `needle`, returning its
+ * full composed label. Lists that refresh on their own schedule cannot be read
+ * once behind a fixed delay without turning a slow refetch into a false
+ * assertion; on timeout the options that WERE present are logged.
+ */
+async function waitForOption(select, needle, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  let opts = [];
+  while (Date.now() < deadline) {
+    opts = await select.locator('option').allTextContents().catch(() => []);
+    const match = opts.find(o => o.includes(needle));
+    if (match) return match;
+    await settle(500);
+  }
+  console.log(`DIAGNOSTIC — no option containing "${needle}" after ${timeoutMs}ms; options were:`, JSON.stringify(opts));
+  return null;
+}
+
+/**
  * Chooses the active organization through PhoenixOrgScope.
  *
  * AppContext pins activeOrgId to the profile's own organization for every
@@ -954,14 +973,16 @@ async function main() {
 
     // -- Reversal: return the just-performed replenishment to its real source
     if (replenishedOutletStockId || routeSelectVisible) {
-      await settle(500);
+      // The reversible list is refetched only once the replenishment bumps the
+      // tab's reloadKey, and until that lands ReverseForm renders its
+      // "nothing reversible" state with no <select> at all. Poll for the
+      // option instead of reading once behind a fixed delay.
       const reverseBatchSelect = page.getByLabel('Batch').or(page.getByLabel('الدفعة')).nth(1);
-      const reverseAvailable = await reverseBatchSelect.locator('option').count().then(c => c > 1).catch(() => false);
-      record('the reversal form lists the just-created replenishment as reversible', reverseAvailable);
-      if (reverseAvailable) {
-        const opts = await reverseBatchSelect.locator('option').allTextContents();
-        const match = opts.find(o => o.includes(seed.stageE.replenishSourceLot));
-        if (match) await reverseBatchSelect.selectOption({ label: match });
+      const match = await waitForOption(reverseBatchSelect, seed.stageE.replenishSourceLot, 25000);
+      record('the reversal form lists the just-created replenishment as reversible',
+        Boolean(match), match ?? '');
+      if (match) {
+        await reverseBatchSelect.selectOption({ label: match }).catch(() => {});
         const revQty = page.locator('#rev-qty');
         await revQty.fill('3').catch(() => {});
         const reverseSubmit = page.getByText('Execute Reversal').or(page.getByText('تنفيذ العكس')).first();
