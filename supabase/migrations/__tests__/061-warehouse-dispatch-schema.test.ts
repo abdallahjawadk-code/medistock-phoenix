@@ -1154,6 +1154,15 @@ describe('15. isolation from out-of-scope domains', () => {
         // eligibility rule (per its own header) — never a schema, RLS, or
         // workflow change — excluded here.
         '":(exclude)src/shared/lib/institution-hierarchy.ts" ' +
+        // STAGE-E-E7-2: the Stage-E application-wiring phase. It adds no
+        // migration; it wires already-reviewed RPCs into services and UI.
+        // organizations.service.ts now sends the Migration-164/171
+        // classification pair it previously omitted (a real regression fix),
+        // and warehouses.service.ts now carries Migration 164's
+        // clinical_location_kind on distribution points. Excluded by exact
+        // name; every other product path stays watched.
+        '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
+        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ' +
         '":(exclude)src/shared/i18n/strings.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });

@@ -142,18 +142,36 @@ describe('getOrganizations(): in-memory cache + in-flight request dedup', () => 
     expect(body).toContain('orgsInFlight = null;');
   });
 
+  // STAGE-E-E7-2: the caching contract these two assertions protect is
+  // unchanged — every original field is still mapped, and the original columns
+  // are still selected in their original order. What moved is only WHERE that
+  // happens: the inline mapping became the shared `mapOrgRow()` and the literal
+  // column list became the shared `ORG_COLUMNS`, so the classification pair
+  // (organization_kind / institution_class, Migrations 164/171) cannot be
+  // selected by one read path and missed by another. The assertions below check
+  // the same guarantees against the new structure and additionally pin the two
+  // new columns — a strict widening, never a relaxation.
   it('does not change the returned OrgRow shape (still id/name/name_ar/code/status/city/contact_email)', () => {
-    expect(orgsService).toContain('id:      r.id,');
-    expect(orgsService).toContain('name:    r.name,');
+    expect(orgsService).toContain('id: r.id,');
+    expect(orgsService).toContain('name: r.name,');
     expect(orgsService).toContain('name_ar: r.name_ar,');
-    expect(orgsService).toContain('code:    r.code,');
-    expect(orgsService).toContain('status:  r.status,');
-    expect(orgsService).toContain("city:    r.city ?? '',");
+    expect(orgsService).toContain('code: r.code,');
+    expect(orgsService).toContain('status: r.status,');
+    expect(orgsService).toContain("city: r.city ?? '',");
     expect(orgsService).toContain("contact_email: r.contact_email ?? '',");
+    // Both read paths go through the one mapper, so the shape cannot drift.
+    expect(orgsService).toContain('function mapOrgRow(');
+    expect(orgsService).toContain('.map(mapOrgRow)');
   });
 
   it('the underlying query (select columns, order) is unchanged', () => {
-    expect(orgsService).toContain("select('id, name, name_ar, code, status, city, contact_email')");
+    // The original seven columns in their original order, plus the two E7-2
+    // classification columns — pinned as one exact literal, so a silently
+    // dropped column is still caught.
+    expect(orgsService).toContain(
+      "'id, name, name_ar, code, status, city, contact_email, organization_kind, institution_class'",
+    );
+    expect(orgsService).toContain('.select(ORG_COLUMNS)');
     expect(orgsService).toContain(".order('name_ar')");
   });
 });

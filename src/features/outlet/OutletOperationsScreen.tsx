@@ -39,6 +39,7 @@ import { useOutletDispensePermission } from '@/features/inventory/useOutletDispe
 import { useOutletReceivePermission } from '@/features/inventory/useOutletReceivePermission';
 import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
+import { EmergencyReplenishmentTab } from './EmergencyReplenishmentTab';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
 import { OutletStockCorrectionModal } from './OutletStockCorrectionModal';
@@ -53,7 +54,7 @@ import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
 import { getPaperReference } from '@/features/movement/paper-reference.service';
 import type { SuggestionDocumentTarget } from '@/features/inventory/suggestion-document-navigation';
 
-type OutletTab = 'incoming' | 'stock' | 'returns' | 'history';
+type OutletTab = 'incoming' | 'stock' | 'replenish' | 'returns' | 'history';
 const dash = (v: string | number | null | undefined) => (v == null || v === '' ? '—' : String(v));
 
 export function OutletOperationsScreen({
@@ -108,9 +109,14 @@ export function OutletOperationsScreen({
   // MOVEMENT-TRACKING-MERGE: "movement history" and "movement status" are ONE
   // tab — سجل وتتبع الحركة / Movement History & Tracking — the ledger list plus
   // the 081/082 server-authoritative timeline tracker.
+  // STAGE-E-E7-2: the emergency-replenishment corridor gets its own tab rather
+  // than being folded into Returns — a replenishment reversal and a general
+  // outlet→warehouse return are different operations with different corridors,
+  // and merging their entry points would blur exactly that distinction.
   const tabs: Array<{ id: OutletTab; labelKey: string }> = [
     { id: 'incoming', labelKey: 'or_tab_incoming' },
     { id: 'stock', labelKey: 'or_tab_stock' },
+    { id: 'replenish', labelKey: 'repl_routine' },
     { id: 'returns', labelKey: 'or_tab_returns' },
     { id: 'history', labelKey: 'or_tab_history' },
   ];
@@ -161,6 +167,15 @@ export function OutletOperationsScreen({
       )}
 
       {tab === 'stock' && <OutletStockTab orgId={activeOrgId} distributionPointId={activeOutlet.id} lang={lang} />}
+
+      {tab === 'replenish' && (
+        <EmergencyReplenishmentTab
+          key={activeOutlet.id}
+          orgId={activeOrgId}
+          distributionPointId={activeOutlet.id}
+          lang={lang}
+        />
+      )}
 
       {tab === 'returns' && (
         <OutletReturnsTab

@@ -92,8 +92,18 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
   it('no migration, Supabase service/RPC call site, route registry, or authz file has a working-tree diff', () => {
     let diff = '';
     try {
+      // STAGE-E-E7-2: a still later, separately-reviewed phase wires the
+      // Stage-E outlet corridor into the application, editing exactly two
+      // service files — organizations.service.ts (the organization writer now
+      // sends the Migration-164/171 classification pair it previously omitted)
+      // and warehouses.service.ts (distribution points now carry Migration
+      // 164's clinical_location_kind). Neither is a visual change, and E7-2
+      // adds NO migration — `supabase/migrations/*.sql` stays fully watched
+      // here, so a stray SQL edit would still fail this guard.
       diff = execSync(
-        'git diff --name-only HEAD -- supabase/migrations/*.sql src/shared/supabase src/app/AuthenticatedApp.tsx src/app/App.tsx src/shared/authz',
+        'git diff --name-only HEAD -- supabase/migrations/*.sql src/shared/supabase src/app/AuthenticatedApp.tsx src/app/App.tsx src/shared/authz '
+        + '":!src/shared/supabase/services/organizations.service.ts" '
+        + '":!src/shared/supabase/services/warehouses.service.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

@@ -127,8 +127,18 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
   it('never touches a Supabase service, RPC call site, or route/screen-number registry', () => {
     let diff = '';
     try {
+      // STAGE-E-E7-2: a still later, separately-reviewed phase wires the
+      // Stage-E outlet corridor into the application. It edits exactly two
+      // service files — organizations.service.ts (the organization writer now
+      // sends the Migration-164/171 classification pair it previously omitted)
+      // and warehouses.service.ts (distribution points now carry Migration
+      // 164's clinical_location_kind) — neither of which is a visual change.
+      // Excluded BY EXACT NAME; every other path this guard watched, the rest
+      // of src/shared/supabase included, is still covered.
       diff = execSync(
-        'git diff --name-only HEAD -- src/shared/supabase src/app/AuthenticatedApp.tsx src/app/App.tsx src/shared/authz',
+        'git diff --name-only HEAD -- src/shared/supabase src/app/AuthenticatedApp.tsx src/app/App.tsx src/shared/authz '
+        + '":!src/shared/supabase/services/organizations.service.ts" '
+        + '":!src/shared/supabase/services/warehouses.service.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

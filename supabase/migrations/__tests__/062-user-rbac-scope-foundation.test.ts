@@ -1607,6 +1607,15 @@ describe('16. isolation: untouched domains', () => {
         // eligibility rule (per its own header) — never a schema, RLS, or
         // workflow change — excluded here.
         '":(exclude)src/shared/lib/institution-hierarchy.ts" ' +
+        // STAGE-E-E7-2: the Stage-E application-wiring phase. It adds no
+        // migration and no RBAC/RLS change; it wires already-reviewed RPCs
+        // into services and UI using only Migration 164's existing permission
+        // keys. organizations.service.ts now sends the Migration-164/171
+        // classification pair it previously omitted, and warehouses.service.ts
+        // now carries Migration 164's clinical_location_kind. Excluded by
+        // exact name; every other product path stays watched.
+        '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
+        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ' +
         '":(exclude)src/shared/i18n/strings.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );

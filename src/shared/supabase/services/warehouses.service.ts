@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from '../client';
+import { isClinicalLocationKind, type ClinicalLocationKind } from '../../lib/institution-hierarchy';
 
 export type WarehouseKind = 'central' | 'institution';
 
@@ -19,6 +20,19 @@ export interface DistributionPoint {
   warehouseId: string | null;
   organizationId: string;
   pointType: string;
+  /**
+   * STAGE-E-E7-2: the outlet's clinical context (Migration 164).
+   * Null until an operator sets it. Stage-E replenishment REQUIRES it on the
+   * destination — the corridor raises
+   * `destination_clinical_location_kind_required` while it is null — so it is
+   * surfaced here rather than left invisible to the UI.
+   *
+   * OPTIONAL, not required: the DB column is nullable, and several
+   * deliberately-frozen presentation fixtures construct this shape without it.
+   * Both service read paths below always populate it, so real data is never
+   * `undefined`; consumers treat absent and null identically.
+   */
+  clinicalLocationKind?: ClinicalLocationKind | null;
 }
 
 /** Types approved for operational outlet stock by migrations 066/067. */
@@ -51,7 +65,7 @@ export async function getDistributionPoints(warehouseId: string): Promise<Distri
 
   const { data, error } = await supabase
     .from('distribution_points')
-    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type')
+    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type, clinical_location_kind')
     .eq('warehouse_id', warehouseId)
     .neq('status', 'archived')
     .order('name_ar');
@@ -61,6 +75,8 @@ export async function getDistributionPoints(warehouseId: string): Promise<Distri
     id: r.id, name: r.name, name_ar: r.name_ar,
     status: r.status, warehouseId: r.warehouse_id,
     organizationId: r.organization_id, pointType: r.point_type,
+    clinicalLocationKind: isClinicalLocationKind(r.clinical_location_kind)
+      ? r.clinical_location_kind : null,
   }));
 }
 
@@ -69,7 +85,7 @@ export async function getPointsByOrg(orgId: string): Promise<DistributionPoint[]
 
   const { data, error } = await supabase
     .from('distribution_points')
-    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type')
+    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type, clinical_location_kind')
     .eq('organization_id', orgId)
     .neq('status', 'archived')
     .order('name_ar');
@@ -79,6 +95,8 @@ export async function getPointsByOrg(orgId: string): Promise<DistributionPoint[]
     id: r.id, name: r.name, name_ar: r.name_ar,
     status: r.status, warehouseId: r.warehouse_id,
     organizationId: r.organization_id, pointType: r.point_type,
+    clinicalLocationKind: isClinicalLocationKind(r.clinical_location_kind)
+      ? r.clinical_location_kind : null,
   }));
 }
 
@@ -88,6 +106,9 @@ export async function createDistributionPoint(input: {
   name: string;
   name_ar: string;
   pointType: ApprovedPointType;
+  /** STAGE-E-E7-2: required in practice for emergency outlets — see the
+   *  DistributionPoint interface. Omitted stays null, exactly as before. */
+  clinicalLocationKind?: ClinicalLocationKind | null;
 }): Promise<DistributionPoint> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
   if (!input.warehouseId) throw new Error('WAREHOUSE_REQUIRED');
@@ -99,11 +120,14 @@ export async function createDistributionPoint(input: {
     point_type:      input.pointType,
     warehouse_id:   input.warehouseId,
   };
+  if (input.clinicalLocationKind != null) {
+    row.clinical_location_kind = input.clinicalLocationKind;
+  }
 
   const { data, error } = await supabase
     .from('distribution_points')
     .insert(row)
-    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type')
+    .select('id, name, name_ar, status, warehouse_id, organization_id, point_type, clinical_location_kind')
     .single();
 
   if (error) {
@@ -126,12 +150,18 @@ export async function createDistributionPoint(input: {
     id: data.id, name: data.name, name_ar: data.name_ar,
     status: data.status, warehouseId: data.warehouse_id,
     organizationId: data.organization_id, pointType: data.point_type,
+    clinicalLocationKind: isClinicalLocationKind(data.clinical_location_kind)
+      ? data.clinical_location_kind : null,
   };
 }
 
 export async function updateDistributionPoint(
   id: string,
-  input: { name?: string; name_ar?: string; pointType?: ApprovedPointType; warehouseId?: string; status?: string },
+  input: {
+    name?: string; name_ar?: string; pointType?: ApprovedPointType;
+    warehouseId?: string; status?: string;
+    clinicalLocationKind?: ClinicalLocationKind | null;
+  },
 ): Promise<void> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
@@ -141,6 +171,10 @@ export async function updateDistributionPoint(
   if (input.pointType !== undefined) update.point_type = input.pointType;
   if (input.warehouseId !== undefined) update.warehouse_id = input.warehouseId;
   if (input.status !== undefined) update.status = input.status;
+  // Explicit null is meaningful (clears the context), so only `undefined` skips.
+  if (input.clinicalLocationKind !== undefined) {
+    update.clinical_location_kind = input.clinicalLocationKind;
+  }
 
   const { error } = await supabase
     .from('distribution_points')

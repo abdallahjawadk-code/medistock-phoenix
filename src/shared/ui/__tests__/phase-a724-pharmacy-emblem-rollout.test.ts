@@ -475,6 +475,20 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       'supabase/migrations/171_phoenix_organization_kind_pharmacy_department_authority.sql',
       'supabase/migrations/__tests__/171-organization-kind-pharmacy-department-authority-static.test.ts',
       'supabase/migrations/__tests__/171-organization-kind-pharmacy-department-authority.dynamic.test.ts',
+      // STAGE-E-E7-2: the application-wiring phase for Stage E. It adds NO
+      // migration; it wires the already-reviewed 164/166/168/169/170/171 RPCs
+      // into real services and UI. The two service files below are the only
+      // watched-prefix production files it touches — organizations.service.ts
+      // (the writer now sends the classification pair it previously omitted,
+      // a genuine regression fix) and warehouses.service.ts (distribution
+      // points now carry Migration 164's clinical_location_kind, without which
+      // no emergency outlet could ever be replenished). The dynamic test file
+      // is E7-2's own proof against a real database. Named exactly, so this
+      // guard still catches any OTHER unlisted migration/schema/RLS/service
+      // change.
+      'src/shared/supabase/services/organizations.service.ts',
+      'src/shared/supabase/services/warehouses.service.ts',
+      'supabase/migrations/__tests__/172-e7-2-stage-e-wiring.dynamic.test.ts',
     ];
 
     const changed = execSync(
