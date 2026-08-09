@@ -913,12 +913,15 @@ async function main() {
 
     let replenishedOutletStockId = null;
     if (routeSelectVisible) {
+      // Only the provenance-backed lot is FEFO-transferable — see the seed's
+      // REPL_SOURCE_* note. The batch option is a composed label
+      // ("<name> · <batch> · <available> N"), so match on substring.
       const batchSelect = page.getByLabel('Batch').or(page.getByLabel('الدفعة')).first();
-      await selectByLabel(batchSelect, [/E2E Ibuprofen/]).catch(async () => {
-        const opts = await batchSelect.locator('option').allTextContents();
-        const match = opts.find(o => o.includes('E2E Ibuprofen'));
-        if (match) await batchSelect.selectOption({ label: match });
-      });
+      const batchOpts = await batchSelect.locator('option').allTextContents().catch(() => []);
+      const srcMatch = batchOpts.find(o => o.includes(seed.stageE.replenishSourceLot));
+      if (srcMatch) await batchSelect.selectOption({ label: srcMatch }).catch(() => {});
+      record('the provenance-backed source batch is offered for replenishment',
+        Boolean(srcMatch), srcMatch ?? JSON.stringify(batchOpts));
       const qtyInput = page.locator('#repl-qty');
       await qtyInput.fill('3').catch(() => {});
       const submitBtn = page.getByText('Execute Replenishment').or(page.getByText('تنفيذ التعويض')).first();
@@ -957,7 +960,7 @@ async function main() {
       record('the reversal form lists the just-created replenishment as reversible', reverseAvailable);
       if (reverseAvailable) {
         const opts = await reverseBatchSelect.locator('option').allTextContents();
-        const match = opts.find(o => o.includes('E2E Ibuprofen'));
+        const match = opts.find(o => o.includes(seed.stageE.replenishSourceLot));
         if (match) await reverseBatchSelect.selectOption({ label: match });
         const revQty = page.locator('#rev-qty');
         await revQty.fill('3').catch(() => {});

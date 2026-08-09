@@ -67,6 +67,26 @@ const DP_B = randomUUID();
 const CART_A = randomUUID();
 const IP_MATERIAL_STOCK_ID = randomUUID();
 
+// STAGE-E-E7-2: the routine-replenishment source lot, and why it cannot be one
+// of the plain outlet_stock lots seeded further down.
+//
+// Migration 150 hardened outlet FEFO so a batch is only a candidate when it can
+// PROVE how it arrived: _phoenix_inventory_fefo_batches_exact_v1 inner-joins
+// warehouse_dispatch_lines (status accepted / accepted_with_difference) and the
+// matching dispatch_receive movement, and derives transferable_quantity from
+// received minus returned. Stock inserted straight into outlet_stock carries no
+// such provenance, so it is correctly invisible to FEFO — dispensable, but
+// never transferable onward. Migration 168 revalidates through that same
+// canonical helper before replenishing, by design, since there is to be no
+// second FEFO implementation.
+//
+// This lot therefore reaches DP_A the only legitimate way: a real warehouse
+// dispatch, really sent and really received — the same path the Phase 8
+// provenance fixture below already uses.
+const REPL_SOURCE_WH_STOCK_ID = randomUUID();
+const REPL_SOURCE_MATERIAL = 'E2E Replenishment Source Material';
+const REPL_SOURCE_NATIONAL_CODE = 'E2E-REPL-SRC';
+
 // A pharmacy_department_authority organization + its central warehouse
 // (Migration 171) — seeded directly to validate the organization model
 // exists and is queryable; the E7-2 acceptance run additionally creates a
@@ -270,6 +290,38 @@ async function main() {
     if (!suggestionId) throw new Error('could not create Phase 8 outlet-return suggestion');
     console.log(`  Phase 8 suggestion: ${suggestionId}`);
 
+    console.log('Seeding the routine-replenishment source lot at DP_A with real dispatch provenance...');
+    await client.query(
+      `INSERT INTO warehouse_stock(
+         id,organization_id,warehouse_id,scientific_name,concentration,dosage_form,unit,
+         national_code,has_no_national_code,batch_number,has_no_batch_number,expiry_date,
+         on_hand_quantity,reserved_quantity,movement_seq
+       ) VALUES($1,$2,$3,$4,'400 mg','tablet','box',$5,false,'E2E-REPL-001',false,current_date+365,60,0,1)`,
+      [REPL_SOURCE_WH_STOCK_ID, ORG_A, WH_A, REPL_SOURCE_MATERIAL, REPL_SOURCE_NATIONAL_CODE],
+    );
+    let replSourceLineId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      const dispatch = (await actor.query(
+        `SELECT public.phoenix_create_warehouse_dispatch($1,$2,$3,NULL,NULL,NULL) AS r`,
+        [WH_A, DP_A, 'E2E-REPL-PROVENANCE'],
+      )).rows[0].r;
+      replSourceLineId = (await actor.query(
+        `SELECT public.phoenix_add_dispatch_line_fefo_guarded($1,$2,30,false,NULL,$3) AS r`,
+        [dispatch.dispatch_id, REPL_SOURCE_WH_STOCK_ID, randomUUID()],
+      )).rows[0].r.dispatch_line_id;
+      await actor.query(`SELECT public.phoenix_send_warehouse_dispatch($1,$2)`, [
+        randomUUID(), dispatch.dispatch_id,
+      ]);
+    });
+    let replSourceOutletStockId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      replSourceOutletStockId = (await actor.query(
+        `SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,30,NULL,NULL) AS r`,
+        [randomUUID(), replSourceLineId],
+      )).rows[0].r.outlet_stock_id;
+    });
+    console.log(`  replenishment source lot at DP_A: ${replSourceOutletStockId} (30 received, FEFO-eligible)`);
+
     const summary = {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
@@ -294,7 +346,10 @@ async function main() {
         ipMaterial: 'E2E Initial Provisioning Material',
         orgCAuthority: ORG_C_AUTHORITY,
         whCCentral: WH_C_CENTRAL,
-        replenishSourceLot: 'E2E Ibuprofen 400mg',
+        // Provenance-backed (see REPL_SOURCE_* above): the plain outlet lots
+        // are dispensable but categorically not FEFO-transferable.
+        replenishSourceLot: REPL_SOURCE_MATERIAL,
+        replenishSourceOutletStockId: replSourceOutletStockId,
       },
     };
 
