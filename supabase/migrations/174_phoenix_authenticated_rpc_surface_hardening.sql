@@ -8,7 +8,10 @@
 --   * 304 public-schema functions
 --   * 19 effectively reachable by anon/PUBLIC
 --   * the nine targets below are authenticated application APIs
---   * every target has authenticated + service_role EXECUTE before this change
+--   * every target has authenticated + service_role EXECUTE in Production
+--   * fresh replay proved service_role may inherit EXECUTE from PUBLIC on some
+--     historical definitions, so this migration first makes service_role's
+--     EXECUTE explicit on the same nine overloads before removing PUBLIC/anon
 --   * anon reach is accidental, inherited from PUBLIC
 --   * public.get_public_qr_payload(text) is intentional anonymous API and is
 --     explicitly preserved before and after this migration
@@ -52,11 +55,14 @@ BEGIN
       RAISE EXCEPTION 'PREFLIGHT FAILED (174): target is no longer SECURITY DEFINER: %', v_target;
     END IF;
 
-    -- Every target was proven live as an authenticated API. If that grant is
-    -- already gone, this migration is looking at an unexpected database state.
+    -- Every target is an authenticated API. If authenticated cannot execute it,
+    -- this migration is looking at an unexpected database state.
     IF NOT has_function_privilege('authenticated', to_regprocedure(v_target), 'EXECUTE') THEN
       RAISE EXCEPTION 'PREFLIGHT FAILED (174): authenticated cannot execute expected API: %', v_target;
     END IF;
+
+    -- service_role must be able to execute before hardening, whether by an
+    -- explicit historical grant (Production) or inherited PUBLIC (fresh replay).
     IF NOT has_function_privilege('service_role', to_regprocedure(v_target), 'EXECUTE') THEN
       RAISE EXCEPTION 'PREFLIGHT FAILED (174): service_role cannot execute expected API: %', v_target;
     END IF;
@@ -94,11 +100,16 @@ BEGIN
   END IF;
 
   -- ══════════════════════════════════════════════════════════════════════════
-  -- CHANGE — exact nine overloads only. authenticated/service_role are NOT
-  -- revoked and receive no replacement grant; their existing explicit grants
-  -- remain intact.
+  -- CHANGE — exact nine overloads only.
+  --
+  -- authenticated is never changed.
+  -- service_role is made explicit first. This is a no-op on Production (where
+  -- the live catalog already has the grant) and safely converges fresh replay
+  -- databases that previously inherited service_role access only from PUBLIC.
+  -- Then only PUBLIC/anon are revoked.
   -- ══════════════════════════════════════════════════════════════════════════
   FOREACH v_target IN ARRAY v_targets LOOP
+    EXECUTE 'GRANT EXECUTE ON FUNCTION ' || v_target || ' TO service_role';
     EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || v_target || ' FROM PUBLIC';
     EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || v_target || ' FROM anon';
   END LOOP;
@@ -156,7 +167,7 @@ $hardening$;
 -- ROLLBACK GUIDANCE — documentation only, deliberately NOT executed.
 --
 -- Normal application functionality should need no rollback because this file
--- preserves authenticated and service_role grants. If a previously unknown
+-- preserves authenticated and service_role access. If a previously unknown
 -- anonymous integration were ever proven legitimate, restore only the exact
 -- required role on the exact overload after review; do NOT broadly restore
 -- PUBLIC. Re-granting PUBLIC would intentionally reopen anonymous access and
