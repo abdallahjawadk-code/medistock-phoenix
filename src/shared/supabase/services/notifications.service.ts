@@ -66,12 +66,49 @@ export async function listNotifications(
   };
 }
 
+// UNREAD-COUNT-PRESSURE-GUARD — NotificationBell intentionally keeps its
+// established 30-second cadence while the app is in use. The service layer
+// prevents those timers from becoming database traffic while the document is
+// hidden, and also collapses overlapping callers onto one RPC. No result is
+// cached after the request settles, so a visible caller always gets fresh
+// server state and permission/session changes are never hidden behind a TTL.
+let unreadCountInFlight: Promise<number> | null = null;
+
+function waitUntilDocumentVisible(): Promise<void> {
+  if (typeof document === 'undefined' || !document.hidden) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      resolve();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  });
+}
+
 /** Count of unread notifications visible to the caller (org-scoped). */
-export async function getUnreadNotificationCount(): Promise<number> {
-  if (!supabaseConfigured) return 0;
-  const { data, error } = await supabase.rpc('phoenix_notifications_unread_count');
-  if (error) throw error;
-  return typeof data === 'number' ? data : Number(data ?? 0);
+export function getUnreadNotificationCount(): Promise<number> {
+  if (!supabaseConfigured) return Promise.resolve(0);
+  if (unreadCountInFlight) return unreadCountInFlight;
+
+  const request = (async () => {
+    await waitUntilDocumentVisible();
+    const { data, error } = await supabase.rpc('phoenix_notifications_unread_count');
+    if (error) throw error;
+    return typeof data === 'number' ? data : Number(data ?? 0);
+  })();
+
+  unreadCountInFlight = request;
+  void request.finally(() => {
+    if (unreadCountInFlight === request) unreadCountInFlight = null;
+  }).catch(() => {
+    // The original request remains the sole error channel. This catch only
+    // consumes the promise returned by finally() so a failed RPC cannot create
+    // a second unhandled rejection while the caller handles the real error.
+  });
+
+  return request;
 }
 
 /** Marks one notification read for the CALLING profile only — never another profile. */
