@@ -97,11 +97,12 @@ run('E7-2 · Stage-E application wiring (dynamic)', () => {
     // own ceiling is still 171, and anything above it must be a known
     // Stage-F file named EXACTLY. No wildcard, no range exclusion.
     // Stage F's own migration, plus the post-Stage-F security hardening that
-    // follows it. Both named EXACTLY — Stage E's ceiling is still asserted at
+    // follows it. All named EXACTLY — Stage E's ceiling is still asserted at
     // 171 below, and any OTHER file above it still fails this guard.
     const STAGE_F_MIGRATIONS = [
       '172_phoenix_patient_dispensing_contract.sql',
       '173_phoenix_database_security_surface_hardening.sql',
+      '174_phoenix_authenticated_rpc_surface_hardening.sql',
     ];
 
     it('Stage E still ends at 171 — E7-2 introduced no new SQL', () => {
