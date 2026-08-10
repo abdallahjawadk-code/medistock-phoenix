@@ -36,6 +36,10 @@ const qrService           = readSrc('shared/supabase/services/qr.service.ts');
 const publicQrScreen      = readSrc('features/qr/PublicQrScreen.tsx');
 const interOrgAlertLifecycleService = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
 const types = readSourceFile(join(ROOT, 'src/shared/lib/types.ts'));
+const migration176 = readSourceFile(join(
+  ROOT,
+  'supabase/migrations/176_phoenix_canonical_outlet_availability_read_model.sql',
+));
 
 describe('A) Dashboard: live stock counts ignore removed_at rows', () => {
   // PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: getDashboardMetrics/
@@ -102,18 +106,21 @@ describe('C) Institution current outlet list: hides removed rows, keeps genuine 
   });
 
   it('a genuine still-open shortage (removed_at null, condition=missing) is not filtered out — only removed_at gates visibility', () => {
-    // Structurally: the filter predicate references only removed_at, so a
-    // row with condition==='missing' and removed_at===null passes through.
     expect(fnBody).not.toMatch(/condition === 'missing'/);
   });
 
-  it('getAvailabilityByPoint (the underlying read) now selects removed_at', () => {
+  it('getAvailabilityByPoint delegates to the canonical CQRS read model, which still returns removed_at and display metadata', () => {
     const start = availabilityService.indexOf('export async function getAvailabilityByPoint');
-    const body = availabilityService.slice(start, start + 900);
-    expect(body).toMatch(/port_name, supply_type, removed_at,/);
+    const end = availabilityService.indexOf('export async function upsertAvailability');
+    const body = availabilityService.slice(start, end);
+    expect(body).toContain("supabase.rpc('phoenix_outlet_availability_read_model'");
+    expect(body).not.toContain(".from('item_availability')");
+    expect(migration176).toContain("'port_name', s.port_name");
+    expect(migration176).toContain("'supply_type', s.supply_type");
+    expect(migration176).toContain("'removed_at', s.removed_at");
   });
 
-  it('getAvailabilityByPoint does NOT filter removed_at at the DB level (EditorScreen, the other consumer, needs to see removed rows to reactivate them)', () => {
+  it('getAvailabilityByPoint does NOT filter removed_at at the DB level (reactivation/visibility consumers need the marker)', () => {
     const start = availabilityService.indexOf('export async function getAvailabilityByPoint');
     const end = availabilityService.indexOf('export async function upsertAvailability');
     const body = availabilityService.slice(start, end);
@@ -122,15 +129,10 @@ describe('C) Institution current outlet list: hides removed rows, keeps genuine 
 });
 
 describe('D) EditorScreen reactivation path is not broken', () => {
-  // E6: was an isolation assertion against EditorScreen.tsx. The screen is
-  // retired, so this is now an absence guard — strictly stronger.
   it('EditorScreen stays retired (EditorScreen still consumes the same unfiltered getAvailabil)', () => {
     expectRetiredSurfaceAbsent('EditorScreen');
   });
 
-  // E6: was an isolation assertion about EditorScreen's reactivation matching.
-  // The screen is retired; reactivation now lives solely in
-  // ReactivateMaterialModal, whose behaviour is asserted elsewhere in this file.
   it('EditorScreen stays retired, so it adds no removed_at filter', () => {
     expectRetiredSurfaceAbsent('EditorScreen');
   });
@@ -143,23 +145,12 @@ describe('E) getAvailabilityByOrg (Status Center / operations context) remains u
     expect(body).not.toContain(".is('removed_at', null)");
   });
 
-  // SAFE-PROFESSIONAL-XLSX-EXPORT-A: a later, separately-reviewed phase adds
-  // actor_name_snapshot/removed_at to this same SELECT (both already-existing,
-  // non-sensitive columns) so StatusCenterScreen's XLSX export can show a
-  // "Last Updated By" display name and exclude removed_at rows from the
-  // export — the query itself still applies no removed_at filter, so this
-  // file's own guard above still holds.
   it('getAvailabilityByOrg additionally selects actor_name_snapshot and removed_at (read-only, no new query source, no filter added)', () => {
     const start = availabilityService.indexOf('export async function getAvailabilityByOrg');
     const body = availabilityService.slice(start, start + 1400);
     expect(body).toContain('actor_name_snapshot, removed_at');
   });
 
-  // PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A: a further, later,
-  // separately-reviewed phase adds a user-entered-price column + filter to
-  // StatusCenterScreen (row.price only, never calculated/inferred). This
-  // guard is widened to also allow that phase's own diff signature, while
-  // still blocking any SQL/RPC/service_role/auth-admin sneaking in.
   it('StatusCenterScreen (the consumer) is untouched by this phase, except the later, separately-reviewed SAFE-PROFESSIONAL-XLSX-EXPORT-A CSV-to-XLSX export replacement, PHASE2-STATUS-CENTER-ENTERED-PRICE-FILTER-XLSX-A price filter addition, and PHASE2-STATUS-CENTER-OUTLET-REPORT-MODAL-A outlet-report-modal wiring', () => {
     let diff = '';
     try {
@@ -182,15 +173,6 @@ describe('F) Public QR remains protected and unchanged (already DB/RPC-filtered)
     expect(diff.trim()).toBe('');
   });
 
-  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately changed
-  // by that later, separately-reviewed phase (additive dosage_form render). This
-  // phase (FRONTEND-LIVE-REMOVED-AT-FILTERS-A) still makes no change of its own
-  // to it; the source-wiring checks below confirm the only public-QR change is
-  // the additive dosage_form field, with no private field or direct query added.
-  // PUBLIC-QR-CONCENTRATION-059-A: a later, separately-reviewed phase additively
-  // adds concentration alongside dosage_form, both trimmed inside the exported
-  // buildQrItemMetaLine helper. Every privacy assertion below is retained
-  // verbatim — only the dosage_form shape check moved to the helper.
   it('PublicQrScreen.tsx change is confined to the additive dosage_form/concentration fields (no private field, no direct query)', () => {
     expect(publicQrScreen).toContain('export function buildQrItemMetaLine');
     expect(publicQrScreen).toContain('dosage_form?: string | null;');
@@ -266,10 +248,6 @@ describe('I) lifecycle.service.ts (org delete-impact count) is untouched — rem
     expect(lifecycleService).not.toMatch(/removed_at/);
   });
 
-  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
-  // adds an invalidateOrganizationsCache() call to archiveOrganization here
-  // (org-list cache invalidation on mutation) — unrelated to removed_at
-  // filtering, which the sibling test above already re-confirms is absent.
   it('lifecycle.service.ts: only the org-list cache-invalidation import/call was added by later phases; archiveOrganization behavior is otherwise unchanged', () => {
     expect(lifecycleService).toContain("import { invalidateOrganizationsCache } from './organizations.service';");
     expect(lifecycleService).toContain("update({ status: 'inactive' })");
@@ -299,15 +277,9 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     try {
       listing = execSync('git status --porcelain -- supabase/migrations', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    // PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A: new reviewed migration 055 and
-    // its test file are the only allowed 055_ occurrences; anything else
-    // still fails this guard.
     const allowed055 = new Set([
       '?? supabase/migrations/055_phoenix_clean_availability_data.sql',
       'A  supabase/migrations/055_phoenix_clean_availability_data.sql',
-      // FIX-MIGRATION-055-TRUNCATE-VERIFY-FALSE-POSITIVE-A: 055 corrected
-      // in-place before its first successful manual apply (VERIFY block's
-      // TRUNCATE assertion false-positive fix), same pattern as 051/053/054.
       'M supabase/migrations/055_phoenix_clean_availability_data.sql',
       'M  supabase/migrations/055_phoenix_clean_availability_data.sql',
       '?? supabase/migrations/__tests__/055-phoenix-clean-availability-data.test.ts',
@@ -318,14 +290,10 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     expect(unexpected055).toEqual([]);
   });
 
-  // PHASE2-ALLOW-054-INPLACE-HARDENING-GUARDS-A: 054_dashboard_condition_counts_rpcs.sql
-  // is excluded because HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A legitimately
-  // corrects it in-place before its first successful manual apply, the same
-  // pattern as the 051/053 in-place corrections elsewhere in this repo.
-  it('no migration SQL file has a working-tree diff (other than the already-approved 054 NULL-role fail-closed fix)', () => {
+  it('no historical migration SQL file has a working-tree diff; G1 adds only the reviewed 176 migration', () => {
     let diff = '';
     try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"', { cwd: ROOT, encoding: 'utf8' });
+      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/176_phoenix_canonical_outlet_availability_read_model.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
     expect(diff.trim()).toBe('');
   });
@@ -338,15 +306,13 @@ describe('Guards: no SQL/migration/DB change, no package/lockfile change, no unr
     expect(diff.trim()).toBe('');
   });
 
-  it('no service_role/auth.admin/RPC/CREATE FUNCTION reference introduced in any touched file', () => {
+  it('no service_role/auth.admin/CREATE FUNCTION reference was introduced in frontend code', () => {
     for (const src of [dashboardService, availabilityService, institutionScreen]) {
       expect(src).not.toMatch(/service_role|auth\.admin/i);
       expect(src).not.toMatch(/CREATE (OR REPLACE )?FUNCTION/i);
     }
   });
 
-  // DB-PRESSURE-QUICK-WINS-A: a later, separately-reviewed phase legitimately
-  // adds a skipAuthBootstrap flag to src/app/AppContext.tsx — excluded here.
   it('no WhatsApp/auth/session/permission file was touched by this phase', () => {
     let diff = '';
     try {
