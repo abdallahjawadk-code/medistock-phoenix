@@ -25,6 +25,122 @@ export type PatientReferenceType = 'chart' | 'card' | 'pass';
 export const PATIENT_REFERENCE_TYPES: readonly PatientReferenceType[] =
   Object.freeze(['chart', 'card', 'pass']);
 
+/**
+ * STAGE-F-172: the document types a NEW patient dispense may declare.
+ *
+ * 'pass' stays in PatientReferenceType above because historical rows may
+ * carry it and must keep rendering; Migration 172 refuses it on write
+ * (patient_reference_type_pass_retired). WHICH of card/chart is legal for a
+ * given outlet depends on that outlet's clinical context and is decided
+ * SERVER-side — this type only stops the UI from offering a value that can
+ * never be accepted anywhere.
+ */
+export type StageFPatientReferenceType = Extract<PatientReferenceType, 'card' | 'chart'>;
+
+export const STAGE_F_PATIENT_REFERENCE_TYPES: readonly StageFPatientReferenceType[] =
+  Object.freeze(['card', 'chart']);
+
+/* ── STAGE-F-172: patient-dispensing FEFO advisory ─────────────────────────
+ *
+ * WHY THIS IS NOT phoenix_inventory_fefo_batches.
+ *
+ * Migration 150 hardened TRANSFER FEFO by inner-joining warehouse_dispatch_
+ * lines and the matching dispatch_receive movement, and deriving a
+ * transferable quantity from received-minus-returned. That is correct for
+ * moving stock ONWARD: you may only transfer what you can prove you
+ * received. It is wrong for dispensing to a patient, because outlet stock
+ * with no dispatch provenance has always been legally DISPENSABLE — Stage E
+ * proved exactly that, and Stage F must not change it. Reusing the transfer
+ * helper here would silently hide legally dispensable stock from the very
+ * operator allowed to dispense it.
+ *
+ * So the advisory reads the plain, RLS-scoped outlet_stock read model
+ * (getOutletStock) — which carries no provenance join and therefore includes
+ * provenance-less rows — and applies only the rules dispensing itself cares
+ * about. No migration is required, and no security or business rule is
+ * duplicated: this recommends, it never decides.
+ *
+ * IT IS NOT AUTHORITY. It reserves nothing, holds nothing and guarantees
+ * nothing. The canonical RPC still re-locks the chosen outlet_stock row
+ * FOR UPDATE and re-checks the quantity, so a stale recommendation fails
+ * closed at the server rather than overselling.
+ */
+
+/** The exact-identity fields a candidate must match, per Migration 150. */
+export interface PatientFefoIdentity {
+  scientificName: string;
+  nationalCode: string | null;
+  concentration: string | null;
+  dosageForm: string | null;
+  unit: string | null;
+}
+
+/** Minimal lot shape the advisory needs (a subset of OutletStockRow). */
+export interface PatientFefoLot extends PatientFefoIdentity {
+  id: string;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  availableQuantity: number;
+}
+
+const norm = (v: string | null | undefined): string =>
+  (v ?? '').trim().toLowerCase();
+
+/** Exact material identity — never a fuzzy or display-name match. */
+export function isSamePatientFefoMaterial(a: PatientFefoIdentity, b: PatientFefoIdentity): boolean {
+  return norm(a.scientificName) === norm(b.scientificName)
+    && norm(a.nationalCode) === norm(b.nationalCode)
+    && norm(a.concentration) === norm(b.concentration)
+    && norm(a.dosageForm) === norm(b.dosageForm)
+    && norm(a.unit) === norm(b.unit);
+}
+
+/**
+ * FEFO-ordered dispensable candidates for one exact material at one outlet.
+ *
+ * Order (matching the outlet_stock read model's own `expiry_date ASC NULLS
+ * LAST`, so a recommendation never contradicts the list the operator sees):
+ *   1. earliest expiry first;
+ *   2. a NULL expiry sorts LAST — undated stock is not "expiring soonest",
+ *      and Phoenix has never treated it as such;
+ *   3. batch number, then row id, as deterministic tie-breaks so an
+ *      unchanged dataset always yields the same recommendation.
+ *
+ * Excluded: non-positive available quantity, and stock already past its
+ * expiry date (`asOf`, default today) — a dispense of expired stock is not a
+ * FEFO recommendation to make. A NULL expiry is never treated as expired.
+ */
+export function patientFefoCandidates<T extends PatientFefoLot>(
+  lots: readonly T[],
+  identity: PatientFefoIdentity,
+  asOf: Date = new Date(),
+): T[] {
+  const today = asOf.toISOString().slice(0, 10);
+  return lots
+    .filter(l => l.availableQuantity > 0)
+    .filter(l => l.expiryDate === null || l.expiryDate >= today)
+    .filter(l => isSamePatientFefoMaterial(l, identity))
+    .sort((a, b) => {
+      if (a.expiryDate !== b.expiryDate) {
+        if (a.expiryDate === null) return 1;      // NULL expiry last
+        if (b.expiryDate === null) return -1;
+        return a.expiryDate < b.expiryDate ? -1 : 1;
+      }
+      const ab = norm(a.batchNumber), bb = norm(b.batchNumber);
+      if (ab !== bb) return ab < bb ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+}
+
+/** The single lot FEFO would recommend, or null when nothing is dispensable. */
+export function patientFefoRecommendation<T extends PatientFefoLot>(
+  lots: readonly T[],
+  identity: PatientFefoIdentity,
+  asOf: Date = new Date(),
+): T | null {
+  return patientFefoCandidates(lots, identity, asOf)[0] ?? null;
+}
+
 /** The minimal shape DispenseContextDialog/Viewer need from an
  *  OutletMovementRow — kept separate so this service doesn't import from
  *  outlet-stock.service.ts (avoids a circular import). */

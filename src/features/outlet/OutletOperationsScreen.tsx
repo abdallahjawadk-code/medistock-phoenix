@@ -281,6 +281,7 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
       <DispenseComposerDialog
         open={dispenseLot !== null}
         lot={dispenseLot}
+        lots={rows}
         lang={lang}
         canDispense={canDispense}
         onClose={() => setDispenseLot(null)}

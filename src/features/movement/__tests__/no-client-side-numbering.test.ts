@@ -559,8 +559,20 @@ describe('no client-side document-number sequence exists', () => {
     // performs an EXISTS check, never allocates one. No sequence, no counter,
     // no max()+1, and no generated numeric identity of any kind is
     // introduced. Ceiling moves to 172.
-    const beyond = migrations.filter(f => /^(17[2-9]|1[89]\d|[2-9]\d\d)_/.test(f));
+    // 172 (PATIENT-DISPENSING-CONTRACT-172, Stage F) adds NO column, NO table
+    // and NO identifier of any kind. It adds one internal eligibility oracle
+    // plus one read-only advisory (both DERIVE an allowed document-type SET
+    // from existing canonical columns), replaces two existing writer bodies so
+    // they refuse retired vocabulary, and adds one BEFORE INSERT guard
+    // trigger. patient_reference_type is a fixed 2-value document CLASSIFIER
+    // (card | chart), not an identifier; the patient reference NUMBER is
+    // caller-supplied text read off a physical document and is never
+    // allocated, incremented or derived here. No sequence, no counter, no
+    // max()+1, and no generated numeric identity of any kind is introduced.
+    // Ceiling moves to 173.
+    const beyond = migrations.filter(f => /^(17[3-9]|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('172_phoenix_patient_dispensing_contract.sql');
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('168_phoenix_atomic_emergency_outlet_replenishment.sql');
     expect(migrations).toContain('169_phoenix_outlet_replenishment_reversal.sql');

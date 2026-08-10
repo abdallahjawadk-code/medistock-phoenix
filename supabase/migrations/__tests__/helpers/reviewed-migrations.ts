@@ -253,6 +253,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // from the care-delivery classification (institution_class, unchanged for
   // care_institution rows). The next unreviewed number is 172.
   '171_phoenix_organization_kind_pharmacy_department_authority.sql',
+  '172_phoenix_patient_dispensing_contract.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

@@ -5,7 +5,7 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import {
-  dispenseWithContext, classifyDispenseContextError,
+  dispenseWithContext, classifyDispenseContextError, patientFefoRecommendation,
   type DispenseBeneficiaryType, type PatientReferenceType,
 } from './dispense-context.service';
 import type { OutletStockRow } from './outlet-stock.service';
@@ -13,6 +13,9 @@ import type { OutletStockRow } from './outlet-stock.service';
 interface Props {
   open: boolean;
   lot: OutletStockRow | null;
+  /** STAGE-F-172: the outlet's other lots, used ONLY to compute a FEFO
+   *  recommendation for the operator. Advisory — see patientFefoRecommendation. */
+  lots?: readonly OutletStockRow[];
   lang: 'ar' | 'en';
   canDispense: boolean;
   onClose: () => void;
@@ -45,13 +48,12 @@ const labelStyle = {
  * enforced here is re-enforced server-side; this is preflight, not
  * authorization.
  */
-export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, onSuccess }: Props) {
+export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, onClose, onSuccess }: Props) {
   const [quantity, setQuantity] = useState('');
   const [beneficiaryType, setBeneficiaryType] = useState<DispenseBeneficiaryType>('patient');
   const [patientName, setPatientName] = useState('');
   const [patientReferenceType, setPatientReferenceType] = useState<PatientReferenceType>('chart');
   const [patientIdentifier, setPatientIdentifier] = useState('');
-  const [crashCartReference, setCrashCartReference] = useState('');
   const [internalOrderReference, setInternalOrderReference] = useState('');
   const [reason, setReason] = useState('');
   const [contextNotes, setContextNotes] = useState('');
@@ -65,7 +67,7 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   function selectBeneficiaryType(next: DispenseBeneficiaryType) {
     setBeneficiaryType(next);
     setPatientName(''); setPatientIdentifier(''); setPatientReferenceType('chart');
-    setCrashCartReference(''); setInternalOrderReference('');
+    setInternalOrderReference('');
     setError(null);
   }
 
@@ -84,6 +86,20 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
 
   if (!open || !lot) return null;
 
+  // STAGE-F-172: which batch of THIS exact material FEFO would take first at
+  // this outlet. Advisory only — it reserves nothing and blocks nothing; the
+  // operator may still dispense the batch they physically hold, and the
+  // canonical RPC remains the sole authority over the final debit.
+  const fefoPick = lots && lots.length > 0
+    ? patientFefoRecommendation(lots, {
+        scientificName: lot.scientificName,
+        nationalCode: lot.nationalCode,
+        concentration: lot.concentration,
+        dosageForm: lot.dosageForm,
+        unit: lot.unit,
+      })
+    : null;
+
   const qtyNum = quantity === '' ? null : Number(quantity);
   const qtyInvalid = quantity !== '' && (qtyNum === null || !Number.isInteger(qtyNum) || qtyNum <= 0);
   const qtyExceeds = qtyNum !== null && qtyNum > lot.availableQuantity;
@@ -91,14 +107,17 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   // Patient: a name is always required; a reference NUMBER and its TYPE are
   // only meaningful together (the server enforces the same pairing).
   const patientNameMissing = beneficiaryType === 'patient' && patientName.trim() === '';
-  const patientRefIncomplete = false; // type always has a value; number is optional
-  const crashCartMissing = beneficiaryType === 'crash_cart' && crashCartReference.trim() === '';
+  // STAGE-F-172: the reference NUMBER is no longer optional for a patient
+  // dispense — the server now requires the document type, and refuses a type
+  // with no number (patient_identifier_required_for_reference_type). The type
+  // itself always has a value, so only the number can be missing.
+  const patientRefIncomplete = beneficiaryType === 'patient' && patientIdentifier.trim() === '';
   const internalOrderMissing = beneficiaryType === 'internal_order' && internalOrderReference.trim() === '';
 
   const canSubmit =
     canDispense && !busy &&
     qtyNum !== null && Number.isInteger(qtyNum) && qtyNum > 0 && !qtyExceeds &&
-    !patientNameMissing && !patientRefIncomplete && !crashCartMissing && !internalOrderMissing;
+    !patientNameMissing && !patientRefIncomplete && !internalOrderMissing;
 
   async function handleSubmit() {
     if (!canSubmit || qtyNum === null) return;
@@ -116,7 +135,6 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
         // Only send a reference type when a number accompanies it — the
         // server refuses one without the other.
         patientReferenceType: patientIdentifier.trim() ? patientReferenceType : undefined,
-        crashCartReference: crashCartReference.trim() || undefined,
         internalOrderReference: internalOrderReference.trim() || undefined,
         reason: reason.trim() || undefined,
         contextNotes: contextNotes.trim() || undefined,
@@ -151,6 +169,22 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
         <div style={{ marginTop: '6px', fontSize: '13px' }}>
           {t('mv_available', lang)}: <strong>{lot.availableQuantity}</strong>
         </div>
+        {/* STAGE-F-172: FEFO advice, never a claim. It does not reserve, hold
+            or guarantee this batch — the canonical RPC re-locks and re-checks
+            whichever row is finally submitted. */}
+        {fefoPick && fefoPick.id !== lot.id && (
+          <div role="note" style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--warn)' }} dir="auto">
+            <PhoenixIcon name="warning" size={12} inline />{' '}
+            {t('dsp_fefo_earlier_batch', lang)}{' '}
+            <span dir="ltr">{fefoPick.batchNumber ?? '—'}</span>
+            {fefoPick.expiryDate && <> · <span dir="ltr">{fefoPick.expiryDate}</span></>}
+          </div>
+        )}
+        {fefoPick && fefoPick.id === lot.id && (
+          <div style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--ok)' }} dir="auto">
+            {t('dsp_fefo_is_earliest', lang)}
+          </div>
+        )}
       </div>
 
       {!canDispense ? (
@@ -175,8 +209,11 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
               value={beneficiaryType}
               onChange={e => selectBeneficiaryType(e.target.value as DispenseBeneficiaryType)}
               options={[
+                // STAGE-F-172: crash_cart is retired as a dispensing
+                // beneficiary. The cart is a real outlet holding real
+                // outlet_stock, fed by Migration 168's routed corridor —
+                // not a free-text beneficiary on a pharmacy debit.
                 { value: 'patient', label: t('dc_type_patient', lang) },
-                { value: 'crash_cart', label: t('dc_type_crash_cart', lang) },
                 { value: 'internal_order', label: t('dc_type_internal_order', lang) },
               ]}
             />
@@ -201,9 +238,13 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
                   value={patientReferenceType}
                   onChange={e => setPatientReferenceType(e.target.value as PatientReferenceType)}
                   options={[
+                    // STAGE-F-172: 'pass' is retired for NEW patient
+                    // dispensing (the server refuses it); historical rows
+                    // keep rendering in DispenseContextViewer. Which of
+                    // card/chart is legal for THIS outlet is decided
+                    // server-side from its clinical context.
                     { value: 'chart', label: t('dsp_ref_chart', lang) },
                     { value: 'card', label: t('dsp_ref_card', lang) },
-                    { value: 'pass', label: t('dsp_ref_pass', lang) },
                   ]}
                 />
               </div>
@@ -213,17 +254,6 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
                   onChange={e => setPatientIdentifier(e.target.value)} style={fieldStyle} />
               </div>
             </>
-          )}
-
-          {beneficiaryType === 'crash_cart' && (
-            <div style={{ marginBottom: '12px' }}>
-              <label htmlFor="dsp-cart" style={labelStyle}>{t('dc_crash_cart_reference_label', lang)} *</label>
-              <input id="dsp-cart" type="text" dir="auto" value={crashCartReference}
-                onChange={e => setCrashCartReference(e.target.value)}
-                aria-invalid={crashCartMissing}
-                style={{ ...fieldStyle, border: `1px solid ${crashCartMissing ? 'var(--err)' : 'var(--brd)'}` }} />
-              {crashCartMissing && <p role="alert" style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>{t('dc_crash_cart_required', lang)}</p>}
-            </div>
           )}
 
           {beneficiaryType === 'internal_order' && (

@@ -1531,6 +1531,10 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/outlet/OutletStockCorrectionModal.tsx" ' +
         '":(exclude)src/features/outlet/DispenseComposerDialog.tsx" ' +
         '":(exclude)src/features/outlet/DispenseContextDialog.tsx" ' +
+        // STAGE-F-PATIENT-DISPENSING-172: the Stage-F card/chart type and
+        // submit payload live beside the dialog already excluded above.
+        // Named exactly — this guard still catches any OTHER product file.
+        '":(exclude)src/features/outlet/dispense-context.service.ts" ' +
         '":(exclude)src/features/outlet/DispenseContextViewer.tsx" ' +
         '":(exclude)src/features/outlet/CurrentMovementStatus.tsx" ' +
         '":(exclude)src/features/status/StatusCenterScreen.tsx" ' +

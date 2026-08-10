@@ -2360,6 +2360,17 @@ export const T: Dict = {
   dc_patient_identifier_label:    { ar: 'رقم الملف الطبي / المعرّف',                     en: 'Medical record number / identifier' },
   dc_patient_name_label:          { ar: 'اسم المريض',                                    en: 'Patient name' },
   dc_patient_required:            { ar: 'أدخل رقم الملف أو الاسم على الأقل',              en: 'Enter at least an identifier or a name' },
+  // STAGE-F-172: purely ADDITIVE — dc_patient_required above is left exactly
+  // as it was (an existing key is never edited or renamed here); Stage F's
+  // stricter requirement gets its own new key instead.
+  dc_patient_ref_required:        { ar: 'أدخل نوع المستند ورقم المرجع',                   en: 'Choose the document type and enter its reference number' },
+  // STAGE-F-172: the document the patient reference number was read from.
+  // Only these two are offered for new dispensing; which one is legal depends
+  // on the outlet's clinical context and is decided server-side.
+  dc_patient_ref_type_label:      { ar: 'نوع مستند المريض',                               en: 'Patient document' },
+  dc_patient_ref_type_choose:     { ar: 'اختر نوع المستند',                                en: 'Choose document type' },
+  dc_patient_ref_card:            { ar: 'بطاقة المراجعة',                                 en: 'Visit Card' },
+  dc_patient_ref_chart:           { ar: 'طبلة المريض',                                    en: 'Patient Chart' },
   dc_crash_cart_reference_label:  { ar: 'معرّف عربة الطوارئ',                            en: 'Crash cart reference' },
   dc_crash_cart_required:         { ar: 'معرّف عربة الطوارئ مطلوب',                      en: 'A crash cart reference is required' },
   dc_internal_order_reference_label: { ar: 'رقم الطلب الداخلي',                          en: 'Internal order reference' },
@@ -2384,6 +2395,11 @@ export const T: Dict = {
   dsp_quantity_invalid:           { ar: 'يجب أن تكون عدداً صحيحاً أكبر من صفر',            en: 'Must be a whole number greater than zero' },
   dsp_quantity_exceeds:           { ar: 'الكمية تتجاوز المتاح في هذه الدفعة',              en: 'Quantity exceeds what is available in this lot' },
   dsp_patient_name_required:      { ar: 'اسم المريض مطلوب',                               en: 'The patient name is required' },
+  // STAGE-F-172: FEFO advice on the dispense composer. Deliberately worded as
+  // guidance, never as a reservation — nothing is held until the canonical
+  // RPC commits.
+  dsp_fefo_earlier_batch:         { ar: 'يوجد دفعة أقرب انتهاءً لنفس المادة:',              en: 'An earlier-expiring batch of this material exists:' },
+  dsp_fefo_is_earliest:           { ar: 'هذه الدفعة هي الأقرب انتهاءً (الصرف وفق FEFO).',   en: 'This is the earliest-expiring batch (FEFO).' },
   dsp_reference_type_label:       { ar: 'نوع المستند المرجعي',                            en: 'Reference document type' },
   dsp_ref_chart:                  { ar: 'الملف / الإضبارة',                               en: 'Chart / file' },
   dsp_ref_card:                   { ar: 'البطاقة',                                        en: 'Card' },
