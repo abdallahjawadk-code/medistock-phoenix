@@ -146,22 +146,30 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
     // covered: package.json, package-lock.json, supabase/, all of
     // src/shared/authz, the rest of src/shared/supabase, the rest of src/app,
     // and the env files.
-    const prohibited = execSync(
-      'git diff --name-only 4dc6d8122dbef51fb7632266f8e92b983559cc8e -- package.json package-lock.json supabase src/shared/supabase src/shared/authz src/app .env .env.local' +
-      ' ":!src/app/AppContext.tsx"' +
-      ' ":!src/app/AuthenticatedApp.tsx"' +
-      ' ":!src/app/__tests__/auth-resilience-context.runtime.test.tsx"' +
-      ' ":!src/app/__tests__/auth-dead-end-screens.runtime.test.tsx"' +
-      ' ":!src/app/__tests__/auth-session-race.runtime.test.tsx"' +
-      ' ":!src/app/__tests__/db-pressure-quick-wins.test.ts"' +
-      ' ":!src/app/screen-continuity.ts"' +
-      ' ":!src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts"' +
-      ' ":!src/shared/supabase/services/auth.service.ts"' +
-      ' ":!src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts"' +
-      ' ":!src/shared/supabase/__tests__/permission-persistence.test.ts"' +
-      ' ":!src/shared/supabase/__tests__/permission-matrix-readiness.test.ts"' +
-      ' ":!src/shared/supabase/__tests__/permission-save-diagnostics.test.ts"' +
-      ' ":!src/shared/authz/__tests__/screen-access.test.ts"' +
+    const A724_GUARD_BASE_SHA = "4dc6d8122dbef51fb7632266f8e92b983559cc8e";
+    const A724_WATCHED_PREFIXES: readonly string[] = ["package.json","package-lock.json","supabase","src/shared/supabase","src/shared/authz","src/app",".env",".env.local"];
+    // Excluded by exact filename only — no wildcard, no directory prefix.
+    // Every entry below is preserved from the original pathspec-based guard,
+    // one per historical phase; see each phase's own comment for why it is
+    // here. Read via a SHORT git command (no per-file pathspec on the
+    // command line) and filtered in JS instead — a Windows cmd.exe
+    // ARG_MAX workaround only; the base SHA, watched prefixes, and
+    // exclusion set are byte-for-byte the same as before this change.
+    const A724_EXCLUDED_FILES: readonly string[] = [
+      'src/app/AppContext.tsx',
+      'src/app/AuthenticatedApp.tsx',
+      'src/app/__tests__/auth-resilience-context.runtime.test.tsx',
+      'src/app/__tests__/auth-dead-end-screens.runtime.test.tsx',
+      'src/app/__tests__/auth-session-race.runtime.test.tsx',
+      'src/app/__tests__/db-pressure-quick-wins.test.ts',
+      'src/app/screen-continuity.ts',
+      'src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts',
+      'src/shared/supabase/services/auth.service.ts',
+      'src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts',
+      'src/shared/supabase/__tests__/permission-persistence.test.ts',
+      'src/shared/supabase/__tests__/permission-matrix-readiness.test.ts',
+      'src/shared/supabase/__tests__/permission-save-diagnostics.test.ts',
+      'src/shared/authz/__tests__/screen-access.test.ts',
       // PHASE-C2-ORG-SCOPE: a still later, separately authorized phase adds a
       // narrow-by-name exclusion (this same "narrow exclusion, never delete"
       // maintenance pattern) to four migration ISOLATION GUARD tests under
@@ -171,21 +179,21 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // list gained five entries. The guard test FILES themselves are
       // test-maintenance, not a migration/schema/RLS change — excluded here
       // by name, same as the auth-resilience test files above.
-      ' ":!supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts"' +
-      ' ":!supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts"' +
-      ' ":!supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts"' +
-      ' ":!supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts"' +
+      'supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts',
+      'supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts',
+      'supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts',
+      'supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts',
       // PHASE-D1A-TRANSFER-PRIVILEGE-LOCKDOWN: a still later, separately
       // authorized phase adds a genuine new migration (154) plus its own
       // dedicated static/dynamic test files and a manifest-registry update —
       // a real, in-scope backend change for THAT phase, excluded here by
       // name for the same reason every entry above is: it has nothing to do
       // with this (much earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/154_phoenix_transfer_corridor_privilege_lockdown.sql"' +
-      ' ":!supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown.dynamic.test.ts"' +
-      ' ":!supabase/migrations/__tests__/helpers/reviewed-migrations.ts"' +
-      ' ":!supabase/migrations/__tests__/reviewed-migration-manifest.test.ts"' +
+      'supabase/migrations/154_phoenix_transfer_corridor_privilege_lockdown.sql',
+      'supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown-static.test.ts',
+      'supabase/migrations/__tests__/154-transfer-corridor-privilege-lockdown.dynamic.test.ts',
+      'supabase/migrations/__tests__/helpers/reviewed-migrations.ts',
+      'supabase/migrations/__tests__/reviewed-migration-manifest.test.ts',
       // PHASE-D1A-BRACE-EXPANSION-AUDIT-FIX: the same D1A phase's own CI
       // corrective commit bumps the pre-existing package.json override
       // (added 2026-07-25, commit 95b89e2, for a prior brace-expansion
@@ -195,8 +203,8 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // here by name for the same reason every entry above is: it has
       // nothing to do with this (much earlier, UI-only) pharmacy-emblem
       // phase.
-      ' ":!package.json"' +
-      ' ":!package-lock.json"' +
+      'package.json',
+      'package-lock.json',
       // PHASE-D1B-1-LIFECYCLE-NOTIFICATION-COMPLETENESS: a still later,
       // separately authorized phase adds a genuine new migration (155) plus
       // its own dedicated static/dynamic test files — a real, in-scope
@@ -205,76 +213,76 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // earlier, UI-only) pharmacy-emblem phase. reviewed-migrations.ts and
       // reviewed-migration-manifest.test.ts are already excluded above (D1A)
       // and need no second entry.
-      ' ":!supabase/migrations/155_phoenix_transfer_send_receive_lifecycle_notifications.sql"' +
-      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications.dynamic.test.ts"' +
+      'supabase/migrations/155_phoenix_transfer_send_receive_lifecycle_notifications.sql',
+      'supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications-static.test.ts',
+      'supabase/migrations/__tests__/155-transfer-send-receive-lifecycle-notifications.dynamic.test.ts',
       // PHASE-D1B-6-OUTLET-RETURN-LINE-IDEMPOTENCY: a still later, separately
       // authorized phase adds a genuine new migration (156) plus its own
       // dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/156_phoenix_outlet_return_line_idempotency.sql"' +
-      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/156-outlet-return-line-idempotency.dynamic.test.ts"' +
+      'supabase/migrations/156_phoenix_outlet_return_line_idempotency.sql',
+      'supabase/migrations/__tests__/156-outlet-return-line-idempotency-static.test.ts',
+      'supabase/migrations/__tests__/156-outlet-return-line-idempotency.dynamic.test.ts',
       // PHASE-D1B-5-OUTLET-RETURN-EXCEPTION-RESOLUTION: a still later,
       // separately authorized phase adds a genuine new migration (157) plus
       // its own dedicated static/dynamic test files — a real, in-scope
       // backend change for THAT phase, excluded here by name for the same
       // reason every entry above is: it has nothing to do with this (much
       // earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/157_phoenix_outlet_return_exception_resolution.sql"' +
-      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/157-outlet-return-exception-resolution.dynamic.test.ts"' +
+      'supabase/migrations/157_phoenix_outlet_return_exception_resolution.sql',
+      'supabase/migrations/__tests__/157-outlet-return-exception-resolution-static.test.ts',
+      'supabase/migrations/__tests__/157-outlet-return-exception-resolution.dynamic.test.ts',
       // 157 also registers its new writer in the shared movement-writer-
       // contract registry/guard — test-maintenance, not new application
       // logic, same as every other __tests__/helpers exclusion above.
-      ' ":!supabase/migrations/__tests__/helpers/reviewed-movement-writers.ts"' +
-      ' ":!supabase/migrations/__tests__/movement-writer-completeness.test.ts"' +
+      'supabase/migrations/__tests__/helpers/reviewed-movement-writers.ts',
+      'supabase/migrations/__tests__/movement-writer-completeness.test.ts',
       // PHASE-D2-1-TRANSACTIONAL-OUTBOX-FOUNDATION: a still later, separately
       // authorized phase adds a genuine new migration (158) plus its own
       // dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/158_phoenix_transactional_outbox_foundation.sql"' +
-      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/158-transactional-outbox-foundation.dynamic.test.ts"' +
+      'supabase/migrations/158_phoenix_transactional_outbox_foundation.sql',
+      'supabase/migrations/__tests__/158-transactional-outbox-foundation-static.test.ts',
+      'supabase/migrations/__tests__/158-transactional-outbox-foundation.dynamic.test.ts',
       // PHASE-D2-2-LIFECYCLE-OUTBOX-PRODUCER: a still later, separately
       // authorized phase adds a genuine new migration (159) plus its own
       // dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/159_phoenix_lifecycle_outbox_producer.sql"' +
-      ' ":!supabase/migrations/__tests__/159-lifecycle-outbox-producer-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/159-lifecycle-outbox-producer.dynamic.test.ts"' +
+      'supabase/migrations/159_phoenix_lifecycle_outbox_producer.sql',
+      'supabase/migrations/__tests__/159-lifecycle-outbox-producer-static.test.ts',
+      'supabase/migrations/__tests__/159-lifecycle-outbox-producer.dynamic.test.ts',
       // PHASE-D2-2-DEMO-PURGE-OUTBOX-COMPATIBILITY: the same D2-2 phase's own
       // corrective migration (160) plus its own dedicated static/dynamic test
       // files — a real, in-scope backend change for THAT phase, excluded here
       // by name for the same reason every entry above is: it has nothing to
       // do with this (much earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/160_phoenix_demo_purge_outbox_compatibility.sql"' +
-      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/160-demo-purge-outbox-compatibility.dynamic.test.ts"' +
+      'supabase/migrations/160_phoenix_demo_purge_outbox_compatibility.sql',
+      'supabase/migrations/__tests__/160-demo-purge-outbox-compatibility-static.test.ts',
+      'supabase/migrations/__tests__/160-demo-purge-outbox-compatibility.dynamic.test.ts',
       // PHASE-D2-3-MOVEMENT-OUTBOX-PRODUCER: a still later, separately
       // authorized phase adds a genuine new migration (161) plus its own
       // dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/161_phoenix_movement_outbox_producer.sql"' +
-      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/161-movement-outbox-producer.dynamic.test.ts"' +
+      'supabase/migrations/161_phoenix_movement_outbox_producer.sql',
+      'supabase/migrations/__tests__/161-movement-outbox-producer-static.test.ts',
+      'supabase/migrations/__tests__/161-movement-outbox-producer.dynamic.test.ts',
       // PHASE-D2-4-STOCKTAKE-AND-EXCEPTION-OUTBOX-PRODUCERS: a still later,
       // separately authorized phase adds a genuine new migration (162) plus
       // its own dedicated static/dynamic test files — a real, in-scope
       // backend change for THAT phase, excluded here by name for the same
       // reason every entry above is: it has nothing to do with this (much
       // earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/162_phoenix_stocktake_and_exception_outbox_producers.sql"' +
-      ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers.dynamic.test.ts"' +
+      'supabase/migrations/162_phoenix_stocktake_and_exception_outbox_producers.sql',
+      'supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers-static.test.ts',
+      'supabase/migrations/__tests__/162-stocktake-and-exception-outbox-producers.dynamic.test.ts',
       // 162-CRLF-PORTABLE-VERIFICATION-HOTFIX: a still later, separately
       // authorized hotfix narrowly edits 162's own already-excluded VERIFY
       // block (CRLF-portability only, no business/event-contract change) and
@@ -282,16 +290,16 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // change for THAT hotfix, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts"' +
+      'supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts',
       // D3-1-OUTBOX-CONSUMER-STATE-FOUNDATION: a still later, separately
       // authorized phase adds a genuine new migration (163) plus its own
       // dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above is: it has nothing to do with this (much earlier,
       // UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/163_phoenix_outbox_consumer_foundation.sql"' +
-      ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/163-outbox-consumer-foundation.dynamic.test.ts"' +
+      'supabase/migrations/163_phoenix_outbox_consumer_foundation.sql',
+      'supabase/migrations/__tests__/163-outbox-consumer-foundation-static.test.ts',
+      'supabase/migrations/__tests__/163-outbox-consumer-foundation.dynamic.test.ts',
       // 163-VERIFICATION-HARDENING-HOTFIX: a still later, separately
       // authorized hotfix narrowly edits 163's own PRECONDITION/VERIFY
       // blocks only (a defective \b LISTEN/NOTIFY regex, and bare-proname
@@ -301,7 +309,7 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // in-scope backend change for THAT hotfix, excluded here by name for
       // the same reason every entry above is: it has nothing to do with
       // this (much earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/migrations/__tests__/163-verification-hardening.dynamic.test.ts"' +
+      'supabase/migrations/__tests__/163-verification-hardening.dynamic.test.ts',
       // D2-4 also narrowly extends the shared PHOENIX_DEMO_V1 seed-lifecycle
       // proof with a regression guard for a real, pre-existing demo-seeder
       // bug discovered while verifying 162 (stocktakeAndCorrection used the
@@ -309,7 +317,7 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // created zero stocktakes rows since the group was written) — test-
       // maintenance for demo tooling, not a migration/schema/RLS change,
       // excluded here by name for the same reason every entry above is.
-      ' ":!supabase/migrations/__tests__/phoenix-demo-seed-lifecycle.dynamic.test.ts"' +
+      'supabase/migrations/__tests__/phoenix-demo-seed-lifecycle.dynamic.test.ts',
       // D3-2A-OUTBOX-DISPATCHER-AUTH-HEALTH-FOUNDATION: a still later,
       // separately authorized phase adds a new Edge Function directory
       // (phoenix-outbox-dispatcher) with its own dedicated unit and static
@@ -317,39 +325,39 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // no migration, no schema, no RLS and no product src/ file, excluded
       // here by name for the same reason every entry above is: it has nothing
       // to do with this (much earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/README.md"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/index.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/auth.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/auth_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/config.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/config_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/handler.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/handler_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/health.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/health_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/request.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/request_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/static_guards_test.ts"' +
+      'supabase/functions/phoenix-outbox-dispatcher/README.md',
+      'supabase/functions/phoenix-outbox-dispatcher/index.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/auth.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/auth_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/config.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/config_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/handler.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/handler_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/health.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/health_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/request.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/request_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/static_guards_test.ts',
       // D3-2B-OUTBOX-DISPATCH-ORCHESTRATION: the next, separately authorized
       // slice of that same phase adds the pure orchestration module, its
       // portable RPC type contract, and its own disposable pg-rig integration
       // test — again no migration, no schema, no RLS and no product src/
       // file, excluded here by name for the same reason.
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-client.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/dispatch.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/dispatch_test.ts"' +
-      ' ":!supabase/migrations/__tests__/163-d3-2b-dispatch-integration.dynamic.test.ts"' +
+      'supabase/functions/phoenix-outbox-dispatcher/lib/rpc-client.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/dispatch.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/dispatch_test.ts',
+      'supabase/migrations/__tests__/163-d3-2b-dispatch-integration.dynamic.test.ts',
       // D3-2C-PRODUCTION-RPC-ADAPTER: the next, separately authorized slice of
       // that same phase adds the unwired, dependency-injected production RPC
       // adapter, its pure runtime result validators, their unit tests, and its
       // own disposable pg-rig result-shape test — again no migration, no
       // schema, no RLS and no product src/ file, excluded here by name for the
       // same reason.
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation_test.ts"' +
-      ' ":!supabase/migrations/__tests__/163-d3-2c-rpc-result-shape.dynamic.test.ts"' +
+      'supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/supabase-rpc-adapter_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/rpc-result-validation_test.ts',
+      'supabase/migrations/__tests__/163-d3-2c-rpc-result-shape.dynamic.test.ts',
       // D3-2D-OUTBOX-DISPATCHER-RUNTIME: the next, separately authorized slice
       // wires that adapter into the Edge Function's request path DISABLED BY
       // DEFAULT, adding the activation/configuration parser, the single
@@ -358,12 +366,12 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // Still no migration, no schema, no RLS and no product src/ file —
       // excluded here by name for the same reason every entry above is: it has
       // nothing to do with this (much earlier, UI-only) pharmacy-emblem phase.
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config_test.ts"' +
-      ' ":!supabase/functions/phoenix-outbox-dispatcher/lib/supabase-client.ts"' +
-      ' ":!supabase/config.toml"' +
+      'supabase/functions/phoenix-outbox-dispatcher/lib/runtime.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/runtime_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/runtime-config_test.ts',
+      'supabase/functions/phoenix-outbox-dispatcher/lib/supabase-client.ts',
+      'supabase/config.toml',
       // STAGE-E-2 FACILITY-IDENTITY-AND-ROUTING-FOUNDATION: a still later,
       // separately authorized phase adds a genuine new migration (164 — the
       // subordinate-facility identity table, the warehouse->facility link, two
@@ -373,9 +381,9 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // entry above is: it has nothing to do with this (much earlier, UI-only)
       // pharmacy-emblem phase. Named exactly, so this guard still catches any
       // OTHER unlisted migration/schema/RLS/service change.
-      ' ":!supabase/migrations/164_phoenix_facility_identity_and_routing_foundation.sql"' +
-      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/164-facility-identity-and-routing-foundation.dynamic.test.ts"' +
+      'supabase/migrations/164_phoenix_facility_identity_and_routing_foundation.sql',
+      'supabase/migrations/__tests__/164-facility-identity-and-routing-foundation-static.test.ts',
+      'supabase/migrations/__tests__/164-facility-identity-and-routing-foundation.dynamic.test.ts',
       // STAGE-E-3 SECTOR-HEALTH-CENTER-SUPPLY-AND-RETURN: the next, separately
       // authorized phase adds migration 165 (two CREATE OR REPLACE endpoint
       // validators, no new schema object) plus its own dedicated static/dynamic
@@ -383,9 +391,9 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // here by name for the same reason every entry above is: it has nothing
       // to do with this (much earlier, UI-only) pharmacy-emblem phase. Named
       // exactly, so this guard still catches any OTHER unlisted change.
-      ' ":!supabase/migrations/165_phoenix_sector_health_center_supply_and_return.sql"' +
-      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/165-sector-health-center-supply-and-return.dynamic.test.ts"' +
+      'supabase/migrations/165_phoenix_sector_health_center_supply_and_return.sql',
+      'supabase/migrations/__tests__/165-sector-health-center-supply-and-return-static.test.ts',
+      'supabase/migrations/__tests__/165-sector-health-center-supply-and-return.dynamic.test.ts',
       // STAGE-E-4 INITIAL-PROVISIONING-INVARIANT: the next, separately
       // authorized phase adds migration 166 (two flag columns on
       // warehouse_dispatches, one CHECK, one partial unique index, one new
@@ -395,9 +403,9 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // entry above is: it has nothing to do with this (much earlier, UI-only)
       // pharmacy-emblem phase. Named exactly, so this guard still catches any
       // OTHER unlisted change.
-      ' ":!supabase/migrations/166_phoenix_initial_provisioning_invariant.sql"' +
-      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/166-initial-provisioning-invariant.dynamic.test.ts"' +
+      'supabase/migrations/166_phoenix_initial_provisioning_invariant.sql',
+      'supabase/migrations/__tests__/166-initial-provisioning-invariant-static.test.ts',
+      'supabase/migrations/__tests__/166-initial-provisioning-invariant.dynamic.test.ts',
       // FIX-DISPATCH-REJECTION-167: authored on its own branch concurrently
       // with 166, migration 167 (reconciles the 'rejected' branch of
       // warehouse_dispatch_lines_decision_chk to the receive writer's
@@ -407,30 +415,124 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // above is: it has nothing to do with this (much earlier, UI-only)
       // pharmacy-emblem phase. Named exactly, so this guard still catches any
       // OTHER unlisted migration/schema/RLS/service change.
-      ' ":!supabase/migrations/167_phoenix_dispatch_line_full_rejection_reconciliation.sql"' +
-      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-backfill.dynamic.test.ts"' +
-      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation.dynamic.test.ts"' +
+      'supabase/migrations/167_phoenix_dispatch_line_full_rejection_reconciliation.sql',
+      'supabase/migrations/__tests__/167-dispatch-line-full-rejection-backfill.dynamic.test.ts',
+      'supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation-static.test.ts',
+      'supabase/migrations/__tests__/167-dispatch-line-full-rejection-reconciliation.dynamic.test.ts',
       // STAGE-E-E5-168: Migration 168 (atomic pharmacy→emergency-outlet
       // replenishment) plus its own dedicated static/dynamic test files — a
       // real, in-scope backend change for THAT phase, excluded here by name
       // for the same reason every entry above exists: this guard freezes an
       // earlier, UI-only pharmacy-emblem phase. Named exactly, so this guard
       // still catches any OTHER unlisted migration/schema/RLS/service change.
-      ' ":!supabase/migrations/168_phoenix_atomic_emergency_outlet_replenishment.sql"' +
-      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment.dynamic.test.ts"' +
+      'supabase/migrations/168_phoenix_atomic_emergency_outlet_replenishment.sql',
+      'supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment-static.test.ts',
+      'supabase/migrations/__tests__/168-atomic-emergency-outlet-replenishment.dynamic.test.ts',
       // STAGE-E-E6-169: Migration 169 (outlet-replenishment reversal) plus its
       // own dedicated static/dynamic test files — a real, in-scope backend
       // change for THAT phase, excluded here by name for the same reason
       // every entry above exists: this guard freezes an earlier, UI-only
       // pharmacy-emblem phase. Named exactly, so this guard still catches any
       // OTHER unlisted migration/schema/RLS/service change.
-      ' ":!supabase/migrations/169_phoenix_outlet_replenishment_reversal.sql"' +
-      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal-static.test.ts"' +
-      ' ":!supabase/migrations/__tests__/169-outlet-replenishment-reversal.dynamic.test.ts"',
+      'supabase/migrations/169_phoenix_outlet_replenishment_reversal.sql',
+      'supabase/migrations/__tests__/169-outlet-replenishment-reversal-static.test.ts',
+      'supabase/migrations/__tests__/169-outlet-replenishment-reversal.dynamic.test.ts',
+      // STAGE-E-E7-1-170: Migration 170 (organization-class NOT NULL +
+      // immutability, warehouse-facility assignment RPC + hard guard) plus its
+      // own dedicated static/dynamic test files — a real, in-scope backend
+      // change for THAT phase, excluded here by name for the same reason
+      // every entry above exists: this guard freezes an earlier, UI-only
+      // pharmacy-emblem phase. Named exactly, so this guard still catches any
+      // OTHER unlisted migration/schema/RLS/service change.
+      'supabase/migrations/170_phoenix_organization_class_and_warehouse_facility_assignment.sql',
+      'supabase/migrations/__tests__/170-organization-class-and-warehouse-facility-static.test.ts',
+      'supabase/migrations/__tests__/170-organization-class-and-warehouse-facility.dynamic.test.ts',
+      // STAGE-E-E7-1-170-COMPAT: a follow-up compatibility correction, once
+      // Migration 170 made organizations.institution_class NOT NULL, updates
+      // these pre-existing predecessor fixture-test files (all pre-dating 164)
+      // to specify institution_class on the organizations their own fixtures
+      // create — no assertion or business behavior changes, excluded here by
+      // name for the same reason every entry above exists: this guard freezes
+      // an earlier, UI-only pharmacy-emblem phase. Named exactly, so this
+      // guard still catches any OTHER unlisted migration/schema/RLS/service
+      // change.
+      'supabase/migrations/__tests__/115-central-intake-catalog-lockdown.dynamic.test.ts',
+      'supabase/migrations/__tests__/117-subpurchase-duplicate-candidates.dynamic.test.ts',
+      'supabase/migrations/__tests__/119-report-snapshots-and-executive-overview.dynamic.test.ts',
+      'supabase/migrations/__tests__/120-supply-sources-detail.dynamic.test.ts',
+      'supabase/migrations/__tests__/141-demo-immutable-exemption.dynamic.test.ts',
+      'supabase/migrations/__tests__/141-demo-org-blocked-parent.dynamic.test.ts',
+      'supabase/migrations/__tests__/142-demo-profile-detach.dynamic.test.ts',
+      'supabase/migrations/__tests__/145-demo-organization-watermark.dynamic.test.ts',
+      // STAGE-E-E7-1-171: Migration 171 (organization_kind discriminator —
+      // care_institution | pharmacy_department_authority — separate from
+      // institution_class) plus its own dedicated static/dynamic test files —
+      // a real, in-scope backend change for THAT phase, excluded here by
+      // name for the same reason every entry above exists: this guard
+      // freezes an earlier, UI-only pharmacy-emblem phase. Named exactly, so
+      // this guard still catches any OTHER unlisted migration/schema/RLS/
+      // service change.
+      'supabase/migrations/171_phoenix_organization_kind_pharmacy_department_authority.sql',
+      'supabase/migrations/__tests__/171-organization-kind-pharmacy-department-authority-static.test.ts',
+      'supabase/migrations/__tests__/171-organization-kind-pharmacy-department-authority.dynamic.test.ts',
+      // STAGE-E-E7-2: the application-wiring phase for Stage E. It adds NO
+      // migration; it wires the already-reviewed 164/166/168/169/170/171 RPCs
+      // into real services and UI. The two service files below are the only
+      // watched-prefix production files it touches — organizations.service.ts
+      // (the writer now sends the classification pair it previously omitted,
+      // a genuine regression fix) and warehouses.service.ts (distribution
+      // points now carry Migration 164's clinical_location_kind, without which
+      // no emergency outlet could ever be replenished). The dynamic test file
+      // is E7-2's own proof against a real database. Named exactly, so this
+      // guard still catches any OTHER unlisted migration/schema/RLS/service
+      // change.
+      'src/shared/supabase/services/organizations.service.ts',
+      'src/shared/supabase/services/warehouses.service.ts',
+      'supabase/migrations/__tests__/172-e7-2-stage-e-wiring.dynamic.test.ts',
+      // E7-2's behavioural test for the organization writer. It lives beside
+      // the service it covers, which puts it under the watched
+      // src/shared/supabase prefix. `git diff` cannot see an UNTRACKED file,
+      // so this one stayed invisible to the guard locally and only surfaced
+      // once committed — CI caught it, which is the guard working correctly.
+      'src/shared/supabase/services/__tests__/organization-classification-writer.test.ts',
+    ];
+
+    const changed = execSync(
+      `git diff --name-only ${A724_GUARD_BASE_SHA}`,
       { cwd: ROOT, encoding: 'utf8' },
+    ).split('\n').map((l) => l.trim()).filter(Boolean);
+    const prohibited = changed.filter((f) =>
+      A724_WATCHED_PREFIXES.some((p) => f === p || f.startsWith(p + '/'))
+      && !A724_EXCLUDED_FILES.includes(f),
     );
-    expect(prohibited.trim()).toBe('');
+    expect(prohibited).toEqual([]);
+  });
+
+  it('the rewritten (JS-side-filtered) guard mechanism still catches an unlisted file', () => {
+    // STAGE-E-E7-1-171: the guard above was rewritten from a single long
+    // shell pathspec to a short git command plus JS-side filtering, purely
+    // to work around Windows cmd.exe's ~8191-character command-line limit
+    // (CI runs on Ubuntu, where this was never a problem, but the guard
+    // should also be runnable locally on Windows). This test proves the
+    // rewritten filtering MECHANISM itself — prefix match minus exact-name
+    // exclusion — still fails closed on a file that matches a watched
+    // prefix and is NOT in the exclusion list, using the exact same
+    // algorithm shape as the real check above, independent of real git
+    // state.
+    const prefixes = ['supabase', 'src/app'];
+    const excluded = ['supabase/migrations/170_real_and_authorized.sql'];
+    const filterProhibited = (changed: string[]) => changed.filter((f) =>
+      prefixes.some((p) => f === p || f.startsWith(p + '/'))
+      && !excluded.includes(f),
+    );
+
+    expect(filterProhibited([
+      'supabase/migrations/170_real_and_authorized.sql', // excluded by name
+      'src/shared/lib/unrelated.ts', // not under a watched prefix
+    ])).toEqual([]);
+
+    expect(filterProhibited([
+      'supabase/migrations/999_unlisted_sneaky_migration.sql', // watched, NOT excluded
+    ])).toEqual(['supabase/migrations/999_unlisted_sneaky_migration.sql']);
   });
 });

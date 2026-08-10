@@ -29,9 +29,9 @@ run('145 demo organization watermark — phoenix_is_demo_organization (dynamic)'
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${DEMO_ORG}','Demo Org','منظمة تجريبية','demo-org-145'),
-        ('${REAL_ORG}','Real Org','منظمة حقيقية','real-org-145')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ('${DEMO_ORG}','Demo Org','منظمة تجريبية','demo-org-145','hospital'),
+        ('${REAL_ORG}','Real Org','منظمة حقيقية','real-org-145','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO auth.users (id,email) VALUES ('${SA}','sa-145@rig')
         ON CONFLICT (id) DO NOTHING;`);

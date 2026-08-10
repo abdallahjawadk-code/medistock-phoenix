@@ -538,12 +538,34 @@ describe('no client-side document-number sequence exists', () => {
     // a read-only reversible-batches helper, and the atomic reversal RPC. It
     // reuses returned_quantity (071) as the reversal cap and creates no
     // document numbering, sequence, counter, or max()+1 of any kind.
-    // Ceiling moves to 170.
-    const beyond = migrations.filter(f => /^(170|1[7-9]\d|[2-9]\d\d)_/.test(f));
+    // 170 (ORGANIZATION-CLASS-AND-WAREHOUSE-FACILITY-ASSIGNMENT-170, Stage E ·
+    // E7-1) adds ONE NOT NULL column alteration (organizations.institution_class),
+    // two triggers, and two new functions (an immutability guard on
+    // organizations, a hard operational-dependency guard + assignment RPC on
+    // warehouses.facility_id). None of it is a document/movement number: the
+    // trigger functions inspect OLD/NEW column values and the RPC forwards a
+    // caller-supplied facility_id verbatim. No sequence, no counter, no
+    // max()+1, and no generated numeric identity of any kind is introduced.
+    // Ceiling moves to 171.
+    // 171 (ORGANIZATION-KIND-AND-PHARMACY-DEPARTMENT-AUTHORITY-171, Stage E ·
+    // E7-1 follow-up) adds ONE new column (organizations.organization_kind,
+    // a 2-value discriminator), relaxes institution_class back to nullable,
+    // two new CHECK constraints, and three new trigger functions (an
+    // immutability guard on organization_kind, a one-way warehouse-ownership
+    // guard, and a distribution_point-ownership guard). None of it is a
+    // document/movement number: organization_kind is a fixed 2-value
+    // enum-like classifier (care_institution | pharmacy_department_authority),
+    // not an identifier; every trigger inspects OLD/NEW column values or
+    // performs an EXISTS check, never allocates one. No sequence, no counter,
+    // no max()+1, and no generated numeric identity of any kind is
+    // introduced. Ceiling moves to 172.
+    const beyond = migrations.filter(f => /^(17[2-9]|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('168_phoenix_atomic_emergency_outlet_replenishment.sql');
     expect(migrations).toContain('169_phoenix_outlet_replenishment_reversal.sql');
+    expect(migrations).toContain('170_phoenix_organization_class_and_warehouse_facility_assignment.sql');
+    expect(migrations).toContain('171_phoenix_organization_kind_pharmacy_department_authority.sql');
     expect(migrations).toContain('149_phoenix_inventory_suggestion_lineage_commitments.sql');
     expect(migrations).toContain('150_phoenix_material_identity_fefo_provenance_hardening.sql');
     expect(migrations).toContain('151_phoenix_suggestion_route_policy_gates.sql');

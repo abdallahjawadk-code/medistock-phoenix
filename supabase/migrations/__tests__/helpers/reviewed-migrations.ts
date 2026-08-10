@@ -241,8 +241,18 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // forward corridor.
   '168_phoenix_atomic_emergency_outlet_replenishment.sql',
   // 169 (OUTLET-REPLENISHMENT-REVERSAL) — Stage E / E-6. Backend-only reversal
-  // corridor. The next unreviewed number is 170.
+  // corridor.
   '169_phoenix_outlet_replenishment_reversal.sql',
+  // 170 (ORGANIZATION-CLASS-AND-WAREHOUSE-FACILITY-ASSIGNMENT) — Stage E /
+  // E7-1. Backend/admin identity hardening: institution_class NOT NULL +
+  // immutable, warehouse facility-assignment RPC + hard trigger guard.
+  '170_phoenix_organization_class_and_warehouse_facility_assignment.sql',
+  // 171 (ORGANIZATION-KIND-AND-PHARMACY-DEPARTMENT-AUTHORITY) — Stage E /
+  // E7-1 follow-up. Separates the organizational-actor discriminator
+  // (organization_kind: care_institution | pharmacy_department_authority)
+  // from the care-delivery classification (institution_class, unchanged for
+  // care_institution rows). The next unreviewed number is 172.
+  '171_phoenix_organization_kind_pharmacy_department_authority.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */

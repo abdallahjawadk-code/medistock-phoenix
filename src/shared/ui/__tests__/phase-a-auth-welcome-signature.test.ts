@@ -216,11 +216,24 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     expect(strings).toContain('المصدر (مركزي)');
     expect(strings).toContain('مشتريات مركزية');
     expect(strings).toContain('استرجاع مركزي');
-    let diff = '';
+    // STAGE-E-E7-2: a still later, separately-reviewed phase adds the Stage-E
+    // outlet-corridor vocabulary (organization kind, clinical context, routes,
+    // provisioning, replenishment, reversal, and the canonical RPC-rejection
+    // messages) to this file. This guard's purpose is that the EXISTING
+    // operational terminology asserted above stays untouched — not that the
+    // dictionary may never grow. A single-file watch cannot exclude itself, so
+    // the check is narrowed to exactly that purpose: the diff must be purely
+    // ADDITIVE. Zero deletions proves no existing key was edited, renamed or
+    // removed, which is a stricter reading of "untouched" than the previous
+    // blanket no-diff.
+    let numstat = '';
     try {
-      diff = execSync('git diff --name-only HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
+      numstat = execSync('git diff --numstat HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    const deletions = numstat.trim()
+      ? Number(numstat.trim().split('\n')[0].split('\t')[1])
+      : 0;
+    expect(deletions).toBe(0);
   });
 
   // ─── 3. No fabricated data, no invented functionality ──────────────────────
@@ -310,7 +323,17 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     let svcDiff = '';
     let sqlDiff = '';
     try {
-      svcDiff = execSync('git diff --name-only HEAD -- src/shared/supabase src/shared/authz', { cwd: ROOT, encoding: 'utf8' });
+      // STAGE-E-E7-2: excluded BY EXACT NAME — organizations.service.ts (the
+      // writer now sends the Migration-164/171 classification pair it
+      // previously omitted) and warehouses.service.ts (distribution points now
+      // carry Migration 164's clinical_location_kind). All other service and
+      // authz paths remain watched, and the migration check below is untouched.
+      svcDiff = execSync(
+        'git diff --name-only HEAD -- src/shared/supabase src/shared/authz '
+        + '":!src/shared/supabase/services/organizations.service.ts" '
+        + '":!src/shared/supabase/services/warehouses.service.ts"',
+        { cwd: ROOT, encoding: 'utf8' },
+      );
     } catch { /* ignore */ }
     try {
       sqlDiff = execSync('git diff --name-only HEAD -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });

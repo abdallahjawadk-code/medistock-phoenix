@@ -55,9 +55,9 @@ run('119 — report snapshots and executive overview (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG}','Reports Org','مؤسسة التقارير','rp-119'),
-        ('${ORG_OTHER}','Other Org','أخرى','rp-119-o')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ('${ORG}','Reports Org','مؤسسة التقارير','rp-119','hospital'),
+        ('${ORG_OTHER}','Other Org','أخرى','rp-119-o','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH}','${ORG}','Central WH','مذخر مركزي','active','central','rp-119-w')

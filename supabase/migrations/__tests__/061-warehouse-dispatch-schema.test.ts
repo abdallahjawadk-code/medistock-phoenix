@@ -1146,6 +1146,23 @@ describe('15. isolation from out-of-scope domains', () => {
         // in decision-intelligence.service.ts (new type/function, new i18n
         // keys in strings.ts) — excluded here.
         '":(exclude)src/features/reports/decision-intelligence.service.ts" ' +
+        // STAGE-E-E7-1-171: a still later, separately-reviewed phase
+        // (Migration 171, organization_kind discriminator) adds a new
+        // exported type/vocabulary and doc comment to
+        // src/shared/lib/institution-hierarchy.ts — a pure types/vocabulary
+        // module with no database access, no service function, and no
+        // eligibility rule (per its own header) — never a schema, RLS, or
+        // workflow change — excluded here.
+        '":(exclude)src/shared/lib/institution-hierarchy.ts" ' +
+        // STAGE-E-E7-2: the Stage-E application-wiring phase. It adds no
+        // migration; it wires already-reviewed RPCs into services and UI.
+        // organizations.service.ts now sends the Migration-164/171
+        // classification pair it previously omitted (a real regression fix),
+        // and warehouses.service.ts now carries Migration 164's
+        // clinical_location_kind on distribution points. Excluded by exact
+        // name; every other product path stays watched.
+        '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
+        '":(exclude)src/shared/supabase/services/warehouses.service.ts" ":(exclude)src/features/outlet/EmergencyReplenishmentTab.tsx" ":(exclude)src/features/outlet/InitialProvisioningLauncher.tsx" ":(exclude)src/features/institutions/FacilityManagementPanel.tsx" ":(exclude)src/features/institutions/ReplenishmentRouteManagementPanel.tsx" ":(exclude)src/features/institutions/WarehouseFacilityAssignmentPanel.tsx" ' +
         '":(exclude)src/shared/i18n/strings.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });

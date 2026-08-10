@@ -15,8 +15,8 @@
  */
 import {
   DATASET_KEY, demoUuid, demoRequestId, demoDocRef, demoInt, demoPick,
-  demoBatchProfile, institutionName, outletName, materialName, beneficiary,
-  intakeSupply, DEFAULT_SCALE,
+  demoBatchProfile, institutionName, institutionClass, outletName, materialName,
+  beneficiary, intakeSupply, DEFAULT_SCALE,
 } from './dataset.mjs';
 import { snapshotIds, registerNewRows } from './ownership.mjs';
 import {
@@ -73,17 +73,30 @@ export async function seedDemoDataset(io, superAdminId, scaleOverride = {}) {
   for (let i = 0; i < scale.institutions; i++) {
     const [nameAr, nameEn] = institutionName(i);
     const id = demoUuid(`org:${i}`);
-    orgs.push({ id, nameAr, nameEn, index: i });
+    orgs.push({ id, nameAr, nameEn, index: i, institutionClass: institutionClass(i) });
   }
   // A second organization set is not needed: cross-org isolation is proven
   // between org[0] and org[1], both demo-owned, so no real org is involved.
 
   await io.asAdmin(async (c) => {
+    // This seeder is shared by dynamic tests that build the rig to varying
+    // migration checkpoints — some (161, 162's outbox-producer suites) stop
+    // well before Migration 164 introduces organizations.institution_class.
+    // Detected at runtime rather than assumed, so this file keeps working
+    // unmodified against every checkpoint that has ever called it.
+    const { rowCount: hasInstitutionClass } = await c.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='organizations' AND column_name='institution_class'`);
     for (const o of orgs) {
-      const r = await c.query(
-        `INSERT INTO organizations (id,name,name_ar,code)
-         VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING RETURNING id`,
-        [o.id, o.nameEn, o.nameAr, `demo-org-${o.index}`]);
+      const r = hasInstitutionClass
+        ? await c.query(
+            `INSERT INTO organizations (id,name,name_ar,code,institution_class)
+             VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING RETURNING id`,
+            [o.id, o.nameEn, o.nameAr, `demo-org-${o.index}`, o.institutionClass])
+        : await c.query(
+            `INSERT INTO organizations (id,name,name_ar,code)
+             VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING RETURNING id`,
+            [o.id, o.nameEn, o.nameAr, `demo-org-${o.index}`]);
       if (r.rowCount > 0) counts.organizations++; else counts.skipped_existing++;
     }
   });

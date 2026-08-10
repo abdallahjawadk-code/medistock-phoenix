@@ -69,8 +69,8 @@ run('PHOENIX_DEMO_V1 seed/verify/purge lifecycle (dynamic)', () => {
     await rig.asAdmin(async (c: any) => {
       // A REAL organization and a REAL super_admin that the demo lifecycle
       // must never touch. This is the stand-in for the production owner.
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code)
-        VALUES ('${REAL_ORG}','Real Production Org','مؤسسة حقيقية','real-prod-org')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class)
+        VALUES ('${REAL_ORG}','Real Production Org','مؤسسة حقيقية','real-prod-org','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO auth.users (id,email) VALUES ('${REAL_SA}','real-owner@rig')
         ON CONFLICT (id) DO NOTHING;`);

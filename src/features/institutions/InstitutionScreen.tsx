@@ -8,6 +8,12 @@ import { canManageOrg, canAssignRole, ASSIGNABLE_ROLES_BY_ACTOR } from '@/shared
 import type { Role } from '@/shared/lib/types';
 import { roleLabelKey } from '@/shared/lib/roles';
 import {
+  isInstitutionClass,
+  type ClinicalLocationKind,
+  type InstitutionClass,
+  type OrganizationKind,
+} from '@/shared/lib/institution-hierarchy';
+import {
   getOrganizations,
   getOrganization,
   createOrganization,
@@ -33,6 +39,10 @@ import {
   getQrForPoint,
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
+import { listOrganizationFacilities } from './facilities.service';
+import { FacilityManagementPanel } from './FacilityManagementPanel';
+import { WarehouseFacilityAssignmentPanel } from './WarehouseFacilityAssignmentPanel';
+import { ReplenishmentRouteManagementPanel } from './ReplenishmentRouteManagementPanel';
 import {
   archiveEntity,
   getEntityPurgeImpact,
@@ -311,18 +321,40 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * STAGE-E-E7-2: the classification pair. `organization_kind` (Migration 171)
+   * decides whether `institution_class` (Migration 164) applies at all — a
+   * pharmacy_department_authority must carry NULL, a care institution must
+   * carry one of the three real classes. Neither is guessed, and the kind is
+   * never left to the column DEFAULT.
+   */
+  const [orgKind, setOrgKind] = useState<OrganizationKind>('care_institution');
+  const [orgClass, setOrgClass] = useState<InstitutionClass | ''>('');
 
-  const canSubmit = name.trim() && nameAr.trim() && code.trim();
+  const isAuthority = orgKind === 'pharmacy_department_authority';
+  const classSatisfied = isAuthority || isInstitutionClass(orgClass);
+  const canSubmit = Boolean(name.trim() && nameAr.trim() && code.trim() && classSatisfied);
 
   async function onSubmit() {
-    if (!canSubmit) { setError(t('inst_required', lang)); return; }
+    if (!name.trim() || !nameAr.trim() || !code.trim()) {
+      setError(t('inst_required', lang)); return;
+    }
+    if (!classSatisfied) { setError(t('org_class_required', lang)); return; }
     setBusy(true);
     setError(null);
     try {
-      await createOrganization({
+      const base = {
         name: name.trim(), name_ar: nameAr.trim(), code: code.trim().toLowerCase(),
         city: city.trim() || undefined, contact_email: email.trim() || undefined,
-      });
+      };
+      // The discriminated union keeps the two legal shapes apart: an authority
+      // is written with institution_class NULL, a care institution with the
+      // operator's explicit class. No sentinel, no silent default.
+      await createOrganization(
+        isAuthority
+          ? { ...base, organizationKind: 'pharmacy_department_authority' }
+          : { ...base, organizationKind: 'care_institution', institutionClass: orgClass as InstitutionClass },
+      );
       onCreated();
     } catch (e) {
       // Developer-safe console log; user sees a friendly message only (mirrors useAsync).
@@ -349,6 +381,52 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('inst_code', lang)} *</label>
           <input type="text" value={code} onChange={e => setCode(e.target.value)} style={{ ...fieldStyle, fontFamily: 'monospace' }} dir="ltr" placeholder="babil-main" />
         </div>
+        {/* STAGE-E-E7-2: organization_kind (171) then, only when it applies,
+            institution_class (164). The class selector is not merely disabled
+            for an authority — it is absent, because NULL is the only legal
+            value there and offering a control implies a choice that does not
+            exist. */}
+        <div>
+          <label htmlFor="org-kind-select" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('org_kind', lang)} *</label>
+          <select
+            id="org-kind-select"
+            value={orgKind}
+            onChange={e => {
+              const next = e.target.value as OrganizationKind;
+              setOrgKind(next);
+              // Leaving care_institution drops any class already chosen, so a
+              // stale value can never be submitted for an authority.
+              if (next !== 'care_institution') setOrgClass('');
+            }}
+            style={fieldStyle}
+            dir="auto"
+          >
+            <option value="care_institution">{t('org_kind_care', lang)}</option>
+            <option value="pharmacy_department_authority">{t('org_kind_authority', lang)}</option>
+          </select>
+          {isAuthority && (
+            <p style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '6px', lineHeight: 1.5 }}>
+              {t('org_kind_authority_hint', lang)}
+            </p>
+          )}
+        </div>
+        {!isAuthority && (
+          <div>
+            <label htmlFor="org-class-select" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('org_class', lang)} *</label>
+            <select
+              id="org-class-select"
+              value={orgClass}
+              onChange={e => setOrgClass(e.target.value as InstitutionClass | '')}
+              style={fieldStyle}
+              dir="auto"
+            >
+              <option value="">{t('org_class_required', lang)}</option>
+              <option value="hospital">{t('org_class_hospital', lang)}</option>
+              <option value="specialized_center">{t('org_class_specialized', lang)}</option>
+              <option value="health_sector">{t('org_class_health_sector', lang)}</option>
+            </select>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('inst_city', lang)}</label>
@@ -418,6 +496,20 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
 
   const o = org.data;
   const ptCount = points.data?.length ?? 0;
+
+  // STAGE-E-E7-2: facility management is legal ONLY for a health_sector
+  // organization — Migration 164's own composite FK (of_parent_class_fk)
+  // structurally forbids any other institution_class, and a
+  // pharmacy_department_authority (institution_class always NULL, Migration
+  // 171) can never match it either. Gated here so the panel is never even
+  // mounted for an organization the database will always refuse.
+  const isHealthSector = o?.organizationKind === 'care_institution' && o?.institutionClass === 'health_sector';
+  const canManageFacilities = actorPermissions.has('organization_facilities.manage');
+  const canManageRoutes = actorPermissions.has('replenishment_routes.manage');
+  const facilities = useAsync(
+    () => isHealthSector ? listOrganizationFacilities(orgId) : Promise.resolve([]),
+    [orgId, isHealthSector],
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -521,6 +613,25 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         )}
       </div>
 
+      {/* STAGE-E-E7-2: facility management + warehouse-facility assignment —
+          health_sector organizations only (see isHealthSector above). */}
+      {isHealthSector && (
+        <div>
+          <FacilityManagementPanel orgId={orgId} lang={lang} canManage={canManageFacilities} />
+          {canManageFacilities && operationalWarehouses.length > 0 && (
+            <div style={{ marginTop: '10px' }}>
+              <WarehouseFacilityAssignmentPanel
+                warehouses={operationalWarehouses}
+                facilities={facilities.data ?? []}
+                lang={lang}
+                canManage={canManageFacilities}
+                onAssigned={() => { warehouses.reload(); }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Ports section */}
       {canViewPorts ? (
         <PortSection
@@ -548,6 +659,18 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
         <div style={{ fontSize: '12px', color: 'var(--t2)', padding: '12px', background: 'var(--s2)', borderRadius: 'var(--r2)' }}>
           {t('perm_no_view_ports', lang)}
         </div>
+      )}
+
+      {/* STAGE-E-E7-2: replenishment route management. Not gated to
+          health_sector — hospital/specialized_center routes (Shape I) are
+          equally legal; the RPC itself enforces both shapes. */}
+      {canViewPorts && (
+        <ReplenishmentRouteManagementPanel
+          orgId={orgId}
+          points={points.data ?? []}
+          lang={lang}
+          canManage={canManageRoutes}
+        />
       )}
 
       {/* Organization cleanup wizard */}
@@ -879,6 +1002,13 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
   const [portName, setPortName] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [pointType, setPointType] = useState<ApprovedPointType>('pharmacy');
+  /**
+   * STAGE-E-E7-2: an outlet's clinical context (Migration 164). Stage-E
+   * replenishment refuses a destination whose context is null
+   * (`destination_clinical_location_kind_required`), so it is collected at
+   * creation rather than discovered as a failure later.
+   */
+  const [clinicalKind, setClinicalKind] = useState<ClinicalLocationKind | ''>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -908,6 +1038,7 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
         name:      portName.trim(),
         name_ar:   portName.trim(),
         pointType,
+        clinicalLocationKind: clinicalKind === '' ? null : clinicalKind,
       });
       try {
         await createQrForTarget('distribution_point', pt.id, pt.name);
@@ -985,6 +1116,28 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
             ))}
           </select>
         </div>
+        {/* STAGE-E-E7-2: clinical context. Offered for every outlet type, but
+            called out as required for the emergency ones, because Migration
+            168 refuses a replenishment whose destination context is null. */}
+        <div>
+          <label htmlFor="port-clinical-kind" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+            {t('port_clinical_kind', lang)}{pointType !== 'pharmacy' ? ' *' : ''}
+          </label>
+          <select
+            id="port-clinical-kind"
+            value={clinicalKind}
+            onChange={e => setClinicalKind(e.target.value as ClinicalLocationKind | '')}
+            style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
+            dir="auto"
+          >
+            <option value="">—</option>
+            <option value="emergency">{t('port_clinical_emergency', lang)}</option>
+            <option value="non_emergency">{t('port_clinical_non_emergency', lang)}</option>
+          </select>
+          <p style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '5px', lineHeight: 1.5 }}>
+            {t('port_clinical_hint', lang)}
+          </p>
+        </div>
         {error && <p style={{ fontSize: '12px', color: 'var(--err)' }}>{error}</p>}
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <PhoenixButton variant="ghost" size="sm" onClick={onCancel}>{t('cancel', lang)}</PhoenixButton>
@@ -1038,6 +1191,11 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
   const [editPointType, setEditPointType] = useState<ApprovedPointType>(
     isApprovedPointType(point.pointType) ? point.pointType : 'pharmacy',
   );
+  /** STAGE-E-E7-2: lets an existing outlet gain (or correct) the clinical
+   *  context Stage-E replenishment requires — outlets created before E7-2 all
+   *  carry null, and would otherwise be permanently ineligible. */
+  const [editClinicalKind, setEditClinicalKind] =
+    useState<ClinicalLocationKind | ''>(point.clinicalLocationKind ?? '');
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -1046,6 +1204,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
     setEditNameAr(point.name_ar);
     setEditWarehouseId(point.warehouseId ?? '');
     setEditPointType(isApprovedPointType(point.pointType) ? point.pointType : 'pharmacy');
+    setEditClinicalKind(point.clinicalLocationKind ?? '');
     setEditError(null);
     setConfirmAction('edit');
   }
@@ -1067,6 +1226,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
         name_ar: editNameAr.trim(),
         warehouseId: editWarehouseId,
         pointType: editPointType,
+        clinicalLocationKind: editClinicalKind === '' ? null : editClinicalKind,
       });
       setConfirmAction(null);
       onToast(t('port_updated', lang));
@@ -1393,6 +1553,24 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
             </label>
             <select value={editPointType} onChange={e => setEditPointType(e.target.value as ApprovedPointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
               {APPROVED_POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+            </select>
+          </div>
+          {/* STAGE-E-E7-2: outlets created before E7-2 carry a null clinical
+              context and are ineligible for replenishment until it is set. */}
+          <div>
+            <label htmlFor={`port-clinical-${point.id}`} style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
+              {t('port_clinical_kind', lang)}
+            </label>
+            <select
+              id={`port-clinical-${point.id}`}
+              value={editClinicalKind}
+              onChange={e => setEditClinicalKind(e.target.value as ClinicalLocationKind | '')}
+              style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
+              dir="auto"
+            >
+              <option value="">—</option>
+              <option value="emergency">{t('port_clinical_emergency', lang)}</option>
+              <option value="non_emergency">{t('port_clinical_non_emergency', lang)}</option>
             </select>
           </div>
         </div>

@@ -215,8 +215,9 @@ run('167 · dispatch-line full-rejection reconciliation (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG_CENTRAL}','C167','مركز','p167-c'),('${ORG_INST}','I167','مؤسسة','p167-i')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
+        ('${ORG_CENTRAL}','C167','مركز','p167-c','pharmacy_department_authority',NULL),
+        ('${ORG_INST}','I167','مؤسسة','p167-i','care_institution','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_CENTRAL}','${ORG_CENTRAL}','CWH167','مخزنC','active','central','p167-wc'),

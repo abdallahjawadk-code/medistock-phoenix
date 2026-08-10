@@ -53,7 +53,7 @@ run('141 demo immutable exemption — adversarial (dynamic)', () => {
     // recreate it as well as re-register it. Each test owns its preconditions.
     await rig.asAdmin(async (c: any) => {
       await c.query(
-        `INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,'Demo','تجريبي','p141-demo')
+        `INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES ($1,'Demo','تجريبي','p141-demo','hospital')
          ON CONFLICT (id) DO NOTHING`, [DEMO_ORG]);
     });
     await rig.asUser(SA, async (c: any) => { await register(c, 'organizations', DEMO_ORG); }, { commit: true });
@@ -77,8 +77,8 @@ run('141 demo immutable exemption — adversarial (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ($1,'Real','حقيقية','p141-real'),($2,'Demo','تجريبي','p141-demo'),($3,'Other','أخرى','p141-other')
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ($1,'Real','حقيقية','p141-real','hospital'),($2,'Demo','تجريبي','p141-demo','hospital'),($3,'Other','أخرى','p141-other','hospital')
         ON CONFLICT (id) DO NOTHING`, [REAL_ORG, DEMO_ORG, OTHER_ORG]);
       await c.query(`INSERT INTO auth.users (id,email) VALUES
         ($1,'p141-sa@rig'),($2,'p141-ia@rig'),($3,'p141-oo@rig') ON CONFLICT (id) DO NOTHING`,

@@ -58,6 +58,44 @@ const WH_B = randomUUID();
 const DP_A = randomUUID();
 const DP_B = randomUUID();
 
+// STAGE-E-E7-2: fixtures for the facility/route/initial-provisioning/
+// replenishment/reversal lifecycle. ORG_A (hospital) already exists above —
+// Shape I of Migrations 164/168 applies: rescue_cart requires a hospital and
+// an emergency clinical context, with NO facility layer. CART_A is a second,
+// dedicated emergency outlet under WH_A so the replenishment/reversal cycle
+// never touches DP_A's own dispense-flow stock from section 1 above.
+const CART_A = randomUUID();
+const IP_MATERIAL_STOCK_ID = randomUUID();
+
+// STAGE-E-E7-2: the routine-replenishment source lot, and why it cannot be one
+// of the plain outlet_stock lots seeded further down.
+//
+// Migration 150 hardened outlet FEFO so a batch is only a candidate when it can
+// PROVE how it arrived: _phoenix_inventory_fefo_batches_exact_v1 inner-joins
+// warehouse_dispatch_lines (status accepted / accepted_with_difference) and the
+// matching dispatch_receive movement, and derives transferable_quantity from
+// received minus returned. Stock inserted straight into outlet_stock carries no
+// such provenance, so it is correctly invisible to FEFO — dispensable, but
+// never transferable onward. Migration 168 revalidates through that same
+// canonical helper before replenishing, by design, since there is to be no
+// second FEFO implementation.
+//
+// This lot therefore reaches DP_A the only legitimate way: a real warehouse
+// dispatch, really sent and really received — the same path the Phase 8
+// provenance fixture below already uses.
+const REPL_SOURCE_WH_STOCK_ID = randomUUID();
+const REPL_SOURCE_MATERIAL = 'E2E Replenishment Source Material';
+const REPL_SOURCE_NATIONAL_CODE = 'E2E-REPL-SRC';
+
+// A pharmacy_department_authority organization + its central warehouse
+// (Migration 171) — seeded directly to validate the organization model
+// exists and is queryable; the E7-2 acceptance run additionally creates a
+// SECOND authority organization live through the real AddOrgForm (proving
+// the createOrganization() regression fix), so this one is a stable fixture
+// the acceptance script can read back without depending on that live step.
+const ORG_C_AUTHORITY = randomUUID();
+const WH_C_CENTRAL = randomUUID();
+
 const FIXED_PASSWORD = 'E2eAcceptance!2026';
 
 const USERS = {
@@ -88,19 +126,24 @@ async function main() {
   const client = await pool.connect();
   try {
     console.log('Seeding organizations/warehouses/outlets...');
+    // STAGE-E-E7-2: organization_kind is written explicitly (Migration 171) —
+    // 'care_institution' here, matching what the real AddOrgForm now always
+    // sends. institution_class is unchanged from before.
     await client.query(
-      `INSERT INTO organizations (id, name, name_ar, code) VALUES
-         ($1, 'E2E Hospital A', 'مستشفى أ للاختبار', 'e2e-org-a'),
-         ($2, 'E2E Hospital B', 'مستشفى ب للاختبار', 'e2e-org-b')
+      `INSERT INTO organizations (id, name, name_ar, code, organization_kind, institution_class) VALUES
+         ($1, 'E2E Hospital A', 'مستشفى أ للاختبار', 'e2e-org-a', 'care_institution', 'hospital'),
+         ($2, 'E2E Hospital B', 'مستشفى ب للاختبار', 'e2e-org-b', 'care_institution', 'hospital'),
+         ($3, 'E2E Pharmacy Department', 'قسم الصيدلة للاختبار', 'e2e-org-c-authority', 'pharmacy_department_authority', NULL)
        ON CONFLICT (id) DO NOTHING`,
-      [ORG_A, ORG_B],
+      [ORG_A, ORG_B, ORG_C_AUTHORITY],
     );
     await client.query(
       `INSERT INTO warehouses (id, organization_id, name, name_ar, status, warehouse_kind)
        VALUES ($1, $3, 'E2E Warehouse A', 'مخزن أ', 'active', 'institution'),
-              ($2, $4, 'E2E Warehouse B', 'مخزن ب', 'active', 'institution')
+              ($2, $4, 'E2E Warehouse B', 'مخزن ب', 'active', 'institution'),
+              ($5, $6, 'E2E Central Pharmacy Warehouse', 'مخزن الصيدلة المركزي', 'active', 'central')
        ON CONFLICT (id) DO NOTHING`,
-      [WH_A, WH_B, ORG_A, ORG_B],
+      [WH_A, WH_B, ORG_A, ORG_B, WH_C_CENTRAL, ORG_C_AUTHORITY],
     );
     await client.query(
       // point_type must be 'pharmacy' here, matching the outlet_stock rows
@@ -109,11 +152,33 @@ async function main() {
       // distribution_points(id, point_type) — both sides must agree, exactly
       // as 136-dispense-with-context-atomic.dynamic.test.ts's own seedLot()
       // helper already does.
-      `INSERT INTO distribution_points (id, warehouse_id, organization_id, name, name_ar, point_type, status)
-       VALUES ($1, $3, $5, 'E2E Outlet A', 'منفذ أ', 'pharmacy', 'active'),
-              ($2, $4, $6, 'E2E Outlet B', 'منفذ ب', 'pharmacy', 'active')
+      //
+      // STAGE-E-E7-2: DP_A carries clinical_location_kind='non_emergency' (a
+      // pharmacy is never itself an emergency location) and CART_A is a
+      // SEPARATE rescue_cart outlet under the same hospital warehouse —
+      // Shape I (Migrations 164/168): hospital + rescue_cart requires
+      // clinical_location_kind='emergency', no facility layer at all. Kept
+      // apart from DP_A so the replenishment/reversal cycle below never
+      // touches DP_A's own dispense-flow stock from section 1.
+      `INSERT INTO distribution_points (id, warehouse_id, organization_id, name, name_ar, point_type, status, clinical_location_kind)
+       VALUES ($1, $3, $5, 'E2E Outlet A', 'منفذ أ', 'pharmacy', 'active', 'non_emergency'),
+              ($2, $4, $6, 'E2E Outlet B', 'منفذ ب', 'pharmacy', 'active', 'non_emergency'),
+              ($7, $3, $5, 'E2E Rescue Cart A', 'عربة إنقاذ أ', 'rescue_cart', 'active', 'emergency')
        ON CONFLICT (id) DO NOTHING`,
-      [DP_A, DP_B, WH_A, WH_B, ORG_A, ORG_B],
+      [DP_A, DP_B, WH_A, WH_B, ORG_A, ORG_B, CART_A],
+    );
+    // STAGE-E-E7-2: a warehouse_stock lot at WH_A for the initial-provisioning
+    // dispatch composer's FEFO material picker — a real, selectable batch,
+    // not a synthetic placeholder.
+    await client.query(
+      `INSERT INTO warehouse_stock(
+         id, organization_id, warehouse_id, scientific_name, concentration, dosage_form, unit,
+         has_no_national_code, batch_number, has_no_batch_number, expiry_date,
+         on_hand_quantity, reserved_quantity, movement_seq
+       ) VALUES ($1, $2, $3, 'E2E Initial Provisioning Material', '5 mg', 'ampoule', 'box',
+                 true, 'E2E-IP-001', false, current_date + 365, 20, 0, 1)
+       ON CONFLICT (id) DO NOTHING`,
+      [IP_MATERIAL_STOCK_ID, ORG_A, WH_A],
     );
 
     console.log('Creating real Supabase Auth users (real passwords, real UI login)...');
@@ -225,15 +290,66 @@ async function main() {
     if (!suggestionId) throw new Error('could not create Phase 8 outlet-return suggestion');
     console.log(`  Phase 8 suggestion: ${suggestionId}`);
 
+    console.log('Seeding the routine-replenishment source lot at DP_A with real dispatch provenance...');
+    await client.query(
+      `INSERT INTO warehouse_stock(
+         id,organization_id,warehouse_id,scientific_name,concentration,dosage_form,unit,
+         national_code,has_no_national_code,batch_number,has_no_batch_number,expiry_date,
+         on_hand_quantity,reserved_quantity,movement_seq
+       ) VALUES($1,$2,$3,$4,'400 mg','tablet','box',$5,false,'E2E-REPL-001',false,current_date+365,60,0,1)`,
+      [REPL_SOURCE_WH_STOCK_ID, ORG_A, WH_A, REPL_SOURCE_MATERIAL, REPL_SOURCE_NATIONAL_CODE],
+    );
+    let replSourceLineId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      const dispatch = (await actor.query(
+        `SELECT public.phoenix_create_warehouse_dispatch($1,$2,$3,NULL,NULL,NULL) AS r`,
+        [WH_A, DP_A, 'E2E-REPL-PROVENANCE'],
+      )).rows[0].r;
+      replSourceLineId = (await actor.query(
+        `SELECT public.phoenix_add_dispatch_line_fefo_guarded($1,$2,30,false,NULL,$3) AS r`,
+        [dispatch.dispatch_id, REPL_SOURCE_WH_STOCK_ID, randomUUID()],
+      )).rows[0].r.dispatch_line_id;
+      await actor.query(`SELECT public.phoenix_send_warehouse_dispatch($1,$2)`, [
+        randomUUID(), dispatch.dispatch_id,
+      ]);
+    });
+    let replSourceOutletStockId;
+    await asAuthenticated(USERS.fixtureAdmin.id, async actor => {
+      replSourceOutletStockId = (await actor.query(
+        `SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,30,NULL,NULL) AS r`,
+        [randomUUID(), replSourceLineId],
+      )).rows[0].r.outlet_stock_id;
+    });
+    console.log(`  replenishment source lot at DP_A: ${replSourceOutletStockId} (30 received, FEFO-eligible)`);
+
     const summary = {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
       password: FIXED_PASSWORD,
+      // STAGE-E-E7-2: run.mjs performs read-only DB verification AFTER a real
+      // UI action already happened — it needs the same local-only connection
+      // string this script already validated above. Passed via the seed file
+      // (same discipline as `password` immediately above: never printed to
+      // stdout/CI logs, written only into the output file) rather than a new
+      // workflow env var, so no additional repository permission is needed to
+      // wire this up.
+      databaseUrl: DATABASE_URL,
       lots: lotIds,
       phase8: {
         suggestionId,
         material: suggestionMaterial,
         sourceStockId: suggestionOutletStockId,
+      },
+      stageE: {
+        cartA: CART_A,
+        whA: WH_A,
+        ipMaterial: 'E2E Initial Provisioning Material',
+        orgCAuthority: ORG_C_AUTHORITY,
+        whCCentral: WH_C_CENTRAL,
+        // Provenance-backed (see REPL_SOURCE_* above): the plain outlet lots
+        // are dispensable but categorically not FEFO-transferable.
+        replenishSourceLot: REPL_SOURCE_MATERIAL,
+        replenishSourceOutletStockId: replSourceOutletStockId,
       },
     };
 
@@ -244,7 +360,7 @@ async function main() {
     const OUTPUT_PATH = process.env.E2E_SEED_OUTPUT_PATH || 'e2e-seed.json';
     writeFileSync(OUTPUT_PATH, JSON.stringify(summary, null, 2));
     console.log(`\nSeed complete. Fixture summary (password redacted) written to ${OUTPUT_PATH}:`);
-    console.log(JSON.stringify({ ...summary, password: '***REDACTED***' }, null, 2));
+    console.log(JSON.stringify({ ...summary, password: '***REDACTED***', databaseUrl: '***REDACTED***' }, null, 2));
   } finally {
     client.release();
     await pool.end();

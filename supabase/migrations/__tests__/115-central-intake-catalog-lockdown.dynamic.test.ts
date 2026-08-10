@@ -53,8 +53,8 @@ run('118 — Pharmacy Department manual central intake (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG}','Central118','مركزية 118','ci-118') ON CONFLICT (id) DO NOTHING;`);
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES
+        ('${ORG}','Central118','مركزية 118','ci-118','hospital') ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_CENTRAL}','${ORG}','Central WH','مخزن قسم الصيدلة','active','central','ci-118-c'),
         ('${WH_INSTITUTION}','${ORG}','Institution WH','مذخر مؤسسة','active','institution','ci-118-i')

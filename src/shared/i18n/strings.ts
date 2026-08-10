@@ -538,6 +538,166 @@ export const T: Dict = {
   suspended:        { ar: 'معلق',                               en: 'Suspended' },
   archived:         { ar: 'مؤرشف',                              en: 'Archived' },
 
+  /* ── STAGE-E-E7-2: organization classification (Migrations 164/171) ──
+     organization_kind is the actor discriminator; institution_class classifies
+     ONLY a care institution. An authority always carries a NULL class. */
+  org_kind:                 { ar: 'نوع المنظمة',                   en: 'Organization Type' },
+  org_kind_care:            { ar: 'مؤسسة صحية',                    en: 'Care Institution' },
+  org_kind_authority:       { ar: 'قسم الصيدلة',                   en: 'Pharmacy Department' },
+  org_kind_authority_hint:  {
+    ar: 'جهة تجهيز مركزية — تمتلك مخازن مركزية فقط، ولا تمتلك مرافق رعاية أو منافذ صرف للمرضى.',
+    en: 'Central supply authority — owns central warehouses only; never care facilities or patient-dispensing outlets.',
+  },
+  org_class:                { ar: 'تصنيف المؤسسة',                 en: 'Institution Class' },
+  org_class_hospital:       { ar: 'مستشفى',                        en: 'Hospital' },
+  org_class_specialized:    { ar: 'مركز تخصصي',                    en: 'Specialized Center' },
+  org_class_health_sector:  { ar: 'قطاع',                          en: 'Health Sector' },
+  org_class_required:       { ar: 'يجب اختيار تصنيف المؤسسة',      en: 'An institution class must be selected' },
+  org_kind_unknown:         { ar: 'غير مصنّف',                     en: 'Unclassified' },
+
+  /* ── STAGE-E-E7-2: subordinate facilities (Migration 164) ── */
+  fac_section:              { ar: 'المراكز الصحية التابعة',        en: 'Subordinate Health Centers' },
+  fac_add:                  { ar: 'إضافة مركز صحي',                en: 'Add Health Center' },
+  fac_edit:                 { ar: 'تعديل المركز الصحي',            en: 'Edit Health Center' },
+  fac_name_en:              { ar: 'اسم المركز (إنجليزي)',          en: 'Center Name (English)' },
+  fac_name_ar:              { ar: 'اسم المركز (عربي)',             en: 'Center Name (Arabic)' },
+  fac_code:                 { ar: 'رمز المركز',                    en: 'Center Code' },
+  fac_class:                { ar: 'صنف المركز',                    en: 'Center Class' },
+  fac_class_primary:        { ar: 'مركز صحي أولي',                 en: 'Primary Health Center' },
+  fac_class_subordinate:    { ar: 'مركز صحي فرعي',                 en: 'Subordinate Health Center' },
+  fac_active:               { ar: 'فعّال',                          en: 'Active' },
+  fac_created:              { ar: 'تم حفظ المركز الصحي بنجاح',     en: 'Health center saved successfully' },
+  fac_none:                 { ar: 'لا توجد مراكز صحية تابعة',      en: 'No subordinate health centers' },
+  fac_only_health_sector:   {
+    ar: 'المراكز الصحية التابعة متاحة لمؤسسات القطاع فقط.',
+    en: 'Subordinate health centers exist only for health-sector organizations.',
+  },
+  fac_warehouse_assign:     { ar: 'ربط المستودع بمركز صحي',        en: 'Assign Warehouse to Center' },
+  fac_warehouse_none:       { ar: 'بدون مركز',                     en: 'No center' },
+  fac_warehouse_assigned:   { ar: 'تم ربط المستودع بنجاح',         en: 'Warehouse assigned successfully' },
+
+  /* ── STAGE-E-E7-2: clinical context of an outlet (Migration 164) ── */
+  port_clinical_kind:       { ar: 'السياق السريري',                en: 'Clinical Context' },
+  port_clinical_emergency:  { ar: 'طوارئ',                         en: 'Emergency' },
+  port_clinical_non_emergency: { ar: 'غير طوارئ',                  en: 'Non-emergency' },
+  port_clinical_hint:       {
+    ar: 'مطلوب لمنافذ الطوارئ: يحدد ما إذا كان الموقع طوارئ أم لا، وهو شرط لتعويض عربة الإنقاذ ودولاب الصدمة.',
+    en: 'Required for emergency outlets: marks the location as emergency or not — a precondition for rescue-cart and crash-cabinet replenishment.',
+  },
+
+  /* ── STAGE-E-E7-2: replenishment routes (Migration 164) ── */
+  route_section:            { ar: 'مسارات التعويض',                en: 'Replenishment Routes' },
+  route_add:                { ar: 'إضافة مسار',                    en: 'Add Route' },
+  route_source:             { ar: 'الصيدلية المصدر',               en: 'Source Pharmacy' },
+  route_destination:        { ar: 'منفذ الطوارئ الوجهة',           en: 'Destination Emergency Outlet' },
+  route_active:             { ar: 'مسار فعّال',                     en: 'Active route' },
+  route_notes:              { ar: 'ملاحظات',                        en: 'Notes' },
+  route_saved:              { ar: 'تم حفظ المسار بنجاح',           en: 'Route saved successfully' },
+  route_none:               { ar: 'لا توجد مسارات تعويض',          en: 'No replenishment routes' },
+  route_no_sources:         { ar: 'لا توجد صيدليات — أنشئ منفذ صيدلية أولاً', en: 'No pharmacies — create a pharmacy outlet first' },
+  route_no_destinations:    { ar: 'لا توجد منافذ طوارئ مؤهلة',     en: 'No eligible emergency outlets' },
+
+  /* ── STAGE-E-E7-2: initial provisioning (Migration 166) ── */
+  prov_initial:             { ar: 'التجهيز الأولي',                 en: 'Initial Provisioning' },
+  prov_initial_start:       { ar: 'بدء التجهيز الأولي',             en: 'Start Initial Provisioning' },
+  prov_initial_consumed:    { ar: 'تم استهلاك التجهيز الأولي لهذا المنفذ', en: 'Initial provisioning already used for this outlet' },
+  prov_initial_open:        { ar: 'يوجد تجهيز أولي مفتوح',          en: 'An initial provisioning is already open' },
+  prov_initial_hint:        {
+    ar: 'يُنفَّذ مرة واحدة فقط طوال عمر المنفذ. لا يُعاد فتحه إذا أصبح الرصيد صفراً لاحقاً.',
+    en: 'Happens once in the outlet’s lifetime. It never reopens if the balance later reaches zero.',
+  },
+  prov_dispatch_number:     { ar: 'رقم الإخراج',                    en: 'Dispatch Number' },
+  prov_created:             { ar: 'تم إنشاء التجهيز الأولي',        en: 'Initial provisioning created' },
+
+  /* ── STAGE-E-E7-2: routine replenishment (168) and reversal (169) ── */
+  repl_routine:             { ar: 'التعويض الدوري',                 en: 'Routine Replenishment' },
+  repl_reverse:             { ar: 'عكس التعويض',                    en: 'Reverse Replenishment' },
+  repl_route:               { ar: 'المسار',                          en: 'Route' },
+  repl_batch:               { ar: 'الدفعة',                          en: 'Batch' },
+  repl_quantity:            { ar: 'الكمية',                          en: 'Quantity' },
+  repl_available:           { ar: 'المتاح',                          en: 'Available' },
+  repl_reversible:          { ar: 'القابل للعكس',                    en: 'Reversible' },
+  repl_submit:              { ar: 'تنفيذ التعويض',                  en: 'Execute Replenishment' },
+  repl_reverse_submit:      { ar: 'تنفيذ العكس',                    en: 'Execute Reversal' },
+  repl_done:                { ar: 'تم تنفيذ التعويض بنجاح',         en: 'Replenishment completed successfully' },
+  repl_reverse_done:        { ar: 'تم عكس التعويض بنجاح',           en: 'Replenishment reversed successfully' },
+  repl_replayed:            { ar: 'طلب مكرر — لم يتم تحريك مخزون إضافي', en: 'Duplicate request — no additional stock was moved' },
+  repl_no_stock:            { ar: 'لا يوجد مخزون متاح في الصيدلية المصدر', en: 'No available stock at the source pharmacy' },
+  repl_no_reversible:       { ar: 'لا توجد كميات قابلة للعكس',      en: 'Nothing is currently reversible' },
+  repl_reverse_hint:        {
+    ar: 'يعيد كمية تعويض سابق إلى الصيدلية التي صرفته فقط — وهو يختلف عن إرجاع المنفذ العام إلى مستودع المؤسسة.',
+    en: 'Returns a previous replenishment to the pharmacy it actually came from — distinct from the general outlet return to the institution warehouse.',
+  },
+  repl_reason:              { ar: 'سبب العكس',                      en: 'Reversal Reason' },
+
+  /* ── STAGE-E-E7-2: canonical Stage-E RPC rejections ──
+     Keyed by the EXACT identifier the database raises, so the operator reads a
+     real explanation while the canonical code stays visible for support. */
+  e_rescue_cart_requires_hospital: {
+    ar: 'عربة الإنقاذ متاحة في المستشفيات فقط.',
+    en: 'A rescue cart is only permitted in a hospital.',
+  },
+  e_rescue_cart_requires_emergency_context: {
+    ar: 'عربة الإنقاذ يجب أن تكون في موقع طوارئ.',
+    en: 'A rescue cart must sit in an emergency location.',
+  },
+  e_crash_cabinet_requires_non_emergency_context: {
+    ar: 'دولاب الصدمة في المستشفى أو المركز التخصصي يجب أن يكون في موقع غير طوارئ.',
+    en: 'In a hospital or specialized center, a crash cabinet must sit in a non-emergency location.',
+  },
+  e_health_center_rescue_cart_forbidden: {
+    ar: 'المراكز الصحية لا تمتلك عربات إنقاذ — استخدم دولاب الصدمة.',
+    en: 'Health centers do not have rescue carts — use a crash cabinet.',
+  },
+  e_health_center_crash_cabinet_requires_emergency: {
+    ar: 'دولاب الصدمة في المركز الصحي يجب أن يكون في موقع طوارئ.',
+    en: 'A health-center crash cabinet must sit in an emergency location.',
+  },
+  e_destination_clinical_location_kind_required: {
+    ar: 'يجب تحديد السياق السريري لمنفذ الوجهة أولاً.',
+    en: 'The destination outlet’s clinical context must be set first.',
+  },
+  e_organization_institution_class_required: {
+    ar: 'يجب تصنيف المؤسسة أولاً.',
+    en: 'The organization must be classified first.',
+  },
+  e_destination_must_be_emergency_outlet: {
+    ar: 'الوجهة يجب أن تكون منفذ طوارئ.',
+    en: 'The destination must be an emergency outlet.',
+  },
+  e_initial_provisioning_already_consumed: {
+    ar: 'تم استهلاك التجهيز الأولي لهذا المنفذ سابقاً ولا يمكن إعادته.',
+    en: 'This outlet’s initial provisioning was already used and cannot be reopened.',
+  },
+  e_forbidden_organization_facilities_manage: {
+    ar: 'لا تملك صلاحية إدارة المراكز الصحية.',
+    en: 'You do not have permission to manage health centers.',
+  },
+  e_forbidden_replenishment_routes_manage: {
+    ar: 'لا تملك صلاحية إدارة مسارات التعويض.',
+    en: 'You do not have permission to manage replenishment routes.',
+  },
+  e_route_inactive: {
+    ar: 'المسار غير فعّال.',
+    en: 'This route is not active.',
+  },
+  e_insufficient_outlet_stock: {
+    ar: 'الكمية المطلوبة تتجاوز المتاح في الصيدلية المصدر.',
+    en: 'The requested quantity exceeds what the source pharmacy has available.',
+  },
+  e_reversal_exceeds_remaining: {
+    ar: 'الكمية المطلوبة تتجاوز الكمية القابلة للعكس.',
+    en: 'The requested quantity exceeds the reversible amount.',
+  },
+  e_not_configured: {
+    ar: 'الاتصال بقاعدة البيانات غير مهيأ.',
+    en: 'The database connection is not configured.',
+  },
+  e_unknown_error: {
+    ar: 'تعذر إتمام العملية.',
+    en: 'The operation could not be completed.',
+  },
+
   /* ── Port / Distribution Point Management ── */
   port_add:           { ar: 'إضافة منفذ',                        en: 'Add Port' },
   port_edit:          { ar: 'تعديل المنفذ',                      en: 'Edit Port' },
@@ -2688,4 +2848,21 @@ export const T: Dict = {
 
 export function t(key: string, lang: Lang): string {
   return T[key]?.[lang] ?? key;
+}
+
+/**
+ * STAGE-E-E7-2: renders a canonical RPC rejection for an operator.
+ *
+ * The database's own identifier is the contract, so it is always kept visible
+ * alongside the sentence — a translated message must never be the only thing
+ * left when someone needs to report or diagnose a rejection. An identifier
+ * with no translation yet degrades to the identifier alone rather than to a
+ * vague generic failure, so a new server-side rule is never silently flattened
+ * into "something went wrong".
+ */
+export function tRpcError(code: string | undefined, lang: Lang): string {
+  if (!code) return t('e_unknown_error', lang);
+  const key = `e_${code}`;
+  const message = T[key]?.[lang];
+  return message ? `${message} (${code})` : code;
 }

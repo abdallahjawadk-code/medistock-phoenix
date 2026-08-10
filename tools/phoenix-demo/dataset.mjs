@@ -47,6 +47,12 @@ export function demoDocRef(prefix, n) {
 
 // ── Synthetic Arabic content pools ─────────────────────────────────────────
 
+// Parallel to INSTITUTION_NAMES below (same index) — each demo institution's
+// real-world type, taken from its own literal name (Hospital vs. Health
+// Centre), not inferred: organizations.institution_class (Migration 170) is
+// NOT NULL, so every demo organization now needs an explicit value.
+const INSTITUTION_CLASSES = ['hospital', 'hospital', 'hospital', 'hospital', 'specialized_center'];
+
 const INSTITUTION_NAMES = [
   ['مستشفى الأمل التعليمي (تجريبي)', 'Al-Amal Teaching Hospital (demo)'],
   ['مستشفى النخيل العام (تجريبي)', 'Al-Nakheel General Hospital (demo)'],
@@ -143,6 +149,10 @@ export function demoBatchProfile(key) {
 
 export function institutionName(i) {
   return INSTITUTION_NAMES[i % INSTITUTION_NAMES.length];
+}
+
+export function institutionClass(i) {
+  return INSTITUTION_CLASSES[i % INSTITUTION_CLASSES.length];
 }
 
 export function outletName(i) {

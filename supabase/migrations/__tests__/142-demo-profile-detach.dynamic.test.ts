@@ -46,7 +46,7 @@ run('142 demo profile detachment — adversarial (dynamic)', () => {
     const org = randomUUID();
     const user = randomUUID();
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES ($1,$2,'تجريبي',$3)`,
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class) VALUES ($1,$2,'تجريبي',$3,'hospital')`,
         [org, `Demo ${tag}`, `dp-${tag}-${Date.now()}`]);
       await c.query(`INSERT INTO auth.users (id,email) VALUES ($1,$2)`,
         [user, `demo-${tag}-${Date.now()}@phoenix-demo.invalid`]);
@@ -69,8 +69,8 @@ run('142 demo profile detachment — adversarial (dynamic)', () => {
   beforeAll(async () => {
     rig = await buildRig({});
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code)
-        VALUES ($1,'Home','الرئيسية','dp-home') ON CONFLICT (id) DO NOTHING`, [HOME_ORG]);
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,institution_class)
+        VALUES ($1,'Home','الرئيسية','dp-home','hospital') ON CONFLICT (id) DO NOTHING`, [HOME_ORG]);
       await c.query(`INSERT INTO auth.users (id,email) VALUES
         ($1,'dp-owner@rig'),($2,'dp-genuine@rig'),($3,'dp-ia@rig') ON CONFLICT (id) DO NOTHING`,
         [OWNER, GENUINE, IA]);
