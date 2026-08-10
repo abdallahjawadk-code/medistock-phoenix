@@ -504,6 +504,7 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // earlier, UI-only pharmacy-emblem phase. Named exactly, so this guard
       // still catches any OTHER unlisted migration/schema/RLS/service change.
       'supabase/migrations/172_phoenix_patient_dispensing_contract.sql',
+      'supabase/migrations/__tests__/172-patient-dispensing-contract.dynamic.test.ts',
       'src/features/outlet/dispense-context.service.ts',
       'src/features/outlet/DispenseContextDialog.tsx',
       'src/features/outlet/__tests__/dispense-context-contract.test.ts',
