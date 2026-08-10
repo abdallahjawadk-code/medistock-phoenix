@@ -451,19 +451,28 @@ run('172 · patient dispensing contract (dynamic)', () => {
       };
 
       try {
-        // Both ask for 7 of 10 — together they would oversell.
-        const [ra, rb] = await Promise.allSettled([asOfficer(ca, 7), asOfficer(cb, 7)]);
-        // Commit whichever succeeded; the loser rolls back.
-        for (const [c, r] of [[ca, ra], [cb, rb]] as const) {
-          if (r.status === 'fulfilled') { await c.query('COMMIT'); } else { await c.query('ROLLBACK'); }
-        }
+        // A takes 7 of 10 and HOLDS its row lock (transaction still open).
+        await asOfficer(ca, 7);
 
-        const fulfilled = [ra, rb].filter(r => r.status === 'fulfilled').length;
-        expect(fulfilled).toBeLessThanOrEqual(1);
+        // B now asks for 7 as well. Together they would oversell, so B must
+        // not be allowed to read-and-decide on the pre-A quantity: it has to
+        // WAIT on A's FOR UPDATE lock. Start it without awaiting.
+        const second = asOfficer(cb, 7);
+        let settledEarly = false;
+        second.then(() => { settledEarly = true; }, () => { settledEarly = true; });
+        await new Promise(r => setTimeout(r, 500));
+        expect(settledEarly).toBe(false);          // proven serialisation
 
+        // Release A. B now re-reads UNDER the lock and must refuse: only 3 left.
+        await ca.query('COMMIT');
+        const outcome = await second.then(() => 'fulfilled', () => 'rejected');
+        expect(outcome).toBe('rejected');
+        await cb.query('ROLLBACK');
+
+        // Exactly one dispense happened, and stock never went negative.
         const left = await onHand(s);
-        expect(left).toBeGreaterThanOrEqual(0);   // never negative
-        expect(left).toBe(fulfilled === 1 ? 3 : 10);
+        expect(left).toBe(3);
+        expect(left).toBeGreaterThanOrEqual(0);
       } finally {
         ca.release(); cb.release();
       }
