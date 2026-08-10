@@ -168,7 +168,13 @@ run('172 · patient dispensing contract (dynamic)', () => {
 
       UPDATE profiles SET role='outlet_officer', status='active', organization_id='${ORG_HOSP}'
        WHERE id='${OFFICER}';
-      UPDATE profiles SET role='viewer', status='active', organization_id='${ORG_HOSP}'
+      -- 091's five-role cutover is the whole vocabulary profiles_role_check
+      -- admits. warehouse_officer is the right under-privileged actor here:
+      -- it is a real operational role in the SAME organization whose
+      -- role_permission_defaults entry for outlet_stock.dispense is FALSE
+      -- (067), so case R fails on the permission itself rather than on a
+      -- rejected role value or an organization mismatch.
+      UPDATE profiles SET role='warehouse_officer', status='active', organization_id='${ORG_HOSP}'
        WHERE id='${NO_PERM}';
     `));
 
