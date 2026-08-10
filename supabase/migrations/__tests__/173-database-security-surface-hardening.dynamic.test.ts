@@ -65,7 +65,9 @@ run('173 · database security surface hardening (dynamic)', () => {
       expect(r.rows).toHaveLength(1);
       expect(r.rows[0].prosecdef).toBe(true);
       expect(r.rows[0].proconfig).toContain('search_path=public, pg_temp');
-      expect(r.rows[0].args).toBe('uuid');
+      // pg_get_function_identity_arguments renders NAME + TYPE, so this pins
+      // 013/064's exact parameter as well as its type.
+      expect(r.rows[0].args).toBe('p_profile_id uuid');
       // 013/064's return contract, unchanged.
       for (const col of ['identity_version', 'full_name', 'email', 'role', 'organization_id']) {
         expect(r.rows[0].ret).toContain(col);
