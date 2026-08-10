@@ -570,8 +570,15 @@ describe('no client-side document-number sequence exists', () => {
     // allocated, incremented or derived here. No sequence, no counter, no
     // max()+1, and no generated numeric identity of any kind is introduced.
     // Ceiling moves to 173.
-    const beyond = migrations.filter(f => /^(17[3-9]|1[89]\d|[2-9]\d\d)_/.test(f));
+    // 173 (DATABASE-SECURITY-SURFACE-HARDENING-173) is a GRANT-ONLY
+    // migration: three REVOKE EXECUTE statements against one exact function
+    // overload, wrapped in preflight/verify. It creates no object, alters no
+    // table, replaces no function body and writes no data — so it cannot
+    // introduce a sequence, counter, max()+1 or generated numeric identity
+    // of any kind. Ceiling moves to 174.
+    const beyond = migrations.filter(f => /^(17[4-9]|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
+    expect(migrations).toContain('173_phoenix_database_security_surface_hardening.sql');
     expect(migrations).toContain('172_phoenix_patient_dispensing_contract.sql');
     expect(migrations).toContain('167_phoenix_dispatch_line_full_rejection_reconciliation.sql');
     expect(migrations).toContain('168_phoenix_atomic_emergency_outlet_replenishment.sql');
