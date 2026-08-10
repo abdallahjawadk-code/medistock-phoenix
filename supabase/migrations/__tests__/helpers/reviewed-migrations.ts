@@ -1,64 +1,9 @@
 /**
  * MIGRATION-GUARD-DERIVE-A — canonical reviewed-migration registry (test-only).
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * WHY THIS EXISTS
- * ─────────────────────────────────────────────────────────────────────────────
- * Migration review used to be duplicated across dozens of historical test
- * files, in two shapes that both had to be edited for every new migration:
- *
- *   1. Tail inventory:  readdirSync(MIGRATIONS_DIR).filter(f => /^0(4[4-9]|[5-9][0-9])_/.test(f))
- *                       expect(matches).toEqual([ ...every exact filename above 043... ])
- *
- *   2. Future ceiling:  readdirSync(MIGRATIONS_DIR).filter(f => /^0(6[0-9]|[7-9][0-9])_/.test(f))
- *                       expect(matches).toEqual([])
- *
- * Adding migration 059 therefore meant appending a filename to ~5 long arrays
- * and bumping ~9 ceiling regexes in files that had nothing to do with 059. That
- * churn is a safety hazard: the more unrelated guards a phase must edit, the
- * easier it is to smuggle a weakening edit past review.
- *
- * This module makes the review list explicit and singular. Historical tests keep
- * their own migration-specific assertions and simply derive the inventory half
- * from here.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * SECURITY MODEL — READ BEFORE EDITING
- * ─────────────────────────────────────────────────────────────────────────────
- * Approval is by EXACT FILENAME MEMBERSHIP in REVIEWED_MIGRATION_FILES below.
- *
- * A migration is NEVER approved because it:
- *   • exists in supabase/migrations/            (directory presence proves nothing)
- *   • has a number <= the maximum reviewed      (059_alternate_name.sql is rejected)
- *   • matches the NNN_name.sql naming pattern   (pattern is not review)
- *   • is numerically contiguous with its peers  (contiguity is not review)
- *   • matches a wildcard, prefix or range       (none are used here)
- *
- * The registry is hand-maintained and MUST NOT be derived from the filesystem —
- * deriving it would make every file on disk self-approving, which is precisely
- * the property these guards exist to deny.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * ADDING A MIGRATION (the whole workflow)
- * ─────────────────────────────────────────────────────────────────────────────
- *   1. Author the migration SQL.
- *   2. Add its exact filename to REVIEWED_MIGRATION_FILES below (once).
- *   3. Add that migration's own semantic / security / privacy tests.
- *   4. Run `npx vitest run supabase/migrations/__tests__` and full validation.
- *   5. Do NOT edit ceilings in historical test files — there are none left.
- *
- * This module is pure: no filesystem access, no I/O, no mutation, no imports
- * from production code, no environment-dependent behavior.
- */
-
-/**
- * Every migration SQL file that has been explicitly reviewed, by exact filename.
- *
- * Ordering is the canonical ascending-number order and is asserted by the
- * manifest test. Note the deliberately irregular naming — 048/049 and 051–054
- * carry no `phoenix_` prefix while their neighbours do. That irregularity is
- * real, and it is exactly why this registry stores exact filenames instead of a
- * generated `NNN_phoenix_*.sql` pattern.
+ * SECURITY MODEL: approval is exact-filename membership in the hand-maintained
+ * list below. Filesystem presence, numbering, prefixes, ranges, or wildcards
+ * never confer review status.
  */
 export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '001_phoenix_core_schema.sql',
@@ -226,184 +171,73 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '163_phoenix_outbox_consumer_foundation.sql',
   '164_phoenix_facility_identity_and_routing_foundation.sql',
   '165_phoenix_sector_health_center_supply_and_return.sql',
-  // 166 (INITIAL-PROVISIONING-INVARIANT) merged from Stage E's E-4 branch
-  // (PR #107) after being authored independently of 167. Both are reviewed
-  // and registered here in their real numeric order.
   '166_phoenix_initial_provisioning_invariant.sql',
-  // 167 (DISPATCH-LINE-FULL-REJECTION-RECONCILIATION) was authored on its own
-  // branch concurrently with 166 and does not depend on it — it neither reads
-  // nor writes anything 166 creates. Taking 167 rather than waiting for 166
-  // to merge first is what kept 166 free of a forced renumber, the same way
-  // 148 once had to renumber when two branches raced for the same number.
-  // Both are now reviewed and registered; the next unreviewed number is 168.
   '167_phoenix_dispatch_line_full_rejection_reconciliation.sql',
-  // 168 (ATOMIC-EMERGENCY-OUTLET-REPLENISHMENT) — Stage E / E-5. Backend-only
-  // forward corridor.
   '168_phoenix_atomic_emergency_outlet_replenishment.sql',
-  // 169 (OUTLET-REPLENISHMENT-REVERSAL) — Stage E / E-6. Backend-only reversal
-  // corridor.
   '169_phoenix_outlet_replenishment_reversal.sql',
-  // 170 (ORGANIZATION-CLASS-AND-WAREHOUSE-FACILITY-ASSIGNMENT) — Stage E /
-  // E7-1. Backend/admin identity hardening: institution_class NOT NULL +
-  // immutable, warehouse facility-assignment RPC + hard trigger guard.
   '170_phoenix_organization_class_and_warehouse_facility_assignment.sql',
-  // 171 (ORGANIZATION-KIND-AND-PHARMACY-DEPARTMENT-AUTHORITY) — Stage E /
-  // E7-1 follow-up. Separates the organizational-actor discriminator
-  // (organization_kind: care_institution | pharmacy_department_authority)
-  // from the care-delivery classification (institution_class, unchanged for
-  // care_institution rows). The next unreviewed number is 172.
   '171_phoenix_organization_kind_pharmacy_department_authority.sql',
   '172_phoenix_patient_dispensing_contract.sql',
   '173_phoenix_database_security_surface_hardening.sql',
   '174_phoenix_authenticated_rpc_surface_hardening.sql',
+  '175_phoenix_read_helper_anonymous_surface_hardening.sql',
 ]);
 
-/** Exact-membership index. Built once; never derived from disk. */
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);
-
-/**
- * A numbered migration filename: exactly three digits, `_`, a name, `.sql`.
- * Used ONLY to classify what on disk is *claiming* to be a migration. Matching
- * this pattern grants nothing — approval still requires exact registry membership.
- */
 const NUMBERED_MIGRATION_RE = /^(\d{3})_[A-Za-z0-9_]+\.sql$/;
-
-/** Any `.sql` file, however named. Non-numbered SQL is surfaced, never ignored. */
 const SQL_FILE_RE = /\.sql$/i;
 
-/**
- * The migration number encoded in a filename, or null when the name is not a
- * well-formed numbered migration. Never throws — callers surface the null.
- */
 export function extractMigrationNumber(fileName: string): number | null {
   const m = NUMBERED_MIGRATION_RE.exec(fileName);
   if (m === null) return null;
   return parseInt(m[1], 10);
 }
-
-/** True only when `fileName` is byte-for-byte a reviewed filename. */
-export function isReviewedMigrationFile(fileName: string): boolean {
-  return REVIEWED_SET.has(fileName);
-}
-
-/** True when a name claims to be a numbered migration (claim ≠ approval). */
-export function isNumberedMigrationFile(fileName: string): boolean {
-  return NUMBERED_MIGRATION_RE.test(fileName);
-}
-
-/** Deterministic order: by number, then by filename for equal numbers. */
+export function isReviewedMigrationFile(fileName: string): boolean { return REVIEWED_SET.has(fileName); }
+export function isNumberedMigrationFile(fileName: string): boolean { return NUMBERED_MIGRATION_RE.test(fileName); }
 export function sortMigrationFiles(files: readonly string[]): string[] {
   return [...files].sort((a, b) => {
-    const na = extractMigrationNumber(a);
-    const nb = extractMigrationNumber(b);
+    const na = extractMigrationNumber(a); const nb = extractMigrationNumber(b);
     if (na !== null && nb !== null && na !== nb) return na - nb;
     return a < b ? -1 : a > b ? 1 : 0;
   });
 }
-
-/**
- * Every actual `.sql` file that is not an exact reviewed filename.
- *
- * Deliberately covers non-numbered SQL too (e.g. `hotfix.sql`), so an
- * unreviewed file cannot hide by skipping the naming convention.
- */
 export function findUnreviewedMigrationFiles(actualFiles: readonly string[]): string[] {
-  return sortMigrationFiles(
-    actualFiles.filter(f => SQL_FILE_RE.test(f) && !isReviewedMigrationFile(f)),
-  );
+  return sortMigrationFiles(actualFiles.filter(f => SQL_FILE_RE.test(f) && !isReviewedMigrationFile(f)));
 }
-
-/** Registry entries with no corresponding file on disk. */
 export function findMissingReviewedMigrationFiles(actualFiles: readonly string[]): string[] {
-  const actual = new Set(actualFiles);
-  return REVIEWED_MIGRATION_FILES.filter(f => !actual.has(f));
+  const actual = new Set(actualFiles); return REVIEWED_MIGRATION_FILES.filter(f => !actual.has(f));
 }
-
-/** `.sql` files that do not parse as `NNN_name.sql`. Surfaced, not ignored. */
 export function findMalformedMigrationFiles(actualFiles: readonly string[]): string[] {
-  return sortMigrationFiles(
-    actualFiles.filter(f => SQL_FILE_RE.test(f) && !isNumberedMigrationFile(f)),
-  );
+  return sortMigrationFiles(actualFiles.filter(f => SQL_FILE_RE.test(f) && !isNumberedMigrationFile(f)));
 }
-
-/** Exact filenames appearing more than once in the registry. */
 export function findDuplicateReviewedFilenames(): string[] {
-  const seen = new Set<string>();
-  const dupes = new Set<string>();
-  for (const f of REVIEWED_MIGRATION_FILES) {
-    if (seen.has(f)) dupes.add(f);
-    seen.add(f);
-  }
+  const seen = new Set<string>(); const dupes = new Set<string>();
+  for (const f of REVIEWED_MIGRATION_FILES) { if (seen.has(f)) dupes.add(f); seen.add(f); }
   return sortMigrationFiles([...dupes]);
 }
-
-/**
- * Migration numbers claimed by more than one registry filename.
- *
- * The repository currently contains no reviewed duplicates, so the manifest
- * test asserts this is empty. If a genuine duplicate is ever reviewed, document
- * it there deliberately rather than loosening this function.
- */
 export function findDuplicateReviewedNumbers(): number[] {
   const byNumber = new Map<number, string[]>();
   for (const f of REVIEWED_MIGRATION_FILES) {
-    const n = extractMigrationNumber(f);
-    if (n === null) continue;
+    const n = extractMigrationNumber(f); if (n === null) continue;
     byNumber.set(n, [...(byNumber.get(n) ?? []), f]);
   }
-  return [...byNumber.entries()]
-    .filter(([, files]) => files.length > 1)
-    .map(([n]) => n)
-    .sort((a, b) => a - b);
+  return [...byNumber.entries()].filter(([, files]) => files.length > 1).map(([n]) => n).sort((a,b)=>a-b);
 }
-
-/** Registry filenames that are not well-formed numbered migrations. */
 export function findMalformedReviewedFilenames(): string[] {
   return REVIEWED_MIGRATION_FILES.filter(f => extractMigrationNumber(f) === null);
 }
-
-/**
- * Highest reviewed migration number, derived from the REGISTRY — never from the
- * migrations directory. A file on disk cannot raise this ceiling by existing.
- */
 export function getMaximumReviewedMigrationNumber(): number {
-  const numbers = REVIEWED_MIGRATION_FILES.map(extractMigrationNumber).filter(
-    (n): n is number => n !== null,
-  );
+  const numbers = REVIEWED_MIGRATION_FILES.map(extractMigrationNumber).filter((n): n is number => n !== null);
   return Math.max(...numbers);
 }
-
-/** The next number that has not been reviewed yet (max + 1). */
-export function getNextUnreviewedMigrationNumber(): number {
-  return getMaximumReviewedMigrationNumber() + 1;
-}
-
-/**
- * Reviewed filenames numbered strictly above `afterNumber`, in canonical order.
- *
- * This is the shared replacement for the old per-file "everything beyond NNN is
- * exactly this list" tail arrays. It still yields EXACT filenames — callers
- * compare disk contents against it with toEqual, so an unregistered file on disk
- * still fails.
- */
+export function getNextUnreviewedMigrationNumber(): number { return getMaximumReviewedMigrationNumber() + 1; }
 export function reviewedMigrationFilesAbove(afterNumber: number): string[] {
-  return sortMigrationFiles(
-    REVIEWED_MIGRATION_FILES.filter(f => {
-      const n = extractMigrationNumber(f);
-      return n !== null && n > afterNumber;
-    }),
-  );
+  return sortMigrationFiles(REVIEWED_MIGRATION_FILES.filter(f => {
+    const n = extractMigrationNumber(f); return n !== null && n > afterNumber;
+  }));
 }
-
-/**
- * Reviewed filenames whose number falls within [from, to] inclusive, in
- * canonical order. Same exact-filename guarantee as reviewedMigrationFilesAbove.
- */
 export function reviewedMigrationFilesBetween(from: number, to: number): string[] {
-  return sortMigrationFiles(
-    REVIEWED_MIGRATION_FILES.filter(f => {
-      const n = extractMigrationNumber(f);
-      return n !== null && n >= from && n <= to;
-    }),
-  );
+  return sortMigrationFiles(REVIEWED_MIGRATION_FILES.filter(f => {
+    const n = extractMigrationNumber(f); return n !== null && n >= from && n <= to;
+  }));
 }
