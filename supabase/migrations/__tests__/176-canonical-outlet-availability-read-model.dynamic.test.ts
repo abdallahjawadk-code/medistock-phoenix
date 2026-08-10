@@ -63,22 +63,26 @@ run('176 · canonical outlet availability read model (dynamic)', () => {
   it('uses canonical outlet_stock quantity/condition and ignores poisoned cache quantity/condition', async () => {
     const cacheId = randomUUID();
     await rig.asAdmin(async (c: any) => {
+      // A real batch number requires internal_batch_reference IS NULL by
+      // outlet_stock_internal_ref_rule_chk. Keep both canonical and cache
+      // sides on that legal identity shape so this test exercises G1 rather
+      // than bypassing the stock identity contract.
       await c.query(`
         INSERT INTO outlet_stock(
           id,organization_id,distribution_point_id,point_type,scientific_name,
           concentration,dosage_form,national_code,has_no_national_code,
-          batch_number,has_no_batch_number,internal_batch_reference,expiry_date,
+          batch_number,has_no_batch_number,expiry_date,
           on_hand_quantity,reserved_quantity,movement_seq,supply_type
         ) VALUES
-          (gen_random_uuid(),$1,$2,'pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC',false,'G1-B',false,'G1-IBR',$3,10,0,1,'kimadia'),
-          (gen_random_uuid(),$1,$2,'pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC',false,'G1-B',false,'G1-IBR',$3,15,0,1,'aid')`,
+          (gen_random_uuid(),$1,$2,'pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC',false,'G1-B',false,$3,10,0,1,'kimadia'),
+          (gen_random_uuid(),$1,$2,'pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC',false,'G1-B',false,$3,15,0,1,'aid')`,
         [ORG, DP, FAR_FUTURE]);
       await c.query(`
         INSERT INTO item_availability(
           id,distribution_point_id,organization_id,port_name,scientific_name,
-          concentration,dosage_form,national_code,batch_number,internal_batch_reference,
+          concentration,dosage_form,national_code,batch_number,
           expiry_date,quantity,condition,notes,supply_type,removed_at
-        ) VALUES($1,$2,$3,'G1 Pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC','G1-B','G1-IBR',$4,999,'surplus','metadata-note','legacy-display',now())`,
+        ) VALUES($1,$2,$3,'G1 Pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC','G1-B',$4,999,'surplus','metadata-note','legacy-display',now())`,
         [cacheId, DP, ORG, FAR_FUTURE]);
     });
 
