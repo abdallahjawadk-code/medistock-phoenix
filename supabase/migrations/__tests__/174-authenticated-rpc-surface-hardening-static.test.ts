@@ -24,11 +24,13 @@ describe('174 · exact Wave-1 ACL scope', () => {
     expect(TARGETS).toHaveLength(9);
   });
 
-  it('removes only PUBLIC and anon reach, never authenticated/service_role', () => {
+  it('makes only service_role explicit, then removes PUBLIC and anon reach', () => {
+    expect(sql).toContain("EXECUTE 'GRANT EXECUTE ON FUNCTION ' || v_target || ' TO service_role';");
     expect(sql).toContain("FROM PUBLIC';");
     expect(sql).toContain("FROM anon';");
     expect(executable).not.toMatch(/REVOKE[^;\n]*(authenticated|service_role)/i);
-    expect(executable).not.toMatch(/^\s*GRANT\s/mi);
+    expect(executable).not.toMatch(/GRANT[^;\n]*TO\s+(anon|authenticated|PUBLIC)/i);
+    expect(executable.match(/GRANT EXECUTE ON FUNCTION/g) ?? []).toHaveLength(1);
   });
 
   it('does not alter function bodies or structural/database objects', () => {
