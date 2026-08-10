@@ -181,6 +181,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '173_phoenix_database_security_surface_hardening.sql',
   '174_phoenix_authenticated_rpc_surface_hardening.sql',
   '175_phoenix_read_helper_anonymous_surface_hardening.sql',
+  '176_phoenix_canonical_outlet_availability_read_model.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);
