@@ -18,6 +18,8 @@ const CACHE_VERSION = 'medistock-shell-v2';
 function isSupabaseOrApiRequest(url) {
   return (
     url.hostname.endsWith('.supabase.co') ||
+    url.pathname === '/api' ||
+    url.pathname.startsWith('/api/') ||
     url.pathname.includes('/rest/v1') ||
     url.pathname.includes('/auth/v1') ||
     url.pathname.includes('/rpc/') ||
