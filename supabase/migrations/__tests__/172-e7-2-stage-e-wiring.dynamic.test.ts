@@ -90,12 +90,27 @@ run('E7-2 · Stage-E application wiring (dynamic)', () => {
   // 0. E7-2 adds no migration
   // ══════════════════════════════════════════════════════════════════════
   describe('0. E7-2 is application-only', () => {
-    it('171 is still the highest migration on disk — E7-2 introduced no new SQL', () => {
+    // Originally: "171 is the highest migration on disk". That phrasing held
+    // only while Stage E was the newest work. Stage F legitimately adds
+    // Migration 172, so the assertion is restated to preserve E7-2's ACTUAL
+    // intent — E7-2 itself shipped no SQL — without weakening it: Stage E's
+    // own ceiling is still 171, and anything above it must be a known
+    // Stage-F file named EXACTLY. No wildcard, no range exclusion.
+    const STAGE_F_MIGRATIONS = ['172_phoenix_patient_dispensing_contract.sql'];
+
+    it('Stage E still ends at 171 — E7-2 introduced no new SQL', () => {
       const dir = join(__dirname, '..');
-      const numbers = readdirSync(dir)
-        .filter(f => /^\d{3}_.*\.sql$/.test(f))
-        .map(f => Number(f.slice(0, 3)));
-      expect(Math.max(...numbers)).toBe(171);
+      const files = readdirSync(dir).filter(f => /^\d{3}_.*\.sql$/.test(f));
+
+      // Everything Stage E owns still stops at 171.
+      const stageENumbers = files
+        .map(f => Number(f.slice(0, 3)))
+        .filter(n => n <= 171);
+      expect(Math.max(...stageENumbers)).toBe(171);
+
+      // And the only files beyond it are the exact Stage-F ones.
+      const beyond = files.filter(f => Number(f.slice(0, 3)) > 171).sort();
+      expect(beyond).toEqual(STAGE_F_MIGRATIONS);
     });
   });
 

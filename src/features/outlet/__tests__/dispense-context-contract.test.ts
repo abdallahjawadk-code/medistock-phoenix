@@ -138,16 +138,68 @@ describe('F) the viewer renders exactly what the server returns — no client-si
 });
 
 describe('G) beneficiary-type-specific fields are mutually exclusive in the dialog, matching the server CHECK', () => {
-  it('only renders patient fields for beneficiaryType patient, crash cart fields for crash_cart, order field for internal_order', () => {
+  it('only renders patient fields for beneficiaryType patient, order field for internal_order', () => {
     expect(dialog).toContain("beneficiaryType === 'patient'");
-    expect(dialog).toContain("beneficiaryType === 'crash_cart'");
     expect(dialog).toContain("beneficiaryType === 'internal_order'");
   });
 
   it('validates each type-specific requirement before allowing submit', () => {
     expect(dialog).toContain('patientValid');
-    expect(dialog).toContain('crashCartValid');
     expect(dialog).toContain('internalOrderValid');
+  });
+});
+
+/**
+ * STAGE-F-172 — the patient-dispensing contract the product must now honour.
+ *
+ * These assertions are POSITIVE proof of the new contract, not a relaxation of
+ * the old one: the legacy crash_cart handoff must be gone from the operator
+ * surface, and a patient dispense must now declare WHICH document its
+ * reference number came from.
+ */
+describe('G2) Stage-F patient dispensing contract (Migration 172)', () => {
+  it('the operator can no longer choose the retired crash_cart beneficiary', () => {
+    // The option must be gone from the selector, and the dialog must no longer
+    // branch on it or collect a free-text cart reference.
+    expect(dialog).not.toContain("value: 'crash_cart'");
+    expect(dialog).not.toContain("beneficiaryType === 'crash_cart'");
+    expect(dialog).not.toContain('crashCartValid');
+    expect(dialog).not.toContain('setCrashCartReference');
+  });
+
+  it('still offers the two canonical beneficiaries that survive Stage F', () => {
+    expect(dialog).toContain("value: 'patient'");
+    expect(dialog).toContain("value: 'internal_order'");
+  });
+
+  it('offers exactly card and chart as the new patient document types', () => {
+    expect(dialog).toContain("value: 'card'");
+    expect(dialog).toContain("value: 'chart'");
+    // 'pass' is retired for new dispensing (172 refuses it server-side); it
+    // must never be offered, even though historical rows may still carry it.
+    expect(dialog).not.toContain("value: 'pass'");
+  });
+
+  it('requires BOTH the document type and the reference number before submit', () => {
+    // 172 refuses a number with no document and a document with no number.
+    expect(dialog).toContain("patientReferenceType !== ''");
+    expect(dialog).toContain("patientIdentifier.trim() !== ''");
+  });
+
+  it('sends patientReferenceType to the service on submit', () => {
+    expect(dialog).toContain('patientReferenceType: patientReferenceType || undefined');
+  });
+
+  it('the service exposes a Stage-F-narrowed document type without losing history', () => {
+    // New writes: card | chart only …
+    expect(service).toContain("export type StageFPatientReferenceType = Extract<PatientReferenceType, 'card' | 'chart'>");
+    expect(service).toContain("Object.freeze(['card', 'chart'])");
+    // … while the historical union keeps 'pass' so old rows still render.
+    expect(service).toContain("export type PatientReferenceType = 'chart' | 'card' | 'pass'");
+  });
+
+  it('the dialog types its document state with the Stage-F narrowed type', () => {
+    expect(dialog).toContain('StageFPatientReferenceType');
   });
 });
 

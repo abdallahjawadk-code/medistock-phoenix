@@ -25,6 +25,21 @@ export type PatientReferenceType = 'chart' | 'card' | 'pass';
 export const PATIENT_REFERENCE_TYPES: readonly PatientReferenceType[] =
   Object.freeze(['chart', 'card', 'pass']);
 
+/**
+ * STAGE-F-172: the document types a NEW patient dispense may declare.
+ *
+ * 'pass' stays in PatientReferenceType above because historical rows may
+ * carry it and must keep rendering; Migration 172 refuses it on write
+ * (patient_reference_type_pass_retired). WHICH of card/chart is legal for a
+ * given outlet depends on that outlet's clinical context and is decided
+ * SERVER-side — this type only stops the UI from offering a value that can
+ * never be accepted anywhere.
+ */
+export type StageFPatientReferenceType = Extract<PatientReferenceType, 'card' | 'chart'>;
+
+export const STAGE_F_PATIENT_REFERENCE_TYPES: readonly StageFPatientReferenceType[] =
+  Object.freeze(['card', 'chart']);
+
 /** The minimal shape DispenseContextDialog/Viewer need from an
  *  OutletMovementRow — kept separate so this service doesn't import from
  *  outlet-stock.service.ts (avoids a circular import). */

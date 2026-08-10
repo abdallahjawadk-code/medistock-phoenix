@@ -2360,6 +2360,17 @@ export const T: Dict = {
   dc_patient_identifier_label:    { ar: 'رقم الملف الطبي / المعرّف',                     en: 'Medical record number / identifier' },
   dc_patient_name_label:          { ar: 'اسم المريض',                                    en: 'Patient name' },
   dc_patient_required:            { ar: 'أدخل رقم الملف أو الاسم على الأقل',              en: 'Enter at least an identifier or a name' },
+  // STAGE-F-172: purely ADDITIVE — dc_patient_required above is left exactly
+  // as it was (an existing key is never edited or renamed here); Stage F's
+  // stricter requirement gets its own new key instead.
+  dc_patient_ref_required:        { ar: 'أدخل نوع المستند ورقم المرجع',                   en: 'Choose the document type and enter its reference number' },
+  // STAGE-F-172: the document the patient reference number was read from.
+  // Only these two are offered for new dispensing; which one is legal depends
+  // on the outlet's clinical context and is decided server-side.
+  dc_patient_ref_type_label:      { ar: 'نوع مستند المريض',                               en: 'Patient document' },
+  dc_patient_ref_type_choose:     { ar: 'اختر نوع المستند',                                en: 'Choose document type' },
+  dc_patient_ref_card:            { ar: 'بطاقة المراجعة',                                 en: 'Visit Card' },
+  dc_patient_ref_chart:           { ar: 'طبلة المريض',                                    en: 'Patient Chart' },
   dc_crash_cart_reference_label:  { ar: 'معرّف عربة الطوارئ',                            en: 'Crash cart reference' },
   dc_crash_cart_required:         { ar: 'معرّف عربة الطوارئ مطلوب',                      en: 'A crash cart reference is required' },
   dc_internal_order_reference_label: { ar: 'رقم الطلب الداخلي',                          en: 'Internal order reference' },

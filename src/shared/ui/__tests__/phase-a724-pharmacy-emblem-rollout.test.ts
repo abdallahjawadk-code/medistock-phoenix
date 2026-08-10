@@ -495,6 +495,18 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       // so this one stayed invisible to the guard locally and only surfaced
       // once committed — CI caught it, which is the guard working correctly.
       'src/shared/supabase/services/__tests__/organization-classification-writer.test.ts',
+      // STAGE-F-PATIENT-DISPENSING-172: a still later, separately authorized
+      // stage adds a genuine new migration (172) plus the product files that
+      // migration's contract requires — the dispense-context service (the
+      // Stage-F card/chart type and submit payload), its dialog, and the
+      // strings those two render. Excluded here by name for the same reason
+      // every entry above is: none of it has anything to do with this much
+      // earlier, UI-only pharmacy-emblem phase. Named exactly, so this guard
+      // still catches any OTHER unlisted migration/schema/RLS/service change.
+      'supabase/migrations/172_phoenix_patient_dispensing_contract.sql',
+      'src/features/outlet/dispense-context.service.ts',
+      'src/features/outlet/DispenseContextDialog.tsx',
+      'src/features/outlet/__tests__/dispense-context-contract.test.ts',
     ];
 
     const changed = execSync(

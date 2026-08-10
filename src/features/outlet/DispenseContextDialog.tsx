@@ -7,6 +7,7 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import {
   recordDispenseContext, classifyDispenseContextError,
   type DispenseBeneficiaryType, type OutletMovementForContext,
+  type StageFPatientReferenceType,
 } from './dispense-context.service';
 
 interface Props {
@@ -36,7 +37,7 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
   const [beneficiaryType, setBeneficiaryType] = useState<DispenseBeneficiaryType>('patient');
   const [patientIdentifier, setPatientIdentifier] = useState('');
   const [patientName, setPatientName] = useState('');
-  const [crashCartReference, setCrashCartReference] = useState('');
+  const [patientReferenceType, setPatientReferenceType] = useState<'' | StageFPatientReferenceType>('');
   const [internalOrderReference, setInternalOrderReference] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -45,7 +46,7 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
 
   function reset() {
     setBeneficiaryType('patient'); setPatientIdentifier(''); setPatientName('');
-    setCrashCartReference(''); setInternalOrderReference(''); setNotes(''); setError(null);
+    setPatientReferenceType(''); setInternalOrderReference(''); setNotes(''); setError(null);
     requestIdRef.current = null;
   }
 
@@ -57,10 +58,16 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
 
   if (!open || !movement) return null;
 
-  const patientValid = beneficiaryType !== 'patient' || patientIdentifier.trim() !== '' || patientName.trim() !== '';
-  const crashCartValid = beneficiaryType !== 'crash_cart' || crashCartReference.trim() !== '';
+  // STAGE-F-172: a patient dispense now needs BOTH the reference number and
+  // the document it was read from — the server refuses either alone
+  // (patient_reference_type_required / patient_identifier_required_for_
+  // reference_type), and refuses a document type that is illegal for the
+  // outlet's clinical context. The database remains the authority; this is an
+  // affordance so the operator is not sent to a guaranteed refusal.
+  const patientValid = beneficiaryType !== 'patient'
+    || (patientIdentifier.trim() !== '' && patientReferenceType !== '');
   const internalOrderValid = beneficiaryType !== 'internal_order' || internalOrderReference.trim() !== '';
-  const canSubmit = canRecord && patientValid && crashCartValid && internalOrderValid && !busy;
+  const canSubmit = canRecord && patientValid && internalOrderValid && !busy;
 
   async function handleSubmit() {
     if (!canSubmit) return;
@@ -74,7 +81,7 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
         beneficiaryType,
         patientIdentifier: patientIdentifier.trim() || undefined,
         patientName: patientName.trim() || undefined,
-        crashCartReference: crashCartReference.trim() || undefined,
+        patientReferenceType: patientReferenceType || undefined,
         internalOrderReference: internalOrderReference.trim() || undefined,
         notes: notes.trim() || undefined,
       });
@@ -113,8 +120,12 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
               value={beneficiaryType}
               onChange={e => setBeneficiaryType(e.target.value as DispenseBeneficiaryType)}
               options={[
+                // STAGE-F-172: 'crash_cart' is retired for NEW dispensing.
+                // The cart is a real outlet holding real outlet_stock, fed by
+                // Migration 168's routed corridor — not a free-text
+                // beneficiary on a pharmacy debit. Historical rows keep
+                // rendering through DispenseContextViewer.
                 { value: 'patient', label: t('dc_type_patient', lang) },
-                { value: 'crash_cart', label: t('dc_type_crash_cart', lang) },
                 { value: 'internal_order', label: t('dc_type_internal_order', lang) },
               ]}
             />
@@ -125,25 +136,34 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
               <p style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '10px' }} dir="auto">
                 <PhoenixIcon name="lock" size={12} inline /> {t('dc_patient_privacy_note', lang)}
               </p>
+              {/* STAGE-F-172: the document the reference number was read from.
+                  Only card (Visit Card) and chart (Patient Chart) are offered;
+                  'pass' is retired for new dispensing. Which of the two is
+                  legal depends on the outlet's clinical context and is decided
+                  server-side — an illegal choice is refused, never silently
+                  accepted. */}
               <div style={{ marginBottom: '12px' }}>
-                <label htmlFor="dc-patient-id" style={labelStyle}>{t('dc_patient_identifier_label', lang)}</label>
+                <PhoenixSelect
+                  label={`${t('dc_patient_ref_type_label', lang)} *`}
+                  value={patientReferenceType}
+                  onChange={e => setPatientReferenceType(e.target.value as '' | StageFPatientReferenceType)}
+                  options={[
+                    { value: '', label: t('dc_patient_ref_type_choose', lang) },
+                    { value: 'card', label: t('dc_patient_ref_card', lang) },
+                    { value: 'chart', label: t('dc_patient_ref_chart', lang) },
+                  ]}
+                />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label htmlFor="dc-patient-id" style={labelStyle}>{t('dc_patient_identifier_label', lang)} *</label>
                 <input id="dc-patient-id" type="text" dir="auto" value={patientIdentifier} onChange={e => setPatientIdentifier(e.target.value)} style={fieldStyle} />
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label htmlFor="dc-patient-name" style={labelStyle}>{t('dc_patient_name_label', lang)}</label>
                 <input id="dc-patient-name" type="text" dir="auto" value={patientName} onChange={e => setPatientName(e.target.value)} style={fieldStyle} />
               </div>
-              {!patientValid && <p style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '10px' }}>{t('dc_patient_required', lang)}</p>}
+              {!patientValid && <p style={{ fontSize: '11px', color: 'var(--err)', marginBottom: '10px' }}>{t('dc_patient_ref_required', lang)}</p>}
             </>
-          )}
-
-          {beneficiaryType === 'crash_cart' && (
-            <div style={{ marginBottom: '12px' }}>
-              <label htmlFor="dc-cart-ref" style={labelStyle}>{t('dc_crash_cart_reference_label', lang)} *</label>
-              <input id="dc-cart-ref" type="text" dir="auto" value={crashCartReference} onChange={e => setCrashCartReference(e.target.value)}
-                style={{ ...fieldStyle, border: `1px solid ${crashCartValid ? 'var(--brd)' : 'var(--err)'}` }} />
-              {!crashCartValid && <p style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>{t('dc_crash_cart_required', lang)}</p>}
-            </div>
           )}
 
           {beneficiaryType === 'internal_order' && (
