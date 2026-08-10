@@ -18,18 +18,19 @@ describe('175 · exact Wave-2 helper ACL scope', () => {
     expect(TARGETS).toHaveLength(3);
   });
 
-  it('removes only PUBLIC/anon execution and introduces no grants', () => {
+  it('makes only service_role explicit, then removes PUBLIC/anon execution', () => {
+    expect(sql).toContain("EXECUTE 'GRANT EXECUTE ON FUNCTION ' || v_target || ' TO service_role';");
     expect(sql).toContain("FROM PUBLIC';");
     expect(sql).toContain("FROM anon';");
-    expect(executable).not.toMatch(/^\s*GRANT\s/mi);
     expect(executable).not.toMatch(/REVOKE[^;\n]*(authenticated|service_role)/i);
+    expect(executable).not.toMatch(/GRANT[^;\n]*TO\s+(anon|authenticated|PUBLIC)/i);
   });
 
-  it('requires direct authenticated and service_role grants before hardening', () => {
+  it('requires direct authenticated grant and effective service_role access before hardening', () => {
     expect(sql).toContain("r.rolname = 'authenticated'");
-    expect(sql).toContain("r.rolname = 'service_role'");
     expect(sql).toContain('authenticated direct grant absent');
-    expect(sql).toContain('service_role direct grant absent');
+    expect(sql).toContain("has_function_privilege('service_role'");
+    expect(sql).toContain('service_role cannot execute expected helper');
   });
 
   it('fingerprints definitions and fails closed', () => {
