@@ -5,7 +5,7 @@ import { PhoenixDialog } from '@/shared/ui/PhoenixDialog';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import {
-  dispenseWithContext, classifyDispenseContextError,
+  dispenseWithContext, classifyDispenseContextError, patientFefoRecommendation,
   type DispenseBeneficiaryType, type PatientReferenceType,
 } from './dispense-context.service';
 import type { OutletStockRow } from './outlet-stock.service';
@@ -13,6 +13,9 @@ import type { OutletStockRow } from './outlet-stock.service';
 interface Props {
   open: boolean;
   lot: OutletStockRow | null;
+  /** STAGE-F-172: the outlet's other lots, used ONLY to compute a FEFO
+   *  recommendation for the operator. Advisory — see patientFefoRecommendation. */
+  lots?: readonly OutletStockRow[];
   lang: 'ar' | 'en';
   canDispense: boolean;
   onClose: () => void;
@@ -45,7 +48,7 @@ const labelStyle = {
  * enforced here is re-enforced server-side; this is preflight, not
  * authorization.
  */
-export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, onSuccess }: Props) {
+export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, onClose, onSuccess }: Props) {
   const [quantity, setQuantity] = useState('');
   const [beneficiaryType, setBeneficiaryType] = useState<DispenseBeneficiaryType>('patient');
   const [patientName, setPatientName] = useState('');
@@ -82,6 +85,20 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   }
 
   if (!open || !lot) return null;
+
+  // STAGE-F-172: which batch of THIS exact material FEFO would take first at
+  // this outlet. Advisory only — it reserves nothing and blocks nothing; the
+  // operator may still dispense the batch they physically hold, and the
+  // canonical RPC remains the sole authority over the final debit.
+  const fefoPick = lots && lots.length > 0
+    ? patientFefoRecommendation(lots, {
+        scientificName: lot.scientificName,
+        nationalCode: lot.nationalCode,
+        concentration: lot.concentration,
+        dosageForm: lot.dosageForm,
+        unit: lot.unit,
+      })
+    : null;
 
   const qtyNum = quantity === '' ? null : Number(quantity);
   const qtyInvalid = quantity !== '' && (qtyNum === null || !Number.isInteger(qtyNum) || qtyNum <= 0);
@@ -152,6 +169,22 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
         <div style={{ marginTop: '6px', fontSize: '13px' }}>
           {t('mv_available', lang)}: <strong>{lot.availableQuantity}</strong>
         </div>
+        {/* STAGE-F-172: FEFO advice, never a claim. It does not reserve, hold
+            or guarantee this batch — the canonical RPC re-locks and re-checks
+            whichever row is finally submitted. */}
+        {fefoPick && fefoPick.id !== lot.id && (
+          <div role="note" style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--warn)' }} dir="auto">
+            <PhoenixIcon name="warning" size={12} inline />{' '}
+            {t('dsp_fefo_earlier_batch', lang)}{' '}
+            <span dir="ltr">{fefoPick.batchNumber ?? '—'}</span>
+            {fefoPick.expiryDate && <> · <span dir="ltr">{fefoPick.expiryDate}</span></>}
+          </div>
+        )}
+        {fefoPick && fefoPick.id === lot.id && (
+          <div style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--ok)' }} dir="auto">
+            {t('dsp_fefo_is_earliest', lang)}
+          </div>
+        )}
       </div>
 
       {!canDispense ? (

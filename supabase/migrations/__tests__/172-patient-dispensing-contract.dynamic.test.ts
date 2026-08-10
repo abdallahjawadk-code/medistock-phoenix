@@ -431,6 +431,60 @@ run('172 · patient dispensing contract (dynamic)', () => {
     });
   });
 
+  // ══ Provenance: the paired proof ══════════════════════════════════════════
+  describe('provenance · dispensable here, still untransferable there', () => {
+    it('a provenance-less row is patient-dispensable AND still excluded by transfer FEFO', async () => {
+      // Every fixture in this suite is provenance-less by construction:
+      // inserted straight into outlet_stock, with no warehouse_dispatch_lines
+      // row and no dispatch_receive movement. Migration 150 built TRANSFER
+      // FEFO to require exactly that chain. Stage F must keep BOTH halves
+      // true at once, so this asserts them on the SAME row.
+      const sci = uniq('SCI-PROV');
+      const s = await seedOutletStock({
+        org: ORG_HOSP, point: PH_HOSP_ER, pointType: 'pharmacy', sci, qty: 12,
+      });
+
+      const row = await rig.asAdmin((c: any) => c.query(
+        `SELECT organization_id, distribution_point_id, scientific_name, national_code
+           FROM outlet_stock WHERE id=$1`, [s]));
+      const { organization_id, distribution_point_id, scientific_name, national_code } = row.rows[0];
+
+      // A. transfer FEFO EXCLUDES it — 150's provenance join finds nothing.
+      const transfer = await rig.asUser(rig.superAdminId, (c: any) => c.query(
+        `SELECT * FROM public.phoenix_inventory_fefo_batches($1,'outlet',$2,$3,$4)`,
+        [organization_id, distribution_point_id, scientific_name, national_code]));
+      expect(transfer.rows).toHaveLength(0);
+
+      // B. the patient dispense SUCCEEDS on that very row.
+      await dispense({ stockId: s, qty: 5, refType: 'card' });
+      expect(await onHand(s)).toBe(7);
+
+      // C. and transfer FEFO still excludes it afterwards — dispensing did
+      //    not manufacture provenance the row never had.
+      const after = await rig.asUser(rig.superAdminId, (c: any) => c.query(
+        `SELECT * FROM public.phoenix_inventory_fefo_batches($1,'outlet',$2,$3,$4)`,
+        [organization_id, distribution_point_id, scientific_name, national_code]));
+      expect(after.rows).toHaveLength(0);
+    });
+
+    it('a STALE recommendation cannot oversell — the RPC re-checks under its own lock', async () => {
+      // Stands in for the UI holding a candidate that another operator has
+      // since drained. The advisory reserves nothing, so the only thing
+      // standing between a stale suggestion and an oversell is the canonical
+      // writer's FOR UPDATE re-check.
+      const s = await seedOutletStock({ org: ORG_HOSP, point: PH_HOSP_ER, pointType: 'pharmacy', qty: 10 });
+
+      // Operator A "sees" 10 available. Someone else takes 8 first.
+      await dispense({ stockId: s, qty: 8, refType: 'card' });
+      expect(await onHand(s)).toBe(2);
+
+      // A now submits against the stale figure.
+      const msg = await rejects(() => dispense({ stockId: s, qty: 10, refType: 'card' }));
+      expect(msg).toMatch(/insufficient|quantity|available/i);
+      expect(await onHand(s)).toBe(2);           // fails closed, never negative
+    });
+  });
+
   // ══ Concurrency ═══════════════════════════════════════════════════════════
   describe('concurrency · genuine two-transaction races', () => {
     it('two concurrent dispenses on the SAME row cannot oversell it', async () => {

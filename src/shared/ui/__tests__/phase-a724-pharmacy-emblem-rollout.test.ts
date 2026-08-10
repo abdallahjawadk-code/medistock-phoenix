@@ -508,6 +508,12 @@ describe('A7.2.4 preservation and fail-closed boundaries', () => {
       'src/features/outlet/dispense-context.service.ts',
       'src/features/outlet/DispenseContextDialog.tsx',
       'src/features/outlet/__tests__/dispense-context-contract.test.ts',
+      // The FEFO advisory ships inside that same service, so its unit matrix
+      // lives beside it. Listed pre-emptively: git diff cannot see an
+      // UNTRACKED file, so a new test only becomes visible to this guard once
+      // committed — exactly how the organization-classification writer test
+      // above surfaced in CI rather than locally.
+      'src/features/outlet/__tests__/patient-fefo.test.ts',
     ];
 
     const changed = execSync(

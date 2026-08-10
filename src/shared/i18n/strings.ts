@@ -2395,6 +2395,11 @@ export const T: Dict = {
   dsp_quantity_invalid:           { ar: 'يجب أن تكون عدداً صحيحاً أكبر من صفر',            en: 'Must be a whole number greater than zero' },
   dsp_quantity_exceeds:           { ar: 'الكمية تتجاوز المتاح في هذه الدفعة',              en: 'Quantity exceeds what is available in this lot' },
   dsp_patient_name_required:      { ar: 'اسم المريض مطلوب',                               en: 'The patient name is required' },
+  // STAGE-F-172: FEFO advice on the dispense composer. Deliberately worded as
+  // guidance, never as a reservation — nothing is held until the canonical
+  // RPC commits.
+  dsp_fefo_earlier_batch:         { ar: 'يوجد دفعة أقرب انتهاءً لنفس المادة:',              en: 'An earlier-expiring batch of this material exists:' },
+  dsp_fefo_is_earliest:           { ar: 'هذه الدفعة هي الأقرب انتهاءً (الصرف وفق FEFO).',   en: 'This is the earliest-expiring batch (FEFO).' },
   dsp_reference_type_label:       { ar: 'نوع المستند المرجعي',                            en: 'Reference document type' },
   dsp_ref_chart:                  { ar: 'الملف / الإضبارة',                               en: 'Chart / file' },
   dsp_ref_card:                   { ar: 'البطاقة',                                        en: 'Card' },
