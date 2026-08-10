@@ -2,8 +2,11 @@
 -- READ-HELPER-ANON-SURFACE-HARDENING-175 — Phase-2 Wave 2
 --
 -- Exact three-function ACL hardening only. These functions are authenticated
--- or internal read helpers with explicit authenticated + service_role EXECUTE;
--- their current anon reach is inherited from PUBLIC and is unnecessary.
+-- or internal read helpers whose anon reach is inherited from PUBLIC.
+-- Production already has explicit authenticated + service_role EXECUTE on all
+-- three. Clean replay proved at least phoenix_profile_has_permission may let
+-- service_role inherit from PUBLIC, so this migration first makes service_role
+-- explicit on the same three overloads, then removes PUBLIC/anon.
 --
 -- Intentionally OUT OF SCOPE:
 --   * public.get_public_qr_payload(text) — intentional anonymous product API
@@ -38,8 +41,7 @@ BEGIN
       RAISE EXCEPTION 'PREFLIGHT FAILED (175): target absent: %', v_target;
     END IF;
 
-    -- Unlike inherited/effective checks alone, require direct grants to both
-    -- legitimate API roles so removing PUBLIC cannot silently remove access.
+    -- authenticated must already have a direct grant; 175 never creates one.
     IF NOT EXISTS (
       SELECT 1
       FROM pg_proc p
@@ -52,16 +54,10 @@ BEGIN
       RAISE EXCEPTION 'PREFLIGHT FAILED (175): authenticated direct grant absent: %', v_target;
     END IF;
 
-    IF NOT EXISTS (
-      SELECT 1
-      FROM pg_proc p
-      CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) e
-      JOIN pg_roles r ON r.oid = e.grantee
-      WHERE p.oid = to_regprocedure(v_target)
-        AND r.rolname = 'service_role'
-        AND e.privilege_type = 'EXECUTE'
-    ) THEN
-      RAISE EXCEPTION 'PREFLIGHT FAILED (175): service_role direct grant absent: %', v_target;
+    -- service_role must be effectively usable before hardening. It may be an
+    -- explicit grant (Production) or inherited from PUBLIC (fresh replay).
+    IF NOT has_function_privilege('service_role', to_regprocedure(v_target), 'EXECUTE') THEN
+      RAISE EXCEPTION 'PREFLIGHT FAILED (175): service_role cannot execute expected helper: %', v_target;
     END IF;
 
     IF NOT has_function_privilege('anon', to_regprocedure(v_target), 'EXECUTE') THEN
@@ -91,8 +87,10 @@ BEGIN
     RAISE EXCEPTION 'PREFLIGHT FAILED (175): core identity helpers not in expected authenticated state';
   END IF;
 
-  -- Exact three overloads only. No GRANT and no authenticated/service revoke.
+  -- Exact three overloads only. service_role convergence first; no grant to
+  -- authenticated/anon/PUBLIC and no authenticated/service-role revoke.
   FOREACH v_target IN ARRAY v_targets LOOP
+    EXECUTE 'GRANT EXECUTE ON FUNCTION ' || v_target || ' TO service_role';
     EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || v_target || ' FROM PUBLIC';
     EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || v_target || ' FROM anon';
   END LOOP;
