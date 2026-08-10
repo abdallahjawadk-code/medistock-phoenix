@@ -172,13 +172,14 @@ describe('8. Read transport changed, but no DB write path was added', () => {
     expectQuickAvailFormAbsent();
   });
 
-  it('getAvailabilityByPoint uses the canonical read RPC and performs no mutation', () => {
+  it('getAvailabilityByPoint uses the canonical read RPC and performs no executable mutation', () => {
     const start = availabilityService.indexOf('export async function getAvailabilityByPoint');
     const end = availabilityService.indexOf('export async function upsertAvailability');
     const fn = availabilityService.slice(start, end);
-    expect(fn).toContain("supabase.rpc('phoenix_outlet_availability_read_model'");
-    expect(fn).not.toContain(".from('item_availability')");
-    expect(fn).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
+    const executable = fn.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(executable).toContain("supabase.rpc('phoenix_outlet_availability_read_model'");
+    expect(executable).not.toContain(".from('item_availability')");
+    expect(executable).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
   });
 });
 
