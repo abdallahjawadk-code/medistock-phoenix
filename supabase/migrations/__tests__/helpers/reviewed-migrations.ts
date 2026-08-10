@@ -254,6 +254,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // care_institution rows). The next unreviewed number is 172.
   '171_phoenix_organization_kind_pharmacy_department_authority.sql',
   '172_phoenix_patient_dispensing_contract.sql',
+  '173_phoenix_database_security_surface_hardening.sql',
 ]);
 
 /** Exact-membership index. Built once; never derived from disk. */
