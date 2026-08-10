@@ -535,19 +535,38 @@ async function main() {
       await page.fill('#dsp-patient-ref', 'CHART-001');
     }, (body, { restSnippet }) => record('PATIENT dispense succeeds', dispenseSucceeded(body, restSnippet)));
 
-    // CRASH CART
+    // STAGE-F-172: the legacy crash_cart beneficiary is RETIRED. It used to
+    // debit the pharmacy against a free-text cart reference and credit
+    // nothing; the cart is now a real outlet fed by Migration 168's routed
+    // corridor. This case therefore became a NEGATIVE assertion plus a second
+    // real patient dispense — the retirement is proven at the surface the
+    // operator actually uses, and the migration is NOT weakened to keep an
+    // obsolete path green.
     await dispenseFlow('E2E Amoxicillin', async () => {
       await page.fill('#dsp-qty', '5');
       // PhoenixSelect connects a real <label htmlFor> to the <select id> —
-      // getByLabel is Playwright's own robust locator for exactly this,
-      // unlike the hasText content filter this used to use (which made
-      // .evaluate() hang the full 30s timeout waiting for a match that
-      // apparently never resolved).
+      // getByLabel is Playwright's own robust locator for exactly this.
       const select = page.getByLabel('Beneficiary type').or(page.getByLabel('نوع الجهة المستفيدة')).first();
-      await selectByLabel(select, ['Crash cart', 'عربة الطوارئ']);
-      await settle(300);
-      await page.fill('#dsp-cart', 'CART-42');
-    }, (body, { restSnippet }) => record('CRASH_CART dispense succeeds', dispenseSucceeded(body, restSnippet)));
+      const beneficiaryOptions = await select.locator('option').allTextContents().catch(() => []);
+      const offersCart = beneficiaryOptions.some(o => /crash cart|عربة الطوارئ/i.test(o));
+      record('STAGE-F: the retired crash_cart beneficiary is no longer offered', !offersCart,
+        JSON.stringify(beneficiaryOptions));
+
+      // And the retired 'pass' document is gone from the patient document
+      // selector, which must offer exactly Visit Card and Patient Chart.
+      const refSelect = page.getByLabel('Reference document type').or(page.getByLabel('نوع المستند المرجعي')).first();
+      const refOptions = await refSelect.locator('option').allTextContents().catch(() => []);
+      record('STAGE-F: patient document selector offers card+chart and never pass',
+        refOptions.length === 2 && !refOptions.some(o => /pass|إجازة|تصريح/i.test(o)),
+        JSON.stringify(refOptions));
+
+      // A second real patient dispense, this time declaring the Visit Card.
+      // DP_A is a hospital pharmacy in a non-emergency context, so Migration
+      // 172 accepts card OR chart there — this proves the card branch.
+      await selectByLabel(refSelect, ['Card', 'البطاقة']).catch(() => {});
+      await page.fill('#dsp-patient-name', 'Test Patient B');
+      await page.fill('#dsp-patient-ref', 'CARD-002');
+    }, (body, { restSnippet }) => record('PATIENT dispense with Visit Card succeeds', dispenseSucceeded(body, restSnippet)));
 
     // INTERNAL ORDER
     await dispenseFlow('E2E Ibuprofen', async () => {

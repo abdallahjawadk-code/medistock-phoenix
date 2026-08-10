@@ -51,7 +51,6 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   const [patientName, setPatientName] = useState('');
   const [patientReferenceType, setPatientReferenceType] = useState<PatientReferenceType>('chart');
   const [patientIdentifier, setPatientIdentifier] = useState('');
-  const [crashCartReference, setCrashCartReference] = useState('');
   const [internalOrderReference, setInternalOrderReference] = useState('');
   const [reason, setReason] = useState('');
   const [contextNotes, setContextNotes] = useState('');
@@ -65,7 +64,7 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   function selectBeneficiaryType(next: DispenseBeneficiaryType) {
     setBeneficiaryType(next);
     setPatientName(''); setPatientIdentifier(''); setPatientReferenceType('chart');
-    setCrashCartReference(''); setInternalOrderReference('');
+    setInternalOrderReference('');
     setError(null);
   }
 
@@ -91,14 +90,17 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
   // Patient: a name is always required; a reference NUMBER and its TYPE are
   // only meaningful together (the server enforces the same pairing).
   const patientNameMissing = beneficiaryType === 'patient' && patientName.trim() === '';
-  const patientRefIncomplete = false; // type always has a value; number is optional
-  const crashCartMissing = beneficiaryType === 'crash_cart' && crashCartReference.trim() === '';
+  // STAGE-F-172: the reference NUMBER is no longer optional for a patient
+  // dispense — the server now requires the document type, and refuses a type
+  // with no number (patient_identifier_required_for_reference_type). The type
+  // itself always has a value, so only the number can be missing.
+  const patientRefIncomplete = beneficiaryType === 'patient' && patientIdentifier.trim() === '';
   const internalOrderMissing = beneficiaryType === 'internal_order' && internalOrderReference.trim() === '';
 
   const canSubmit =
     canDispense && !busy &&
     qtyNum !== null && Number.isInteger(qtyNum) && qtyNum > 0 && !qtyExceeds &&
-    !patientNameMissing && !patientRefIncomplete && !crashCartMissing && !internalOrderMissing;
+    !patientNameMissing && !patientRefIncomplete && !internalOrderMissing;
 
   async function handleSubmit() {
     if (!canSubmit || qtyNum === null) return;
@@ -116,7 +118,6 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
         // Only send a reference type when a number accompanies it — the
         // server refuses one without the other.
         patientReferenceType: patientIdentifier.trim() ? patientReferenceType : undefined,
-        crashCartReference: crashCartReference.trim() || undefined,
         internalOrderReference: internalOrderReference.trim() || undefined,
         reason: reason.trim() || undefined,
         contextNotes: contextNotes.trim() || undefined,
@@ -175,8 +176,11 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
               value={beneficiaryType}
               onChange={e => selectBeneficiaryType(e.target.value as DispenseBeneficiaryType)}
               options={[
+                // STAGE-F-172: crash_cart is retired as a dispensing
+                // beneficiary. The cart is a real outlet holding real
+                // outlet_stock, fed by Migration 168's routed corridor —
+                // not a free-text beneficiary on a pharmacy debit.
                 { value: 'patient', label: t('dc_type_patient', lang) },
-                { value: 'crash_cart', label: t('dc_type_crash_cart', lang) },
                 { value: 'internal_order', label: t('dc_type_internal_order', lang) },
               ]}
             />
@@ -201,9 +205,13 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
                   value={patientReferenceType}
                   onChange={e => setPatientReferenceType(e.target.value as PatientReferenceType)}
                   options={[
+                    // STAGE-F-172: 'pass' is retired for NEW patient
+                    // dispensing (the server refuses it); historical rows
+                    // keep rendering in DispenseContextViewer. Which of
+                    // card/chart is legal for THIS outlet is decided
+                    // server-side from its clinical context.
                     { value: 'chart', label: t('dsp_ref_chart', lang) },
                     { value: 'card', label: t('dsp_ref_card', lang) },
-                    { value: 'pass', label: t('dsp_ref_pass', lang) },
                   ]}
                 />
               </div>
@@ -213,17 +221,6 @@ export function DispenseComposerDialog({ open, lot, lang, canDispense, onClose, 
                   onChange={e => setPatientIdentifier(e.target.value)} style={fieldStyle} />
               </div>
             </>
-          )}
-
-          {beneficiaryType === 'crash_cart' && (
-            <div style={{ marginBottom: '12px' }}>
-              <label htmlFor="dsp-cart" style={labelStyle}>{t('dc_crash_cart_reference_label', lang)} *</label>
-              <input id="dsp-cart" type="text" dir="auto" value={crashCartReference}
-                onChange={e => setCrashCartReference(e.target.value)}
-                aria-invalid={crashCartMissing}
-                style={{ ...fieldStyle, border: `1px solid ${crashCartMissing ? 'var(--err)' : 'var(--brd)'}` }} />
-              {crashCartMissing && <p role="alert" style={{ fontSize: '11px', color: 'var(--err)', marginTop: '4px' }}>{t('dc_crash_cart_required', lang)}</p>}
-            </div>
           )}
 
           {beneficiaryType === 'internal_order' && (

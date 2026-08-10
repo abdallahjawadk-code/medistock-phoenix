@@ -88,8 +88,10 @@ describe('B) gated on BOTH scoped permissions the composed act needs', () => {
 describe('C) discriminated form — only valid fields, no stale values on switch', () => {
   it('renders each beneficiary type\'s fields behind its own guard', () => {
     expect(composer).toContain("beneficiaryType === 'patient'");
-    expect(composer).toContain("beneficiaryType === 'crash_cart'");
     expect(composer).toContain("beneficiaryType === 'internal_order'");
+    // STAGE-F-172: crash_cart is retired as a dispensing beneficiary, so it
+    // no longer has a branch to render.
+    expect(composer).not.toContain("beneficiaryType === 'crash_cart'");
   });
 
   it('switching type clears every other type\'s field', () => {
@@ -97,10 +99,12 @@ describe('C) discriminated form — only valid fields, no stale values on switch
     const body = fn.slice(0, fn.indexOf('\n  }'));
     for (const setter of [
       'setPatientName(\'\')', 'setPatientIdentifier(\'\')',
-      'setCrashCartReference(\'\')', 'setInternalOrderReference(\'\')',
+      'setInternalOrderReference(\'\')',
     ]) {
       expect(body, setter).toContain(setter);
     }
+    // Nothing left to clear for the retired type — its state is gone.
+    expect(composer).not.toContain('setCrashCartReference');
   });
 
   it('the type selector goes through selectBeneficiaryType, never a bare setState', () => {
@@ -111,11 +115,16 @@ describe('C) discriminated form — only valid fields, no stale values on switch
     expect(composer).toMatch(/patientReferenceType: patientIdentifier\.trim\(\) \? patientReferenceType : undefined/);
   });
 
-  it('uses the closed chart/card/pass vocabulary', () => {
+  it('uses the closed chart/card vocabulary for NEW dispensing, keeping pass readable', () => {
+    // The historical union still carries 'pass' so old rows render …
     expect(service).toContain("'chart' | 'card' | 'pass'");
+    // … but STAGE-F-172 refuses it on write, so the composer must never
+    // offer it. Only the two owner-approved documents are selectable.
     expect(composer).toContain("value: 'chart'");
     expect(composer).toContain("value: 'card'");
-    expect(composer).toContain("value: 'pass'");
+    expect(composer).not.toContain("value: 'pass'");
+    // And the retired beneficiary is gone from the selector too.
+    expect(composer).not.toContain("value: 'crash_cart'");
   });
 });
 
@@ -143,8 +152,13 @@ describe('E) validation surfaces before the server sees it (preflight, not autho
 
   it('requires the per-type mandatory field', () => {
     expect(composer).toContain('patientNameMissing');
-    expect(composer).toContain('crashCartMissing');
     expect(composer).toContain('internalOrderMissing');
+    // STAGE-F-172: the retired type has no field left to require …
+    expect(composer).not.toContain('crashCartMissing');
+    // … and a patient dispense now also requires the reference NUMBER,
+    // because 172 refuses a document type with no number.
+    expect(composer).toContain('patientRefIncomplete');
+    expect(composer).toMatch(/patientRefIncomplete\s*=\s*beneficiaryType === 'patient' && patientIdentifier\.trim\(\) === ''/);
   });
 
   it('marks invalid fields for assistive technology and announces errors', () => {

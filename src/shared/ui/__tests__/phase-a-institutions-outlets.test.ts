@@ -223,10 +223,15 @@ describe('Phase A institutions + outlet operations/dispensing (A5.1) presentatio
   });
 
   it('keeps outlet dispensing on mandatory beneficiary/context fields — no submit path bypasses beneficiary validation', () => {
+    // STAGE-F-172: crash_cart is retired as a dispensing beneficiary, so its
+    // per-type guard goes with it. What this test exists to protect — that no
+    // submit path bypasses beneficiary validation — is UNCHANGED, and now
+    // also covers the patient reference number, which 172 made mandatory.
     expect(dispenseComposer).toContain('patientNameMissing');
-    expect(dispenseComposer).toContain('crashCartMissing');
+    expect(dispenseComposer).toContain('patientRefIncomplete');
     expect(dispenseComposer).toContain('internalOrderMissing');
-    expect(dispenseComposer).toMatch(/canSubmit\s*=[\s\S]*!patientNameMissing[\s\S]*!crashCartMissing[\s\S]*!internalOrderMissing/);
+    expect(dispenseComposer).not.toContain('crashCartMissing');
+    expect(dispenseComposer).toMatch(/canSubmit\s*=[\s\S]*!patientNameMissing[\s\S]*!patientRefIncomplete[\s\S]*!internalOrderMissing/);
   });
 
   it('keeps physical-count correction on its existing guarded/approval-aware RPC path, never a direct stock write', () => {
