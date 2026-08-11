@@ -43,6 +43,36 @@ describe('177 · canonical public QR (static)',()=>{
     expect(fnBody).not.toContain('ia.condition');
   });
 
+  it('groups every branch on the canonical Migration-150 material identity',()=>{
+    // outlet_stock.material_identity_key is the GENERATED ALWAYS canonical key
+    // over (central_item_id, scientific_name, national_code, concentration,
+    // dosage_form, unit). Grouping on it — rather than on a hand-rebuilt tuple
+    // of raw columns — is what makes case/whitespace variants aggregate and
+    // unit-distinct identities stay apart.
+    expect(fnBody).toContain('GROUP BY s.material_identity_key');
+    expect(fnBody).toContain('GROUP BY s.distribution_point_id,s.material_identity_key');
+    expect(fnBody).toContain('public._phoenix_material_identity_v1(');
+    // The pre-remediation raw-tuple grouping must never return.
+    expect(fnBody).not.toContain('GROUP BY s.central_item_id,s.scientific_name');
+    expect(fnBody).not.toContain("coalesce(s.unit,'') AS unit_key");
+  });
+
+  it('matches catalogue removal exactly, never fuzzily, and fails safe when ambiguous',()=>{
+    // item_availability cannot express unit and its local_item_id is nullable,
+    // so a marker may not resolve one canonical identity. It hides only when it
+    // resolves exactly one, and central item is constrained only when proven.
+    expect(fnBody).not.toContain('OR coalesce(ia.scientific_name');
+    expect(fnBody).toContain('HAVING count(DISTINCT c.material_identity_key)=1');
+    expect(fnBody).toContain('m.proven_central_item_id IS NULL');
+    expect(fnBody).toContain('ia.removed_at IS NOT NULL');
+  });
+
+  it('keeps the runtime VERIFY guards that protect canonical identity',()=>{
+    expect(sql).toContain("v_def NOT ILIKE '%GROUP BY s.material_identity_key%'");
+    expect(sql).toContain("v_def ILIKE '%OR coalesce(ia.scientific_name%'");
+    expect(sql).toContain("v_def NOT ILIKE '%HAVING count(DISTINCT c.material_identity_key)=1%'");
+  });
+
   it('keeps the runtime VERIFY guard that rejects cache-as-physical-truth',()=>{
     // The whole point of isolating fnBody above is that this guard is allowed
     // — indeed required — to mention the forbidden expressions. If a future
