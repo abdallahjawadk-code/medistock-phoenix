@@ -473,6 +473,23 @@ BEGIN
   IF v_def NOT ILIKE '%removed_at IS NOT NULL%' THEN
     RAISE EXCEPTION '177 verify failed: catalogue visibility marker is not enforced';
   END IF;
+  -- The canonical identity helper is deliberately REVOKEd from PUBLIC, anon and
+  -- authenticated by 150. This body reaches it as SECURITY DEFINER, so the
+  -- DEFINER — not the caller — must hold EXECUTE. Assert that at apply time
+  -- rather than discovering it on the first anonymous scan.
+  IF NOT has_function_privilege(
+       (SELECT pg_get_userbyid(proowner) FROM pg_proc
+        WHERE oid='public.get_public_qr_payload(text)'::regprocedure),
+       'public._phoenix_material_identity_v1(uuid,text,text,text,text,text)'::regprocedure,
+       'EXECUTE') THEN
+    RAISE EXCEPTION '177 verify failed: definer cannot execute the canonical identity helper';
+  END IF;
+  IF has_function_privilege('anon',
+       'public._phoenix_material_identity_v1(uuid,text,text,text,text,text)'::regprocedure,'EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public._phoenix_material_identity_v1(uuid,text,text,text,text,text)'::regprocedure,'EXECUTE') THEN
+    RAISE EXCEPTION '177 verify failed: internal identity helper was exposed to public roles';
+  END IF;
   IF v_def NOT ILIKE '%scan_count = scan_count + 1%' THEN
     RAISE EXCEPTION '177 verify failed: scan counter side effect changed';
   END IF;
