@@ -23,6 +23,18 @@
 -- It does not reimplement 150's normalization; it reuses the stored generated
 -- column and the canonical helper.
 --
+-- PUBLIC UNIT SEMANTICS
+--   Because unit is part of material identity, every published row IS one
+--   unit-distinct physical identity, and it must publish ITS OWN unit. Neither
+--   the distribution_point nor the local_item branch may source a row's unit
+--   from central_items — not preferentially and not as a fallback — because
+--   either one relabels a sibling identity (5 box + 3 strip published as
+--   5 box + 3 box). outlet_stock.unit is nullable, and a NULL unit is its own
+--   canonical identity under 150's 'N' sentinel, so a NULL row unit is
+--   published as JSON null and the public screen renders the bare quantity.
+--   The local_item target keeps its top-level catalogue `unit` unchanged; that
+--   describes the catalogue item, not any one physical row.
+--
 -- CATALOGUE REMOVAL MATCHING
 --   item_availability has no `unit` column and no central_item_id column, and
 --   its local_item_id is nullable, so a removal marker cannot always prove one
@@ -137,6 +149,9 @@ BEGIN
               min(s.scientific_name) AS scientific_name,
               min(s.concentration) AS concentration,
               min(s.dosage_form) AS dosage_form,
+              -- unit is a COMPONENT of material_identity_key, so it is constant
+              -- within this group and min() is an exact representative. This is
+              -- the unit the public row must publish — see row_unit below.
               min(s.unit) AS unit,
               coalesce(s.batch_number,'') AS batch_number_key,
               coalesce(s.expiry_date,DATE '0001-01-01') AS expiry_date_key,
@@ -182,7 +197,9 @@ BEGIN
             GROUP BY m.marker_id,m.batch_number_key,m.expiry_date_key,m.internal_ref_key
             HAVING count(DISTINCT c.material_identity_key)=1
           ), visible AS (
-            SELECT c.*,ci.name AS central_name,ci.name_ar AS central_name_ar,ci.unit AS central_unit,
+            -- central_items supplies DISPLAY NAMES only. Its `unit` is
+            -- deliberately not carried here: see row_unit below.
+            SELECT c.*,ci.name AS central_name,ci.name_ar AS central_name_ar,
               public.phoenix_derive_outlet_availability_condition(
                 c.available_quantity,NULLIF(c.expiry_date_key,DATE '0001-01-01')) AS effective_condition
             FROM canonical c
@@ -198,7 +215,22 @@ BEGIN
             SELECT
               coalesce(v.central_name,v.central_name_ar,v.scientific_name,'Unnamed material') AS row_name,
               coalesce(v.central_name_ar,v.central_name,v.scientific_name,'مادة غير مسماة') AS row_name_ar,
-              coalesce(v.central_unit,NULLIF(v.unit,'')) AS row_unit,
+              -- Row-specific canonical unit, exactly as the local_item branch
+              -- publishes it. unit is a COMPONENT of material_identity_key, so
+              -- every row here IS one unit-distinct physical identity. Taking
+              -- the catalogue unit in preference — which the pre-177 body did,
+              -- correctly, because it read item_availability, which has no unit
+              -- column at all — relabels 5 box + 3 strip as 5 box + 3 box and
+              -- misstates physical stock on an anonymous public payload.
+              --
+              -- The catalogue unit is not a FALLBACK either. outlet_stock.unit
+              -- is nullable (outlet_stock_unit_chk permits NULL and forbids
+              -- ''), and under 150 a NULL unit is its own canonical identity
+              -- via the 'N' sentinel — so borrowing the catalogue label for it
+              -- would merge two distinct identities under one unit in exactly
+              -- the same way. NULL here means "stock records no unit", and the
+              -- public screen then renders the bare quantity.
+              NULLIF(v.unit,'') AS row_unit,
               NULLIF(v.concentration,'') AS concentration,
               NULLIF(v.dosage_form,'') AS dosage_form,
               NULLIF(v.expiry_date_key,DATE '0001-01-01') AS expiry_date,
@@ -452,7 +484,7 @@ GRANT EXECUTE ON FUNCTION public.get_public_qr_payload(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_public_qr_payload(text) TO service_role;
 
 COMMENT ON FUNCTION public.get_public_qr_payload(text) IS
-  'STAGE-G-G2 / 177: public QR payload from canonical outlet_stock, grouped on the Migration-150 material_identity_key plus lot and aggregated only over supply provenance. item_availability is optional removed_at visibility metadata only; no cache quantity/condition is trusted and an ambiguous removal marker hides nothing. Public privacy fields and anonymous access are preserved.';
+  'STAGE-G-G2 / 177: public QR payload from canonical outlet_stock, grouped on the Migration-150 material_identity_key plus lot and aggregated only over supply provenance. Every published row carries the unit of its OWN canonical identity, never the catalogue unit, so unit-distinct identities stay distinct and correctly labelled. item_availability is optional removed_at visibility metadata only; no cache quantity/condition is trusted and an ambiguous removal marker hides nothing. Public privacy fields and anonymous access are preserved.';
 
 DO $verify$
 DECLARE
@@ -487,6 +519,14 @@ BEGIN
   IF v_def NOT ILIKE $$%'unit',NULLIF(s.unit,'')%$$
      OR v_def NOT ILIKE '%min(s.unit) AS unit%' THEN
     RAISE EXCEPTION '177 verify failed: local_item availability rows lost their canonical unit';
+  END IF;
+  -- Same contract for every distribution_point medicine row. central_items.unit
+  -- must not reach the published unit as a preference OR as a fallback: both
+  -- relabel one unit-distinct canonical identity with another's unit. The alias
+  -- itself is banned so the expression cannot be reintroduced under a rename.
+  IF v_def NOT ILIKE $$%NULLIF(v.unit,'') AS row_unit%$$
+     OR v_def ILIKE '%central_unit%' THEN
+    RAISE EXCEPTION '177 verify failed: distribution_point rows lost their canonical unit';
   END IF;
   IF v_def NOT ILIKE '%removed_at IS NOT NULL%' THEN
     RAISE EXCEPTION '177 verify failed: catalogue visibility marker is not enforced';

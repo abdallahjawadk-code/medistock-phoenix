@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
@@ -264,9 +266,13 @@ run('177 · canonical public QR (dynamic)',()=>{
     //
     // NOTE: this is a REGRESSION GUARD, not a negative test. The distribution
     // point branch already carried unit in its grouping tuple before this
-    // remediation, so it passes against the old body too. The unit defect lived
-    // in the warehouse and local_item branches — C and D below are the cases
-    // that genuinely fail against the pre-remediation function.
+    // remediation, so it passes against the old body too. The QUANTITY defect
+    // lived in the warehouse and local_item branches — C and D below are the
+    // cases that genuinely fail against the pre-remediation function.
+    //
+    // Splitting the quantities is only half of THIS branch's contract: the two
+    // rows must also be LABELLED with their own units. B2/B3 below cover that,
+    // and B3 is the genuine negative proof for it.
     const p=await asAnon(PUB_DP2);
     const q=qtys(p.items??[],'Unitvar Drug');
     expect(q).toEqual([3,5]);
@@ -277,6 +283,124 @@ run('177 · canonical public QR (dynamic)',()=>{
       `SELECT DISTINCT material_identity_key FROM outlet_stock
        WHERE distribution_point_id=$1 AND central_item_id=$2`,[DP2,CI_U]));
     expect(keys.rows).toHaveLength(2);
+  });
+
+  it('B2 · every distribution-point row carries the unit of its OWN canonical identity',async()=>{
+    // The anonymous point payload is what a member of the public actually
+    // scans. Physical truth at DP2 is 5 box and 3 strip. central_items.unit for
+    // Unitvar Drug is 'box' for BOTH rows, so sourcing the row unit from the
+    // catalogue publishes "3 box" for stock that is 3 strip — a public
+    // data-semantics error, not a display nicety.
+    const p=await asAnon(PUB_DP2);
+    expect(p.ok).toBe(true);
+    expect(p.target_type).toBe('distribution_point');
+
+    const rows=(p.items??[]).filter((x:any)=>x.name==='Unitvar Drug');
+    // Exactly two canonical rows — never merged, never duplicated.
+    expect(rows).toHaveLength(2);
+
+    const pairs=rows.map((x:any)=>[x.quantity,x.unit]).sort((a:any,b:any)=>a[0]-b[0]);
+    expect(pairs).toEqual([[3,'strip'],[5,'box']]);
+    // No summed quantity, and no borrowed label.
+    expect(pairs.map(([q]:any)=>q)).not.toContain(8);
+    expect(pairs).not.toEqual([[3,'box'],[5,'box']]);
+
+    // Units are distinct, and every row really carries one.
+    expect(new Set(rows.map((x:any)=>x.unit)).size).toBe(2);
+    for(const row of rows){
+      expect(typeof row.unit).toBe('string');
+      expect(row.unit).not.toBe('');
+    }
+
+    // The catalogue unit that must NOT have relabelled the strip row.
+    const ci=await rig.asAdmin((c:any)=>c.query(
+      'SELECT unit FROM central_items WHERE id=$1',[CI_U]));
+    expect(ci.rows[0].unit).toBe('box');
+
+    // Two units published from two genuinely different canonical identities.
+    const keys=await rig.asAdmin((c:any)=>c.query(
+      `SELECT DISTINCT material_identity_key FROM outlet_stock
+       WHERE distribution_point_id=$1 AND central_item_id=$2`,[DP2,CI_U]));
+    expect(keys.rows).toHaveLength(2);
+
+    // Splitting on canonical identity must not leak the identity itself, or any
+    // other internal/sensitive field, into the anonymous payload.
+    for(const row of rows){
+      for(const key of ['material_identity_key','projection_key','central_item_id',
+        'batch_number','internal_batch_reference','national_code','supply_type',
+        'purchase_origin','price','trade_name','notes','distribution_point_id',
+        'actor_name_snapshot','actor_email_snapshot','actor_role_snapshot']){
+        expect(row,key).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it("B3 · NEGATIVE — the pre-fix body publishes the strip identity as 'box'",async()=>{
+    // A genuine negative test, not a restatement of B2. It reinstalls EXACTLY
+    // the pre-fix (a4d934b) distribution-point unit derivation — the two
+    // expressions this remediation changed and nothing else — then runs B2's
+    // assertion against it and proves it fails as 5 box + 3 box.
+    //
+    // The swap runs inside a transaction that is always rolled back. Postgres
+    // DDL is transactional, so the fixed body is restored even on failure, and
+    // the scan-counter side effect of the probe scan is discarded with it.
+    const file=readFileSync(join(__dirname,'..','177_phoenix_canonical_public_qr.sql'),'utf8');
+    const open=file.indexOf('CREATE OR REPLACE FUNCTION public.get_public_qr_payload(p_public_id text)');
+    const close=file.indexOf('$function$;',open);
+    expect(open).toBeGreaterThan(-1);
+    expect(close).toBeGreaterThan(open);
+    const fixedBody=file.slice(open,close+'$function$;'.length);
+
+    // The exact pre-fix text of both changed expressions.
+    const FIXED_ROW_UNIT="NULLIF(v.unit,'') AS row_unit";
+    const PREFIX_ROW_UNIT="coalesce(v.central_unit,NULLIF(v.unit,'')) AS row_unit";
+    const FIXED_VISIBLE='SELECT c.*,ci.name AS central_name,ci.name_ar AS central_name_ar,';
+    const PREFIX_VISIBLE=FIXED_VISIBLE+'ci.unit AS central_unit,';
+
+    // Each anchor must occur exactly once, so the reconstruction is unambiguous
+    // and cannot silently no-op if the body is later restructured.
+    expect(fixedBody.split(FIXED_ROW_UNIT)).toHaveLength(2);
+    expect(fixedBody.split(FIXED_VISIBLE)).toHaveLength(2);
+
+    const preFixBody=fixedBody
+      .replace(FIXED_ROW_UNIT,PREFIX_ROW_UNIT)
+      .replace(FIXED_VISIBLE,PREFIX_VISIBLE);
+    expect(preFixBody).toContain(PREFIX_ROW_UNIT);
+    expect(preFixBody).not.toContain(FIXED_ROW_UNIT);
+    expect(preFixBody).not.toBe(fixedBody);
+
+    const client=await rig.pool.connect();
+    let observed:any;
+    try{
+      await client.query('BEGIN');
+      await client.query(preFixBody);
+      await client.query('SET LOCAL ROLE anon');
+      const r=await client.query(
+        'SELECT public.get_public_qr_payload($1) AS payload',[PUB_DP2]);
+      observed=r.rows[0].payload;
+    } finally {
+      await client.query('ROLLBACK').catch(()=>{});
+      client.release();
+    }
+
+    expect(observed.ok).toBe(true);
+    const rows=(observed.items??[]).filter((x:any)=>x.name==='Unitvar Drug');
+    const pairs=rows.map((x:any)=>[x.quantity,x.unit]).sort((a:any,b:any)=>a[0]-b[0]);
+
+    // The defect, reproduced exactly: the quantities still split correctly (the
+    // pre-fix body already grouped on canonical identity), but BOTH rows are
+    // labelled from central_items.unit, so the strip identity is published as
+    // box. This is the assertion B2 makes and this body cannot satisfy.
+    expect(pairs).toEqual([[3,'box'],[5,'box']]);
+    expect(pairs).not.toEqual([[3,'strip'],[5,'box']]);
+    expect(new Set(rows.map((x:any)=>x.unit)).size).toBe(1);
+
+    // And the fixed body is genuinely back in place afterwards.
+    const restored=await asAnon(PUB_DP2);
+    const restoredPairs=(restored.items??[])
+      .filter((x:any)=>x.name==='Unitvar Drug')
+      .map((x:any)=>[x.quantity,x.unit]).sort((a:any,b:any)=>a[0]-b[0]);
+    expect(restoredPairs).toEqual([[3,'strip'],[5,'box']]);
   });
 
   it('E · an ambiguous removal marker hides no unit-distinct canonical identity',async()=>{

@@ -72,6 +72,34 @@ describe('177 · canonical public QR (static)',()=>{
     expect(sql).toContain("v_def ILIKE '%OR coalesce(ia.scientific_name%'");
     expect(sql).toContain("v_def NOT ILIKE '%HAVING count(DISTINCT c.material_identity_key)=1%'");
     expect(sql).toContain("v_def NOT ILIKE '%min(s.unit) AS unit%'");
+    expect(sql).toContain("v_def ILIKE '%central_unit%'");
+  });
+
+  it('publishes a per-identity unit on distribution_point medicine rows',()=>{
+    // Same contract as local_item below, on the branch an anonymous point scan
+    // actually renders. Each row here is ONE unit-distinct canonical identity,
+    // so it must publish its own unit. central_items.unit must not reach it as
+    // a preference (which relabels the sibling identity) or as a fallback
+    // (outlet_stock.unit is nullable, and a NULL unit is its own identity under
+    // 150's 'N' sentinel, so borrowing the catalogue label merges them too).
+    const dp = fnBody.slice(
+      fnBody.indexOf("WHEN 'distribution_point' THEN"),
+      fnBody.indexOf("WHEN 'warehouse' THEN"),
+    );
+    expect(dp).toContain('min(s.unit) AS unit');
+    expect(dp).toContain("NULLIF(v.unit,'') AS row_unit");
+    expect(dp).toContain("'unit',s.row_unit");
+    // The pre-fix expression and the alias it depended on must never come back.
+    expect(dp).not.toContain("coalesce(v.central_unit,NULLIF(v.unit,''))");
+    expect(fnBody).not.toContain('central_unit');
+  });
+
+  it('keeps the local_item catalogue unit at the top level only',()=>{
+    // The local_item target's top-level `unit` describes the CATALOGUE item and
+    // is unchanged. It must never become the source of a per-row unit.
+    const localItem = fnBody.slice(fnBody.indexOf("WHEN 'local_item' THEN"));
+    expect(localItem).toContain("'unit',ci.unit,");
+    expect(localItem).toContain("'unit',NULLIF(s.unit,'')");
   });
 
   it('publishes a per-identity unit on local_item availability rows',()=>{
