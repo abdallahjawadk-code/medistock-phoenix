@@ -10,6 +10,17 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
 
+/**
+ * AVAILABILITY-ALERTS-QR-POLISH-D
+ *
+ * Status-summary chips near the top of the page: counts per `item.condition`
+ * value, computed entirely from the already-loaded `rawItems` (the same data
+ * the item list below renders) — no new fetch, no new field. Only conditions
+ * already present in `CONDITION_LABEL`/`CONDITION_VARIANT` (the same set the
+ * per-item badges already use) are ever shown, and only when at least one
+ * loaded item actually has that condition.
+ */
+
 interface Props { publicId: string; }
 
 type PublicItem = {
@@ -21,13 +32,38 @@ type PublicItem = {
   quantity?: number;
   unit?: string;
   expiry_date?: string;
-  expiry_bucket?: string;
+  expiry_bucket?: string; // D7: 'expired'|'3_months'|'6_months'|'9_months'|null
+  // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: additive public field, sourced from the
+  // RPC payload (item_availability.dosage_form via migration 058). Optional/
+  // nullable — rendered only when it holds a real non-empty value.
   dosage_form?: string | null;
+  // PUBLIC-QR-CONCENTRATION-059-A: additive public field, sourced from the RPC
+  // payload (item_availability.concentration via migration 059). Optional/
+  // nullable — same rendering contract as dosage_form above.
   concentration?: string | null;
-  /** Warehouse-target points carry a canonical public-available material count. */
+  // STAGE-G-G2: warehouse-target payloads return outlet POINT records, not
+  // medicine rows. Each point carries its own count of publicly available
+  // materials instead of a quantity/condition pair. Optional — only a
+  // warehouse target ever populates it.
   item_count?: number;
 };
 
+/**
+ * PUBLIC-QR-CONCENTRATION-059-A
+ *
+ * Build the one-line material metadata shown directly under the material name:
+ *   "500 mg • Tablet"  (both present)
+ *   "500 mg"           (concentration only)
+ *   "Tablet"           (dosage form only)
+ *   ""                 (neither — caller renders nothing at all)
+ *
+ * Each value is trimmed, and only real non-empty (non-whitespace) values are
+ * included, so the separator can never appear leading, trailing, or isolated.
+ * Missing values contribute nothing at all — no placeholder text of any kind
+ * is substituted, and no blank space is reserved.
+ *
+ * Exported for direct unit testing (same convention as isPubliclyAvailableQrItem).
+ */
 export function buildQrItemMetaLine(item: PublicItem): string {
   const trimmed = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
   return [trimmed(item.concentration), trimmed(item.dosage_form)]
@@ -52,6 +88,8 @@ function conditionLabel(cond: string, lang: 'ar' | 'en'): string {
   return CONDITION_LABEL[cond]?.[lang] ?? cond;
 }
 
+// Display order for the summary chips — mirrors the existing condition set
+// (CONDITION_VARIANT/CONDITION_LABEL) already used for per-item badges below.
 const SUMMARY_CONDITIONS = ['available', 'surplus', 'low_stock', 'near_expiry', 'missing', 'expired'] as const;
 
 const VARIANT_COLOR: Record<'ok' | 'warn' | 'err' | 'neutral', { color: string; bg: string }> = {
@@ -80,9 +118,18 @@ function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {
 }
 
 /**
- * The public medicine list is availability-only. Unknown/missing/expired and
- * non-positive rows remain hidden. Warehouse target `points[]` are not medicine
- * rows and are therefore handled separately by PublicQrScreen below.
+ * QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A
+ *
+ * The public QR page is an "available medicines" list, not a full internal
+ * status report. `condition` here is already the RPC's effective_condition
+ * (migration 052 folds quantity <= 0 into 'missing' server-side) — this
+ * helper only decides which effective statuses are publicly listed as
+ * available stock.
+ *
+ * Conservative default for any condition not explicitly recognized here
+ * (including a missing/undefined condition): hide it. An unrecognized status
+ * is exactly the case where showing it as "available" would be most likely
+ * to mislead the public, so the safe default is to hide rather than guess.
  */
 export function isPubliclyAvailableQrItem(item: PublicItem): boolean {
   if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return false;
@@ -107,6 +154,8 @@ export function PublicQrScreen({ publicId }: Props) {
 
   const payload = (data ?? null) as Record<string, unknown> | null;
   const ok = payload?.ok === true;
+  // STAGE-G-G2: which of the three historical QR targets this payload is for
+  // (distribution_point | warehouse | local_item).
   const targetType = typeof payload?.target_type === 'string' ? payload.target_type : null;
   const orgName = lang === 'ar'
     ? (payload?.org_name_ar as string) ?? (payload?.org_name as string)
@@ -118,15 +167,26 @@ export function PublicQrScreen({ publicId }: Props) {
     (payload?.points as PublicItem[] | undefined) ??
     [];
 
-  // STAGE-G-G2: medicine targets remain strictly availability-filtered. A
-  // warehouse QR returns active outlet `points[]`, not medicine rows, so those
-  // point records must not be discarded merely because they have no quantity /
-  // condition fields. No new request or public field is introduced here.
+  // QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: the public "available
+  // medicines" list only ever shows items that are actually available stock
+  // — removed/zeroed/expired/missing rows never reach the visible list or
+  // the item count, even though the RPC payload (rawItems) still carries
+  // them for now. Everything below (summary chips, search, item cards,
+  // empty state) is derived from this visible set, not rawItems.
+  //
+  // STAGE-G-G2: that filter is a MEDICINE filter. A warehouse QR returns
+  // active outlet point records, which carry no quantity/condition at all, so
+  // running them through it would discard every one of them. Medicine targets
+  // (distribution_point | local_item) stay strictly fail-closed exactly as
+  // before — the filter itself is unchanged.
   const visibleItems = useMemo(
-    () => targetType === 'warehouse' ? rawItems : rawItems.filter(isPubliclyAvailableQrItem),
+    () => (targetType === 'warehouse' ? rawItems : rawItems.filter(isPubliclyAvailableQrItem)),
     [rawItems, targetType],
   );
 
+  // Status-summary counts derived entirely from the already-loaded visibleItems
+  // — no new fetch. Only conditions that can appear among visible (available)
+  // items are ever counted here, so 'missing'/'expired' never show a count.
   const summaryCounts = useMemo(() => {
     const counts: Partial<Record<string, number>> = {};
     for (const item of visibleItems) {
@@ -151,6 +211,7 @@ export function PublicQrScreen({ publicId }: Props) {
   return (
     <div className="premium-qr-public-shell nexus-qr-public" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: '480px' }}>
+        {/* Header */}
         <div className="nexus-qr-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PhoenixPharmacyEmblem variant="compact-teal" size={48} /></div>
@@ -166,6 +227,10 @@ export function PublicQrScreen({ publicId }: Props) {
 
         {loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
+        {/* FINAL-POLISH-PERMISSIONS-QR-A (F-06): this page is anonymous/public —
+            never render the raw useAsync error string (it may contain internal
+            backend error details). The raw error is already logged to the
+            console by useAsync for developers. */}
         {!loading && error && (
           <PhoenixErrorState title={t('load_error', lang)} message={t('qr_public_load_error', lang)} onRetry={reload} />
         )}
@@ -180,15 +245,19 @@ export function PublicQrScreen({ publicId }: Props) {
 
         {!loading && !error && ok && (
           <>
+            {/* Org/point header */}
             {orgName && (
               <div className="nexus-qr-org-card" style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px', boxShadow: 'var(--sh-sm)' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>{orgName}</div>
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
                 )}
+                {/* STAGE-G-G2: a warehouse target labels the warehouse itself. */}
                 {typeof payload?.warehouse_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.warehouse_label as string}</div>
                 )}
+                {/* A warehouse lists outlet POINTS, not medicines, so the
+                    "available medicines" count would be misleading there. */}
                 {targetType !== 'warehouse' && visibleItems.length > 0 && (
                   <div style={{ fontSize: '11px', color: 'var(--pd)', marginTop: '6px', opacity: 0.8 }}>
                     {t('public_items_count', lang)}: {visibleItems.length}
@@ -197,13 +266,17 @@ export function PublicQrScreen({ publicId }: Props) {
               </div>
             )}
 
+            {/* Status summary — counts computed from the already-loaded rawItems only */}
             {summaryCounts.length > 0 && (
               <div className="nexus-qr-summary" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
                 {summaryCounts.map(({ condition, count }) => {
                   const variant = CONDITION_VARIANT[condition] ?? 'neutral';
                   const { color, bg } = VARIANT_COLOR[variant];
                   return (
-                    <span key={condition} style={{ fontSize: '10.5px', fontWeight: 700, color, background: bg, border: `1px solid ${color}`, borderRadius: 'var(--rpill)', padding: '3px 10px' }}>
+                    <span
+                      key={condition}
+                      style={{ fontSize: '10.5px', fontWeight: 700, color, background: bg, border: `1px solid ${color}`, borderRadius: 'var(--rpill)', padding: '3px 10px' }}
+                    >
                       {conditionLabel(condition, lang)}: {count}
                     </span>
                   );
@@ -211,25 +284,45 @@ export function PublicQrScreen({ publicId }: Props) {
               </div>
             )}
 
+            {/* Search */}
             {visibleItems.length > 3 && (
               <div className="nexus-qr-search" style={{ position: 'relative', marginBottom: '12px' }}>
                 <span style={{ position: 'absolute', insetInlineStart: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', pointerEvents: 'none' }}><PhoenixIcon name="search" size={14} /></span>
-                <input type="search" placeholder={t('public_search', lang)} value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '9px 10px', paddingInlineStart: '34px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px' }} aria-label={t('public_search', lang)} />
+                <input
+                  type="search"
+                  placeholder={t('public_search', lang)}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{ width: '100%', padding: '9px 10px', paddingInlineStart: '34px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '12.5px' }}
+                  aria-label={t('public_search', lang)}
+                />
               </div>
             )}
 
+            {/* Items */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {rawItems.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>{t('public_empty_port', lang)}</div>
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('public_empty_port', lang)}
+                </div>
               )}
               {rawItems.length > 0 && visibleItems.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>{t('public_no_available_now', lang)}</div>
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('public_no_available_now', lang)}
+                </div>
               )}
               {visibleItems.length > 0 && filteredItems.length === 0 && search && (
-                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--t2)', fontSize: '12.5px' }}>{t('empty_items', lang)}</div>
+                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--t2)', fontSize: '12.5px' }}>
+                  {t('empty_items', lang)}
+                </div>
               )}
               {filteredItems.map((item, i) => {
                 const label = itemLabel(item, lang);
+                // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A + PUBLIC-QR-CONCENTRATION-059-A:
+                // one metadata line under the name — "concentration • dosage form",
+                // collapsing to whichever side is present. Empty string when
+                // neither is, so nothing renders: no placeholder, no empty row,
+                // no reserved space, no isolated separator.
                 const metaLine = buildQrItemMetaLine(item);
                 const variant = item.condition ? CONDITION_VARIANT[item.condition] ?? 'neutral' : 'neutral';
                 const condLabel = item.condition ? conditionLabel(item.condition, lang) : '';
@@ -240,15 +333,35 @@ export function PublicQrScreen({ publicId }: Props) {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 600 }} dir="auto">{label}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                        {bucketBadge && <span style={{ padding: '1px 7px', borderRadius: 'var(--rpill)', border: `1px solid ${bucketBadge.color}`, background: bucketBadge.bg, color: bucketBadge.color, fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{bucketBadge.label}</span>}
-                        {condLabel && <PhoenixStatusBadge variant={variant} label={condLabel} />}
+                        {bucketBadge && (
+                          <span style={{ padding: '1px 7px', borderRadius: 'var(--rpill)', border: `1px solid ${bucketBadge.color}`, background: bucketBadge.bg, color: bucketBadge.color, fontSize: '10px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {bucketBadge.label}
+                          </span>
+                        )}
+                        {condLabel && (
+                          <PhoenixStatusBadge variant={variant} label={condLabel} />
+                        )}
                       </div>
                     </div>
-                    {metaLine && <div dir="auto" style={{ marginTop: '4px', fontSize: '11px', color: 'var(--t2)' }}>{metaLine}</div>}
+                    {metaLine && (
+                      <div dir="auto" style={{ marginTop: '4px', fontSize: '11px', color: 'var(--t2)' }}>
+                        {metaLine}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>
-                      {typeof item.quantity === 'number' && variant !== 'err' && <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>}
-                      {typeof item.item_count === 'number' && <span>{t('public_items_count', lang)}: {item.item_count}</span>}
-                      {item.expiry_date && isNearExpiry && <span style={{ color: bucketBadge ? bucketBadge.color : 'var(--warn)' }} dir="ltr">⏱ {t('public_expiry_warn', lang)} {item.expiry_date}</span>}
+                      {typeof item.quantity === 'number' && variant !== 'err' && (
+                        <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+                      )}
+                      {/* STAGE-G-G2: warehouse point records carry a count of
+                          publicly available materials instead of a quantity. */}
+                      {typeof item.item_count === 'number' && (
+                        <span>{t('public_items_count', lang)}: {item.item_count}</span>
+                      )}
+                      {item.expiry_date && isNearExpiry && (
+                        <span style={{ color: bucketBadge ? bucketBadge.color : 'var(--warn)' }} dir="ltr">
+                          ⏱ {t('public_expiry_warn', lang)} {item.expiry_date}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

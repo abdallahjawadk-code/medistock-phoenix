@@ -118,9 +118,29 @@ run('177 · canonical public QR (dynamic)',()=>{
   });
 
   it('preserves scan counter side effect for anonymous scans',async()=>{
-    const r=await rig.asAdmin((c:any)=>c.query('SELECT scan_count,last_scanned_at FROM qr_tokens WHERE id=$1',[QTK_DP]));
-    expect(Number(r.rows[0].scan_count)).toBe(1);
-    expect(r.rows[0].last_scanned_at).toBeTruthy();
+    // qr_tokens.scan_count is `bigint not null default 0`, so it can never be
+    // NULL and needs no COALESCE — the historical contract is intact, and 177
+    // keeps the increment verbatim (its own VERIFY asserts the statement text).
+    //
+    // This case must run its OWN scan because of the harness: rig.asUser
+    // defaults to commit:false and ROLLBACKs, so the `asAnon` helper above
+    // discards this side effect along with the payload it read. Asserting a
+    // counter accumulated by an earlier, rolled-back case tested nothing and
+    // was order-dependent besides. So: read before, perform one COMMITTED
+    // anonymous scan exactly as production does, read after, assert the delta.
+    const before=await rig.asAdmin((c:any)=>c.query(
+      'SELECT scan_count FROM qr_tokens WHERE id=$1',[QTK_DP]));
+    const start=Number(before.rows[0].scan_count);
+
+    const payload=await rig.asUser(null,(c:any)=>c.query(
+      'SELECT public.get_public_qr_payload($1) AS payload',[PUB_DP],
+    ).then((r:any)=>r.rows[0].payload),{role:'anon',commit:true});
+    expect(payload.ok).toBe(true);
+
+    const after=await rig.asAdmin((c:any)=>c.query(
+      'SELECT scan_count,last_scanned_at FROM qr_tokens WHERE id=$1',[QTK_DP]));
+    expect(Number(after.rows[0].scan_count)).toBe(start+1);
+    expect(after.rows[0].last_scanned_at).toBeTruthy();
   });
 
   it('warehouse QR counts canonical publicly available identities, not cache rows',async()=>{

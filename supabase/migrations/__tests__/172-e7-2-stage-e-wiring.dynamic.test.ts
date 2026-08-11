@@ -74,6 +74,7 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       '174_phoenix_authenticated_rpc_surface_hardening.sql',
       '175_phoenix_read_helper_anonymous_surface_hardening.sql',
       '176_phoenix_canonical_outlet_availability_read_model.sql',
+      '177_phoenix_canonical_public_qr.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
