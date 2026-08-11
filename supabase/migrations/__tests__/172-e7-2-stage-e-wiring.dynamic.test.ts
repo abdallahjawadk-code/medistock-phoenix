@@ -75,6 +75,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       '175_phoenix_read_helper_anonymous_surface_hardening.sql',
       '176_phoenix_canonical_outlet_availability_read_model.sql',
       '177_phoenix_canonical_public_qr.sql',
+      // P0 HOTFIX 178: SECURITY DEFINER on Migration 171's outlet owner-kind
+      // guard so its FOR SHARE row lock stops failing with 42501. It replaces
+      // one 171 function in place and adds no Stage-E SQL, so the "Stage E
+      // still ends at 171" assertion above is unaffected. Listed here so this
+      // guard stays exhaustive and still fails closed on any unlisted new file.
+      '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
