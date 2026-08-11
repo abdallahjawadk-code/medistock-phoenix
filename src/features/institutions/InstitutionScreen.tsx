@@ -1740,8 +1740,15 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
 export interface AvailRow {
   /** item_availability UUID — NULL for rows backed only by canonical stock.
    *  Unchanged by G3.1 and still the identity visibility actions act on; it is
-   *  NOT a physical row identity and must never be a React key. */
-  id: string;
+   *  NOT a physical row identity and must never be a React key.
+   *
+   *  The type says `string | null` because that is what the RPC actually
+   *  returns and what the line above always described. Declaring it `string`
+   *  made the compiler treat every honest null check as dead code — which is
+   *  exactly how a catalogue-visibility action stayed reachable on a row that
+   *  has no catalogue entry to act on. Do NOT synthesize an id, and do NOT
+   *  substitute row_key: the two mean different things (see below). */
+  id: string | null;
   /** STAGE-G-G3.1 (migration 179): the canonical physical row identity. Derived
    *  server-side from outlet_stock.material_identity_key + lot for stock-backed
    *  rows, and from the catalogue id for catalogue-only rows, so it is always a
@@ -1752,8 +1759,11 @@ export interface AvailRow {
   /** STAGE-G-G3.1: the PHYSICAL unit of this row's canonical stock identity
    *  (migration 179). NULL means the stock carries no unit — render the
    *  quantity without one. Never substitute central_items.unit, which describes
-   *  the catalogue item and can belong to a different canonical identity. */
-  unit?: string | null;
+   *  the catalogue item and can belong to a different canonical identity.
+   *
+   *  Not optional: migration 179 publishes the `unit` key on EVERY returned
+   *  row. Only its value is nullable. */
+  unit: string | null;
   condition: string;
   batch_number: string | null;
   expiry_date: string | null;
@@ -1880,6 +1890,10 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
 
   async function onConfirmRemove() {
     if (!removeTarget) return;
+    // STAGE-G-G3.1: a stock-only row (id === null) has no item_availability row
+    // to mark removed. The button is already withheld for those rows; this is
+    // the second gate, so no call path reaches migration 084 with a null id.
+    if (removeTarget.id === null) { setRemoveTarget(null); return; }
     setRemoveBusy(true);
     setRemoveError(null);
     try {
@@ -1976,7 +1990,15 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
                     <span style={{ fontSize: '9.5px', color: 'var(--t2)' }} dir="ltr">{r.expiry_date}</span>
                   )}
                   <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
-                  {canRemove && (
+                  {/* STAGE-G-G3.1: "Remove from outlet" is a CATALOGUE
+                      VISIBILITY action (migration 084) — it stamps removed_at
+                      on an item_availability row. A stock-only row has id ===
+                      null: there is no catalogue row to stamp, so the action
+                      cannot be carried out honestly and is not offered. The row
+                      itself stays fully readable and its details still open;
+                      only this one action is withheld. Physical stock is
+                      corrected through migration 086, never from here. */}
+                  {canRemove && r.id !== null && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}
                       aria-label={t('avail_remove_from_outlet', lang)}

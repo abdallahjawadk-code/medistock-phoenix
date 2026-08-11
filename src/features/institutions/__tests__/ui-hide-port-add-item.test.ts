@@ -74,7 +74,10 @@ describe('2. Existing availability list still renders', () => {
 
 describe('3. Existing "إزالة من المنفذ" (remove-from-port) action remains', () => {
   it('the remove button is still rendered, gated by canRemove, with its confirmation dialog intact', () => {
-    expect(portAvailabilitySection).toMatch(/\{canRemove\s*&&\s*\(/);
+    // STAGE-G-G3.1: canRemove is still the permission gate and still comes
+    // first; the added conjunct is an identity precondition (a stock-only row
+    // has no item_availability row for this catalogue-visibility action).
+    expect(portAvailabilitySection).toMatch(/\{canRemove\s*&&\s*r\.id\s*!==\s*null\s*&&\s*\(/);
     expect(portAvailabilitySection).toContain("t('avail_remove_from_outlet', lang)");
     expect(portAvailabilitySection).toContain('onConfirmRemove');
     expect(portAvailabilitySection).toContain("t('avail_remove_confirm', lang)");

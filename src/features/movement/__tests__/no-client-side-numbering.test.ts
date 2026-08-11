@@ -68,11 +68,11 @@ describe('no client-side document-number sequence exists',()=>{
     // STAGE-G-G3.1: 179 replaces phoenix_outlet_availability_read_model's body
     // so physical rows group on outlet_stock.material_identity_key (Migration
     // 150's GENERATED column) instead of raw material columns, and publishes an
-    // additive row-level unit. Its only derived value is a md5 row_key over
-    // already-persisted canonical identity — a stable content hash, not a
-    // sequence, counter, max()+1 or generated numeric identity, and never a
-    // document number. Boundary moves to 180 so the next unknown migration
-    // still fails closed here.
+    // additive row-level unit. Its only derived value is a row_key that is a
+    // LOSSLESS encoding of already-persisted canonical identity — a pure
+    // function of existing data, not a sequence, counter, max()+1 or generated
+    // numeric identity, and never a document number. Boundary moves to 180 so
+    // the next unknown migration still fails closed here.
     const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^179_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [

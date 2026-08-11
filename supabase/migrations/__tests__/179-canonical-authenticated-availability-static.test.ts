@@ -16,6 +16,10 @@ const sql = readFileSync(join(MIGRATIONS, NAME), 'utf8');
 const exec = sql.replace(/--[^\n]*/g, '');
 /** Just the replaced function body. */
 const fn = exec.slice(exec.indexOf('CREATE OR REPLACE FUNCTION'), exec.indexOf('$function$;'));
+/** Whitespace-flattened body, so multi-line SQL can be asserted verbatim
+ *  without the assertion depending on the checkout's line endings (cf. the
+ *  CRLF-portability guard below). */
+const flat = fn.replace(/\s+/g, ' ');
 
 describe('179 · canonical authenticated availability hardening (static)', () => {
   it('replaces exactly the Migration-176 read model and nothing else', () => {
@@ -67,13 +71,52 @@ describe('179 · canonical authenticated availability hardening (static)', () =>
     expect(fn).toContain('public.phoenix_derive_outlet_availability_condition(');
   });
 
-  it('anchors stock-backed row_key to the canonical identity, injectively', () => {
-    expect(fn).toContain('canonical_material_identity_key IS NOT NULL');
-    expect(fn).toContain("'stock:'||md5(jsonb_build_array(");
+  it('derives the stock row_key by LOSSLESS encoding, never by hashing', () => {
+    expect(fn).toContain('canonical_row_key IS NOT NULL');
     expect(fn).toContain("'catalogue:'||j.catalogue_id::text");
+    // The encoding IS the contract. This column advertises "unique per physical
+    // row" to its consumers, and no finite digest can deliver that at any
+    // width — md5 only makes a collision unlikely, and so does sha256.
+    expect(flat).toContain(
+      "'stock:v1:'||encode(convert_to(jsonb_build_array( " +
+      'p_distribution_point_id::text, ' +
+      's.material_identity_key, ' +
+      "COALESCE(s.batch_number,''), " +
+      "COALESCE(s.expiry_date,DATE '0001-01-01')::text, " +
+      "COALESCE(s.internal_batch_reference,''))::text,'UTF8'),'hex')",
+    );
+    for (const forbidden of [/\bmd5\s*\(/i, /\bdigest\s*\(/i, /\bsha\d+\s*\(/i, /\bhashtext\s*\(/i]) {
+      expect(fn, `hashed row identity: ${forbidden}`).not.toMatch(forbidden);
+    }
     // concat_ws is genuinely ambiguous here: batch_number and
     // internal_batch_reference are free text and may contain the separator.
-    expect(fn).not.toMatch(/md5\(concat_ws/i);
+    expect(fn).not.toMatch(/concat_ws/i);
+    // Nothing non-deterministic or non-persisted may enter the row identity.
+    for (const forbidden of [/gen_random_uuid/i, /\bnow\s*\(\)/i, /clock_timestamp/i, /row_number/i]) {
+      expect(fn, `non-deterministic row identity: ${forbidden}`).not.toMatch(forbidden);
+    }
+  });
+
+  it('pairs catalogue metadata raw-first, then 150-normalized, then not at all', () => {
+    // Migration 150's OWN normalization — not a second lower/btrim algorithm.
+    expect(fn).toContain('public._phoenix_material_identity_component_v1(');
+    expect(fn).not.toMatch(/lower\s*\(\s*btrim/i);
+    // Step 1 (raw) must still exist and must win, so a pairing that already
+    // worked is bit-for-bit unchanged.
+    expect(flat).toContain('COALESCE(rm.catalogue_id,nm.catalogue_id) AS selected_catalogue_id');
+    // Step 2 is fail-safe: an ambiguous normalized candidate set attaches
+    // nothing rather than guessing, and can never multiply a physical row.
+    expect(flat).toContain('HAVING count(*)=1');
+    // The lot dimensions are matched EXACTLY on both paths — normalization is
+    // scoped to the material components, exactly as Migration 150 scopes it.
+    expect(flat).toContain('AND ia.batch_number_key=c.batch_number_key AND ia.expiry_date_key=c.expiry_date_key');
+    expect(fn).not.toMatch(/_phoenix_material_identity_component_v1\(\s*ia\.batch_number/i);
+    expect(fn).not.toMatch(/_phoenix_material_identity_component_v1\(\s*ia\.internal_batch_reference/i);
+    // The pairing decision is made once, in `selected`; the outer join consumes
+    // it by id and therefore cannot re-open a many-to-many.
+    expect(flat).toContain('FULL OUTER JOIN catalogue ia ON ia.id=c.selected_catalogue_id');
+    // item_availability has no unit column, so unit must never be a match key.
+    expect(fn).not.toMatch(/ia\.unit/i);
   });
 
   it('does not repurpose id or catalogue_item_availability_id', () => {
@@ -117,6 +160,14 @@ describe('179 · canonical authenticated availability hardening (static)', () =>
     expect(sql).toContain('179 verify failed: raw-column physical grouping was reintroduced');
     expect(sql).toContain('179 verify failed: physical unit can fall back to the catalogue unit');
     expect(sql).toContain('179 verify failed: anon gained EXECUTE on the authenticated read model');
+    expect(sql).toContain('179 verify failed: stock row_key is not the lossless v1 encoding');
+    expect(sql).toContain('179 verify failed: a hash reappeared in the physical row identity');
+    expect(sql).toContain('179 verify failed: ambiguous catalogue candidates are no longer fail-safe');
+    expect(sql).toContain('179 preflight failed: Migration-150 canonical component helper missing');
+    // Step 1's "at most one raw candidate" is a proof only while this index
+    // exists, so the migration pins it rather than assuming it.
+    expect(sql).toContain('179 preflight failed: item_availability raw uniqueness index missing');
+    expect(sql).toContain('item_availability_dp_sci_conc_form_nat_batch_exp_ibr_uniq');
   });
 
   it('every verify assertion literal is single-line (CRLF-portable, cf. 162)', () => {

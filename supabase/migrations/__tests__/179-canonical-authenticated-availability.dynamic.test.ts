@@ -342,6 +342,97 @@ run('179 · canonical authenticated availability (dynamic)', () => {
       });
     });
 
+    // ---------------------------------------------------------------------
+    // ROW_KEY ENCODING CONTRACT (closure correction 1).
+    //
+    // The previous derivation hashed the canonical tuple through md5. What it
+    // hashed was an injective serialization, but md5 is a finite 128-bit
+    // mapping, so the "unique per physical row" guarantee this column publishes
+    // to its consumers was probabilistic rather than structural. These cases
+    // test the ENCODING — that it reverses to the persisted identity and
+    // partitions the point exactly — instead of comparing opaque digests.
+    // ---------------------------------------------------------------------
+    const STOCK_PREFIX = 'stock:v1:';
+    const decodeKey = (k: string) =>
+      JSON.parse(Buffer.from(k.slice(STOCK_PREFIX.length), 'hex').toString('utf8'));
+
+    it('R. every stock row_key REVERSES to a canonical tuple that really exists', async () => {
+      const rows = (await read(rig, SA, DP)).rows.filter((r: any) => String(r.row_key).startsWith(STOCK_PREFIX));
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) {
+        const hex = String(r.row_key).slice(STOCK_PREFIX.length);
+        // Hex only: no delimiter, no control character, no whitespace — safe as
+        // a React key and impossible to re-split ambiguously.
+        expect(hex).toMatch(/^[0-9a-f]+$/);
+        const tuple = decodeKey(String(r.row_key));
+        expect(Array.isArray(tuple)).toBe(true);
+        expect(tuple).toHaveLength(5);
+        const [dp, mik, batch, expiry, ref] = tuple;
+        expect(dp).toBe(DP);
+        expect(mik).toMatch(/^material:v1\|/); // Migration 150's key, not a re-derivation
+        // The decoded tuple addresses real persisted stock: the encoding is
+        // lossless in the only sense a consumer can observe.
+        const live = await rig.asAdmin((c: any) => c.query(
+          `SELECT count(*)::int n FROM outlet_stock
+            WHERE distribution_point_id=$1 AND material_identity_key=$2
+              AND COALESCE(batch_number,'')=$3
+              AND COALESCE(expiry_date,DATE '0001-01-01')::text=$4
+              AND COALESCE(internal_batch_reference,'')=$5`, [dp, mik, batch, expiry, ref]));
+        expect(live.rows[0].n).toBeGreaterThan(0);
+      }
+    });
+
+    it('S. row_key partitions the point EXACTLY as the canonical tuple does', async () => {
+      const rows = (await read(rig, SA, DP)).rows.filter((r: any) => String(r.row_key).startsWith(STOCK_PREFIX));
+      const groups = await rig.asAdmin((c: any) => c.query(
+        `SELECT count(*)::int n FROM (
+           SELECT DISTINCT material_identity_key,
+                  COALESCE(batch_number,'') b,
+                  COALESCE(expiry_date,DATE '0001-01-01') e,
+                  COALESCE(internal_batch_reference,'') i
+             FROM outlet_stock WHERE distribution_point_id=$1) g`, [DP]));
+      // One row per canonical tuple — nothing merged, nothing split…
+      expect(rows).toHaveLength(groups.rows[0].n);
+      // …and no two distinct tuples share a key. A digest would fail here on
+      // collision; a lossless encoding cannot reach the state at all.
+      expect(new Set(rows.map((r: any) => r.row_key)).size).toBe(rows.length);
+      const decoded = rows.map((r: any) => JSON.stringify(decodeKey(String(r.row_key))));
+      expect(new Set(decoded).size).toBe(rows.length);
+    });
+
+    it('T. a differing EXPIRY alone yields a different row_key', async () => {
+      await rig.asAdmin((c: any) => c.query(
+        `INSERT INTO outlet_stock(id,organization_id,distribution_point_id,point_type,central_item_id,
+           scientific_name,concentration,dosage_form,unit,national_code,batch_number,has_no_batch_number,
+           internal_batch_reference,expiry_date,on_hand_quantity,reserved_quantity,supply_type)
+         VALUES(gen_random_uuid(),$1,$2,'pharmacy',$3,$4,$5,$6,'drop',$7,'EXPLOT',false,NULL,DATE '2028-03-03',3,0,'aid'),
+                (gen_random_uuid(),$1,$2,'pharmacy',$3,$4,$5,$6,'drop',$7,'EXPLOT',false,NULL,DATE '2029-04-04',4,0,'aid')`,
+        [ORG, DP, CI, B.sci, B.conc, B.form, B.nc]));
+      const rows = (await read(rig, SA, DP)).rows.filter((r: any) => r.batch_number === 'EXPLOT');
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r: any) => r.row_key)).size).toBe(2);
+      expect(rows.map((r: any) => r.quantity).sort()).toEqual([3, 4]);
+      // …and the difference is carried by the expiry element, nothing else.
+      const [a, b] = rows.map((r: any) => decodeKey(String(r.row_key)));
+      expect(a[3]).not.toBe(b[3]);
+      expect([a[0], a[1], a[2], a[4]]).toEqual([b[0], b[1], b[2], b[4]]);
+    });
+
+    it('U. the DEPLOYED function derives row identity with no hash at all', async () => {
+      const r = await rig.asAdmin((c: any) => c.query(
+        `SELECT prosrc FROM pg_proc WHERE oid='public.phoenix_outlet_availability_read_model(uuid)'::regprocedure`));
+      const src: string = r.rows[0].prosrc;
+      expect(src).toContain("'stock:v1:'||encode(convert_to(");
+      for (const bad of [/\bmd5\s*\(/i, /\bdigest\s*\(/i, /\bsha\d+\s*\(/i, /\bhashtext\s*\(/i, /concat_ws/i]) {
+        expect(src, `hashed/ambiguous row identity: ${bad}`).not.toMatch(bad);
+      }
+      // Every returned row carries a usable key, always.
+      for (const row of (await read(rig, SA, DP)).rows) {
+        expect(typeof row.row_key).toBe('string');
+        expect(row.row_key.length).toBeGreaterThan(0);
+      }
+    });
+
     it('Q. the read model still reports exactly two stock truths, writing none', async () => {
       const before = await rig.asAdmin((c: any) => c.query(`SELECT count(*)::int n FROM outlet_stock`));
       await read(rig, SA, DP);
@@ -349,6 +440,209 @@ run('179 · canonical authenticated availability (dynamic)', () => {
       expect(after.rows[0].n).toBe(before.rows[0].n); // a read model writes nothing
       const ia = await rig.asAdmin((c: any) => c.query(`SELECT count(*)::int n FROM item_availability`));
       expect(ia.rows[0].n).toBeGreaterThan(0); // and never manufactures cache rows
+    });
+  });
+
+  /**
+   * CATALOGUE METADATA PAIRING (closure correction 3).
+   *
+   * Grouping physically on material_identity_key while pairing item_availability
+   * by RAW equality against a min() representative detached catalogue metadata
+   * whenever the catalogue held a different-but-canonically-equal spelling:
+   * the physical row lost local_item/notes/price and the catalogue row surfaced
+   * as a SECOND, zero-quantity row for the same conceptual material.
+   *
+   * Every fixture below is REACHABLE under the live constraints:
+   *  * outlet_stock_sci_name_chk forbids padding, so CASE is the only raw
+   *    variance Migration 150's lower() has to absorb;
+   *  * outlet_stock_identity_uniq keys on supply_type too, so canonically equal
+   *    rows coexist across supply types — which this read model aggregates over;
+   *  * item_availability's own uniqueness is RAW, so two case-variant catalogue
+   *    rows are insertable at one point. That is why the normalized pairing is
+   *    guarded rather than unconditional.
+   */
+  describe('METADATA PAIRING — normalization must not detach catalogue metadata', () => {
+    let rig: any;
+    const CI2 = '00000000-0000-0000-0000-000000179302';
+    const LI2 = '00000000-0000-0000-0000-000000179402';
+
+    /** One physical row with an explicit raw spelling and lot. */
+    const mstock = (o: { sci: string; unit?: string | null; qty: number; batch: string; supply?: string }) =>
+      rig.asAdmin((c: any) => c.query(
+        `INSERT INTO outlet_stock(id,organization_id,distribution_point_id,point_type,central_item_id,
+           scientific_name,concentration,dosage_form,unit,national_code,batch_number,has_no_batch_number,
+           internal_batch_reference,expiry_date,on_hand_quantity,reserved_quantity,supply_type)
+         VALUES(gen_random_uuid(),$1,$2,'pharmacy',$3,$4,$5,$6,$7,$8,$9,false,NULL,$10,$11,0,$12)`,
+        [ORG, DP, CI, o.sci, B.conc, B.form, o.unit === undefined ? 'box' : o.unit, B.nc,
+         o.batch, B.exp, o.qty, o.supply ?? 'aid']));
+
+    /** One catalogue row. port_name satisfies item_availability_identity_chk
+     *  without consuming the one-catalogue-row-per-local-item slot. */
+    const mcat = (o: { id: string; sci: string; batch: string; notes?: string; price?: number;
+                       localItem?: string; removed?: boolean }) =>
+      rig.asAdmin((c: any) => c.query(
+        `INSERT INTO item_availability(id,local_item_id,port_name,distribution_point_id,organization_id,
+           quantity,condition,scientific_name,concentration,dosage_form,national_code,batch_number,
+           expiry_date,source_kind,notes,price,removed_at)
+         VALUES($1,$2,$3,$4,$5,999,'surplus',$6,$7,$8,$9,$10,$11,'manual',$12,$13,$14)`,
+        [o.id, o.localItem ?? null, o.localItem ? null : 'G3 Pharmacy', DP, ORG,
+         o.sci, B.conc, B.form, B.nc, o.batch, B.exp,
+         o.notes ?? null, o.price ?? null, o.removed ? new Date().toISOString() : null]));
+
+    const forBatch = async (batch: string) =>
+      (await read(rig, SA, DP)).rows.filter((r: any) => r.batch_number === batch);
+
+    beforeAll(async () => {
+      rig = await buildRig({ upTo: 179 });
+      await seed(rig);
+      await rig.asAdmin((c: any) => c.query(
+        `INSERT INTO central_items(id,name,name_ar,unit,status,concentration,dosage_form)
+         VALUES($1,'Amox2','أموكس٢',$2,'active','500mg','capsule') ON CONFLICT(id) DO NOTHING`, [CI2, CATALOGUE_UNIT]));
+      await rig.asAdmin((c: any) => c.query(
+        `INSERT INTO local_items(id,central_item_id,organization_id,local_name,local_code)
+         VALUES($1,$2,$3,'L2','LOC-179-2') ON CONFLICT(id) DO NOTHING`, [LI2, CI2, ORG]));
+    });
+    afterAll(async () => { await rig?.end?.(); });
+
+    it('1. EXACT raw match still pairs, bit-for-bit as before', async () => {
+      await mstock({ sci: 'Metformin', qty: 4, batch: 'MM-RAW' });
+      await mcat({ id: '00000000-0000-0000-0000-00000017a001', sci: 'Metformin', batch: 'MM-RAW', notes: 'RAW' });
+      const rows = await forBatch('MM-RAW');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].quantity).toBe(4);
+      expect(rows[0].notes).toBe('RAW');
+      expect(rows[0].id).toBe('00000000-0000-0000-0000-00000017a001');
+      expect(String(rows[0].row_key)).toMatch(/^stock:v1:/);
+    });
+
+    it('2. a Migration-150 case variant no longer detaches (the reproduction)', async () => {
+      // Two canonically IDENTICAL physical rows whose raw spellings differ,
+      // coexisting across supply types — exactly the shape that produced the
+      // detached catalogue row on the rig.
+      await mstock({ sci: 'Ibuprofen', qty: 5, batch: 'MM-NORM', supply: 'aid' });
+      await mstock({ sci: 'IBUPROFEN', qty: 6, batch: 'MM-NORM', supply: 'kimadia' });
+      const keys = await rig.asAdmin((c: any) => c.query(
+        `SELECT count(DISTINCT material_identity_key)::int n FROM outlet_stock
+          WHERE distribution_point_id=$1 AND batch_number='MM-NORM'`, [DP]));
+      expect(keys.rows[0].n).toBe(1); // one canonical identity, two raw spellings
+      // A THIRD spelling in the catalogue, so RAW equality cannot match any
+      // representative min() could ever choose — normalization is the only path.
+      await mcat({ id: '00000000-0000-0000-0000-00000017a002', sci: 'ibuprofen', batch: 'MM-NORM', notes: 'NORM' });
+      const rows = await forBatch('MM-NORM');
+      expect(rows).toHaveLength(1);                 // NOT a physical row + a phantom catalogue row
+      expect(rows[0].quantity).toBe(11);            // physical truth unchanged
+      expect(rows[0].unit).toBe('box');
+      expect(rows[0].notes).toBe('NORM');           // metadata stayed attached
+      expect(rows[0].id).toBe('00000000-0000-0000-0000-00000017a002');
+      expect(rows.some((r: any) => String(r.row_key).startsWith('catalogue:'))).toBe(false);
+    });
+
+    it('3. removed_at survives the normalized pairing, on the physical row', async () => {
+      await mstock({ sci: 'Naproxen', qty: 2, batch: 'MM-REM' });
+      await mcat({ id: '00000000-0000-0000-0000-00000017a003', sci: 'NAPROXEN', batch: 'MM-REM',
+                   notes: 'REM', removed: true });
+      const rows = await forBatch('MM-REM');
+      // Exactly one row: the removed marker must not strand itself on a
+      // separate catalogue-only row that carries no stock.
+      expect(rows).toHaveLength(1);
+      expect(rows[0].removed_at).toBeTruthy();
+      expect(rows[0].quantity).toBe(2);             // visibility metadata is not stock truth
+      expect(rows[0].id).toBe('00000000-0000-0000-0000-00000017a003');
+    });
+
+    it('4. notes, price and local_item survive the normalized pairing', async () => {
+      await mstock({ sci: 'Cetirizine', qty: 8, batch: 'MM-META' });
+      await mcat({ id: '00000000-0000-0000-0000-00000017a004', sci: 'CETIRIZINE', batch: 'MM-META',
+                   notes: 'META', price: 12.5, localItem: LI2 });
+      const rows = await forBatch('MM-META');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].notes).toBe('META');
+      expect(Number(rows[0].price)).toBe(12.5);
+      expect(rows[0].local_item_id).toBe(LI2);
+      expect(rows[0].local_items?.central_items?.id).toBe(CI2);
+      // …and the catalogue unit still cannot become the physical unit.
+      expect(rows[0].local_items?.central_items?.unit).toBe(CATALOGUE_UNIT);
+      expect(rows[0].unit).toBe('box');
+      expect(rows[0].quantity).toBe(8);
+    });
+
+    it('5. ONE catalogue row legitimately serves 5 box AND 3 strip', async () => {
+      await mstock({ sci: 'Ranitidine', unit: 'box', qty: 5, batch: 'MM-SHARE' });
+      await mstock({ sci: 'Ranitidine', unit: 'strip', qty: 3, batch: 'MM-SHARE' });
+      await mcat({ id: '00000000-0000-0000-0000-00000017a005', sci: 'RANITIDINE', batch: 'MM-SHARE', notes: 'SHARED' });
+      const rows = await forBatch('MM-SHARE');
+      // item_availability has no unit column, so one catalogue row serving both
+      // unit-distinct physical identities is correct — and is NOT multiplication:
+      // each physical row still appears exactly once.
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r: any) => r.quantity).sort()).toEqual([3, 5]);
+      expect(rows.map((r: any) => r.unit).sort()).toEqual(['box', 'strip']);
+      for (const r of rows) expect(r.notes).toBe('SHARED');
+      expect(rows[0].id).toBe(rows[1].id);            // same catalogue row…
+      expect(rows[0].row_key).not.toBe(rows[1].row_key); // …distinct physical identities
+      expect(rows.some((r: any) => r.quantity === 8)).toBe(false);
+    });
+
+    it('6. stock with NO catalogue row keeps its physical truth and a null id', async () => {
+      await mstock({ sci: 'Loratadine', qty: 9, batch: 'MM-NOCAT' });
+      const rows = await forBatch('MM-NOCAT');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].quantity).toBe(9);
+      expect(rows[0].id).toBeNull();
+      expect(rows[0].notes).toBeNull();
+      expect(String(rows[0].row_key)).toMatch(/^stock:v1:/);
+    });
+
+    it('7. a catalogue row matching NO stock still surfaces, canonical-zero', async () => {
+      const id = '00000000-0000-0000-0000-00000017a007';
+      await mcat({ id, sci: 'Orphan', batch: 'MM-ORPHAN', notes: 'ORPHAN' });
+      const rows = await forBatch('MM-ORPHAN');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].quantity).toBe(0);          // the cache said 999
+      expect(rows[0].unit).toBeNull();           // no physical stock -> no physical unit
+      expect(rows[0].row_key).toBe(`catalogue:${id}`);
+    });
+
+    it('8. AMBIGUOUS candidates attach nothing, multiply nothing, drop nothing', async () => {
+      // Two catalogue rows that are one material under Migration 150 but two
+      // rows under item_availability's RAW uniqueness. Reachable: proven here
+      // by the insert itself succeeding.
+      await mcat({ id: '00000000-0000-0000-0000-00000017a008', sci: 'Famotidine', batch: 'MM-AMB', notes: 'AMB-1' });
+      await mcat({ id: '00000000-0000-0000-0000-00000017a009', sci: 'FAMOTIDINE', batch: 'MM-AMB', notes: 'AMB-2' });
+      await mstock({ sci: 'famotidine', qty: 7, batch: 'MM-AMB' });
+
+      const rows = await forBatch('MM-AMB');
+      const physical = rows.filter((r: any) => String(r.row_key).startsWith('stock:v1:'));
+      const catalogueOnly = rows.filter((r: any) => String(r.row_key).startsWith('catalogue:'));
+
+      // The physical row appears EXACTLY ONCE — an unguarded normalized join
+      // would have emitted it once per candidate.
+      expect(physical).toHaveLength(1);
+      expect(physical[0].quantity).toBe(7);
+      expect(physical[0].unit).toBe('box');
+      // …carrying NO arbitrarily-chosen metadata.
+      expect(physical[0].id).toBeNull();
+      expect(physical[0].notes).toBeNull();
+      // …and neither candidate is silently discarded: ambiguity degrades to
+      // exactly the pre-existing behaviour rather than inventing an answer.
+      expect(catalogueOnly).toHaveLength(2);
+      expect(catalogueOnly.map((r: any) => r.notes).sort()).toEqual(['AMB-1', 'AMB-2']);
+      expect(new Set(rows.map((r: any) => r.row_key)).size).toBe(3);
+    });
+
+    it('9. no phantom duplicate anywhere, and no row ever multiplies', async () => {
+      const rows = (await read(rig, SA, DP)).rows;
+      // Every row key is unique across the whole point…
+      expect(new Set(rows.map((r: any) => r.row_key)).size).toBe(rows.length);
+      // …and each physical canonical tuple is represented exactly once.
+      const groups = await rig.asAdmin((c: any) => c.query(
+        `SELECT count(*)::int n FROM (
+           SELECT DISTINCT material_identity_key, COALESCE(batch_number,'') b,
+                  COALESCE(expiry_date,DATE '0001-01-01') e,
+                  COALESCE(internal_batch_reference,'') i
+             FROM outlet_stock WHERE distribution_point_id=$1) g`, [DP]));
+      expect(rows.filter((r: any) => String(r.row_key).startsWith('stock:v1:')))
+        .toHaveLength(groups.rows[0].n);
     });
   });
 });
