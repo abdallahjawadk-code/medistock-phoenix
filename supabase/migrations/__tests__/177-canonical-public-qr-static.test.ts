@@ -71,6 +71,16 @@ describe('177 · canonical public QR (static)',()=>{
     expect(sql).toContain("v_def NOT ILIKE '%GROUP BY s.material_identity_key%'");
     expect(sql).toContain("v_def ILIKE '%OR coalesce(ia.scientific_name%'");
     expect(sql).toContain("v_def NOT ILIKE '%HAVING count(DISTINCT c.material_identity_key)=1%'");
+    expect(sql).toContain("v_def NOT ILIKE '%min(s.unit) AS unit%'");
+  });
+
+  it('publishes a per-identity unit on local_item availability rows',()=>{
+    // Quantity without its unit is unattributable: two unit-distinct identities
+    // would surface as bare "5" and "3". The unit must come from the canonical
+    // stock identity, never from the local item's single central unit.
+    const localItem = fnBody.slice(fnBody.indexOf("WHEN 'local_item' THEN"));
+    expect(localItem).toContain('min(s.unit) AS unit');
+    expect(localItem).toContain("'unit',NULLIF(s.unit,'')");
   });
 
   it('keeps the runtime VERIFY guard that rejects cache-as-physical-truth',()=>{

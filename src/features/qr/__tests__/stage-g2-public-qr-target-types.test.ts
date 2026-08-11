@@ -28,6 +28,34 @@ describe('Stage G2 · public QR target-type compatibility',()=>{
     expect(migration).toContain("'quantity',CASE WHEN s.effective_condition='expired' THEN NULL ELSE s.available_quantity END");
   });
 
+  it('gives every local-item availability row its own canonical unit, not the central unit',()=>{
+    const localItem=migration.slice(migration.indexOf("WHEN 'local_item' THEN"));
+    // Sourced from the canonical stock identity...
+    expect(localItem).toContain('min(s.unit) AS unit');
+    // ...and the ROW object specifically must use it, never ci.unit, which is a
+    // single label shared by every unit-distinct identity under this local item.
+    const rowStart=localItem.indexOf('SELECT jsonb_agg(jsonb_build_object(');
+    expect(rowStart).toBeGreaterThan(-1);
+    // Executable lines only — the block's own commentary names ci.unit in order
+    // to say it is NOT used, and a raw scan would match that explanation.
+    const rowBuilder=localItem
+      .slice(rowStart,localItem.indexOf('ORDER BY s.point_name_ar',rowStart))
+      .split('\n').filter(l=>!l.trim().startsWith('--')).join('\n');
+    expect(rowBuilder).toContain("'unit',NULLIF(s.unit,'')");
+    expect(rowBuilder).not.toContain('ci.unit');
+    // The top-level central unit stays for backward compatibility.
+    expect(localItem).toContain("'unit',ci.unit");
+  });
+
+  it('renders a row unit next to the quantity, so 5 box and 3 strip stay distinguishable',()=>{
+    // The screen already had this rendering path; the G2 defect was that the
+    // local_item RPC never populated item.unit for it.
+    expect(screen).toContain("{item.quantity}{item.unit ? ` ${item.unit}` : ''}");
+    expect(screen).toContain('unit?: string;');
+    // availability rows flow through the same PublicItem rendering as items.
+    expect(screen).toContain('(payload?.availability as PublicItem[] | undefined)');
+  });
+
   it('keeps warehouse payload point-shaped rather than faking medicine quantity/status',()=>{
     expect(migration).toContain("'target_type','warehouse'");
     expect(migration).toContain("'point_id',dp.id");

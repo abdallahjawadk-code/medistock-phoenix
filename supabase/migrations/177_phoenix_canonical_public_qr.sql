@@ -342,6 +342,13 @@ BEGIN
               )) AS projection_key,
               min(s.concentration) AS concentration,
               min(s.dosage_form) AS dosage_form,
+              -- unit is a COMPONENT of material_identity_key, so it is constant
+              -- within this group after 150's normalization and min() is an
+              -- exact representative. Each availability row must carry the unit
+              -- of ITS OWN canonical identity: a local item whose stock exists
+              -- as both 'box' and 'strip' is two identities, and labelling both
+              -- from central_items.unit would misreport physical quantities.
+              min(s.unit) AS unit,
               coalesce(s.batch_number,'') AS batch_number_key,
               coalesce(s.expiry_date,DATE '0001-01-01') AS expiry_date_key,
               coalesce(s.internal_batch_reference,'') AS internal_ref_key,
@@ -411,6 +418,11 @@ BEGIN
           SELECT jsonb_agg(jsonb_build_object(
             'point_name',s.point_name,
             'point_name_ar',s.point_name_ar,
+            -- Row-specific canonical unit. Deliberately NOT the top-level
+            -- ci.unit, which would flatten unit-distinct identities to one
+            -- label. NULL when stock carries no unit — the public screen then
+            -- renders the bare quantity rather than an invented unit.
+            'unit',NULLIF(s.unit,''),
             'concentration',NULLIF(s.concentration,''),
             'dosage_form',NULLIF(s.dosage_form,''),
             'condition',s.effective_condition,
@@ -469,6 +481,12 @@ BEGIN
   END IF;
   IF v_def NOT ILIKE '%HAVING count(DISTINCT c.material_identity_key)=1%' THEN
     RAISE EXCEPTION '177 verify failed: ambiguous removal markers are not fail-safe';
+  END IF;
+  -- Each local_item availability row must publish the unit of its own
+  -- canonical identity, never the local item's central unit.
+  IF v_def NOT ILIKE $$%'unit',NULLIF(s.unit,'')%$$
+     OR v_def NOT ILIKE '%min(s.unit) AS unit%' THEN
+    RAISE EXCEPTION '177 verify failed: local_item availability rows lost their canonical unit';
   END IF;
   IF v_def NOT ILIKE '%removed_at IS NOT NULL%' THEN
     RAISE EXCEPTION '177 verify failed: catalogue visibility marker is not enforced';

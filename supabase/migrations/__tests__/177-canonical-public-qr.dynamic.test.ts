@@ -370,6 +370,40 @@ run('177 · canonical public QR (dynamic)',()=>{
     for(const row of p.availability) expect(row.point_name).toBe('G2 Pharmacy Two');
   });
 
+  it('D2 · every local-item availability row carries the unit of its OWN canonical identity',async()=>{
+    // Splitting the quantities is only half the contract. A public reader sees
+    // "5" and "3"; without a per-row unit those numbers are unattributable and
+    // the split is meaningless. central_items.unit for this local item is 'box'
+    // for BOTH rows, so sourcing the row unit from it would label the strip row
+    // 'box' and misstate physical stock.
+    const p=await asAnon(PUB_LI_U);
+    expect(p.unit).toBe('box'); // top-level central unit preserved, unchanged
+
+    const pairs=p.availability
+      .map((x:any)=>[x.quantity,x.unit])
+      .sort((a:any,b:any)=>a[0]-b[0]);
+    expect(pairs).toEqual([[3,'strip'],[5,'box']]);
+
+    // Every row must actually carry a unit — not merely differ.
+    for(const row of p.availability){
+      expect(typeof row.unit).toBe('string');
+      expect(row.unit).not.toBe('');
+    }
+    // And the two rows must not collapse to the central item's single label.
+    expect(new Set(p.availability.map((x:any)=>x.unit)).size).toBe(2);
+  });
+
+  it('D3 · local-item availability rows expose no internal identity or provenance',async()=>{
+    const p=await asAnon(PUB_LI_U);
+    for(const row of p.availability){
+      for(const key of ['material_identity_key','projection_key','central_item_id',
+        'batch_number','internal_batch_reference','national_code','supply_type',
+        'purchase_origin','price','trade_name','notes','distribution_point_id']){
+        expect(row,key).not.toHaveProperty(key);
+      }
+    }
+  });
+
   it('J · privacy fields stay absent from every target type',async()=>{
     const secret=['batch_number','national_code','price','trade_name','notes',
       'actor_name_snapshot','actor_email_snapshot','actor_role_snapshot','supply_type',
