@@ -36,7 +36,16 @@ run('176 · canonical outlet availability read model (dynamic)',()=>{
       await c.query(`INSERT INTO item_availability(id,distribution_point_id,organization_id,port_name,scientific_name,concentration,dosage_form,national_code,batch_number,expiry_date,quantity,condition,notes,supply_type,removed_at) VALUES($1,$2,$3,'G1 Pharmacy','G1 Canonical Drug','500 mg','tablet','G1-NC','G1-B',$4,999,'surplus','metadata-note','legacy-display',now())`,[cacheId,DP,ORG,FAR_FUTURE]);
     });
     const r=await readModel(rig.superAdminId,DP); const row=r.rows.find((x:any)=>x.catalogue_item_availability_id===cacheId);
-    expect(row.quantity).toBe(25); expect(row.condition).toBe('available'); expect(row.id).toBe(cacheId); expect(row.row_key).toBe(`catalogue:${cacheId}`); expect(row.notes).toBe('metadata-note'); expect(row.removed_at).toBeTruthy();
+    expect(row.quantity).toBe(25); expect(row.condition).toBe('available'); expect(row.id).toBe(cacheId); expect(row.notes).toBe('metadata-note'); expect(row.removed_at).toBeTruthy();
+    // STAGE-G-G3.1 (migration 179): a row BACKED BY canonical stock is now
+    // identified by its physical identity, not by the item_availability UUID.
+    // 179 must do this because item_availability has no unit column, so one
+    // cache row cannot distinguish two unit-distinct physical identities and
+    // `catalogue:<id>` would be emitted twice for two different materials.
+    // `id`/`catalogue_item_availability_id` still carry the cache UUID (asserted
+    // above); only row_key moved to the physical identity.
+    expect(row.row_key).toMatch(/^stock:/);
+    expect(row.catalogue_item_availability_id).toBe(cacheId);
   });
 
   it('keeps catalogue-only rows at canonical zero/missing',async()=>{

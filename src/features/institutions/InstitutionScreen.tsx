@@ -1738,8 +1738,22 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
 // exact same shape PortAvailabilitySection already fetches — no new query,
 // no new fields added to the interface itself.
 export interface AvailRow {
+  /** item_availability UUID — NULL for rows backed only by canonical stock.
+   *  Unchanged by G3.1 and still the identity visibility actions act on; it is
+   *  NOT a physical row identity and must never be a React key. */
   id: string;
+  /** STAGE-G-G3.1 (migration 179): the canonical physical row identity. Derived
+   *  server-side from outlet_stock.material_identity_key + lot for stock-backed
+   *  rows, and from the catalogue id for catalogue-only rows, so it is always a
+   *  deterministic non-null string and is unique per physical row — including
+   *  for two unit-distinct identities that share one item_availability row. */
+  row_key: string;
   quantity: number;
+  /** STAGE-G-G3.1: the PHYSICAL unit of this row's canonical stock identity
+   *  (migration 179). NULL means the stock carries no unit — render the
+   *  quantity without one. Never substitute central_items.unit, which describes
+   *  the catalogue item and can belong to a different canonical identity. */
+  unit?: string | null;
   condition: string;
   batch_number: string | null;
   expiry_date: string | null;
@@ -1925,7 +1939,12 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
             return (
               <div
-                key={r.id}
+                // STAGE-G-G3.1: row_key, never r.id. r.id is the item_availability
+                // UUID: it is NULL for stock-only rows, and migration 179 can
+                // legitimately return two unit-distinct physical rows that share
+                // one item_availability row. row_key is guaranteed non-null and
+                // unique per physical row by the read model itself.
+                key={r.row_key}
                 className="premium-material-row nexus-io-material-row"
                 role="button"
                 tabIndex={0}
@@ -1944,7 +1963,14 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
+                  {/* STAGE-G-G3.1: the physical quantity is labelled with the
+                      PHYSICAL unit of its own canonical stock identity. `ci` is
+                      the catalogue item and its unit may belong to a different
+                      canonical identity entirely — labelling 3 strip as "3
+                      tablet" is exactly the defect migration 179 fixes, so there
+                      is no fallback here in either direction. A null physical
+                      unit renders the quantity alone rather than inventing one. */}
+                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {r.unit ?? ''}</span>
                   <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
                   {r.expiry_date && (
                     <span style={{ fontSize: '9.5px', color: 'var(--t2)' }} dir="ltr">{r.expiry_date}</span>

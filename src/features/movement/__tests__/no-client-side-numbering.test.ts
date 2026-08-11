@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('178 is a trigger-privilege hotfix and no 179+ numbering migration exists',()=>{
+  it('179 is a read-model regrouping and no 180+ numbering migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -64,11 +64,19 @@ describe('no client-side document-number sequence exists',()=>{
     // item_availability cache. It is a READ cutover: no sequence, no counter,
     // no max()+1, no generated numeric identity — the only counter it touches
     // is qr_tokens.scan_count, which is pre-existing scan accounting and not a
-    // document number. Boundary moves to 179 so the next unknown migration
+    // document number.
+    // STAGE-G-G3.1: 179 replaces phoenix_outlet_availability_read_model's body
+    // so physical rows group on outlet_stock.material_identity_key (Migration
+    // 150's GENERATED column) instead of raw material columns, and publishes an
+    // additive row-level unit. Its only derived value is a md5 row_key over
+    // already-persisted canonical identity — a stable content hash, not a
+    // sequence, counter, max()+1 or generated numeric identity, and never a
+    // document number. Boundary moves to 180 so the next unknown migration
     // still fails closed here.
-    const beyond=migrations.filter(f=>/^(179|1[89]\d|[2-9]\d\d)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^179_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '179_phoenix_canonical_authenticated_availability_hardening.sql',
       '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',
       '177_phoenix_canonical_public_qr.sql',
       '176_phoenix_canonical_outlet_availability_read_model.sql',

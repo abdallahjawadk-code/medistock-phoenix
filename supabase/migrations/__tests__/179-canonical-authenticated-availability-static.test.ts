@@ -1,0 +1,144 @@
+/**
+ * STAGE-G-G3.1 (179) — static contract of the authenticated availability
+ * hardening. Guards the SHAPE of the migration so a later edit cannot quietly
+ * reintroduce raw-column physical grouping, add a catalogue unit fallback, or
+ * let the item_availability cache become physical stock truth again.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const MIGRATIONS = join(__dirname, '..');
+const NAME = '179_phoenix_canonical_authenticated_availability_hardening.sql';
+const sql = readFileSync(join(MIGRATIONS, NAME), 'utf8');
+/** Executable SQL only — the header prose deliberately quotes the OLD grouping
+ *  and the rejected catalogue-fallback shapes, and must not trip these guards. */
+const exec = sql.replace(/--[^\n]*/g, '');
+/** Just the replaced function body. */
+const fn = exec.slice(exec.indexOf('CREATE OR REPLACE FUNCTION'), exec.indexOf('$function$;'));
+
+describe('179 · canonical authenticated availability hardening (static)', () => {
+  it('replaces exactly the Migration-176 read model and nothing else', () => {
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION public.phoenix_outlet_availability_read_model(p_distribution_point_id uuid)',
+    );
+    expect(sql.match(/CREATE OR REPLACE FUNCTION/g)).toHaveLength(1);
+    // A read-model regrouping touches no table, policy, index or trigger.
+    expect(exec).not.toMatch(/\bALTER\s+TABLE\b/i);
+    expect(exec).not.toMatch(/CREATE (OR REPLACE )?(TABLE|VIEW|POLICY|INDEX|TRIGGER)/i);
+    expect(exec).not.toMatch(/\bDROP\s+(TABLE|POLICY|TRIGGER|FUNCTION|INDEX)\b/i);
+    expect(exec).not.toMatch(/ROW LEVEL SECURITY/i);
+  });
+
+  it('preserves the signature, security context and pinned search_path', () => {
+    expect(sql).toContain('(p_distribution_point_id uuid)');
+    expect(sql).toContain('RETURNS jsonb');
+    expect(sql).toContain('SECURITY DEFINER');
+    expect(sql).toContain('SET search_path = public, pg_temp');
+    expect(sql).toContain('STABLE');
+  });
+
+  it('groups physical rows on the canonical identity, not raw material columns', () => {
+    expect(fn).toContain('s.material_identity_key');
+    expect(fn).toMatch(/GROUP BY[^;]*s\.material_identity_key/);
+    // The exact defective grouping from 176 must not survive: it re-derived
+    // identity from scientific_name + COALESCE(...) material columns and left
+    // `unit` out entirely, so 5 box + 3 strip summed to 8.
+    expect(fn).not.toMatch(/GROUP BY s\.organization_id,s\.distribution_point_id,s\.scientific_name/);
+  });
+
+  it('publishes an additive row-level unit with NO catalogue fallback', () => {
+    expect(fn).toContain("NULLIF(j.canonical_unit,'') AS unit");
+    expect(fn).toContain("'unit', s.unit");
+    // Neither direction of the forbidden fallback may appear.
+    expect(fn).not.toMatch(/COALESCE\([^)]*canonical_unit[^)]*ci\.unit/i);
+    expect(fn).not.toMatch(/COALESCE\([^)]*ci\.unit[^)]*canonical_unit/i);
+    expect(fn).not.toMatch(/COALESCE\(\s*ci\.unit/i);
+    // central_items.unit may still be published as catalogue metadata inside
+    // local_items — that is the pre-existing 176 contract and is not the
+    // physical row unit.
+    expect(fn).toContain("'unit',ci.unit");
+  });
+
+  it('keeps item_availability out of physical quantity and condition', () => {
+    expect(fn).toContain('COALESCE(j.available_quantity,0) AS quantity');
+    expect(fn).not.toMatch(/COALESCE\(\s*ia\.quantity/i);
+    expect(fn).not.toMatch(/COALESCE\(\s*ia\.condition/i);
+    expect(fn).toContain('public.phoenix_derive_outlet_availability_condition(');
+  });
+
+  it('anchors stock-backed row_key to the canonical identity, injectively', () => {
+    expect(fn).toContain('canonical_material_identity_key IS NOT NULL');
+    expect(fn).toContain("'stock:'||md5(jsonb_build_array(");
+    expect(fn).toContain("'catalogue:'||j.catalogue_id::text");
+    // concat_ws is genuinely ambiguous here: batch_number and
+    // internal_batch_reference are free text and may contain the separator.
+    expect(fn).not.toMatch(/md5\(concat_ws/i);
+  });
+
+  it('does not repurpose id or catalogue_item_availability_id', () => {
+    expect(fn).toContain('j.catalogue_id AS id');
+    expect(fn).toContain('j.catalogue_id AS catalogue_item_availability_id');
+  });
+
+  it('preserves every response key the 176 contract already published', () => {
+    for (const k of [
+      'id', 'catalogue_item_availability_id', 'row_key', 'local_item_id',
+      'distribution_point_id', 'organization_id', 'quantity', 'condition',
+      'batch_number', 'national_code', 'expiry_date', 'notes', 'updated_at',
+      'port_name', 'supply_type', 'removed_at', 'scientific_name', 'trade_name',
+      'dosage_form', 'concentration', 'price', 'internal_batch_reference',
+      'canonical_on_hand_quantity', 'canonical_available_quantity',
+      'canonical_usable_quantity', 'local_items',
+    ]) expect(fn, `response key ${k}`).toContain(`'${k}',`);
+    expect(fn).toContain("'source','canonical_outlet_stock'");
+  });
+
+  it('keeps the ACL contract and never opens anon', () => {
+    expect(exec).toContain('REVOKE EXECUTE ON FUNCTION public.phoenix_outlet_availability_read_model(uuid) FROM anon');
+    expect(exec).toContain('GRANT EXECUTE ON FUNCTION public.phoenix_outlet_availability_read_model(uuid) TO authenticated');
+    expect(exec).toContain('GRANT EXECUTE ON FUNCTION public.phoenix_outlet_availability_read_model(uuid) TO service_role');
+    expect(exec).not.toMatch(/GRANT[^;]*TO\s+anon/i);
+  });
+
+  it('preserves organization scoping and point indistinguishability', () => {
+    expect(fn).toContain("v_role='super_admin'");
+    expect(fn).toContain('v_org=v_point_org');
+    expect(fn).toContain("RAISE EXCEPTION 'not_authenticated'");
+  });
+
+  it('is transactional with preflight and fail-closed verify', () => {
+    expect(sql).toMatch(/^BEGIN;/m);
+    expect(sql).toMatch(/^COMMIT;/m);
+    expect(sql).toContain('$preflight$');
+    expect(sql).toContain('$verify$');
+    expect(sql).toContain('179 preflight failed: outlet_stock.material_identity_key is missing or not GENERATED ALWAYS');
+    expect(sql).toContain('179 verify failed: read model does not group on material_identity_key');
+    expect(sql).toContain('179 verify failed: raw-column physical grouping was reintroduced');
+    expect(sql).toContain('179 verify failed: physical unit can fall back to the catalogue unit');
+    expect(sql).toContain('179 verify failed: anon gained EXECUTE on the authenticated read model');
+  });
+
+  it('every verify assertion literal is single-line (CRLF-portable, cf. 162)', () => {
+    const verify = sql.slice(sql.indexOf('$verify$'));
+    const literals = [...verify.matchAll(/LIKE\s+'([^']*)'/g)].map(m => m[1]);
+    expect(literals.length).toBeGreaterThan(0);
+    for (const lit of literals) expect(lit).not.toContain('\n');
+  });
+
+  it('does not touch Migration 177 Public QR or Hotfix 178 territory', () => {
+    // Both are asserted as PREconditions only — 179 must never redefine them.
+    expect(exec).not.toMatch(/CREATE OR REPLACE FUNCTION public\.get_public_qr_payload/i);
+    expect(exec).not.toMatch(/ADD CONSTRAINT/i);
+    expect(exec).not.toMatch(/_phoenix_distribution_points_owner_kind_guard_v1\s*\(\s*\)\s*RETURNS/i);
+    expect(sql).toContain('179 preflight failed: public QR anonymous contract is not intact');
+    expect(sql).toContain('179 preflight failed: Hotfix-178 ownership FK is missing');
+  });
+
+  it('adds no third stock truth', () => {
+    expect(fn).toContain('FROM public.outlet_stock s');
+    expect(exec).not.toMatch(/\bINSERT\s+INTO\b/i);
+    expect(exec).not.toMatch(/\bUPDATE\s+public\./i);
+    expect(exec).not.toMatch(/\bDELETE\s+FROM\b/i);
+  });
+});
