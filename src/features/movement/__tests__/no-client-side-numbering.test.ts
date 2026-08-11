@@ -52,18 +52,24 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('177 is a public-QR read cutover and no 178+ numbering migration exists',()=>{
+  it('178 is a trigger-privilege hotfix and no 179+ numbering migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
+    // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
+    // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
+    // callers holding only SELECT on warehouses. One function attribute: no
+    // sequence, no counter, no max()+1, no generated numeric identity, no
+    // document number of any kind.
     // STAGE-G-G2: 177 replaces get_public_qr_payload's body so physical
     // quantity/condition derive from outlet_stock instead of the
     // item_availability cache. It is a READ cutover: no sequence, no counter,
     // no max()+1, no generated numeric identity — the only counter it touches
     // is qr_tokens.scan_count, which is pre-existing scan accounting and not a
-    // document number. Boundary moves to 178 so the next unknown migration
+    // document number. Boundary moves to 179 so the next unknown migration
     // still fails closed here.
-    const beyond=migrations.filter(f=>/^(17[8-9]|1[89]\d|[2-9]\d\d)_/.test(f));
+    const beyond=migrations.filter(f=>/^(179|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',
       '177_phoenix_canonical_public_qr.sql',
       '176_phoenix_canonical_outlet_availability_read_model.sql',
       '175_phoenix_read_helper_anonymous_surface_hardening.sql',
