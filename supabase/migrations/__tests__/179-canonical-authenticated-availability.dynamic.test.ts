@@ -140,12 +140,22 @@ run('179 · canonical authenticated availability (dynamic)', () => {
     });
     afterAll(async () => { await rig?.end?.(); });
 
+    /**
+     * The two base rows, selected by BOTH unit and lot.
+     *
+     * Selecting on `unit` alone is ambiguous: later cases in this suite add
+     * further rows that also carry unit 'box' on a different lot, and the
+     * read model orders by updated_at DESC, so `find(r => r.unit === 'box')`
+     * can return whichever row happens to sort first. CI caught exactly that.
+     */
+    const BASE_LOT = 'B179';
     const boxStrip = async () => {
       const rows = (await read(rig, SA, DP)).rows;
+      const base = rows.filter((r: any) => r.batch_number === BASE_LOT);
       return {
         rows,
-        box: rows.find((r: any) => r.unit === 'box'),
-        strip: rows.find((r: any) => r.unit === 'strip'),
+        box: base.find((r: any) => r.unit === 'box'),
+        strip: base.find((r: any) => r.unit === 'strip'),
       };
     };
 
