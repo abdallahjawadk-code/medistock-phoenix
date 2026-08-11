@@ -41,6 +41,11 @@ type PublicItem = {
   // payload (item_availability.concentration via migration 059). Optional/
   // nullable — same rendering contract as dosage_form above.
   concentration?: string | null;
+  // STAGE-G-G2: warehouse-target payloads return outlet POINT records, not
+  // medicine rows. Each point carries its own count of publicly available
+  // materials instead of a quantity/condition pair. Optional — only a
+  // warehouse target ever populates it.
+  item_count?: number;
 };
 
 /**
@@ -149,6 +154,9 @@ export function PublicQrScreen({ publicId }: Props) {
 
   const payload = (data ?? null) as Record<string, unknown> | null;
   const ok = payload?.ok === true;
+  // STAGE-G-G2: which of the three historical QR targets this payload is for
+  // (distribution_point | warehouse | local_item).
+  const targetType = typeof payload?.target_type === 'string' ? payload.target_type : null;
   const orgName = lang === 'ar'
     ? (payload?.org_name_ar as string) ?? (payload?.org_name as string)
     : (payload?.org_name as string) ?? (payload?.org_name_ar as string);
@@ -165,9 +173,15 @@ export function PublicQrScreen({ publicId }: Props) {
   // the item count, even though the RPC payload (rawItems) still carries
   // them for now. Everything below (summary chips, search, item cards,
   // empty state) is derived from this visible set, not rawItems.
+  //
+  // STAGE-G-G2: that filter is a MEDICINE filter. A warehouse QR returns
+  // active outlet point records, which carry no quantity/condition at all, so
+  // running them through it would discard every one of them. Medicine targets
+  // (distribution_point | local_item) stay strictly fail-closed exactly as
+  // before — the filter itself is unchanged.
   const visibleItems = useMemo(
-    () => rawItems.filter(isPubliclyAvailableQrItem),
-    [rawItems],
+    () => (targetType === 'warehouse' ? rawItems : rawItems.filter(isPubliclyAvailableQrItem)),
+    [rawItems, targetType],
   );
 
   // Status-summary counts derived entirely from the already-loaded visibleItems
@@ -238,7 +252,13 @@ export function PublicQrScreen({ publicId }: Props) {
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
                 )}
-                {visibleItems.length > 0 && (
+                {/* STAGE-G-G2: a warehouse target labels the warehouse itself. */}
+                {typeof payload?.warehouse_label === 'string' && (
+                  <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.warehouse_label as string}</div>
+                )}
+                {/* A warehouse lists outlet POINTS, not medicines, so the
+                    "available medicines" count would be misleading there. */}
+                {targetType !== 'warehouse' && visibleItems.length > 0 && (
                   <div style={{ fontSize: '11px', color: 'var(--pd)', marginTop: '6px', opacity: 0.8 }}>
                     {t('public_items_count', lang)}: {visibleItems.length}
                   </div>
@@ -331,6 +351,11 @@ export function PublicQrScreen({ publicId }: Props) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '11px', color: 'var(--t2)' }}>
                       {typeof item.quantity === 'number' && variant !== 'err' && (
                         <span>{item.quantity}{item.unit ? ` ${item.unit}` : ''}</span>
+                      )}
+                      {/* STAGE-G-G2: warehouse point records carry a count of
+                          publicly available materials instead of a quantity. */}
+                      {typeof item.item_count === 'number' && (
+                        <span>{t('public_items_count', lang)}: {item.item_count}</span>
                       )}
                       {item.expiry_date && isNearExpiry && (
                         <span style={{ color: bucketBadge ? bucketBadge.color : 'var(--warn)' }} dir="ltr">

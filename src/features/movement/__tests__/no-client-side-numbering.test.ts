@@ -52,11 +52,19 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('176 is availability-read-only and no 177+ numbering migration exists',()=>{
+  it('177 is a public-QR read cutover and no 178+ numbering migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
-    const beyond=migrations.filter(f=>/^(17[7-9]|1[89]\d|[2-9]\d\d)_/.test(f));
+    // STAGE-G-G2: 177 replaces get_public_qr_payload's body so physical
+    // quantity/condition derive from outlet_stock instead of the
+    // item_availability cache. It is a READ cutover: no sequence, no counter,
+    // no max()+1, no generated numeric identity — the only counter it touches
+    // is qr_tokens.scan_count, which is pre-existing scan accounting and not a
+    // document number. Boundary moves to 178 so the next unknown migration
+    // still fails closed here.
+    const beyond=migrations.filter(f=>/^(17[8-9]|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '177_phoenix_canonical_public_qr.sql',
       '176_phoenix_canonical_outlet_availability_read_model.sql',
       '175_phoenix_read_helper_anonymous_surface_hardening.sql',
       '174_phoenix_authenticated_rpc_surface_hardening.sql',
