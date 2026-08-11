@@ -208,7 +208,11 @@ describe('Permission gating for clear/remove/disable is unchanged by this phase'
   it('the outlet contents "Remove from outlet" button is still gated by canRemove, not canMutate', () => {
     const fnStart = institutions.indexOf('function PortAvailabilitySection');
     const fnBody = institutions.slice(fnStart, institutions.indexOf('function PortCleanupWizard'));
-    expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
+    // STAGE-G-G3.1: still canRemove (never canMutate), still first. The extra
+    // conjunct is an identity precondition, not a permission: a stock-only row
+    // has no item_availability row for this catalogue-visibility action.
+    expect(fnBody).toMatch(/\{canRemove\s*&&\s*r\.id\s*!==\s*null\s*&&\s*\(/);
+    expect(fnBody).not.toContain('canMutate');
   });
 
   it('no new permission key was invented — permissions.ts is unchanged by this phase', () => {

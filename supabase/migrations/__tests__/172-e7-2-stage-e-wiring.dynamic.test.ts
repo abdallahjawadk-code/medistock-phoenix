@@ -81,6 +81,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // still ends at 171" assertion above is unaffected. Listed here so this
       // guard stays exhaustive and still fails closed on any unlisted new file.
       '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',
+      // STAGE-G-G3.1: 179 replaces Migration 176's authenticated availability
+      // read model so physical rows group on outlet_stock.material_identity_key
+      // and carry a row-level unit. It replaces one 176 function in place and
+      // adds no Stage-E SQL, so the "Stage E still ends at 171" assertion above
+      // is unaffected. Listed here so this guard stays exhaustive and still
+      // fails closed on any unlisted new file.
+      '179_phoenix_canonical_authenticated_availability_hardening.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

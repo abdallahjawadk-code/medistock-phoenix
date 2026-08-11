@@ -37,10 +37,13 @@ describe('Material remove action: visible in the outlet material list', () => {
     const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
     expect(fnBody).toContain("t('avail_remove_from_outlet', lang)");
     // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: already-removed (quantity 0 +
-    // condition 'missing') rows are now filtered out of `rows` entirely
-    // before rendering, so the per-row button gate simplifies to canRemove
-    // alone — there is no longer a row in the list for which it could apply.
-    expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
+    // condition 'missing') rows are filtered out of `rows` entirely before
+    // rendering.
+    // STAGE-G-G3.1: the permission gate is still canRemove and still comes
+    // first. The added conjunct is an identity precondition, not a second
+    // permission: this button performs a CATALOGUE-visibility write (084) and
+    // a stock-only row has no item_availability row (id === null) to write to.
+    expect(fnBody).toMatch(/\{canRemove\s*&&\s*r\.id\s*!==\s*null\s*&&\s*\(/);
   });
 
   it('the remove button has a minimum touch target size (mobile-reachable)', () => {
@@ -389,7 +392,10 @@ describe('BUGFIX-OUTLET-MATERIAL-DELETE-EDIT-A: permission-matrix fix — effect
   it('the remove button in PortAvailabilitySection is gated by the canRemove prop (fed by the effective permission)', () => {
     const fnStart = screen.indexOf('function PortAvailabilitySection');
     const fnBody = screen.slice(fnStart, screen.indexOf('function PortCleanupWizard'));
-    expect(fnBody).toMatch(/\{canRemove\s*&&\s*\(/);
+    // STAGE-G-G3.1: canRemove is still the permission gate and still first;
+    // the added conjunct is an identity precondition (a stock-only row has no
+    // item_availability row for this catalogue-visibility action to write).
+    expect(fnBody).toMatch(/\{canRemove\s*&&\s*r\.id\s*!==\s*null\s*&&\s*\(/);
     // UI-HIDE-PORT-ADD-ITEM-A: the separate "+ Add" action (previously gated
     // by a canMutate prop) was intentionally hidden from this card — canMutate
     // no longer exists on this component at all.

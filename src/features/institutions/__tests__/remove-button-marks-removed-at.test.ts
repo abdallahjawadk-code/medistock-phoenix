@@ -43,9 +43,14 @@ const availabilityService = readSrc('shared/supabase/services/availability.servi
 
 function onConfirmRemoveBody(): string {
   const start = screen.indexOf('async function onConfirmRemove');
-  // The function is short (single RPC call + toast/reload/catch) — a fixed
-  // window comfortably covers it without spilling into the next function.
-  return screen.slice(start, start + 900);
+  // Extract the ACTUAL function rather than a fixed character window. The old
+  // 900-char window was sized to a shorter version of this function and
+  // silently stopped covering its tail once STAGE-G-G3.1 added the stock-only
+  // id guard — the assertions below then depended on how much text happened to
+  // fit rather than on what the code does. `\n  }` is the closing brace at
+  // this function's own indentation, so the slice ends exactly at its end.
+  const end = screen.indexOf('\n  }', start);
+  return screen.slice(start, end + 4);
 }
 
 // CANONICAL-STOCK-CUTOVER: the original quantity-0 bug is now structurally

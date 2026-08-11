@@ -95,10 +95,18 @@ describe('B) Remove / QR / Edit / Disable / Clear-port actions do not accidental
 
   it('remove-from-outlet is a single unconditional catalogue-visibility call (migration 084), not a quantity write', () => {
     const start = institutionScreen.indexOf('async function onConfirmRemove');
-    const body = institutionScreen.slice(start, start + 900);
+    // Extract the actual function, not a fixed character window: the old 900
+    // char slice was sized to a shorter version of it and stopped covering the
+    // call once STAGE-G-G3.1 added the stock-only id guard.
+    const body = institutionScreen.slice(start, institutionScreen.indexOf('\n  }', start) + 4);
     expect(body).toMatch(/setAvailabilityVisibility\(\s*removeTarget\.id\s*,\s*true\s*,\s*'removed_from_outlet'\s*\)/);
     expect(body).not.toContain("movementType: 'set_exact'");
+    // "Unconditional" here has always meant: independent of quantity and
+    // condition, so an already-out-of-stock material can still be removed.
+    // STAGE-G-G3.1's guard is an identity precondition on a row that has no
+    // catalogue entry at all — it cannot reintroduce a quantity gate.
     expect(body).not.toMatch(/if\s*\(\s*removeTarget\.quantity\s*!==\s*0\s*\)/);
+    expect(body).not.toMatch(/removeTarget\.(quantity|condition)/);
   });
 
   it('clear-port / safe-delete (PortCleanupWizard, onClearItems) is untouched by this phase', () => {

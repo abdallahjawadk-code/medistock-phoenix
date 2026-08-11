@@ -1738,8 +1738,32 @@ function QrPreviewModal({ open, onClose, src, srcErr, url, portName, orgName, la
 // exact same shape PortAvailabilitySection already fetches — no new query,
 // no new fields added to the interface itself.
 export interface AvailRow {
-  id: string;
+  /** item_availability UUID — NULL for rows backed only by canonical stock.
+   *  Unchanged by G3.1 and still the identity visibility actions act on; it is
+   *  NOT a physical row identity and must never be a React key.
+   *
+   *  The type says `string | null` because that is what the RPC actually
+   *  returns and what the line above always described. Declaring it `string`
+   *  made the compiler treat every honest null check as dead code — which is
+   *  exactly how a catalogue-visibility action stayed reachable on a row that
+   *  has no catalogue entry to act on. Do NOT synthesize an id, and do NOT
+   *  substitute row_key: the two mean different things (see below). */
+  id: string | null;
+  /** STAGE-G-G3.1 (migration 179): the canonical physical row identity. Derived
+   *  server-side from outlet_stock.material_identity_key + lot for stock-backed
+   *  rows, and from the catalogue id for catalogue-only rows, so it is always a
+   *  deterministic non-null string and is unique per physical row — including
+   *  for two unit-distinct identities that share one item_availability row. */
+  row_key: string;
   quantity: number;
+  /** STAGE-G-G3.1: the PHYSICAL unit of this row's canonical stock identity
+   *  (migration 179). NULL means the stock carries no unit — render the
+   *  quantity without one. Never substitute central_items.unit, which describes
+   *  the catalogue item and can belong to a different canonical identity.
+   *
+   *  Not optional: migration 179 publishes the `unit` key on EVERY returned
+   *  row. Only its value is nullable. */
+  unit: string | null;
   condition: string;
   batch_number: string | null;
   expiry_date: string | null;
@@ -1866,6 +1890,10 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
 
   async function onConfirmRemove() {
     if (!removeTarget) return;
+    // STAGE-G-G3.1: a stock-only row (id === null) has no item_availability row
+    // to mark removed. The button is already withheld for those rows; this is
+    // the second gate, so no call path reaches migration 084 with a null id.
+    if (removeTarget.id === null) { setRemoveTarget(null); return; }
     setRemoveBusy(true);
     setRemoveError(null);
     try {
@@ -1925,7 +1953,12 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
             const variant = CONDITION_VARIANT[r.condition] ?? 'neutral';
             return (
               <div
-                key={r.id}
+                // STAGE-G-G3.1: row_key, never r.id. r.id is the item_availability
+                // UUID: it is NULL for stock-only rows, and migration 179 can
+                // legitimately return two unit-distinct physical rows that share
+                // one item_availability row. row_key is guaranteed non-null and
+                // unique per physical row by the read model itself.
+                key={r.row_key}
                 className="premium-material-row nexus-io-material-row"
                 role="button"
                 tabIndex={0}
@@ -1944,13 +1977,28 @@ function PortAvailabilitySection({ pointId, lang, canRemove, onToast, pointStatu
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {ci?.unit ?? ''}</span>
+                  {/* STAGE-G-G3.1: the physical quantity is labelled with the
+                      PHYSICAL unit of its own canonical stock identity. `ci` is
+                      the catalogue item and its unit may belong to a different
+                      canonical identity entirely — labelling 3 strip as "3
+                      tablet" is exactly the defect migration 179 fixes, so there
+                      is no fallback here in either direction. A null physical
+                      unit renders the quantity alone rather than inventing one. */}
+                  <span style={{ fontSize: '10.5px', color: 'var(--t2)' }}>{r.quantity} {r.unit ?? ''}</span>
                   <PhoenixStatusBadge variant={variant} label={condKey ? t(condKey, lang) : r.condition} />
                   {r.expiry_date && (
                     <span style={{ fontSize: '9.5px', color: 'var(--t2)' }} dir="ltr">{r.expiry_date}</span>
                   )}
                   <ExpiryRiskBadge expiryDate={r.expiry_date} lang={lang} />
-                  {canRemove && (
+                  {/* STAGE-G-G3.1: "Remove from outlet" is a CATALOGUE
+                      VISIBILITY action (migration 084) — it stamps removed_at
+                      on an item_availability row. A stock-only row has id ===
+                      null: there is no catalogue row to stamp, so the action
+                      cannot be carried out honestly and is not offered. The row
+                      itself stays fully readable and its details still open;
+                      only this one action is withheld. Physical stock is
+                      corrected through migration 086, never from here. */}
+                  {canRemove && r.id !== null && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setRemoveError(null); setRemoveTarget(r); }}
                       aria-label={t('avail_remove_from_outlet', lang)}
