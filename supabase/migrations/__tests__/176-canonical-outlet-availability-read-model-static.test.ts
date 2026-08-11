@@ -30,8 +30,8 @@ describe('176 · canonical outlet availability read model (static)',()=>{
   it('preserves exact visible batch identity when cache metadata exists',()=>{
     expect(sql).toContain('ia.internal_batch_reference_key=c.internal_batch_reference_key');
     expect(sql).toContain("COALESCE(s.internal_batch_reference,'') AS internal_batch_reference_key");
-    expect(sql).toContain("'removed_at',s.removed_at");
-    expect(sql).toContain("'canonical_available_quantity',s.canonical_available_quantity");
+    expect(sql).toContain("'removed_at', s.removed_at");
+    expect(sql).toContain("'canonical_available_quantity', s.canonical_available_quantity");
   });
 
   it('is read-only and never mutates stock/cache/RLS/QR',()=>{
