@@ -23,8 +23,47 @@ describe('178 · distribution point owner-guard privilege fix (static)', () => {
     expect(sql.match(/CREATE OR REPLACE FUNCTION/g)).toHaveLength(1);
     expect(sql).not.toMatch(/CREATE (OR REPLACE )?(TABLE|VIEW|POLICY|INDEX|TRIGGER)/i);
     expect(sql).not.toMatch(/\bDROP\s+(TABLE|POLICY|TRIGGER|FUNCTION|INDEX)\b/i);
-    expect(sql).not.toMatch(/\bALTER\s+TABLE\b/i);
     expect(sql).not.toMatch(/ROW LEVEL SECURITY/i);
+  });
+
+  it('its ONLY ALTER TABLE is the ownership FK — no other table surgery', () => {
+    // 178 legitimately gained one schema change (the ownership invariant), so a
+    // blanket "no ALTER TABLE" ban no longer expresses the intent. Pin it to
+    // exactly one statement of exactly the expected shape instead, so this stays
+    // as tight as the ban it replaces.
+    const alters = exec.match(/\bALTER\s+TABLE\b[^;]*/gi) ?? [];
+    expect(alters).toHaveLength(1);
+    expect(alters[0]).toContain('public.distribution_points');
+    expect(alters[0]).toContain('ADD CONSTRAINT distribution_points_wh_org_fk');
+    // Nothing may be dropped, detached, or have its RLS/ownership altered.
+    expect(exec).not.toMatch(/\bALTER\s+TABLE\b[^;]*\b(DROP|DISABLE|NO FORCE|OWNER TO)\b/i);
+  });
+
+  it('pins the ownership invariant structurally and VALIDATED', () => {
+    // (warehouse_id, organization_id) must resolve against the pre-existing
+    // UNIQUE (id, organization_id) on warehouses.
+    expect(exec).toMatch(/FOREIGN KEY\s*\(\s*warehouse_id\s*,\s*organization_id\s*\)/i);
+    expect(exec).toMatch(/REFERENCES\s+public\.warehouses\s*\(\s*id\s*,\s*organization_id\s*\)/i);
+    // ON DELETE CASCADE mirrors the pre-existing single-column warehouse FK, so
+    // warehouse deletion behaviour is unchanged by this hotfix.
+    expect(exec).toContain('ON DELETE CASCADE');
+    // NOT VALID would leave every pre-existing row unchecked — the invariant
+    // would be advisory rather than true. Scoped to the ALTER itself: the
+    // verify block legitimately contains the words in its failure message.
+    const alter = (exec.match(/\bALTER\s+TABLE\b[^;]*/i) ?? [''])[0];
+    expect(alter).not.toMatch(/\bNOT\s+VALID\b/i);
+    expect(sql).toContain('178 verify failed: ownership FK exists but is NOT VALID');
+    expect(sql).toContain('178 verify failed: ownership FK distribution_points_wh_org_fk is missing');
+  });
+
+  it('fails closed, and legibly, if the database already holds a mismatch', () => {
+    // A bare 23503 from the ALTER would tell an operator nothing. The preflight
+    // must count the offending rows and must not silently repair them: rewriting
+    // an outlet's organization_id moves it across an RLS boundary.
+    expect(sql).toContain('$ownership_preflight$');
+    expect(sql).toContain('violate the warehouse/organization ownership invariant');
+    expect(exec).not.toMatch(/\bUPDATE\s+public\.distribution_points\b/i);
+    expect(exec).not.toMatch(/\bDELETE\s+FROM\b/i);
   });
 
   it('carries the corrected security context and a pinned search_path', () => {
@@ -76,6 +115,11 @@ describe('178 · distribution point owner-guard privilege fix (static)', () => {
     expect(sql).not.toContain('get_public_qr_payload');
     expect(sql).not.toContain('phoenix_outlet_availability_read_model');
     expect(sql).not.toContain('material_identity_key');
-    expect(sql).not.toMatch(/\b(outlet_stock|warehouse_stock|item_availability)\b/);
+    // Executable SQL only. The header prose names the stock tables that FK
+    // against distribution_points, because that propagation is precisely why a
+    // mismatched outlet is severe rather than cosmetic. Naming a table in a
+    // comment is not touching it; writing to it would be, and the assertion
+    // below still forbids that.
+    expect(exec).not.toMatch(/\b(outlet_stock|warehouse_stock|item_availability)\b/);
   });
 });

@@ -24,6 +24,16 @@
  *     precisely why CI never caught this P0. Modelling Production's ACL is what
  *     gives this suite its teeth.
  *
+ * SECOND DEFECT (independent review of this hotfix): restoring outlet creation
+ * exposed that nothing enforced the OWNERSHIP invariant — an outlet's
+ * organization_id was never tied to the organization owning its warehouse. The
+ * earlier "cross-organization creation remains denied" case did not prove it:
+ * it used a caller lacking ports.create AND a foreign organization_id, so RLS
+ * rejected the statement before the mismatch mattered. `dp_insert_perm`
+ * constrains organization_id only and never inspects warehouse_id, so an
+ * AUTHORIZED caller could attach an outlet to any organization's warehouse.
+ * Cases D2-D5, G2-G4, K, H2 and H3 below are that missing proof.
+ *
  * Gated on PHOENIX_RIG_PG; skipped in CI-without-rig.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -46,8 +56,13 @@ const WH = '00000000-0000-0000-0000-000000178101';
 const WH_B = '00000000-0000-0000-0000-000000178102';
 const WH_A = '00000000-0000-0000-0000-000000178103';
 const WH_C = '00000000-0000-0000-0000-000000178104';
+/** Dedicated to H2: test H COMMITS WH_C into the authority org, so the reverse
+ *  interleave needs its own warehouse that is still owned by ORG. */
+const WH_D = '00000000-0000-0000-0000-000000178105';
 const SA = '00000000-0000-0000-0000-000000178201';
 const OFF = '00000000-0000-0000-0000-000000178202';
+/** institution_admin holding an explicit ports.create override — see seed(). */
+const PC = '00000000-0000-0000-0000-000000178203';
 
 async function seed(rig: any) {
   await rig.asAdmin(async (c: any) => {
@@ -62,17 +77,43 @@ async function seed(rig: any) {
         ($1,$2,'WH','WH','active','institution','h178-wh'),
         ($3,$4,'WHB','WHB','active','institution','h178-wh-b'),
         ($5,$6,'WHA','WHA','active','central','h178-wh-a'),
-        ($7,$2,'WHC','WHC','active','central','h178-wh-c')
-       ON CONFLICT(id) DO NOTHING`, [WH, ORG, WH_B, ORG_B, WH_A, AUTHORG, WH_C]);
+        ($7,$2,'WHC','WHC','active','central','h178-wh-c'),
+        ($8,$2,'WHD','WHD','active','institution','h178-wh-d')
+       ON CONFLICT(id) DO NOTHING`, [WH, ORG, WH_B, ORG_B, WH_A, AUTHORG, WH_C, WH_D]);
     await c.query(
-      `INSERT INTO auth.users(id,email) VALUES($1,'h178-sa@rig.local'),($2,'h178-off@rig.local')
-       ON CONFLICT(id) DO NOTHING`, [SA, OFF]);
+      `INSERT INTO auth.users(id,email) VALUES($1,'h178-sa@rig.local'),($2,'h178-off@rig.local'),($3,'h178-pc@rig.local')
+       ON CONFLICT(id) DO NOTHING`, [SA, OFF, PC]);
     await c.query(`UPDATE profiles SET role='super_admin',status='active',organization_id=$2 WHERE id=$1`, [SA, ORG]);
     await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id=$2 WHERE id=$1`, [OFF, ORG]);
+    await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id=$2 WHERE id=$1`, [PC, ORG]);
+    // A genuinely authorized NON-super actor. No non-super DEFAULT role carries
+    // ports.create (role_permission_defaults grants it to super_admin only), so
+    // the supported way to build one is an explicit per-profile override —
+    // exactly what phoenix_profile_has_permission() consults first. This is an
+    // existing mechanism, not a policy invented by this test.
+    await c.query(
+      `INSERT INTO profile_permission_overrides(profile_id,permission_key,allowed)
+       VALUES($1,'ports.create',true) ON CONFLICT DO NOTHING`, [PC]);
     // Model Production's real ACL (see file header).
     await c.query(`REVOKE UPDATE, DELETE ON public.warehouses FROM authenticated`);
   });
 }
+
+/** Always-rolled-back txn on a dedicated connection: a failing statement can
+ *  never leave a pooled connection in aborted state and poison a later case. */
+async function inTxn(rig: any, fn: (c: any) => Promise<unknown>) {
+  const c = await rig.pool.connect();
+  try {
+    await c.query('BEGIN');
+    try { return await fn(c); } finally { try { await c.query('ROLLBACK'); } catch { /* noop */ } }
+  } finally { c.release(); }
+}
+
+/** A fresh, VALID outlet on the institution warehouse, for reassignment cases. */
+const seedOutlet = async (c: any) => (await c.query(
+  `INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+   VALUES(gen_random_uuid(),$1,$2,'rz','rz','pharmacy','active','non_emergency') RETURNING id`,
+  [WH, ORG])).rows[0].id;
 
 const createOutlet = (rig: any, uid: string | null, wh: string, org: string, label: string, role = 'authenticated') =>
   rig.asUser(uid, (c: any) => c.query(
@@ -104,6 +145,31 @@ run('178 · outlet creation privilege regression (dynamic)', () => {
       const r = await errOf(createOutlet(rig, SA, WH, ORG, 'pre-A'));
       expect(r).toMatch(/^42501:/);
       expect(r).toContain('permission denied for table warehouses');
+    });
+
+    it('the ownership invariant does not exist at the Production ceiling', async () => {
+      // The second defect, reproduced at 177. The ACL bug above masks it for
+      // `authenticated`, so drive it with a writer the ACL bug cannot stop: the
+      // mismatch is accepted and COMMITS, proving nothing in the 001->177 chain
+      // — no FK, no CHECK, no trigger, no RLS policy — ties an outlet's
+      // organization_id to the organization that owns its warehouse.
+      const r = await rig.asAdmin(async (c: any) => {
+        await c.query('BEGIN');
+        try {
+          await c.query(
+            `INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+             VALUES('00000000-0000-0000-0000-0000001780f1',$1,$2,'gap','gap','pharmacy','active','non_emergency')`,
+            [WH_B, ORG]); // warehouse owned by ORG_B, outlet claimed by ORG
+          const back = await c.query(`
+            SELECT dp.organization_id dp_org, w.organization_id wh_org
+              FROM distribution_points dp JOIN warehouses w ON w.id = dp.warehouse_id
+             WHERE dp.id = '00000000-0000-0000-0000-0000001780f1'`);
+          return back.rows[0];
+        } finally { try { await c.query('ROLLBACK'); } catch { /* noop */ } }
+      });
+      expect(r.dp_org).toBe(ORG);
+      expect(r.wh_org).toBe(ORG_B);
+      expect(r.dp_org).not.toBe(r.wh_org); // accepted at 177 — this is the gap
     });
 
     it('the failure is the guard, not RLS/ports.create/payload/organization', async () => {
@@ -152,9 +218,58 @@ run('178 · outlet creation privilege regression (dynamic)', () => {
       expect(r).toMatch(/row-level security/i);
     });
 
-    it('D. cross-organization creation remains denied', async () => {
+    it('D. cross-organization creation remains denied (ordinary RLS)', async () => {
+      // NOTE: this proves ORDINARY cross-org RLS and nothing more — the caller
+      // lacks ports.create AND the organization_id is foreign, so RLS rejects
+      // before any ownership question is reached. The ownership invariant is
+      // proved by the D2/D3 cases below, which keep organization_id AUTHORIZED
+      // and make only the WAREHOUSE foreign.
       const r = await errOf(createOutlet(rig, OFF, WH_B, ORG_B, 'post-D'));
       expect(r).toMatch(/row-level security/i);
+    });
+
+    it('D2. authorized super_admin CANNOT attach an outlet to a FOREIGN-org warehouse', async () => {
+      // The case the first cut of this hotfix missed entirely.
+      //   organization_id = ORG   (the caller is fully authorized for it)
+      //   warehouse_id    = WH_B  (owned by ORG_B)
+      // RLS passes — dp_insert_perm only ever constrains organization_id and
+      // never looks at warehouse_id — so only a real ownership invariant can
+      // stop this. Before the fix it SUCCEEDED and committed a row whose
+      // organization_id disagreed with its warehouse's owner.
+      const r = await errOf(createOutlet(rig, SA, WH_B, ORG, 'post-D2'));
+      expect(r).toMatch(/^23503:/);
+      expect(r).toContain('distribution_points_wh_org_fk');
+    });
+
+    it('D3. an authorized NON-super actor is bound by the same invariant', async () => {
+      // Same shape as D2 but through the least-privileged caller that is still
+      // genuinely allowed to create outlets, so the rule cannot be mistaken for
+      // a super_admin-only special case.
+      const ok = await errOf(createOutlet(rig, PC, WH, ORG, 'post-D3-own'));
+      expect(ok).toBe('SUCCEEDED');
+      const bad = await errOf(createOutlet(rig, PC, WH_B, ORG, 'post-D3-foreign'));
+      expect(bad).toMatch(/^23503:/);
+      expect(bad).toContain('distribution_points_wh_org_fk');
+    });
+
+    it('D4. the invariant binds service_role and the superuser too, not just RLS callers', async () => {
+      // RLS never runs for these principals, so a policy-level rule would miss
+      // them entirely. A structural constraint does not.
+      const svc = await errOf(createOutlet(rig, SA, WH_B, ORG, 'post-D4', 'service_role'));
+      expect(svc).toMatch(/^23503:/);
+      const su = await errOf(inTxn(rig, (c: any) => c.query(
+        `INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+         VALUES(gen_random_uuid(),$1,$2,'post-D4b','post-D4b','pharmacy','active','non_emergency')`, [WH_B, ORG])));
+      expect(su).toMatch(/^23503:/);
+    });
+
+    it('D5. a legacy outlet with NO warehouse is unaffected (MATCH SIMPLE)', async () => {
+      // warehouse_id is nullable and such rows predate this hotfix. With no
+      // warehouse there is no owner to match, so the FK must not fire.
+      const r = await errOf(inTxn(rig, (c: any) => c.query(
+        `INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status)
+         VALUES(gen_random_uuid(),NULL,$1,'post-D5','post-D5','pharmacy','active')`, [ORG])));
+      expect(r).toBe('SUCCEEDED');
     });
 
     it('E. anon remains denied', async () => {
@@ -183,6 +298,46 @@ run('178 · outlet creation privilege regression (dynamic)', () => {
       });
       expect(res).toMatch(/^23514:/);
       expect(res).toContain('pharmacy_department_authority_warehouse_no_outlets');
+    });
+
+    it('G2. reassigning an outlet onto a FOREIGN-org warehouse is rejected', async () => {
+      const r = await errOf(inTxn(rig, async (c: any) =>
+        c.query(`UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_B, await seedOutlet(c)])));
+      expect(r).toMatch(/^23503:/);
+      expect(r).toContain('distribution_points_wh_org_fk');
+    });
+
+    it('G3. moving an outlet to another organization WITHOUT moving its warehouse is rejected', async () => {
+      // 171's trigger is BEFORE INSERT OR UPDATE **OF warehouse_id**, so this
+      // statement never fires it — a trigger-based ownership test could not see
+      // this path at all without recreating 171's trigger. The FK does.
+      const r = await errOf(inTxn(rig, async (c: any) =>
+        c.query(`UPDATE distribution_points SET organization_id=$1 WHERE id=$2`, [ORG_B, await seedOutlet(c)])));
+      expect(r).toMatch(/^23503:/);
+      expect(r).toContain('distribution_points_wh_org_fk');
+    });
+
+    it('G4. moving an outlet to a CONSISTENT foreign pair is still allowed', async () => {
+      // The invariant is about agreement between the two columns, not about
+      // immobility. Moving both to (WH_B, ORG_B) keeps the outlet owned by the
+      // organization that owns its warehouse, so it must NOT be blocked here —
+      // whether a given caller may do it is RLS's question, not the FK's.
+      const r = await errOf(inTxn(rig, async (c: any) =>
+        c.query(`UPDATE distribution_points SET warehouse_id=$1, organization_id=$2 WHERE id=$3`,
+          [WH_B, ORG_B, await seedOutlet(c)])));
+      expect(r).toBe('SUCCEEDED');
+    });
+
+    it('K. a warehouse that still has outlets cannot be moved to another organization', async () => {
+      // The referenced side of the same invariant. Fail-closed: detaching or
+      // moving the outlets is a deliberate operator action, and this mirrors the
+      // rule 171 already applies to authority reassignment.
+      const r = await errOf(inTxn(rig, async (c: any) => {
+        await seedOutlet(c);
+        return c.query(`UPDATE warehouses SET organization_id=$1 WHERE id=$2`, [ORG_B, WH]);
+      }));
+      expect(r).toMatch(/^23503:/);
+      expect(r).toContain('distribution_points_wh_org_fk');
     });
 
     it('I/J. authenticated gains NO table privilege and cannot execute the guard directly', async () => {
@@ -223,6 +378,50 @@ run('178 · outlet creation privilege regression (dynamic)', () => {
         try { await a.query('ROLLBACK'); } catch { /* already committed */ }
         a.release(); b.release();
       }
+    });
+
+    it('H2. the ownership invariant survives the REVERSE interleave', async () => {
+      // The direction a trigger equality test cannot survive, measured on this
+      // rig while choosing the enforcement: TX-A attaches an outlet to a
+      // warehouse it legitimately owns; TX-B then reassigns that warehouse to
+      // another organization. A BEFORE-trigger check on the outlet has already
+      // passed and nothing re-examines the row once its warehouse moves, so the
+      // trigger variant let TX-B COMMIT and left a mismatched row behind.
+      // Under the FK, TX-B blocks on the RI lock and is then rejected outright.
+      const a = await rig.pool.connect();
+      const b = await rig.pool.connect();
+      try {
+        await a.query('BEGIN');
+        await a.query(
+          `INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+           VALUES(gen_random_uuid(),$1,$2,'race2','race2','pharmacy','active','non_emergency')`, [WH_D, ORG]);
+        const move = b.query(`UPDATE warehouses SET organization_id=$1 WHERE id=$2`, [ORG_B, WH_D]);
+        const raced = await Promise.race([
+          move.then(() => 'resolved').catch(() => 'rejected'),
+          new Promise<string>((r) => setTimeout(() => r('pending'), 700)),
+        ]);
+        expect(raced).toBe('pending'); // must block on the uncommitted outlet
+        await a.query('COMMIT');
+        const after = await errOf(move);
+        expect(after).toMatch(/^23503:/);
+        expect(after).toContain('distribution_points_wh_org_fk');
+      } finally {
+        try { await a.query('ROLLBACK'); } catch { /* already committed */ }
+        try { await b.query('ROLLBACK'); } catch { /* noop */ }
+        a.release(); b.release();
+      }
+    });
+
+    it('H3. TERMINAL INVARIANT — no interleave left a committed mismatch', async () => {
+      // Whatever the races above did, the database must not hold a single
+      // distribution_point whose organization_id disagrees with the committed
+      // owner of its warehouse.
+      const r = await rig.asAdmin((c: any) => c.query(`
+        SELECT count(*)::int n
+          FROM distribution_points dp
+          JOIN warehouses w ON w.id = dp.warehouse_id
+         WHERE dp.organization_id IS DISTINCT FROM w.organization_id`));
+      expect(r.rows[0].n).toBe(0);
     });
   });
 });
