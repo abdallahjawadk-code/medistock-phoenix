@@ -84,33 +84,27 @@ export interface UpsertAvailabilityInput {
   nationalCode?: string | null;
 }
 
+/**
+ * STAGE-G-G1: authenticated outlet availability now comes from the canonical
+ * CQRS read model (Migration 176). `item_availability` remains compatibility
+ * catalogue metadata only; its stored quantity/condition are never trusted by
+ * this client read. The returned row shape intentionally stays compatible with
+ * existing Institution/Details consumers, so visibility actions keep using the
+ * catalogue row id while physical values come from `outlet_stock`.
+ */
 export async function getAvailabilityByPoint(
   pointId: string,
 ): Promise<(AvailabilityRecord & EffectiveAvailabilityFields)[]> {
   if (!supabaseConfigured) return [];
 
-  // FRONTEND-LIVE-REMOVED-AT-FILTERS-A: this read is shared by both
-  // EditorScreen (identity-matching an existing/removed row so
-  // phoenix_upsert_availability can reactivate it) and InstitutionScreen's
-  // PortAvailabilitySection (the live outlet material list) — it must NOT
-  // filter removed_at itself, since EditorScreen needs removed rows visible
-  // to find and reactivate them. removed_at is selected so each consumer can
-  // decide for itself whether to display or hide a removed row.
-  const { data, error } = await supabase
-    .from('item_availability')
-    .select(`
-      id, quantity, condition, batch_number, national_code, expiry_date, notes, updated_at,
-      port_name, supply_type, removed_at,
-      scientific_name, trade_name, dosage_form, concentration, price,
-      local_items ( id, local_code,
-        central_items ( id, name, name_ar, unit, barcode )
-      )
-    `)
-    .eq('distribution_point_id', pointId)
-    .order('updated_at', { ascending: false });
-
+  const { data, error } = await supabase.rpc('phoenix_outlet_availability_read_model', {
+    p_distribution_point_id: pointId,
+  });
   if (error) throw error;
-  return ((data ?? []) as unknown as AvailabilityRecord[]).map(r => withEffectiveAvailabilityStatus(r));
+
+  const payload = data as { rows?: AvailabilityRecord[] | null } | null;
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  return rows.map(r => withEffectiveAvailabilityStatus(r));
 }
 
 /**

@@ -32,8 +32,12 @@ const screen = readSrc('features/institutions/InstitutionScreen.tsx');
 const outletGroups = readSrc('features/status/OutletMaterialGroups.tsx');
 const availabilityService = readSrc('shared/supabase/services/availability.service.ts');
 const strings = readSrc('shared/i18n/strings.ts');
+const migration176 = readFileSync(
+  join(ROOT, 'supabase/migrations/176_phoenix_canonical_outlet_availability_read_model.sql'),
+  'utf8',
+);
 
-describe('1. Outlet material row uses item_availability direct fields as the primary source', () => {
+describe('1. Outlet material row uses direct material identity as the primary source', () => {
   it('outletMaterialTitle checks r.scientific_name before the legacy central_items join', () => {
     const fn = screen.slice(screen.indexOf('function outletMaterialTitle'), screen.indexOf('function outletMaterialTitle') + 500);
     const scientificIdx = fn.indexOf('r.scientific_name');
@@ -49,12 +53,16 @@ describe('1. Outlet material row uses item_availability direct fields as the pri
     expect(section).not.toMatch(/const itemName = lang === 'ar' \? \(ci\?\.name_ar/);
   });
 
-  it('getAvailabilityByPoint already selects the direct identity fields used here', () => {
-    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 1400);
-    expect(fn).toContain('scientific_name');
-    expect(fn).toContain('trade_name');
-    expect(fn).toContain('dosage_form');
-    expect(fn).toContain('concentration');
+  it('Migration 176 returns the direct identity fields while the client delegates to its CQRS RPC', () => {
+    const start = availabilityService.indexOf('export async function getAvailabilityByPoint');
+    const end = availabilityService.indexOf('export async function upsertAvailability');
+    const fn = availabilityService.slice(start, end);
+    expect(fn).toContain("supabase.rpc('phoenix_outlet_availability_read_model'");
+    expect(fn).not.toContain(".from('item_availability')");
+    expect(migration176).toContain("'scientific_name', s.scientific_name");
+    expect(migration176).toContain("'trade_name', s.trade_name");
+    expect(migration176).toContain("'dosage_form', s.dosage_form");
+    expect(migration176).toContain("'concentration', s.concentration");
   });
 });
 
@@ -102,8 +110,6 @@ describe('4. "—" is never the sole material title when a material exists', () 
   it('outletMaterialTitle always resolves to a non-empty string via the translated placeholder as the final fallback', () => {
     const start = screen.indexOf('function outletMaterialTitle');
     const fn = screen.slice(start, screen.indexOf('\n}', start) + 2);
-    // The translated placeholder must be the LAST `||` term of the fallback
-    // chain (i.e. nothing after it but the closing return), never a raw '—'.
     const placeholderIdx = fn.indexOf("t('avail_unnamed_material', lang)");
     const returnCloseIdx = fn.indexOf(');', placeholderIdx);
     expect(placeholderIdx).toBeGreaterThan(-1);
@@ -120,7 +126,7 @@ describe('4. "—" is never the sole material title when a material exists', () 
 });
 
 describe('5. intentionally-removed rows remain hidden from active outlet contents', () => {
-  it('PortAvailabilitySection filters on the removed_at marker before rendering (FRONTEND-LIVE-REMOVED-AT-FILTERS-A: replaced the old blunt quantity=0+missing heuristic, which also hid genuine still-open shortages)', () => {
+  it('PortAvailabilitySection filters on the removed_at marker before rendering', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('filter(r => r.removed_at == null)');
   });
@@ -153,11 +159,7 @@ describe('7. Empty state appears with the required translated copy when all rows
   });
 });
 
-describe('8. No DB/RPC write path was changed by this fix', () => {
-  // CANONICAL-STOCK-CUTOVER: PortAvailabilitySection's onConfirmRemove now hides
-  // the catalogue row via the audited migration-084 visibility RPC
-  // (setAvailabilityVisibility) — the removed marker only, no quantity write.
-  // It still reads via getAvailabilityByPoint and issues no direct table write.
+describe('8. Read transport changed, but no DB write path was added', () => {
   it('PortAvailabilitySection still only reads via getAvailabilityByPoint and removes materials via the audited visibility RPC', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('getAvailabilityByPoint(pointId)');
@@ -165,54 +167,39 @@ describe('8. No DB/RPC write path was changed by this fix', () => {
     expect(section).not.toMatch(/\.rpc\(\s*['"](?!phoenix_set_availability_visibility|phoenix_apply_availability_movement|phoenix_upsert_availability)/);
   });
 
-  // E6: QuickAvailForm was the ONLY upsertAvailability caller in this file and
-  // is now retired, so the assertion inverts: the remove path still must not
-  // use it, and neither does anything else here any more.
   it('upsertAvailability is no longer called anywhere in this file, remove path included', () => {
     expect(screen).not.toContain('await upsertAvailability(');
     expectQuickAvailFormAbsent();
   });
 
-  it('getAvailabilityByPoint itself is unchanged (still a plain SELECT, no new RPC/table)', () => {
-    const fn = availabilityService.slice(availabilityService.indexOf('export async function getAvailabilityByPoint'), availabilityService.indexOf('export async function getAvailabilityByPoint') + 1400);
-    expect(fn).toContain(".from('item_availability')");
-    expect(fn).not.toContain('.rpc(');
-    expect(fn).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
+  it('getAvailabilityByPoint uses the canonical read RPC and performs no executable mutation', () => {
+    const start = availabilityService.indexOf('export async function getAvailabilityByPoint');
+    const end = availabilityService.indexOf('export async function upsertAvailability');
+    const fn = availabilityService.slice(start, end);
+    const executable = fn.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(executable).toContain("supabase.rpc('phoenix_outlet_availability_read_model'");
+    expect(executable).not.toContain(".from('item_availability')");
+    expect(executable).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
   });
 });
 
-describe('9. No package/lockfile/migration changes', () => {
+describe('9. No package/lockfile or unreviewed migration changes', () => {
   it('no package/lockfile diff', () => {
     let diff = '';
     try {
       diff = execSync('git diff -- package.json', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* git not available in this sandbox — skip silently */ }
+    } catch { /* ignore */ }
     const addedLines = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
     const removedLines = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
     expect(removedLines.length).toBe(0);
     expect(addedLines.every(l => /"exceljs":/.test(l))).toBe(true);
   });
 
-  // REFRESH-MIGRATION-051-DIFF-GUARDS-A: 051_material_batch_identity_option_a.sql
-  // is excluded from the diff check because a later, separately-reviewed
-  // phase (FIX-MIGRATION-051-IMMUTABLE-EXPIRY-DATE-A) legitimately corrects
-  // it in-place before its first successful manual apply.
-  it('no existing migration SQL was modified (other than the already-approved 051 immutable-expiry-date fix), and no unreviewed migration SQL was created — only the separately-reviewed migration 045 (DB-MY-ACCOUNT-WHATSAPP-RPC-A) is allowed as an untracked addition (test-only maintenance under supabase/migrations/__tests__/ is not a migration SQL change; 044 is already committed and no longer appears here)', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- "supabase/migrations/*.sql" ":!supabase/migrations/051_material_batch_identity_option_a.sql" ":!supabase/migrations/053_item_availability_removed_marker.sql" ":!supabase/migrations/054_dashboard_condition_counts_rpcs.sql" ":!supabase/migrations/055_phoenix_clean_availability_data.sql" ":!supabase/migrations/056_phoenix_platform_broadcast_notices.sql" ":!supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql"', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  it('all migration working-tree entries are already registered/reviewed and no historical reviewed migration is modified', () => {
     let status = '';
     try {
       status = execSync('git status --porcelain -- "supabase/migrations/*.sql"', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    // MIGRATION-GUARD-DERIVE-B: the allowed in-flight migration entries are
-    // now DERIVED from the canonical reviewed registry instead of a copy kept
-    // in this file, so registering a migration once permits it everywhere and
-    // no historical guard needs an edit. Strictly stronger than the old list:
-    // an unregistered migration still fails, and a MODIFIED reviewed migration
-    // now fails too (the old list tolerated `M `/`M  ` entries).
     expect(findUnexpectedMigrationGitStatusEntries(status)).toEqual([]);
   });
 });
@@ -260,7 +247,7 @@ describe('QR generation, creation/update RPCs, and permission checks are untouch
     expect(section).not.toMatch(/qr_targets|qr_tokens|generateQr|revokeQr/i);
   });
 
-  it('canRemove permission prop is still threaded through unchanged (canMutate was removed by UI-HIDE-PORT-ADD-ITEM-A once its only use, the "+ Add" button, was hidden)', () => {
+  it('canRemove permission prop is still threaded through unchanged', () => {
     const section = screen.slice(screen.indexOf('function PortAvailabilitySection'), screen.indexOf('function PortCleanupWizard'));
     expect(section).toContain('canRemove');
   });

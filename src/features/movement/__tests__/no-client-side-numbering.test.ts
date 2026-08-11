@@ -52,11 +52,12 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('175 is security-only and no 176+ numbering migration exists',()=>{
+  it('176 is availability-read-only and no 177+ numbering migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
-    const beyond=migrations.filter(f=>/^(17[6-9]|1[89]\d|[2-9]\d\d)_/.test(f));
+    const beyond=migrations.filter(f=>/^(17[7-9]|1[89]\d|[2-9]\d\d)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '176_phoenix_canonical_outlet_availability_read_model.sql',
       '175_phoenix_read_helper_anonymous_surface_hardening.sql',
       '174_phoenix_authenticated_rpc_surface_hardening.sql',
       '173_phoenix_database_security_surface_hardening.sql',
