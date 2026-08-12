@@ -24,6 +24,7 @@ import { chromium } from 'playwright-core';
 import pg from 'pg';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { createExpectedRefusalRegistry } from './expected-refusals.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -97,37 +98,22 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
   const consoleErrors = [];
   const failedRequests = [];
   const restCalls = [];
-  // R1.2 / Migration 180 — EXPECTED DOMAIN REFUSALS.
+  // R1.2 / Migration 180 — EXPECTED DOMAIN REFUSALS, scoped to a window.
   //
-  // Some acceptance steps deliberately drive a request the server must REFUSE:
-  // proving a business rule fires is as much a part of acceptance as proving
-  // the happy path works. A canonical RPC refusal is an HTTP 400 carrying the
-  // rule's own SQLSTATE and message, and the browser logs every 4xx resource as
-  // a console error — so without this, an intentionally-proved refusal would be
-  // indistinguishable from a regression and would fail the session's
-  // "no console errors" gate.
-  //
-  // A refusal is suppressed ONLY while a matching entry is registered, ONLY for
-  // the named RPC, and ONLY when the response body carries the exact expected
-  // error. Everything else — any other RPC, any other message, any 5xx — still
-  // counts in full. Each registration also RECORDS what it saw, so a step can
-  // assert the refusal genuinely happened rather than merely being tolerated.
-  const expectedRefusals = [];
-  const observedRefusals = [];
-  const expectRefusal = (rpc, message) => {
-    expectedRefusals.push({ rpc, message });
-    return () => observedRefusals.filter(o => o.rpc === rpc && o.message === message);
-  };
-  const isExpectedRefusalUrl = url =>
-    expectedRefusals.some(r => url.includes(`/rpc/${r.rpc}`));
+  // A step that deliberately provokes a refusal opens a window with
+  // expectRefusal(rpc, message), asserts refusal.observed(), then CLOSES it.
+  // Only an OPEN window can suppress the browser's generic 4xx console line,
+  // so a later unrelated 4xx from the same RPC is policed again in full. 5xx is
+  // never suppressible. See tools/e2e-acceptance/expected-refusals.mjs, whose
+  // sibling unit test proves the window actually closes.
+  const refusals = createExpectedRefusalRegistry();
+  const expectRefusal = (rpc, message) => refusals.expectRefusal(rpc, message);
 
   page.on('console', msg => {
     if (msg.type() !== 'error') return;
     const text = msg.text();
     const from = (typeof msg.location === 'function' ? msg.location()?.url : '') ?? '';
-    // "Failed to load resource: … status of 4xx" for an RPC we deliberately
-    // provoked. 5xx is never suppressed.
-    if (/status of 4\d{2}/.test(text) && isExpectedRefusalUrl(from)) return;
+    if (refusals.suppressesConsoleError(text, from)) return;
     consoleErrors.push(text);
   });
   page.on('pageerror', err => consoleErrors.push(String(err)));
@@ -156,17 +142,12 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
         // exactly the distinction triage needs.
         if (res.status() >= 400 && res.url().includes('/rpc/')) {
           console.log(`DIAGNOSTIC — RPC ${res.status()} ${res.url().replace(/^.*\/rpc\//, '')} -> ${body.slice(0, 400)}`);
-          const rpc = res.url().replace(/^.*\/rpc\//, '').split('?')[0];
-          for (const r of expectedRefusals) {
-            if (rpc === r.rpc && body.includes(r.message)) {
-              observedRefusals.push({ rpc, message: r.message, status: res.status(), body: body.slice(0, 300) });
-            }
-          }
+          refusals.recordResponse({ url: res.url(), status: res.status(), body });
         }
       }).catch(() => {});
     }
   });
-  return { page, consoleErrors, failedRequests, restCalls, expectRefusal, observedRefusals };
+  return { page, consoleErrors, failedRequests, restCalls, expectRefusal, refusals };
 }
 
 /**
@@ -908,7 +889,7 @@ async function main() {
     // not offered Dispense. The corridor therefore runs as the seeded
     // super_admin, who holds every scope in org A; each RPC still re-checks
     // that scope server-side, so nothing here is taken on the client's word.
-    const { page, consoleErrors, failedRequests, expectRefusal } = await freshPage(browser);
+    const { page, consoleErrors, failedRequests, expectRefusal, refusals } = await freshPage(browser);
     await login(page, seed.users.fixtureAdmin.email, seed.password);
 
     // -- Initial Provisioning: WH_A -> E2E Rescue Cart A (Migration 166 RPC).
@@ -1054,7 +1035,7 @@ async function main() {
       // a regression: it is registered with the harness so its 400 is admitted
       // deliberately and asserted to have actually occurred.
       // ══════════════════════════════════════════════════════════════════════
-      const seenRefusal = expectRefusal(
+      const refusal = expectRefusal(
         'phoenix_replenish_emergency_outlet',
         'initial_provisioning_required_before_replenishment',
       );
@@ -1074,12 +1055,21 @@ async function main() {
 
       const beforeRefused = await replenishReceiveCount();
       await submitReplenishment(3);
+      const seen = refusal.observed();
       record('routine replenishment BEFORE the initial receipt is refused with initial_provisioning_required_before_replenishment',
-        seenRefusal().length > 0, JSON.stringify(seenRefusal()[0] ?? null));
+        seen.length > 0 && seen[0].status === 400, JSON.stringify(seen[0] ?? null));
       if (dbPool) {
         record('the refused replenishment moved no stock at the cart',
           (await replenishReceiveCount()) === beforeRefused);
       }
+
+      // CLOSE the window immediately. From here on, any further 4xx from this
+      // same RPC is an unexpected console error again — the allowance covered
+      // exactly the one refusal this step set out to prove.
+      refusal.close();
+      record('the expected-refusal window is closed again, so the RPC is fully policed for the rest of the session',
+        refusal.isActive() === false && refusals.activeRegistrations().length === 0,
+        JSON.stringify(refusals.activeRegistrations()));
 
       // ══════════════════════════════════════════════════════════════════════
       // COMMISSIONING, through the REAL canonical writers.
