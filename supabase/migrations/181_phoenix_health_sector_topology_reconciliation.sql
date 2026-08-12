@@ -203,6 +203,9 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='warehouses_health_sector_shape_guard_trg') THEN
     RAISE EXCEPTION '181_precondition_failed: the 181 warehouse shape guard already exists';
   END IF;
+  IF to_regprocedure('public._phoenix_assert_health_sector_live_topology_v1(uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION '181_precondition_failed: the 181 activation topology helper already exists';
+  END IF;
 END;
 $preflight$;
 
@@ -235,8 +238,20 @@ DECLARE
   v_class    text;
   v_facility public.organization_facilities%ROWTYPE;
 BEGIN
+  -- The organization row is the topology lock fence. Lock every affected
+  -- owner in UUID order so activation cannot race a child mutation and
+  -- cross-organization moves cannot invert lock order.
+  PERFORM 1
+  FROM public.organizations o
+  WHERE o.id = ANY(CASE TG_OP
+    WHEN 'INSERT' THEN ARRAY[NEW.organization_id]
+    ELSE ARRAY[OLD.organization_id, NEW.organization_id]
+  END)
+  ORDER BY o.id
+  FOR SHARE;
+
   SELECT o.institution_class INTO v_class
-  FROM public.organizations o WHERE o.id = NEW.organization_id FOR SHARE;
+  FROM public.organizations o WHERE o.id = NEW.organization_id;
 
   -- Every other organization class keeps its existing freedom untouched.
   IF v_class IS DISTINCT FROM 'health_sector' THEN
@@ -336,6 +351,15 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  -- Match the warehouse/outlet lock order: the child row is already held by
+  -- UPDATE, then affected organizations are locked in deterministic UUID order.
+  -- Activation owns the organization row and never waits on child rows.
+  PERFORM 1
+  FROM public.organizations o
+  WHERE o.id = ANY(ARRAY[OLD.organization_id, NEW.organization_id])
+  ORDER BY o.id
+  FOR SHARE;
+
   IF (NEW.organization_id IS DISTINCT FROM OLD.organization_id
       OR NEW.facility_class IS DISTINCT FROM OLD.facility_class
       OR NEW.status IS DISTINCT FROM OLD.status)
@@ -461,31 +485,119 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_main_presence_guard_v1()
 -- ============================================================================
 -- 5. ORGANIZATION ACTIVATION — no invalid topology may be revived
 -- ============================================================================
+-- Internal, non-business helper: validate the complete live child topology
+-- that becomes authoritative when a dormant sector is activated. It takes no
+-- caller-selected mode and writes nothing. The activation trigger owns the
+-- organization lock fence before calling it.
+CREATE FUNCTION public._phoenix_assert_health_sector_live_topology_v1(p_organization_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_active_warehouses integer;
+  v_valid_mains       integer;
+  v_bad_warehouse     integer;
+  v_bad_facility      integer;
+  v_duplicate_depots  integer;
+  v_bad_outlets       integer;
+  v_errors            text[] := ARRAY[]::text[];
+BEGIN
+  SELECT
+    count(*) FILTER (WHERE w.status = 'active'),
+    count(*) FILTER (WHERE w.status = 'active'
+                       AND w.warehouse_kind = 'institution'
+                       AND w.facility_id IS NULL
+                       AND w.is_main),
+    count(*) FILTER (WHERE w.status = 'active' AND (
+      w.warehouse_kind IS DISTINCT FROM 'institution'
+      OR (w.facility_id IS NULL AND w.is_main IS NOT TRUE)
+      OR (w.facility_id IS NOT NULL AND w.is_main IS NOT FALSE)
+    )),
+    count(*) FILTER (WHERE w.status = 'active'
+                       AND w.facility_id IS NOT NULL
+                       AND (f.id IS NULL
+                            OR f.organization_id IS DISTINCT FROM p_organization_id
+                            OR f.status IS DISTINCT FROM 'active'
+                            OR f.facility_class IS NULL
+                            OR f.facility_class NOT IN
+                              ('primary_health_center', 'subordinate_health_center')))
+  INTO v_active_warehouses, v_valid_mains, v_bad_warehouse, v_bad_facility
+  FROM public.warehouses w
+  LEFT JOIN public.organization_facilities f ON f.id = w.facility_id
+  WHERE w.organization_id = p_organization_id;
+
+  SELECT count(*) INTO v_duplicate_depots
+  FROM (
+    SELECT w.facility_id
+    FROM public.warehouses w
+    WHERE w.organization_id = p_organization_id
+      AND w.status = 'active'
+      AND w.facility_id IS NOT NULL
+    GROUP BY w.facility_id
+    HAVING count(*) > 1
+  ) duplicate_facilities;
+
+  SELECT count(*) FILTER (WHERE dp.status = 'active' AND (
+    w.id IS NULL
+    OR dp.organization_id IS DISTINCT FROM p_organization_id
+    OR w.organization_id IS DISTINCT FROM p_organization_id
+    OR w.status IS DISTINCT FROM 'active'
+    OR w.warehouse_kind IS DISTINCT FROM 'institution'
+    OR w.facility_id IS NULL
+    OR w.is_main IS NOT FALSE
+    OR dp.point_type IS NULL
+    OR dp.point_type NOT IN ('pharmacy', 'crash_cabinet')
+    OR (dp.point_type = 'crash_cabinet'
+        AND dp.clinical_location_kind IS DISTINCT FROM 'emergency')
+  ))
+  INTO v_bad_outlets
+  FROM public.distribution_points dp
+  LEFT JOIN public.warehouses w ON w.id = dp.warehouse_id
+  WHERE dp.organization_id = p_organization_id
+     OR w.organization_id = p_organization_id;
+
+  IF v_active_warehouses > 0 AND v_valid_mains <> 1 THEN
+    v_errors := array_append(v_errors, 'sector_main_count');
+  END IF;
+  IF v_bad_warehouse > 0 THEN
+    v_errors := array_append(v_errors, 'warehouse_shape');
+  END IF;
+  IF v_bad_facility > 0 THEN
+    v_errors := array_append(v_errors, 'facility_binding');
+  END IF;
+  IF v_duplicate_depots > 0 THEN
+    v_errors := array_append(v_errors, 'duplicate_facility_depot');
+  END IF;
+  IF v_bad_outlets > 0 THEN
+    v_errors := array_append(v_errors, 'outlet_shape');
+  END IF;
+
+  IF array_length(v_errors, 1) IS NOT NULL THEN
+    RAISE EXCEPTION 'health_sector_activation_requires_valid_topology'
+      USING ERRCODE = '23514', DETAIL = array_to_string(v_errors, ', ');
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_assert_health_sector_live_topology_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION public._phoenix_health_sector_organization_activation_guard_v1()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-  v_active integer;
-  v_mains  integer;
 BEGIN
   IF NEW.status = 'active'
      AND OLD.status IS DISTINCT FROM 'active'
      AND NEW.institution_class = 'health_sector' THEN
-    SELECT count(*) FILTER (WHERE w.status='active'),
-           count(*) FILTER (WHERE w.status='active'
-                              AND w.warehouse_kind='institution'
-                              AND w.facility_id IS NULL AND w.is_main)
-    INTO v_active, v_mains
-    FROM public.warehouses w
-    WHERE w.organization_id = NEW.id;
-
-    IF v_active > 0 AND v_mains <> 1 THEN
-      RAISE EXCEPTION 'health_sector_activation_requires_valid_topology'
-        USING ERRCODE = '23514';
-    END IF;
+    -- UPDATE already owns this row, but the explicit lock documents and
+    -- enforces the organization-level topology fence used by every child
+    -- guard. Activation never takes a child-row lock, avoiding lock inversion.
+    PERFORM 1 FROM public.organizations WHERE id = NEW.id FOR UPDATE;
+    PERFORM public._phoenix_assert_health_sector_live_topology_v1(NEW.id);
   END IF;
   RETURN NEW;
 END;
@@ -539,6 +651,17 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'outlet_warehouse_not_found' USING ERRCODE = 'P0002';
   END IF;
+
+  -- Complete the topology-fence order after the existing warehouse lock.
+  -- Include both owners for a rehome and lock them in UUID order.
+  PERFORM 1
+  FROM public.organizations o
+  WHERE o.id = ANY(CASE TG_OP
+    WHEN 'INSERT' THEN ARRAY[NEW.organization_id]
+    ELSE ARRAY[OLD.organization_id, NEW.organization_id]
+  END)
+  ORDER BY o.id
+  FOR SHARE;
 
   SELECT o.institution_class INTO v_class
   FROM public.organizations o WHERE o.id = v_wh.organization_id;
@@ -1269,11 +1392,16 @@ COMMIT;
 -- ============================================================================
 -- ROLLBACK (manual):
 --   DROP TRIGGER warehouses_health_sector_shape_guard_trg ON public.warehouses;
+--   DROP TRIGGER organization_facilities_health_center_shape_guard_trg ON public.organization_facilities;
 --   DROP TRIGGER warehouses_health_sector_main_presence_trg ON public.warehouses;
+--   DROP TRIGGER organizations_health_sector_activation_guard_trg ON public.organizations;
 --   DROP TRIGGER distribution_points_health_sector_topology_trg ON public.distribution_points;
 --   DROP TRIGGER distribution_points_reassignment_guard_trg ON public.distribution_points;
 --   DROP FUNCTION public._phoenix_health_sector_warehouse_shape_guard_v1();
+--   DROP FUNCTION public._phoenix_health_center_facility_shape_guard_v1();
 --   DROP FUNCTION public._phoenix_health_sector_main_presence_guard_v1();
+--   DROP FUNCTION public._phoenix_health_sector_organization_activation_guard_v1();
+--   DROP FUNCTION public._phoenix_assert_health_sector_live_topology_v1(uuid);
 --   DROP FUNCTION public._phoenix_health_sector_outlet_topology_guard_v1();
 --   DROP FUNCTION public._phoenix_health_sector_outlet_reassignment_guard_v1();
 --   DROP FUNCTION public.phoenix_create_health_center_warehouse(uuid, uuid, text, text, text);

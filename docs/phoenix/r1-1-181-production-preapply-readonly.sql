@@ -94,11 +94,21 @@ operational_evidence AS (
     (SELECT count(*) FROM public.inter_org_exchange_requests e WHERE e.source_organization_id=hs.id OR e.target_organization_id=hs.id) AS exchange_request_rows
   FROM health_sectors hs
 ), evidence AS (
-  SELECT hs.*, f.facility_count,f.active_facility_count,f.facilities,
-         w.*, d.facilities_with_multiple_active_depots,
+  SELECT hs.id AS organization_id, hs.name, hs.name_ar, hs.code, hs.status,
+         f.facility_count,f.active_facility_count,f.facilities,
+         w.warehouse_count,w.active_warehouses,w.valid_sector_mains,
+         w.active_facility_null,w.active_mains,w.active_central,
+         w.active_center_depots,w.facility_bound_mains,w.facility_null_nonmains,
+         w.invalid_facility_depots,w.warehouses,
+         d.facilities_with_multiple_active_depots,
          x.outlet_count,x.active_outlets,x.sector_level_outlets,x.rescue_carts,
          x.invalid_outlet_types,x.invalid_crash_contexts,x.outlets,
-         op.*,
+         op.warehouse_stock_rows,op.outlet_stock_rows,op.warehouse_movement_rows,
+         op.outlet_movement_rows,op.dispatch_rows,op.transfer_request_rows,
+         op.transfer_rows,op.supply_route_rows,op.replenishment_route_rows,
+         op.outlet_return_request_rows,op.outlet_return_shipment_rows,
+         op.availability_rows,op.availability_movement_rows,
+         op.dispense_context_rows,op.exchange_request_rows,
          (op.warehouse_stock_rows+op.outlet_stock_rows+op.warehouse_movement_rows+
           op.outlet_movement_rows+op.dispatch_rows+op.transfer_request_rows+
           op.transfer_rows+op.supply_route_rows+op.replenishment_route_rows+
@@ -129,4 +139,4 @@ SELECT CASE
 END AS classification,
 evidence.*
 FROM evidence
-ORDER BY organization_id;
+ORDER BY evidence.organization_id;

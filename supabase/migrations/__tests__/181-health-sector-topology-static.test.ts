@@ -90,6 +90,7 @@ describe('181 object inventory is exactly the topology set', () => {
   it('creates exactly the topology guards and the one centre-depot writer', () => {
     const created = [...bare.matchAll(/CREATE FUNCTION (public\.[a-z_0-9]+)/g)].map(m => m[1]).sort();
     expect(created).toEqual([
+      'public._phoenix_assert_health_sector_live_topology_v1',
       'public._phoenix_health_center_facility_shape_guard_v1',
       'public._phoenix_health_sector_main_presence_guard_v1',
       'public._phoenix_health_sector_organization_activation_guard_v1',
@@ -200,11 +201,34 @@ describe('181 organization activation boundary', () => {
   const guard = () => section(
     'CREATE FUNCTION public._phoenix_health_sector_organization_activation_guard_v1',
     'CREATE TRIGGER organizations_health_sector_activation_guard_trg');
+  const validator = () => section(
+    'CREATE FUNCTION public._phoenix_assert_health_sector_live_topology_v1',
+    'REVOKE ALL ON FUNCTION public._phoenix_assert_health_sector_live_topology_v1');
 
   it('cannot reactivate a health sector into an invalid live topology', () => {
     expect(guard()).toContain("NEW.status = 'active'");
-    expect(guard()).toContain('health_sector_activation_requires_valid_topology');
+    expect(guard()).toContain('_phoenix_assert_health_sector_live_topology_v1(NEW.id)');
+    expect(validator()).toContain('health_sector_activation_requires_valid_topology');
     expect(code).toMatch(/BEFORE UPDATE OF status\s*\n\s*ON public\.organizations/);
+  });
+
+  it('revalidates every warehouse, facility binding, duplicate depot, and active outlet', () => {
+    for (const contract of [
+      'sector_main_count',
+      'warehouse_shape',
+      'facility_binding',
+      'duplicate_facility_depot',
+      'outlet_shape',
+    ]) expect(validator(), contract).toContain(contract);
+    expect(validator()).toContain("dp.point_type NOT IN ('pharmacy', 'crash_cabinet')");
+    expect(validator()).toContain("dp.point_type = 'crash_cabinet'");
+    expect(validator()).toContain("dp.clinical_location_kind IS DISTINCT FROM 'emergency'");
+  });
+
+  it('uses the organization row as one deterministic topology lock fence', () => {
+    expect(guard()).toContain('WHERE id = NEW.id FOR UPDATE');
+    expect(code).toMatch(/WHERE o\.id = ANY\(CASE TG_OP[\s\S]*ORDER BY o\.id[\s\S]*FOR SHARE/);
+    expect(code).toMatch(/WHERE o\.id = ANY\(ARRAY\[OLD\.organization_id, NEW\.organization_id\]\)[\s\S]*ORDER BY o\.id[\s\S]*FOR SHARE/);
   });
 });
 
@@ -399,6 +423,9 @@ describe('181 the centre-depot creation contract', () => {
       expect(code, fn).toContain(
         `REVOKE ALL ON FUNCTION public.${fn}()\n  FROM PUBLIC, anon, authenticated, service_role;`);
     }
+    expect(code).toContain(
+      'REVOKE ALL ON FUNCTION public._phoenix_assert_health_sector_live_topology_v1(uuid)\n  FROM PUBLIC, anon, authenticated, service_role;',
+    );
   });
 });
 
@@ -408,6 +435,29 @@ describe('181 sector-main presence guard', () => {
       'CREATE FUNCTION public._phoenix_health_sector_main_presence_guard_v1',
       'CREATE CONSTRAINT TRIGGER health_sector_main_presence_guard_v1');
     expect(guard).toMatch(/IF v_active = 0 THEN\s+CONTINUE;/);
+  });
+});
+
+describe('181 manual rollback documentation', () => {
+  it('lists every Migration-181 trigger, internal function, writer, and index', () => {
+    const rollback = sql.slice(sql.indexOf('-- ROLLBACK (manual):'));
+    for (const object of [
+      'warehouses_health_sector_shape_guard_trg',
+      'organization_facilities_health_center_shape_guard_trg',
+      'warehouses_health_sector_main_presence_trg',
+      'organizations_health_sector_activation_guard_trg',
+      'distribution_points_health_sector_topology_trg',
+      'distribution_points_reassignment_guard_trg',
+      '_phoenix_health_sector_warehouse_shape_guard_v1',
+      '_phoenix_health_center_facility_shape_guard_v1',
+      '_phoenix_health_sector_main_presence_guard_v1',
+      '_phoenix_health_sector_organization_activation_guard_v1',
+      '_phoenix_assert_health_sector_live_topology_v1',
+      '_phoenix_health_sector_outlet_topology_guard_v1',
+      '_phoenix_health_sector_outlet_reassignment_guard_v1',
+      'phoenix_create_health_center_warehouse',
+      'warehouses_one_active_depot_per_facility_uniq',
+    ]) expect(rollback, object).toContain(object);
   });
 });
 
