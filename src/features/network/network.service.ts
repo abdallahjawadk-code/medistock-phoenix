@@ -92,6 +92,29 @@ export function createWarehouse(input: {
   });
 }
 
+/**
+ * R1.1 / Migration 181 — the atomic writer for a HEALTH-CENTRE depot.
+ *
+ * `createWarehouse` above takes no facility, so under the R1.1 topology
+ * invariants it cannot produce a valid centre depot: the row would have to be
+ * created facility-less first, and an active facility-less health-sector
+ * warehouse is by definition the sector main. This RPC creates the depot bound
+ * to its centre in one statement — institution kind, never main, active — so
+ * there is no intermediate illegal state and no "remember to assign the
+ * facility afterwards" step left to the operator.
+ */
+export function createHealthCenterWarehouse(input: {
+  organizationId: string; facilityId: string; name: string; nameAr: string; code?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_create_health_center_warehouse', {
+    p_organization_id: input.organizationId,
+    p_facility_id: input.facilityId,
+    p_name: input.name,
+    p_name_ar: input.nameAr,
+    p_code: input.code ?? null,
+  });
+}
+
 export function updateWarehouse(input: {
   warehouseId: string; name?: string; nameAr?: string; code?: string | null;
 }): Promise<RpcResult> {

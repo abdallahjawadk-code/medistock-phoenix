@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
@@ -649,6 +649,11 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
+          // R1.1 / Migration 181: inside a health sector an outlet may only
+          // hang off a facility-bound CENTRE depot, and a rescue cart has no
+          // health-centre counterpart. The section needs the class to stop
+          // offering shapes the database now refuses.
+          isHealthSector={isHealthSector}
           warehouses={operationalWarehouses}
           warehousesLoading={warehouses.loading}
           warehousesError={warehouses.error}
@@ -900,7 +905,7 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 };
 
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, isHealthSector, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
@@ -915,6 +920,8 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
+  /** R1.1 / Migration 181 — see the two derivations immediately below. */
+  isHealthSector: boolean;
   warehouses: Warehouse[];
   warehousesLoading: boolean;
   warehousesError: string | null;
@@ -922,6 +929,28 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   onToast: (msg: string) => void;
 }) {
   const [showAdd, setShowAdd] = useState(false);
+
+  // R1.1 / Migration 181 — UX parity with the database topology.
+  //
+  // Inside a health sector an ACTIVE outlet must hang off a facility-bound
+  // CENTRE depot: the sector main is a supply root, not a dispensing location,
+  // and the database refuses an outlet on it with
+  // health_sector_outlet_requires_health_center_depot. Offering it here would
+  // offer an action that always fails.
+  const selectableWarehouses = useMemo(
+    () => (isHealthSector ? warehouses.filter(w => w.facilityId !== null) : warehouses),
+    [isHealthSector, warehouses],
+  );
+
+  // A rescue cart is a hospital emergency-department concept with no
+  // health-centre counterpart — Migration 168 already refuses to replenish one
+  // here, and Migration 181 refuses to create one at all.
+  const selectablePointTypes = useMemo(
+    () => (isHealthSector
+      ? APPROVED_POINT_TYPES.filter(type => type.value !== 'rescue_cart')
+      : APPROVED_POINT_TYPES),
+    [isHealthSector],
+  );
 
   return (
     <div>
@@ -946,7 +975,8 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
           lang={lang}
           orgId={orgId}
           canCreate={canCreatePorts}
-          warehouses={warehouses}
+          warehouses={selectableWarehouses}
+          pointTypes={selectablePointTypes}
           warehousesLoading={warehousesLoading}
           warehousesError={warehousesError}
           onCreated={() => { setShowAdd(false); onReload(); }}
@@ -969,6 +999,8 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               point={pt}
               lang={lang}
               warehouses={warehouses}
+              assignableWarehouses={selectableWarehouses}
+              pointTypes={selectablePointTypes}
               canEditPorts={canEditPorts}
               canArchivePorts={canArchivePorts}
               canArchivePortsEffective={canArchivePortsEffective}
@@ -988,11 +1020,15 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
 /* ── Add Port Form ── */
 
-function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, warehousesError, onCreated, onCancel, onToast }: {
+function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehousesLoading, warehousesError, onCreated, onCancel, onToast }: {
   lang: 'ar' | 'en';
   orgId: string;
   canCreate: boolean;
+  /** Already narrowed by the caller — inside a health sector this is the
+   *  facility-bound centre depots only, never the sector main (R1.1/181). */
   warehouses: Warehouse[];
+  /** Already narrowed by the caller — no rescue cart inside a health sector. */
+  pointTypes: { value: ApprovedPointType; labelKey: string }[];
   warehousesLoading: boolean;
   warehousesError: string | null;
   onCreated: () => void;
@@ -1111,7 +1147,7 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
             onChange={e => setPointType(e.target.value as ApprovedPointType)}
             style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
           >
-            {APPROVED_POINT_TYPES.map(type => (
+            {pointTypes.map(type => (
               <option key={type.value} value={type.value}>{t(type.labelKey, lang)}</option>
             ))}
           </select>
@@ -1152,10 +1188,17 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, warehousesLoading, wa
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
+function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
+  /** Full list — used to resolve the CURRENT owner's display name, including a
+   *  legacy owner the edit form would no longer offer. */
   warehouses: Warehouse[];
+  /** R1.1/181: the owners this point may be MOVED to. Inside a health sector
+   *  that is the facility-bound centre depots only, never the sector main. */
+  assignableWarehouses: Warehouse[];
+  /** R1.1/181: no rescue cart inside a health sector. */
+  pointTypes: { value: ApprovedPointType; labelKey: string }[];
   canEditPorts: boolean;
   canArchivePorts: boolean;
   canArchivePortsEffective: boolean;
@@ -1542,7 +1585,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
               style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
             >
               <option value="">{t('port_select_wh', lang)}</option>
-              {warehouses.map(w => (
+              {assignableWarehouses.map(w => (
                 <option key={w.id} value={w.id}>{warehouseDisplayName(w, lang)}</option>
               ))}
             </select>
@@ -1552,7 +1595,7 @@ function PortCard({ point, lang, warehouses, canEditPorts, canArchivePorts, canA
               {t('port_type', lang)} *
             </label>
             <select value={editPointType} onChange={e => setEditPointType(e.target.value as ApprovedPointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
-              {APPROVED_POINT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
+              {pointTypes.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
             </select>
           </div>
           {/* STAGE-E-E7-2: outlets created before E7-2 carry a null clinical

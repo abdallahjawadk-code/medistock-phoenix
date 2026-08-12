@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179/180 introduce no numbering and no 181+ migration exists',()=>{
+  it('179/180/181 introduce no numbering and no 182+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -78,10 +78,15 @@ describe('no client-side document-number sequence exists',()=>{
     // no table, column, sequence, counter, max()+1 or generated numeric
     // identity, and the dispatch number stays exactly what it always was — a
     // caller-supplied text the core only trims and requires to be non-empty.
-    // Boundary moves to 181 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180)_/.test(f));
+    // R1.1: 181 reconciles health-sector topology and installs shape guards. It
+    // creates no table, sequence, counter, max()+1 or generated numeric
+    // identity, and no document number of any kind — the only value it
+    // generates is a warehouse UUID from the column default.
+    // Boundary moves to 182 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '181_phoenix_health_sector_topology_reconciliation.sql',
       '180_phoenix_emergency_initial_provisioning_boundary.sql',
       '179_phoenix_canonical_authenticated_availability_hardening.sql',
       '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',

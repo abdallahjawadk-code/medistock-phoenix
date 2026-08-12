@@ -96,6 +96,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // is unaffected. Listed here so this guard stays exhaustive and still
       // fails closed on any unlisted new file.
       '180_phoenix_emergency_initial_provisioning_boundary.sql',
+      // R1.1 (181): reconciles health-sector topology and installs the
+      // warehouse/outlet shape guards. It adds no Stage-E SQL — Stage E's
+      // corridors are untouched and Branch B is reused exactly as shipped — so
+      // the "Stage E still ends at 171" assertion above is unaffected. Listed
+      // here so this guard stays exhaustive and still fails closed.
+      '181_phoenix_health_sector_topology_reconciliation.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
