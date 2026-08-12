@@ -174,6 +174,11 @@ export function OutletOperationsScreen({
           orgId={activeOrgId}
           distributionPointId={activeOutlet.id}
           outletName={outletName}
+          // R1.2 / Migration 180: initial provisioning commissions an EMERGENCY
+          // outlet only, so the tab needs the selected outlet's type to decide
+          // whether to offer that action at all. Already resolved here by
+          // useInventoryScopes — no extra fetch and no new boundary.
+          outletPointType={activeOutlet.pointType}
           lang={lang}
         />
       )}

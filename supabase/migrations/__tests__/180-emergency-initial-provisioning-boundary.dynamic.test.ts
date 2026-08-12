@@ -69,6 +69,14 @@ const PH_PAIR_B = '00000000-0000-0000-0000-000000180314';
 const CAB_FOREIGN = '00000000-0000-0000-0000-000000180315';
 const CAB_ANON = '00000000-0000-0000-0000-000000180316';
 const CAB_RBAC = '00000000-0000-0000-0000-000000180317';
+/** Independent-closure correction 1 — INITIAL authority must refuse a pharmacy. */
+const PH_INIT = '00000000-0000-0000-0000-000000180318';
+/** Independent-closure correction 2 — the initial-FIRST replenishment rule. */
+const CAB_NOINIT = '00000000-0000-0000-0000-000000180319';
+const CAB_EMPTYLIFE = '00000000-0000-0000-0000-000000180320';
+const CAB_ZEROREPL = '00000000-0000-0000-0000-000000180321';
+const CAB_REPLAY = '00000000-0000-0000-0000-000000180322';
+const CAB_CONC3 = '00000000-0000-0000-0000-000000180323';
 
 /** A profile with NO dispatch permissions — the RBAC negative control. */
 const NOBODY = '00000000-0000-0000-0000-000000180901';
@@ -256,6 +264,12 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
         ('${PH_CC}','${WH_HOSP}','${ORG_HOSP}','CC Pharmacy180','صيدلية','pharmacy','active','non_emergency'),
         ('${CAB_ANON}','${WH_HOSP}','${ORG_HOSP}','Anon Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${CAB_RBAC}','${WH_HOSP}','${ORG_HOSP}','Rbac Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${PH_INIT}','${WH_HOSP}','${ORG_HOSP}','Init Pharmacy180','صيدلية','pharmacy','active','non_emergency'),
+        ('${CAB_NOINIT}','${WH_HOSP}','${ORG_HOSP}','NoInit Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${CAB_EMPTYLIFE}','${WH_HOSP}','${ORG_HOSP}','EmptyLife Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${CAB_ZEROREPL}','${WH_HOSP}','${ORG_HOSP}','ZeroRepl Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${CAB_REPLAY}','${WH_HOSP}','${ORG_HOSP}','Replay Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${CAB_CONC3}','${WH_HOSP}','${ORG_HOSP}','CC3 Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${CAB_PAIR_B}','${WH_HOSP_B}','${ORG_HOSP}','B Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${PH_PAIR_B}','${WH_HOSP_B}','${ORG_HOSP}','B Pharmacy180','صيدلية','pharmacy','active','non_emergency'),
         ('${CAB_FOREIGN}','${WH_FOREIGN}','${ORG_FOREIGN}','F Cabinet180','خزانة','crash_cabinet','active','non_emergency')
@@ -515,8 +529,13 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
   // ══════════════════════════════════════════════════════════════════════════
   // I / J — routine replenishment (Migration 168) is untouched.
   // ══════════════════════════════════════════════════════════════════════════
-  describe('I/J · routine pharmacy -> emergency replenishment still works', () => {
-    it('I · legal pharmacy -> crash cabinet replenishment passes', async () => {
+  describe('I/J · routine pharmacy -> emergency replenishment still works AFTER commissioning', () => {
+    it('I · legal pharmacy -> crash cabinet replenishment passes once the cabinet is commissioned', async () => {
+      // R1.2 correction 2: routine replenishment tops an emergency outlet UP;
+      // it never commissions one. The cabinet must have CONSUMED an initial
+      // provisioning first — proved separately below; here it is the
+      // precondition for the corridor being legal at all.
+      await provisionOutlet(CAB_REPL, 'I0', 2);
       const src = await stockPharmacy(PH_MAIN, 'I1', 20);
       const routeId = await upsertRoute(PH_MAIN, CAB_REPL);
       const before = await onHand(CAB_REPL);
@@ -530,7 +549,8 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
       expect(await onHand(CAB_REPL)).toBe(before + 5);
     });
 
-    it('J · legal ER pharmacy -> rescue cart replenishment passes', async () => {
+    it('J · legal ER pharmacy -> rescue cart replenishment passes once the cart is commissioned', async () => {
+      await provisionOutlet(CART_REPL, 'J0', 2);
       const src = await stockPharmacy(PH_ER, 'J1', 15);
       const routeId = await upsertRoute(PH_ER, CART_REPL);
       const before = await onHand(CART_REPL);
@@ -544,14 +564,284 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
       expect(await onHand(CART_REPL)).toBe(before + 4);
     });
 
-    it('I/J · replenishment never sets or consumes an initial-provisioning lifecycle', async () => {
+    it('I/J · replenishment never sets or consumes a SECOND lifecycle', async () => {
       await rig.asAdmin(async (c: any) => {
         const r = await c.query(
-          `SELECT count(*)::int n FROM warehouse_dispatches
-            WHERE destination_distribution_point_id = ANY($1) AND is_initial_provisioning`,
+          `SELECT destination_distribution_point_id AS dp, count(*)::int n
+             FROM warehouse_dispatches
+            WHERE destination_distribution_point_id = ANY($1) AND is_initial_provisioning
+            GROUP BY 1`,
           [[CAB_REPL, CART_REPL]],
         );
+        // Exactly the one commissioning dispatch each, created above — never a
+        // second one minted by the replenishment corridor.
+        expect(r.rows.map((x: any) => x.n)).toEqual([1, 1]);
+      });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // P — INDEPENDENT-CLOSURE CORRECTION 1: the authority matrix is DISJOINT.
+  //
+  //                    pharmacy    crash_cabinet    rescue_cart
+  //   ORDINARY          LEGAL        FORBIDDEN       FORBIDDEN
+  //   INITIAL           FORBIDDEN    LEGAL           LEGAL
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('P · INITIAL authority refuses a pharmacy', () => {
+    it('P · initial provisioning to a pharmacy FAILS with the precise corridor error', async () => {
+      const msg = await rejects(() => createInitial(PH_INIT, 'P1'));
+      expect(msg).toMatch(/initial_provisioning_requires_emergency_outlet/);
+      expect(msg).toContain('pharmacy');
+      // NOT 070's generic type error: the pharmacy is perfectly able to hold
+      // stock, it simply has no commissioning lifecycle.
+      expect(msg).not.toMatch(/outlet_type_not_approved_for_stock/);
+      expect(msg).not.toMatch(/emergency_outlet_requires_initial_provisioning/);
+    });
+
+    it('P · the refusal leaves no dispatch row and no audit row', async () => {
+      expect(await dispatchCount(PH_INIT)).toBe(0);
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT count(*)::int n FROM audit_logs
+            WHERE action IN ('warehouse_dispatch.created',
+                             'warehouse_dispatch.initial_provisioning_created')
+              AND payload->>'distribution_point_id' = $1`,
+          [PH_INIT],
+        );
         expect(r.rows[0].n).toBe(0);
+      });
+    });
+
+    it('P · the SAME pharmacy accepts ordinary warehouse dispatch', async () => {
+      // Proof the refusal is about the authority, not the outlet.
+      const created = await createOrdinary(PH_INIT, 'P2');
+      expect(created.ok).toBe(true);
+      expect(await dispatchCount(PH_INIT)).toBe(1);
+    });
+
+    it('P · an ER pharmacy is refused too — the matrix keys on point_type', async () => {
+      // PH_ER is clinical_location_kind='emergency'. It is still a PHARMACY, so
+      // it has no commissioning lifecycle, and it still takes ordinary dispatch.
+      expect(await rejects(() => createInitial(PH_ER, 'P3')))
+        .toMatch(/initial_provisioning_requires_emergency_outlet/);
+    });
+
+    it('P · a pharmacy can therefore never hold an initial-provisioning row', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(`
+          SELECT count(*)::int n
+            FROM warehouse_dispatches d
+            JOIN distribution_points dp ON dp.id = d.destination_distribution_point_id
+           WHERE d.is_initial_provisioning AND dp.point_type = 'pharmacy'`);
+        expect(r.rows[0].n).toBe(0);
+      });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Q — INDEPENDENT-CLOSURE CORRECTION 2: routine replenishment is INITIAL-FIRST.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('Q · routine replenishment requires a CONSUMED initial provisioning', () => {
+    const replenish = (routeId: string, src: string, qty: number, requestId = randomUUID()) =>
+      rig.asUser(
+        rig.superAdminId,
+        (c: any) =>
+          call(c, 'phoenix_replenish_emergency_outlet', [requestId, routeId, src, qty, null, 'R1.2 Q']),
+        { commit: true },
+      );
+
+    it('Q1 · a brand-new emergency outlet with a LEGAL ACTIVE route is refused', async () => {
+      // Everything else is legal: real route, real pharmacy stock, real
+      // topology, real permission. The ONLY thing missing is commissioning.
+      const src = await stockPharmacy(PH_MAIN, 'Q1', 12);
+      const routeId = await upsertRoute(PH_MAIN, CAB_NOINIT);
+      expect(routeId).toBeTruthy();
+
+      const msg = await rejects(() => replenish(routeId, src, 3));
+      expect(msg).toMatch(/initial_provisioning_required_before_replenishment/);
+      // …and nothing moved on either side.
+      expect(await onHand(CAB_NOINIT)).toBe(0);
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT count(*)::int n FROM outlet_stock_movements
+            WHERE distribution_point_id=$1`,
+          [CAB_NOINIT],
+        );
+        expect(r.rows[0].n).toBe(0);
+      });
+    });
+
+    it('Q1 · an active route alone is therefore NOT permission to replenish', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT count(*)::int n FROM outlet_replenishment_routes
+            WHERE destination_point_id=$1 AND is_active`,
+          [CAB_NOINIT],
+        );
+        expect(r.rows[0].n).toBe(1);
+      });
+    });
+
+    it('Q2 · a lifecycle that DELIVERED NOTHING does not open the corridor', async () => {
+      // Fully rejected on arrival: 166 rule D. The dispatch exists and is
+      // flagged, but consumed_at stays NULL, so nothing was ever commissioned.
+      const stock = await provisionWarehouseStock('Q2', 5);
+      const created = await createInitial(CAB_EMPTYLIFE, 'Q2');
+      const lineId = await addLineAndSend(created.dispatch_id, stock, 5);
+      const rejected = await rig.asUser(
+        rig.superAdminId,
+        (c: any) =>
+          call(c, 'phoenix_receive_outlet_dispatch_line', [
+            randomUUID(), lineId, 0, 'Q2 probe: consignment refused on arrival', null, 'damaged',
+          ]),
+        { commit: true },
+      );
+      expect(rejected.line_status).toBe('rejected');
+
+      const h = await header(created.dispatch_id);
+      expect(h.is_initial_provisioning).toBe(true);
+      expect(h.initial_provisioning_consumed_at).toBeNull();
+
+      const src = await stockPharmacy(PH_MAIN, 'Q2S', 10);
+      const routeId = await upsertRoute(PH_MAIN, CAB_EMPTYLIFE);
+      expect(await rejects(() => replenish(routeId, src, 2)))
+        .toMatch(/initial_provisioning_required_before_replenishment/);
+      expect(await onHand(CAB_EMPTYLIFE)).toBe(0);
+    });
+
+    it('Q3 · a POSITIVE initial receipt opens the corridor', async () => {
+      const provisioned = await provisionOutlet(CAB_ZEROREPL, 'Q3', 6);
+      const h = await header(provisioned.dispatchId);
+      expect(h.initial_provisioning_consumed_at).not.toBeNull();
+      expect(await onHand(CAB_ZEROREPL)).toBe(6);
+
+      const src = await stockPharmacy(PH_MAIN, 'Q3S', 10);
+      const routeId = await upsertRoute(PH_MAIN, CAB_ZEROREPL);
+      const r = await replenish(routeId, src, 4);
+      expect(r.ok).toBe(true);
+      expect(r.idempotent_replay).toBe(false);
+      expect(await onHand(CAB_ZEROREPL)).toBe(10);
+    });
+
+    it('Q4 · a later ZERO balance keeps the corridor open — the marker is historical', async () => {
+      // Drain the whole cabinet back to the warehouse through the real outlet
+      // return corridor, then replenish again. Eligibility must come from the
+      // consumed lifecycle, never from a nonzero balance.
+      const before = await onHand(CAB_ZEROREPL);
+      expect(before).toBeGreaterThan(0);
+
+      await rig.asUser(
+        rig.superAdminId,
+        async (c: any) => {
+          const lines = await c.query(
+            `SELECT l.id, l.received_quantity
+               FROM warehouse_dispatch_lines l
+               JOIN warehouse_dispatches d ON d.id = l.dispatch_id
+              WHERE d.destination_distribution_point_id=$1 AND l.received_quantity > 0`,
+            [CAB_ZEROREPL],
+          );
+          const req = await call(c, 'phoenix_request_outlet_return', [CAB_ZEROREPL, uniq('ORQ4')]);
+          const requestId = req.return_request_id ?? req.id;
+          const ids: string[] = [];
+          for (const l of lines.rows) {
+            const added = await call(c, 'phoenix_add_outlet_return_request_line', [
+              requestId, l.id, l.received_quantity, 'excess', 'R1.2 Q4 drain',
+            ]);
+            ids.push(added.return_request_line_id);
+          }
+          await call(c, 'phoenix_submit_outlet_return_request', [requestId]);
+          await call(c, 'phoenix_review_outlet_return_request', [
+            requestId,
+            JSON.stringify(
+              lines.rows.map((l: any, i: number) => ({
+                line_id: ids[i], approved_quantity: l.received_quantity,
+              })),
+            ),
+          ]);
+          for (const [i, l] of lines.rows.entries()) {
+            const sent = await call(c, 'phoenix_send_outlet_return_shipment_line', [
+              randomUUID(), ids[i], null, l.received_quantity, uniq('ORSQ4'), null, null,
+            ]);
+            await call(c, 'phoenix_receive_outlet_return_shipment_line', [
+              randomUUID(), sent.shipment_line_id, l.received_quantity, null, null, 'restockable',
+            ]);
+          }
+        },
+        { commit: true },
+      );
+
+      // Only the initially-provisioned quantity returns through that corridor;
+      // whatever remains, the point is the lifecycle marker is untouched.
+      const h = await rig
+        .asAdmin((c: any) =>
+          c.query(
+            `SELECT count(*)::int n FROM warehouse_dispatches
+              WHERE destination_distribution_point_id=$1
+                AND is_initial_provisioning AND initial_provisioning_consumed_at IS NOT NULL`,
+            [CAB_ZEROREPL],
+          ),
+        )
+        .then((r: any) => r.rows[0].n);
+      expect(h).toBe(1);
+
+      const src = await stockPharmacy(PH_MAIN, 'Q4S', 8);
+      const routeId = await upsertRoute(PH_MAIN, CAB_ZEROREPL);
+      const after = await onHand(CAB_ZEROREPL);
+      const r = await replenish(routeId, src, 2);
+      expect(r.ok).toBe(true);
+      expect(await onHand(CAB_ZEROREPL)).toBe(after + 2);
+    });
+
+    it('Q5 · an already-successful request keeps its authorized idempotent replay', async () => {
+      // The gate governs FRESH movement only and must sit AFTER the replay
+      // return, so a completed request replays forever — including one
+      // completed before this migration existed.
+      await provisionOutlet(CAB_REPLAY, 'Q5', 4);
+      const src = await stockPharmacy(PH_MAIN, 'Q5S', 10);
+      const routeId = await upsertRoute(PH_MAIN, CAB_REPLAY);
+
+      const requestId = randomUUID();
+      const first = await replenish(routeId, src, 3, requestId);
+      expect(first.ok).toBe(true);
+      expect(first.idempotent_replay).toBe(false);
+      const afterFirst = await onHand(CAB_REPLAY);
+
+      const replay = await replenish(routeId, src, 3, requestId);
+      expect(replay.ok).toBe(true);
+      expect(replay.idempotent_replay).toBe(true);
+      expect(replay.send_movement_id).toBe(first.send_movement_id);
+      expect(replay.receive_movement_id).toBe(first.receive_movement_id);
+      // Replay moved nothing a second time.
+      expect(await onHand(CAB_REPLAY)).toBe(afterFirst);
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT count(*)::int n FROM outlet_stock_movements
+            WHERE reference_type='outlet_replenishment' AND reference_id=$1`,
+          [requestId],
+        );
+        expect(r.rows[0].n).toBe(2);
+      });
+    });
+
+    it('Q6 · the gate reads the lifecycle marker, never a balance', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(`
+          SELECT pg_get_functiondef(
+            'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)'::regprocedure) AS def`);
+        const def: string = r.rows[0].def;
+        const start = def.indexOf('FROM public.warehouse_dispatches d');
+        const end = def.indexOf('initial_provisioning_required_before_replenishment');
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        const predicate = def.slice(start, end);
+        expect(predicate).toContain('is_initial_provisioning');
+        expect(predicate).toContain('initial_provisioning_consumed_at IS NOT NULL');
+        expect(predicate).not.toMatch(/on_hand|available_quantity|outlet_stock|status/);
+        // …and the whole gate precedes every write.
+        expect(end).toBeLessThan(def.indexOf('INSERT INTO public.outlet_stock_movements'));
+        expect(end).toBeLessThan(def.indexOf('FOR UPDATE'));
+        // …while the authorized replay return precedes the gate.
+        expect(def.indexOf("'idempotent_replay', true")).toBeLessThan(end);
       });
     });
   });
@@ -817,6 +1107,74 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
       // lock serialises them, it does not reject either.
       expect(results).toEqual(['ok', 'ok']);
       expect(await dispatchCount(PH_CC)).toBe(2);
+    });
+
+    it('CASE 4 · a replenishment cannot cross the boundary before the initial receipt commits', async () => {
+      // The strongest form of the initial-first rule: the commissioning receipt
+      // is IN FLIGHT but not yet committed. consumed_at is monotonic, so the
+      // only safe answer is "not yet" — and after the commit, the very next
+      // fresh replenishment proceeds. No balance shortcut, no double movement.
+      const stock = await provisionWarehouseStock('CC4', 5);
+      const created = await createInitial(CAB_CONC3, 'CC4');
+      const lineId = await addLineAndSend(created.dispatch_id, stock, 5);
+
+      const src = await stockPharmacy(PH_MAIN, 'CC4S', 10);
+      const routeId = await upsertRoute(PH_MAIN, CAB_CONC3);
+
+      const held = await rig.pool.connect();
+      let msg = '';
+      try {
+        await held.query('BEGIN');
+        await held.query('SET LOCAL ROLE authenticated');
+        await held.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [rig.superAdminId]);
+        // Stamps initial_provisioning_consumed_at — but does NOT commit yet.
+        await held.query(
+          `SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,$3,NULL,NULL) AS r`,
+          [randomUUID(), lineId, 5],
+        );
+
+        // A concurrent FRESH replenishment cannot see that stamp.
+        msg = await rejects(() =>
+          rig.asUser(
+            rig.superAdminId,
+            (c: any) =>
+              call(c, 'phoenix_replenish_emergency_outlet', [
+                randomUUID(), routeId, src, 2, null, 'R1.2 CC4 early',
+              ]),
+            { commit: true },
+          ),
+        );
+
+        await held.query('COMMIT');
+      } finally {
+        held.release();
+      }
+
+      expect(msg).toMatch(/initial_provisioning_required_before_replenishment/);
+
+      // Once the receipt is committed and the marker visible, it proceeds.
+      const before = await onHand(CAB_CONC3);
+      const ok = await rig.asUser(
+        rig.superAdminId,
+        (c: any) =>
+          call(c, 'phoenix_replenish_emergency_outlet', [
+            randomUUID(), routeId, src, 2, null, 'R1.2 CC4 late',
+          ]),
+        { commit: true },
+      );
+      expect(ok.ok).toBe(true);
+      expect(await onHand(CAB_CONC3)).toBe(before + 2);
+
+      // Exactly one replenishment pair reached the ledger — the refused attempt
+      // wrote nothing.
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT count(*)::int n FROM outlet_stock_movements
+            WHERE distribution_point_id=$1 AND movement_type='replenish_receive'`,
+          [CAB_CONC3],
+        );
+        expect(r.rows[0].n).toBe(1);
+      });
     });
 
     it('CASE 3 · the per-warehouse advisory lock and lock ORDER are unchanged', async () => {

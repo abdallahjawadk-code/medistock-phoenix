@@ -31,6 +31,8 @@ const launcher = read('features/outlet/InitialProvisioningLauncher.tsx');
 const composer = read('features/outlet/OutletDispatchComposer.tsx');
 const dispatchService = read('features/outlet/dispatch.service.ts');
 const replenishmentService = read('features/outlet/emergency-replenishment.service.ts');
+const replenishmentTab = read('features/outlet/EmergencyReplenishmentTab.tsx');
+const outletScreen = read('features/outlet/OutletOperationsScreen.tsx');
 
 describe('the canonical emergency-outlet vocabulary is reused, not re-declared', () => {
   it('classifies exactly the two emergency destination types', () => {
@@ -100,6 +102,65 @@ describe('the initial-provisioning entry point is preserved and still reaches em
   it('the composer routes to the DEDICATED RPC when provisioning, and the ordinary one otherwise', () => {
     expect(composer).toMatch(/isInitialProvisioning[\s\S]{0,120}createInitialProvisioningDispatch\(\{/);
     expect(composer).toMatch(/: createWarehouseDispatch\(\{/);
+  });
+});
+
+describe('the Initial Provisioning launcher is offered for EMERGENCY outlets only', () => {
+  it('the tab receives the selected outlet point type through the existing scope catalog', () => {
+    // Smallest existing boundary: useInventoryScopes already resolves the
+    // active outlet, so no new fetch and no new prop chain is introduced.
+    expect(outletScreen).toMatch(/<EmergencyReplenishmentTab[\s\S]{0,700}outletPointType=\{activeOutlet\.pointType\}/);
+    expect(replenishmentTab).toMatch(/outletPointType\?: string \| null;/);
+  });
+
+  it('gates the launcher on the canonical emergency predicate, not a new literal list', () => {
+    expect(replenishmentTab).toMatch(
+      /import \{ isReplenishmentDestinationPointType \} from '@\/shared\/lib\/emergency-replenishment'/,
+    );
+    expect(replenishmentTab).toMatch(
+      /\{isReplenishmentDestinationPointType\(outletPointType\) && \(\s*<InitialProvisioningLauncher/,
+    );
+    // The GATE itself must contain no hand-rolled type vocabulary. Scoped to the
+    // gate: the route-label rendering further down legitimately names
+    // 'rescue_cart' to choose a caption, which decides no authority.
+    const gate = replenishmentTab.slice(
+      replenishmentTab.indexOf('isReplenishmentDestinationPointType(outletPointType)'),
+      replenishmentTab.indexOf('<ReplenishForm'),
+    );
+    expect(gate).not.toMatch(/'crash_cabinet'/);
+    expect(gate).not.toMatch(/'rescue_cart'/);
+  });
+
+  it('PHARMACY · the launcher is not rendered — an absent or unknown type fails closed', () => {
+    // isReplenishmentDestinationPointType returns false for 'pharmacy', null and
+    // undefined, so the guard above renders nothing in all three cases. The
+    // behaviour of the predicate itself is asserted at the top of this file.
+    for (const value of ['pharmacy', null, undefined]) {
+      expect(isReplenishmentDestinationPointType(value), String(value)).toBe(false);
+    }
+  });
+
+  it('CRASH CABINET / RESCUE CART · the launcher is rendered and still lifecycle-aware', () => {
+    for (const value of ['crash_cabinet', 'rescue_cart']) {
+      expect(isReplenishmentDestinationPointType(value), value).toBe(true);
+    }
+    // Rendering it is necessary but not sufficient: the launcher itself still
+    // shows a non-actionable status once the lifecycle is open or consumed.
+    expect(launcher).toMatch(/state\.data\?\.consumed/);
+    expect(launcher).toMatch(/state\.data\?\.openDispatchId/);
+  });
+
+  it('a pharmacy keeps its OUTGOING routine-replenishment and reversal forms', () => {
+    // Only the launcher is gated. Hiding the whole tab would strand every legal
+    // pharmacy source, which is the corridor Migration 168 depends on.
+    expect(replenishmentTab).toMatch(/<ReplenishForm/);
+    expect(replenishmentTab).toMatch(/<ReverseForm/);
+    const gateAt = replenishmentTab.indexOf('isReplenishmentDestinationPointType(outletPointType)');
+    const formsAt = replenishmentTab.indexOf('<ReplenishForm');
+    expect(gateAt).toBeGreaterThan(-1);
+    expect(formsAt).toBeGreaterThan(gateAt);
+    // The forms are gated on OUTGOING routes, never on the outlet's own type.
+    expect(replenishmentTab).toMatch(/outgoing\.length === 0/);
   });
 });
 

@@ -137,6 +137,31 @@ run('169 · outlet replenishment reversal (dynamic)', () => {
       UPDATE profiles
          SET role='outlet_officer', status='active', organization_id='${ORG_HOSPITAL}'
        WHERE id='${NO_REVERSE_PERM}';
+
+      -- R1.2 / Migration 180: a FRESH routine replenishment now requires the
+      -- destination emergency outlet to have CONSUMED an initial-provisioning
+      -- lifecycle. This suite reverses replenishments, so every scenario has to
+      -- be able to perform the forward leg first. Each emergency destination is
+      -- therefore commissioned here as a FIXTURE — one consumed lifecycle row
+      -- each, exactly the state the real commissioning chain leaves behind, and
+      -- seeded the same way this file already seeds stock directly.
+      --
+      -- 169's own subject — the reversal corridor and its aggregate cap — is
+      -- untouched by that gate: Migration 180 does not modify
+      -- phoenix_reverse_outlet_replenishment at all, which its verify block
+      -- asserts. The gate itself is proved in
+      -- 180-emergency-initial-provisioning-boundary.dynamic.test.ts (Q1-Q6).
+      INSERT INTO warehouse_dispatches (
+        organization_id, warehouse_id, destination_distribution_point_id,
+        dispatch_number, status, sent_at,
+        is_initial_provisioning, initial_provisioning_consumed_at)
+      SELECT dp.organization_id, dp.warehouse_id, dp.id,
+             'IP169-' || right(dp.id::text, 12), 'accepted', now(), true, now()
+        FROM distribution_points dp
+       WHERE dp.point_type IN ('crash_cabinet', 'rescue_cart')
+         AND dp.organization_id IN
+             ('${ORG_SECTOR}', '${ORG_HOSPITAL}', '${ORG_SPECIAL}', '${ORG_SECTOR_2}')
+      ON CONFLICT DO NOTHING;
     `));
 
     // NO_REVERSE_PERM holds outlet_stock.replenish (can do forward ops) but

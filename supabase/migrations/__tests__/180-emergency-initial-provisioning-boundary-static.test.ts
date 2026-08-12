@@ -62,7 +62,16 @@ const ordinaryBody = (() => {
 /** The initial-provisioning writer's declaration + body, comments stripped. */
 const initialBody = (() => {
   const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_create_initial_provisioning_dispatch');
+  const end = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_replenish_emergency_outlet', start);
+  expect(end).toBeGreaterThan(start);
+  return bare.slice(start, end);
+})();
+
+/** The replaced Migration-168 replenishment RPC, comments stripped. */
+const replenishBody = (() => {
+  const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_replenish_emergency_outlet');
   const end = bare.indexOf('REVOKE ALL ON FUNCTION public._phoenix_180_delegate', start);
+  expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return bare.slice(start, end);
 })();
@@ -83,6 +92,16 @@ describe('180 registration and shape', () => {
     expect(sql).toMatch(/DO NOT use `supabase db push`/);
   });
 
+  it('names the CURRENT Production apply path, not the retired SQL Editor one', () => {
+    expect(sql).toContain('Supabase.apply_migration');
+    expect(sql).toMatch(/exact-ceiling preflight and\s*\n--\s*independent approval/);
+    // The SQL Editor may only be MENTIONED as no longer the path.
+    expect(sql).toMatch(/Supabase SQL Editor is no longer the apply path/);
+    expect(sql).not.toMatch(/Apply after \d+, via the Supabase SQL Editor/);
+    // …and db push stays forbidden outright.
+    expect(sql).toMatch(/`supabase db push` remains forbidden/);
+  });
+
   it('fails closed on preconditions and verifies in-transaction', () => {
     expect(code).toContain('180_precondition_failed');
     expect(code).toContain('VERIFY FAILED (180)');
@@ -100,13 +119,14 @@ describe('180 object inventory is exactly the authority-separation set', () => {
     expect(created).toEqual(['public._phoenix_180_delegate_create_warehouse_dispatch']);
   });
 
-  it('replaces exactly TWO existing functions — the two public writers', () => {
+  it('replaces exactly THREE existing functions — the two writers and the 168 replenishment RPC', () => {
     const replaced = [...bare.matchAll(/CREATE OR REPLACE FUNCTION (public\.[a-z_0-9]+)/g)]
       .map(m => m[1])
       .sort();
     expect(replaced).toEqual([
       'public.phoenix_create_initial_provisioning_dispatch',
       'public.phoenix_create_warehouse_dispatch',
+      'public.phoenix_replenish_emergency_outlet',
     ]);
   });
 
@@ -129,29 +149,53 @@ describe('180 object inventory is exactly the authority-separation set', () => {
     expect(applyTime).not.toMatch(/\bDELETE\s+FROM\b/i);
   });
 
-  it('adds no permission key, movement type, ledger or RLS change', () => {
+  it('adds no permission key, no RLS change and no new movement type', () => {
     expect(bare).not.toMatch(/INSERT INTO public\.permission/i);
     expect(bare).not.toMatch(/ROW LEVEL SECURITY/i);
-    expect(bare).not.toMatch(/outlet_stock_movements/);
+    // No warehouse ledger is touched at all.
     expect(bare).not.toMatch(/warehouse_stock_movements/);
+    // outlet_stock_movements IS written — by Migration 168's own reproduced
+    // body — but only with 168's own two movement types. 180 invents none.
+    const types = [...new Set(
+      [...replenishBody.matchAll(/'(replenish_[a-z_]+|dispatch_[a-z_]+|correction_[a-z_]+)'/g)].map(m => m[1]),
+    )].sort();
+    expect(types).toEqual(['replenish_receive', 'replenish_send']);
+    // …and the core itself never touches a quantity ledger.
+    expect(coreBody).not.toMatch(/outlet_stock_movements|warehouse_stock_movements/);
   });
 
-  it('does not redefine migration 166 or 179 objects', () => {
+  it('does not redefine migration 166, 169 or 176-179 objects', () => {
     expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_receive_outlet_dispatch_line/);
     expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_outlet_availability_read_model/);
     expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.get_public_qr_payload/);
-    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_replenish_emergency_outlet/);
     expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_reverse_outlet_replenishment/);
   });
 });
 
 describe('180 the authority boundary itself', () => {
-  it('the gate refuses BOTH emergency outlet types', () => {
+  it('the ORDINARY branch refuses BOTH emergency outlet types', () => {
     expect(coreBody).toMatch(/point_type IN \('crash_cabinet', 'rescue_cart'\)/);
   });
 
-  it('the gate applies to ORDINARY authority only', () => {
-    expect(coreBody).toMatch(/p_authority = 'ordinary'\s*\n?\s*AND v_point\.point_type IN/);
+  it('the INITIAL branch refuses everything that is not an emergency outlet', () => {
+    // Independent-closure correction 1: the two authorities are DISJOINT.
+    expect(coreBody).toMatch(/point_type NOT IN \('crash_cabinet', 'rescue_cart'\)/);
+    expect(coreBody).toContain('initial_provisioning_requires_emergency_outlet');
+  });
+
+  it('each branch is conditioned on its own authority, and neither on both', () => {
+    expect(coreBody).toMatch(/IF p_authority = 'ordinary' THEN/);
+    expect(coreBody).toMatch(/ELSIF p_authority = 'initial' THEN/);
+  });
+
+  it('the two branches partition the stock-holding destination vocabulary', () => {
+    // pharmacy is legal for exactly one authority and forbidden for the other;
+    // the emergency pair is the mirror image. Asserted as the presence of both
+    // the inclusive and the exclusive form of the SAME type test.
+    const inclusive = coreBody.indexOf("point_type IN ('crash_cabinet', 'rescue_cart')");
+    const exclusive = coreBody.indexOf("point_type NOT IN ('crash_cabinet', 'rescue_cart')");
+    expect(inclusive).toBeGreaterThan(-1);
+    expect(exclusive).toBeGreaterThan(inclusive);
   });
 
   it('uses a precise corridor error, never the outlet-type error', () => {
@@ -186,12 +230,17 @@ describe('180 the authority boundary itself', () => {
     expect(coreBody).not.toMatch(/clinical_location_kind/);
   });
 
-  it('refuses before any dispatch row is created', () => {
-    const gate = coreBody.indexOf('emergency_outlet_requires_initial_provisioning');
+  it('BOTH refusals precede any dispatch row', () => {
     const insert = coreBody.indexOf('INSERT INTO public.warehouse_dispatches');
-    expect(gate).toBeGreaterThan(-1);
     expect(insert).toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(insert);
+    for (const err of [
+      'emergency_outlet_requires_initial_provisioning',
+      'initial_provisioning_requires_emergency_outlet',
+    ]) {
+      const gate = coreBody.indexOf(err);
+      expect(gate, err).toBeGreaterThan(-1);
+      expect(gate, err).toBeLessThan(insert);
+    }
   });
 
   it('refuses AFTER the permission gate, so an unauthorised caller learns nothing', () => {
@@ -216,6 +265,113 @@ describe('180 the authority boundary itself', () => {
     // No DEFAULT on the authority parameter: a caller that names no authority
     // does not get one.
     expect(coreBody).not.toMatch(/p_authority\s+text\s+DEFAULT/);
+  });
+});
+
+describe('180 routine replenishment is initial-FIRST', () => {
+  it('adds the lifecycle gate with a precise, stable error', () => {
+    expect(replenishBody).toContain('initial_provisioning_required_before_replenishment');
+    expect(replenishBody).toMatch(/USING ERRCODE = '23514'/);
+  });
+
+  it('the gate predicate names the durable 166 marker and nothing else', () => {
+    const start = replenishBody.indexOf('FROM public.warehouse_dispatches d');
+    const end = replenishBody.indexOf('initial_provisioning_required_before_replenishment');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const predicate = replenishBody.slice(start, end);
+    expect(predicate).toContain('d.is_initial_provisioning');
+    expect(predicate).toContain('d.initial_provisioning_consumed_at IS NOT NULL');
+    // Never balance-derived, never header-status-derived.
+    expect(predicate).not.toMatch(/on_hand|available_quantity|outlet_stock|status/);
+  });
+
+  it('the gate runs AFTER the authorized idempotent replay return', () => {
+    // A request that already completed keeps its replay semantics permanently,
+    // including one completed before this migration existed.
+    const replay = replenishBody.indexOf("'idempotent_replay', true");
+    const gate = replenishBody.indexOf('initial_provisioning_required_before_replenishment');
+    expect(replay).toBeGreaterThan(-1);
+    expect(replay).toBeLessThan(gate);
+  });
+
+  it('the gate runs AFTER the whole topology matrix, so shape errors stay accurate', () => {
+    const shape = replenishBody.indexOf('unsupported_institution_class_for_route');
+    const gate = replenishBody.indexOf('initial_provisioning_required_before_replenishment');
+    expect(shape).toBeGreaterThan(-1);
+    expect(shape).toBeLessThan(gate);
+  });
+
+  it('the gate runs BEFORE every write and every stock lock', () => {
+    const gate = replenishBody.indexOf('initial_provisioning_required_before_replenishment');
+    for (const write of [
+      'INSERT INTO public.outlet_stock ',
+      'FOR UPDATE',
+      'UPDATE public.outlet_stock',
+      'INSERT INTO public.outlet_stock_movements',
+      'INSERT INTO public.audit_logs',
+    ]) {
+      const at = replenishBody.indexOf(write);
+      expect(at, write).toBeGreaterThan(-1);
+      expect(gate, write).toBeLessThan(at);
+    }
+  });
+
+  it('preserves Migration 168 exactly around that one added statement', () => {
+    for (const mechanic of [
+      'hashtextextended(p_request_id::text, 168168)',
+      '_phoenix_replenishment_fingerprint_v1(',
+      'request_id_conflict',
+      'forbidden_outlet_stock_replenish',
+      "'outlet_stock.replenish'",
+      'route_not_active',
+      'source_must_be_pharmacy',
+      'destination_must_be_emergency_outlet',
+      'health_center_rescue_cart_forbidden',
+      'health_center_crash_cabinet_requires_emergency',
+      'rescue_cart_requires_hospital',
+      'crash_cabinet_requires_non_emergency_context',
+      'cross_facility_route_forbidden',
+      'facility_not_permitted_for_this_institution_class',
+      'phoenix_inventory_fefo_batches(',
+      'fefo_override_required',
+      'forbidden_fefo_override',
+      'expired_batch_cannot_be_replenished',
+      'insufficient_source_stock',
+      'outlet_quantity_cannot_go_negative',
+      'outlet_quantity_below_reserved',
+      'stock_lock_identity_mismatch',
+      'material_identity_key',
+      "'replenish_send'",
+      "'replenish_receive'",
+      'phoenix_project_outlet_availability(',
+      "'outlet_stock.replenish', 'outlet_replenishment_routes'",
+    ]) {
+      expect(replenishBody, mechanic).toContain(mechanic);
+    }
+  });
+
+  it('keeps the 168 signature, security posture and ACL', () => {
+    expect(replenishBody).toMatch(/p_request_id\s+uuid,/);
+    expect(replenishBody).toMatch(/p_route_id\s+uuid,/);
+    expect(replenishBody).toMatch(/p_source_outlet_stock_id\s+uuid,/);
+    expect(replenishBody).toMatch(/p_quantity\s+integer,/);
+    expect(replenishBody).toMatch(/p_fefo_override_reason\s+text DEFAULT NULL,/);
+    expect(replenishBody).toMatch(/p_notes\s+text DEFAULT NULL/);
+    expect(replenishBody).toMatch(/SECURITY DEFINER/);
+    expect(replenishBody).toMatch(/SET search_path = public, pg_temp/);
+    expect(code).toContain(
+      'REVOKE ALL ON FUNCTION public.phoenix_replenish_emergency_outlet(uuid, uuid, uuid, integer, text, text)\n  FROM PUBLIC, anon;',
+    );
+    expect(code).toContain(
+      'GRANT EXECUTE ON FUNCTION public.phoenix_replenish_emergency_outlet(uuid, uuid, uuid, integer, text, text)\n  TO authenticated;',
+    );
+  });
+
+  it('does not touch migration 168 itself, nor 169 reversal', () => {
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_reverse_outlet_replenishment/);
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\._phoenix_replenishment_fingerprint_v1/);
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\._phoenix_outlet_facility_context_v1/);
   });
 });
 
@@ -395,10 +551,20 @@ describe('180 documents the decisions a reviewer must be able to check', () => {
     expect(sql).toMatch(/DELEGATES to\s*\n--\s*the ordinary creator/);
   });
 
-  it('records the network-wide Production pre-apply gate', () => {
+  it('records the STRENGTHENED network-wide Production pre-apply gate', () => {
     expect(sql).toContain('PRODUCTION PRE-APPLY GATE');
-    expect(sql).toMatch(/no live crash_cabinet \/ rescue_cart would be stranded/);
-    expect(sql).toMatch(/ACTIVE 168 replenishment\s*\n--\s*route/);
+    // Both conditions, not either/or.
+    expect(sql).toMatch(/LEGAL ACTIVE 168 replenishment route/);
+    expect(sql).toMatch(/still available\/open, or\s*\n--\s*already CONSUMED/);
+    // An active route ALONE must be explicitly rejected as sufficient.
+    expect(sql).toMatch(/An active route ALONE is not permission to replenish/);
+  });
+
+  it('states both remaining defects and the initial-first order', () => {
+    expect(sql).toMatch(/DEFECT 2 — INITIAL AUTHORITY ACCEPTED A PHARMACY/);
+    expect(sql).toMatch(/DEFECT 3 — ROUTINE REPLENISHMENT DID NOT REQUIRE INITIAL PROVISIONING/);
+    expect(sql).toMatch(/THE FINAL AUTHORITY MATRIX \(disjoint\)/);
+    expect(sql).toMatch(/routine pharmacy replenishment \(168\) becomes legal/);
   });
 
   it('records the suggestion-bridge consequence rather than special-casing it', () => {

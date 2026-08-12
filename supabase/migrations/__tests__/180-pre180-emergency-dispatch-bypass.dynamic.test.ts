@@ -49,6 +49,11 @@ const ROUTE = '00000000-0000-0000-0000-000000179501';
 const CAB_ESCALATE = '00000000-0000-0000-0000-000000179301';
 const CAB_VIRGIN = '00000000-0000-0000-0000-000000179302';
 const CART_VIRGIN = '00000000-0000-0000-0000-000000179303';
+/** Defect 2 — pre-180, INITIAL authority accepted a pharmacy. */
+const PH_INIT = '00000000-0000-0000-0000-000000179304';
+/** Defect 3 — pre-180, routine replenishment did not require commissioning. */
+const PH_SRC = '00000000-0000-0000-0000-000000179305';
+const CAB_REPL = '00000000-0000-0000-0000-000000179306';
 
 let seq = 0;
 const uniq = (p: string) => `${p}-${Date.now()}-${seq++}`;
@@ -157,7 +162,10 @@ run('180 · the pre-180 emergency-dispatch bypass, reproduced on a 001->179 rig'
         (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${CAB_ESCALATE}','${WH_HOSP}','${ORG_HOSP}','Escalate Cabinet179','خزانة','crash_cabinet','active','non_emergency'),
         ('${CAB_VIRGIN}','${WH_HOSP}','${ORG_HOSP}','Virgin Cabinet179','خزانة','crash_cabinet','active','non_emergency'),
-        ('${CART_VIRGIN}','${WH_HOSP}','${ORG_HOSP}','Virgin Cart179','عربة','rescue_cart','active','emergency')
+        ('${CART_VIRGIN}','${WH_HOSP}','${ORG_HOSP}','Virgin Cart179','عربة','rescue_cart','active','emergency'),
+        ('${PH_INIT}','${WH_HOSP}','${ORG_HOSP}','Init Pharmacy179','صيدلية','pharmacy','active','non_emergency'),
+        ('${PH_SRC}','${WH_HOSP}','${ORG_HOSP}','Source Pharmacy179','صيدلية','pharmacy','active','non_emergency'),
+        ('${CAB_REPL}','${WH_HOSP}','${ORG_HOSP}','Repl Cabinet179','خزانة','crash_cabinet','active','non_emergency')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouse_supply_routes
         (id, source_warehouse_id, target_warehouse_id, source_warehouse_kind, target_warehouse_kind, is_active)
@@ -266,6 +274,94 @@ run('180 · the pre-180 emergency-dispatch bypass, reproduced on a 001->179 rig'
       const r = await createInitial(CAB_VIRGIN, 'VIRGIN-INIT');
       expect(r.ok).toBe(true);
       expect(r.is_initial_provisioning).toBe(true);
+    });
+  });
+
+  describe('3 · INITIAL authority accepted a PHARMACY (defect 2)', () => {
+    it('DEFECT · a pharmacy could be commissioned and burn a one-shot slot', async () => {
+      // Migration 166 inherited 070's whole approved-type set, so the
+      // commissioning corridor reached an outlet that has no commissioning
+      // lifecycle at all. Migration 180 makes the two authorities disjoint.
+      const r = await createInitial(PH_INIT, 'PH-INIT');
+      expect(r.ok).toBe(true);
+      expect(r.is_initial_provisioning).toBe(true);
+    });
+
+    it('DEFECT · and the pharmacy then held a real initial-provisioning row', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const q = await c.query(
+          `SELECT count(*)::int n
+             FROM warehouse_dispatches d
+             JOIN distribution_points dp ON dp.id = d.destination_distribution_point_id
+            WHERE dp.point_type = 'pharmacy' AND d.is_initial_provisioning`,
+        );
+        expect(q.rows[0].n).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe('4 · routine replenishment did not require commissioning (defect 3)', () => {
+    it('DEFECT · a never-commissioned crash cabinet is stocked by routine replenishment', async () => {
+      // Migration 168 validates route, authorization, endpoint types,
+      // organization, facility, Shape H/I topology, FEFO, stock, quantity and
+      // idempotency — but never the 166 lifecycle. So the SAME invariant is
+      // bypassable through the pharmacy door as well as the warehouse door.
+      expect(await onHand(CAB_REPL)).toBe(0);
+      await rig.asAdmin(async (c: any) => {
+        const q = await c.query(
+          `SELECT count(*)::int n FROM warehouse_dispatches
+            WHERE destination_distribution_point_id=$1 AND is_initial_provisioning`,
+          [CAB_REPL],
+        );
+        expect(q.rows[0].n).toBe(0);
+      });
+
+      // Stock the source pharmacy through the ordinary corridor (legal pre-180
+      // and post-180 alike), then create the route and replenish.
+      const stock = await provisionWarehouseStock('REPL-SRC', 12);
+      const created = await createOrdinary(PH_SRC, 'REPL-SRC');
+      const received = await deliver(created.dispatch_id, stock, 12);
+      const srcStockId = received.outlet_stock_id as string;
+
+      const routeId = await rig.asUser(
+        rig.superAdminId,
+        (c: any) =>
+          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_SRC, CAB_REPL, true, null]),
+        { commit: true },
+      ).then((r: any) => r.route_id as string);
+
+      const r = await rig.asUser(
+        rig.superAdminId,
+        (c: any) =>
+          call(c, 'phoenix_replenish_emergency_outlet', [
+            randomUUID(), routeId, srcStockId, 4, null, 'pre-180 bypass',
+          ]),
+        { commit: true },
+      );
+      expect(r.ok).toBe(true);
+      expect(await onHand(CAB_REPL)).toBe(4);
+    });
+
+    it('DEFECT · the outlet is stocked, yet still has no lifecycle at all', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const q = await c.query(
+          `SELECT count(*)::int n FROM warehouse_dispatches
+            WHERE destination_distribution_point_id=$1 AND is_initial_provisioning`,
+          [CAB_REPL],
+        );
+        expect(q.rows[0].n).toBe(0);
+      });
+      expect(await onHand(CAB_REPL)).toBe(4);
+    });
+
+    it('DEFECT · the effective 168 body never mentions the lifecycle marker', async () => {
+      await rig.asAdmin(async (c: any) => {
+        const q = await c.query(`
+          SELECT pg_get_functiondef(
+            'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)'::regprocedure) AS def`);
+        expect(q.rows[0].def).not.toContain('initial_provisioning_consumed_at');
+        expect(q.rows[0].def).not.toContain('is_initial_provisioning');
+      });
     });
   });
 });

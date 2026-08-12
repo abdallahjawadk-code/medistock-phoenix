@@ -59,6 +59,13 @@ const DP = {
   ONCE: '00000000-0000-0000-0000-000000166317',
   D_ORD: '00000000-0000-0000-0000-000000166318',
   MIXED: '00000000-0000-0000-0000-000000166319',
+  // R1.2: a PHARMACY for the ordinary-dispatch event trace. It used to reuse
+  // DP.F, the outlet rule E frees — but DP.F is an emergency outlet and
+  // Migration 180 forbids ordinary dispatch there, so the event trace needs a
+  // destination of its own on the legal ordinary corridor.
+  EV_ORD: '00000000-0000-0000-0000-000000166320',
+  /** R1.2: a crash cabinet whose consumed lifecycle must not leak to a pharmacy. */
+  ORD4_IP: '00000000-0000-0000-0000-000000166321',
 };
 
 /** A profile with NO dispatch permissions — the RBAC negative control. */
@@ -208,14 +215,18 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
         ('${WH_INST}','${ORG_INST}','IWH166','مخزنI','active','institution','p166-wi')
         ON CONFLICT (id) DO NOTHING;`);
 
-      // R1.2 / Migration 180: warehouse -> emergency outlet direct supply is
-      // legal ONLY through the initial-provisioning corridor, so the four
-      // outlets this suite ALSO drives with the ordinary 070 creator are
-      // pharmacies. E-4's one-shot invariant is outlet-type-agnostic — this
-      // file's own header names "crash cabinet / rescue cart / pharmacy" — so
-      // rules A-G below are proved identically on either type. Every outlet
-      // used only for initial provisioning stays a crash cabinet.
-      const ORDINARY_DISPATCH_OUTLETS = new Set(['D', 'D_ORD', 'F', 'REPLAY']);
+      // R1.2 / Migration 180 makes the two authorities DISJOINT:
+      //
+      //   ORDINARY dispatch    : pharmacy only
+      //   INITIAL provisioning : crash_cabinet / rescue_cart only
+      //
+      // So the outlets are split by which corridor each test actually drives.
+      // Every outlet used for an initial-provisioning lifecycle stays a crash
+      // cabinet — rules A-G are lifecycle rules and are unaffected — and the
+      // outlets used only for ORDINARY dispatch are pharmacies. No outlet is
+      // used for both any more: that overlap is exactly what 180 removed, and
+      // a fixture that still relied on it would encode the old contract.
+      const ORDINARY_DISPATCH_OUTLETS = new Set(['D_ORD', 'REPLAY', 'EV_ORD']);
       const values = Object.entries(DP)
         .map(
           ([k, id]) =>
@@ -663,20 +674,26 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       expect(h.initial_provisioning_consumed_at).toBeNull();
     });
 
-    it('an ordinary dispatch to a PHARMACY whose provisioning is consumed is still allowed', async () => {
-      // The E-4 invariant governs the one-time lifecycle only — never ordinary
-      // resupply. DP.D is a pharmacy, fully provisioned and consumed in rule C,
-      // and its ordinary warehouse corridor stays open.
+    it('a consumed lifecycle on one outlet never constrains ordinary dispatch to another', async () => {
+      // The E-4 invariant is per-destination and governs the one-time lifecycle
+      // only. DP.D (a crash cabinet) consumed its lifecycle in rule C; that must
+      // not leak into the ordinary corridor of an unrelated pharmacy.
       //
-      // R1.2 / Migration 180 narrows this to outlet TYPE, not to the lifecycle:
-      // for a crash cabinet or rescue cart the ordinary corridor is closed
-      // permanently — before, during and after the lifecycle, and at any
-      // balance. That refusal is proved in
-      // 180-emergency-initial-provisioning-boundary.dynamic.test.ts (cases
-      // A/B/E/F/G); it is a separate rule from anything E-4 owns, which is why
-      // this test still asserts the E-4 behaviour unchanged.
-      const ordinary = await createOrdinary(DP.D, 'ORD4');
+      // R1.2 / Migration 180 also made the two authorities DISJOINT, so the old
+      // form of this test — ordinary dispatch to the very outlet that consumed a
+      // lifecycle — is no longer expressible: only emergency outlets have a
+      // lifecycle, and their ordinary corridor is now closed permanently. That
+      // refusal is proved in
+      // 180-emergency-initial-provisioning-boundary.dynamic.test.ts (A/B/E/F/G),
+      // and it is a 180 rule, not an E-4 one.
+      const consumed = await header((await provisionOutlet(DP.ORD4_IP, 'ORD4-IP', 3)).dispatchId);
+      expect(consumed.initial_provisioning_consumed_at).not.toBeNull();
+
+      const ordinary = await createOrdinary(DP.REPLAY, 'ORD4');
       expect(ordinary.ok).toBe(true);
+      const h = await header(ordinary.dispatch_id);
+      expect(h.is_initial_provisioning).toBe(false);
+      expect(h.initial_provisioning_consumed_at).toBeNull();
     });
   });
 
@@ -958,8 +975,11 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       const created = await createInitialProvisioning(DP.EVENT, 'EV2').catch(() => null);
       expect(created).toBeNull(); // DP.EVENT is already held — rule A still governs
 
-      // Use the outlet freed by rule E instead, and follow it end to end.
-      const fresh = await createOrdinary(DP.F, 'EV3');
+      // Follow an ORDINARY dispatch end to end instead. R1.2: this used to
+      // reuse DP.F, the emergency outlet rule E frees — but Migration 180
+      // closes the ordinary corridor to emergency outlets, so the event trace
+      // runs on a pharmacy. The trace itself is outlet-type-agnostic.
+      const fresh = await createOrdinary(DP.EV_ORD, 'EV3');
       const lines = await addLinesAndSend(fresh.dispatch_id, stock, [3]);
       await receive(lines[0], 3);
 
