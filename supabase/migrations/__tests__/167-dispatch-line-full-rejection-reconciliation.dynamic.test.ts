@@ -224,8 +224,15 @@ run('167 · dispatch-line full-rejection reconciliation (dynamic)', () => {
         ('${WH_INST}','${ORG_INST}','IWH167','مخزنI','active','institution','p167-wi')
         ON CONFLICT (id) DO NOTHING;`);
 
+      // R1.2 / Migration 180: warehouse -> emergency outlet direct supply is
+      // legal ONLY through the initial-provisioning corridor, so every outlet
+      // this suite drives with the ORDINARY 070 creator is a pharmacy. The
+      // outlet TYPE is incidental to what 167 proves — line-rejection
+      // reconciliation is identical on any stock-approved outlet, and nothing
+      // below reads point_type. The emergency-corridor refusal itself is proved
+      // in 180-emergency-initial-provisioning-boundary.dynamic.test.ts.
       const values = Object.entries(DP)
-        .map(([k, id]) => `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','crash_cabinet','active')`)
+        .map(([k, id]) => `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','pharmacy','active')`)
         .join(',');
       await c.query(`INSERT INTO distribution_points
         (id,warehouse_id,organization_id,name,name_ar,point_type,status)

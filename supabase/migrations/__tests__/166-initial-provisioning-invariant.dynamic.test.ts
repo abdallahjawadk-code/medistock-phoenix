@@ -208,10 +208,20 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
         ('${WH_INST}','${ORG_INST}','IWH166','مخزنI','active','institution','p166-wi')
         ON CONFLICT (id) DO NOTHING;`);
 
+      // R1.2 / Migration 180: warehouse -> emergency outlet direct supply is
+      // legal ONLY through the initial-provisioning corridor, so the four
+      // outlets this suite ALSO drives with the ordinary 070 creator are
+      // pharmacies. E-4's one-shot invariant is outlet-type-agnostic — this
+      // file's own header names "crash cabinet / rescue cart / pharmacy" — so
+      // rules A-G below are proved identically on either type. Every outlet
+      // used only for initial provisioning stays a crash cabinet.
+      const ORDINARY_DISPATCH_OUTLETS = new Set(['D', 'D_ORD', 'F', 'REPLAY']);
       const values = Object.entries(DP)
         .map(
           ([k, id]) =>
-            `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','crash_cabinet','active')`,
+            `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','${
+              ORDINARY_DISPATCH_OUTLETS.has(k) ? 'pharmacy' : 'crash_cabinet'
+            }','active')`,
         )
         .join(',');
       await c.query(`INSERT INTO distribution_points
@@ -653,9 +663,18 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       expect(h.initial_provisioning_consumed_at).toBeNull();
     });
 
-    it('an ordinary dispatch to an outlet whose provisioning is consumed is still allowed', async () => {
-      // The invariant governs the one-time lifecycle only — never ordinary
-      // resupply. DP.D was fully provisioned and consumed in rule C.
+    it('an ordinary dispatch to a PHARMACY whose provisioning is consumed is still allowed', async () => {
+      // The E-4 invariant governs the one-time lifecycle only — never ordinary
+      // resupply. DP.D is a pharmacy, fully provisioned and consumed in rule C,
+      // and its ordinary warehouse corridor stays open.
+      //
+      // R1.2 / Migration 180 narrows this to outlet TYPE, not to the lifecycle:
+      // for a crash cabinet or rescue cart the ordinary corridor is closed
+      // permanently — before, during and after the lifecycle, and at any
+      // balance. That refusal is proved in
+      // 180-emergency-initial-provisioning-boundary.dynamic.test.ts (cases
+      // A/B/E/F/G); it is a separate rule from anything E-4 owns, which is why
+      // this test still asserts the E-4 behaviour unchanged.
       const ordinary = await createOrdinary(DP.D, 'ORD4');
       expect(ordinary.ok).toBe(true);
     });
