@@ -85,7 +85,10 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
     ).then((r: any) => r.rows[0]));
 
   beforeAll(async () => {
-    rig = await buildRig();
+    // Historical 165 regression: exercise its original broad endpoint matrix
+    // on the chain where those deliberately-invalid fixtures were still
+    // constructible. Post-181 canonical Branch B is proved by the 181 suite.
+    rig = await buildRig({ upTo: 180 });
 
     await rig.asAdmin((c: any) => c.query(`
       INSERT INTO organizations(id,name,name_ar,code,organization_kind,institution_class) VALUES
@@ -104,6 +107,8 @@ run('165 · sector ↔ health-centre supply and return (dynamic)', () => {
 
       INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id) VALUES
         ('${WH_CENTRAL}','${ORG_CENTRAL}','Central WH','Central WH','active','central','p165-wh-central',NULL),
+        -- R1.1/181: the facility-less sector warehouse IS the sector main; the
+        -- flag simply had no meaning before 181 made the shape an invariant.
         ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot','Sector Depot','active','institution','p165-wh-sector',NULL),
         ('${WH_SECTOR_ALT}','${ORG_SECTOR}','Sector Depot 2','Sector Depot 2','active','institution','p165-wh-sector-alt',NULL),
         ('${WH_SECTOR_INACTIVE}','${ORG_SECTOR}','Sector Depot Off','Sector Depot Off','inactive','institution','p165-wh-sector-off',NULL),

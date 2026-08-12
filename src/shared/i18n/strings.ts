@@ -575,6 +575,8 @@ export const T: Dict = {
   fac_warehouse_assign:     { ar: 'ربط المستودع بمركز صحي',        en: 'Assign Warehouse to Center' },
   fac_warehouse_none:       { ar: 'بدون مركز',                     en: 'No center' },
   fac_warehouse_assigned:   { ar: 'تم ربط المستودع بنجاح',         en: 'Warehouse assigned successfully' },
+  fac_warehouse_create:     { ar: 'إنشاء مذخر المركز الصحي',       en: 'Create Health Center Depot' },
+  fac_warehouse_created:    { ar: 'تم إنشاء مذخر المركز الصحي',    en: 'Health center depot created' },
 
   /* ── STAGE-E-E7-2: clinical context of an outlet (Migration 164) ── */
   port_clinical_kind:       { ar: 'السياق السريري',                en: 'Clinical Context' },
@@ -1998,6 +2000,9 @@ export const T: Dict = {
 
   net_wh_central:         { ar: 'مخازن قسم الصيدلة (مركزي)',       en: 'Pharmacy Dept. warehouses (central)' },
   net_wh_institution:     { ar: 'مذاخر المؤسسات',                 en: 'Institution warehouses' },
+  net_wh_sector_main:     { ar: 'مذخر القطاع الرئيسي',             en: 'Sector Main Depot' },
+  net_wh_center_depots:   { ar: 'مذاخر المراكز الصحية',            en: 'Health Center Depots' },
+  net_wh_sector_main_fixed:{ ar: 'نوع هذا المذخر ثابت: مؤسسة، على مستوى القطاع، ورئيسي.', en: 'This depot is fixed as institution-kind, sector-level, and main.' },
   net_wh_add:             { ar: 'إضافة مخزن/مذخر',                en: 'Add warehouse' },
   net_wh_name_ar:         { ar: 'الاسم (عربي)',                   en: 'Name (Arabic)' },
   net_wh_name:            { ar: 'الاسم (إنجليزي)',                en: 'Name (English)' },

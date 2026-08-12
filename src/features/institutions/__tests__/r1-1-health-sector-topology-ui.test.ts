@@ -19,6 +19,9 @@ const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const screen = read('features/institutions/InstitutionScreen.tsx');
 const networkService = read('features/network/network.service.ts');
+const networkScreen = read('features/network/NetworkManagementScreen.tsx');
+const depotPanel = read('features/institutions/WarehouseFacilityAssignmentPanel.tsx');
+const preapply = read('../docs/phoenix/r1-1-181-production-preapply-readonly.sql');
 
 describe('the outlet surface is narrowed inside a health sector', () => {
   it('the section receives the organization class rather than re-deriving it', () => {
@@ -73,6 +76,20 @@ describe('centre-depot creation is atomic', () => {
     }
   });
 
+  it('the health-centre panel actually uses the atomic writer', () => {
+    expect(depotPanel).toContain('createHealthCenterWarehouse({');
+    expect(depotPanel).not.toContain('assignWarehouseFacility({');
+    expect(depotPanel).not.toContain('createWarehouse({');
+    expect(screen).toMatch(/<WarehouseFacilityAssignmentPanel[\s\S]{0,400}canManage=\{isSuper\}/);
+  });
+
+  it('the network screen fixes sector-main kind/main and displays depots separately', () => {
+    expect(networkScreen).toContain("warehouseKind: isHealthSector ? 'institution' : kind");
+    expect(networkScreen).toContain('isMain: isHealthSector ? true : isMain');
+    expect(networkScreen).toContain("title={t('net_wh_sector_main', lang)}");
+    expect(networkScreen).toContain("title={t('net_wh_center_depots', lang)}");
+  });
+
   it('it does not route through the generic creator, which has no facility', () => {
     const fn = networkService.slice(
       networkService.indexOf('export function createHealthCenterWarehouse'),
@@ -101,5 +118,24 @@ describe('R1.1 introduces no unit domain in the client', () => {
       expect(screen, forbidden).not.toContain(forbidden);
       expect(networkService, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+describe('the operator receives a reusable read-only Production gate', () => {
+  it('classifies every active health sector and exposes operational evidence', () => {
+    for (const classification of ['TARGET_READY', 'SAFE_LEGACY_RECONCILABLE', 'AMBIGUOUS_STOP']) {
+      expect(preapply).toContain(classification);
+    }
+    for (const evidence of [
+      'facilities', 'warehouses', 'outlets', 'warehouse_stock_rows', 'outlet_stock_rows',
+      'warehouse_movement_rows', 'outlet_movement_rows', 'dispatch_rows',
+      'transfer_request_rows', 'supply_route_rows', 'replenishment_route_rows',
+      'availability_rows', 'dispense_context_rows',
+    ]) expect(preapply, evidence).toContain(evidence);
+  });
+
+  it('contains no write or lock statement', () => {
+    const executable = preapply.replace(/^\s*--.*$/gm, '');
+    expect(executable).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|GRANT|REVOKE|FOR\s+(UPDATE|SHARE))\b/i);
   });
 });

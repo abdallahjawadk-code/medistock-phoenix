@@ -30,6 +30,7 @@ const WH_FAC_A = '00000000-0000-0000-0000-000000169201';
 const WH_HOSPITAL = '00000000-0000-0000-0000-000000169202';
 const WH_SPECIAL = '00000000-0000-0000-0000-000000169203';
 const WH_SECTOR_2 = '00000000-0000-0000-0000-000000169204';
+const WH_SECTOR_MAIN_169 = '00000000-0000-0000-0000-000000169205';
 
 const PH_A = '00000000-0000-0000-0000-000000169301';
 const CAB_A = '00000000-0000-0000-0000-000000169302';
@@ -103,11 +104,14 @@ run('169 · outlet replenishment reversal (dynamic)', () => {
       INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
         ('${FAC_A}','${ORG_SECTOR}','primary_health_center','Centre A169','Centre A169','active');
 
-      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id) VALUES
-        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot169','A Depot169','active','institution','p169-wh-a','${FAC_A}'),
-        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot169','Hosp Depot169','active','institution','p169-wh-hosp',NULL),
-        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot169','Ctr Depot169','active','institution','p169-wh-ctr',NULL),
-        ('${WH_SECTOR_2}','${ORG_SECTOR_2}','Sector2 Depot169','Sector2 Depot169','active','institution','p169-wh-s2',NULL);
+      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id,is_main) VALUES
+        -- R1.1/181: a health sector owning centre depots must own exactly one
+        -- sector main, so ORG_SECTOR gets the root node it always implied.
+        ('${WH_SECTOR_MAIN_169}','${ORG_SECTOR}','Sector Depot169','Sector Depot169','active','institution','p169-wh-sec',NULL,true),
+        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot169','A Depot169','active','institution','p169-wh-a','${FAC_A}',false),
+        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot169','Hosp Depot169','active','institution','p169-wh-hosp',NULL,false),
+        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot169','Ctr Depot169','active','institution','p169-wh-ctr',NULL,false),
+        ('${WH_SECTOR_2}','${ORG_SECTOR_2}','Sector2 Depot169','Sector2 Depot169','active','institution','p169-wh-s2',NULL,true);
 
       INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${PH_A}','${WH_FAC_A}','${ORG_SECTOR}','A Pharmacy169','A Pharmacy169','pharmacy','active','non_emergency'),

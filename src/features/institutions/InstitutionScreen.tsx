@@ -618,13 +618,13 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
       {isHealthSector && (
         <div>
           <FacilityManagementPanel orgId={orgId} lang={lang} canManage={canManageFacilities} />
-          {canManageFacilities && operationalWarehouses.length > 0 && (
+          {isSuper && operationalWarehouses.length > 0 && (
             <div style={{ marginTop: '10px' }}>
               <WarehouseFacilityAssignmentPanel
                 warehouses={operationalWarehouses}
                 facilities={facilities.data ?? []}
                 lang={lang}
-                canManage={canManageFacilities}
+                canManage={isSuper}
                 onAssigned={() => { warehouses.reload(); }}
               />
             </div>

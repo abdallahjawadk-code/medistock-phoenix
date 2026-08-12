@@ -115,11 +115,11 @@ const ReportsScreen = lazy(() =>
 // 4 institution stores, 8 outlets) so the captured 2D map proves the
 // deterministic layout keeps dense nodes/labels from overlapping.
 const TWIN_WAREHOUSES: NetworkWarehouse[] = [
-  { id: 'c1', name: 'Central Store', name_ar: 'المخزن المركزي', warehouseKind: 'central', status: 'active', isMain: true, code: 'C-01', organizationId: 'org' },
-  { id: 'i1', name: 'Babil General', name_ar: 'مذخر بابل العام', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-01', organizationId: 'org' },
-  { id: 'i2', name: 'Hilla Teaching', name_ar: 'مذخر الحلة التعليمي', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-02', organizationId: 'org' },
-  { id: 'i3', name: 'Mahawil Store', name_ar: 'مذخر المحاويل', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-03', organizationId: 'org' },
-  { id: 'i4', name: 'Musayyib Store', name_ar: 'مذخر المسيّب', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-04', organizationId: 'org' },
+  { id: 'c1', name: 'Central Store', name_ar: 'المخزن المركزي', warehouseKind: 'central', status: 'active', isMain: true, code: 'C-01', organizationId: 'org', facilityId: null },
+  { id: 'i1', name: 'Babil General', name_ar: 'مذخر بابل العام', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-01', organizationId: 'org', facilityId: null },
+  { id: 'i2', name: 'Hilla Teaching', name_ar: 'مذخر الحلة التعليمي', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-02', organizationId: 'org', facilityId: null },
+  { id: 'i3', name: 'Mahawil Store', name_ar: 'مذخر المحاويل', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-03', organizationId: 'org', facilityId: null },
+  { id: 'i4', name: 'Musayyib Store', name_ar: 'مذخر المسيّب', warehouseKind: 'institution', status: 'active', isMain: false, code: 'I-04', organizationId: 'org', facilityId: null },
 ];
 const TWIN_ROUTES: SupplyRoute[] = [
   { id: 'r1', sourceWarehouseId: 'c1', targetWarehouseId: 'i1', priority: 1, isActive: true, notes: null },

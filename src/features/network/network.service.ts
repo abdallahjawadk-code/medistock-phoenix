@@ -51,17 +51,19 @@ export interface NetworkWarehouse {
   isMain: boolean;
   code: string | null;
   organizationId: string;
+  facilityId: string | null;
 }
 
 interface WarehouseRow {
   id: string; name: string; name_ar: string; warehouse_kind: WarehouseKind;
-  status: string; is_main: boolean; code: string | null; organization_id: string;
+  status: string; is_main: boolean; code: string | null; organization_id: string; facility_id: string | null;
 }
 
 function mapWarehouse(r: WarehouseRow): NetworkWarehouse {
   return {
     id: r.id, name: r.name, name_ar: r.name_ar, warehouseKind: r.warehouse_kind,
     status: r.status, isMain: r.is_main, code: r.code, organizationId: r.organization_id,
+    facilityId: r.facility_id ?? null,
   };
 }
 
@@ -70,7 +72,7 @@ export async function getAllWarehouses(): Promise<NetworkWarehouse[]> {
   if (!supabaseConfigured) return [];
   const { data, error } = await supabase
     .from('warehouses')
-    .select('id, name, name_ar, warehouse_kind, status, is_main, code, organization_id')
+    .select('id, name, name_ar, warehouse_kind, status, is_main, code, organization_id, facility_id')
     .neq('status', 'archived')
     .order('warehouse_kind', { ascending: true })
     .order('name_ar', { ascending: true });

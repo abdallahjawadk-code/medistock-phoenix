@@ -195,6 +195,9 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
 
   const reload = () => setReloadKey(k => k + 1);
   const inOrg = (warehouses.data ?? []).filter(w => w.organizationId === orgId);
+  const selectedOrg = (orgs.data ?? []).find(o => o.id === orgId);
+  const isHealthSector = selectedOrg?.organizationKind === 'care_institution'
+    && selectedOrg.institutionClass === 'health_sector';
   const central = inOrg.filter(w => w.warehouseKind === 'central');
   const institution = inOrg.filter(w => w.warehouseKind === 'institution');
   const selectedWarehouseIds = new Set(inOrg.map(w => w.id));
@@ -239,7 +242,7 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
 
       {adding && orgId && (
         <WarehouseForm
-          lang={lang} organizationId={orgId}
+          lang={lang} organizationId={orgId} isHealthSector={isHealthSector}
           onCancel={() => setAdding(false)}
           onDone={(res) => {
             if (res.ok) { setStatus({ msg: t('net_wh_saved', lang), error: false }); setAdding(false); reload(); }
@@ -251,28 +254,31 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
       {!orgId && <PhoenixEmptyState icon="institutions" title={t('net_select_org_first', lang)} />}
       {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="warehouse" title={t('net_wh_empty', lang)} />}
 
-      {central.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_central', lang)} rows={central} onChanged={(r) => { setStatus(r); reload(); }} />}
-      {institution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={institution} onChanged={(r) => { setStatus(r); reload(); }} />}
+      {central.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_central', lang)} rows={central} isHealthSector={isHealthSector} onChanged={(r) => { setStatus(r); reload(); }} />}
+      {isHealthSector && institution.some(w => w.facilityId === null) && <WarehouseGroup lang={lang} title={t('net_wh_sector_main', lang)} rows={institution.filter(w => w.facilityId === null)} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
+      {isHealthSector && institution.some(w => w.facilityId !== null) && <WarehouseGroup lang={lang} title={t('net_wh_center_depots', lang)} rows={institution.filter(w => w.facilityId !== null)} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
+      {!isHealthSector && institution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={institution} isHealthSector={false} onChanged={(r) => { setStatus(r); reload(); }} />}
     </div>
   );
 }
 
-function WarehouseGroup({ lang, title, rows, onChanged }: {
+function WarehouseGroup({ lang, title, rows, isHealthSector, onChanged }: {
   lang: Lang; title: string; rows: NetworkWarehouse[];
+  isHealthSector: boolean;
   onChanged: (s: { msg: string; error: boolean }) => void;
 }) {
   return (
     <div className="nexus-it-group" style={{ marginTop: '14px' }}>
       <h4 className="nexus-it-group__title" style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--t2)' }}>{title}</h4>
       <div className="nexus-it-row-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {rows.map(w => <WarehouseRow key={w.id} lang={lang} w={w} onChanged={onChanged} />)}
+        {rows.map(w => <WarehouseRow key={w.id} lang={lang} w={w} isHealthSector={isHealthSector} onChanged={onChanged} />)}
       </div>
     </div>
   );
 }
 
-function WarehouseRow({ lang, w, onChanged }: {
-  lang: Lang; w: NetworkWarehouse; onChanged: (s: { msg: string; error: boolean }) => void;
+function WarehouseRow({ lang, w, isHealthSector, onChanged }: {
+  lang: Lang; w: NetworkWarehouse; isHealthSector: boolean; onChanged: (s: { msg: string; error: boolean }) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -288,7 +294,7 @@ function WarehouseRow({ lang, w, onChanged }: {
   if (editing) {
     return (
       <WarehouseForm
-        lang={lang} organizationId={w.organizationId} existing={w}
+        lang={lang} organizationId={w.organizationId} existing={w} isHealthSector={isHealthSector}
         onCancel={() => setEditing(false)}
         onDone={(res) => {
           setEditing(false);
@@ -318,15 +324,15 @@ function WarehouseRow({ lang, w, onChanged }: {
   );
 }
 
-function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
-  lang: Lang; organizationId: string; existing?: NetworkWarehouse;
+function WarehouseForm({ lang, organizationId, existing, isHealthSector, onCancel, onDone }: {
+  lang: Lang; organizationId: string; existing?: NetworkWarehouse; isHealthSector: boolean;
   onCancel: () => void; onDone: (res: RpcResult) => void;
 }) {
   const [nameAr, setNameAr] = useState(existing?.name_ar ?? '');
   const [name, setName] = useState(existing?.name ?? '');
   const [code, setCode] = useState(existing?.code ?? '');
   const [kind, setKind] = useState<WarehouseKind>(existing?.warehouseKind ?? 'institution');
-  const [isMain, setIsMain] = useState(existing?.isMain ?? false);
+  const [isMain, setIsMain] = useState(existing?.isMain ?? isHealthSector);
   const [busy, setBusy] = useState(false);
   const canSubmit = nameAr.trim() !== '' && name.trim() !== '';
 
@@ -335,7 +341,11 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
     setBusy(true);
     const res = existing
       ? await updateWarehouse({ warehouseId: existing.id, name: name.trim(), nameAr: nameAr.trim(), code: code.trim() === '' ? '' : code.trim() })
-      : await createWarehouse({ organizationId, name: name.trim(), nameAr: nameAr.trim(), warehouseKind: kind, code: code.trim() || null, isMain });
+      : await createWarehouse({
+          organizationId, name: name.trim(), nameAr: nameAr.trim(),
+          warehouseKind: isHealthSector ? 'institution' : kind,
+          code: code.trim() || null, isMain: isHealthSector ? true : isMain,
+        });
     setBusy(false);
     onDone(res);
   }
@@ -346,7 +356,7 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
         <PhoenixInput label={t('net_wh_name_ar', lang)} value={nameAr} onChange={e => setNameAr(e.target.value)} />
         <PhoenixInput label={t('net_wh_name', lang)} value={name} onChange={e => setName(e.target.value)} />
         <PhoenixInput label={t('net_wh_code', lang)} value={code} onChange={e => setCode(e.target.value)} />
-        {!existing && (
+        {!existing && !isHealthSector && (
           <PhoenixSelect label={t('net_wh_kind', lang)} value={kind}
             onChange={e => setKind(e.target.value as WarehouseKind)}
             options={[
@@ -355,11 +365,16 @@ function WarehouseForm({ lang, organizationId, existing, onCancel, onDone }: {
             ]} />
         )}
       </div>
-      {!existing && (
+      {!existing && !isHealthSector && (
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '12.5px', cursor: 'pointer' }}>
           <input type="checkbox" checked={isMain} onChange={e => setIsMain(e.target.checked)} />
           {t('net_wh_is_main', lang)}
         </label>
+      )}
+      {!existing && isHealthSector && (
+        <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--t2)' }}>
+          {t('net_wh_sector_main_fixed', lang)}
+        </p>
       )}
       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
         <PhoenixButton loading={busy} disabled={!canSubmit} onClick={submit}>{t('net_save', lang)}</PhoenixButton>

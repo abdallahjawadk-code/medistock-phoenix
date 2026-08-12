@@ -87,10 +87,12 @@ describe('181 carries no Production identity', () => {
 });
 
 describe('181 object inventory is exactly the topology set', () => {
-  it('creates exactly the four guards and the one centre-depot writer', () => {
+  it('creates exactly the topology guards and the one centre-depot writer', () => {
     const created = [...bare.matchAll(/CREATE FUNCTION (public\.[a-z_0-9]+)/g)].map(m => m[1]).sort();
     expect(created).toEqual([
+      'public._phoenix_health_center_facility_shape_guard_v1',
       'public._phoenix_health_sector_main_presence_guard_v1',
+      'public._phoenix_health_sector_organization_activation_guard_v1',
       'public._phoenix_health_sector_outlet_reassignment_guard_v1',
       'public._phoenix_health_sector_outlet_topology_guard_v1',
       'public._phoenix_health_sector_warehouse_shape_guard_v1',
@@ -120,11 +122,13 @@ describe('181 object inventory is exactly the topology set', () => {
     expect(bare).not.toMatch(/\bDROP\s+(TABLE|COLUMN|CONSTRAINT|INDEX|FUNCTION|POLICY|TRIGGER)\b/i);
   });
 
-  it('attaches exactly the four triggers, one of them a DEFERRED constraint trigger', () => {
+  it('attaches exactly the topology triggers, one of them a DEFERRED constraint trigger', () => {
     const trg = [...bare.matchAll(/CREATE (CONSTRAINT )?TRIGGER ([a-z_]+)/g)].map(m => ({ c: Boolean(m[1]), n: m[2] }));
     expect(trg.map(x => x.n).sort()).toEqual([
       'distribution_points_health_sector_topology_trg',
       'distribution_points_reassignment_guard_trg',
+      'organization_facilities_health_center_shape_guard_trg',
+      'organizations_health_sector_activation_guard_trg',
       'warehouses_health_sector_main_presence_trg',
       'warehouses_health_sector_shape_guard_trg',
     ]);
@@ -170,12 +174,18 @@ describe('181 the warehouse hard boundary', () => {
     );
   });
 
+  it('cannot deactivate a centre depot underneath an active outlet', () => {
+    expect(guard()).toContain('health_center_depot_deactivation_blocked_by_active_outlet');
+    expect(guard()).toContain('FROM public.distribution_points dp');
+  });
+
   it('I · the organization-level rule keeps a sector from losing its only main', () => {
     const presence = section(
       'CREATE FUNCTION public._phoenix_health_sector_main_presence_guard_v1',
       'CREATE CONSTRAINT TRIGGER');
     expect(presence).toContain('health_sector_must_retain_a_sector_main');
     expect(presence).toContain('health_sector_has_multiple_sector_mains');
+    expect(presence).toContain('ARRAY[OLD.organization_id, NEW.organization_id]');
     // DELETE is a loss route too.
     expect(code).toMatch(/AFTER INSERT OR UPDATE OR DELETE ON public\.warehouses/);
   });
@@ -183,6 +193,18 @@ describe('181 the warehouse hard boundary', () => {
   it('H · preserves the pre-existing one-active-main-per-org index', () => {
     expect(bare).not.toMatch(/DROP INDEX[\s\S]{0,80}warehouses_one_active_main_per_org_uniq/);
     expect(code).toContain('warehouses_one_active_main_per_org_uniq was dropped');
+  });
+});
+
+describe('181 organization activation boundary', () => {
+  const guard = () => section(
+    'CREATE FUNCTION public._phoenix_health_sector_organization_activation_guard_v1',
+    'CREATE TRIGGER organizations_health_sector_activation_guard_trg');
+
+  it('cannot reactivate a health sector into an invalid live topology', () => {
+    expect(guard()).toContain("NEW.status = 'active'");
+    expect(guard()).toContain('health_sector_activation_requires_valid_topology');
+    expect(code).toMatch(/BEFORE UPDATE OF status\s*\n\s*ON public\.organizations/);
   });
 });
 
@@ -194,6 +216,9 @@ describe('181 the outlet hard boundary', () => {
   it('an active outlet must hang off a facility-bound centre depot', () => {
     expect(guard()).toContain('health_sector_outlet_requires_health_center_depot');
     expect(guard()).toMatch(/IF v_wh\.facility_id IS NULL THEN/);
+    expect(guard()).toMatch(/v_wh\.status IS DISTINCT FROM 'active'/);
+    expect(guard()).toMatch(/v_wh\.warehouse_kind IS DISTINCT FROM 'institution'/);
+    expect(guard()).toMatch(/v_wh\.is_main IS NOT FALSE/);
   });
 
   it('forbids a rescue cart, and any type outside pharmacy/crash_cabinet', () => {
@@ -214,6 +239,24 @@ describe('181 the outlet hard boundary', () => {
   it('covers the WHOLE mutation surface', () => {
     expect(code).toMatch(
       /BEFORE INSERT OR UPDATE OF warehouse_id, organization_id, point_type, clinical_location_kind, status\s*\n\s*ON public\.distribution_points/,
+    );
+  });
+});
+
+describe('181 the facility-side hard boundary', () => {
+  const guard = () => section(
+    'CREATE FUNCTION public._phoenix_health_center_facility_shape_guard_v1',
+    'CREATE TRIGGER organization_facilities_health_center_shape_guard_trg');
+
+  it('prevents a live centre depot being invalidated through its facility row', () => {
+    expect(guard()).toContain("NEW.facility_class NOT IN ('primary_health_center', 'subordinate_health_center')");
+    expect(guard()).toContain("NEW.status IS DISTINCT FROM 'active'");
+    expect(guard()).toContain('health_center_facility_change_blocked_by_active_depot');
+  });
+
+  it('covers every parent-field mutation that can invalidate a depot', () => {
+    expect(code).toMatch(
+      /BEFORE UPDATE OF organization_id, facility_class, status\s*\n\s*ON public\.organization_facilities/,
     );
   });
 });
@@ -293,6 +336,7 @@ describe('181 reconciliation is fail-closed', () => {
 
   it('locks the organization and its warehouses deterministically', () => {
     expect(code).toContain('FROM public.organizations WHERE id = v_org.id FOR SHARE');
+    expect(code).toContain('FROM public.organization_facilities WHERE organization_id = v_org.id ORDER BY id FOR SHARE');
     expect(code).toContain('WHERE organization_id = v_org.id ORDER BY id FOR UPDATE');
   });
 
@@ -349,6 +393,8 @@ describe('181 the centre-depot creation contract', () => {
       '_phoenix_health_sector_main_presence_guard_v1',
       '_phoenix_health_sector_outlet_topology_guard_v1',
       '_phoenix_health_sector_outlet_reassignment_guard_v1',
+      '_phoenix_health_center_facility_shape_guard_v1',
+      '_phoenix_health_sector_organization_activation_guard_v1',
     ]) {
       expect(code, fn).toContain(
         `REVOKE ALL ON FUNCTION public.${fn}()\n  FROM PUBLIC, anon, authenticated, service_role;`);

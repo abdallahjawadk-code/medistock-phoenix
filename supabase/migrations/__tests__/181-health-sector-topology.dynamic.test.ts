@@ -204,7 +204,15 @@ run('181 · reconciliation contract (001->180 rig)', () => {
           ('${DEP_A}','${ORG}','D','د','institution','${FAC_A}',true,'active');
         INSERT INTO distribution_points (id,warehouse_id,organization_id,name,name_ar,point_type,status)
           VALUES ('${DP}','${DEP_A}','${ORG}','CC','خز','crash_cabinet','active');`,
-       /without an emergency clinical context/],
+        /without an emergency clinical context/],
+      ['operational history on the legacy centre depot',
+       `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,facility_id,is_main,status) VALUES
+          ('${DEP_A}','${ORG}','D','د','institution','${FAC_A}',true,'active');
+        INSERT INTO warehouse_stock
+          (organization_id,warehouse_id,scientific_name,unit,has_no_national_code,
+           has_no_batch_number,internal_batch_reference,on_hand_quantity,reserved_quantity)
+        VALUES ('${ORG}','${DEP_A}','History','box',true,true,'R1-1-HISTORY',1,0);`,
+       /operational-history row/],
       ['centre depots but NO main anywhere',
        `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,facility_id,is_main,status) VALUES
           ('${DEP_A}','${ORG}','D','د','institution','${FAC_A}',false,'active');`,
@@ -324,6 +332,14 @@ run('181 · topology invariants (001->181 rig)', () => {
          VALUES ($1,'D3','د٣','institution',$2,false,'active')`, [HOSP, FAC_A])))
         .toMatch(/warehouses_facility_org_fk|facility/i);
     });
+    it('an active depot cannot be invalidated through its facility row', async () => {
+      expect(await rejects(() => asAdmin(
+        `UPDATE organization_facilities SET status='inactive' WHERE id=$1`, [FAC_A])))
+        .toMatch(/health_center_facility_change_blocked_by_active_depot/);
+      expect(await rejects(() => asAdmin(
+        `UPDATE organization_facilities SET facility_class='administrative_office' WHERE id=$1`, [FAC_A])))
+        .toMatch(/health_center_facility_change_blocked_by_active_depot|of_facility_class_chk/);
+    });
   });
 
   // ── F/G. OUTLET INVALIDITY AND VALIDITY ───────────────────────────────────
@@ -353,6 +369,15 @@ run('181 · topology invariants (001->181 rig)', () => {
         .toMatch(/health_center_crash_cabinet_requires_emergency_context/);
       expect(await rejects(() => outlet(DEP_B, 'crash_cabinet', 'non_emergency')))
         .toMatch(/health_center_crash_cabinet_requires_emergency_context/);
+    });
+    it('F · an active outlet cannot hang off an inactive historical depot', async () => {
+      const inactiveDepot = uid();
+      await asAdmin(
+        `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,facility_id,is_main,status)
+         VALUES ($1,$2,'Retired','متقاعد','institution',$3,false,'inactive')`,
+        [inactiveDepot, ORG, FAC_B]);
+      expect(await rejects(() => outlet(inactiveDepot, 'pharmacy', null)))
+        .toMatch(/health_sector_outlet_requires_active_health_center_depot/);
     });
     it('G · a centre pharmacy is legal, with NO clinical context required', async () => {
       const r = await outlet(DEP_B, 'pharmacy', null);

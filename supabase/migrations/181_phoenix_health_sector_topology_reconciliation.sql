@@ -207,27 +207,7 @@ END;
 $preflight$;
 
 -- ============================================================================
--- 1. STRUCTURAL INVARIANT — at most ONE active depot per facility
--- ============================================================================
--- A facility is a health centre, and a health centre has one depot. This is a
--- pure structural rule with no cross-table lookup, so it belongs in an index
--- rather than a trigger: it cannot be raced, cannot be bypassed by any writer,
--- and costs nothing to enforce.
---
--- Scoped to facility-bound ACTIVE warehouses. facility_id is only ever set on
--- health-sector warehouses (Migration 170's assignment guard refuses it for any
--- other organization class), so this cannot constrain another organization
--- class. Inactive and archived rows are deliberately excluded so a depot can be
--- retired and replaced.
-CREATE UNIQUE INDEX warehouses_one_active_depot_per_facility_uniq
-  ON public.warehouses (facility_id)
-  WHERE facility_id IS NOT NULL AND status = 'active';
-
-COMMENT ON INDEX public.warehouses_one_active_depot_per_facility_uniq IS
-  'R1.1: a health centre (organization_facilities row) has at most ONE active depot. Partial on facility_id IS NOT NULL AND status=''active'', so retiring a depot frees the centre for a replacement, and non-health-sector organizations — which may never carry facility_id (170) — are unaffected.';
-
--- ============================================================================
--- 2. ROW-LEVEL SHAPE GUARD — every health-sector warehouse, every write path
+-- 1. ROW-LEVEL SHAPE GUARD — every health-sector warehouse, every write path
 -- ============================================================================
 -- The frontend writes warehouses through RPCs today, but RLS-protected direct
 -- writes and future callers must hit the same wall, so the rule lives in a
@@ -261,6 +241,20 @@ BEGIN
   -- Every other organization class keeps its existing freedom untouched.
   IF v_class IS DISTINCT FROM 'health_sector' THEN
     RETURN NEW;
+  END IF;
+
+  -- A status downgrade must serialize against a concurrent outlet INSERT (its
+  -- FK takes FOR KEY SHARE). Escalating this row to FOR UPDATE closes the same
+  -- write-skew window Migration 170 closes for facility reassignment.
+  IF OLD.status = 'active' AND NEW.status IS DISTINCT FROM 'active' THEN
+    PERFORM 1 FROM public.warehouses WHERE id = NEW.id FOR UPDATE;
+    IF EXISTS (
+      SELECT 1 FROM public.distribution_points dp
+      WHERE dp.warehouse_id = NEW.id AND dp.status = 'active'
+    ) THEN
+      RAISE EXCEPTION 'health_center_depot_deactivation_blocked_by_active_outlet'
+        USING ERRCODE = '23514';
+    END IF;
   END IF;
 
   -- A. A health sector has no central warehouses. Its own supply corridor
@@ -330,7 +324,52 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_warehouse_shape_guard_v1()
   FROM PUBLIC, anon, authenticated, service_role;
 
 -- ============================================================================
--- 3. ORGANIZATION-LEVEL INVARIANT — a sector never loses its only main
+-- 3. FACILITY-SIDE INVARIANT — a live depot keeps a live health-centre parent
+-- ============================================================================
+-- The warehouse trigger validates the facility when a depot is written. The
+-- inverse mutation surface matters too: changing organization_id, class or
+-- status on the parent facility must not invalidate an already-active depot.
+CREATE FUNCTION public._phoenix_health_center_facility_shape_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF (NEW.organization_id IS DISTINCT FROM OLD.organization_id
+      OR NEW.facility_class IS DISTINCT FROM OLD.facility_class
+      OR NEW.status IS DISTINCT FROM OLD.status)
+     AND (NEW.status IS DISTINCT FROM 'active'
+          OR NEW.facility_class NOT IN ('primary_health_center', 'subordinate_health_center')
+          OR NEW.organization_id IS DISTINCT FROM OLD.organization_id) THEN
+    -- A depot INSERT takes FOR KEY SHARE on this facility through its FK. The
+    -- explicit upgrade makes it wait (or makes us wait for it), so the EXISTS
+    -- check cannot miss a concurrently-created active depot.
+    PERFORM 1 FROM public.organization_facilities WHERE id = OLD.id FOR UPDATE;
+    IF EXISTS (
+      SELECT 1 FROM public.warehouses w
+      WHERE w.facility_id = OLD.id AND w.status = 'active'
+    ) THEN
+      RAISE EXCEPTION 'health_center_facility_change_blocked_by_active_depot'
+        USING ERRCODE = '23514',
+        DETAIL = 'retire or rehome the active centre depot before changing its facility ownership, class, or status';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organization_facilities_health_center_shape_guard_trg
+  BEFORE UPDATE OF organization_id, facility_class, status
+  ON public.organization_facilities
+  FOR EACH ROW
+  EXECUTE FUNCTION public._phoenix_health_center_facility_shape_guard_v1();
+
+REVOKE ALL ON FUNCTION public._phoenix_health_center_facility_shape_guard_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- ============================================================================
+-- 4. ORGANIZATION-LEVEL INVARIANT — a sector never loses its only main
 -- ============================================================================
 -- Section 2 judges one row at a time and therefore cannot see "this sector now
 -- has centre depots and no sector main". That is an organization-level fact,
@@ -352,21 +391,31 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_org        uuid := COALESCE(NEW.organization_id, OLD.organization_id);
+  v_org        uuid;
+  v_orgs       uuid[];
   v_class      text;
   v_org_status text;
   v_active     integer;
   v_mains      integer;
 BEGIN
+  v_orgs := CASE TG_OP
+    WHEN 'INSERT' THEN ARRAY[NEW.organization_id]
+    WHEN 'DELETE' THEN ARRAY[OLD.organization_id]
+    ELSE ARRAY[OLD.organization_id, NEW.organization_id]
+  END;
+
+  FOREACH v_org IN ARRAY v_orgs LOOP
+  IF v_org IS NULL THEN CONTINUE; END IF;
+
   SELECT o.institution_class, o.status INTO v_class, v_org_status
   FROM public.organizations o WHERE o.id = v_org;
 
   IF v_class IS DISTINCT FROM 'health_sector' THEN
-    RETURN NULL;
+    CONTINUE;
   END IF;
   -- An organization that is not itself active is not asserting a live topology.
   IF v_org_status IS DISTINCT FROM 'active' THEN
-    RETURN NULL;
+    CONTINUE;
   END IF;
 
   SELECT
@@ -379,11 +428,6 @@ BEGIN
   FROM public.warehouses w
   WHERE w.organization_id = v_org;
 
-  -- A sector with no active warehouse at all is simply not set up yet.
-  IF v_active = 0 THEN
-    RETURN NULL;
-  END IF;
-
   IF v_mains = 0 THEN
     RAISE EXCEPTION 'health_sector_must_retain_a_sector_main'
       USING ERRCODE = '23514',
@@ -394,6 +438,7 @@ BEGIN
   IF v_mains > 1 THEN
     RAISE EXCEPTION 'health_sector_has_multiple_sector_mains' USING ERRCODE = '23505';
   END IF;
+  END LOOP;
 
   RETURN NULL;
 END;
@@ -409,7 +454,49 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_main_presence_guard_v1()
   FROM PUBLIC, anon, authenticated, service_role;
 
 -- ============================================================================
--- 4. OUTLET TOPOLOGY GUARD — outlets belong to health CENTRES, never to the sector
+-- 5. ORGANIZATION ACTIVATION — no invalid topology may be revived
+-- ============================================================================
+CREATE FUNCTION public._phoenix_health_sector_organization_activation_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_active integer;
+  v_mains  integer;
+BEGIN
+  IF NEW.status = 'active'
+     AND OLD.status IS DISTINCT FROM 'active'
+     AND NEW.institution_class = 'health_sector' THEN
+    SELECT count(*) FILTER (WHERE w.status='active'),
+           count(*) FILTER (WHERE w.status='active'
+                              AND w.warehouse_kind='institution'
+                              AND w.facility_id IS NULL AND w.is_main)
+    INTO v_active, v_mains
+    FROM public.warehouses w
+    WHERE w.organization_id = NEW.id;
+
+    IF v_active > 0 AND v_mains <> 1 THEN
+      RAISE EXCEPTION 'health_sector_activation_requires_valid_topology'
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organizations_health_sector_activation_guard_trg
+  BEFORE UPDATE OF status
+  ON public.organizations
+  FOR EACH ROW
+  EXECUTE FUNCTION public._phoenix_health_sector_organization_activation_guard_v1();
+
+REVOKE ALL ON FUNCTION public._phoenix_health_sector_organization_activation_guard_v1()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- ============================================================================
+-- 6. OUTLET TOPOLOGY GUARD — outlets belong to health CENTRES, never to the sector
 -- ============================================================================
 -- The frontend creates and edits distribution_points by direct RLS-protected
 -- INSERT/UPDATE, so the database must be the topology authority here rather
@@ -464,6 +551,14 @@ BEGIN
       DETAIL = 'an active outlet must hang off a facility-bound centre depot, never off the sector main';
   END IF;
 
+  IF v_wh.status IS DISTINCT FROM 'active'
+     OR v_wh.warehouse_kind IS DISTINCT FROM 'institution'
+     OR v_wh.is_main IS NOT FALSE THEN
+    RAISE EXCEPTION 'health_sector_outlet_requires_active_health_center_depot'
+      USING ERRCODE = '23514',
+      DETAIL = 'the owning warehouse must be an active institution, facility-bound, non-main centre depot';
+  END IF;
+
   -- B. A health centre runs a pharmacy and crash cabinets. Rescue carts are a
   --    hospital emergency-department concept and have no health-centre
   --    counterpart — Migration 168 already refuses to replenish one here
@@ -503,7 +598,7 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_outlet_topology_guard_v1()
   FROM PUBLIC, anon, authenticated, service_role;
 
 -- ============================================================================
--- 5. CROSS-CENTRE REASSIGNMENT GUARD — setup-time only
+-- 7. CROSS-CENTRE REASSIGNMENT GUARD — setup-time only
 -- ============================================================================
 -- Moving an outlet from centre A's depot to centre B's depot re-parents every
 -- movement, balance and route it already owns: the same stock would appear to
@@ -622,7 +717,7 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_outlet_reassignment_guard_v
   FROM PUBLIC, anon, authenticated, service_role;
 
 -- ============================================================================
--- 6. RECONCILIATION — classify every active health sector, then correct the
+-- 8. RECONCILIATION — classify every active health sector, then correct the
 --    ones that are provably safe
 -- ============================================================================
 -- Three outcomes, and only one of them writes:
@@ -650,6 +745,8 @@ DECLARE
   v_sector_outlets    integer;
   v_rescue_carts      integer;
   v_bad_cabinets      integer;
+  v_invalid_outlets   integer;
+  v_operational       integer;
   v_legacy_main       uuid;
   v_new_main          uuid;
   v_reconciled        integer := 0;
@@ -661,9 +758,11 @@ BEGIN
     WHERE o.institution_class = 'health_sector' AND o.status = 'active'
     ORDER BY o.id
   LOOP
-    -- Deterministic lock order: the organization, then its warehouses by id.
+    -- Deterministic lock order: organization, facilities, warehouses, outlets.
     PERFORM 1 FROM public.organizations WHERE id = v_org.id FOR SHARE;
+    PERFORM 1 FROM public.organization_facilities WHERE organization_id = v_org.id ORDER BY id FOR SHARE;
     PERFORM 1 FROM public.warehouses WHERE organization_id = v_org.id ORDER BY id FOR UPDATE;
+    PERFORM 1 FROM public.distribution_points WHERE organization_id = v_org.id ORDER BY id FOR UPDATE;
 
     SELECT
       count(*) FILTER (WHERE w.status='active'),
@@ -701,8 +800,9 @@ BEGIN
       count(*) FILTER (WHERE w.facility_id IS NULL),
       count(*) FILTER (WHERE dp.point_type = 'rescue_cart'),
       count(*) FILTER (WHERE dp.point_type = 'crash_cabinet'
-                             AND dp.clinical_location_kind IS DISTINCT FROM 'emergency')
-    INTO v_sector_outlets, v_rescue_carts, v_bad_cabinets
+                             AND dp.clinical_location_kind IS DISTINCT FROM 'emergency'),
+      count(*) FILTER (WHERE dp.point_type NOT IN ('pharmacy','crash_cabinet'))
+    INTO v_sector_outlets, v_rescue_carts, v_bad_cabinets, v_invalid_outlets
     FROM public.distribution_points dp
     JOIN public.warehouses w ON w.id = dp.warehouse_id
     WHERE w.organization_id = v_org.id AND dp.status = 'active';
@@ -732,6 +832,9 @@ BEGIN
     IF v_bad_cabinets > 0 THEN
       RAISE EXCEPTION '181_ambiguous_stop: health sector % has % crash cabinet(s) without an emergency clinical context', v_org.id, v_bad_cabinets;
     END IF;
+    IF v_invalid_outlets > 0 THEN
+      RAISE EXCEPTION '181_ambiguous_stop: health sector % has % active outlet(s) with an invalid type', v_org.id, v_invalid_outlets;
+    END IF;
 
     -- ── Not set up yet — nothing to classify ───────────────────────────────
     IF v_active = 0 THEN
@@ -749,6 +852,34 @@ BEGIN
     -- carrying the organization main flag. Every other structural condition has
     -- already been proved clean above.
     IF v_facility_less = 0 AND v_depots >= 1 AND v_depot_mains = 1 AND v_mains = 1 THEN
+      -- The boolean demotion does not move history, but a legacy topology with
+      -- operational commitments still requires an operator to prove its
+      -- meaning. The supplied Production fixture is empty; anything else stops.
+      SELECT
+        (SELECT count(*) FROM public.warehouse_stock ws JOIN public.warehouses w ON w.id=ws.warehouse_id WHERE w.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.warehouse_stock_movements m JOIN public.warehouses w ON w.id=m.warehouse_id WHERE w.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.warehouse_dispatches d WHERE d.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.warehouse_transfers t WHERE t.source_organization_id=v_org.id OR t.destination_organization_id=v_org.id)
+        + (SELECT count(*) FROM public.warehouse_transfer_requests r WHERE r.source_organization_id=v_org.id OR r.destination_organization_id=v_org.id)
+        + (SELECT count(*) FROM public.warehouse_supply_routes r
+             JOIN public.warehouses sw ON sw.id=r.source_warehouse_id
+             JOIN public.warehouses tw ON tw.id=r.target_warehouse_id
+            WHERE sw.organization_id=v_org.id OR tw.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.outlet_stock s WHERE s.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.outlet_stock_movements m WHERE m.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.outlet_replenishment_routes r WHERE r.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.outlet_return_requests r WHERE r.source_organization_id=v_org.id OR r.destination_organization_id=v_org.id)
+        + (SELECT count(*) FROM public.outlet_return_shipments s WHERE s.source_organization_id=v_org.id OR s.destination_organization_id=v_org.id)
+        + (SELECT count(*) FROM public.item_availability a WHERE a.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.item_availability_movements m WHERE m.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.phoenix_movement_dispense_context c WHERE c.organization_id=v_org.id)
+        + (SELECT count(*) FROM public.inter_org_exchange_requests e WHERE e.source_organization_id=v_org.id OR e.target_organization_id=v_org.id)
+      INTO v_operational;
+
+      IF v_operational > 0 THEN
+        RAISE EXCEPTION '181_ambiguous_stop: health sector % has % operational-history row(s)', v_org.id, v_operational;
+      END IF;
+
       SELECT w.id INTO v_legacy_main
       FROM public.warehouses w
       WHERE w.organization_id = v_org.id AND w.status='active'
@@ -798,7 +929,23 @@ END;
 $reconcile$;
 
 -- ============================================================================
--- 7. CENTRE-DEPOT CREATION — one atomic canonical writer
+-- 9. STRUCTURAL INVARIANT — at most ONE active depot per facility
+-- ============================================================================
+-- Installed after classification so a duplicate legacy shape receives the
+-- deliberate AMBIGUOUS_STOP diagnosis instead of an early raw index error.
+-- Flush this migration's deferred organization-level checks first: PostgreSQL
+-- will not build an index on a table with pending trigger events.
+SET CONSTRAINTS warehouses_health_sector_main_presence_trg IMMEDIATE;
+
+CREATE UNIQUE INDEX warehouses_one_active_depot_per_facility_uniq
+  ON public.warehouses (facility_id)
+  WHERE facility_id IS NOT NULL AND status = 'active';
+
+COMMENT ON INDEX public.warehouses_one_active_depot_per_facility_uniq IS
+  'R1.1: a health centre (organization_facilities row) has at most ONE active depot. Partial on facility_id IS NOT NULL AND status=''active'', so retiring a depot frees the centre for a replacement, and non-health-sector organizations — which may never carry facility_id (170) — are unaffected.';
+
+-- ============================================================================
+-- 10. CENTRE-DEPOT CREATION — one atomic canonical writer
 -- ============================================================================
 -- phoenix_create_warehouse (074) takes no facility, so under section 2 it can
 -- no longer produce a valid centre depot: the row would have to be created
@@ -935,13 +1082,19 @@ GRANT EXECUTE ON FUNCTION public.phoenix_create_health_center_warehouse(uuid, uu
   TO authenticated;
 
 -- ============================================================================
--- 8. COMMENTS
+-- 11. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public._phoenix_health_sector_warehouse_shape_guard_v1() IS
   'R1.1: row-level health-sector warehouse shape. Inside institution_class=''health_sector'': warehouse_kind must be institution; an ACTIVE facility-less warehouse is the sector main (is_main=true); an ACTIVE facility-bound warehouse is a centre depot (is_main=false) whose facility must be an active primary/subordinate health centre of the same organization. Fires on INSERT and on UPDATE of organization_id, warehouse_kind, facility_id, is_main and status, so no mutation path can bypass it. Other organization classes are untouched.';
 
+COMMENT ON FUNCTION public._phoenix_health_center_facility_shape_guard_v1() IS
+  'R1.1: inverse parent-side topology guard. An organization_facilities row that owns an active centre depot cannot be moved, deactivated, or reclassified away from primary/subordinate health-centre shape underneath that depot.';
+
 COMMENT ON FUNCTION public._phoenix_health_sector_main_presence_guard_v1() IS
   'R1.1: organization-level invariant — an ACTIVE health sector owning any active warehouse owns exactly one active institution warehouse with facility_id IS NULL and is_main=true. DEFERRABLE INITIALLY DEFERRED so a legitimate two-statement correction (demote the old main, create the new one) is atomic, while a COMMIT that would leave centre depots with no sector main is impossible. Fires on DELETE too.';
+
+COMMENT ON FUNCTION public._phoenix_health_sector_organization_activation_guard_v1() IS
+  'R1.1: blocks reactivation of a health-sector organization when it owns active warehouses but not exactly one canonical sector main.';
 
 COMMENT ON FUNCTION public._phoenix_health_sector_outlet_topology_guard_v1() IS
   'R1.1: an ACTIVE outlet in a health sector must hang off a facility-bound centre depot — which forbids every sector-level pharmacy, crash cabinet and rescue cart — may only be a pharmacy or a crash cabinet, never a rescue cart, and if it is a crash cabinet must carry clinical_location_kind=''emergency''. An ordinary centre pharmacy has no clinical-location requirement. Fires on INSERT and on UPDATE of warehouse_id, organization_id, point_type, clinical_location_kind and status.';
@@ -953,7 +1106,7 @@ COMMENT ON FUNCTION public.phoenix_create_health_center_warehouse(uuid, uuid, te
   'R1.1: the atomic canonical writer for a health-centre depot — institution kind, bound to the given facility, never main, active. Requires an active super_admin, the same authority historical warehouse management already requires, and validates organization class, facility ownership, facility class, facility status and the one-active-depot-per-centre rule before inserting. Exists because phoenix_create_warehouse (074) has no facility parameter and therefore cannot produce a valid centre depot in one statement under the R1.1 invariants.';
 
 -- ============================================================================
--- 9. VERIFY — in-transaction, fails the whole migration
+-- 12. VERIFY — in-transaction, fails the whole migration
 -- ============================================================================
 DO $verify$
 DECLARE
@@ -979,6 +1132,8 @@ BEGIN
   FOR v_bad IN
     SELECT 1 FROM (VALUES
       ('_phoenix_health_sector_warehouse_shape_guard_v1'),
+      ('_phoenix_health_center_facility_shape_guard_v1'),
+      ('_phoenix_health_sector_organization_activation_guard_v1'),
       ('_phoenix_health_sector_main_presence_guard_v1'),
       ('_phoenix_health_sector_outlet_topology_guard_v1'),
       ('_phoenix_health_sector_outlet_reassignment_guard_v1')
@@ -1001,6 +1156,12 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='distribution_points_reassignment_guard_trg') THEN
     RAISE EXCEPTION 'VERIFY FAILED (181): the outlet reassignment guard is not attached';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='organization_facilities_health_center_shape_guard_trg') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (181): the health-centre facility parent guard is not attached';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='organizations_health_sector_activation_guard_trg') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (181): the health-sector activation guard is not attached';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger

@@ -94,23 +94,28 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         ('${FAC_INACTIVE}','${ORG_SECTOR}','primary_health_center','Centre X','Centre X','inactive'),
         ('${FAC_OTHER_SECTOR}','${ORG_SECTOR_2}','primary_health_center','Centre Z','Centre Z','active');
 
-      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id) VALUES
-        ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot','Sector Depot','active','institution','p164-wh-sector',NULL),
-        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot','A Depot','active','institution','p164-wh-a','${FAC_A}'),
-        ('${WH_FAC_A2}','${ORG_SECTOR}','A Depot 2','A Depot 2','active','institution','p164-wh-a2','${FAC_A}'),
-        ('${WH_FAC_B}','${ORG_SECTOR}','B Depot','B Depot','active','institution','p164-wh-b','${FAC_B}'),
-        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot','Hosp Depot','active','institution','p164-wh-hosp',NULL),
-        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot','Ctr Depot','active','institution','p164-wh-ctr',NULL);
+      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id,is_main) VALUES
+        -- R1.1/181: the facility-less sector warehouse IS the sector main; the
+        -- flag simply had no meaning before 181 made the shape an invariant.
+        ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot','Sector Depot','active','institution','p164-wh-sector',NULL,true),
+        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot','A Depot','active','institution','p164-wh-a','${FAC_A}',false),
+        -- R1.1/181: a health centre runs ONE active depot
+        -- (warehouses_one_active_depot_per_facility_uniq). The second depot of
+        -- facility A therefore exists as a retired one. 164's point is unchanged
+        -- and still proved below: facility identity is not warehouse identity.
+        ('${WH_FAC_A2}','${ORG_SECTOR}','A Depot 2','A Depot 2','inactive','institution','p164-wh-a2','${FAC_A}',false),
+        ('${WH_FAC_B}','${ORG_SECTOR}','B Depot','B Depot','active','institution','p164-wh-b','${FAC_B}',false),
+        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot','Hosp Depot','active','institution','p164-wh-hosp',NULL,false),
+        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot','Ctr Depot','active','institution','p164-wh-ctr',NULL,false);
 
       INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${PH_A}','${WH_FAC_A}','${ORG_SECTOR}','A Pharmacy','A Pharmacy','pharmacy','active','non_emergency'),
         ('${CAB_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cabinet','A Cabinet','crash_cabinet','active','emergency'),
-        ('${PH_A2}','${WH_FAC_A2}','${ORG_SECTOR}','A Pharmacy 2','A Pharmacy 2','pharmacy','active','non_emergency'),
         ('${PH_B}','${WH_FAC_B}','${ORG_SECTOR}','B Pharmacy','B Pharmacy','pharmacy','active','non_emergency'),
         ('${CAB_B}','${WH_FAC_B}','${ORG_SECTOR}','B Cabinet','B Cabinet','crash_cabinet','active','emergency'),
-        ('${PH_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Pharmacy','Sector Pharmacy','pharmacy','active','non_emergency'),
-        ('${CAB_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Cabinet','Sector Cabinet','crash_cabinet','active','emergency'),
-        ('${CART_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cart','A Cart','rescue_cart','active','emergency'),
+        -- R1.1/181: PH_SECTOR, CAB_SECTOR and CART_A are deliberately NOT
+        -- seeded. All three are shapes 181 refuses to create at all, and each
+        -- is proved impossible in the rejection matrix below instead.
         ('${PH_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Pharmacy','H Pharmacy','pharmacy','active','non_emergency'),
         ('${CART_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart','H Cart','rescue_cart','active','emergency'),
         ('${CART_HOSP_NON}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart NE','H Cart NE','rescue_cart','active','non_emergency'),
@@ -217,13 +222,27 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
     });
 
     it('deactivating a warehouse does not destroy facility identity', async () => {
+      // Proved on facility B, whose single depot can be retired and restored.
+      // Facility A's second depot is already retired under 181's one-active-
+      // depot rule, so toggling that one would assert nothing.
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE warehouses SET status='inactive' WHERE id=$1`, [WH_FAC_A2]));
+        `UPDATE distribution_points SET status='inactive' WHERE id IN ($1,$2)`, [PH_B, CAB_B]));
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE warehouses SET status='inactive' WHERE id=$1`, [WH_FAC_B]));
       const f = await rig.asAdmin((c: any) => c.query(
-        `SELECT status FROM organization_facilities WHERE id=$1`, [FAC_A]));
+        `SELECT status FROM organization_facilities WHERE id=$1`, [FAC_B]));
       expect(f.rows[0].status).toBe('active');
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE warehouses SET status='active' WHERE id=$1`, [WH_FAC_A2]));
+        `UPDATE warehouses SET status='active' WHERE id=$1`, [WH_FAC_B]));
+      await rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET status='active' WHERE id IN ($1,$2)`, [PH_B, CAB_B]));
+    });
+
+    it('a facility may not run TWO active depots at once', async () => {
+      // R1.1/181. The retired second depot cannot simply be switched back on.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE warehouses SET status='active' WHERE id=$1`, [WH_FAC_A2])));
+      expect(msg).toMatch(/warehouses_one_active_depot_per_facility_uniq/);
     });
 
     it('a facility with warehouses cannot be deleted out from under them', async () => {
@@ -269,13 +288,14 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(r.ok).toBe(true);
     });
 
-    it('health centre: a second depot of the SAME facility is still same-facility', async () => {
-      // Facility containment is by FACILITY, not by warehouse: PH_A2 sits on
-      // facility A's second depot and may still serve facility A's cabinet.
-      const r: any = await route(PH_A2, CAB_A);
-      expect(r.ok).toBe(true);
-      await rig.asAdmin((c: any) => c.query(
-        `DELETE FROM outlet_replenishment_routes WHERE source_point_id=$1`, [PH_A2]));
+    it('health centre: the route contract still compares FACILITY identity', async () => {
+      // 181 permits one active depot per centre, so a live second-depot route is
+      // unreachable. Keep the underlying 164 contract pinned in the catalogue.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p
+          JOIN pg_namespace n ON n.oid=p.pronamespace
+         WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      expect(rows[0].def).toContain('v_src.o_facility_id IS DISTINCT FROM v_dst.o_facility_id');
     });
   });
 
@@ -291,21 +311,51 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(msg).toMatch(/cross_facility_route_forbidden/);
     });
 
-    it('sector-level pharmacy -> health-centre crash cabinet', async () => {
-      const msg = await rejects(() => route(PH_SECTOR, CAB_A));
-      expect(msg).toMatch(/health_center_route_requires_facility/);
+    it('neither END of a sector-level route can exist after 181', async () => {
+      // 164 refused to ROUTE to or from a sector-level outlet. 181 refuses to
+      // CREATE one, so both endpoints of those two routes are now impossible.
+      // Refusing the outlet is strictly stronger than refusing its route.
+      for (const [id, type, kind] of [
+        [PH_SECTOR, 'pharmacy', 'non_emergency'],
+        [CAB_SECTOR, 'crash_cabinet', 'emergency'],
+      ] as const) {
+        const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+          `INSERT INTO distribution_points
+             (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+           VALUES ($1,$2,$3,'Sector Outlet','Sector Outlet',$4,'active',$5)`,
+          [id, WH_SECTOR, ORG_SECTOR, type, kind])));
+        expect(msg, type).toMatch(/health_sector_outlet_requires_health_center_depot/);
+      }
     });
 
-    it('health-centre pharmacy -> sector-level crash cabinet', async () => {
-      const msg = await rejects(() => route(PH_A, CAB_SECTOR));
-      expect(msg).toMatch(/health_center_route_requires_facility/);
+    it('the 164 facility requirement is still installed underneath', async () => {
+      // Its shape is unreachable now, so it cannot be exercised end to end. It
+      // must still EXIST as defence in depth — asserted against the live
+      // catalogue rather than the migration file, so a later redefinition of
+      // the RPC cannot drop the rule without failing here.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].def).toContain('health_center_route_requires_facility');
     });
   });
 
   describe('emergency-outlet eligibility is enforced', () => {
-    it('a health centre may NOT have a rescue cart', async () => {
-      const msg = await rejects(() => route(PH_A, CART_A));
-      expect(msg).toMatch(/health_center_rescue_cart_forbidden/);
+    it('a health centre may NOT have a rescue cart — refused at CREATION now', async () => {
+      // 164 refused to route to one; 181 refuses to let one exist.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `INSERT INTO distribution_points
+           (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+         VALUES ('${CART_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cart','A Cart','rescue_cart','active','emergency')`)));
+      expect(msg).toMatch(/health_center_rescue_cart_not_permitted/);
+      // And 164's routing refusal is still installed beneath it.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      expect(rows[0].def).toContain('health_center_rescue_cart_forbidden');
     });
 
     it('a specialized centre may NOT have a rescue cart', async () => {
@@ -324,10 +374,18 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
     });
 
     it('a sector-level outlet does NOT inherit the health-centre emergency exception', async () => {
-      // CAB_SECTOR is an emergency crash cabinet in a health_sector org, but has
-      // no subordinate facility. It must not be routable.
-      const msg = await rejects(() => route(PH_SECTOR, CAB_SECTOR));
-      expect(msg).toMatch(/health_center_route_requires_facility/);
+      // Pre-181 this was proved by routing between two sector-level outlets and
+      // watching the route be refused. 181 removes the shape entirely, so the
+      // stronger statement is asserted directly: inside a health sector there
+      // is no active outlet anywhere that is not under a centre depot.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT count(*)::int AS n
+           FROM distribution_points dp
+           JOIN warehouses w ON w.id = dp.warehouse_id
+           JOIN organizations o ON o.id = w.organization_id
+          WHERE o.institution_class='health_sector'
+            AND dp.status='active' AND w.facility_id IS NULL`));
+      expect(rows[0].n).toBe(0);
     });
   });
 
@@ -346,13 +404,10 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`, [CAB_SPECIAL]));
     });
 
-    it('rejects a facility route when the facility is inactive', async () => {
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE organization_facilities SET status='inactive' WHERE id=$1`, [FAC_B]));
-      const msg = await rejects(() => route(PH_B, CAB_B));
-      expect(msg).toMatch(/facility_not_active/);
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE organization_facilities SET status='active' WHERE id=$1`, [FAC_B]));
+    it('cannot make a routed centre facility inactive underneath its depot', async () => {
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE organization_facilities SET status='inactive' WHERE id=$1`, [FAC_B])));
+      expect(msg).toMatch(/health_center_facility_change_blocked_by_active_depot/);
     });
   });
 
