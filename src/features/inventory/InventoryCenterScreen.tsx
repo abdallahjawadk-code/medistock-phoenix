@@ -27,6 +27,7 @@ import { QuarantinePanel } from './QuarantinePanel';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
+import { isReplenishmentDestinationPointType } from '@/shared/lib/emergency-replenishment';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import { SourceBalancesPanel } from './SourceBalancesPanel';
 import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
@@ -149,10 +150,24 @@ export function InventoryCenterScreen({
   const activeWarehouseKind = manageableWarehouses.find(w => w.id === activeWarehouseId)?.warehouseKind ?? null;
   const isInstitutionWarehouse = activeWarehouseKind === 'institution';
   // Outlets belonging to the selected institution warehouse (parent link), and
-  // within the officer's manageable scope — the only valid dispatch destinations.
+  // within the officer's manageable scope — the only valid ORDINARY dispatch
+  // destinations.
+  //
+  // R1.2 / Migration 180: emergency outlets (crash cabinet, rescue cart) are
+  // excluded here. Warehouse/depot direct supply to them is legal ONLY through
+  // the dedicated initial-provisioning corridor, which has its own entry point
+  // (InitialProvisioningLauncher -> phoenix_create_initial_provisioning_dispatch);
+  // thereafter they are supplied by routine pharmacy->emergency replenishment
+  // (Migration 168). Offering one here would offer an action the server now
+  // always refuses with emergency_outlet_requires_initial_provisioning.
+  //
+  // This filter is UX, NOT the security boundary. The authority boundary is
+  // enforced in the database by Migration 180 for every caller, including ones
+  // that never go through this screen.
   const outletsForWarehouse = useMemo(
     () => (scopes.data?.manageableOutlets ?? [])
       .filter(o => o.warehouseId === activeWarehouseId)
+      .filter(o => !isReplenishmentDestinationPointType(o.pointType))
       .map(o => ({ id: o.id, name: lang === 'ar' ? (o.nameAr || o.name) : (o.name || o.nameAr) })),
     [scopes.data, activeWarehouseId, lang],
   );

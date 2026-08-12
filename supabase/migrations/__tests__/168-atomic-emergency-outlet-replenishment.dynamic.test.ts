@@ -144,10 +144,55 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       UPDATE profiles
          SET role='outlet_officer', status='suspended', organization_id='${ORG_HOSPITAL}'
        WHERE id='${SLEEPER}';
+
+      -- R1.2 / Migration 180: routine replenishment is now INITIAL-FIRST — a
+      -- fresh execution requires the destination emergency outlet to have
+      -- CONSUMED an initial-provisioning lifecycle. This suite owns the E-5
+      -- corridor, not commissioning, so every emergency destination is
+      -- commissioned here as a FIXTURE: one consumed lifecycle row each,
+      -- exactly the state phoenix_create_initial_provisioning_dispatch plus a
+      -- positive receipt leaves behind. Seeded the same way this file already
+      -- seeds warehouse_stock and outlet_stock directly.
+      --
+      -- The commissioning path itself, and the refusal when it is missing, are
+      -- proved end to end against the real RPCs in
+      -- 180-emergency-initial-provisioning-boundary.dynamic.test.ts (Q1-Q6).
+      INSERT INTO warehouse_dispatches (
+        organization_id, warehouse_id, destination_distribution_point_id,
+        dispatch_number, status, sent_at,
+        is_initial_provisioning, initial_provisioning_consumed_at)
+      SELECT dp.organization_id, dp.warehouse_id, dp.id,
+             -- right(), not left(): these fixture UUIDs share their first 24
+             -- characters, so a left() slice would collide into one number and
+             -- ON CONFLICT would silently commission only the first outlet.
+             'IP168-' || right(dp.id::text, 12), 'accepted', now(), true, now()
+        FROM distribution_points dp
+       WHERE dp.point_type IN ('crash_cabinet', 'rescue_cart')
+         AND dp.organization_id IN
+             ('${ORG_SECTOR}', '${ORG_HOSPITAL}', '${ORG_SPECIAL}', '${ORG_SECTOR_2}')
+      ON CONFLICT DO NOTHING;
     `));
   });
 
   afterAll(async () => { if (rig) await rig.end(); });
+
+  /**
+   * R1.2 / Migration 180 commissioning fixture, per outlet. Mirrors the seed
+   * block above so a test that has to park the row can put it back verbatim.
+   */
+  const commission = (dp: string) => rig.asAdmin((c: any) => c.query(`
+    INSERT INTO warehouse_dispatches (
+      organization_id, warehouse_id, destination_distribution_point_id,
+      dispatch_number, status, sent_at,
+      is_initial_provisioning, initial_provisioning_consumed_at)
+    SELECT dp.organization_id, dp.warehouse_id, dp.id,
+           'IP168-' || right(dp.id::text, 12), 'accepted', now(), true, now()
+      FROM distribution_points dp WHERE dp.id = $1
+    ON CONFLICT DO NOTHING`, [dp]));
+
+  const decommission = (dp: string) => rig.asAdmin((c: any) => c.query(
+    `DELETE FROM warehouse_dispatches
+      WHERE destination_distribution_point_id = $1 AND is_initial_provisioning`, [dp]));
 
   async function upsertRoute(src: string, dst: string, active = true): Promise<string> {
     // Prefer updating an existing pair when present — the active-pair unique
@@ -699,6 +744,17 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       // exists to close). Attach CAB_A to WH_FAC_B instead: that diverges
       // only the cabinet's current facility context, which is all this test
       // needs, and never touches warehouses.facility_id at all.
+      // R1.2 / Migration 180: CAB_A now also carries a commissioning fixture,
+      // and warehouse_dispatches_dest_warehouse_fk pins
+      // (destination_distribution_point_id, warehouse_id) together with
+      // ON DELETE RESTRICT — so the outlet cannot be re-pointed while that row
+      // exists. Park it for the duration and restore it afterwards.
+      //
+      // The assertion below is unaffected either way: the Shape H/I matrix is
+      // evaluated BEFORE the initial-first gate, so a cross-facility route
+      // still fails with its own accurate diagnosis rather than a lifecycle
+      // error. That ordering is itself asserted in Migration 180's verify block.
+      await decommission(CAB_A);
       await rig.asAdmin((c: any) => c.query(
         `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_B, CAB_A]));
       const before = await onHand(srcId);
@@ -707,6 +763,7 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       expect(await onHand(srcId)).toBe(before);
       await rig.asAdmin((c: any) => c.query(
         `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_A, CAB_A]));
+      await commission(CAB_A);
     });
   });
 

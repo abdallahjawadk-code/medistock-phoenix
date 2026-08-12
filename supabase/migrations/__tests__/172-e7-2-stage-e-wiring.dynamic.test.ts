@@ -88,6 +88,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // is unaffected. Listed here so this guard stays exhaustive and still
       // fails closed on any unlisted new file.
       '179_phoenix_canonical_authenticated_availability_hardening.sql',
+      // R1.2 (180): separates ordinary from initial-provisioning warehouse-
+      // dispatch authority. It moves Migration 070's creator body into one
+      // trusted internal core and replaces the two public writers in place —
+      // no new table, column, constraint, index, permission key or corridor,
+      // and no Stage-E SQL — so the "Stage E still ends at 171" assertion above
+      // is unaffected. Listed here so this guard stays exhaustive and still
+      // fails closed on any unlisted new file.
+      '180_phoenix_emergency_initial_provisioning_boundary.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

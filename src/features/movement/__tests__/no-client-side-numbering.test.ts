@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179 is a read-model regrouping and no 180+ numbering migration exists',()=>{
+  it('179/180 introduce no numbering and no 181+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -71,11 +71,18 @@ describe('no client-side document-number sequence exists',()=>{
     // additive row-level unit. Its only derived value is a row_key that is a
     // LOSSLESS encoding of already-persisted canonical identity — a pure
     // function of existing data, not a sequence, counter, max()+1 or generated
-    // numeric identity, and never a document number. Boundary moves to 180 so
-    // the next unknown migration still fails closed here.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^179_/.test(f));
+    // numeric identity, and never a document number.
+    // R1.2: 180 separates ordinary from initial-provisioning dispatch
+    // authority. It moves migration 070's creator body into one trusted
+    // internal core and adds an emergency-outlet corridor refusal. It creates
+    // no table, column, sequence, counter, max()+1 or generated numeric
+    // identity, and the dispatch number stays exactly what it always was — a
+    // caller-supplied text the core only trims and requires to be non-empty.
+    // Boundary moves to 181 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '180_phoenix_emergency_initial_provisioning_boundary.sql',
       '179_phoenix_canonical_authenticated_availability_hardening.sql',
       '178_phoenix_distribution_point_owner_guard_privilege_fix.sql',
       '177_phoenix_canonical_public_qr.sql',

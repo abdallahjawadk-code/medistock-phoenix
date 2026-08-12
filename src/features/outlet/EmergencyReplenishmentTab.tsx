@@ -8,6 +8,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useEmergencyReplenishmentPermission } from '@/features/inventory/useEmergencyReplenishmentPermission';
+import { isReplenishmentDestinationPointType } from '@/shared/lib/emergency-replenishment';
 import { InitialProvisioningLauncher } from './InitialProvisioningLauncher';
 import { getOutletStock } from './outlet-stock.service';
 import {
@@ -45,11 +46,22 @@ export function EmergencyReplenishmentTab({
   orgId,
   distributionPointId,
   outletName,
+  outletPointType,
   lang,
 }: {
   orgId: string;
   distributionPointId: string;
   outletName: string;
+  /**
+   * R1.2 / Migration 180: `distribution_points.point_type` of the selected
+   * outlet. Initial provisioning commissions an EMERGENCY outlet only — the
+   * database refuses a pharmacy destination with
+   * `initial_provisioning_requires_emergency_outlet` — so the launcher below is
+   * offered only for a crash cabinet or rescue cart. Optional so the deliberately
+   * frozen presentation fixtures need no change; absent is treated as "not an
+   * emergency outlet", i.e. fail closed.
+   */
+  outletPointType?: string | null;
   lang: 'ar' | 'en';
 }) {
   const perms = useEmergencyReplenishmentPermission(orgId, distributionPointId);
@@ -78,12 +90,25 @@ export function EmergencyReplenishmentTab({
         </PhoenixCard>
       )}
 
-      <InitialProvisioningLauncher
-        orgId={orgId}
-        distributionPointId={distributionPointId}
-        outletName={outletName}
-        lang={lang}
-      />
+      {/*
+        R1.2 / Migration 180: commissioning is for EMERGENCY outlets only. A
+        pharmacy has no initial-provisioning lifecycle — it is supplied by
+        ordinary warehouse dispatch as often as needed — so the launcher is not
+        offered here, while this pharmacy's OUTGOING routine-replenishment and
+        reversal forms below stay exactly as they were. Fails closed: an unknown
+        or absent point type offers nothing.
+
+        UX only. The database refuses a pharmacy destination regardless of what
+        this screen renders.
+      */}
+      {isReplenishmentDestinationPointType(outletPointType) && (
+        <InitialProvisioningLauncher
+          orgId={orgId}
+          distributionPointId={distributionPointId}
+          outletName={outletName}
+          lang={lang}
+        />
+      )}
 
       {outgoing.length === 0 ? (
         <PhoenixEmptyState

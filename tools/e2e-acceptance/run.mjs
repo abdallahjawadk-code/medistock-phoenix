@@ -23,6 +23,8 @@
 import { chromium } from 'playwright-core';
 import pg from 'pg';
 import { readFileSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { createExpectedRefusalRegistry } from './expected-refusals.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -96,7 +98,24 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
   const consoleErrors = [];
   const failedRequests = [];
   const restCalls = [];
-  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+  // R1.2 / Migration 180 — EXPECTED DOMAIN REFUSALS, scoped to a window.
+  //
+  // A step that deliberately provokes a refusal opens a window with
+  // expectRefusal(rpc, message), asserts refusal.observed(), then CLOSES it.
+  // Only an OPEN window can suppress the browser's generic 4xx console line,
+  // so a later unrelated 4xx from the same RPC is policed again in full. 5xx is
+  // never suppressible. See tools/e2e-acceptance/expected-refusals.mjs, whose
+  // sibling unit test proves the window actually closes.
+  const refusals = createExpectedRefusalRegistry();
+  const expectRefusal = (rpc, message) => refusals.expectRefusal(rpc, message);
+
+  page.on('console', msg => {
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    const from = (typeof msg.location === 'function' ? msg.location()?.url : '') ?? '';
+    if (refusals.suppressesConsoleError(text, from)) return;
+    consoleErrors.push(text);
+  });
   page.on('pageerror', err => consoleErrors.push(String(err)));
   page.on('requestfailed', req => {
     const errorText = req.failure()?.errorText ?? '';
@@ -123,11 +142,39 @@ async function freshPage(browser, viewport = { width: 1440, height: 900 }) {
         // exactly the distinction triage needs.
         if (res.status() >= 400 && res.url().includes('/rpc/')) {
           console.log(`DIAGNOSTIC — RPC ${res.status()} ${res.url().replace(/^.*\/rpc\//, '')} -> ${body.slice(0, 400)}`);
+          refusals.recordResponse({ url: res.url(), status: res.status(), body });
         }
       }).catch(() => {});
     }
   });
-  return { page, consoleErrors, failedRequests, restCalls };
+  return { page, consoleErrors, failedRequests, restCalls, expectRefusal, refusals };
+}
+
+/**
+ * Runs `fn` inside one transaction impersonating `userId` as the authenticated
+ * role, so in-function auth.uid() resolves and every canonical writer applies
+ * its real permission checks and locks. Same seam and same discipline as
+ * tools/e2e-fixtures/seed.mjs.
+ *
+ * Used only where a lifecycle transition has to be driven by the REAL server
+ * writer rather than by fixture SQL — never to fabricate state.
+ */
+async function asAuthenticated(userId, fn) {
+  if (!dbPool) return null;
+  const actor = await dbPool.connect();
+  try {
+    await actor.query('BEGIN');
+    await actor.query('SET LOCAL ROLE authenticated');
+    await actor.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [userId]);
+    const result = await fn(actor);
+    await actor.query('COMMIT');
+    return result;
+  } catch (error) {
+    await actor.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    actor.release();
+  }
 }
 
 async function login(page, email, password) {
@@ -842,7 +889,7 @@ async function main() {
     // not offered Dispense. The corridor therefore runs as the seeded
     // super_admin, who holds every scope in org A; each RPC still re-checks
     // that scope server-side, so nothing here is taken on the client's word.
-    const { page, consoleErrors, failedRequests } = await freshPage(browser);
+    const { page, consoleErrors, failedRequests, expectRefusal, refusals } = await freshPage(browser);
     await login(page, seed.users.fixtureAdmin.email, seed.password);
 
     // -- Initial Provisioning: WH_A -> E2E Rescue Cart A (Migration 166 RPC).
@@ -957,14 +1004,131 @@ async function main() {
       const batchSelect = page.getByLabel('Batch').or(page.getByLabel('الدفعة')).first();
       const batchOpts = await batchSelect.locator('option').allTextContents().catch(() => []);
       const srcMatch = batchOpts.find(o => o.includes(seed.stageE.replenishSourceLot));
-      if (srcMatch) await batchSelect.selectOption({ label: srcMatch }).catch(() => {});
       record('the provenance-backed source batch is offered for replenishment',
         Boolean(srcMatch), srcMatch ?? JSON.stringify(batchOpts));
-      const qtyInput = page.locator('#repl-qty');
-      await qtyInput.fill('3').catch(() => {});
-      const submitBtn = page.getByText('Execute Replenishment').or(page.getByText('تنفيذ التعويض')).first();
-      await submitBtn.click().catch(() => {});
-      await settle(1500);
+
+      /** Fills the routine-replenishment form and submits it once. */
+      const submitReplenishment = async (qty) => {
+        if (srcMatch) await batchSelect.selectOption({ label: srcMatch }).catch(() => {});
+        await page.locator('#repl-qty').fill(String(qty)).catch(() => {});
+        await page.getByText('Execute Replenishment').or(page.getByText('تنفيذ التعويض'))
+          .first().click().catch(() => {});
+        await settle(1500);
+      };
+
+      const replenishReceiveCount = async () => {
+        if (!dbPool) return null;
+        const r = await dbQuery(
+          `SELECT count(*)::int n FROM outlet_stock_movements osm
+             JOIN distribution_points dp ON dp.id = osm.distribution_point_id
+            WHERE dp.name = 'E2E Rescue Cart A' AND osm.movement_type = 'replenish_receive'`,
+        ).catch(() => null);
+        return r?.rows?.[0]?.n ?? null;
+      };
+
+      // ══════════════════════════════════════════════════════════════════════
+      // R1.2 / Migration 180 — NEGATIVE PROOF: replenishment is INITIAL-FIRST.
+      //
+      // The cart's commissioning dispatch exists and is flagged, but nothing
+      // has ARRIVED under it yet (consumed_at IS NULL), so routine
+      // replenishment must be refused. This is an EXPECTED domain refusal, not
+      // a regression: it is registered with the harness so its 400 is admitted
+      // deliberately and asserted to have actually occurred.
+      // ══════════════════════════════════════════════════════════════════════
+      const refusal = expectRefusal(
+        'phoenix_replenish_emergency_outlet',
+        'initial_provisioning_required_before_replenishment',
+      );
+
+      if (dbPool) {
+        const pre = await dbQuery(
+          `SELECT wd.initial_provisioning_consumed_at AS consumed
+             FROM warehouse_dispatches wd
+             JOIN distribution_points dp ON dp.id = wd.destination_distribution_point_id
+            WHERE dp.name = 'E2E Rescue Cart A' AND wd.is_initial_provisioning = true
+            ORDER BY wd.created_at DESC LIMIT 1`,
+        ).catch(() => null);
+        record('pre-condition: the cart is commissioned but nothing has arrived yet (consumed_at IS NULL)',
+          pre?.rows?.[0] !== undefined && pre.rows[0].consumed === null,
+          JSON.stringify(pre?.rows?.[0] ?? null));
+      }
+
+      const beforeRefused = await replenishReceiveCount();
+      await submitReplenishment(3);
+      const seen = refusal.observed();
+      record('routine replenishment BEFORE the initial receipt is refused with initial_provisioning_required_before_replenishment',
+        seen.length > 0 && seen[0].status === 400, JSON.stringify(seen[0] ?? null));
+      if (dbPool) {
+        record('the refused replenishment moved no stock at the cart',
+          (await replenishReceiveCount()) === beforeRefused);
+      }
+
+      // CLOSE the window immediately. From here on, any further 4xx from this
+      // same RPC is an unexpected console error again — the allowance covered
+      // exactly the one refusal this step set out to prove.
+      refusal.close();
+      record('the expected-refusal window is closed again, so the RPC is fully policed for the rest of the session',
+        refusal.isActive() === false && refusals.activeRegistrations().length === 0,
+        JSON.stringify(refusals.activeRegistrations()));
+
+      // ══════════════════════════════════════════════════════════════════════
+      // COMMISSIONING, through the REAL canonical writers.
+      //
+      // The composer above already created the flagged dispatch and its line
+      // through the UI. The remaining two lifecycle transitions — SEND and a
+      // POSITIVE RECEIPT — are driven here by the canonical RPCs under an
+      // authenticated session, so consumed_at is stamped by the real server
+      // path (Migration 166's receive wrapper), never seeded. Nothing about the
+      // lifecycle is fabricated: fixture SQL is used only to read state back.
+      // ══════════════════════════════════════════════════════════════════════
+      let consumedAt = null;
+      if (dbPool && dispatchId) {
+        try {
+          await asAuthenticated(seed.users.fixtureAdmin.id, async actor => {
+            await actor.query(`SELECT public.phoenix_send_warehouse_dispatch($1,$2)`,
+              [randomUUID(), dispatchId]);
+          });
+          record('the initial-provisioning dispatch is SENT through the canonical writer', true);
+        } catch (e) {
+          record('the initial-provisioning dispatch is SENT through the canonical writer', false, String(e?.message ?? e));
+        }
+
+        const lines = await dbQuery(
+          `SELECT id, sent_quantity FROM warehouse_dispatch_lines WHERE dispatch_id=$1 ORDER BY created_at`,
+          [dispatchId],
+        ).catch(() => null);
+        const line = lines?.rows?.[0] ?? null;
+        record('the sent initial-provisioning dispatch carries a real warehouse-stock-backed line',
+          Boolean(line?.id) && Number(line?.sent_quantity) > 0, JSON.stringify(line));
+
+        if (line?.id) {
+          try {
+            const got = await asAuthenticated(seed.users.fixtureAdmin.id, async actor => (await actor.query(
+              `SELECT public.phoenix_receive_outlet_dispatch_line($1,$2,$3,NULL,NULL) AS r`,
+              [randomUUID(), line.id, line.sent_quantity],
+            )).rows[0].r);
+            record('a POSITIVE initial-provisioning receipt lands through the canonical outlet receive path',
+              got?.ok === true && Number(got?.quantity_delta) > 0, JSON.stringify(got ?? null));
+          } catch (e) {
+            record('a POSITIVE initial-provisioning receipt lands through the canonical outlet receive path',
+              false, String(e?.message ?? e));
+          }
+        }
+
+        const after = await dbQuery(
+          `SELECT wd.is_initial_provisioning AS flagged, wd.initial_provisioning_consumed_at AS consumed
+             FROM warehouse_dispatches wd WHERE wd.id=$1`, [dispatchId],
+        ).catch(() => null);
+        consumedAt = after?.rows?.[0]?.consumed ?? null;
+        record('DB read-model: the cart is now COMMISSIONED — is_initial_provisioning=true AND consumed_at IS NOT NULL',
+          after?.rows?.[0]?.flagged === true && consumedAt !== null,
+          JSON.stringify(after?.rows?.[0] ?? null));
+      }
+
+      // ══════════════════════════════════════════════════════════════════════
+      // POSITIVE: the SAME legitimate replenishment now succeeds.
+      // ══════════════════════════════════════════════════════════════════════
+      await submitReplenishment(3);
 
       if (dbPool) {
         const r = await dbQuery(
@@ -985,6 +1149,23 @@ async function main() {
             ORDER BY created_at DESC LIMIT 1`,
         ).catch(() => null);
         record('DB read-model: the matching replenish_send debit leg exists', Boolean(sendRow?.rows?.[0]?.id));
+
+        // R1.2: the refused attempt must have written nothing, so the cart is
+        // credited EXACTLY once — one send + one receive sharing one reference.
+        const pair = await dbQuery(
+          `SELECT osm.reference_id,
+                  count(*) FILTER (WHERE osm.movement_type='replenish_send')::int    AS sends,
+                  count(*) FILTER (WHERE osm.movement_type='replenish_receive')::int AS receives
+             FROM outlet_stock_movements osm
+             JOIN distribution_points dp ON dp.id = osm.distribution_point_id
+            WHERE osm.reference_type = 'outlet_replenishment'
+              AND dp.name IN ('E2E Rescue Cart A', 'E2E Outlet A')
+            GROUP BY osm.reference_id`,
+        ).catch(() => null);
+        record('DB read-model: the cart was credited EXACTLY once — one replenish_send/replenish_receive pair, no double movement',
+          (pair?.rows ?? []).length === 1
+            && pair.rows[0].sends === 1 && pair.rows[0].receives === 1,
+          JSON.stringify(pair?.rows ?? null));
       } else {
         record('DB read-model verification for routine replenishment', true, 'DATABASE_URL not provided — UI-level check only');
       }

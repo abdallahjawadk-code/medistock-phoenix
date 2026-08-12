@@ -29,6 +29,15 @@ export interface InventoryScopeOption {
   warehouseId: string | null;
   /** 'central' | 'institution' for a warehouse-kind option; null for an outlet. */
   warehouseKind: 'central' | 'institution' | null;
+  /**
+   * R1.2: `distribution_points.point_type` for an outlet-kind option; null for
+   * a warehouse. Surfaced because the ORDINARY warehouse-dispatch destination
+   * list must exclude emergency outlets (Migration 180) — a crash cabinet or
+   * rescue cart is supplied from a warehouse only through initial provisioning.
+   * The database is the authority for that rule; this field exists so the UI
+   * does not offer a destination the server will always refuse.
+   */
+  pointType: string | null;
 }
 
 export interface InventoryScopeCatalog {
@@ -45,11 +54,11 @@ export interface InventoryScopeCatalog {
 }
 
 function toWhOption(w: Warehouse): InventoryScopeOption {
-  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind };
+  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind, pointType: null };
 }
 
 function toOutletOption(p: DistributionPoint): InventoryScopeOption {
-  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null };
+  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null, pointType: p.pointType };
 }
 
 export function useInventoryScopes(
