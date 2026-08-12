@@ -402,6 +402,15 @@ describe('181 the centre-depot creation contract', () => {
   });
 });
 
+describe('181 sector-main presence guard', () => {
+  it('does not force a main onto a sector with no active warehouses', () => {
+    const guard = section(
+      'CREATE FUNCTION public._phoenix_health_sector_main_presence_guard_v1',
+      'CREATE CONSTRAINT TRIGGER health_sector_main_presence_guard_v1');
+    expect(guard).toMatch(/IF v_active = 0 THEN\s+CONTINUE;/);
+  });
+});
+
 describe('181 NON-GOALS', () => {
   it('creates no unit domain, in any spelling', () => {
     // Scoped to apply-time DDL: the verify block deliberately NAMES these

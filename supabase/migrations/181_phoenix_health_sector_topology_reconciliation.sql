@@ -428,6 +428,11 @@ BEGIN
   FROM public.warehouses w
   WHERE w.organization_id = v_org;
 
+  -- A sector with no live warehouse topology yet may retain inactive history.
+  IF v_active = 0 THEN
+    CONTINUE;
+  END IF;
+
   IF v_mains = 0 THEN
     RAISE EXCEPTION 'health_sector_must_retain_a_sector_main'
       USING ERRCODE = '23514',

@@ -535,6 +535,19 @@ run('181 · topology invariants (001->181 rig)', () => {
   });
 
   // ── Non-health-sector organizations are untouched ─────────────────────────
+  it('an active sector with only inactive warehouse history remains a valid not-yet-set-up topology', async () => {
+    const org = uid();
+    await asAdmin(
+      `INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class,status)
+       VALUES ($1,'Pending sector','قطاع معلق',$2,'care_institution','health_sector','active')`,
+      [org, `pending-${org.slice(0, 8)}`]);
+    const r = await asAdmin(
+      `INSERT INTO warehouses (organization_id,name,name_ar,warehouse_kind,facility_id,is_main,status)
+       VALUES ($1,'Retired history','سجل متقاعد','institution',NULL,false,'inactive') RETURNING id`,
+      [org]);
+    expect(r.rows[0].id).toBeTruthy();
+  });
+
   describe('other organization classes keep their existing freedom', () => {
     it('a hospital may still own a central warehouse and a facility-less non-main', async () => {
       const r = await asAdmin(
