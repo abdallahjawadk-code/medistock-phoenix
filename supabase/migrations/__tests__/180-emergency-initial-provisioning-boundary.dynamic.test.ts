@@ -77,6 +77,8 @@ const CAB_EMPTYLIFE = '00000000-0000-0000-0000-000000180320';
 const CAB_ZEROREPL = '00000000-0000-0000-0000-000000180321';
 const CAB_REPLAY = '00000000-0000-0000-0000-000000180322';
 const CAB_CONC3 = '00000000-0000-0000-0000-000000180323';
+/** The exact ordering the authenticated E2E acceptance now drives, on ONE outlet. */
+const CART_E2E = '00000000-0000-0000-0000-000000180324';
 
 /** A profile with NO dispatch permissions — the RBAC negative control. */
 const NOBODY = '00000000-0000-0000-0000-000000180901';
@@ -270,6 +272,7 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
         ('${CAB_ZEROREPL}','${WH_HOSP}','${ORG_HOSP}','ZeroRepl Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${CAB_REPLAY}','${WH_HOSP}','${ORG_HOSP}','Replay Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${CAB_CONC3}','${WH_HOSP}','${ORG_HOSP}','CC3 Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
+        ('${CART_E2E}','${WH_HOSP}','${ORG_HOSP}','E2E Cart180','عربة','rescue_cart','active','emergency'),
         ('${CAB_PAIR_B}','${WH_HOSP_B}','${ORG_HOSP}','B Cabinet180','خزانة','crash_cabinet','active','non_emergency'),
         ('${PH_PAIR_B}','${WH_HOSP_B}','${ORG_HOSP}','B Pharmacy180','صيدلية','pharmacy','active','non_emergency'),
         ('${CAB_FOREIGN}','${WH_FOREIGN}','${ORG_FOREIGN}','F Cabinet180','خزانة','crash_cabinet','active','non_emergency')
@@ -820,6 +823,56 @@ run('180 · emergency-outlet initial-provisioning authority boundary (dynamic)',
           [requestId],
         );
         expect(r.rows[0].n).toBe(2);
+      });
+    });
+
+    it('Q7 · the authenticated-E2E ordering, on ONE outlet: refused, commissioned, then allowed once', async () => {
+      // Mirrors exactly what tools/e2e-acceptance/run.mjs now drives, so the
+      // browser acceptance and this rig prove the same sequence:
+      //   create commissioning dispatch -> replenish REFUSED -> send ->
+      //   positive receive -> consumed_at stamped -> replenish PASSES ->
+      //   exactly one send/receive pair.
+      const stock = await provisionWarehouseStock('Q7', 5);
+      const created = await createInitial(CART_E2E, 'Q7');
+      const lineId = await addLineAndSend(created.dispatch_id, stock, 5);
+
+      const src = await stockPharmacy(PH_MAIN, 'Q7S', 12);
+      const routeId = await upsertRoute(PH_MAIN, CART_E2E);
+
+      // 1. Commissioned but nothing has ARRIVED yet -> refused.
+      expect((await header(created.dispatch_id)).initial_provisioning_consumed_at).toBeNull();
+      expect(await rejects(() => replenish(routeId, src, 3)))
+        .toMatch(/initial_provisioning_required_before_replenishment/);
+      expect(await onHand(CART_E2E)).toBe(0);
+
+      // 2. A POSITIVE receipt through the canonical path stamps consumed_at.
+      const got = await receive(lineId, 5);
+      expect(got.ok).toBe(true);
+      expect(got.quantity_delta).toBe(5);
+      expect((await header(created.dispatch_id)).initial_provisioning_consumed_at).not.toBeNull();
+
+      // 3. The SAME replenishment now succeeds.
+      const ok = await replenish(routeId, src, 3);
+      expect(ok.ok).toBe(true);
+      expect(ok.idempotent_replay).toBe(false);
+      expect(await onHand(CART_E2E)).toBe(8);
+
+      // 4. Credited exactly once — the refused attempt wrote nothing.
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(
+          `SELECT reference_id,
+                  count(*) FILTER (WHERE movement_type='replenish_send')::int    AS sends,
+                  count(*) FILTER (WHERE movement_type='replenish_receive')::int AS receives
+             FROM outlet_stock_movements
+            WHERE reference_type='outlet_replenishment'
+              AND distribution_point_id IN ($1, $2)
+            GROUP BY reference_id`,
+          [CART_E2E, PH_MAIN],
+        );
+        const forCart = r.rows.filter((x: any) => x.receives > 0);
+        expect(forCart).toHaveLength(1);
+        expect(forCart[0].sends).toBe(1);
+        expect(forCart[0].receives).toBe(1);
       });
     });
 
