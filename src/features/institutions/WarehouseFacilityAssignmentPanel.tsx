@@ -27,7 +27,28 @@ export function WarehouseFacilityAssignmentPanel({
   const availableFacilities = facilities.filter(
     f => f.status === 'active' && !warehouses.some(w => w.status === 'active' && w.facilityId === f.id),
   );
-  const [facilityId, setFacilityId] = useState<string>(availableFacilities[0]?.id ?? '');
+
+  /**
+   * HOTFIX. `facilities` is loaded ASYNCHRONOUSLY, so the first render of this
+   * panel almost always sees an empty list. Seeding this state from
+   * `availableFacilities[0]` — as the original code did — therefore captured ''
+   * once and never revisited it: when the centres arrived, the native <select>
+   * fell back to displaying its first <option>, but the controlled value stayed
+   * '' and `disabled={!facilityId || ...}` kept the create button dead no matter
+   * what the operator typed. That is the Production defect.
+   *
+   * The selection is now DERIVED each render instead of seeded once: explicit
+   * state wins while it still names an available centre, and otherwise the
+   * first available centre is used. That makes the control agree with what the
+   * <select> actually shows, survives the async arrival, and also recovers when
+   * the chosen centre disappears (another depot claimed it, or it was
+   * deactivated) without an effect or a re-render loop.
+   */
+  const [facilityId, setFacilityId] = useState('');
+  const selectedFacilityId = availableFacilities.some(f => f.id === facilityId)
+    ? facilityId
+    : availableFacilities[0]?.id ?? '';
+
   const [name, setName] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [code, setCode] = useState('');
@@ -36,15 +57,15 @@ export function WarehouseFacilityAssignmentPanel({
   const [success, setSuccess] = useState<string | null>(null);
 
   async function onSubmit() {
-    if (!facilityId || !name.trim() || !nameAr.trim() || busy || !canManage) return;
+    if (!selectedFacilityId || !name.trim() || !nameAr.trim() || busy || !canManage) return;
     setBusy(true);
     setError(null);
     setSuccess(null);
-    const facility = facilities.find(f => f.id === facilityId);
+    const facility = facilities.find(f => f.id === selectedFacilityId);
     if (!facility) { setBusy(false); return; }
     const res = await createHealthCenterWarehouse({
       organizationId: facility.organizationId,
-      facilityId,
+      facilityId: selectedFacilityId,
       name: name.trim(),
       nameAr: nameAr.trim(),
       code: code.trim() || null,
@@ -63,7 +84,7 @@ export function WarehouseFacilityAssignmentPanel({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <PhoenixSelect
           label={t('fac_section', lang)}
-          value={facilityId}
+          value={selectedFacilityId}
           onChange={e => setFacilityId(e.target.value)}
           options={[
             ...availableFacilities.map(f => ({ value: f.id, label: lang === 'ar' ? f.nameAr : f.name })),
@@ -77,7 +98,7 @@ export function WarehouseFacilityAssignmentPanel({
         {success && <p style={{ fontSize: '12px', color: 'var(--ok)' }}>{success}</p>}
         {canManage && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!facilityId || !name.trim() || !nameAr.trim() || busy} onClick={onSubmit}>
+            <PhoenixButton variant="primary" size="sm" loading={busy} disabled={!selectedFacilityId || !name.trim() || !nameAr.trim() || busy} onClick={onSubmit}>
               {t('fac_warehouse_create', lang)}
             </PhoenixButton>
           </div>
