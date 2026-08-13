@@ -1,3 +1,5 @@
+import { isFacilityScopedRole } from '@/shared/lib/roles';
+
 export type ReportTab =
   | 'overview'
   | 'institutions'
@@ -58,9 +60,31 @@ export const REPORT_TAB_ACCESS = {
 export function allowedReportTabs(permissions: ReadonlySet<string>, role: string | null): ReportTab[] {
   if (role === null) return [];
 
+  /**
+   * R1.1-U SAFE ACTIVATION — `authenticated_rls` is not facility-safe.
+   *
+   * That rule means "this tab had no frontend gate; its RLS boundary is
+   * authoritative". For every role that existed before Migration 182 that is
+   * still exactly right. For a FACILITY-SCOPED role it is not: several read
+   * models behind those tabs authorize on ORGANIZATION MEMBERSHIP ALONE, which
+   * is precisely the boundary this role must not inherit, so "RLS is
+   * authoritative" would silently mean "the whole health sector is visible".
+   *
+   * A tab is therefore withheld from a facility-scoped role unless it carries
+   * an explicit gate the role can satisfy. This is a DENIAL, never a filter:
+   * the tab is not rendered at all, rather than rendered over client-side
+   * filtered data. Migration 182 closes the corresponding surfaces at the
+   * database for the ones that matter most; this denies the remainder rather
+   * than presenting a surface whose backend cannot yet be proven facility-safe.
+   *
+   * REPORT_TAB_ACCESS itself is deliberately unchanged, so every pre-existing
+   * role's tab set is byte-identical to before.
+   */
+  const facilityScoped = isFacilityScopedRole(role);
+
   return REPORT_TAB_ORDER.filter(tab => {
     const rule: ReportTabAccessRule = REPORT_TAB_ACCESS[tab];
-    if (rule.kind === 'authenticated_rls') return true;
+    if (rule.kind === 'authenticated_rls') return !facilityScoped;
     if (rule.kind === 'permission') return permissions.has(rule.permission);
     return role === rule.role;
   });

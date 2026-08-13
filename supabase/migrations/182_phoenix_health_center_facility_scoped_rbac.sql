@@ -1320,6 +1320,537 @@ CREATE POLICY dp_read_perm ON public.distribution_points
   );
 
 -- ============================================================================
+-- 9c. FACILITY CONFIDENTIALITY — close the organization-wide READ surfaces
+-- ============================================================================
+-- R1.1-U SAFE ACTIVATION (U-B).
+--
+-- Sections 9a/9b narrowed the two surfaces the granted permission keys reach.
+-- They are not sufficient on their own, because a large part of this schema
+-- authorizes reads on ORGANIZATION MEMBERSHIP ALONE — no permission key, no
+-- scope assignment. For every role that existed before 182 that was the whole
+-- contract and remains correct. For a FACILITY-SCOPED role it is not: "same
+-- organization" is precisely the boundary this role must not inherit, so an
+-- org-only predicate hands one health centre's manager every other centre's
+-- data, and the sector main's.
+--
+-- Two distinct bypasses are closed here.
+--
+-- (1) ORG-ONLY RLS. Seven SELECT policies authorize on organization alone. The
+--     highest-severity is item_availability: 182 deliberately withholds every
+--     availability.* key, but avail_select_org (002) never consults a permission
+--     key at all, so withholding them changed nothing. qr_targets/qr_tokens,
+--     the two route tables and the stocktake pair matter for the same reason
+--     AND as ENUMERATION ORACLES: they hand out the distribution_point and
+--     warehouse ids that 9b's dp_read_perm narrowing otherwise hides, which is
+--     what makes the next class exploitable.
+--
+-- (2) SECURITY DEFINER READ MODELS. phoenix_outlet_availability_read_model (179)
+--     and phoenix_available_stock (083) are granted to `authenticated` and gate
+--     on `v_org = <point>_org`. Being SECURITY DEFINER they bypass RLS entirely,
+--     so they defeat outlet_stock_select_scoped AND 9b's dp_read_perm: any
+--     outlet id in the sector returns that outlet's full stock. Narrowing
+--     policies without closing these would be security theatre.
+--
+-- THE PATTERN, everywhere: `phoenix_my_role() <> 'health_center_manager' OR
+-- <scope test>`. That conjunct is TRUE for every pre-182 role, and no profile
+-- could hold this role before this migration, so every existing role's
+-- predicate is semantically identical to today's — non-regression by
+-- construction rather than by assertion.
+--
+-- NOT closed here, and deliberately: dashboard condition counts (054),
+-- get_entity_purge_impact (003), local_items / profiles / paper references /
+-- inventory status reports. Each is org-only and each is recorded in the U-B
+-- report as a U-C dependency. They are aggregate, reference or personnel
+-- surfaces rather than per-centre clinical stock, none is reachable through a
+-- permission this role holds, and closing them would reach well beyond safe
+-- activation into surfaces this substage is not authorized to redesign. The
+-- U-B rule applied instead is the brief's own: a surface that cannot be proven
+-- facility-safe is DENIED to the role at the application boundary, and the
+-- dependency is documented rather than hidden.
+
+-- ── 9c-1. item_availability — the highest-severity leak ─────────────────────
+-- distribution_point_id is NOT NULL, so every row resolves to an outlet and
+-- therefore to a facility through its owning centre depot.
+DROP POLICY avail_select_org ON public.item_availability;
+CREATE POLICY avail_select_org ON public.item_availability
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR phoenix_profile_has_point_assignment(auth.uid(), distribution_point_id)
+    )
+  );
+
+-- ── 9c-2. QR enumeration ────────────────────────────────────────────────────
+-- get_public_qr_payload is a PUBLIC contract (Stage G2) whose confidentiality
+-- boundary is possession of the public_id — it is deliberately NOT changed
+-- here. What is closed is the ENUMERATION that hands a manager every public_id
+-- and target id in the sector, which is what converts a public-by-design
+-- surface into a sector-wide stock read.
+DROP POLICY qrt_select_org ON public.qr_targets;
+CREATE POLICY qrt_select_org ON public.qr_targets
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR (target_type = 'distribution_point'
+          AND phoenix_profile_has_point_assignment(auth.uid(), target_id))
+      OR (target_type = 'warehouse'
+          AND phoenix_profile_has_warehouse_assignment(auth.uid(), target_id))
+    )
+  );
+
+DROP POLICY qrtk_select_org ON public.qr_tokens;
+CREATE POLICY qrtk_select_org ON public.qr_tokens
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      -- A token is readable exactly when its target is.
+      OR EXISTS (
+        SELECT 1 FROM public.qr_targets t
+        WHERE t.id = qr_tokens.qr_target_id
+          AND ((t.target_type = 'distribution_point'
+                AND phoenix_profile_has_point_assignment(auth.uid(), t.target_id))
+            OR (t.target_type = 'warehouse'
+                AND phoenix_profile_has_warehouse_assignment(auth.uid(), t.target_id)))
+      )
+    )
+  );
+
+-- ── 9c-3. Routing tables — the id oracles ───────────────────────────────────
+-- BOTH endpoints must be visible. Seeing one end of a route discloses the id at
+-- the other, which is exactly the enumeration being closed.
+DROP POLICY outlet_replenishment_routes_select_scoped ON public.outlet_replenishment_routes;
+CREATE POLICY outlet_replenishment_routes_select_scoped ON public.outlet_replenishment_routes
+  FOR SELECT TO authenticated
+  USING (
+    (
+      organization_id = phoenix_my_org()
+      OR phoenix_my_role() = 'super_admin'
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR (phoenix_profile_has_point_assignment(auth.uid(), source_point_id)
+          AND phoenix_profile_has_point_assignment(auth.uid(), destination_point_id))
+    )
+  );
+
+-- Migration 181 makes same-sector supply ROUTE-FREE (Branch B) and 182's own
+-- VERIFY asserts no warehouse_supply_route exists for a health sector, so for
+-- this role the narrowed predicate is over a provably empty set. It is written
+-- anyway so the invariant does not depend on that emptiness holding forever.
+DROP POLICY warehouse_supply_routes_select_scoped ON public.warehouse_supply_routes;
+CREATE POLICY warehouse_supply_routes_select_scoped ON public.warehouse_supply_routes
+  FOR SELECT TO authenticated
+  USING (
+    (
+      EXISTS (
+        SELECT 1 FROM public.warehouses w
+        WHERE w.id = ANY (ARRAY[warehouse_supply_routes.source_warehouse_id,
+                                warehouse_supply_routes.target_warehouse_id])
+          AND w.organization_id = phoenix_my_org()
+      )
+      OR phoenix_my_role() = 'super_admin'
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR (phoenix_profile_has_warehouse_assignment(auth.uid(), source_warehouse_id)
+          AND phoenix_profile_has_warehouse_assignment(auth.uid(), target_warehouse_id))
+    )
+  );
+
+-- ── 9c-4. Stocktakes — counted quantities per warehouse/outlet ──────────────
+DROP POLICY stocktakes_select_scoped ON public.stocktakes;
+CREATE POLICY stocktakes_select_scoped ON public.stocktakes
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR (scope_kind = 'warehouse'
+          AND phoenix_profile_has_warehouse_assignment(auth.uid(), scope_id))
+      OR (scope_kind = 'outlet'
+          AND phoenix_profile_has_point_assignment(auth.uid(), scope_id))
+    )
+  );
+
+-- The line policy already delegates to its parent stocktake, so narrowing the
+-- parent narrows it — but it reads stocktakes with its OWN predicate rather
+-- than through RLS, so the delegation is restated explicitly.
+DROP POLICY stocktake_count_lines_select_scoped ON public.stocktake_count_lines;
+CREATE POLICY stocktake_count_lines_select_scoped ON public.stocktake_count_lines
+  FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.stocktakes s
+      WHERE s.id = stocktake_count_lines.stocktake_id
+        AND (
+          phoenix_my_role() = 'super_admin'
+          OR s.organization_id = phoenix_my_org()
+        )
+        AND (
+          phoenix_my_role() <> 'health_center_manager'
+          OR (s.scope_kind = 'warehouse'
+              AND phoenix_profile_has_warehouse_assignment(auth.uid(), s.scope_id))
+          OR (s.scope_kind = 'outlet'
+              AND phoenix_profile_has_point_assignment(auth.uid(), s.scope_id))
+        )
+    )
+  );
+
+-- ── 9c-5. The SECURITY DEFINER read models ─────────────────────────────────
+-- Forward-replaced, generated from the live definitions so everything they
+-- already prove stays byte-identical. Exactly ONE statement is added to each:
+-- a facility-scope refusal for this role, placed immediately after the existing
+-- organization gate and returning the SAME empty result, so an off-facility
+-- outlet is indistinguishable from a nonexistent one.
+--
+-- Migrations 179 and 083 are NOT edited; this is a forward replacement.
+CREATE OR REPLACE FUNCTION public.phoenix_outlet_availability_read_model(p_distribution_point_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org uuid;
+  v_role text;
+  v_point_org uuid;
+  v_rows jsonb;
+  v_empty jsonb := jsonb_build_object(
+    'ok', true, 'scope', 'distribution_point', 'distribution_point_id', NULL,
+    'source', 'canonical_outlet_stock', 'rows', '[]'::jsonb
+  );
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000'; END IF;
+  SELECT p.organization_id,p.role INTO v_org,v_role FROM public.profiles p WHERE p.id=v_actor AND p.status='active';
+  IF NOT FOUND OR p_distribution_point_id IS NULL THEN RETURN v_empty; END IF;
+  SELECT d.organization_id INTO v_point_org FROM public.distribution_points d WHERE d.id=p_distribution_point_id;
+  IF NOT FOUND OR NOT (v_role='super_admin' OR (v_org IS NOT NULL AND v_org=v_point_org)) THEN RETURN v_empty; END IF;
+  -- R1.1-U: SECURITY DEFINER bypasses RLS, so the organization test above is the
+  -- ONLY boundary this read model has. For a FACILITY-SCOPED role organization
+  -- membership is not a boundary at all: without this line a health-centre
+  -- manager reads any outlet in the sector, defeating both
+  -- outlet_stock_select_scoped and Migration 182's dp_read_perm narrowing.
+  IF v_role = 'health_center_manager'
+     AND NOT public.phoenix_profile_has_point_assignment(v_actor, p_distribution_point_id) THEN
+    RETURN v_empty;
+  END IF;
+
+  WITH canonical AS (
+    -- Physical identity is material_identity_key (Migration 150, GENERATED
+    -- ALWAYS), NOT a re-derivation from raw columns. unit, central_item_id,
+    -- scientific_name, national_code, concentration and dosage_form are all
+    -- COMPONENTS of that key, so each is constant inside a group and min() is
+    -- an exact representative — the same technique Migration 177 uses. The lot
+    -- dimensions below are exactly the ones Migration 176 already grouped on;
+    -- supply_type and purchase_origin stay aggregated-over, as before.
+    SELECT s.organization_id,s.distribution_point_id,
+      s.material_identity_key,
+      min(s.scientific_name) AS scientific_name,
+      COALESCE(min(s.concentration),'') AS concentration_key,
+      COALESCE(min(s.dosage_form),'') AS dosage_form_key,
+      COALESCE(min(s.national_code),'') AS national_code_key,
+      COALESCE(s.batch_number,'') AS batch_number_key,
+      COALESCE(s.expiry_date,DATE '0001-01-01') AS expiry_date_key,
+      COALESCE(s.internal_batch_reference,'') AS internal_batch_reference_key,
+      -- Migration-150 normalized material components. Each is CONSTANT inside
+      -- the group (they are the very components material_identity_key is built
+      -- from), so applying the helper to the min() representative yields the
+      -- group's shared value exactly. Used only to pair catalogue metadata.
+      public._phoenix_material_identity_component_v1(min(s.scientific_name)) AS scientific_name_norm,
+      public._phoenix_material_identity_component_v1(min(s.concentration))   AS concentration_norm,
+      public._phoenix_material_identity_component_v1(min(s.dosage_form))     AS dosage_form_norm,
+      public._phoenix_material_identity_component_v1(min(s.national_code))   AS national_code_norm,
+      -- The physical row unit. Constant within the group because it is part of
+      -- the identity; never a catalogue value.
+      min(s.unit) AS unit,
+      MAX(s.trade_name) AS trade_name,MAX(s.unit_price) AS unit_price,MAX(s.updated_at) AS updated_at,
+      SUM(s.on_hand_quantity)::integer AS on_hand_quantity,
+      SUM(s.available_quantity)::integer AS available_quantity,
+      -- LOSSLESS canonical row identity — see this file's ENCODING header. Every
+      -- element below is a GROUP BY key, so this is the group's own identity,
+      -- and it is also what the catalogue match keys on further down.
+      'stock:v1:'||encode(convert_to(jsonb_build_array(
+        p_distribution_point_id::text,
+        s.material_identity_key,
+        COALESCE(s.batch_number,''),
+        COALESCE(s.expiry_date,DATE '0001-01-01')::text,
+        COALESCE(s.internal_batch_reference,''))::text,'UTF8'),'hex') AS row_key
+    FROM public.outlet_stock s
+    WHERE s.distribution_point_id=p_distribution_point_id
+    -- central_item_id is a COMPONENT of material_identity_key, so grouping by
+    -- it cannot split a canonical group.
+    GROUP BY s.organization_id,s.distribution_point_id,s.material_identity_key,s.central_item_id,
+      COALESCE(s.batch_number,''),COALESCE(s.expiry_date,DATE '0001-01-01'),
+      COALESCE(s.internal_batch_reference,'')
+  ), catalogue AS (
+    SELECT ia.*,
+      COALESCE(ia.concentration,'') AS concentration_key,
+      COALESCE(ia.dosage_form,'') AS dosage_form_key,
+      COALESCE(ia.national_code,'') AS national_code_key,
+      COALESCE(ia.batch_number,'') AS batch_number_key,
+      COALESCE(ia.expiry_date,DATE '0001-01-01') AS expiry_date_key,
+      COALESCE(ia.internal_batch_reference,'') AS internal_batch_reference_key,
+      public._phoenix_material_identity_component_v1(ia.scientific_name) AS scientific_name_norm,
+      public._phoenix_material_identity_component_v1(ia.concentration)   AS concentration_norm,
+      public._phoenix_material_identity_component_v1(ia.dosage_form)     AS dosage_form_norm,
+      public._phoenix_material_identity_component_v1(ia.national_code)   AS national_code_norm
+    FROM public.item_availability ia WHERE ia.distribution_point_id=p_distribution_point_id
+  ), raw_match AS (
+    -- STEP 1 — exact RAW pairing, byte-for-byte what Migration 176 did. At most
+    -- ONE per canonical group (see this file's CATALOGUE METADATA MATCHING
+    -- header for why the unique index makes that a proof, not a hope), so it
+    -- can never multiply a physical row.
+    SELECT c.row_key,ia.id AS catalogue_id
+    FROM canonical c JOIN catalogue ia
+      ON ia.scientific_name=c.scientific_name
+     AND ia.concentration_key=c.concentration_key
+     AND ia.dosage_form_key=c.dosage_form_key
+     AND ia.national_code_key=c.national_code_key
+     AND ia.batch_number_key=c.batch_number_key
+     AND ia.expiry_date_key=c.expiry_date_key
+     AND ia.internal_batch_reference_key=c.internal_batch_reference_key
+  ), norm_match AS (
+    -- STEP 2 — Migration-150-normalized pairing for the MATERIAL components
+    -- only; the lot dimensions stay exact. HAVING count(*)=1 is the fail-safe:
+    -- item_availability's uniqueness is RAW, so two case-variant catalogue rows
+    -- can coexist at one point, and an ambiguous group takes NO metadata rather
+    -- than an arbitrary one. array_agg()[1] (not min(uuid), which is not
+    -- available on every supported server) reads the single surviving row.
+    SELECT c.row_key,(array_agg(ia.id))[1] AS catalogue_id
+    FROM canonical c JOIN catalogue ia
+      ON ia.scientific_name_norm=c.scientific_name_norm
+     AND ia.concentration_norm=c.concentration_norm
+     AND ia.dosage_form_norm=c.dosage_form_norm
+     AND ia.national_code_norm=c.national_code_norm
+     AND ia.batch_number_key=c.batch_number_key
+     AND ia.expiry_date_key=c.expiry_date_key
+     AND ia.internal_batch_reference_key=c.internal_batch_reference_key
+    GROUP BY c.row_key
+    HAVING count(*)=1
+  ), selected AS (
+    -- Exactly one catalogue candidate per canonical group, or none. RAW wins,
+    -- so a pairing that already worked keeps working unchanged.
+    SELECT c.*,COALESCE(rm.catalogue_id,nm.catalogue_id) AS selected_catalogue_id
+    FROM canonical c
+    LEFT JOIN raw_match  rm ON rm.row_key=c.row_key
+    LEFT JOIN norm_match nm ON nm.row_key=c.row_key
+  ), joined AS (
+    SELECT c.organization_id AS canonical_org_id,c.distribution_point_id AS canonical_point_id,
+      c.material_identity_key AS canonical_material_identity_key,
+      c.scientific_name AS canonical_scientific_name,c.concentration_key AS canonical_concentration_key,
+      c.dosage_form_key AS canonical_dosage_form_key,c.national_code_key AS canonical_national_code_key,
+      c.batch_number_key AS canonical_batch_number_key,c.expiry_date_key AS canonical_expiry_date_key,
+      c.internal_batch_reference_key AS canonical_internal_ref_key,c.trade_name AS canonical_trade_name,
+      c.row_key AS canonical_row_key,
+      c.unit AS canonical_unit,
+      c.unit_price AS canonical_unit_price,c.updated_at AS canonical_updated_at,c.on_hand_quantity,c.available_quantity,
+      ia.id AS catalogue_id,ia.local_item_id,ia.organization_id AS catalogue_org_id,ia.port_name,
+      ia.scientific_name AS catalogue_scientific_name,ia.trade_name AS catalogue_trade_name,
+      ia.concentration AS catalogue_concentration,ia.dosage_form AS catalogue_dosage_form,
+      ia.national_code AS catalogue_national_code,ia.batch_number AS catalogue_batch_number,
+      ia.expiry_date AS catalogue_expiry_date,ia.internal_batch_reference AS catalogue_internal_ref,
+      ia.notes,ia.supply_type,ia.price,ia.removed_at,ia.updated_at AS catalogue_updated_at
+    -- The pairing decision was already made, deterministically and at most
+    -- once, in `selected`. FULL OUTER preserves both open ends exactly as
+    -- before: a canonical group with no catalogue candidate keeps its physical
+    -- row, and a catalogue row NO group selected still surfaces on its own —
+    -- including both members of an ambiguous pair, so nothing is dropped. One
+    -- catalogue row may legitimately be selected by SEVERAL canonical groups
+    -- (5 box and 3 strip share one unit-less catalogue row); that fans the
+    -- catalogue metadata out to each physical row, which is correct, and is not
+    -- row multiplication because each physical row still appears once.
+    FROM selected c
+    FULL OUTER JOIN catalogue ia ON ia.id=c.selected_catalogue_id
+  ), shaped AS (
+    SELECT j.catalogue_id AS id,j.catalogue_id AS catalogue_item_availability_id,
+      -- Stock-backed rows are identified by their PHYSICAL identity, so two
+      -- unit-distinct materials sharing one catalogue row stay distinct. Only a
+      -- row with no physical stock at all falls back to the catalogue form. The
+      -- value is the LOSSLESS encoding computed in `canonical` — carried
+      -- through rather than recomputed, so the string the client keys on and
+      -- the string the catalogue match keys on cannot drift apart.
+      CASE WHEN j.canonical_row_key IS NOT NULL
+        THEN j.canonical_row_key
+        ELSE 'catalogue:'||j.catalogue_id::text END AS row_key,
+      j.local_item_id,p_distribution_point_id AS distribution_point_id,
+      COALESCE(j.canonical_org_id,j.catalogue_org_id) AS organization_id,
+      COALESCE(j.available_quantity,0) AS quantity,
+      -- The physical unit of THIS row's canonical identity. '' collapses to
+      -- NULL exactly as Migration 177 projects its public row unit. There is no
+      -- central_items.unit fallback in either direction: a catalogue unit
+      -- describes the local item, not this physical stock identity.
+      NULLIF(j.canonical_unit,'') AS unit,
+      public.phoenix_derive_outlet_availability_condition(COALESCE(j.available_quantity,0),COALESCE(j.catalogue_expiry_date,NULLIF(j.canonical_expiry_date_key,DATE '0001-01-01'))) AS condition,
+      COALESCE(j.catalogue_batch_number,NULLIF(j.canonical_batch_number_key,'')) AS batch_number,
+      COALESCE(j.catalogue_national_code,NULLIF(j.canonical_national_code_key,'')) AS national_code,
+      COALESCE(j.catalogue_expiry_date,NULLIF(j.canonical_expiry_date_key,DATE '0001-01-01')) AS expiry_date,
+      j.notes,COALESCE(j.catalogue_updated_at,j.canonical_updated_at) AS updated_at,j.port_name,j.supply_type,j.removed_at,
+      COALESCE(j.canonical_scientific_name,j.catalogue_scientific_name) AS scientific_name,
+      COALESCE(j.catalogue_trade_name,j.canonical_trade_name) AS trade_name,
+      COALESCE(j.catalogue_dosage_form,NULLIF(j.canonical_dosage_form_key,'')) AS dosage_form,
+      COALESCE(j.catalogue_concentration,NULLIF(j.canonical_concentration_key,'')) AS concentration,
+      COALESCE(j.price,j.canonical_unit_price) AS price,
+      COALESCE(j.catalogue_internal_ref,NULLIF(j.canonical_internal_ref_key,'')) AS internal_batch_reference,
+      COALESCE(j.on_hand_quantity,0) AS canonical_on_hand_quantity,
+      COALESCE(j.available_quantity,0) AS canonical_available_quantity,
+      CASE WHEN public.phoenix_derive_outlet_availability_condition(COALESCE(j.available_quantity,0),COALESCE(j.catalogue_expiry_date,NULLIF(j.canonical_expiry_date_key,DATE '0001-01-01'))) IN ('expired','missing') THEN 0 ELSE COALESCE(j.available_quantity,0) END AS canonical_usable_quantity,
+      CASE WHEN li.id IS NULL THEN NULL ELSE jsonb_build_object('id',li.id,'local_code',li.local_code,
+        'central_items',CASE WHEN ci.id IS NULL THEN NULL ELSE jsonb_build_object('id',ci.id,'name',ci.name,'name_ar',ci.name_ar,'unit',ci.unit,'barcode',ci.barcode) END) END AS local_items
+    FROM joined j
+    LEFT JOIN public.local_items li ON li.id=j.local_item_id
+    LEFT JOIN public.central_items ci ON ci.id=li.central_item_id
+  )
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'id', s.id,
+    'catalogue_item_availability_id', s.catalogue_item_availability_id,
+    'row_key', s.row_key,
+    'local_item_id', s.local_item_id,
+    'distribution_point_id', s.distribution_point_id,
+    'organization_id', s.organization_id,
+    'quantity', s.quantity,
+    'unit', s.unit,
+    'condition', s.condition,
+    'batch_number', s.batch_number,
+    'national_code', s.national_code,
+    'expiry_date', s.expiry_date,
+    'notes', s.notes,
+    'updated_at', s.updated_at,
+    'port_name', s.port_name,
+    'supply_type', s.supply_type,
+    'removed_at', s.removed_at,
+    'scientific_name', s.scientific_name,
+    'trade_name', s.trade_name,
+    'dosage_form', s.dosage_form,
+    'concentration', s.concentration,
+    'price', s.price,
+    'internal_batch_reference', s.internal_batch_reference,
+    'canonical_on_hand_quantity', s.canonical_on_hand_quantity,
+    'canonical_available_quantity', s.canonical_available_quantity,
+    'canonical_usable_quantity', s.canonical_usable_quantity,
+    'local_items', s.local_items
+  ) ORDER BY s.updated_at DESC NULLS LAST,s.row_key),'[]'::jsonb)
+  INTO v_rows FROM shaped s;
+
+  RETURN jsonb_build_object('ok',true,'scope','distribution_point','distribution_point_id',p_distribution_point_id,'source','canonical_outlet_stock','rows',v_rows);
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_available_stock(p_distribution_point_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_role  text;
+  v_dp_org uuid;
+  v_items jsonb;
+  v_empty jsonb := jsonb_build_object(
+    'ok', true, 'scope', 'distribution_point',
+    'distribution_point_id', NULL, 'source', 'canonical_projection',
+    'items', '[]'::jsonb);
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p WHERE p.id = v_actor AND p.status = 'active';
+  IF NOT FOUND THEN
+    RETURN v_empty;  -- same empty shape: no active profile
+  END IF;
+
+  IF p_distribution_point_id IS NULL THEN
+    RETURN v_empty;
+  END IF;
+
+  SELECT d.organization_id INTO v_dp_org
+    FROM public.distribution_points d WHERE d.id = p_distribution_point_id;
+
+  -- Forbidden and nonexistent are INDISTINGUISHABLE: both fall through to the
+  -- same empty result. The RPC never reveals that a point exists but is off-scope.
+  IF NOT FOUND
+     OR NOT (v_role = 'super_admin' OR (v_org IS NOT NULL AND v_dp_org = v_org)) THEN
+    RETURN v_empty;
+  END IF;
+
+  -- R1.1-U: SECURITY DEFINER bypasses RLS, so the organization test above is the
+  -- ONLY boundary this function has. Organization membership is not a boundary
+  -- for a FACILITY-SCOPED role, and the same indistinguishability rule applies:
+  -- an off-facility point returns the identical empty result as a nonexistent
+  -- one, never disclosing that it exists.
+  IF v_role = 'health_center_manager'
+     AND NOT public.phoenix_profile_has_point_assignment(v_actor, p_distribution_point_id) THEN
+    RETURN v_empty;
+  END IF;
+
+  -- Aggregate outlet_stock by BATCH-LEVEL identity (the granularity
+  -- item_availability represents). Each row is one canonical lot; summing across
+  -- rows sharing an 8-part identity cannot double count because outlet_stock's
+  -- own unique index makes that identity singular. usable_quantity zeroes out
+  -- anything the audited policy classifies expired or missing.
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'scientific_name', t.scientific_name,
+           'trade_name',      t.trade_name,
+           'concentration',   t.concentration,
+           'dosage_form',     t.dosage_form,
+           'national_code',   t.national_code,
+           'batch_number',    t.batch_number,
+           'expiry_date',     t.expiry_date,
+           'on_hand_quantity', t.on_hand_quantity,
+           'available_quantity', t.available_quantity,
+           'usable_quantity', CASE WHEN t.condition IN ('expired','missing') THEN 0
+                                   ELSE t.available_quantity END,
+           'condition',       t.condition,
+           'is_usable',       t.condition NOT IN ('expired','missing')
+         ) ORDER BY t.scientific_name, t.expiry_date NULLS LAST), '[]'::jsonb)
+    INTO v_items
+  FROM (
+    SELECT s.scientific_name, s.trade_name, s.concentration, s.dosage_form,
+           s.national_code, s.batch_number, s.expiry_date,
+           sum(s.on_hand_quantity)   AS on_hand_quantity,
+           sum(s.available_quantity) AS available_quantity,
+           public.phoenix_derive_outlet_availability_condition(
+             sum(s.available_quantity)::integer, s.expiry_date) AS condition
+      FROM public.outlet_stock s
+     WHERE s.distribution_point_id = p_distribution_point_id
+     GROUP BY s.scientific_name, s.trade_name, s.concentration, s.dosage_form,
+              s.national_code, s.batch_number, s.expiry_date,
+              s.internal_batch_reference
+  ) t;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'scope', 'distribution_point',
+    'distribution_point_id', p_distribution_point_id,
+    'source', 'canonical_projection',
+    'items', v_items
+  );
+END;
+$function$;
+
+-- ============================================================================
 -- 10. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) IS

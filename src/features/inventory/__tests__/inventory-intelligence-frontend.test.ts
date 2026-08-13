@@ -305,10 +305,28 @@ describe('round 3: exact manageable scopes and stale-id safety', () => {
   it('filters the readable catalog through active scope assignments with explicit broad-grant bypasses', () => {
     expect(scopesHook).toMatch(/useCurrentScopes\(authz\)/);
     expect(scopesHook).toMatch(/profile\?\.role === 'super_admin'/);
-    expect(scopesHook).toMatch(/assignedWarehouses\.has\(w\.id\)/);
+    // R1.1-U: the DIRECT warehouse-assignment test is unchanged in meaning but
+    // now lives inside `reachableWarehouse`, which ORs it with the facility-
+    // derived set. Asserting the predicate rather than its former call site
+    // keeps this guard about the CONTRACT — a manageable warehouse must be
+    // assigned — instead of about one line's spelling.
+    expect(scopesHook).toMatch(/assignedWarehouses\.has\(id\)/);
+    expect(scopesHook).toMatch(/reachableWarehouse\(w\.id\)/);
     expect(scopesHook).toMatch(/assignedPoints\.has\(o\.id\)/);
     expect(scopesHook).toMatch(/manageableWarehouses/);
     expect(scopesHook).toMatch(/manageableOutlets/);
+  });
+
+  it('R1.1-U: facility assignments project into warehouses without reaching the sector main', () => {
+    // A facility-scoped manager holds no warehouse row at all, so without this
+    // branch its manageable catalog is empty — valid database scope, unusable
+    // UI. The non-null facility test IS the sector-main exclusion: the main is
+    // the sector's only active warehouse with facility_id IS NULL (181).
+    expect(scopesHook).toMatch(/a\.scopeType === 'facility'/);
+    expect(scopesHook).toMatch(/w\.facilityId !== null && assignedFacilities\.has\(w\.facilityId\)/);
+    expect(scopesHook).toMatch(/reachableWarehouse\(o\.warehouseId\)/);
+    // The projection follows ASSIGNMENTS; no role name is hard-coded into it.
+    expect(scopesHook).not.toMatch(/health_center_manager/);
   });
 
   it('lets an exact organization-level grant cover every scope without requiring assignment rows', () => {

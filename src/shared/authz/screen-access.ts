@@ -14,7 +14,7 @@
  *   warehouse_officer         — one institution store (depot)
  *   outlet_officer            — one dispensing outlet
  */
-import { normalizeRole } from '@/shared/lib/roles';
+import { normalizeRole, isFacilityScopedRole } from '@/shared/lib/roles';
 
 /** Platform administrator — the ONLY role that manages institutions globally. */
 export function isPlatformAdmin(role: string | null | undefined): boolean {
@@ -48,5 +48,23 @@ export function institutionsScreenAccess(role: string | null | undefined): 'dire
  * so a missing or stale role can never default into the reports surface.
  */
 export function roleLandingScreen(role: string | null | undefined): number {
-  return normalizeRole(role ?? '') === 'outlet_officer' ? 18 : 21;
+  const n = normalizeRole(role ?? '');
+  if (n === 'outlet_officer') return 18;
+  /**
+   * R1.1-U — a FACILITY-SCOPED role must not land on the reports surface.
+   *
+   * Screen 21 carries eight tabs whose only boundary is `authenticated_rls`,
+   * and RLS alone is organization-wide on several of the read models behind
+   * them, so it is not a facility-safe landing (allowedReportTabs now refuses
+   * those tabs to this role for the same reason, which would otherwise land it
+   * on a Forbidden screen at login).
+   *
+   * Screen 18 is the correct first surface: it self-gates on the profile's
+   * manageable outlets, which for this role are derived from its assigned
+   * health centres, and every outlet read behind it resolves through
+   * phoenix_profile_has_point_assignment. This grants no permission — it only
+   * chooses which already-authorized surface opens first.
+   */
+  if (isFacilityScopedRole(n)) return 18;
+  return 21;
 }

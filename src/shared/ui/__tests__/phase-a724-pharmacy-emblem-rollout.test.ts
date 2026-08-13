@@ -92,6 +92,20 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // credential-logging guarantee now covers BOTH rollback logs by name.
       'src/shared/supabase/services/users.service.ts',
       'src/shared/supabase/__tests__/admin-create-user-secure-contract.test.ts',
+      // R1.1-U / U-B SAFE ACTIVATION — the four watched files the activation
+      // boundary touches, each by EXACT filename:
+      //   * screen-access.ts   — the facility-scoped role must not land on the
+      //     reports surface, whose tabs are RLS-only and therefore not
+      //     facility-safe;
+      //   * rbac.service.ts    — the scope reader now SELECTs facility_id;
+      //     without it a facility assignment arrived with no target and was
+      //     silently dropped, giving valid DB scope and an unusable UI;
+      //   * the two U-B proof suites — the frontend activation contract and the
+      //     adversarial database confidentiality matrix.
+      'src/shared/authz/screen-access.ts',
+      'src/shared/authz/rbac.service.ts',
+      'src/shared/authz/__tests__/ub-facility-scope-activation.test.ts',
+      'supabase/migrations/__tests__/182-ub-facility-confidentiality.dynamic.test.ts',
       // STAGE-G-G2: 177 registered by EXACT filename, same as every entry
       // before it — the public-QR read cutover plus its own static/dynamic
       // proofs. No wildcard, no directory exclusion; any OTHER unlisted file
@@ -111,7 +125,7 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
         const exact:Record<number,string>={154:'154_phoenix_transfer_corridor_privilege_lockdown.sql',155:'155_phoenix_transfer_send_receive_lifecycle_notifications.sql',156:'156_phoenix_outlet_return_line_idempotency.sql',157:'157_phoenix_outlet_return_exception_resolution.sql',158:'158_phoenix_transactional_outbox_foundation.sql',159:'159_phoenix_lifecycle_outbox_producer.sql',160:'160_phoenix_demo_purge_outbox_compatibility.sql',161:'161_phoenix_movement_outbox_producer.sql',162:'162_phoenix_stocktake_and_exception_outbox_producers.sql',163:'163_phoenix_outbox_consumer_foundation.sql',164:'164_phoenix_facility_identity_and_routing_foundation.sql',165:'165_phoenix_sector_health_center_supply_and_return.sql',166:'166_phoenix_initial_provisioning_invariant.sql',167:'167_phoenix_dispatch_line_full_rejection_reconciliation.sql',168:'168_phoenix_atomic_emergency_outlet_replenishment.sql',169:'169_phoenix_outlet_replenishment_reversal.sql',170:'170_phoenix_organization_class_and_warehouse_facility_assignment.sql',171:'171_phoenix_organization_kind_pharmacy_department_authority.sql',172:'172_phoenix_patient_dispensing_contract.sql',173:'173_phoenix_database_security_surface_hardening.sql',174:'174_phoenix_authenticated_rpc_surface_hardening.sql',175:'175_phoenix_read_helper_anonymous_surface_hardening.sql',176:'176_phoenix_canonical_outlet_availability_read_model.sql',177:'177_phoenix_canonical_public_qr.sql',178:'178_phoenix_distribution_point_owner_guard_privilege_fix.sql',179:'179_phoenix_canonical_authenticated_availability_hardening.sql',180:'180_phoenix_emergency_initial_provisioning_boundary.sql',181:'181_phoenix_health_sector_topology_reconciliation.sql',182:'182_phoenix_health_center_facility_scoped_rbac.sql'};
         const sql='supabase/migrations/'+exact[n];
         const tests=n===182
-          ? ['supabase/migrations/__tests__/182-health-center-facility-scoped-rbac-static.test.ts','supabase/migrations/__tests__/182-health-center-facility-scoped-rbac.dynamic.test.ts']
+          ? ['supabase/migrations/__tests__/182-health-center-facility-scoped-rbac-static.test.ts','supabase/migrations/__tests__/182-health-center-facility-scoped-rbac.dynamic.test.ts','supabase/migrations/__tests__/182-ub-facility-confidentiality.dynamic.test.ts']
           : n===181
           ? ['supabase/migrations/__tests__/181-health-sector-topology-static.test.ts','supabase/migrations/__tests__/181-health-sector-topology.dynamic.test.ts','supabase/migrations/__tests__/181-closure-round1.dynamic.test.ts','supabase/migrations/__tests__/181-null-warehouse-outlet.dynamic.test.ts']
           : n===180
