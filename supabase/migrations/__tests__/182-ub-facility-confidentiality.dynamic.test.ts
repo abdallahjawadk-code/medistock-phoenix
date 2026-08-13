@@ -249,6 +249,101 @@ run('182 U-B · facility confidentiality on the real read surfaces', () => {
     });
   });
 
+  // ══ 2c. FAIL-CLOSED SURFACES (independent adversarial review) ════════════
+  // These carry ONLY organization_id — no warehouse, outlet or facility column —
+  // so facility scope is not expressible on them without a data-model change.
+  // They are DENIED to the role rather than partially served. Each assertion
+  // pairs the manager with the institution_admin control, so "denied" is proved
+  // to be role-specific and not simply an empty table.
+  describe('surfaces that cannot be facility-resolved are denied outright', () => {
+    beforeAll(async () => {
+      await asAdmin(`
+        INSERT INTO phoenix_movement_events (organization_id,trace_id,event_type,occurred_at,source_label,destination_label,material_label,quantity_delta)
+        VALUES ('${SEC_A}','${randomUUID()}','dispatch_sent',now(),'Depot A','Pharmacy B','DrugX',5);
+        INSERT INTO phoenix_notifications (organization_id,event_type,occurred_at,reference_type,reference_label)
+        VALUES ('${SEC_A}','dispatch_sent',now(),'warehouse_dispatch','DSP-1');
+      `);
+    });
+
+    it('phoenix_movement_events: denied to the manager, unchanged for the control', async () => {
+      // Scoped to this fixture's row: the rig also carries demo-seed events.
+      const q = `SELECT material_label FROM phoenix_movement_events WHERE material_label='DrugX'`;
+      expect(await seen(MGR_A, q)).toEqual([]);
+      expect(await seen(MGR_AB, q)).toEqual([]);
+      expect(await seen(ADMIN_A, q)).toEqual(['DrugX']);
+      // ...and the manager sees NOTHING at all in the table, not merely not this row.
+      const all = await asUser(MGR_A, 'SELECT count(*)::int AS n FROM phoenix_movement_events');
+      expect(Number(all.rows[0].n)).toBe(0);
+    });
+
+    it('phoenix_notifications: denied to the manager — it renders in the top bar at login', async () => {
+      const q = `SELECT reference_label FROM phoenix_notifications WHERE reference_label='DSP-1'`;
+      expect(await seen(MGR_A, q)).toEqual([]);
+      expect(await seen(ADMIN_A, q)).toEqual(['DSP-1']);
+      const all = await asUser(MGR_A, 'SELECT count(*)::int AS n FROM phoenix_notifications');
+      expect(Number(all.rows[0].n)).toBe(0);
+    });
+
+    it('the org-only request ledgers are denied, and the resolvable one is narrowed not denied', async () => {
+      for (const t of ['phoenix_warehouse_correction_requests', 'phoenix_dispatch_line_requests',
+                       'phoenix_outlet_return_line_requests', 'phoenix_outlet_return_exception_resolutions']) {
+        const r = await asUser(MGR_A, `SELECT count(*)::int AS n FROM ${t}`);
+        expect(Number(r.rows[0].n), t).toBe(0);
+      }
+      // This one carries outlet_stock_id, so it resolves to a facility and is
+      // narrowed rather than denied — the predicate names the scope test.
+      // By NAME: the table also carries a demo-purger SELECT policy granted to a
+      // different role, so an unqualified rows[0] would read the wrong one.
+      const r = await asAdmin(`
+        SELECT qual FROM pg_policies
+        WHERE schemaname='public'
+          AND tablename='phoenix_stock_correction_requests'
+          AND policyname='phoenix_stock_correction_requests_select_scoped'`);
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].qual).toContain('phoenix_profile_has_point_assignment');
+    });
+
+    it('the SECURITY DEFINER movement/notification readers are denied too', async () => {
+      const timeline = await asUser(MGR_A,
+        `SELECT jsonb_array_length(coalesce((phoenix_movement_timeline($1,50,NULL,NULL)->>'events')::jsonb,'[]'::jsonb)) AS n`,
+        [randomUUID()]);
+      expect(Number(timeline.rows[0].n)).toBe(0);
+
+      const notes = await asUser(MGR_A,
+        `SELECT jsonb_array_length(coalesce((phoenix_notifications_list(50,NULL,NULL,NULL)->>'notifications')::jsonb,'[]'::jsonb)) AS n`);
+      expect(Number(notes.rows[0].n)).toBe(0);
+    });
+
+    it('the dispense-context reader refuses the role, disclosing nothing', async () => {
+      // The role guard sits AFTER the row lookup, so an id that does not exist
+      // raises movement_context_not_found first and a real off-facility id
+      // raises forbidden_cross_org_access. Both are refusals that return no
+      // data, and neither distinguishes "exists but denied" from "absent" to
+      // the caller — which is the property that matters.
+      await expect(
+        asUser(MGR_A, `SELECT phoenix_get_movement_dispense_context($1)`, [randomUUID()]),
+      ).rejects.toThrow(/forbidden_cross_org_access|movement_context_not_found/);
+    });
+  });
+
+  // ══ 2d. SELF-SERVICE ORGANIZATION CHANGE ════════════════════════════════
+  describe('an active manager cannot move itself between health sectors', () => {
+    it('changing its own organization_id is refused', async () => {
+      const msg = await asAdmin(`UPDATE profiles SET organization_id=$2 WHERE id=$1`, [MGR_A, SEC_B])
+        .then(() => '', (e: any) => String(e?.message ?? e));
+      expect(msg).toMatch(/health_center_manager_organization_change_forbidden/);
+      const row = await asAdmin(`SELECT organization_id FROM profiles WHERE id=$1`, [MGR_A]);
+      expect(row.rows[0].organization_id).toBe(SEC_A);
+    });
+
+    it('a non-facility-scoped profile is unaffected — 002s policy is untouched', async () => {
+      const r = await asAdmin(
+        `UPDATE profiles SET organization_id=$2 WHERE id=$1 RETURNING organization_id`, [ADMIN_A, SEC_B]);
+      expect(r.rows[0].organization_id).toBe(SEC_B);
+      await asAdmin(`UPDATE profiles SET organization_id=$2 WHERE id=$1`, [ADMIN_A, SEC_A]);
+    });
+  });
+
   // ══ 3. REVOCATION AND DRIFT close the read surfaces too ══════════════════
   describe('revoking the facility closes every read surface at once', () => {
     it('a revoked centre disappears from RLS and from the read models together', async () => {

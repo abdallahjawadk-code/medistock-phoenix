@@ -1851,6 +1851,592 @@ END;
 $function$;
 
 -- ============================================================================
+-- 9d. FAIL CLOSED where facility scope is NOT EXPRESSIBLE
+-- ============================================================================
+-- Section 9c closed every org-only surface that CAN be resolved to a facility,
+-- because it carries a warehouse, outlet or facility column. An independent
+-- adversarial review of that work found a second group sharing the identical
+-- root cause and reachable in exactly the same way — and the reason 9c missed
+-- them is worth recording, because it is the mistake to avoid next time: 9c
+-- enumerated the surfaces reachable THROUGH THE SIX GRANTED PERMISSION KEYS,
+-- while these consult NO permission key at all. Organization membership alone
+-- is the whole gate, which is precisely the argument 9c already applied to
+-- item_availability and simply did not carry through.
+--
+-- These tables and functions cannot be narrowed the way 9c narrows: they carry
+-- ONLY organization_id. phoenix_movement_events and phoenix_notifications have
+-- no warehouse, outlet or facility column at all — their locations are free
+-- text (source_label / destination_label) and a polymorphic reference_id — so
+-- there is no facility to test against. Giving them one is a data-model change,
+-- which is not authorized here and would reach far beyond safe activation.
+--
+-- The rule this substage applies, from its own brief, is therefore: a surface
+-- that cannot be PROVEN facility-safe is DENIED to the role. Not filtered in
+-- the client, not partially shown — denied at the database, so the refusal
+-- holds for a direct PostgREST query exactly as it does for the UI.
+--
+-- The cost is honest and is recorded rather than hidden: a health-centre
+-- manager receives no movement timeline and no notifications. U-C owns making
+-- these facility-aware (each needs a real scope column or a scope-aware read
+-- model); until then the role is safe rather than convenient.
+--
+-- The one exception is phoenix_stock_correction_requests, which DOES carry
+-- outlet_stock_id and therefore resolves to an outlet and to a facility. It is
+-- narrowed properly instead of denied.
+
+-- ── 9d-1. Movement events — free-text locations, no scope column ────────────
+DROP POLICY phoenix_movement_events_select_scoped ON public.phoenix_movement_events;
+CREATE POLICY phoenix_movement_events_select_scoped ON public.phoenix_movement_events
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    -- No facility can be derived from this row, so the role gets nothing.
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+-- ── 9d-2. Notifications — rendered in the top bar for EVERY signed-in user ──
+-- The severity here is reachability: this needs no crafted request at all, the
+-- shell renders the whole sector's custody feed at login.
+DROP POLICY phoenix_notifications_select_scoped ON public.phoenix_notifications;
+CREATE POLICY phoenix_notifications_select_scoped ON public.phoenix_notifications
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+-- ── 9d-3. Correction requests — one IS resolvable, three are not ────────────
+-- outlet_stock_id resolves to a distribution point and therefore to a facility,
+-- so this one is narrowed rather than denied.
+DROP POLICY phoenix_stock_correction_requests_select_scoped ON public.phoenix_stock_correction_requests;
+CREATE POLICY phoenix_stock_correction_requests_select_scoped ON public.phoenix_stock_correction_requests
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR EXISTS (
+        SELECT 1 FROM public.outlet_stock s
+        WHERE s.id = phoenix_stock_correction_requests.outlet_stock_id
+          AND phoenix_profile_has_point_assignment(auth.uid(), s.distribution_point_id)
+      )
+    )
+  );
+
+DROP POLICY phoenix_warehouse_correction_requests_select_scoped ON public.phoenix_warehouse_correction_requests;
+CREATE POLICY phoenix_warehouse_correction_requests_select_scoped ON public.phoenix_warehouse_correction_requests
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+DROP POLICY phoenix_dispatch_line_requests_select_scoped ON public.phoenix_dispatch_line_requests;
+CREATE POLICY phoenix_dispatch_line_requests_select_scoped ON public.phoenix_dispatch_line_requests
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+DROP POLICY phoenix_outlet_return_line_requests_select_scoped ON public.phoenix_outlet_return_line_requests;
+CREATE POLICY phoenix_outlet_return_line_requests_select_scoped ON public.phoenix_outlet_return_line_requests
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+DROP POLICY phoenix_outlet_return_exception_resolutions_select_scoped ON public.phoenix_outlet_return_exception_resolutions;
+CREATE POLICY phoenix_outlet_return_exception_resolutions_select_scoped ON public.phoenix_outlet_return_exception_resolutions
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = auth.uid())
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+-- ── 9d-4. SELF-SERVICE ORGANIZATION CHANGE ─────────────────────────────────
+-- profiles_update_own (002) pins `role` so a profile cannot self-promote, but
+-- it does NOT pin organization_id, and no column-level REVOKE exists. The 182
+-- guard as written only required the NEW organization to be an active health
+-- sector — it never required the organization to be UNCHANGED, so it waved a
+-- self-service move between sectors straight through for this very role.
+--
+-- The move is lateral rather than escalating (the attacker's own facility
+-- assignments fail the three-way organization agreement in
+-- phoenix_profile_has_facility_assignment and it loses its centres), and the
+-- hole is pre-existing in 002 rather than introduced here. It is closed for
+-- THIS ROLE anyway, at the narrowest point that works: an active
+-- health_center_manager may not change its own organization. 002's policy is
+-- deliberately left alone, so no other role's behaviour moves.
+CREATE OR REPLACE FUNCTION public._phoenix_profile_role_organization_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_kind   text;
+  v_class  text;
+  v_status text;
+  v_scopes integer;
+BEGIN
+  -- ── LEAVING the role: facility scope must be closed FIRST ─────────────────
+  -- Every path that rewrites profiles.role passes through here, including
+  -- phoenix_recycle_apply (which assigns role = p_new_role directly), so this is
+  -- a database invariant rather than a patch applied to one RPC.
+  --
+  -- The read-time helpers already re-prove `p.role = 'health_center_manager'`,
+  -- so an orphaned assignment authorizes nothing the instant the role changes.
+  -- The reason to refuse anyway is the ROUND TRIP: recycle out, recycle back in,
+  -- and the identity would silently regain centres nobody re-authorized. Closing
+  -- the scopes explicitly — audited, with a mandatory reason, through
+  -- phoenix_revoke_profile_scope — is the only way that trail stays honest.
+  --
+  -- No history is deleted to satisfy this: revoked rows are exactly what the
+  -- operator is being asked to produce.
+  IF TG_OP = 'UPDATE'
+     AND OLD.role = 'health_center_manager'
+     AND NEW.role IS DISTINCT FROM OLD.role THEN
+    SELECT count(*) INTO v_scopes
+    FROM public.profile_scope_assignments a
+    WHERE a.profile_id = NEW.id AND a.scope_type = 'facility' AND a.is_active;
+
+    IF v_scopes > 0 THEN
+      RAISE EXCEPTION 'health_center_manager_role_change_blocked_by_active_facility_scope'
+        USING ERRCODE = '23514',
+        DETAIL = format(
+          '%s active facility assignment(s) remain; revoke them through phoenix_revoke_profile_scope, with a reason, before changing this role',
+          v_scopes);
+    END IF;
+  END IF;
+
+  -- R1.1-U (U-B): an active manager may not be moved — or move itself, through
+  -- 002's profiles_update_own — between organizations. Its facilities belong to
+  -- one sector, so an organization change silently detaches every scope it
+  -- holds and re-points phoenix_my_org() at another sector's org-wide surfaces.
+  IF TG_OP = 'UPDATE'
+     AND OLD.role = 'health_center_manager'
+     AND NEW.role = 'health_center_manager'
+     AND NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+    RAISE EXCEPTION 'health_center_manager_organization_change_forbidden'
+      USING ERRCODE = '42501',
+      DETAIL = 'a facility-scoped profile is bound to its health sector; move it by revoking its facility scope and changing the role first';
+  END IF;
+
+  IF NEW.role IS DISTINCT FROM 'health_center_manager' THEN
+    RETURN NEW;
+  END IF;
+  -- Historical rows are not judged; only a live identity asserts authority.
+  IF NEW.status IS DISTINCT FROM 'active' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.organization_id IS NULL THEN
+    RAISE EXCEPTION 'health_center_manager_requires_organization'
+      USING ERRCODE = '23514',
+      DETAIL = 'an active health_center_manager is a facility-scoped role and cannot be a platform profile';
+  END IF;
+
+  SELECT o.organization_kind, o.institution_class, o.status
+    INTO v_kind, v_class, v_status
+  FROM public.organizations o WHERE o.id = NEW.organization_id;
+
+  IF v_status IS DISTINCT FROM 'active'
+     OR v_kind IS DISTINCT FROM 'care_institution'
+     OR v_class IS DISTINCT FROM 'health_sector' THEN
+    RAISE EXCEPTION 'health_center_manager_requires_active_health_sector'
+      USING ERRCODE = '23514',
+      DETAIL = 'organization must be an ACTIVE care_institution with institution_class=health_sector';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- ── 9d-5. The three remaining SECURITY DEFINER readers ────────────────
+-- Same argument as 9c-5, applied to the readers that adversarial review
+-- found afterwards. Forward-replaced from the live definitions; migrations
+-- 094, 136 and 139 are NOT edited.
+CREATE OR REPLACE FUNCTION public.phoenix_movement_timeline(p_trace_id uuid, p_limit integer DEFAULT 50, p_after_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_after_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor  uuid := auth.uid();
+  v_org    uuid;
+  v_role   text;
+  v_limit  integer;
+  v_events jsonb;
+  -- Unchanged from 081: unauthorized and nonexistent traces are
+  -- INDISTINGUISHABLE — both return this exact shape, so the RPC can never
+  -- be used as an existence oracle.
+  v_empty  jsonb := jsonb_build_object(
+    'ok', true,
+    'events', '[]'::jsonb,
+    'complete', false,
+    'completeness_note',
+      'A complete retrospective history cannot be reconstructed from the '
+      'current schema. Events are reported with their provenance: '
+      'movement_row (an append-only fact), derived_from_column (proven by a '
+      'non-NULL timestamp+actor pair on a corridor header), or event_ledger '
+      '(recorded by phoenix_movement_events). Status transitions that left no '
+      'column behind are not retained and are therefore absent, never inferred.',
+    'next_cursor', NULL
+  );
+BEGIN
+  IF v_actor IS NULL THEN
+    RETURN v_empty;
+  END IF;
+
+  v_limit := LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200);
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p
+   WHERE p.id = v_actor AND p.status = 'active';
+
+  IF NOT FOUND THEN
+    RETURN v_empty;
+  END IF;
+
+  IF p_trace_id IS NULL THEN
+    RETURN v_empty;
+  END IF;
+
+  WITH
+  movement_events AS (
+    SELECT m.id                            AS event_id,
+           'warehouse_stock_movement'      AS event_type,
+           -- 124's contract field; falls back to created_at defensively even
+           -- though 124 backfilled and NOT NULL-ed it.
+           COALESCE(m.occurred_at, m.created_at) AS occurred_at,
+           m.organization_id,
+           m.actor_id, m.actor_role, m.actor_name,
+           m.movement_type                 AS status_after,
+           m.scientific_name_snapshot      AS material_label,
+           m.batch_number_snapshot         AS batch_label,
+           m.on_hand_delta                 AS quantity_delta,
+           m.reference_type, m.reference_id,
+           m.source_document_number        AS reference_label,
+           'movement_row'                  AS provenance,
+           m.reason_code                   AS reason_code,
+           m.on_hand_before                AS quantity_before,
+           m.on_hand_after                 AS quantity_after,
+           m.correlation_id, m.causation_id,
+           false                           AS has_dispense_context
+      FROM public.warehouse_stock_movements m
+     WHERE m.reference_id = p_trace_id OR m.id = p_trace_id
+    UNION ALL
+    SELECT m.id, 'outlet_stock_movement', COALESCE(m.occurred_at, m.created_at), m.organization_id,
+           m.actor_id, m.actor_role, m.actor_name, m.movement_type,
+           m.scientific_name_snapshot, m.batch_number_snapshot, m.on_hand_delta,
+           m.reference_type, m.reference_id, m.source_document_number, 'movement_row',
+           m.reason_code, m.on_hand_before, m.on_hand_after,
+           m.correlation_id, m.causation_id,
+           EXISTS (SELECT 1 FROM public.phoenix_movement_dispense_context c WHERE c.movement_id = m.id)
+      FROM public.outlet_stock_movements m
+     WHERE m.reference_id = p_trace_id OR m.id = p_trace_id
+    UNION ALL
+    SELECT m.id, 'quarantine_movement', COALESCE(m.occurred_at, m.created_at), m.organization_id,
+           m.actor_id, m.actor_role, m.actor_name, m.movement_type,
+           m.scientific_name_snapshot, m.batch_number_snapshot, m.quantity_delta,
+           m.reference_type, m.reference_id, m.source_document_number, 'movement_row',
+           m.reason_code, m.quantity_before, m.quantity_after,
+           m.correlation_id, m.causation_id,
+           false
+      FROM public.warehouse_quarantine_stock_movements m
+     WHERE m.reference_id = p_trace_id OR m.id = p_trace_id
+    UNION ALL
+    -- item_availability_movements is the LEGACY table (033) whose sole writer
+    -- has zero production call sites. Kept in the union unchanged for
+    -- backward compatibility with any historical row, but it never carried
+    -- the contract fields, so those are honestly NULL rather than invented.
+    SELECT m.id, 'availability_movement', m.created_at, m.organization_id,
+           m.created_by, m.actor_role_snapshot, m.actor_name_snapshot, m.movement_type,
+           m.scientific_name, NULL, m.quantity_delta,
+           NULL, m.dispatch_line_id, NULL, 'movement_row',
+           NULL::text, m.quantity_before, m.quantity_after,
+           NULL::uuid, NULL::uuid,
+           false
+      FROM public.item_availability_movements m
+     WHERE m.dispatch_line_id = p_trace_id OR m.id = p_trace_id
+  ),
+  derived_events AS (
+    SELECT r.id AS event_id, 'return_requested' AS event_type, r.requested_at AS occurred_at,
+           r.source_organization_id AS organization_id,
+           r.requested_by AS actor_id, NULL::text, NULL::text, r.status,
+           NULL::text, NULL::text, NULL::integer,
+           'outlet_return_request'::text, r.id, r.return_number, 'derived_from_column'::text,
+           NULL::text, NULL::integer, NULL::integer, NULL::uuid, NULL::uuid, false
+      FROM public.outlet_return_requests r
+     WHERE r.id = p_trace_id AND r.requested_at IS NOT NULL
+    UNION ALL
+    SELECT r.id, 'return_reviewed', r.reviewed_at, r.source_organization_id,
+           r.reviewed_by, NULL, NULL, r.status, NULL, NULL, NULL,
+           'outlet_return_request', r.id, r.return_number, 'derived_from_column',
+           NULL, NULL, NULL, NULL, NULL, false
+      FROM public.outlet_return_requests r
+     WHERE r.id = p_trace_id AND r.reviewed_at IS NOT NULL
+    UNION ALL
+    SELECT r.id, 'return_cancelled', r.cancelled_at, r.source_organization_id,
+           r.cancelled_by, NULL, NULL, r.status, NULL, NULL, NULL,
+           'outlet_return_request', r.id, r.return_number, 'derived_from_column',
+           NULL, NULL, NULL, NULL, NULL, false
+      FROM public.outlet_return_requests r
+     WHERE r.id = p_trace_id AND r.cancelled_at IS NOT NULL
+    UNION ALL
+    SELECT s.id, 'return_shipment_sent', s.sent_at, s.source_organization_id,
+           s.sent_by, NULL, NULL, s.status, NULL, NULL, NULL,
+           'outlet_return_shipment', s.id, s.shipment_number, 'derived_from_column',
+           NULL, NULL, NULL, NULL, NULL, false
+      FROM public.outlet_return_shipments s
+     WHERE s.id = p_trace_id AND s.sent_at IS NOT NULL
+    UNION ALL
+    SELECT d.id, 'dispatch_sent', d.sent_at, d.organization_id,
+           d.sent_by, NULL, NULL, d.status, NULL, NULL, NULL,
+           'warehouse_dispatch', d.id, d.dispatch_number, 'derived_from_column',
+           NULL, NULL, NULL, NULL, NULL, false
+      FROM public.warehouse_dispatches d
+     WHERE d.id = p_trace_id AND d.sent_at IS NOT NULL
+    UNION ALL
+    SELECT d.id, 'dispatch_cancelled', d.cancelled_at, d.organization_id,
+           d.cancelled_by, NULL, NULL, d.status, NULL, NULL, NULL,
+           'warehouse_dispatch', d.id, d.dispatch_number, 'derived_from_column',
+           NULL, NULL, NULL, NULL, NULL, false
+      FROM public.warehouse_dispatches d
+     WHERE d.id = p_trace_id AND d.cancelled_at IS NOT NULL
+  ),
+  ledger_events AS (
+    SELECT e.id, e.event_type, e.occurred_at, e.organization_id,
+           e.actor_id, e.actor_role, e.actor_name, e.status_after,
+           e.material_label, e.batch_label, e.quantity_delta,
+           e.reference_type, e.reference_id, e.notes, 'event_ledger',
+           -- The envelope has no reason_code column (its 123/124 capture
+           -- trigger predates 125), so it is honestly NULL here rather than
+           -- guessed from the movement row.
+           NULL::text, e.quantity_before, e.quantity_after,
+           e.correlation_id, e.causation_id, false
+      FROM public.phoenix_movement_events e
+     WHERE e.trace_id = p_trace_id
+  ),
+  all_events AS (
+    SELECT * FROM movement_events
+    UNION ALL SELECT * FROM derived_events
+    UNION ALL SELECT * FROM ledger_events
+  ),
+  scoped AS (
+    SELECT * FROM all_events a
+     WHERE v_role = 'super_admin'
+        -- R1.1-U (U-B): SECURITY DEFINER bypasses RLS, so this organization test
+        -- is the ONLY boundary. A facility-scoped role cannot be resolved to a
+        -- facility here — a movement event carries free-text location labels and
+        -- a polymorphic reference, not a warehouse or outlet id — so it is
+        -- DENIED rather than partially served. U-C owns making this scope-aware.
+        OR (v_org IS NOT NULL AND a.organization_id = v_org
+            AND v_role <> 'health_center_manager')
+  ),
+  paged AS (
+    SELECT * FROM scoped s
+     WHERE p_after_at IS NULL
+        OR (s.occurred_at, s.event_id) > (p_after_at, p_after_id)
+     ORDER BY s.occurred_at ASC, s.event_id ASC
+     LIMIT v_limit
+  )
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+           'event_id',       p.event_id,
+           'event_type',     p.event_type,
+           'occurred_at',    p.occurred_at,
+           'actor_id',       p.actor_id,
+           'actor_role',     p.actor_role,
+           'actor_name',     p.actor_name,
+           'status',         p.status_after,
+           'material',       p.material_label,
+           'batch',          p.batch_label,
+           'quantity_delta', p.quantity_delta,
+           'reference_type', p.reference_type,
+           'reference_id',   p.reference_id,
+           'reference',      p.reference_label,
+           'provenance',     p.provenance,
+           -- ── 139 additive contract fields ──────────────────────────────
+           'reason_code',          p.reason_code,
+           'quantity_before',      p.quantity_before,
+           'quantity_after',       p.quantity_after,
+           'correlation_id',       p.correlation_id,
+           'causation_id',         p.causation_id,
+           'has_dispense_context', p.has_dispense_context
+         ) ORDER BY p.occurred_at ASC, p.event_id ASC), '[]'::jsonb)
+    INTO v_events
+    FROM paged p;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'events', v_events,
+    'complete', false,
+    'completeness_note', v_empty -> 'completeness_note',
+    'next_cursor',
+      CASE WHEN jsonb_array_length(v_events) = v_limit
+        THEN jsonb_build_object(
+               'after_at', v_events -> (v_limit - 1) -> 'occurred_at',
+               'after_id', v_events -> (v_limit - 1) -> 'event_id')
+        ELSE NULL END
+  );
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_notifications_list(p_limit integer DEFAULT 30, p_before_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid, p_unread_only boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_role  text;
+  v_limit integer;
+  v_rows  jsonb;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  v_limit := LEAST(GREATEST(COALESCE(p_limit, 30), 1), 100);
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p
+   WHERE p.id = v_actor AND p.status = 'active';
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', true, 'notifications', '[]'::jsonb, 'next_cursor', NULL);
+  END IF;
+
+  WITH scoped AS (
+    SELECT n.*, (r.notification_id IS NOT NULL) AS is_read
+      FROM public.phoenix_notifications n
+      LEFT JOIN public.phoenix_notification_reads r
+        ON r.notification_id = n.id AND r.profile_id = v_actor
+     -- R1.1-U (U-B): denied for a facility-scoped role — a notification
+     -- carries no scope column, so it cannot be resolved to a facility.
+     WHERE (v_role = 'super_admin'
+            OR (n.organization_id = v_org AND v_role <> 'health_center_manager'))
+       AND (p_before_at IS NULL OR (n.occurred_at, n.id) < (p_before_at, p_before_id))
+       AND (NOT p_unread_only OR r.notification_id IS NULL)
+     ORDER BY n.occurred_at DESC, n.id DESC
+     LIMIT v_limit
+  )
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+           'id',              s.id,
+           'event_type',      s.event_type,
+           'occurred_at',     s.occurred_at,
+           'actor_id',        s.actor_id,
+           'actor_role',      s.actor_role,
+           'actor_name',      s.actor_name,
+           'status',          s.status_after,
+           'reference_type',  s.reference_type,
+           'reference_id',    s.reference_id,
+           'reference',       s.reference_label,
+           'is_read',         s.is_read
+         ) ORDER BY s.occurred_at DESC, s.id DESC), '[]'::jsonb)
+    INTO v_rows
+    FROM scoped s;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'notifications', v_rows,
+    'next_cursor',
+      CASE WHEN jsonb_array_length(v_rows) = v_limit
+        THEN jsonb_build_object(
+               'before_at', v_rows -> (v_limit - 1) -> 'occurred_at',
+               'before_id', v_rows -> (v_limit - 1) -> 'id')
+        ELSE NULL END
+  );
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_get_movement_dispense_context(p_movement_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor  uuid := auth.uid();
+  v_row    public.phoenix_movement_dispense_context%ROWTYPE;
+  v_can_view_sensitive boolean;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_movement_id IS NULL THEN
+    RAISE EXCEPTION 'movement_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT * INTO v_row FROM public.phoenix_movement_dispense_context WHERE movement_id = p_movement_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'movement_context_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF NOT (
+    public.phoenix_my_role() = 'super_admin'
+    OR v_row.organization_id = (SELECT p.organization_id FROM public.profiles p WHERE p.id = v_actor)
+  ) THEN
+    RAISE EXCEPTION 'forbidden_cross_org_access' USING ERRCODE = '42501';
+  END IF;
+
+  -- R1.1-U (U-B): SECURITY DEFINER bypasses RLS, so the organization test above
+  -- is the ONLY boundary. Reached by id from the movement timeline, this
+  -- discloses another centre's dispense context — beneficiary type, references
+  -- and free-text notes. The movement id cannot be resolved to a facility here,
+  -- so a facility-scoped role is refused with the SAME error as any other
+  -- cross-boundary caller, disclosing nothing about whether the row exists.
+  IF public.phoenix_my_role() = 'health_center_manager' THEN
+    RAISE EXCEPTION 'forbidden_cross_org_access' USING ERRCODE = '42501';
+  END IF;
+
+  v_can_view_sensitive := public.phoenix_status_center_authorized(v_row.organization_id, 'movement_context.view_sensitive');
+
+  RETURN jsonb_build_object(
+    'id', v_row.id,
+    'movement_id', v_row.movement_id,
+    'beneficiary_type', v_row.beneficiary_type,
+    'patient_identifier', CASE WHEN v_can_view_sensitive THEN v_row.patient_identifier ELSE NULL END,
+    'patient_name', CASE WHEN v_can_view_sensitive THEN v_row.patient_name ELSE NULL END,
+    -- A document KIND is not an identity: never masked.
+    'patient_reference_type', v_row.patient_reference_type,
+    'patient_identity_masked', v_row.beneficiary_type = 'patient' AND NOT v_can_view_sensitive,
+    'crash_cart_reference', v_row.crash_cart_reference,
+    'internal_order_reference', v_row.internal_order_reference,
+    'notes', v_row.notes,
+    'recorded_by', v_row.recorded_by,
+    'recorded_at', v_row.recorded_at
+  );
+END;
+$function$;
+
+-- ============================================================================
 -- 10. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) IS
