@@ -104,24 +104,29 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
         ('${FAC_A}','${ORG_SECTOR}','primary_health_center','Centre A168','Centre A168','active'),
         ('${FAC_B}','${ORG_SECTOR}','subordinate_health_center','Centre B168','Centre B168','active'),
-        ('${FAC_INACTIVE}','${ORG_SECTOR}','primary_health_center','Centre X168','Centre X168','inactive');
+        ('${FAC_INACTIVE}','${ORG_SECTOR}','primary_health_center','Centre X168','Centre X168','active');
 
-      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id) VALUES
-        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot168','A Depot168','active','institution','p168-wh-a','${FAC_A}'),
-        ('${WH_FAC_B}','${ORG_SECTOR}','B Depot168','B Depot168','active','institution','p168-wh-b','${FAC_B}'),
-        ('${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Depot168','X Depot168','active','institution','p168-wh-x','${FAC_INACTIVE}'),
-        ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot168','Sector Depot168','active','institution','p168-wh-sec',NULL),
-        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot168','Hosp Depot168','active','institution','p168-wh-hosp',NULL),
-        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot168','Ctr Depot168','active','institution','p168-wh-ctr',NULL);
+      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id,is_main) VALUES
+        ('${WH_FAC_A}','${ORG_SECTOR}','A Depot168','A Depot168','active','institution','p168-wh-a','${FAC_A}',false),
+        ('${WH_FAC_B}','${ORG_SECTOR}','B Depot168','B Depot168','active','institution','p168-wh-b','${FAC_B}',false),
+        -- R1.1/181: a depot may only be CREATED on an active facility, so this
+        -- one is created while Centre X is still active and the facility is
+        -- deactivated immediately afterwards — which is exactly how the state
+        -- arises in production, and keeps 168's inactive-facility refusal live.
+        ('${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Depot168','X Depot168','active','institution','p168-wh-x','${FAC_INACTIVE}',false),
+        -- R1.1/181: the facility-less sector warehouse IS the sector main.
+        ('${WH_SECTOR}','${ORG_SECTOR}','Sector Depot168','Sector Depot168','active','institution','p168-wh-sec',NULL,true),
+        ('${WH_HOSPITAL}','${ORG_HOSPITAL}','Hosp Depot168','Hosp Depot168','active','institution','p168-wh-hosp',NULL,false),
+        ('${WH_SPECIAL}','${ORG_SPECIAL}','Ctr Depot168','Ctr Depot168','active','institution','p168-wh-ctr',NULL,false);
 
       INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${PH_A}','${WH_FAC_A}','${ORG_SECTOR}','A Pharmacy168','A Pharmacy168','pharmacy','active','non_emergency'),
         ('${CAB_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cabinet168','A Cabinet168','crash_cabinet','active','emergency'),
         ('${PH_B}','${WH_FAC_B}','${ORG_SECTOR}','B Pharmacy168','B Pharmacy168','pharmacy','active','non_emergency'),
         ('${CAB_B}','${WH_FAC_B}','${ORG_SECTOR}','B Cabinet168','B Cabinet168','crash_cabinet','active','emergency'),
-        ('${CART_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cart168','A Cart168','rescue_cart','active','emergency'),
-        ('${PH_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Pharmacy168','Sector Pharmacy168','pharmacy','active','non_emergency'),
-        ('${CAB_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','Sector Cabinet168','Sector Cabinet168','crash_cabinet','active','emergency'),
+        -- R1.1/181: CART_A, PH_SECTOR and CAB_SECTOR are deliberately NOT
+        -- seeded — a health-centre rescue cart and a sector-level outlet are
+        -- shapes 181 refuses to create. Both refusals are proved below.
         ('${PH_INACTIVE_FAC}','${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Pharmacy168','X Pharmacy168','pharmacy','active','non_emergency'),
         ('${CAB_INACTIVE_FAC}','${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Cabinet168','X Cabinet168','crash_cabinet','active','emergency'),
         ('${PH_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Pharmacy168','H Pharmacy168','pharmacy','active','non_emergency'),
@@ -132,6 +137,8 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         ('${PH_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Pharmacy168','C Pharmacy168','pharmacy','active','non_emergency'),
         ('${CART_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cart168','C Cart168','rescue_cart','active','emergency'),
         ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet168','C Cabinet168','crash_cabinet','active','non_emergency');
+
+      -- Now retire Centre X, leaving its depot attached to an inactive facility.
 
       INSERT INTO auth.users (id, email) VALUES ('${NOBODY}', 'nobody168@rig.test')
       ON CONFLICT (id) DO NOTHING;
@@ -569,11 +576,20 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       expect(msg).toMatch(/source_must_be_pharmacy|pharmacy/i);
     });
 
-    it('health-center rescue_cart destination is rejected', async () => {
-      const msg = await rejects(() =>
-        rig.asUser(rig.superAdminId, (c: any) =>
-          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_A, CART_A, true, null])));
-      expect(msg).toMatch(/health_center_rescue_cart_forbidden/);
+    it('health-center rescue_cart cannot exist to BE a destination', async () => {
+      // 168 refused to route to one. R1.1/181 refuses to create one, so the
+      // destination itself is now impossible — a strictly earlier refusal.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO distribution_points
+          (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+        VALUES ('${CART_A}','${WH_FAC_A}','${ORG_SECTOR}','A Cart168','A Cart168','rescue_cart','active','emergency')`)));
+      expect(msg).toMatch(/health_center_rescue_cart_not_permitted/);
+      // 168's own refusal must still be installed beneath it.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      expect(rows[0].def).toContain('health_center_rescue_cart_forbidden');
     });
 
     it('specialized-center rescue_cart destination is rejected', async () => {
@@ -604,11 +620,26 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       expect(msg).toMatch(/cross_facility_route_forbidden/);
     });
 
-    it('Shape-H sector-level outlet masquerading as facility outlet is rejected', async () => {
-      const msg = await rejects(() =>
-        rig.asUser(rig.superAdminId, (c: any) =>
-          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_SECTOR, CAB_SECTOR, true, null])));
-      expect(msg).toMatch(/health_center_route_requires_facility/);
+    it('Shape-H sector-level outlet cannot be created to masquerade at all', async () => {
+      // Pre-181 a sector-level outlet existed and was refused a route. 181
+      // refuses the outlet, so the masquerade has no subject. Both ends proved.
+      for (const [id, type, kind] of [
+        [PH_SECTOR, 'pharmacy', 'non_emergency'],
+        [CAB_SECTOR, 'crash_cabinet', 'emergency'],
+      ] as const) {
+        const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+          `INSERT INTO distribution_points
+             (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+           VALUES ($1,$2,$3,'Sector Outlet168','Sector Outlet168',$4,'active',$5)`,
+          [id, WH_SECTOR, ORG_SECTOR, type, kind])));
+        expect(msg, type).toMatch(/health_sector_outlet_requires_health_center_depot/);
+      }
+      // Shape H's own facility requirement must still be installed beneath it.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      expect(rows[0].def).toContain('health_center_route_requires_facility');
     });
 
     it('inactive route rejects movement with zero mutation', async () => {
@@ -651,25 +682,13 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         c.query(`UPDATE distribution_points SET status='active' WHERE id=$1`, [CAB_A]));
     });
 
-    it('inactive facility rejects with zero mutation', async () => {
-      await expectReject('inactive_facility', async () => {
-        // Upsert rejects inactive facilities; force-insert route metadata so the
-        // movement-time path must revalidate CURRENT facility status.
-        const routeId = randomUUID();
-        await rig.asAdmin((c: any) => c.query(`
-          INSERT INTO outlet_replenishment_routes (
-            id, organization_id, source_point_id, destination_point_id,
-            source_point_type, destination_point_type, is_active
-          ) VALUES (
-            $1,'${ORG_SECTOR}','${PH_INACTIVE_FAC}','${CAB_INACTIVE_FAC}',
-            'pharmacy','crash_cabinet',true
-          )
-        `, [routeId]));
-        const srcId = await seedPharmacyStock({
-          org: ORG_SECTOR, pharmacy: PH_INACTIVE_FAC, sci: uniq('SCI-IFAC'), qty: 10,
-        });
-        return { routeId, srcId, dstPoint: CAB_INACTIVE_FAC };
-      }, /facility_not_active/);
+    it('R1.1 prevents a facility becoming inactive underneath a live depot', async () => {
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE organization_facilities SET status='inactive' WHERE id=$1`, [FAC_INACTIVE])));
+      expect(msg).toMatch(/health_center_facility_change_blocked_by_active_depot/);
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT status FROM organization_facilities WHERE id=$1`, [FAC_INACTIVE]));
+      expect(rows[0].status).toBe('active');
     });
 
     it('insufficient / zero / negative quantity reject with zero mutation', async () => {
@@ -732,38 +751,52 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         [CART_HOSP]));
     });
 
-    it('rejects Shape-H when facility relationship no longer matches', async () => {
-      const routeId = await upsertRoute(PH_A, CAB_A, true);
+    it('rejects Shape-H when the stored route no longer matches the live facts', async () => {
+      // Pre-181 this drift was manufactured by MOVING CAB_A onto centre B's
+      // depot. R1.1/181 forbids exactly that move once the outlet owns any
+      // operational dependency (asserted in the next test), so the drift is
+      // injected where it can still legitimately occur: straight into the
+      // route table, which carries no shape trigger of its own. That is the
+      // stronger framing anyway — it proves the movement path re-derives
+      // Shape H from the LIVE topology instead of trusting the stored route,
+      // and it mutates no topology at all.
+      //
+      // CAB_B is DECOMMISSIONED for the duration so the assertion also proves
+      // the ordering Migration 180's verify block states: the Shape H/I matrix
+      // is evaluated BEFORE the initial-first gate, so a cross-facility route
+      // fails with its own accurate diagnosis rather than a lifecycle error.
       const srcId = await seedPharmacyStock({
         org: ORG_SECTOR, pharmacy: PH_A, sci: uniq('SCI-FACREL'), qty: 10,
       });
-      // Pharmacy and cabinet share WH_FAC_A; moving the WAREHOUSE's facility
-      // would move both (and, since Migration 170, requires an authenticated
-      // super_admin through the sole supported corridor — raw-mutating it
-      // here would be exactly the kind of unsupported bypass Migration 170
-      // exists to close). Attach CAB_A to WH_FAC_B instead: that diverges
-      // only the cabinet's current facility context, which is all this test
-      // needs, and never touches warehouses.facility_id at all.
-      // R1.2 / Migration 180: CAB_A now also carries a commissioning fixture,
-      // and warehouse_dispatches_dest_warehouse_fk pins
-      // (destination_distribution_point_id, warehouse_id) together with
-      // ON DELETE RESTRICT — so the outlet cannot be re-pointed while that row
-      // exists. Park it for the duration and restore it afterwards.
-      //
-      // The assertion below is unaffected either way: the Shape H/I matrix is
-      // evaluated BEFORE the initial-first gate, so a cross-facility route
-      // still fails with its own accurate diagnosis rather than a lifecycle
-      // error. That ordering is itself asserted in Migration 180's verify block.
-      await decommission(CAB_A);
+      await decommission(CAB_B);
+      // One ACTIVE route per source pharmacy: park PH_A's before forcing one.
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_B, CAB_A]));
+        `UPDATE outlet_replenishment_routes SET is_active=false WHERE source_point_id=$1`, [PH_A]));
+      const forced = await rig.asAdmin((c: any) => c.query(
+        `INSERT INTO outlet_replenishment_routes
+           (organization_id, source_point_id, destination_point_id,
+            source_point_type, destination_point_type, is_active)
+         VALUES ($1,$2,$3,'pharmacy','crash_cabinet',true) RETURNING id`,
+        [ORG_SECTOR, PH_A, CAB_B]));
+      const routeId = forced.rows[0].id;
       const before = await onHand(srcId);
       const msg = await rejects(() => replenish(routeId, srcId, 1));
       expect(msg).toMatch(/cross_facility_route_forbidden/);
       expect(await onHand(srcId)).toBe(before);
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_A, CAB_A]));
-      await commission(CAB_A);
+        `DELETE FROM outlet_replenishment_routes WHERE id=$1`, [routeId]));
+      await commission(CAB_B);
+    });
+
+    it('R1.1/181 closes the old drift vector: the outlet cannot be re-pointed', async () => {
+      // CAB_A owns a commissioning dispatch, routes and movement history by
+      // now. Moving it to another centre's depot would re-parent all of it.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET warehouse_id=$1 WHERE id=$2`, [WH_FAC_B, CAB_A])));
+      expect(msg).toMatch(/outlet_cross_center_reassignment_blocked_operational_dependency/);
+      const still = await rig.asAdmin((c: any) => c.query(
+        `SELECT warehouse_id FROM distribution_points WHERE id=$1`, [CAB_A]));
+      expect(still.rows[0].warehouse_id).toBe(WH_FAC_A);
     });
   });
 

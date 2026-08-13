@@ -1227,12 +1227,22 @@ describe('Port management uses permission-based gating, not role-based', () => {
     expect(addFormBody).not.toContain("port_name_ar");
   });
 
-  it('AddPortForm exposes only the three approved operational outlet types', () => {
+  it('AddPortForm exposes only the approved operational outlet types', () => {
+    // R1.1 / Migration 181: the option list is still derived from
+    // APPROVED_POINT_TYPES and from nothing else, but it is now narrowed by the
+    // OWNING SECTION before it reaches this form — inside a health sector a
+    // rescue cart has no counterpart and the database refuses one outright. The
+    // form renders the list it is handed, so the derivation is asserted one
+    // level up, where the narrowing decision actually lives.
     const addFormStart = instScreen.indexOf('function AddPortForm');
     const addFormEnd   = instScreen.indexOf('function PortCard');
     const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
     expect(addFormBody).toContain("t('port_type', lang)");
-    expect(addFormBody).toContain('APPROVED_POINT_TYPES.map(type =>');
+    expect(addFormBody).toContain('pointTypes.map(type =>');
+    // Whatever is handed down can only ever be a subset of the approved three.
+    expect(instScreen).toMatch(
+      /const selectablePointTypes = useMemo\(\s*\n\s*\(\) => \(isHealthSector\s*\n?\s*\? APPROVED_POINT_TYPES\.filter\(type => type\.value !== 'rescue_cart'\)\s*\n?\s*: APPROVED_POINT_TYPES\)/,
+    );
     expect(instScreen).toContain("value: 'pharmacy'");
     expect(instScreen).toContain("value: 'crash_cabinet'");
     expect(instScreen).toContain("value: 'rescue_cart'");

@@ -40,8 +40,12 @@ const ORG_OTHER = randomUUID();
 // ── warehouses ──────────────────────────────────────────────────────────────
 const WH_HOSP = randomUUID();
 const WH_SPEC = randomUUID();
-const WH_SECTOR = randomUUID();
+const WH_SECTOR = randomUUID();       // sector MAIN — supply root, never dispenses
+const WH_CENTRE = randomUUID();       // R1.1/181: the facility-bound centre depot
 const WH_OTHER = randomUUID();
+
+// ── facilities ──────────────────────────────────────────────────────────────
+const FAC_SECTOR = randomUUID();      // the health centre WH_CENTRE serves
 
 // ── outlets ─────────────────────────────────────────────────────────────────
 const PH_HOSP_ER = randomUUID();      // hospital pharmacy, emergency  -> card
@@ -55,6 +59,7 @@ const CAB_SECTOR = randomUUID();      // health-centre cabinet, emerg  -> card
 const PH_OTHER = randomUUID();        // another org entirely (scope tests)
 const PH_INACTIVE = randomUUID();     // inactive outlet
 const CART_SECTOR = randomUUID();     // ILLEGAL: rescue cart in a health centre
+const CART_SPEC = randomUUID();       // specialized-centre rescue cart (non-hospital)
 const CART_HOSP_WARD = randomUUID();  // ILLEGAL: rescue cart outside the ER
 
 // ── actors ──────────────────────────────────────────────────────────────────
@@ -140,11 +145,20 @@ run('172 · patient dispensing contract (dynamic)', () => {
         ('${ORG_SECTOR}','Sect172','Sect172','p172-sect','care_institution','health_sector'),
         ('${ORG_OTHER}','Other172','Other172','p172-other','care_institution','hospital');
 
-      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
-        ('${WH_HOSP}','${ORG_HOSP}','WH Hosp172','WH Hosp172','active','institution','p172-wh-h'),
-        ('${WH_SPEC}','${ORG_SPEC}','WH Spec172','WH Spec172','active','institution','p172-wh-s'),
-        ('${WH_SECTOR}','${ORG_SECTOR}','WH Sect172','WH Sect172','active','institution','p172-wh-c'),
-        ('${WH_OTHER}','${ORG_OTHER}','WH Other172','WH Other172','active','institution','p172-wh-o');
+      -- R1.1/181: a health sector dispenses from FACILITY-BOUND centre depots.
+      -- The facility-less warehouse is the sector main: a supply root that owns
+      -- no outlet. 172's dispensing rules are unchanged by that — they key off
+      -- institution_class and clinical_location_kind, not off the depot — so
+      -- the health-centre cases below simply moved one level down the topology.
+      INSERT INTO organization_facilities(id,organization_id,facility_class,name,name_ar,status) VALUES
+        ('${FAC_SECTOR}','${ORG_SECTOR}','primary_health_center','Centre172','Centre172','active');
+
+      INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code,facility_id,is_main) VALUES
+        ('${WH_HOSP}','${ORG_HOSP}','WH Hosp172','WH Hosp172','active','institution','p172-wh-h',NULL,false),
+        ('${WH_SPEC}','${ORG_SPEC}','WH Spec172','WH Spec172','active','institution','p172-wh-s',NULL,false),
+        ('${WH_SECTOR}','${ORG_SECTOR}','WH Sect172','WH Sect172','active','institution','p172-wh-c',NULL,true),
+        ('${WH_CENTRE}','${ORG_SECTOR}','WH Ctr172','WH Ctr172','active','institution','p172-wh-hc','${FAC_SECTOR}',false),
+        ('${WH_OTHER}','${ORG_OTHER}','WH Other172','WH Other172','active','institution','p172-wh-o',NULL,false);
 
       INSERT INTO distribution_points
         (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
@@ -154,11 +168,11 @@ run('172 · patient dispensing contract (dynamic)', () => {
         ('${CAB_HOSP}','${WH_HOSP}','${ORG_HOSP}','Cab172','Cab172','crash_cabinet','active','non_emergency'),
         ('${PH_SPEC}','${WH_SPEC}','${ORG_SPEC}','Spec Pharm172','Spec Pharm172','pharmacy','active','non_emergency'),
         ('${CAB_SPEC}','${WH_SPEC}','${ORG_SPEC}','Spec Cab172','Spec Cab172','crash_cabinet','active','non_emergency'),
-        ('${PH_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','HC Pharm172','HC Pharm172','pharmacy','active','non_emergency'),
-        ('${CAB_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','HC Cab172','HC Cab172','crash_cabinet','active','emergency'),
+        ('${PH_SECTOR}','${WH_CENTRE}','${ORG_SECTOR}','HC Pharm172','HC Pharm172','pharmacy','active','non_emergency'),
+        ('${CAB_SECTOR}','${WH_CENTRE}','${ORG_SECTOR}','HC Cab172','HC Cab172','crash_cabinet','active','emergency'),
         ('${PH_OTHER}','${WH_OTHER}','${ORG_OTHER}','Other Pharm172','Other Pharm172','pharmacy','active','non_emergency'),
         ('${PH_INACTIVE}','${WH_HOSP}','${ORG_HOSP}','Dead Pharm172','Dead Pharm172','pharmacy','archived','non_emergency'),
-        ('${CART_SECTOR}','${WH_SECTOR}','${ORG_SECTOR}','HC Cart172','HC Cart172','rescue_cart','active','emergency'),
+        ('${CART_SPEC}','${WH_SPEC}','${ORG_SPEC}','Spec Cart172','Spec Cart172','rescue_cart','active','emergency'),
         ('${CART_HOSP_WARD}','${WH_HOSP}','${ORG_HOSP}','Ward Cart172','Ward Cart172','rescue_cart','active','non_emergency');
 
       INSERT INTO auth.users (id,email) VALUES
@@ -253,8 +267,20 @@ run('172 · patient dispensing contract (dynamic)', () => {
 
   // ══ FAIL matrix ═══════════════════════════════════════════════════════════
   describe('I-S · refusals', () => {
-    it('I. rescue cart in a health centre is refused', async () => {
-      const s = await seedOutletStock({ org: ORG_SECTOR, point: CART_SECTOR, pointType: 'rescue_cart' });
+    it('I. a rescue cart cannot even EXIST in a health sector after 181', async () => {
+      // 172 refused to DISPENSE from this shape. 181 refuses to CREATE it, so
+      // the refusal now happens one step earlier and can never be reached at
+      // dispense time. Asserting the earlier refusal is strictly stronger.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+        VALUES ('${CART_SECTOR}','${WH_CENTRE}','${ORG_SECTOR}','HC Cart172','HC Cart172','rescue_cart','active','emergency')`)));
+      expect(msg).toMatch(/health_center_rescue_cart_not_permitted/);
+    });
+
+    it('I2. the non-hospital rescue-cart dispensing rule itself is unweakened', async () => {
+      // Proved where the shape is still legal: a specialized centre is not a
+      // hospital, so 172's rule fires exactly as it did for the health centre.
+      const s = await seedOutletStock({ org: ORG_SPEC, point: CART_SPEC, pointType: 'rescue_cart' });
       const before = await onHand(s);
       const msg = await rejects(() => dispense({ stockId: s, refType: 'card' }));
       expect(msg).toMatch(/rescue_cart_patient_dispense_requires_hospital/);

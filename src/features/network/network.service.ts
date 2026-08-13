@@ -51,17 +51,19 @@ export interface NetworkWarehouse {
   isMain: boolean;
   code: string | null;
   organizationId: string;
+  facilityId: string | null;
 }
 
 interface WarehouseRow {
   id: string; name: string; name_ar: string; warehouse_kind: WarehouseKind;
-  status: string; is_main: boolean; code: string | null; organization_id: string;
+  status: string; is_main: boolean; code: string | null; organization_id: string; facility_id: string | null;
 }
 
 function mapWarehouse(r: WarehouseRow): NetworkWarehouse {
   return {
     id: r.id, name: r.name, name_ar: r.name_ar, warehouseKind: r.warehouse_kind,
     status: r.status, isMain: r.is_main, code: r.code, organizationId: r.organization_id,
+    facilityId: r.facility_id ?? null,
   };
 }
 
@@ -70,7 +72,7 @@ export async function getAllWarehouses(): Promise<NetworkWarehouse[]> {
   if (!supabaseConfigured) return [];
   const { data, error } = await supabase
     .from('warehouses')
-    .select('id, name, name_ar, warehouse_kind, status, is_main, code, organization_id')
+    .select('id, name, name_ar, warehouse_kind, status, is_main, code, organization_id, facility_id')
     .neq('status', 'archived')
     .order('warehouse_kind', { ascending: true })
     .order('name_ar', { ascending: true });
@@ -89,6 +91,29 @@ export function createWarehouse(input: {
     p_warehouse_kind: input.warehouseKind,
     p_code: input.code ?? null,
     p_is_main: input.isMain ?? false,
+  });
+}
+
+/**
+ * R1.1 / Migration 181 — the atomic writer for a HEALTH-CENTRE depot.
+ *
+ * `createWarehouse` above takes no facility, so under the R1.1 topology
+ * invariants it cannot produce a valid centre depot: the row would have to be
+ * created facility-less first, and an active facility-less health-sector
+ * warehouse is by definition the sector main. This RPC creates the depot bound
+ * to its centre in one statement — institution kind, never main, active — so
+ * there is no intermediate illegal state and no "remember to assign the
+ * facility afterwards" step left to the operator.
+ */
+export function createHealthCenterWarehouse(input: {
+  organizationId: string; facilityId: string; name: string; nameAr: string; code?: string | null;
+}): Promise<RpcResult> {
+  return callRpc('phoenix_create_health_center_warehouse', {
+    p_organization_id: input.organizationId,
+    p_facility_id: input.facilityId,
+    p_name: input.name,
+    p_name_ar: input.nameAr,
+    p_code: input.code ?? null,
   });
 }
 
