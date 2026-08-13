@@ -474,11 +474,34 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
     bare.indexOf(';', bare.indexOf(`CREATE POLICY ${name}`)) + 1,
   );
 
-  it('narrows exactly two policies and creates no others', () => {
+  // U-A narrowed the two surfaces the granted permission keys reach. U-B added
+  // seven more, because a large part of this schema authorizes reads on
+  // ORGANIZATION MEMBERSHIP ALONE — which is exactly the boundary a
+  // facility-scoped role must not inherit. The list stays EXHAUSTIVE: every
+  // narrowed policy is named, each is dropped and recreated exactly once, and
+  // any tenth policy fails this guard.
+  it('narrows exactly the nine audited policies and creates no others', () => {
+    const NARROWED = [
+      'avail_select_org',                          // U-B: the highest-severity leak
+      'dp_read_perm',                              // U-A
+      'organization_facilities_select_scoped',     // U-A
+      'outlet_replenishment_routes_select_scoped', // U-B: id oracle
+      'qrt_select_org',                            // U-B: QR enumeration
+      'qrtk_select_org',                           // U-B: QR enumeration
+      'stocktake_count_lines_select_scoped',       // U-B: counted quantities
+      'stocktakes_select_scoped',                  // U-B: counted quantities
+      'warehouse_supply_routes_select_scoped',     // U-B: id oracle
+    ];
     const created = [...bare.matchAll(/CREATE POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
-    expect(created).toEqual(['dp_read_perm', 'organization_facilities_select_scoped']);
+    expect(created).toEqual(NARROWED);
     const dropped = [...bare.matchAll(/DROP POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
-    expect(dropped).toEqual(['dp_read_perm', 'organization_facilities_select_scoped']);
+    expect(dropped).toEqual(NARROWED);
+    // Each exactly once — a policy dropped twice would leave the second
+    // CREATE as the live definition and silently discard the first narrowing.
+    for (const p of NARROWED) {
+      expect([...bare.matchAll(new RegExp(`DROP POLICY ${p}\\b`, 'g'))], p).toHaveLength(1);
+      expect([...bare.matchAll(new RegExp(`CREATE POLICY ${p}\\b`, 'g'))], p).toHaveLength(1);
+    }
   });
 
   it('each added conjunct is TRUE for every pre-182 role', () => {
@@ -505,9 +528,37 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
 
   it('leaves every other policy alone', () => {
     for (const untouched of [
-      'wh_select_scoped', 'warehouse_stock_select_scoped', 'psa_select_scoped',
-      'dp_insert_perm', 'dp_update_perm', 'avail_select_org',
+      // Already scope-aware, so they inherit facility scope through the two
+      // assignment helpers and need no narrowing of their own.
+      'wh_select_scoped', 'warehouse_stock_select_scoped',
+      'warehouse_stock_mov_select_scoped', 'outlet_stock_select_scoped',
+      // Write paths and the scope ledger itself are untouched by U-B.
+      'psa_select_scoped', 'dp_insert_perm', 'dp_update_perm',
+      'avail_insert_perm', 'avail_update_perm',
     ]) expect(bare, untouched).not.toContain(`DROP POLICY ${untouched}`);
+  });
+
+  it('the two SECURITY DEFINER read models are forward-replaced, not left org-only', () => {
+    // Being SECURITY DEFINER they bypass RLS entirely, so narrowing policies
+    // proves nothing about them: without these the role reads any outlet in the
+    // sector and every policy above is security theatre.
+    for (const fnName of ['phoenix_outlet_availability_read_model', 'phoenix_available_stock']) {
+      const src = sqlFunctionSource(sql, fnName);
+      expect(src, fnName).toBeTruthy();
+      expect(src!, fnName).toContain("v_role = 'health_center_manager'");
+      expect(src!, fnName).toContain('phoenix_profile_has_point_assignment');
+      // The refusal returns the SAME empty result as a nonexistent point, so it
+      // never discloses that an off-facility outlet exists.
+      expect(src!, fnName).toContain('RETURN v_empty;');
+    }
+    // Migrations 179 and 083 themselves are NOT edited.
+    for (const [file, name] of [
+      ['179_phoenix_canonical_authenticated_availability_hardening.sql', '179'],
+      ['083_phoenix_inventory_derived_availability.sql', '083'],
+    ]) {
+      const historical = readFileSync(join(ROOT, 'supabase/migrations', file), 'utf8');
+      expect(historical, name).not.toContain('health_center_manager');
+    }
   });
 });
 
