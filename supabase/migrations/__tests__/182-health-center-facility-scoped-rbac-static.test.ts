@@ -480,18 +480,30 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
   // facility-scoped role must not inherit. The list stays EXHAUSTIVE: every
   // narrowed policy is named, each is dropped and recreated exactly once, and
   // any tenth policy fails this guard.
-  it('narrows exactly the nine audited policies and creates no others', () => {
+  it('narrows exactly the sixteen audited policies and creates no others', () => {
     const NARROWED = [
-      'avail_select_org',                          // U-B: the highest-severity leak
-      'dp_read_perm',                              // U-A
-      'organization_facilities_select_scoped',     // U-A
-      'outlet_replenishment_routes_select_scoped', // U-B: id oracle
-      'qrt_select_org',                            // U-B: QR enumeration
-      'qrtk_select_org',                           // U-B: QR enumeration
-      'stocktake_count_lines_select_scoped',       // U-B: counted quantities
-      'stocktakes_select_scoped',                  // U-B: counted quantities
-      'warehouse_supply_routes_select_scoped',     // U-B: id oracle
-    ];
+      // ── U-A: the two surfaces the granted permission keys reach ──────────
+      'dp_read_perm',
+      'organization_facilities_select_scoped',
+      // ── U-B / 9c: org-only AND facility-resolvable, so narrowed ──────────
+      'avail_select_org',                                          // highest-severity leak
+      'outlet_replenishment_routes_select_scoped',                 // id oracle
+      'qrt_select_org',                                            // QR enumeration
+      'qrtk_select_org',                                           // QR enumeration
+      'stocktake_count_lines_select_scoped',                       // counted quantities
+      'stocktakes_select_scoped',                                  // counted quantities
+      'warehouse_supply_routes_select_scoped',                     // id oracle
+      'phoenix_stock_correction_requests_select_scoped',           // via outlet_stock_id
+      // ── U-B / 9d: org-only and NOT facility-resolvable, so DENIED ────────
+      // Each carries organization_id alone — no warehouse, outlet or facility
+      // column — so scope cannot be expressed and the role gets nothing.
+      'phoenix_movement_events_select_scoped',
+      'phoenix_notifications_select_scoped',
+      'phoenix_warehouse_correction_requests_select_scoped',
+      'phoenix_dispatch_line_requests_select_scoped',
+      'phoenix_outlet_return_line_requests_select_scoped',
+      'phoenix_outlet_return_exception_resolutions_select_scoped',
+    ].sort();
     const created = [...bare.matchAll(/CREATE POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
     expect(created).toEqual(NARROWED);
     const dropped = [...bare.matchAll(/DROP POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
@@ -501,6 +513,40 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
     for (const p of NARROWED) {
       expect([...bare.matchAll(new RegExp(`DROP POLICY ${p}\\b`, 'g'))], p).toHaveLength(1);
       expect([...bare.matchAll(new RegExp(`CREATE POLICY ${p}\\b`, 'g'))], p).toHaveLength(1);
+    }
+  });
+
+  it('the DENIED group has no scope escape hatch, and the narrowed group does', () => {
+    // A denied policy ends in `AND phoenix_my_role() <> 'health_center_manager'`
+    // with no OR — there is deliberately no scope test it could satisfy,
+    // because none is expressible on an organization-id-only table.
+    for (const denied of [
+      'phoenix_movement_events_select_scoped',
+      'phoenix_notifications_select_scoped',
+      'phoenix_warehouse_correction_requests_select_scoped',
+      'phoenix_dispatch_line_requests_select_scoped',
+      'phoenix_outlet_return_line_requests_select_scoped',
+      'phoenix_outlet_return_exception_resolutions_select_scoped',
+    ]) {
+      const body = bare.slice(bare.indexOf(`CREATE POLICY ${denied}`));
+      const policy = body.slice(0, body.indexOf(';') + 1);
+      expect(policy, denied).toContain("AND phoenix_my_role() <> 'health_center_manager'");
+      expect(policy, denied).not.toContain('phoenix_profile_has_point_assignment');
+      expect(policy, denied).not.toContain('phoenix_profile_has_warehouse_assignment');
+      expect(policy, denied).not.toContain('phoenix_profile_has_facility_assignment');
+    }
+    // ...and every NARROWED policy does name a scope test, so the two groups
+    // cannot be confused with one another.
+    for (const [narrowed, test] of [
+      ['avail_select_org', 'phoenix_profile_has_point_assignment'],
+      ['outlet_replenishment_routes_select_scoped', 'phoenix_profile_has_point_assignment'],
+      ['stocktakes_select_scoped', 'phoenix_profile_has_warehouse_assignment'],
+      ['warehouse_supply_routes_select_scoped', 'phoenix_profile_has_warehouse_assignment'],
+      ['organization_facilities_select_scoped', 'phoenix_profile_has_facility_assignment'],
+      ['phoenix_stock_correction_requests_select_scoped', 'phoenix_profile_has_point_assignment'],
+    ] as const) {
+      const body = bare.slice(bare.indexOf(`CREATE POLICY ${narrowed}`));
+      expect(body.slice(0, body.indexOf(';') + 1), narrowed).toContain(test);
     }
   });
 
