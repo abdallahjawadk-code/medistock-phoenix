@@ -215,6 +215,40 @@ run('182 U-B · facility confidentiality on the real read surfaces', () => {
     });
   });
 
+  // ══ 2b. THE NARROWING PATTERN ITSELF IS FAIL-CLOSED ══════════════════════
+  describe('the `role <> ... OR scope` pattern is fail-closed under a NULL role', () => {
+    it('a NULL role DENIES rather than allows — `<>` is load-bearing, not `IS DISTINCT FROM`', async () => {
+      // phoenix_my_role() is `select role from profiles where id = auth.uid()`,
+      // so it yields NULL for any session with no profile row. Under three-valued
+      // logic `NULL <> 'health_center_manager'` is NULL, so the conjunct is NULL
+      // unless the scope test passes, and RLS denies anything that is not TRUE.
+      //
+      // `IS DISTINCT FROM` would instead have returned TRUE and ALLOWED the row.
+      // This asserts the safe operator was chosen, and would fail if anyone
+      // "tidied" it into the null-safe form.
+      const r = await asAdmin(`
+        SELECT
+          coalesce((NULL <> 'health_center_manager') OR false, false)            AS null_role_denied,
+          coalesce((NULL IS DISTINCT FROM 'health_center_manager') OR false, false) AS unsafe_form_would_allow,
+          coalesce(('institution_admin' <> 'health_center_manager') OR false, false) AS other_role_unaffected,
+          coalesce(('health_center_manager' <> 'health_center_manager') OR true, false) AS scope_test_decides`);
+      const row = r.rows[0];
+      expect(row.null_role_denied).toBe(false);
+      expect(row.unsafe_form_would_allow).toBe(true);
+      expect(row.other_role_unaffected).toBe(true);
+      expect(row.scope_test_decides).toBe(true);
+    });
+
+    it('every narrowed policy uses the fail-closed operator', async () => {
+      const r = await asAdmin(`
+        SELECT count(*)::int AS n FROM pg_policies
+        WHERE schemaname='public'
+          AND qual LIKE '%health_center_manager%'
+          AND qual LIKE '%IS DISTINCT FROM%'`);
+      expect(r.rows[0].n).toBe(0);
+    });
+  });
+
   // ══ 3. REVOCATION AND DRIFT close the read surfaces too ══════════════════
   describe('revoking the facility closes every read surface at once', () => {
     it('a revoked centre disappears from RLS and from the read models together', async () => {
