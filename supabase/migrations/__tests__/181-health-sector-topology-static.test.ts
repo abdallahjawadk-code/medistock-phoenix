@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { REVIEWED_MIGRATION_FILES } from './helpers/reviewed-migrations';
-import { activeSql } from './helpers/sql-source';
+import { activeSql, sqlFunctionSource } from './helpers/sql-source';
 
 const ROOT = join(__dirname, '../../../');
 const NAME = '181_phoenix_health_sector_topology_reconciliation.sql';
@@ -264,6 +264,113 @@ describe('181 the outlet hard boundary', () => {
     expect(code).toMatch(
       /BEFORE INSERT OR UPDATE OF warehouse_id, organization_id, point_type, clinical_location_kind, status\s*\n\s*ON public\.distribution_points/,
     );
+  });
+});
+
+describe('181 the unassigned-outlet boundary — NULL warehouse_id', () => {
+  const guardSource = () => {
+    const source = sqlFunctionSource(sql, '_phoenix_health_sector_outlet_topology_guard_v1');
+    expect(source, 'the outlet topology guard must exist').toBeTruthy();
+    return source!;
+  };
+
+  /**
+   * The guard's source from its NULL-warehouse test up to the point where the
+   * NON-null path resolves the owning warehouse row. Everything by which the
+   * unassigned shape is judged has to live inside this slice — which is what
+   * makes the assertions below semantic rather than string-spotting.
+   */
+  const nullBranch = () => {
+    const guard = guardSource();
+    const start = guard.indexOf('IF NEW.warehouse_id IS NULL THEN');
+    const resolve = guard.indexOf('SELECT * INTO v_wh');
+    expect(start, 'the guard must test NEW.warehouse_id IS NULL').toBeGreaterThan(-1);
+    expect(resolve, 'the NULL branch must precede warehouse resolution').toBeGreaterThan(start);
+    return guard.slice(start, resolve);
+  };
+
+  it('does NOT return early on a NULL warehouse before ownership is resolved', () => {
+    // (a) The exact defect shape — an unconditional early return.
+    expect(guardSource()).not.toMatch(
+      /IF\s+NEW\.warehouse_id\s+IS\s+NULL\s+THEN\s+RETURN\s+NEW;\s*END\s+IF;/,
+    );
+    // (b) The semantic form of the same claim, which no rewording can satisfy:
+    //     NO path leaves the NULL branch before the health-sector question has
+    //     been asked.
+    const branch = nullBranch();
+    const classTest = branch.indexOf("IS DISTINCT FROM 'health_sector'");
+    expect(classTest, 'the NULL branch must resolve health-sector ownership').toBeGreaterThan(-1);
+    expect(branch.slice(0, classTest)).not.toContain('RETURN NEW');
+  });
+
+  it('resolves ownership from the OUTLET organization — the only owner it has', () => {
+    const branch = nullBranch();
+    expect(branch).toContain('SELECT o.institution_class INTO v_class');
+    expect(branch).toContain('WHERE o.id = NEW.organization_id');
+    expect(branch.indexOf('institution_class'))
+      .toBeLessThan(branch.indexOf("IS DISTINCT FROM 'health_sector'"));
+  });
+
+  it('refuses an ACTIVE health-sector outlet that hangs off no warehouse', () => {
+    const branch = nullBranch();
+    expect(branch).toContain('health_sector_outlet_requires_health_center_depot');
+    expect(branch).toContain('warehouse_id IS NULL leaves it owned by no health centre');
+    // The refusal comes only AFTER the class test, so every other organization
+    // class still returns through the branch untouched.
+    expect(branch.indexOf("IS DISTINCT FROM 'health_sector'"))
+      .toBeLessThan(branch.indexOf('health_sector_outlet_requires_health_center_depot'));
+  });
+
+  it('judges the shape only when the row is ACTIVE', () => {
+    const guard = guardSource();
+    expect(guard.indexOf("NEW.status IS DISTINCT FROM 'active'"))
+      .toBeLessThan(guard.indexOf('IF NEW.warehouse_id IS NULL THEN'));
+  });
+
+  it('introduces NO warehouse/organization lock inversion', () => {
+    // There is no warehouse row to lock in this branch, and it takes none: the
+    // organization fence alone, in deterministic UUID order, covering both
+    // owners on an UPDATE.
+    const branch = nullBranch();
+    expect(branch).not.toMatch(/public\.warehouses/);
+    expect(branch).toMatch(/FROM public\.organizations o[\s\S]*ORDER BY o\.id[\s\S]*FOR SHARE/);
+    expect(branch).toContain('ARRAY[OLD.organization_id, NEW.organization_id]');
+    // The non-null path keeps its proven warehouse -> organization order.
+    const guard = guardSource();
+    expect(guard.indexOf('FROM public.warehouses WHERE id = NEW.warehouse_id FOR SHARE'))
+      .toBeLessThan(guard.lastIndexOf('FROM public.organizations o'));
+  });
+
+  it('does NOT make warehouse_id globally NOT NULL', () => {
+    expect(applyBare).not.toMatch(/ALTER\s+COLUMN\s+warehouse_id/i);
+    expect(applyBare).not.toMatch(/SET\s+NOT\s+NULL/i);
+  });
+
+  it('the classifier counts an unassigned active outlet as sector-level evidence', () => {
+    // Blocker 1 was migration/operator-gate divergence. An INNER JOIN here
+    // would make a warehouse-less outlet invisible to the migration while the
+    // committed pre-apply artifact — whose LEFT JOIN reads it as sector-level —
+    // stops on it.
+    expect(bare).toMatch(
+      /FROM public\.distribution_points dp\s*\n\s*LEFT JOIN public\.warehouses w ON w\.id = dp\.warehouse_id\s*\n\s*WHERE \(dp\.organization_id = v_org\.id OR w\.organization_id = v_org\.id\)/,
+    );
+  });
+
+  it('the in-transaction VERIFY cannot certify an unassigned active outlet', () => {
+    const end = bare.indexOf('active health-sector outlet(s) violate the canonical shape');
+    expect(end, 'the outlet VERIFY check must exist').toBeGreaterThan(-1);
+    const check = bare.slice(bare.lastIndexOf('SELECT count(*) INTO v_bad', end), end);
+    expect(check).toContain('LEFT JOIN public.warehouses w ON w.id = dp.warehouse_id');
+    expect(check).toContain('coalesce(w.organization_id, dp.organization_id)');
+    expect(check).toContain('w.id IS NULL');
+  });
+
+  it('organization activation still classifies a warehouse-less active outlet as invalid', () => {
+    const validator = section(
+      'CREATE FUNCTION public._phoenix_assert_health_sector_live_topology_v1',
+      'REVOKE ALL ON FUNCTION public._phoenix_assert_health_sector_live_topology_v1');
+    expect(validator).toContain('LEFT JOIN public.warehouses w ON w.id = dp.warehouse_id');
+    expect(validator).toContain('w.id IS NULL');
   });
 });
 

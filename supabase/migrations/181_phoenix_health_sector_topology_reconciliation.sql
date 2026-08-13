@@ -620,15 +620,34 @@ REVOKE ALL ON FUNCTION public._phoenix_health_sector_organization_activation_gua
 -- than the screen.
 --
 -- COVERAGE. An outlet's legality can change through INSERT and through UPDATE
--- of warehouse_id (rehoming, including onto the sector main), organization_id,
--- point_type (pharmacy -> rescue_cart), clinical_location_kind (a crash cabinet
--- losing its emergency context) and status (reactivating an invalid outlet).
+-- of warehouse_id (rehoming, including onto the sector main OR onto NOTHING),
+-- organization_id, point_type (pharmacy -> rescue_cart), clinical_location_kind
+-- (a crash cabinet losing its emergency context) and status (reactivating an
+-- invalid outlet).
+--
+-- THE UNASSIGNED SHAPE. distribution_points.warehouse_id is NULLABLE — Migration
+-- 021 dropped its NOT NULL for "warehouse retirement", and Migration 024 asserts
+-- that nullability is still in force. The composite ownership FK added by
+-- Migration 178, distribution_points_wh_org_fk (warehouse_id, organization_id),
+-- is MATCH SIMPLE, so a NULL warehouse_id is unconstrained by it — 178's own
+-- comment says exactly that. dp_insert_perm (021/024) gates INSERT on
+-- super_admin OR organization scope + ports.create, and never mentions
+-- warehouse_id. So a health sector CAN be handed an active outlet that hangs off
+-- no warehouse at all, and neither the schema nor RLS stops it.
+--
+-- An active outlet with no warehouse is owned by no health centre, which is the
+-- same violation as an outlet sitting on the sector main, and it is refused
+-- under the same contract. It is judged BEFORE the warehouse is resolved,
+-- because there is no warehouse to resolve — the ownership question is answered
+-- from NEW.organization_id instead.
 --
 -- SECURITY DEFINER for Migration 178's reason: the FOR SHARE read on warehouses
 -- is a locking read that `authenticated` may not take, and the definer context
 -- also makes the ownership test immune to caller RLS visibility. That FOR SHARE
 -- additionally conflicts with the section-2 guard's FOR UPDATE, giving the same
--- two-sided serialization Migrations 170/171 already rely on.
+-- two-sided serialization Migrations 170/171 already rely on. The FOR SHARE on
+-- organizations needs the same privilege, and the unassigned branch below takes
+-- it on its own.
 CREATE FUNCTION public._phoenix_health_sector_outlet_topology_guard_v1()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -643,8 +662,45 @@ BEGIN
   IF NEW.status IS DISTINCT FROM 'active' THEN
     RETURN NEW;
   END IF;
+
+  -- ── UNASSIGNED: an ACTIVE outlet with no warehouse ────────────────────────
+  -- There is no warehouse row here, so ownership is resolved from the outlet's
+  -- OWN organization and the health-sector question is answered before anything
+  -- else. This branch must never return early on NEW.warehouse_id IS NULL
+  -- before that answer exists: doing so is precisely the bypass that let an
+  -- active health-sector pharmacy, crash cabinet or rescue cart commit while
+  -- hanging off nothing.
+  --
+  -- LOCK ORDER. The non-null path below takes warehouse FOR SHARE and THEN the
+  -- organization fence, matching every warehouse mutation path, which already
+  -- owns its warehouse row before reaching for organizations. This branch has
+  -- no warehouse row to lock, so it takes the organization fence ALONE, in
+  -- deterministic UUID order. Acquiring no warehouse lock at all, it cannot
+  -- invert that order, and it still serializes against organization activation
+  -- exactly as the other guards do.
   IF NEW.warehouse_id IS NULL THEN
-    RETURN NEW;
+    PERFORM 1
+    FROM public.organizations o
+    WHERE o.id = ANY(CASE TG_OP
+      WHEN 'INSERT' THEN ARRAY[NEW.organization_id]
+      ELSE ARRAY[OLD.organization_id, NEW.organization_id]
+    END)
+    ORDER BY o.id
+    FOR SHARE;
+
+    SELECT o.institution_class INTO v_class
+    FROM public.organizations o WHERE o.id = NEW.organization_id;
+
+    -- Every other organization class keeps the unassigned-outlet freedom
+    -- Migration 021 introduced. R1.1 narrows health-sector semantics only, and
+    -- deliberately does NOT make warehouse_id globally NOT NULL.
+    IF v_class IS DISTINCT FROM 'health_sector' THEN
+      RETURN NEW;
+    END IF;
+
+    RAISE EXCEPTION 'health_sector_outlet_requires_health_center_depot'
+      USING ERRCODE = '23514',
+      DETAIL = 'an active outlet must hang off a facility-bound centre depot; warehouse_id IS NULL leaves it owned by no health centre';
   END IF;
 
   SELECT * INTO v_wh FROM public.warehouses WHERE id = NEW.warehouse_id FOR SHARE;
@@ -924,6 +980,14 @@ BEGIN
       GROUP BY w.facility_id HAVING count(*) > 1
     ) d;
 
+    -- LEFT JOIN, scoped from the OUTLET as well as from the warehouse. An
+    -- active outlet whose warehouse_id is NULL joins to no warehouse row, so an
+    -- inner join would make it invisible to this classifier while the operator
+    -- pre-apply artifact (docs/phoenix/r1-1-181-production-preapply-readonly.sql)
+    -- counts it as sector-level evidence and stops. The gate and the migration
+    -- must reach the SAME verdict, and w.facility_id IS NULL is true for a
+    -- missing warehouse exactly as it is for the sector main: an outlet no
+    -- health centre owns.
     SELECT
       count(*) FILTER (WHERE w.facility_id IS NULL),
       count(*) FILTER (WHERE dp.point_type = 'rescue_cart'),
@@ -932,8 +996,9 @@ BEGIN
       count(*) FILTER (WHERE dp.point_type NOT IN ('pharmacy','crash_cabinet'))
     INTO v_sector_outlets, v_rescue_carts, v_bad_cabinets, v_invalid_outlets
     FROM public.distribution_points dp
-    JOIN public.warehouses w ON w.id = dp.warehouse_id
-    WHERE w.organization_id = v_org.id AND dp.status = 'active';
+    LEFT JOIN public.warehouses w ON w.id = dp.warehouse_id
+    WHERE (dp.organization_id = v_org.id OR w.organization_id = v_org.id)
+      AND dp.status = 'active';
 
     -- ── AMBIGUOUS_STOP — refuse to guess ───────────────────────────────────
     IF v_central > 0 THEN
@@ -1225,7 +1290,7 @@ COMMENT ON FUNCTION public._phoenix_health_sector_organization_activation_guard_
   'R1.1: blocks reactivation of a health-sector organization when it owns active warehouses but not exactly one canonical sector main.';
 
 COMMENT ON FUNCTION public._phoenix_health_sector_outlet_topology_guard_v1() IS
-  'R1.1: an ACTIVE outlet in a health sector must hang off a facility-bound centre depot — which forbids every sector-level pharmacy, crash cabinet and rescue cart — may only be a pharmacy or a crash cabinet, never a rescue cart, and if it is a crash cabinet must carry clinical_location_kind=''emergency''. An ordinary centre pharmacy has no clinical-location requirement. Fires on INSERT and on UPDATE of warehouse_id, organization_id, point_type, clinical_location_kind and status.';
+  'R1.1: an ACTIVE outlet in a health sector must hang off a facility-bound centre depot — which forbids every sector-level pharmacy, crash cabinet and rescue cart — may only be a pharmacy or a crash cabinet, never a rescue cart, and if it is a crash cabinet must carry clinical_location_kind=''emergency''. An ordinary centre pharmacy has no clinical-location requirement. A NULL warehouse_id is refused under the same centre-depot contract: distribution_points.warehouse_id is nullable (021), the composite ownership FK is MATCH SIMPLE and so does not constrain it (178), and dp_insert_perm never mentions it (021/024), so an active health-sector outlet hanging off NOTHING is a database-level possibility and is closed here rather than by a global NOT NULL, which would change every other organization class. Fires on INSERT and on UPDATE of warehouse_id, organization_id, point_type, clinical_location_kind and status.';
 
 COMMENT ON FUNCTION public._phoenix_health_sector_outlet_reassignment_guard_v1() IS
   'R1.1: setup-time-only mutation contract for an outlet, the distribution_points counterpart of Migration 170''s warehouse rule. A cross-CENTRE warehouse_id move, or any point_type change, is refused once the outlet owns operational history. The dependency set was derived structurally from every foreign key referencing distribution_points plus the RBAC scope references, so it is complete by construction; the offending tables are returned in DETAIL.';
@@ -1338,12 +1403,20 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (181): % active health-sector warehouse(s) violate the canonical shape', v_bad;
   END IF;
 
+  -- LEFT JOIN, because an active outlet with NO warehouse is a violation of the
+  -- rule this migration has just installed, and an inner join would let 181
+  -- certify a database that already breaks it. The owner is the warehouse's
+  -- organization when there is a warehouse — the pre-existing reading, kept
+  -- exactly — and the outlet's own organization when there is not, which is the
+  -- only owner a warehouse-less row has. The composite FK
+  -- distribution_points_wh_org_fk keeps the two identical in the former case.
   SELECT count(*) INTO v_bad
   FROM public.distribution_points dp
-  JOIN public.warehouses w ON w.id = dp.warehouse_id
-  JOIN public.organizations o ON o.id = w.organization_id
+  LEFT JOIN public.warehouses w ON w.id = dp.warehouse_id
+  JOIN public.organizations o ON o.id = coalesce(w.organization_id, dp.organization_id)
   WHERE o.institution_class='health_sector' AND dp.status='active'
-    AND (w.facility_id IS NULL
+    AND (w.id IS NULL
+         OR w.facility_id IS NULL
          OR dp.point_type NOT IN ('pharmacy','crash_cabinet')
          OR (dp.point_type='crash_cabinet' AND dp.clinical_location_kind IS DISTINCT FROM 'emergency'));
   IF v_bad > 0 THEN
