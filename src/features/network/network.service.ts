@@ -9,7 +9,10 @@ import { supabase, supabaseConfigured } from '@/shared/supabase/client';
  */
 
 export type WarehouseKind = 'central' | 'institution';
-export type ScopeKind = 'warehouse' | 'distribution_point';
+// R1.1-U: 'facility' scopes a health_center_manager to health-centre
+// facilities. The database (Migration 182) is the authority for who may hold
+// it and which facilities are legal; this type only widens the wire contract.
+export type ScopeKind = 'warehouse' | 'distribution_point' | 'facility';
 
 /** Result envelope. `error` carries the RPC's raised code token (e.g. 'NOT_AUTHORIZED_WAREHOUSE_MANAGE'). */
 export interface RpcResult<T = Record<string, unknown>> {
@@ -289,12 +292,14 @@ export interface ScopeAssignment {
   scopeType: ScopeKind;
   warehouseId: string | null;
   distributionPointId: string | null;
+  facilityId: string | null;
   isActive: boolean;
 }
 
 interface ScopeAssignmentRow {
   id: string; profile_id: string; organization_id: string; scope_type: ScopeKind;
-  warehouse_id: string | null; distribution_point_id: string | null; is_active: boolean;
+  warehouse_id: string | null; distribution_point_id: string | null;
+  facility_id: string | null; is_active: boolean;
 }
 
 /** Active scope assignments the caller may see (RLS-scoped). */
@@ -302,14 +307,15 @@ export async function getScopeAssignments(orgId?: string | null): Promise<ScopeA
   if (!supabaseConfigured) return [];
   let q = supabase
     .from('profile_scope_assignments')
-    .select('id, profile_id, organization_id, scope_type, warehouse_id, distribution_point_id, is_active')
+    .select('id, profile_id, organization_id, scope_type, warehouse_id, distribution_point_id, facility_id, is_active')
     .eq('is_active', true);
   if (orgId) q = q.eq('organization_id', orgId);
   const { data, error } = await q;
   if (error) throw error;
   return (data as ScopeAssignmentRow[] | null ?? []).map(r => ({
     id: r.id, profileId: r.profile_id, organizationId: r.organization_id, scopeType: r.scope_type,
-    warehouseId: r.warehouse_id, distributionPointId: r.distribution_point_id, isActive: r.is_active,
+    warehouseId: r.warehouse_id, distributionPointId: r.distribution_point_id,
+    facilityId: r.facility_id, isActive: r.is_active,
   }));
 }
 

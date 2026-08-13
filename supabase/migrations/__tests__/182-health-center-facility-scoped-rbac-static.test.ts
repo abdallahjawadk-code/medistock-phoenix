@@ -1,0 +1,603 @@
+/**
+ * 182 · HEALTH-CENTER FACILITY-SCOPED RBAC (R1.1-U) — static proof.
+ *
+ * Source-level guards that need no database: registration, the exact object
+ * inventory, and — heavily — the NON-GOALS. R1.1-U owns AUTHORIZATION and
+ * nothing else, so the assertions here are weighted toward what must be ABSENT:
+ * no third stock truth, no unit domain, no second assignment table, no
+ * organization-wide grant to the new role, no edit of Migration 062/076/146/181.
+ *
+ * Behavioural proof (the access matrices, provisioning, isolation, RLS) lives in
+ * the sibling *.dynamic.test.ts.
+ */
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { REVIEWED_MIGRATION_FILES } from './helpers/reviewed-migrations';
+import { activeSql, executableSql, sqlFunctionSource } from './helpers/sql-source';
+
+const ROOT = join(__dirname, '../../../');
+const NAME = '182_phoenix_health_center_facility_scoped_rbac.sql';
+const sql = readFileSync(join(ROOT, 'supabase/migrations', NAME), 'utf8').replace(/\r\n?/g, '\n');
+const code = sql.slice(sql.indexOf('BEGIN;'), sql.indexOf('\nCOMMIT;'));
+
+/** Statements that run at apply time (function bodies / DO blocks stripped). */
+const applyTime = code.replace(/\$([a-z_]*)\$[\s\S]*?\$\1\$/g, '\n/* body removed */\n');
+/** Comments removed — absence claims must read code, not documentation. */
+const bare = activeSql(code);
+const applyBare = activeSql(applyTime);
+/**
+ * Comments removed AND string literals blanked. Required for NEGATIVE
+ * assertions: this migration's own VERIFY block quotes the very text some of
+ * those assertions forbid (e.g. it checks that revocation does not contain
+ * 'DELETE FROM public.profile_scope_assignments'), so reading `bare` would make
+ * the guard match itself.
+ */
+const executable = executableSql(code);
+
+const fn = (name: string) => {
+  const src = sqlFunctionSource(sql, name);
+  expect(src, `function not found: ${name}`).toBeTruthy();
+  return src!;
+};
+
+describe('182 registration and shape', () => {
+  it('is registered exactly once, immediately after 181', () => {
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f === NAME)).toEqual([NAME]);
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(i).toBeGreaterThan(0);
+    expect(REVIEWED_MIGRATION_FILES[i - 1])
+      .toBe('181_phoenix_health_sector_topology_reconciliation.sql');
+  });
+
+  it('is the LAST registered migration — no 183 exists', () => {
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[3-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+  });
+
+  it('is a single transaction, manual-apply only', () => {
+    expect(sql).toContain('BEGIN;');
+    expect(sql).toContain('\nCOMMIT;');
+    expect(sql).toContain('MANUAL APPLY ONLY');
+    expect(sql).toMatch(/DO NOT use `supabase db push`/);
+    expect([...sql.matchAll(/^BEGIN;$/gm)].length).toBe(1);
+    expect([...sql.matchAll(/^COMMIT;$/gm)].length).toBe(1);
+  });
+
+  it('fails closed on preconditions and verifies in-transaction', () => {
+    expect(code).toContain('182_precondition_failed');
+    expect(code).toContain('VERIFY FAILED (182)');
+    // It refuses to run twice, and refuses on a chain without 181.
+    expect(code).toContain('the 182 facility helper already exists');
+    expect(code).toContain('Migration 181 is not applied');
+  });
+
+  it('carries no Production identity', () => {
+    const uuids = bare.match(/'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'/gi) ?? [];
+    expect(uuids).toEqual([]);
+    expect(bare).toContain("institution_class = 'health_sector'");
+  });
+});
+
+describe('182 the role vocabulary gains exactly one member', () => {
+  it('adds health_center_manager and keeps all five historical roles', () => {
+    const check = bare.slice(bare.indexOf('ADD CONSTRAINT profiles_role_check'));
+    for (const role of [
+      'super_admin', 'central_warehouse_manager', 'institution_admin',
+      'warehouse_officer', 'outlet_officer', 'health_center_manager',
+    ]) expect(check, role).toContain(`'${role}'`);
+  });
+
+  it('remaps no legacy role and creates no alias', () => {
+    expect(bare).not.toMatch(/UPDATE\s+public\.profiles\s+SET\s+role/i);
+    expect(bare).not.toMatch(/hospital_admin/);
+  });
+
+  it('refuses to apply where the new role somehow already exists', () => {
+    expect(code).toContain("a health_center_manager profile already exists");
+  });
+});
+
+describe('182 facility scope extends the ONE assignment ledger', () => {
+  it('adds a nullable facility_id column rather than a second table', () => {
+    expect(applyBare).toContain('ALTER TABLE public.profile_scope_assignments ADD COLUMN facility_id uuid');
+    expect(applyBare).not.toMatch(/CREATE\s+TABLE/i);
+  });
+
+  it('extends BOTH historical scope_type checks — one alone would reject every row', () => {
+    // 062 left two overlapping constraints on this column.
+    expect(applyBare).toContain('DROP CONSTRAINT profile_scope_assignments_scope_type_check');
+    expect(applyBare).toContain('DROP CONSTRAINT psa_scope_type_chk');
+    const both = bare.match(/ADD CONSTRAINT (profile_scope_assignments_scope_type_check|psa_scope_type_chk)[\s\S]*?;/g) ?? [];
+    expect(both).toHaveLength(2);
+    for (const c of both) expect(c).toContain("'facility'");
+  });
+
+  it('the target-match check admits exactly one target column per scope type', () => {
+    const chk = bare.slice(
+      bare.indexOf('ADD CONSTRAINT psa_target_matches_scope_chk'),
+      bare.indexOf('ADD CONSTRAINT psa_facility_org_fk'),
+    );
+    expect(chk).toMatch(/WHEN 'warehouse'::text\s+THEN warehouse_id IS NOT NULL AND distribution_point_id IS NULL AND facility_id IS NULL/);
+    expect(chk).toMatch(/WHEN 'distribution_point'::text THEN distribution_point_id IS NOT NULL AND warehouse_id IS NULL AND facility_id IS NULL/);
+    expect(chk).toMatch(/WHEN 'facility'::text\s+THEN facility_id IS NOT NULL AND warehouse_id IS NULL AND distribution_point_id IS NULL/);
+    expect(chk).toContain('ELSE false');
+  });
+
+  it('proves ownership STRUCTURALLY, matching the warehouse/point idiom', () => {
+    expect(bare).toMatch(
+      /ADD CONSTRAINT psa_facility_org_fk\s*\n\s*FOREIGN KEY \(facility_id, organization_id\)\s*\n\s*REFERENCES public\.organization_facilities \(id, organization_id\)\s*\n\s*ON DELETE RESTRICT/,
+    );
+  });
+
+  it('one ACTIVE assignment per (profile, facility), and revoked history never blocks reuse', () => {
+    expect(bare).toMatch(
+      /CREATE UNIQUE INDEX psa_active_facility_uniq\s*\n\s*ON public\.profile_scope_assignments \(profile_id, facility_id\)\s*\n\s*WHERE is_active = true AND scope_type = 'facility'/,
+    );
+    // Deliberately NOT unique on profile_id alone: one manager, many centres.
+    expect(bare).not.toMatch(/UNIQUE INDEX[\s\S]{0,120}\(profile_id\)\s*\n?\s*WHERE[\s\S]{0,60}facility/);
+  });
+
+  it('adds no new unique index to organization_facilities — 164 already provides the FK target', () => {
+    expect(code).toContain('organization_facilities(id, organization_id) UNIQUE is absent');
+    expect(applyBare).not.toMatch(/CREATE\s+(UNIQUE\s+)?INDEX[^;]*ON public\.organization_facilities/i);
+  });
+});
+
+describe('182 write-time validation is the second cross-sector layer', () => {
+  const guard = () => fn('phoenix_validate_profile_scope_assignment');
+
+  it('preserves the warehouse and distribution_point branches verbatim', () => {
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_TARGET_NOT_FOUND: warehouse % not found in organization %');
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_TARGET_INACTIVE: distribution point % is %');
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_ORG_MISMATCH');
+  });
+
+  it('a facility assignment requires the health_center_manager role', () => {
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_ROLE_INELIGIBLE');
+    expect(guard()).toMatch(/v_profile_role IS DISTINCT FROM 'health_center_manager'/);
+  });
+
+  it('a facility assignment requires an ACTIVE care_institution health sector', () => {
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_ORGANIZATION_NOT_HEALTH_SECTOR');
+    expect(guard()).toMatch(/v_org_kind IS DISTINCT FROM 'care_institution'/);
+    expect(guard()).toMatch(/v_org_class IS DISTINCT FROM 'health_sector'/);
+  });
+
+  it('the facility must be an ACTIVE health centre of the same organization', () => {
+    for (const e of [
+      'SCOPE_ASSIGNMENT_TARGET_NOT_FOUND: facility % not found',
+      'SCOPE_ASSIGNMENT_FACILITY_ORGANIZATION_MISMATCH',
+      'SCOPE_ASSIGNMENT_FACILITY_CLASS_INVALID',
+      'SCOPE_ASSIGNMENT_TARGET_INACTIVE: facility % is %',
+    ]) expect(guard(), e).toContain(e);
+    expect(guard()).toContain("'primary_health_center', 'subordinate_health_center'");
+  });
+
+  it('revoked rows stay exempt, so history remains writable', () => {
+    expect(guard()).toMatch(/IF NEW\.is_active THEN/);
+  });
+
+  it('fails closed on an unknown scope type', () => {
+    expect(guard()).toContain('SCOPE_ASSIGNMENT_UNKNOWN_SCOPE_TYPE');
+  });
+});
+
+describe('182 the profile role/organization invariant', () => {
+  const guard = () => fn('_phoenix_profile_role_organization_guard_v1');
+
+  it('an ACTIVE manager must sit in an active care_institution health sector', () => {
+    expect(guard()).toContain('health_center_manager_requires_organization');
+    expect(guard()).toContain('health_center_manager_requires_active_health_sector');
+    expect(guard()).toMatch(/v_class IS DISTINCT FROM 'health_sector'/);
+  });
+
+  it('judges only ACTIVE rows, so history is preserved', () => {
+    expect(guard()).toMatch(/IF NEW\.status IS DISTINCT FROM 'active' THEN\s*\n\s*RETURN NEW;/);
+  });
+
+  it('does NOT require a facility assignment to CREATE or keep the role', () => {
+    // Requiring scope in a row-level BEFORE trigger would make correct
+    // provisioning impossible — the profile must exist before its assignment set
+    // is inserted in the same transaction. Safe because an unscoped manager
+    // reaches nothing at all.
+    //
+    // The guard DOES read profile_scope_assignments, but only in the
+    // role-change-AWAY branch. This proves that lookup is confined there: it
+    // must appear after the TG_OP='UPDATE' role-change test and before the
+    // "is this a valid manager" branch begins.
+    const g = guard();
+    const changeAway = g.indexOf("OLD.role = 'health_center_manager'");
+    const lookup = g.indexOf('FROM public.profile_scope_assignments');
+    const validity = g.indexOf("IF NEW.role IS DISTINCT FROM 'health_center_manager' THEN");
+    expect(changeAway, 'the role-change-away branch must exist').toBeGreaterThan(-1);
+    expect(lookup).toBeGreaterThan(changeAway);
+    expect(lookup).toBeLessThan(validity);
+    // Exactly one lookup — the validity path never consults scope.
+    expect([...g.matchAll(/FROM public\.profile_scope_assignments/g)]).toHaveLength(1);
+    expect(g.slice(validity)).not.toContain('profile_scope_assignments');
+  });
+
+  it('refuses to leave the role while active facility scope remains', () => {
+    expect(guard()).toContain('health_center_manager_role_change_blocked_by_active_facility_scope');
+    expect(guard()).toMatch(/a\.scope_type = 'facility' AND a\.is_active/);
+    // The remedy is an AUDITED revoke, never a silent delete of history.
+    expect(guard()).toContain('phoenix_revoke_profile_scope');
+    expect(guard()).not.toMatch(/DELETE\s+FROM\s+public\.profile_scope_assignments/i);
+  });
+
+  it('covers every mutation that can produce the shape', () => {
+    expect(code).toMatch(
+      /BEFORE INSERT OR UPDATE OF role, organization_id, status\s*\n\s*ON public\.profiles/,
+    );
+  });
+});
+
+describe('182 read-time helpers are the third cross-sector layer', () => {
+  const facility = () => fn('phoenix_profile_has_facility_assignment');
+  const warehouse = () => fn('phoenix_profile_has_warehouse_assignment');
+  const point = () => fn('phoenix_profile_has_point_assignment');
+
+  it('the facility helper re-proves every condition rather than trusting the write', () => {
+    const f = facility();
+    expect(f).toContain("a.scope_type  = 'facility'");
+    expect(f).toContain('a.is_active   = true');
+    expect(f).toContain("p.status = 'active'");
+    expect(f).toContain("p.role   = 'health_center_manager'");
+    expect(f).toContain("f.status = 'active'");
+    expect(f).toContain("f.facility_class IN ('primary_health_center', 'subordinate_health_center')");
+    // Three-way organization agreement.
+    expect(f).toContain('a.organization_id = p.organization_id');
+    expect(f).toContain('a.organization_id = f.organization_id');
+    expect(f).toContain("o.institution_class = 'health_sector'");
+  });
+
+  it('DIRECT warehouse assignment keeps its exact 062/076 semantics', () => {
+    const w = warehouse();
+    const direct = w.slice(0, w.indexOf('OR EXISTS'));
+    expect(direct).toContain("a.scope_type   = 'warehouse'");
+    expect(direct).toContain('a.organization_id = w.organization_id');
+    expect(direct).not.toContain('health_center_manager');
+  });
+
+  it('DIRECT point assignment keeps its exact 062/076 semantics', () => {
+    const p = point();
+    const direct = p.slice(0, p.indexOf('OR EXISTS'));
+    expect(direct).toContain("a.scope_type            = 'distribution_point'");
+    expect(direct).not.toContain('health_center_manager');
+  });
+
+  it('the facility-derived branch is reachable ONLY by health_center_manager', () => {
+    for (const src of [warehouse(), point()]) {
+      const derived = src.slice(src.indexOf('OR EXISTS'));
+      expect(derived).toContain("p.role   = 'health_center_manager'");
+      expect(derived).toContain("a.scope_type = 'facility'");
+    }
+  });
+
+  it('SECTOR-MAIN EXCLUSION: both helpers demand a non-null warehouse facility', () => {
+    for (const src of [warehouse(), point()]) {
+      const derived = src.slice(src.indexOf('OR EXISTS'));
+      expect(derived).toContain('w.facility_id IS NOT NULL');
+      expect(derived).toContain('a.facility_id = w.facility_id');
+    }
+  });
+
+  it('the outlet path resolves through its OWNING warehouse, never the outlet alone', () => {
+    const derived = point().slice(point().indexOf('OR EXISTS'));
+    expect(derived).toContain('JOIN public.warehouses              w ON w.id = d.warehouse_id');
+    expect(derived).toContain("d.status = 'active'");
+  });
+
+  it('the scoped-permission resolver is UNCHANGED and the role is NOT organization-wide', () => {
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_profile_has_scoped_permission/);
+    expect(code).toContain('health_center_manager leaked into the scoped-permission resolver');
+    // The VERIFY block quotes this inside a SQL literal, so the quotes are doubled.
+    expect(code).toContain("v_org_wide_roles text[] := ARRAY[''institution_admin'']");
+  });
+});
+
+describe('182 the assignment RPC is extended, not forked', () => {
+  const rpc = () => fn('phoenix_assign_profile_scope');
+
+  it('keeps its exact historical signature', () => {
+    expect(bare).toContain('phoenix_assign_profile_scope(\n  p_profile_id uuid, p_scope_type text, p_target_id uuid\n)');
+  });
+
+  it('admits facility alongside the two historical scope types', () => {
+    expect(rpc()).toContain("p_scope_type NOT IN ('warehouse', 'distribution_point', 'facility')");
+  });
+
+  it('preserves the historical authority, IDOR guard, idempotency and audit', () => {
+    expect(rpc()).toContain('NOT_AUTHORIZED_SCOPE_ASSIGN');
+    expect(rpc()).toContain('NOT_AUTHORIZED_SCOPE_ASSIGN_CROSS_ORG');
+    expect(rpc()).toContain('pg_advisory_xact_lock');
+    expect(rpc()).toContain("'scope_assigned'");
+    expect(rpc()).toContain('idempotent_replay');
+  });
+
+  it('a FACILITY assignment additionally requires the sector institution_admin', () => {
+    expect(rpc()).toContain('SCOPE_ASSIGN_ROLE_INELIGIBLE');
+    expect(rpc()).toContain('SCOPE_ASSIGN_ORGANIZATION_NOT_HEALTH_SECTOR');
+    expect(rpc()).toContain('NOT_AUTHORIZED_FACILITY_SCOPE_ASSIGN');
+  });
+
+  it('the audit payload names the facility explicitly', () => {
+    expect(rpc()).toContain("'facility_id', CASE WHEN p_scope_type = 'facility' THEN p_target_id ELSE NULL END");
+  });
+
+  it('phoenix_revoke_profile_scope is left ALONE — it is already generic', () => {
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_revoke_profile_scope/);
+    expect(code).toContain('scope revocation now deletes history');
+  });
+});
+
+describe('182 the service-only provisioning companion', () => {
+  const rpc = () => fn('phoenix_admin_assign_facility_scopes');
+
+  it('re-verifies the actor rather than trusting the caller', () => {
+    expect(rpc()).toContain('FACILITY_SCOPE_ACTOR_INELIGIBLE');
+    expect(rpc()).toContain('NOT_AUTHORIZED_FACILITY_SCOPE_CROSS_ORG');
+    expect(rpc()).toContain("public.phoenix_profile_has_permission(p_actor_id, 'users.edit_scope')");
+  });
+
+  it('re-verifies the target role and the organization class', () => {
+    expect(rpc()).toContain('FACILITY_SCOPE_ROLE_INELIGIBLE');
+    expect(rpc()).toContain('FACILITY_SCOPE_ORGANIZATION_NOT_HEALTH_SECTOR');
+  });
+
+  it('rejects an empty set and bounds the size', () => {
+    expect(rpc()).toContain('FACILITY_SCOPE_SET_EMPTY');
+    expect(rpc()).toContain('FACILITY_SCOPE_SET_TOO_LARGE');
+    expect(rpc()).toContain('SELECT array_agg(DISTINCT x)');
+  });
+
+  it('validates EVERY facility BEFORE writing ANY assignment', () => {
+    // sqlFunctionSource strips comments, so this anchors on CODE, not prose.
+    const body = rpc();
+    const firstInsert = body.indexOf('INSERT INTO public.profile_scope_assignments');
+    expect(firstInsert, 'the writer must insert somewhere').toBeGreaterThan(-1);
+    // EVERY validation refusal is lexically BEFORE the first write. That
+    // ordering is what makes a partial facility set impossible to commit.
+    for (const e of [
+      'FACILITY_SCOPE_FACILITY_NOT_FOUND',
+      'FACILITY_SCOPE_FACILITY_FOREIGN',
+      'FACILITY_SCOPE_FACILITY_INACTIVE',
+      'FACILITY_SCOPE_FACILITY_CLASS_INVALID',
+    ]) {
+      expect(body, e).toContain(e);
+      expect(body.indexOf(e), `${e} must precede the first INSERT`).toBeLessThan(firstInsert);
+    }
+  });
+
+  it('audits every assignment it writes', () => {
+    expect(rpc()).toContain("'scope_assigned'");
+    expect(rpc()).toContain("'provisioning', true");
+  });
+
+  it('is service_role ONLY', () => {
+    expect(code).toContain('REVOKE ALL ON FUNCTION public.phoenix_admin_assign_facility_scopes(uuid, uuid, uuid[])\n  FROM PUBLIC, anon, authenticated;');
+    expect(code).toContain('GRANT EXECUTE ON FUNCTION public.phoenix_admin_assign_facility_scopes(uuid, uuid, uuid[])\n  TO service_role;');
+    expect(code).toContain('the service-only facility writer is reachable by a client role');
+  });
+});
+
+describe('182 forward-replaces the 146 provisioning contract without editing 146', () => {
+  const rpc = () => fn('phoenix_admin_provision_profile');
+
+  it('146 itself is untouched on disk', () => {
+    const m146 = readFileSync(
+      join(ROOT, 'supabase/migrations/146_phoenix_secure_user_provisioning.sql'), 'utf8');
+    expect(m146).not.toContain('health_center_manager');
+  });
+
+  it('the new role joins 146s OWN whitelist — otherwise it is unprovisionable', () => {
+    expect(rpc()).toMatch(/'outlet_officer',\s*\n\s*'health_center_manager'\s*\n\s*\) then/);
+  });
+
+  it('the new role additionally requires an active health sector, for EVERY caller', () => {
+    expect(rpc()).toContain('health_center_manager_requires_health_sector');
+    expect(rpc()).toMatch(/o\.organization_kind = 'care_institution'\s*\n\s*and o\.institution_class = 'health_sector'/);
+  });
+
+  it('every 146 guarantee survives byte-for-byte', () => {
+    for (const invariant of [
+      'phoenix-user-provision:',              // the advisory lock
+      'phoenix_provisioning_nonce',           // the Auth app-metadata nonce
+      'phoenix_provisioning_actor_id',
+      'target_not_fresh_placeholder',         // the placeholder inspection
+      'auth_identity_mismatch',
+      'cannot_create_privileged_role',        // the privilege ceiling
+      'cross_org',
+      'actor_missing_permission',
+      'service_only_v146',                    // the audit marker
+    ]) expect(rpc(), invariant).toContain(invariant);
+    // Still UPDATE-only and one-shot: no UPSERT path was introduced.
+    expect(rpc()).not.toMatch(/ON CONFLICT/i);
+    expect(rpc()).toContain('update public.profiles');
+  });
+
+  it('does not touch the other historical migrations it depends on', () => {
+    for (const forbidden of [
+      'phoenix_profile_has_permission',
+      'phoenix_my_role',
+      'phoenix_my_org',
+    ]) expect(bare, forbidden).not.toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${forbidden}\\b`));
+  });
+});
+
+describe('182 role permission defaults are the audited minimum', () => {
+  const defaults = () => bare.slice(
+    bare.indexOf('INSERT INTO public.role_permission_defaults'),
+    bare.indexOf('-- 9a.') > -1 ? bare.indexOf('-- 9a.') : bare.length,
+  );
+
+  it('grants exactly the six proven scope-aware read keys', () => {
+    const block = bare.slice(
+      bare.indexOf('INSERT INTO public.role_permission_defaults'),
+      bare.indexOf('DROP POLICY organization_facilities_select_scoped'),
+    );
+    const keys = [...block.matchAll(/'health_center_manager', '([a-z_.]+)'/g)].map(m => m[1]).sort();
+    expect(keys).toEqual([
+      'outlet_stock.view',
+      'ports.view',
+      'warehouse_dispatch.view',
+      'warehouse_stock.movements_view',
+      'warehouse_stock.view',
+      'warehouses.view',
+    ]);
+    expect(code).toContain('expected 6 health_center_manager defaults');
+  });
+
+  it('grants NO administrative, lifecycle or organization-wide key', () => {
+    const block = defaults();
+    for (const forbidden of [
+      'users.create', 'users.assign_role', 'users.edit_scope', 'users.disable',
+      'users.reset_permissions', 'users.view', 'organization_facilities.manage',
+      'warehouses.manage', 'central_warehouse.manage', 'inventory.purge',
+      'reports.view', 'availability.view',
+    ]) expect(block, forbidden).not.toContain(`'health_center_manager', '${forbidden}'`);
+    // And the VERIFY block proves it at apply time too.
+    expect(code).toContain('administrative permission(s)');
+  });
+
+  it('changes no historical role default', () => {
+    expect(bare).not.toMatch(/DELETE FROM public\.role_permission_defaults/);
+    expect(bare).not.toMatch(/UPDATE public\.role_permission_defaults/);
+    expect(code).toContain("a historical role''s permission defaults changed");
+  });
+});
+
+describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
+  const policy = (name: string) => bare.slice(
+    bare.indexOf(`CREATE POLICY ${name}`),
+    bare.indexOf(';', bare.indexOf(`CREATE POLICY ${name}`)) + 1,
+  );
+
+  it('narrows exactly two policies and creates no others', () => {
+    const created = [...bare.matchAll(/CREATE POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
+    expect(created).toEqual(['dp_read_perm', 'organization_facilities_select_scoped']);
+    const dropped = [...bare.matchAll(/DROP POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
+    expect(dropped).toEqual(['dp_read_perm', 'organization_facilities_select_scoped']);
+  });
+
+  it('each added conjunct is TRUE for every pre-182 role', () => {
+    // `role <> 'health_center_manager' OR <scoped test>` — no existing profile
+    // can hold that role, so their predicate is unchanged. That is what makes
+    // this provably non-regressive rather than merely asserted.
+    for (const p of ['organization_facilities_select_scoped', 'dp_read_perm']) {
+      expect(policy(p), p).toContain("phoenix_my_role() <> 'health_center_manager'");
+    }
+  });
+
+  it('a manager sees only its ASSIGNED facilities', () => {
+    expect(policy('organization_facilities_select_scoped'))
+      .toContain('phoenix_profile_has_facility_assignment(auth.uid(), id)');
+  });
+
+  it('dp_read_perm keeps ports.view and adds per-outlet authorization', () => {
+    const p = policy('dp_read_perm');
+    expect(p).toContain("phoenix_profile_has_permission(auth.uid(), 'ports.view')");
+    expect(p).toContain('organization_id = phoenix_my_org()');
+    expect(p).toContain('phoenix_profile_has_point_assignment(auth.uid(), id)');
+    expect(p).toContain("phoenix_my_role() = 'super_admin'");
+  });
+
+  it('leaves every other policy alone', () => {
+    for (const untouched of [
+      'wh_select_scoped', 'warehouse_stock_select_scoped', 'psa_select_scoped',
+      'dp_insert_perm', 'dp_update_perm', 'avail_select_org',
+    ]) expect(bare, untouched).not.toContain(`DROP POLICY ${untouched}`);
+  });
+});
+
+describe('182 direct client DML on the ledger remains impossible', () => {
+  it('grants authenticated no INSERT/UPDATE/DELETE', () => {
+    // No TABLE-level grant on the ledger is issued at all, to any role.
+    expect(executable).not.toMatch(/GRANT[\s\S]{0,200}?ON\s+(TABLE\s+)?public\.profile_scope_assignments/i);
+    expect(code).toContain('authenticated gained direct DML on profile_scope_assignments');
+  });
+
+  it('every new internal function is search_path-pinned and SECURITY DEFINER', () => {
+    expect(code).toContain('not SECURITY DEFINER, or not search_path-pinned');
+    for (const f of [
+      'phoenix_profile_has_facility_assignment',
+      'phoenix_admin_assign_facility_scopes',
+      '_phoenix_profile_role_organization_guard_v1',
+    ]) expect(fn(f)).toContain('SET search_path = public, pg_temp');
+  });
+
+  it('the internal profile guard is revoked from every client role', () => {
+    expect(code).toContain(
+      'REVOKE ALL ON FUNCTION public._phoenix_profile_role_organization_guard_v1()\n  FROM PUBLIC, anon, authenticated, service_role;');
+  });
+});
+
+describe('182 NON-GOALS', () => {
+  it('creates no third stock truth', () => {
+    for (const forbidden of ['facility_stock', 'health_center_stock', 'manager_stock']) {
+      expect(applyBare, forbidden).not.toContain(forbidden);
+    }
+    expect(code).toContain('a third stock truth was created');
+    expect(code).toContain('the two stock truths were disturbed');
+  });
+
+  it('creates no unit domain', () => {
+    for (const forbidden of ['health_center_unit', 'unit_stock', 'unit_routes', 'unit_scopes']) {
+      expect(applyBare, forbidden).not.toContain(forbidden);
+    }
+    expect(code).toContain('a unit domain was created');
+  });
+
+  it('creates no second assignment table and no new table at all', () => {
+    expect(applyBare).not.toMatch(/\bCREATE\s+(TABLE|SEQUENCE|TYPE|VIEW|MATERIALIZED)\b/i);
+  });
+
+  it('does not touch Migration 181 topology or Migration 180 supply semantics', () => {
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\._phoenix_health_sector/);
+    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_replenish_emergency_outlet/);
+    expect(code).toContain("Migration 181''s outlet topology guard was disturbed");
+    expect(code).toContain("Migration 180''s replenishment gate was disturbed");
+  });
+
+  it('encodes no reset, purge or truncation', () => {
+    expect(executable).not.toMatch(/TRUNCATE/i);
+    expect(executable).not.toMatch(/DELETE FROM public\.profiles/i);
+    expect(executable).not.toMatch(/DELETE FROM public\.profile_scope_assignments/i);
+  });
+
+  it('drops no historical index, constraint or function beyond the two it re-adds', () => {
+    const dropped = [...bare.matchAll(/DROP CONSTRAINT ([a-z_]+)/g)].map(m => m[1]).sort();
+    expect(dropped).toEqual([
+      'profile_scope_assignments_scope_type_check',
+      'profiles_role_check',
+      'psa_scope_type_chk',
+      'psa_target_matches_scope_chk',
+    ]);
+    expect(bare).not.toMatch(/\bDROP\s+(TABLE|COLUMN|INDEX|FUNCTION|TRIGGER)\b/i);
+  });
+});
+
+describe('182 manual rollback documentation', () => {
+  it('lists every object the migration creates', () => {
+    const rollback = sql.slice(sql.indexOf('-- ROLLBACK (manual):'));
+    for (const object of [
+      'dp_read_perm',
+      'organization_facilities_select_scoped',
+      'role_permission_defaults',
+      'profiles_health_center_manager_org_guard_trg',
+      '_phoenix_profile_role_organization_guard_v1',
+      'phoenix_admin_assign_facility_scopes',
+      'phoenix_profile_has_facility_assignment',
+      'psa_active_facility_uniq',
+      'psa_facility_idx',
+      'psa_facility_org_fk',
+      'facility_id',
+    ]) expect(rollback, object).toContain(object);
+  });
+
+  it('warns that dropping the column destroys assignment history', () => {
+    const rollback = sql.slice(sql.indexOf('-- ROLLBACK (manual):'));
+    expect(rollback).toMatch(/destroys facility assignment HISTORY/i);
+  });
+});

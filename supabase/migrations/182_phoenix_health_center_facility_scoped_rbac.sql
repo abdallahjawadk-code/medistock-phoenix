@@ -420,7 +420,38 @@ DECLARE
   v_kind   text;
   v_class  text;
   v_status text;
+  v_scopes integer;
 BEGIN
+  -- ── LEAVING the role: facility scope must be closed FIRST ─────────────────
+  -- Every path that rewrites profiles.role passes through here, including
+  -- phoenix_recycle_apply (which assigns role = p_new_role directly), so this is
+  -- a database invariant rather than a patch applied to one RPC.
+  --
+  -- The read-time helpers already re-prove `p.role = 'health_center_manager'`,
+  -- so an orphaned assignment authorizes nothing the instant the role changes.
+  -- The reason to refuse anyway is the ROUND TRIP: recycle out, recycle back in,
+  -- and the identity would silently regain centres nobody re-authorized. Closing
+  -- the scopes explicitly — audited, with a mandatory reason, through
+  -- phoenix_revoke_profile_scope — is the only way that trail stays honest.
+  --
+  -- No history is deleted to satisfy this: revoked rows are exactly what the
+  -- operator is being asked to produce.
+  IF TG_OP = 'UPDATE'
+     AND OLD.role = 'health_center_manager'
+     AND NEW.role IS DISTINCT FROM OLD.role THEN
+    SELECT count(*) INTO v_scopes
+    FROM public.profile_scope_assignments a
+    WHERE a.profile_id = NEW.id AND a.scope_type = 'facility' AND a.is_active;
+
+    IF v_scopes > 0 THEN
+      RAISE EXCEPTION 'health_center_manager_role_change_blocked_by_active_facility_scope'
+        USING ERRCODE = '23514',
+        DETAIL = format(
+          '%s active facility assignment(s) remain; revoke them through phoenix_revoke_profile_scope, with a reason, before changing this role',
+          v_scopes);
+    END IF;
+  END IF;
+
   IF NEW.role IS DISTINCT FROM 'health_center_manager' THEN
     RETURN NEW;
   END IF;
@@ -1304,7 +1335,7 @@ COMMENT ON FUNCTION public.phoenix_admin_assign_facility_scopes(uuid, uuid, uuid
   'R1.1-U: SERVICE-ONLY companion to the Migration 146 provisioning contract. Validates the actor, the target profile, the organization and EVERY facility id before writing ANY assignment, so a partial facility set can never be committed; the Edge function rolls the Auth user back if this fails. service_role only — authenticated scope editing goes through phoenix_assign_profile_scope.';
 
 COMMENT ON FUNCTION public._phoenix_profile_role_organization_guard_v1() IS
-  'R1.1-U: an ACTIVE health_center_manager must belong to an ACTIVE care_institution organization with institution_class=health_sector. Deliberately does NOT require a facility assignment — provisioning creates the profile before inserting its assignment set in the same transaction — which is safe because an unscoped manager can reach no resource at all.';
+  'R1.1-U: an ACTIVE health_center_manager must belong to an ACTIVE care_institution organization with institution_class=health_sector. Deliberately does NOT require a facility assignment — provisioning creates the profile before inserting its assignment set in the same transaction — which is safe because an unscoped manager can reach no resource at all. It ALSO refuses to move a profile OUT of the role while active facility assignments remain, so a recycle round-trip cannot silently restore centres nobody re-authorized; the operator must revoke them through phoenix_revoke_profile_scope, with a reason, and the revoked rows are retained as history. Recycling INTO the role is already refused by phoenix_recycle_apply''s own role whitelist, which R1.1-U deliberately does not widen — lifecycle support for this role is deferred rather than half-implemented.';
 
 -- ============================================================================
 -- 11. VERIFY — in-transaction, fails the whole migration
