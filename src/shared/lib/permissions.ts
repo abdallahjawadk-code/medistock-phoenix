@@ -236,25 +236,32 @@ const POINT_OPERATOR_LEGACY_DEFAULTS = [
  * R1.1-U — health_center_manager.
  *
  * Deliberately NOT a copy of any other manager role's set: an organization-wide
- * default would defeat Facility Scope entirely. Every key here is one whose
- * backing RLS surface is proven facility-scoped (Migration 182 header records
- * the policy-by-policy audit):
+ * default would defeat Facility Scope entirely.
  *
- *   warehouses.view / warehouse_stock.view / warehouse_stock.movements_view /
- *   warehouse_dispatch.view  -> resolve through phoenix_profile_has_warehouse_assignment
- *   outlet_stock.view        -> resolves through phoenix_profile_has_point_assignment
- *   ports.view               -> dp_read_perm, narrowed for this role in 182
+ * Migration 182 grants this role SIX keys in role_permission_defaults, each one
+ * audited against the policy that consumes it:
  *
- * No user-lifecycle key, no *.manage key, no organization-wide read. This mirror
- * of role_permission_defaults is a UI convenience only; the database is the
- * authority and grants exactly the same six keys.
+ *   warehouses.view                -> warehouses.wh_select_scoped
+ *   warehouse_stock.view           -> warehouse_stock_select_scoped
+ *   warehouse_stock.movements_view -> warehouse_stock_mov_select_scoped
+ *   warehouse_dispatch.view        -> warehouse_dispatches / _lines
+ *      ...all four resolve through phoenix_profile_has_warehouse_assignment
+ *   outlet_stock.view              -> phoenix_can_read_outlet_stock ->
+ *                                     phoenix_profile_has_point_assignment
+ *   ports.view                     -> dp_read_perm, narrowed for this role in 182
+ *
+ * ONLY TWO of those appear here, and that is deliberate. PERMISSION_KEYS is the
+ * user-management catalog, which is narrower than the database's permission_keys
+ * table on purpose — the same policy that keeps the migration-062 keys out of it
+ * (see rbac-fallback-parity D2). A fallback default naming a key the catalog does
+ * not define would be unrenderable and unverifiable, so this mirror lists exactly
+ * the catalog-valid subset. The DATABASE remains the authority and grants all
+ * six; nothing here narrows what the server enforces.
+ *
+ * No user-lifecycle key, no *.manage key, no organization-wide read.
  */
 const HEALTH_CENTER_MANAGER_DEFAULTS = [
   'warehouses.view',
-  'warehouse_stock.view',
-  'warehouse_stock.movements_view',
-  'warehouse_dispatch.view',
-  'outlet_stock.view',
   'ports.view',
 ];
 

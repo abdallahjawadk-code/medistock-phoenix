@@ -44,9 +44,15 @@ describe('181 registration and shape', () => {
       .toBe('180_phoenix_emergency_initial_provisioning_boundary.sql');
   });
 
-  it('is the LAST registered migration — no 182 exists', () => {
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[2-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+  // R1.1-U added 182, so 181 is no longer last. The guard stays EXHAUSTIVE
+  // rather than being deleted: 182 is named by EXACT filename, and anything
+  // beyond it still fails closed.
+  it('is followed by exactly 182 and nothing beyond it', () => {
+    const NEXT = '182_phoenix_health_center_facility_scoped_rbac.sql';
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(REVIEWED_MIGRATION_FILES[i + 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[3-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

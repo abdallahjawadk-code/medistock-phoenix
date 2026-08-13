@@ -41,9 +41,22 @@ describe('admin-create-user secure provisioning contract', () => {
 
   it('never logs credentials or service configuration', () => {
     const consoleCalls = SOURCE.match(/console\.(?:log|warn|error)\([\s\S]*?\);/g) ?? [];
-    expect(consoleCalls).toHaveLength(1);
-    expect(consoleCalls[0]).toContain('correlation_id');
-    expect(consoleCalls[0]).not.toMatch(/password|serviceKey|service_role|email/i);
+    // R1.1-U added a SECOND rollback log, for the facility-scope failure path.
+    // The guarantee is unchanged and is now asserted over EVERY call instead of
+    // a single one: each must carry the correlation id, and none may name a
+    // secret.
+    expect(consoleCalls.length).toBeGreaterThan(0);
+    for (const call of consoleCalls) {
+      expect(call).toContain('correlation_id');
+      expect(call).not.toMatch(/password|serviceKey|service_role|email/i);
+    }
+    // The logged events are pinned by EXACT name, so relaxing the count cannot
+    // let a new, unreviewed log appear silently.
+    const events = [...SOURCE.matchAll(/event:\s*'([^']+)'/g)].map(m => m[1]).sort();
+    expect(events).toEqual([
+      'admin-create-user.facility-scope-rollback-failed',
+      'admin-create-user.rollback-failed',
+    ]);
   });
 
   it('normalizes an invalid client correlation id before passing it to UUID SQL', () => {

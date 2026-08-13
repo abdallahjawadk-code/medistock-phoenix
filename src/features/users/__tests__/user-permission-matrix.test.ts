@@ -52,12 +52,14 @@ describe('Official role model', () => {
       'users.disable', 'users.reset_permissions', 'warehouses.manage',
       'central_warehouse.manage', 'inventory.purge', 'reports.view',
     ]) expect(defaults.has(forbidden), forbidden).toBe(false);
-    // Exactly the six audited scope-aware read keys, mirroring
-    // role_permission_defaults in Migration 182.
-    expect([...defaults].sort()).toEqual([
-      'outlet_stock.view', 'ports.view', 'warehouse_dispatch.view',
-      'warehouse_stock.movements_view', 'warehouse_stock.view', 'warehouses.view',
-    ]);
+    // Migration 182 grants SIX audited scope-aware read keys. This client-side
+    // fallback lists only the CATALOG-VALID subset, because PERMISSION_KEYS is
+    // deliberately narrower than the database's permission_keys table — the same
+    // policy that keeps the 062 keys out of it (rbac-fallback-parity D2). The
+    // database remains the authority for all six.
+    expect([...defaults].sort()).toEqual(['ports.view', 'warehouses.view']);
+    // And every key listed really is in the catalog, so nothing here is dead.
+    for (const k of defaults) expect(isValidPermissionKey(k), k).toBe(true);
   });
 
   it('only super_admin and institution_admin may target the new role', () => {

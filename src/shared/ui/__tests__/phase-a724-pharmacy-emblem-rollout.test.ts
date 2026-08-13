@@ -86,6 +86,12 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       //     maps were broken.
       'supabase/functions/admin-create-user/index.ts',
       'src/app/__tests__/typecheck-script-contract.test.ts',
+      // ...plus the two client-side halves of the same substage: the create-user
+      // service, which forwards facility ids as a REQUEST the database
+      // re-validates, and that Edge function's own secure-contract test, whose
+      // credential-logging guarantee now covers BOTH rollback logs by name.
+      'src/shared/supabase/services/users.service.ts',
+      'src/shared/supabase/__tests__/admin-create-user-secure-contract.test.ts',
       // STAGE-G-G2: 177 registered by EXACT filename, same as every entry
       // before it — the public-QR read cutover plus its own static/dynamic
       // proofs. No wildcard, no directory exclusion; any OTHER unlisted file
