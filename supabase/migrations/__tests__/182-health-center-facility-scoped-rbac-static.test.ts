@@ -475,12 +475,14 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
   );
 
   // U-A narrowed the two surfaces the granted permission keys reach. U-B added
-  // seven more, because a large part of this schema authorizes reads on
+  // fourteen more, because a large part of this schema authorizes reads on
   // ORGANIZATION MEMBERSHIP ALONE — which is exactly the boundary a
-  // facility-scoped role must not inherit. The list stays EXHAUSTIVE: every
-  // narrowed policy is named, each is dropped and recreated exactly once, and
-  // any tenth policy fails this guard.
-  it('narrows exactly the sixteen audited policies and creates no others', () => {
+  // facility-scoped role must not inherit. The corrective pass (9e) added the
+  // final seven, after an independent audit found that closing a FAMILY by
+  // member rather than by predicate leaves siblings open. The list stays
+  // EXHAUSTIVE: every narrowed policy is named, each is dropped and recreated
+  // exactly once, and any further policy fails this guard.
+  it('narrows exactly the twenty-three audited policies and creates no others', () => {
     const NARROWED = [
       // ── U-A: the two surfaces the granted permission keys reach ──────────
       'dp_read_perm',
@@ -503,10 +505,21 @@ describe('182 RLS narrowing is non-regressive BY CONSTRUCTION', () => {
       'phoenix_dispatch_line_requests_select_scoped',
       'phoenix_outlet_return_line_requests_select_scoped',
       'phoenix_outlet_return_exception_resolutions_select_scoped',
+      // ── U-B / 9e CORRECTIVE: cross-centre metadata confidentiality ────────
+      // Narrowed to the caller's own row rather than denied outright, because
+      // each of these carries exactly one row the role legitimately owns.
+      'profiles_select_own_org',                                   // sector roster
+      'ppo_select_scoped',                                         // measured: leaked a centre-B outlet id
+      'pba_select_superadmin_or_own_org',                          // who acknowledged for the org
+      // ── U-B / 9e CORRECTIVE: denied — no facility dimension exists ───────
+      'phoenix_paper_references_select_scoped',                    // index of other centres' documents
+      'isr2_select_scoped',                                        // whole-sector monthly position
+      'isr2_lines_select_scoped',                                  // ...per material
+      'isr2_amendments_select_scoped',
     ].sort();
-    const created = [...bare.matchAll(/CREATE POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
+    const created = [...bare.matchAll(/CREATE POLICY ([a-z0-9_]+)/g)].map(m => m[1]).sort();
     expect(created).toEqual(NARROWED);
-    const dropped = [...bare.matchAll(/DROP POLICY ([a-z_]+)/g)].map(m => m[1]).sort();
+    const dropped = [...bare.matchAll(/DROP POLICY ([a-z0-9_]+)/g)].map(m => m[1]).sort();
     expect(dropped).toEqual(NARROWED);
     // Each exactly once — a policy dropped twice would leave the second
     // CREATE as the live definition and silently discard the first narrowing.

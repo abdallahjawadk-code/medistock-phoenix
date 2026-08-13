@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { institutionsScreenAccess, isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -186,9 +186,25 @@ export function AuthenticatedApp() {
     return <PhoenixLoadingState fullScreen />;
   }
 
-  const screen = navigation?.profileId === profile.id
+  /**
+   * R1.1-U (U-B corrective, C2) — the single screen-authorization choke point.
+   *
+   * Every way a screen id can arrive converges here: in-session navigation from
+   * the Sidebar, Drawer, BottomNav or Command Palette, a restored session, a
+   * refresh, the Back button, and any direct screen id. Enforcing the canonical
+   * decision at this one place means an unsafe organization-level screen is
+   * REFUSED rather than rendered empty, without a per-component gate anywhere.
+   *
+   * Falling back to the role landing rather than rendering ForbiddenScreen keeps
+   * a legitimately-navigating user out of a dead end; the refusal itself is the
+   * authorization decision, and it is asserted directly in the tests.
+   */
+  const requestedScreen = navigation?.profileId === profile.id
     ? navigation.screen
     : resolveRestoredScreen(profile.id, profile.role, myPermissions);
+  const screen = isScreenAuthorized(requestedScreen, profile.role, myPermissions)
+    ? requestedScreen
+    : roleLandingScreen(profile.role);
   const setScreen = (nextScreen: number) => {
     setNavigation({ profileId: profile.id, screen: nextScreen });
     if (isScreenRestorable(nextScreen, profile.role, myPermissions)) {

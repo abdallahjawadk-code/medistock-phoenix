@@ -18,7 +18,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { roleLandingScreen, institutionsScreenAccess } from '../screen-access';
+import { roleLandingScreen, institutionsScreenAccess, isScreenAuthorized } from '../screen-access';
+import { isScreenRestorable } from '@/app/screen-continuity';
 import { allowedReportTabs, resolveAllowedReportTab, REPORT_TAB_ACCESS, REPORT_TAB_ORDER } from '@/features/reports/report-tab-access';
 import { isFacilityScopedRole, OFFICIAL_ROLES } from '@/shared/lib/roles';
 import { roleDefaults } from '@/shared/lib/permissions';
@@ -160,6 +161,81 @@ describe('U-B · restoration and persistence cannot revive a denied screen', () 
 
   it('an unauthorised restore falls back to the ROLE LANDING, which is now safe', () => {
     expect(continuity).toContain('roleLandingScreen');
+  });
+});
+
+/**
+ * R1.1-U (U-B corrective, C2).
+ *
+ * An independent audit classified the restorable-screen gap as "no data escape"
+ * because screen 21 renders empty for this role. That is not an authorization
+ * decision — it is a coincidence of the current data. These tests assert the
+ * DECISION itself: the screen must be refused, whatever it would have rendered.
+ */
+describe('U-B corrective · the canonical screen decision refuses unsafe surfaces', () => {
+  const noPerms = new Set<string>();
+  const continuity = read('app/screen-continuity.ts');
+
+  it('the reports surface is REFUSED, not merely rendered empty', () => {
+    expect(isScreenAuthorized(21, ROLE, perms(ROLE))).toBe(false);
+    // ...and it is refused for the reason that matters: the decision does not
+    // depend on the tab list happening to be empty.
+    expect(allowedReportTabs(perms(ROLE), ROLE)).toEqual([]);
+  });
+
+  it('every organization-level screen is refused to the facility-scoped role', () => {
+    // 11 institutions · 13 inter-institution alerts · 14 users · 17 network
+    // · 19 local procurement · 21 reports
+    for (const s of [11, 13, 14, 17, 19, 21]) {
+      expect(isScreenAuthorized(s, ROLE, perms(ROLE)), `screen ${s}`).toBe(false);
+    }
+  });
+
+  it('the facility-safe surfaces stay reachable, or the role is unusable', () => {
+    for (const s of [3, 6, 15, 18]) {
+      expect(isScreenAuthorized(s, ROLE, perms(ROLE)), `screen ${s}`).toBe(true);
+    }
+    // The landing must itself be authorized, or login lands on a refusal.
+    expect(isScreenAuthorized(roleLandingScreen(ROLE), ROLE, perms(ROLE))).toBe(true);
+  });
+
+  it('is an ALLOW-list: an unknown future screen is refused to this role', () => {
+    for (const s of [7, 8, 16, 20, 22, 99]) {
+      expect(isScreenAuthorized(s, ROLE, perms(ROLE)), `screen ${s}`).toBe(false);
+    }
+  });
+
+  it('restoration, refresh and Back all inherit that decision', () => {
+    // isScreenRestorable is what resolveRestoredScreen and screenFromPopState
+    // both consult, so proving it here covers persisted state, reload and
+    // browser history in one place.
+    expect(isScreenRestorable(21, ROLE, perms(ROLE))).toBe(false);
+    expect(isScreenRestorable(13, ROLE, perms(ROLE))).toBe(false);
+    expect(isScreenRestorable(18, ROLE, perms(ROLE))).toBe(true);
+  });
+
+  it('no historical role loses a screen it could reach before', () => {
+    // institution_admin keeps 11/14/17/21; the officers keep their surfaces.
+    expect(isScreenAuthorized(21, 'institution_admin', perms('institution_admin'))).toBe(true);
+    expect(isScreenAuthorized(11, 'institution_admin', perms('institution_admin'))).toBe(true);
+    expect(isScreenAuthorized(14, 'institution_admin', perms('institution_admin'))).toBe(true);
+    expect(isScreenAuthorized(21, 'outlet_officer', perms('outlet_officer'))).toBe(true);
+    expect(isScreenAuthorized(21, 'warehouse_officer', perms('warehouse_officer'))).toBe(true);
+    expect(isScreenAuthorized(21, 'super_admin', perms('super_admin'))).toBe(true);
+    // ...and the pre-existing permission gates still bite for a role that
+    // genuinely lacks the key, exactly as before this correction.
+    expect(isScreenAuthorized(14, 'outlet_officer', noPerms)).toBe(false);
+    expect(isScreenAuthorized(17, 'outlet_officer', noPerms)).toBe(false);
+    expect(isScreenAuthorized(11, 'outlet_officer', noPerms)).toBe(false);
+  });
+
+  it('the app resolves the screen through the canonical decision, not per-component', () => {
+    const app = read('app/AuthenticatedApp.tsx');
+    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions)');
+    expect(app).toContain('roleLandingScreen(profile.role)');
+    // The restoration module must delegate rather than re-implement the gates.
+    expect(continuity).toContain('isScreenAuthorized(screen, role, permissions)');
+    expect(continuity).not.toContain('institutionsScreenAccess');
   });
 });
 

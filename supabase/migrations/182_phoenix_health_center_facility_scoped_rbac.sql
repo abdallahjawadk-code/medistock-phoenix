@@ -2437,6 +2437,668 @@ END;
 $function$;
 
 -- ============================================================================
+-- 9e. CORRECTIVE CLOSURE — the surfaces an independent U-C audit still found
+-- ============================================================================
+-- R1.1-U SAFE ACTIVATION, corrective pass.
+--
+-- Sections 9c/9d closed the org-only surfaces reachable through the six granted
+-- permission keys, then the org-only surfaces carrying a resolvable resource.
+-- An independent read-only audit of THAT work found a third group, and the
+-- reason both earlier passes missed it is the lesson worth recording:
+--
+--   9c enumerated surfaces reachable through the granted PERMISSION KEYS.
+--   9d enumerated org-only RLS POLICIES and the read models behind them.
+--   NEITHER enumerated the SECURITY DEFINER FUNCTIONS THAT SIT BESIDE a read
+--   model already closed. phoenix_notifications_list was forward-replaced; its
+--   three siblings in the SAME migration-094 family — the unread badge count
+--   and the two mark-read writers — were not, and they carry the identical
+--   `organization_id = v_org` gate.
+--
+-- The failure mode is therefore not "a surface was overlooked" but "a FAMILY
+-- was closed by member instead of by predicate". This section closes by
+-- predicate: every remaining authenticated-reachable surface whose whole
+-- authorization is organization membership is decided explicitly here.
+--
+-- THE PATTERN IS UNCHANGED: `<> 'health_center_manager' OR <narrower test>`.
+-- That conjunct is TRUE for every pre-182 role and no profile could hold this
+-- role before this migration, so every historical predicate stays semantically
+-- identical — non-regression by construction, not by assertion.
+
+-- ── 9e-1. C1 — THE NOTIFICATION FAMILY, closed by predicate ─────────────────
+-- Measured before this correction, for a manager assigned ONLY to centre A
+-- while both notifications belonged to centre B and the sector main:
+--
+--   direct SELECT phoenix_notifications   -> 0   (9d-2 policy, correct)
+--   phoenix_notifications_list()          -> 0   (9d-2 RPC, correct)
+--   phoenix_notifications_unread_count()  -> 2   <-- the whole sector
+--   phoenix_notifications_mark_all_read() -> {"ok": true, "marked": 2}
+--
+-- The count is a live volume-and-timing oracle over every other centre's and
+-- the sector main's custody events, and it needs no crafted request at all:
+-- NotificationBell sits in PhoenixTopbar, so every manager calls it at login.
+-- The two writers additionally record read-receipts against rows the role is
+-- denied — a mutation whose target set it may not see.
+--
+-- Migration 094 is NOT edited; these are forward replacements carrying the
+-- SAME denial phoenix_notifications_list already uses. mark_read is included
+-- even though no audit measured it: it is the same family and the same
+-- predicate, and closing a family by member is exactly what caused this pass.
+CREATE OR REPLACE FUNCTION public.phoenix_notifications_unread_count()
+ RETURNS integer
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_role  text;
+  v_count integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p
+   WHERE p.id = v_actor AND p.status = 'active';
+
+  IF NOT FOUND THEN
+    RETURN 0;
+  END IF;
+
+  SELECT count(*) INTO v_count
+    FROM public.phoenix_notifications n
+    LEFT JOIN public.phoenix_notification_reads r
+      ON r.notification_id = n.id AND r.profile_id = v_actor
+   -- R1.1-U (U-B corrective): a notification carries no facility-resolvable
+   -- dimension, so 9d-2 denies the rows themselves. The COUNT over those rows
+   -- must obey the identical contract or the denial is cosmetic.
+   WHERE (v_role = 'super_admin'
+          OR (n.organization_id = v_org AND v_role <> 'health_center_manager'))
+     AND r.notification_id IS NULL;
+
+  RETURN v_count;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_notifications_mark_all_read()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor  uuid := auth.uid();
+  v_org    uuid;
+  v_role   text;
+  v_marked integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p
+   WHERE p.id = v_actor AND p.status = 'active';
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', true, 'marked', 0);
+  END IF;
+
+  WITH ins AS (
+    INSERT INTO public.phoenix_notification_reads (notification_id, profile_id)
+    SELECT n.id, v_actor
+      FROM public.phoenix_notifications n
+      LEFT JOIN public.phoenix_notification_reads r
+        ON r.notification_id = n.id AND r.profile_id = v_actor
+     -- R1.1-U (U-B corrective): never write a read-receipt against a row this
+     -- role is denied. The returned `marked` count is therefore honest too.
+     WHERE (v_role = 'super_admin'
+            OR (n.organization_id = v_org AND v_role <> 'health_center_manager'))
+       AND r.notification_id IS NULL
+    ON CONFLICT (notification_id, profile_id) DO NOTHING
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_marked FROM ins;
+
+  RETURN jsonb_build_object('ok', true, 'marked', v_marked);
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_notifications_mark_read(p_notification_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_role  text;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_notification_id IS NULL THEN
+    RAISE EXCEPTION 'notification_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT p.organization_id, p.role INTO v_org, v_role
+    FROM public.profiles p
+   WHERE p.id = v_actor AND p.status = 'active';
+
+  -- Deliberately no existence/forbidden distinction: an invisible or unknown
+  -- id simply inserts zero rows. Matches phoenix_movement_timeline's rule
+  -- that unauthorized and nonexistent must be indistinguishable — which is
+  -- also why the R1.1-U denial below returns quietly rather than raising.
+  INSERT INTO public.phoenix_notification_reads (notification_id, profile_id)
+  SELECT n.id, v_actor
+    FROM public.phoenix_notifications n
+   WHERE n.id = p_notification_id
+     AND (v_role = 'super_admin'
+          OR (n.organization_id = v_org AND v_role <> 'health_center_manager'))
+  ON CONFLICT (notification_id, profile_id) DO NOTHING;
+
+  RETURN jsonb_build_object('ok', true);
+END;
+$function$;
+
+-- ── 9e-2. C3 — ADMINISTRATIVE SUSPENSION MUST NOT BE SELF-REVERSIBLE ────────
+-- The repository contract, established from the migrations rather than assumed:
+--
+--   * 011 introduces the `users.disable` permission key and the
+--     profiles.disabled_at / disabled_by AUDIT columns;
+--   * 093 makes account lifecycle atomic — phoenix_lifecycle_reserve sets
+--     `status='suspended', disabled_at=now(), disabled_by=<actor>` and writes a
+--     `user.lifecycle_reserved` audit row;
+--   * the admin-user-lifecycle Edge function states in its own header that it
+--     never mutates profile role/status directly, delegating to those RPCs;
+--   * every read helper re-proves `p.status = 'active'`.
+--
+-- So 'suspended' IS an administrative security state: permission-gated, audited,
+-- attributed, and load-bearing for every authorization decision. It is the
+-- containment control.
+--
+-- 002's profiles_update_own pins `role` in its WITH CHECK but NOT `status`, so
+-- a suspended profile can UPDATE its own row back to active and restore its own
+-- authority. That defeats suspension as a control. The hole is pre-existing and
+-- role-agnostic; 002 is deliberately NOT edited, because rewriting the lifecycle
+-- of five historical roles is far beyond safe activation and is recorded as
+-- forward work instead.
+--
+-- The narrowest correction that makes the NEW role safe: an active-state
+-- transition performed BY THE PROFILE ITSELF is refused for this role only.
+-- An authorized administrator (a different auth.uid()) and every service_role
+-- path (auth.uid() IS NULL) are untouched, so phoenix_lifecycle_commit and
+-- phoenix_lifecycle_compensate keep working exactly as before.
+CREATE OR REPLACE FUNCTION public._phoenix_profile_role_organization_guard_v1()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_kind   text;
+  v_class  text;
+  v_status text;
+  v_scopes integer;
+BEGIN
+  -- ── LEAVING the role: facility scope must be closed FIRST ─────────────────
+  -- Every path that rewrites profiles.role passes through here, including
+  -- phoenix_recycle_apply (which assigns role = p_new_role directly), so this is
+  -- a database invariant rather than a patch applied to one RPC.
+  --
+  -- The read-time helpers already re-prove `p.role = 'health_center_manager'`,
+  -- so an orphaned assignment authorizes nothing the instant the role changes.
+  -- The reason to refuse anyway is the ROUND TRIP: recycle out, recycle back in,
+  -- and the identity would silently regain centres nobody re-authorized. Closing
+  -- the scopes explicitly — audited, with a mandatory reason, through
+  -- phoenix_revoke_profile_scope — is the only way that trail stays honest.
+  --
+  -- No history is deleted to satisfy this: revoked rows are exactly what the
+  -- operator is being asked to produce.
+  IF TG_OP = 'UPDATE'
+     AND OLD.role = 'health_center_manager'
+     AND NEW.role IS DISTINCT FROM OLD.role THEN
+    SELECT count(*) INTO v_scopes
+    FROM public.profile_scope_assignments a
+    WHERE a.profile_id = NEW.id AND a.scope_type = 'facility' AND a.is_active;
+
+    IF v_scopes > 0 THEN
+      RAISE EXCEPTION 'health_center_manager_role_change_blocked_by_active_facility_scope'
+        USING ERRCODE = '23514',
+        DETAIL = format(
+          '%s active facility assignment(s) remain; revoke them through phoenix_revoke_profile_scope, with a reason, before changing this role',
+          v_scopes);
+    END IF;
+  END IF;
+
+  -- R1.1-U (U-B): an active manager may not be moved — or move itself, through
+  -- 002's profiles_update_own — between organizations. Its facilities belong to
+  -- one sector, so an organization change silently detaches every scope it
+  -- holds and re-points phoenix_my_org() at another sector's org-wide surfaces.
+  IF TG_OP = 'UPDATE'
+     AND OLD.role = 'health_center_manager'
+     AND NEW.role = 'health_center_manager'
+     AND NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+    RAISE EXCEPTION 'health_center_manager_organization_change_forbidden'
+      USING ERRCODE = '42501',
+      DETAIL = 'a facility-scoped profile is bound to its health sector; move it by revoking its facility scope and changing the role first';
+  END IF;
+
+  -- R1.1-U (U-B corrective, C3): SELF-REACTIVATION.
+  -- Refused only when the writer IS the profile being rewritten. An authorized
+  -- administrator has a different auth.uid(); a service_role/trigger path has
+  -- none at all. Both keep working, so the authorized reactivation route —
+  -- and 093's commit/compensate contract — is deliberately untouched.
+  IF TG_OP = 'UPDATE'
+     AND NEW.role = 'health_center_manager'
+     AND OLD.status IS DISTINCT FROM 'active'
+     AND NEW.status = 'active'
+     AND auth.uid() IS NOT NULL
+     AND auth.uid() = NEW.id THEN
+    RAISE EXCEPTION 'health_center_manager_self_reactivation_forbidden'
+      USING ERRCODE = '42501',
+      DETAIL = 'administrative suspension is reversed by an authorized administrator, never by the suspended profile itself';
+  END IF;
+
+  IF NEW.role IS DISTINCT FROM 'health_center_manager' THEN
+    RETURN NEW;
+  END IF;
+  -- Historical rows are not judged; only a live identity asserts authority.
+  IF NEW.status IS DISTINCT FROM 'active' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.organization_id IS NULL THEN
+    RAISE EXCEPTION 'health_center_manager_requires_organization'
+      USING ERRCODE = '23514',
+      DETAIL = 'an active health_center_manager is a facility-scoped role and cannot be a platform profile';
+  END IF;
+
+  SELECT o.organization_kind, o.institution_class, o.status
+    INTO v_kind, v_class, v_status
+  FROM public.organizations o WHERE o.id = NEW.organization_id;
+
+  IF v_status IS DISTINCT FROM 'active'
+     OR v_kind IS DISTINCT FROM 'care_institution'
+     OR v_class IS DISTINCT FROM 'health_sector' THEN
+    RAISE EXCEPTION 'health_center_manager_requires_active_health_sector'
+      USING ERRCODE = '23514',
+      DETAIL = 'organization must be an ACTIVE care_institution with institution_class=health_sector';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- ── 9e-3. C4 — CROSS-CENTRE METADATA CONFIDENTIALITY ───────────────────────
+-- Facility isolation is not only "cannot read another centre's stock". A
+-- manager that can enumerate another centre's OUTLET IDS, its staff, or its
+-- document references has still crossed the boundary, even when every id it
+-- learns is inert against the narrowed policies. Each surface below was
+-- classified on its own evidence rather than as a group.
+
+-- profiles — the sector's personnel directory. Carries no facility column, so
+-- it cannot be narrowed to a facility; but this role needs exactly ONE row, its
+-- own, and 002 already grants that through `id = auth.uid()`. Every surface
+-- that renders another person's name for this role is denied, so restricting it
+-- removes an enumeration without removing a capability.
+DROP POLICY profiles_select_own_org ON public.profiles;
+CREATE POLICY profiles_select_own_org ON public.profiles
+  FOR SELECT TO authenticated
+  USING (
+    phoenix_my_role() = 'super_admin'
+    OR id = auth.uid()
+    OR (
+      organization_id = phoenix_my_org()
+      AND phoenix_my_role() <> 'health_center_manager'
+    )
+  );
+
+-- profile_permission_overrides — the audit MEASURED this one handing a centre-A
+-- manager a centre-B outlet id through scope_point_id. It is the clearest case:
+-- foreign-facility resource identity, in a table this role has no reason to
+-- read beyond its own row.
+DROP POLICY ppo_select_scoped ON public.profile_permission_overrides;
+CREATE POLICY ppo_select_scoped ON public.profile_permission_overrides
+  FOR SELECT TO authenticated
+  USING (
+    phoenix_my_role() = 'super_admin'
+    OR (
+      EXISTS (
+        SELECT 1 FROM public.profiles p
+        WHERE p.id = profile_permission_overrides.profile_id
+          AND p.organization_id = phoenix_my_org()
+      )
+      AND (
+        phoenix_my_role() <> 'health_center_manager'
+        OR profile_id = auth.uid()
+      )
+    )
+  );
+
+-- phoenix_paper_references — document_type + document_id for every dispatch,
+-- return, correction and movement in the sector: a direct index of other
+-- centres' operational documents. No facility column, and every surface that
+-- consumes paper references for this role is already denied.
+DROP POLICY phoenix_paper_references_select_scoped ON public.phoenix_paper_references;
+CREATE POLICY phoenix_paper_references_select_scoped ON public.phoenix_paper_references
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+-- platform_broadcast_acknowledgements — who in the sector acknowledged which
+-- platform message. Narrowed to the caller's own acknowledgements rather than
+-- denied, so the role keeps the one row it legitimately owns.
+DROP POLICY pba_select_superadmin_or_own_org ON public.platform_broadcast_acknowledgements;
+CREATE POLICY pba_select_superadmin_or_own_org ON public.platform_broadcast_acknowledgements
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = 'super_admin'
+      OR organization_id = phoenix_my_org()
+    )
+    AND (
+      phoenix_my_role() <> 'health_center_manager'
+      OR acknowledged_by = auth.uid()
+    )
+  );
+
+-- get_effective_permissions — SECURITY DEFINER, so RLS above does not reach it.
+-- Its gate is "super, self, or same-org", which for a facility-scoped role
+-- discloses the full effective permission map of every colleague, including the
+-- sector administrator's. Narrowed to SELF for this role; migration 062's
+-- definition is not edited.
+CREATE OR REPLACE FUNCTION public.get_effective_permissions(p_profile_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_actor uuid;
+  v_role  text;
+  v_org   uuid;
+  v_target_org uuid;
+  v_result jsonb;
+begin
+  v_actor := auth.uid();
+  if v_actor is null then return jsonb_build_object('ok', false, 'error', 'NOT_AUTHENTICATED'); end if;
+
+  select role, organization_id into v_role, v_org from profiles where id = v_actor;
+  select organization_id into v_target_org from profiles where id = p_profile_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'TARGET_NOT_FOUND'); end if;
+
+  -- scope: super, self, or same-org
+  if v_role <> 'super_admin' and p_profile_id <> v_actor and v_target_org is distinct from v_org then
+    return jsonb_build_object('ok', false, 'error', 'OUT_OF_SCOPE');
+  end if;
+
+  -- R1.1-U (U-B corrective, C4): same-organization is not a boundary for a
+  -- facility-scoped role. It may read its OWN effective permissions and no
+  -- one else's, returning the SAME opaque code as any other out-of-scope call.
+  if v_role = 'health_center_manager' and p_profile_id <> v_actor then
+    return jsonb_build_object('ok', false, 'error', 'OUT_OF_SCOPE');
+  end if;
+
+  select coalesce(jsonb_object_agg(k.key, phoenix_profile_has_permission(p_profile_id, k.key)), '{}'::jsonb)
+    into v_result
+  from permission_keys k;
+
+  return jsonb_build_object('ok', true, 'permissions', v_result);
+end;
+$function$;
+
+-- phoenix_search_paper_reference — the RPC form of the table closed above.
+-- Narrowing the policy alone would leave this SECURITY DEFINER path open, which
+-- is precisely the mistake 9e-1 exists to correct.
+CREATE OR REPLACE FUNCTION public.phoenix_search_paper_reference(p_query text)
+ RETURNS TABLE(document_type text, document_id uuid, paper_reference_number text, paper_reference_date date, issuing_authority text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_org   uuid;
+  v_norm  text;
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000'; END IF;
+  IF p_query IS NULL OR btrim(p_query) = '' THEN RETURN; END IF;
+  -- R1.1-U (U-B corrective, C4): denied for a facility-scoped role, returning
+  -- the same empty result as an unmatched query so it is not an oracle.
+  IF public.phoenix_my_role() = 'health_center_manager' THEN RETURN; END IF;
+  v_org := public.phoenix_my_org();
+  v_norm := regexp_replace(lower(btrim(p_query)), '[\s\-_/\.,]+', '', 'g');
+
+  RETURN QUERY
+  SELECT pr.document_type, pr.document_id, pr.paper_reference_number, pr.paper_reference_date, pr.issuing_authority
+  FROM public.phoenix_paper_references pr
+  WHERE (public.phoenix_my_role() = 'super_admin' OR pr.organization_id = v_org)
+    AND pr.normalized_reference = v_norm
+  ORDER BY pr.created_at DESC
+  LIMIT 20;
+END;
+$function$;
+
+-- ── 9e-4. C5 — WHOLE-SECTOR AGGREGATES ─────────────────────────────────────
+-- An aggregate is not safe merely because it exposes no raw stock row. A count
+-- computed over every centre IS a whole-sector snapshot, and assigned facility
+-- scope must not silently become one. None of these surfaces carries a facility
+-- dimension, so — per the U-B rule — they are DENIED rather than narrowed, and
+-- no report is redesigned to preserve access.
+
+-- inventory_status_reports and its lines/amendments: the monthly position of
+-- the WHOLE sector, per material, with on-hand / reserved / in-transit /
+-- quarantine / central / supplementary quantities. Organization-level only:
+-- the header has no warehouse, outlet or facility column, and the line carries
+-- a material rather than a location, so facility scope is not expressible.
+DROP POLICY isr2_select_scoped ON public.inventory_status_reports;
+CREATE POLICY isr2_select_scoped ON public.inventory_status_reports
+  FOR SELECT TO authenticated
+  USING (
+    (
+      phoenix_my_role() = ANY (ARRAY['super_admin'::text, 'central_warehouse_manager'::text])
+      OR organization_id = phoenix_my_org()
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+DROP POLICY isr2_lines_select_scoped ON public.inventory_status_report_lines;
+CREATE POLICY isr2_lines_select_scoped ON public.inventory_status_report_lines
+  FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.inventory_status_reports r
+      WHERE r.id = inventory_status_report_lines.report_id
+        AND (
+          phoenix_my_role() = ANY (ARRAY['super_admin'::text, 'central_warehouse_manager'::text])
+          OR r.organization_id = phoenix_my_org()
+        )
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+DROP POLICY isr2_amendments_select_scoped ON public.inventory_status_report_amendments;
+CREATE POLICY isr2_amendments_select_scoped ON public.inventory_status_report_amendments
+  FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.inventory_status_reports r
+      WHERE r.id = inventory_status_report_amendments.original_report_id
+        AND (
+          phoenix_my_role() = ANY (ARRAY['super_admin'::text, 'central_warehouse_manager'::text])
+          OR r.organization_id = phoenix_my_org()
+        )
+    )
+    AND phoenix_my_role() <> 'health_center_manager'
+  );
+
+-- The migration-054 dashboard counts. Both are SECURITY DEFINER and both count
+-- item_availability across the caller's ENTIRE organization — which for this
+-- role means every other centre's outlets and the sector main. 054 is not
+-- edited; the denial returns the same shape 054 already returns for a caller
+-- with no organization, so no consumer sees a new failure mode.
+CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts(p_org_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_actor          uuid := auth.uid();
+  v_role           text;
+  v_my_org         uuid;
+  v_is_super       boolean;
+  v_effective_org  uuid;
+  v_available      integer;
+  v_low_stock      integer;
+  v_missing        integer;
+  v_near_expiry    integer;
+  v_surplus        integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  v_role     := phoenix_my_role();
+  v_my_org   := phoenix_my_org();
+  -- HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A (preserved verbatim).
+  v_is_super := COALESCE(v_role = 'super_admin', false);
+
+  -- R1.1-U (U-B corrective, C5): a whole-sector condition census is not
+  -- facility-expressible, so it is denied — returning 054's own zero shape.
+  IF v_role = 'health_center_manager' THEN
+    RETURN jsonb_build_object(
+      'available',   0,
+      'low_stock',   0,
+      'missing',     0,
+      'near_expiry', 0,
+      'surplus',     0
+    );
+  END IF;
+
+  -- HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A (preserved verbatim).
+  IF NOT v_is_super AND v_my_org IS NULL THEN
+    RETURN jsonb_build_object(
+      'available',   0,
+      'low_stock',   0,
+      'missing',     0,
+      'near_expiry', 0,
+      'surplus',     0
+    );
+  END IF;
+
+  v_effective_org := CASE WHEN v_is_super THEN p_org_id ELSE v_my_org END;
+
+  SELECT
+    count(*) FILTER (WHERE condition = 'available'),
+    count(*) FILTER (WHERE condition = 'low_stock'),
+    count(*) FILTER (WHERE condition = 'missing'),
+    count(*) FILTER (WHERE condition = 'near_expiry'),
+    count(*) FILTER (WHERE condition = 'surplus')
+  INTO v_available, v_low_stock, v_missing, v_near_expiry, v_surplus
+  FROM public.item_availability
+  WHERE removed_at IS NULL
+    AND (v_effective_org IS NULL OR organization_id = v_effective_org);
+
+  RETURN jsonb_build_object(
+    'available',   COALESCE(v_available, 0),
+    'low_stock',   COALESCE(v_low_stock, 0),
+    'missing',     COALESCE(v_missing, 0),
+    'near_expiry', COALESCE(v_near_expiry, 0),
+    'surplus',     COALESCE(v_surplus, 0)
+  );
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts()
+ RETURNS TABLE(organization_id uuid, available integer, low integer, missing integer)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_actor    uuid := auth.uid();
+  v_role     text;
+  v_my_org   uuid;
+  v_is_super boolean;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  v_role     := phoenix_my_role();
+  v_my_org   := phoenix_my_org();
+  -- HARDEN-MIGRATION-054-NULL-ROLE-FAIL-CLOSED-A (preserved verbatim).
+  v_is_super := COALESCE(v_role = 'super_admin', false);
+
+  -- R1.1-U (U-B corrective, C5): denied, returning 054's own no-rows shape.
+  IF v_role = 'health_center_manager' THEN
+    RETURN;
+  END IF;
+
+  -- HARDEN-MIGRATION-054-NULL-ORG-FAIL-CLOSED-A (preserved verbatim).
+  IF NOT v_is_super AND v_my_org IS NULL THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    o.id AS organization_id,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('available', 'surplus') THEN 1 ELSE 0 END), 0)::integer AS available,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('low_stock', 'near_expiry') THEN 1 ELSE 0 END), 0)::integer AS low,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('missing', 'expired') THEN 1 ELSE 0 END), 0)::integer AS missing
+  FROM public.organizations o
+  LEFT JOIN public.item_availability ia
+    ON ia.organization_id = o.id
+   AND ia.removed_at IS NULL
+  WHERE o.status = 'active'
+    AND (v_is_super OR o.id = v_my_org)
+  GROUP BY o.id;
+END;
+$function$;
+
+-- ── 9e-5. WHAT THIS SECTION DELIBERATELY LEAVES OPEN, and on what evidence ──
+-- Classified individually, not waved through as a group:
+--
+--   local_items      — the organization's material CATALOGUE (local_name,
+--                      local_code, central_item_id). No facility, warehouse,
+--                      outlet or quantity column exists on it, and material
+--                      naming is needed by the surfaces this role DOES hold.
+--                      Organization-wide reference data, exactly like
+--                      central_items / permission_keys.
+--   inventory_suggestion_policy, phoenix_variance_approval_policy
+--                    — (organization_id, one threshold, updated_by/at).
+--                      Organization-level configuration; carries no facility,
+--                      resource or stock identity to leak. Left unchanged so
+--                      the Inventory Center this role legitimately uses keeps
+--                      its staleness contract.
+--   platform broadcast READ path (phoenix_get_pending_platform_broadcasts,
+--                      phoenix_ack_platform_broadcast)
+--                    — platform-to-ORGANIZATION communication, addressed to the
+--                      organization by design. The acknowledgement LEDGER is
+--                      narrowed above; the message itself is not a facility
+--                      resource.
+--
+-- Already fail-closed WITHOUT any change here, verified rather than assumed:
+--   get_entity_purge_impact / purge_entity_with_all_data / phoenix_update_warehouse
+--                    — super_admin-only (the second allowed role, hospital_admin,
+--                      cannot exist after the 091 five-role cutover).
+--   phoenix_set_paper_reference
+--                    — role whitelist that does not include this role.
+--   phoenix_report_snapshots, procurement, transfers, returns, quarantine,
+--   inventory signals, inter-institution alerts
+--                    — gated on permission keys this role is not granted.
+
+-- ============================================================================
 -- 10. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) IS
@@ -2625,6 +3287,83 @@ BEGIN
   IF pg_get_functiondef('public.phoenix_revoke_profile_scope(uuid,text)'::regprocedure)
      LIKE '%DELETE FROM public.profile_scope_assignments%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (182): scope revocation now deletes history';
+  END IF;
+
+  -- ── 11k. CORRECTIVE CLOSURE (9e) ─────────────────────────────────────────
+  -- Every function forward-replaced in 9e must actually carry the denial. A
+  -- family closed by member instead of by predicate is what made 9e necessary,
+  -- so the family is asserted as a SET here rather than one member at a time.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('phoenix_notifications_unread_count()'),
+      ('phoenix_notifications_mark_all_read()'),
+      ('phoenix_notifications_mark_read(uuid)'),
+      ('get_effective_permissions(uuid)'),
+      ('phoenix_search_paper_reference(text)'),
+      ('phoenix_get_dashboard_condition_counts(uuid)'),
+      ('phoenix_get_institution_condition_counts()')
+    ) AS t(sig)
+    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%health_center_manager%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): a forward-replaced reader lost its facility-scoped denial';
+  END LOOP;
+
+  -- The whole notification family is closed, not just the audited members.
+  FOR v_bad IN
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname LIKE 'phoenix_notifications%'
+      AND p.prosecdef
+      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      AND pg_get_functiondef(p.oid) NOT LIKE '%health_center_manager%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): an authenticated-reachable phoenix_notifications* function is still organization-only';
+  END LOOP;
+
+  -- C3: administrative suspension is not self-reversible for this role.
+  IF pg_get_functiondef('public._phoenix_profile_role_organization_guard_v1()'::regprocedure)
+     NOT LIKE '%health_center_manager_self_reactivation_forbidden%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): the self-reactivation guard is absent';
+  END IF;
+  -- ...and the two guards it sits beside are still there.
+  IF pg_get_functiondef('public._phoenix_profile_role_organization_guard_v1()'::regprocedure)
+     NOT LIKE '%health_center_manager_organization_change_forbidden%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): the organization-change guard was lost';
+  END IF;
+
+  -- C4/C5: every corrected policy carries the role decision, and the historical
+  -- predicate it was built from is still recognisable inside it.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('profiles',                             'profiles_select_own_org'),
+      ('profile_permission_overrides',         'ppo_select_scoped'),
+      ('phoenix_paper_references',             'phoenix_paper_references_select_scoped'),
+      ('platform_broadcast_acknowledgements',  'pba_select_superadmin_or_own_org'),
+      ('inventory_status_reports',             'isr2_select_scoped'),
+      ('inventory_status_report_lines',        'isr2_lines_select_scoped'),
+      ('inventory_status_report_amendments',   'isr2_amendments_select_scoped')
+    ) AS t(tbl, pol)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = t.tbl AND policyname = t.pol
+        AND qual LIKE '%health_center_manager%'
+    )
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): a corrected policy is missing or lost its facility-scoped decision';
+  END LOOP;
+
+  -- A profile must still be able to read ITS OWN row, or the role cannot log in.
+  IF (SELECT qual FROM pg_policies WHERE schemaname='public'
+        AND tablename='profiles' AND policyname='profiles_select_own_org')
+     NOT LIKE '%auth.uid()%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): profiles_select_own_org lost its self-read branch';
+  END IF;
+
+  -- NON-REGRESSION: the corrective section must not have granted the role
+  -- anything. The default set is still exactly the audited six.
+  SELECT count(*) INTO v_bad FROM public.role_permission_defaults WHERE role='health_center_manager';
+  IF v_bad <> 6 THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9e): the corrective section changed the role''s permission defaults';
   END IF;
 
   RAISE NOTICE '182 VERIFY OK.';
