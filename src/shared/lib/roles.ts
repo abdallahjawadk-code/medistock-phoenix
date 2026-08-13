@@ -9,7 +9,8 @@ export type OfficialRole =
   | 'institution_admin'
   | 'central_warehouse_manager'
   | 'warehouse_officer'
-  | 'outlet_officer';
+  | 'outlet_officer'
+  | 'health_center_manager';
 
 /** The only roles offered in the official role dropdown, in display order. */
 export const OFFICIAL_ROLES: readonly OfficialRole[] = [
@@ -18,7 +19,24 @@ export const OFFICIAL_ROLES: readonly OfficialRole[] = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
+  'health_center_manager',
 ];
+
+/**
+ * R1.1-U: roles whose authority is FACILITY-SCOPED rather than organization-wide.
+ *
+ * A role listed here is meaningless without at least one active
+ * profile_scope_assignments row of scope_type='facility', and the database
+ * refuses to let it exist outside an active care_institution health sector
+ * (Migration 182). The UI uses this only to decide whether to show the
+ * health-centre picker; the database remains the authority.
+ */
+export const FACILITY_SCOPED_ROLES = ['health_center_manager'] as const;
+export type FacilityScopedRole = typeof FACILITY_SCOPED_ROLES[number];
+
+export function isFacilityScopedRole(role: string | null | undefined): role is FacilityScopedRole {
+  return !!role && (FACILITY_SCOPED_ROLES as readonly string[]).includes(role);
+}
 
 /** Legacy admin role kept for compatibility — not an official dropdown option. */
 export const LEGACY_ADMIN_ROLE = 'hospital_admin';
@@ -52,6 +70,7 @@ export const OFFICIAL_ROLE_LABEL_KEY: Record<OfficialRole, string> = {
   central_warehouse_manager: 'orole_central_warehouse_manager',
   warehouse_officer:      'orole_warehouse_officer',
   outlet_officer:         'orole_outlet_officer',
+  health_center_manager:  'orole_health_center_manager',
 };
 
 /**
@@ -116,13 +135,24 @@ export function roleLabelKey(role: string | null | undefined): string {
  * - Only super_admin may create super_admin.
  * - Only super_admin may create institution_admin.
  * - Only super_admin may create central_warehouse_manager.
+ * - health_center_manager is targetable only by super_admin or an
+ *   institution_admin, and — because this function sees no organization — the
+ *   HEALTH-SECTOR requirement is proved server-side, never here.
  * - All lower operational roles remain targetable subject to the caller's
  *   server-enforced users.create/users.assign_role permissions.
+ *
+ * This is a UI affordance. Migration 182 and the admin-create-user Edge function
+ * refuse a health_center_manager outside an active care_institution health
+ * sector even when this returns true — a hospital institution_admin is rejected
+ * by the server, not by this predicate.
  */
 export function canTargetRole(actorRole: string, targetRole: OfficialRole): boolean {
   const actor = normalizeRole(actorRole);
   if (targetRole === 'super_admin')       return actor === 'super_admin';
   if (targetRole === 'institution_admin') return actor === 'super_admin';
   if (targetRole === 'central_warehouse_manager') return actor === 'super_admin';
+  if (targetRole === 'health_center_manager') {
+    return actor === 'super_admin' || actor === 'institution_admin';
+  }
   return true;
 }

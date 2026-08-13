@@ -232,12 +232,39 @@ const POINT_OPERATOR_LEGACY_DEFAULTS = [
   'inter_institution_alerts.acknowledge',
 ];
 
+/**
+ * R1.1-U — health_center_manager.
+ *
+ * Deliberately NOT a copy of any other manager role's set: an organization-wide
+ * default would defeat Facility Scope entirely. Every key here is one whose
+ * backing RLS surface is proven facility-scoped (Migration 182 header records
+ * the policy-by-policy audit):
+ *
+ *   warehouses.view / warehouse_stock.view / warehouse_stock.movements_view /
+ *   warehouse_dispatch.view  -> resolve through phoenix_profile_has_warehouse_assignment
+ *   outlet_stock.view        -> resolves through phoenix_profile_has_point_assignment
+ *   ports.view               -> dp_read_perm, narrowed for this role in 182
+ *
+ * No user-lifecycle key, no *.manage key, no organization-wide read. This mirror
+ * of role_permission_defaults is a UI convenience only; the database is the
+ * authority and grants exactly the same six keys.
+ */
+const HEALTH_CENTER_MANAGER_DEFAULTS = [
+  'warehouses.view',
+  'warehouse_stock.view',
+  'warehouse_stock.movements_view',
+  'warehouse_dispatch.view',
+  'outlet_stock.view',
+  'ports.view',
+];
+
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   super_admin:            ALL_KEYS,
   institution_admin:      INSTITUTION_ADMIN_DEFAULTS,
   central_warehouse_manager: CENTRAL_WAREHOUSE_MANAGER_DEFAULTS,
   warehouse_officer:      WAREHOUSE_OFFICER_DEFAULTS,
   outlet_officer:         OUTLET_OFFICER_DEFAULTS,
+  health_center_manager:  HEALTH_CENTER_MANAGER_DEFAULTS,
 };
 
 /** Default permission set for any role string (legacy-aware). */

@@ -111,6 +111,11 @@ const ROLE_RANK: Record<Role, number> = {
   central_warehouse_manager: 6,
   warehouse_officer: 5,
   warehouse_manager: 5,
+  // R1.1-U: an OPERATIONAL, facility-scoped role. Ranked with the other
+  // operational roles and deliberately BELOW institution_admin, so isAdminRole
+  // stays false for it — a health-centre manager is never an organization
+  // administrator, however many centres it holds.
+  health_center_manager: 5,
   outlet_officer: 4,
   port_officer: 4,
   point_operator: 4,
@@ -136,13 +141,20 @@ export function canManageOrg(role: Role): boolean {
 export const ASSIGNABLE_ROLES_BY_ACTOR: Record<Role, readonly Role[]> = {
   super_admin: [
     'super_admin', 'institution_admin', 'central_warehouse_manager',
-    'warehouse_officer', 'outlet_officer',
+    'warehouse_officer', 'outlet_officer', 'health_center_manager',
   ],
-  institution_admin: ['warehouse_officer', 'outlet_officer'],
+  // R1.1-U: an institution_admin may target health_center_manager. Whether it
+  // MAY in fact do so depends on its organization being an active health
+  // sector, which this table cannot see — Migration 182 and the
+  // admin-create-user Edge function refuse a hospital admin at the server.
+  institution_admin: ['warehouse_officer', 'outlet_officer', 'health_center_manager'],
   hospital_admin: ['warehouse_officer', 'outlet_officer'],
   central_warehouse_manager: [],
   warehouse_officer: [],
   warehouse_manager: [],
+  // A health-centre manager holds no user-lifecycle permission by default and
+  // therefore assigns no roles at all.
+  health_center_manager: [],
   outlet_officer: [],
   port_officer: [],
   point_operator: [],
