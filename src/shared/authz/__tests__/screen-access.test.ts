@@ -61,13 +61,29 @@ describe('authenticated landing is role-safe and session-scoped', () => {
 });
 
 describe('every navigation surface AND the route guard use the one predicate', () => {
-  it('sidebar, drawer and palette gate screen 11 on institutionsScreenAccess', () => {
-    for (const rel of ['shared/ui/PhoenixSidebar.tsx', 'shared/ui/PhoenixMobileDrawer.tsx', 'shared/ui/CommandPalette.tsx']) {
+  /**
+   * R1.1-P (P1): screen 11's two-tier gate is now reached through the shared
+   * projection rather than called directly in each component, and the bottom
+   * nav — previously absent from this list — is held to it too. The relabel to
+   * "My Organization" moved with the gate into nav-projection.ts, so this
+   * follows the decision to its single home instead of expecting three copies.
+   */
+  it('every nav surface gates screen 11 through the shared projection, which uses institutionsScreenAccess', () => {
+    for (const rel of [
+      'shared/ui/PhoenixSidebar.tsx',
+      'shared/ui/PhoenixMobileDrawer.tsx',
+      'shared/ui/PhoenixMobileBottomNav.tsx',
+      'shared/ui/CommandPalette.tsx',
+    ]) {
       const src = read(rel);
-      expect(src, rel).toContain('institutionsScreenAccess');
-      // and relabels to My Organization for the 'own' tier.
-      expect(src, rel).toContain("'nav_my_organization'");
+      expect(src, rel).toContain("from '@/shared/authz/nav-projection'");
+      expect(src, rel).toContain('projectNavigation(');
     }
+    const projection = read('shared/authz/nav-projection.ts');
+    expect(projection).toContain('institutionsScreenAccess');
+    // and relabels to My Organization for the 'own' tier.
+    expect(projection).toContain("'nav_my_organization'");
+    expect(projection).toContain('isScreenAuthorized(');
   });
 
   it('the route guard renders a Forbidden screen for a refused direct navigation', () => {

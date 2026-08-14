@@ -135,10 +135,18 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
       // 164's clinical_location_kind) — neither of which is a visual change.
       // Excluded BY EXACT NAME; every other path this guard watched, the rest
       // of src/shared/supabase included, is still covered.
+      // R1.1-P: the facility-parity phase adds ONE shared navigation
+      // projection (nav-projection.ts) and updates its own guard test, both
+      // under src/shared/authz. Excluded BY EXACT NAME. It creates NO
+      // migration and edits NO Supabase service, so every other watched path —
+      // all of src/shared/supabase, AuthenticatedApp.tsx, App.tsx and the rest
+      // of src/shared/authz including screen-access.ts itself — stays covered.
       diff = execSync(
         'git diff --name-only HEAD -- src/shared/supabase src/app/AuthenticatedApp.tsx src/app/App.tsx src/shared/authz '
         + '":!src/shared/supabase/services/organizations.service.ts" '
-        + '":!src/shared/supabase/services/warehouses.service.ts"',
+        + '":!src/shared/supabase/services/warehouses.service.ts" '
+        + '":!src/shared/authz/nav-projection.ts" '
+        + '":!src/shared/authz/__tests__/screen-access.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
@@ -158,13 +166,22 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
     expect(welcome).toContain('const finish = useCallback(');
   });
 
-  it('leaves every existing sidebar/drawer permission gate untouched', () => {
+  /**
+   * A7's intent here was "the visual convergence changed presentation only —
+   * it did not touch authorization". That intent is unchanged and still
+   * asserted; R1.1-P (P1) relocated the gates themselves out of these two
+   * components into the shared projection, so the assertion now checks that
+   * each surface still routes through an authorization decision rather than
+   * checking for the inlined copies that used to live here.
+   */
+  it('leaves every existing sidebar/drawer permission gate intact, via the shared projection', () => {
     for (const src of [sidebar, mobileDrawer]) {
-      expect(src).toContain("role === 'super_admin' || myPermissions.has('users.view')");
-      expect(src).toContain("role === 'super_admin' || myPermissions.has('users.edit_scope')");
+      expect(src).toContain("from '@/shared/authz/nav-projection'");
+      expect(src).toContain('projectNavigation(');
+      // The gates must not have been dropped on the way — no surface may
+      // render its raw candidate list.
+      expect(src).not.toMatch(/\{NAV_ITEMS\.map|\{ALL_NAV\.map/);
     }
-    expect(sidebar).toContain('institutionsScreenAccess(role)');
-    expect(mobileDrawer).toContain('institutionsScreenAccess(role)');
   });
 
   it('keeps nav active-state a data-attribute (aria-current parity), not a new interaction', () => {

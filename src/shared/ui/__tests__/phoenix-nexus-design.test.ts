@@ -32,11 +32,24 @@ describe('Phoenix Nexus production design boundaries', () => {
     });
   });
 
-  it('preserves permission predicates across desktop, drawer, and command palette', () => {
+  /**
+   * R1.1-P (P1): the users.view / users.edit_scope predicates are no longer
+   * copied into each surface — they live once in screen-access.ts and reach
+   * every surface through projectNavigation. This guard's intent (all surfaces
+   * enforce the same permission gates) is preserved and tightened: rather than
+   * checking that three copies still match, it checks that no copy exists and
+   * that every surface routes through the one decision.
+   */
+  it('preserves permission gating across desktop, drawer, and command palette via ONE shared projection', () => {
     [sidebar, drawer, palette].forEach(source => {
-      expect(source).toContain("role === 'super_admin' || myPermissions.has('users.view')");
-      expect(source).toContain("role === 'super_admin' || myPermissions.has('users.edit_scope')");
+      expect(source).toContain("from '@/shared/authz/nav-projection'");
+      expect(source).toContain('projectNavigation(');
+      expect(source).not.toContain("myPermissions.has('users.view')");
+      expect(source).not.toContain("myPermissions.has('users.edit_scope')");
     });
+    const screenAccess = read('../../authz/screen-access.ts');
+    expect(screenAccess).toContain("permissions.has('users.view')");
+    expect(screenAccess).toContain("permissions.has('users.edit_scope')");
   });
 
   it('provides day, night, responsive, and reduced-motion design contracts', () => {
