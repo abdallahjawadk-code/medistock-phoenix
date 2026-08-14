@@ -3099,6 +3099,113 @@ $function$;
 --                    — gated on permission keys this role is not granted.
 
 -- ============================================================================
+-- 9f. SECURITY DEFINER STATUS-CONTRIBUTION CLOSURE
+--     A SAFE GATE OVER AN UNSAFE PROJECTION
+-- ============================================================================
+-- 9e narrowed inventory_status_reports / _lines / _amendments at RLS, and that
+-- denial is real — a manager reads 0 rows from all three tables. But RLS does
+-- not reach inside a SECURITY DEFINER body, and one member of the monthly-status
+-- family gates on a facility-safe input while projecting sector-level data:
+--
+--   phoenix_status_get_outlet_contribution(p_report_id, p_distribution_point_id)
+--
+-- Its GATE is correct after 5b/5c: the outlet argument must be one the caller is
+-- really assigned to, so a foreign outlet is refused. Its PROJECTION is not: it
+-- joins inventory_status_report_lines and returns l.classification and
+-- l.nearest_expiry_date — values computed across the WHOLE sector.
+--
+-- Measured on the replayed 001->182 rig, Manager A assigned only to Centre A:
+--
+--   SELECT count(*) FROM inventory_status_reports        -> 0   (9e, correct)
+--   SELECT count(*) FROM inventory_status_report_lines   -> 0   (9e, correct)
+--   phoenix_status_get_outlet_contribution(report, own outlet)
+--                       -> classification        = 'scarce'
+--                          nearest_expiry_date   = 2027-03-03  <-- CENTRE B's
+--
+-- Centre A's own stock expires 2030-01-01. 2027-03-03 is not derivable from
+-- anything Manager A legitimately holds: it is another centre's batch, read
+-- through a function whose gate had already been made facility-aware. The
+-- authorization boundary was right and the data boundary was still wrong.
+--
+-- DECISION — FAIL CLOSED, not a filtered aggregate.
+-- Four of the six returned columns are facility-resolvable (the material
+-- identity is an inner join against the caller's own outlet_stock, and both
+-- quantities come from that same row). The remaining two are not: a monthly
+-- status classification is a decision taken over the whole sector, and the
+-- line's nearest expiry is the minimum across every contributing centre and
+-- Sector Main. No ALREADY-EXISTING canonical facility-level source carries
+-- either value, Stage H has not started, and inventing a pseudo-facility
+-- classification by filtering sector aggregates would make Facility Scope a
+-- whole-sector aggregate under a narrower name. The role is therefore denied
+-- this RPC outright until a facility-level reporting model is authorized.
+--
+-- EXISTENCE ORACLE.
+-- The denial is evaluated BEFORE the report is fetched. The pre-existing order
+-- (look up the report, raise report_not_found, then authorize) let a manager
+-- separate a real report UUID from a random one by the error alone. For this
+-- role both cases now raise the identical not_authorized. Historical roles keep
+-- the original ordering and the original diagnostics.
+--
+-- Migration 092 is NOT edited; this is a forward replacement carrying the same
+-- denial predicate 9e uses. CREATE OR REPLACE preserves the existing ACL
+-- (authenticated only, established by 092 and re-asserted by 113/121).
+--
+-- The rest of the family was inspected for this exact shape — a facility-safe
+-- gate over an organization-level projection — and none of it repeats: every
+-- other reachable phoenix_status_* reader gates on phoenix_status_center_authorized,
+-- which requires a status_center.* permission key, and section 8 grants this
+-- role none. That is asserted as a live set in 11l rather than trusted.
+CREATE OR REPLACE FUNCTION public.phoenix_status_get_outlet_contribution(p_report_id uuid, p_distribution_point_id uuid)
+ RETURNS TABLE(scientific_name text, national_code text, on_hand_qty integer, reserved_qty integer, classification text, nearest_expiry_date date)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_actor  uuid := auth.uid();
+  v_report public.inventory_status_reports%ROWTYPE;
+BEGIN
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+
+  -- R1.1-U (U-B corrective 9f): FIRST, before the report row is touched.
+  -- Two reasons this cannot be folded into the gate below: the gate runs after
+  -- the report lookup and would therefore leak report existence through
+  -- report_not_found, and the values this function returns are sector-derived
+  -- regardless of which outlet is named, so there is nothing to narrow.
+  IF public.phoenix_my_role() = 'health_center_manager' THEN
+    RAISE EXCEPTION 'not_authorized';
+  END IF;
+
+  SELECT * INTO v_report FROM public.inventory_status_reports WHERE id = p_report_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'report_not_found'; END IF;
+
+  -- "Own contribution only": gated on the actor's real assignment to THIS
+  -- outlet, not on a permission key — an outlet_officer's whole authority
+  -- here comes from being the assigned officer, exactly like every other
+  -- outlet-scoped read in the app (availability.view is intentionally NOT
+  -- required: outlet_officer holds no permission keys by default at all).
+  IF NOT (
+    public.phoenix_my_role() = 'super_admin'
+    OR (public.phoenix_my_org() = v_report.organization_id
+        AND (public.phoenix_my_role() IN ('institution_admin', 'central_warehouse_manager')
+             OR public.phoenix_profile_has_point_assignment(v_actor, p_distribution_point_id)))
+  ) THEN RAISE EXCEPTION 'not_authorized'; END IF;
+
+  RETURN QUERY
+  SELECT l.scientific_name, l.national_code,
+         COALESCE(os.on_hand_quantity, 0), COALESCE(os.reserved_quantity, 0),
+         l.classification, l.nearest_expiry_date
+  FROM public.inventory_status_report_lines l
+  JOIN public.outlet_stock os
+    ON os.distribution_point_id = p_distribution_point_id
+   AND os.organization_id = v_report.organization_id
+   AND lower(os.scientific_name) = lower(l.scientific_name)
+   AND coalesce(os.national_code,'') = coalesce(l.national_code,'')
+  WHERE l.report_id = p_report_id;
+END;
+$function$;
+
+-- ============================================================================
 -- 10. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) IS
@@ -3115,6 +3222,9 @@ COMMENT ON FUNCTION public.phoenix_admin_assign_facility_scopes(uuid, uuid, uuid
 
 COMMENT ON FUNCTION public._phoenix_profile_role_organization_guard_v1() IS
   'R1.1-U: an ACTIVE health_center_manager must belong to an ACTIVE care_institution organization with institution_class=health_sector. Deliberately does NOT require a facility assignment — provisioning creates the profile before inserting its assignment set in the same transaction — which is safe because an unscoped manager can reach no resource at all. It ALSO refuses to move a profile OUT of the role while active facility assignments remain, so a recycle round-trip cannot silently restore centres nobody re-authorized; the operator must revoke them through phoenix_revoke_profile_scope, with a reason, and the revoked rows are retained as history. Recycling INTO the role is already refused by phoenix_recycle_apply''s own role whitelist, which R1.1-U deliberately does not widen — lifecycle support for this role is deferred rather than half-implemented.';
+
+COMMENT ON FUNCTION public.phoenix_status_get_outlet_contribution(uuid, uuid) IS
+  'R1.1-U (U-B corrective 9f): forward replacement of 092''s reader. Its gate was already facility-aware, but its projection returned inventory_status_report_lines.classification and .nearest_expiry_date — values computed across the whole sector — so a manager assigned to one centre could read another centre''s nearest expiry through an outlet it legitimately owned. Four of the six columns are facility-resolvable; these two are not, and no existing canonical facility-level source carries them, so health_center_manager is denied outright rather than served a filtered aggregate. The denial is raised BEFORE the report row is fetched so report existence stays unobservable — report_not_found and not_authorized are indistinguishable for this role. Every historical role keeps 092''s exact behaviour, ordering and diagnostics.';
 
 -- ============================================================================
 -- 11. VERIFY — in-transaction, fails the whole migration
@@ -3301,7 +3411,9 @@ BEGIN
       ('get_effective_permissions(uuid)'),
       ('phoenix_search_paper_reference(text)'),
       ('phoenix_get_dashboard_condition_counts(uuid)'),
-      ('phoenix_get_institution_condition_counts()')
+      ('phoenix_get_institution_condition_counts()'),
+      -- 9f: a safe gate over a sector projection.
+      ('phoenix_status_get_outlet_contribution(uuid,uuid)')
     ) AS t(sig)
     WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%health_center_manager%'
   LOOP
@@ -3319,6 +3431,42 @@ BEGIN
   LOOP
     RAISE EXCEPTION 'VERIFY FAILED (182/9e): an authenticated-reachable phoenix_notifications* function is still organization-only';
   END LOOP;
+
+  -- ── 11l. STATUS-CONTRIBUTION CLOSURE (9f) ────────────────────────────────
+  -- The denial must be evaluated BEFORE the report row is read, or the role can
+  -- still separate a real report UUID from a random one by report_not_found
+  -- alone. Position, not mere presence, is what closes the oracle.
+  v_def := pg_get_functiondef('public.phoenix_status_get_outlet_contribution(uuid,uuid)'::regprocedure);
+  IF position('health_center_manager' in v_def) > position('FROM public.inventory_status_reports' in v_def) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9f): the facility-scoped denial no longer precedes the report lookup — report existence is observable again';
+  END IF;
+
+  -- Every OTHER authenticated-reachable status/report reader that projects
+  -- inventory_status_report_lines must gate on a status_center.* key (which this
+  -- role is never granted), never on a facility-safe assignment helper. This is
+  -- the systemic form of 9f: it fails if a future migration adds another member
+  -- with a safe gate over a sector projection.
+  FOR v_bad IN
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prosecdef
+      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      AND pg_get_functiondef(p.oid) LIKE '%inventory_status_report_lines%'
+      AND pg_get_functiondef(p.oid) NOT LIKE '%RETURNS trigger%'
+      AND pg_get_functiondef(p.oid) NOT LIKE '%phoenix_status_center_authorized%'
+      AND pg_get_functiondef(p.oid) NOT LIKE '%health_center_manager%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9f): a status-report reader projects sector report lines without a status_center gate or a facility-scoped denial';
+  END LOOP;
+
+  -- Section 8 must never grant a status_center.* key to this role — 11l's
+  -- reasoning above depends on it.
+  IF EXISTS (
+    SELECT 1 FROM public.role_permission_defaults
+    WHERE role = 'health_center_manager' AND allowed AND permission_key LIKE 'status_center.%'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9f): health_center_manager was granted a status_center key, which reopens the monthly-status family';
+  END IF;
 
   -- C3: administrative suspension is not self-reversible for this role.
   IF pg_get_functiondef('public._phoenix_profile_role_organization_guard_v1()'::regprocedure)

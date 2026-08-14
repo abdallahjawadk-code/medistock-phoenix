@@ -51,6 +51,10 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     (await asUser(uid, sql)).rows.map((r: any) => String(Object.values(r)[0])).sort();
   const one = async (uid: string, sql: string): Promise<string> =>
     String(Object.values((await asUser(uid, sql)).rows[0])[0]);
+  /** The raised message, or NO_ERROR — C8 asserts on refusal text, not rows. */
+  const fails = async (uid: string, sql: string): Promise<string> => {
+    try { await asUser(uid, sql); return 'NO_ERROR'; } catch (e: any) { return String(e.message); }
+  };
 
   beforeAll(async () => {
     rig = await buildRig({});
@@ -117,6 +121,22 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
       INSERT INTO inventory_status_report_lines
         (report_id,scientific_name,on_hand_qty,suggested_classification,classification)
         VALUES ('${ISR}','SECTOR_WIDE_MATERIAL',9999,'available','available');
+
+      -- C8: the exact measured leak, preserved as a fixture. DrugShared sits in
+      -- BOTH centres' outlets, so it survives the RPC's inner join against the
+      -- caller's own outlet_stock. Centre A's own batch expires 2030-01-01;
+      -- Centre B's expires 2027-03-03, and the SECTOR line therefore carries
+      -- 2027-03-03 and a sector classification. 2027-03-03 is the witness value:
+      -- Manager A can only learn it by reading across the facility boundary.
+      INSERT INTO outlet_stock
+        (organization_id,distribution_point_id,point_type,scientific_name,on_hand_quantity,
+         unit,batch_number,expiry_date,has_no_national_code,national_code) VALUES
+        ('${SEC_A}','${PH_A}','pharmacy','DrugShared',10,'box','BA','2030-01-01',false,'NC-S'),
+        ('${SEC_A}','${PH_B}','pharmacy','DrugShared',20,'box','BB','2027-03-03',false,'NC-S');
+      INSERT INTO inventory_status_report_lines
+        (report_id,scientific_name,national_code,on_hand_qty,
+         suggested_classification,classification,nearest_expiry_date)
+        VALUES ('${ISR}','DrugShared','NC-S',30,'available','scarce','2027-03-03');
 
       INSERT INTO item_availability
         (organization_id,distribution_point_id,scientific_name,port_name,condition,quantity,source_kind) VALUES
@@ -273,8 +293,9 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     });
 
     it('institution_admin keeps the monthly position it always had', async () => {
+      // Both sector lines: the original fixture and C8's DrugShared witness line.
       expect(await seen(ADMIN_A, 'SELECT scientific_name FROM inventory_status_report_lines'))
-        .toEqual(['SECTOR_WIDE_MATERIAL']);
+        .toEqual(['DrugShared', 'SECTOR_WIDE_MATERIAL']);
     });
 
     it('the dashboard condition census no longer spans the sector', async () => {
@@ -341,6 +362,81 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     });
   });
 
+  // ══ C8 — a safe gate over an unsafe projection ═════════════════════════════
+  /**
+   * The measured leak, before 9f, for Manager A assigned only to Centre A:
+   *
+   *   SELECT count(*) FROM inventory_status_reports       -> 0   (9e, correct)
+   *   SELECT count(*) FROM inventory_status_report_lines  -> 0   (9e, correct)
+   *   phoenix_status_get_outlet_contribution(report, PH_A)
+   *              -> classification = 'scarce', nearest_expiry_date = 2027-03-03
+   *
+   * PH_A is Manager A's OWN outlet, so the gate was satisfied honestly. But
+   * 2027-03-03 is Centre B's batch — Centre A's own stock expires 2030-01-01 —
+   * so the value could only come from across the facility boundary. The gate was
+   * facility-aware; the projection was not.
+   */
+  describe('C8 · phoenix_status_get_outlet_contribution', () => {
+    const CONTRIB = (report: string, point: string) =>
+      `SELECT classification, nearest_expiry_date::text FROM
+       phoenix_status_get_outlet_contribution('${report}','${point}')`;
+
+    it('the row denial the projection was bypassing still holds', async () => {
+      expect(await one(MGR_A, 'SELECT count(*)::text FROM inventory_status_reports')).toBe('0');
+      expect(await one(MGR_A, 'SELECT count(*)::text FROM inventory_status_report_lines')).toBe('0');
+    });
+
+    it('a manager can no longer read the sector contribution through its OWN outlet', async () => {
+      expect(await fails(MGR_A, CONTRIB(ISR, PH_A))).toMatch(/not_authorized/);
+    });
+
+    it('Centre B\'s nearest expiry is not obtainable by any means this RPC offers', async () => {
+      // The witness value must not appear for the manager through ANY outlet it
+      // could name — its own, the foreign one, or the sector main's.
+      for (const point of [PH_A, PH_B]) {
+        const out = await fails(MGR_A, CONTRIB(ISR, point));
+        expect(out).not.toMatch(/2027-03-03/);
+        expect(out).toMatch(/not_authorized/);
+      }
+    });
+
+    it('report existence stays unobservable — a real UUID and a random one are identical', async () => {
+      const real = await fails(MGR_A, CONTRIB(ISR, PH_A));
+      const fake = await fails(MGR_A, CONTRIB(randomUUID(), PH_A));
+      expect(real).toMatch(/not_authorized/);
+      // Before 9f these differed: not_authorized vs report_not_found.
+      expect(fake).toBe(real);
+      expect(fake).not.toMatch(/report_not_found/);
+    });
+
+    it('every manager shape is refused, not just the one that was measured', async () => {
+      for (const [who, uid, point] of [
+        ['manager of centre B', MGR_B, PH_B],
+        ['manager of A and B', MGR_AB, PH_A],
+        ['manager in the second sector', MGR_SEC_B, PH_C],
+      ] as const) {
+        const out = await fails(uid, CONTRIB(ISR, point));
+        expect(out, who).toMatch(/not_authorized/);
+        expect(out, who).not.toMatch(/2027-03-03/);
+      }
+    });
+
+    it('institution_admin keeps the historical sector result, including 2027-03-03', async () => {
+      const r = await asUser(ADMIN_A, CONTRIB(ISR, PH_A));
+      expect(r.rows).toEqual([{ classification: 'scarce', nearest_expiry_date: '2027-03-03' }]);
+    });
+
+    it('outlet_officer keeps the historical contract for its own outlet', async () => {
+      const r = await asUser(OFF_B, CONTRIB(ISR, PH_B));
+      expect(r.rows).toEqual([{ classification: 'scarce', nearest_expiry_date: '2027-03-03' }]);
+    });
+
+    it('historical roles keep the original diagnostics they rely on', async () => {
+      // 9f deliberately did NOT flatten report_not_found for anyone else.
+      expect(await fails(ADMIN_A, CONTRIB(randomUUID(), PH_A))).toMatch(/report_not_found/);
+    });
+  });
+
   // ══ C6 — the systemic guard: close the CLASS, not the instances ════════════
   describe('C6 · no organization-only SECURITY DEFINER reader stays unnoticed', () => {
     /**
@@ -386,6 +482,145 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
         .map(r => r.proname))].sort();
 
       expect(orgOnly).toEqual(REVIEWED_ORG_ONLY);
+    });
+
+    /**
+     * C8/C6 CORRECTION — classify the PROJECTION, not the gate.
+     *
+     * The census above filters out any function whose definition merely MENTIONS
+     * a scope helper (`!SCOPED.test(def)`). That is what let the real leak
+     * through: phoenix_status_get_outlet_contribution names
+     * phoenix_profile_has_point_assignment in its AUTHORIZATION GATE while its
+     * PROJECTION returned inventory_status_report_lines.classification and
+     * .nearest_expiry_date — values computed across the whole sector. The gate
+     * was facility-safe and the data was not, and a text search for the helper
+     * cannot tell those two things apart.
+     *
+     * So this census is keyed on the property that actually failed: does the
+     * function BODY read a table that carries sector / cross-facility identity?
+     * Every such reachable function must be explicitly classified. Replacing one
+     * fragile regex with a cleverer regex would repeat the mistake, so the
+     * classification is a hand-maintained map and the test asserts SET EQUALITY:
+     * a new function touching one of these tables fails until a human labels it.
+     */
+    const SENSITIVE_TABLES = [
+      'inventory_status_reports',
+      'inventory_status_report_lines',
+      'inventory_status_report_amendments',
+      'phoenix_notifications',
+      'phoenix_paper_references',
+      'profile_permission_overrides',
+    ];
+
+    type Classification =
+      /** Body carries an explicit health_center_manager denial. */
+      | 'DENIED_FOR_HEALTH_CENTER_MANAGER'
+      /** Every returned datum resolves to the caller's own facility. Requires proof. */
+      | 'FACILITY_SAFE_PROJECTION'
+      /** Gated on a permission key or role whitelist this role does not hold. */
+      | 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS'
+      /** Reviewed, deliberately org-level, reason recorded, deferred by contract. */
+      | 'HISTORICAL_ORG_LEVEL_BY_EXPLICIT_CONTRACT';
+
+    const CLASSIFIED: Record<string, Classification> = {
+      // ── Forward-replaced in 9e/9f; the denial is in the body. ──────────────
+      phoenix_notifications_list: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+      phoenix_notifications_unread_count: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+      phoenix_notifications_mark_all_read: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+      phoenix_notifications_mark_read: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+      phoenix_search_paper_reference: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+      // 9f. Permanently listed here BY NAME so it can never again drop out of a
+      // census merely because its gate mentions a scope helper.
+      phoenix_status_get_outlet_contribution: 'DENIED_FOR_HEALTH_CENTER_MANAGER',
+
+      // ── Monthly-status family: every one gates on phoenix_status_center_authorized,
+      //    which demands a status_center.* key. Section 8 grants this role none,
+      //    and 182/11l asserts that it never will.
+      phoenix_status_prepare_report: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_submit_report: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_approve_lock_report: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_return_for_clarification: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_create_amendment: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_classify_lines: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_status_confirm_missing: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      // Permission-override writers: require users.manage_permissions.
+      assign_profile_permissions: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      reset_profile_permissions: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      // Role whitelists that do not include health_center_manager.
+      phoenix_set_paper_reference: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+      phoenix_clean_availability_data: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
+
+      // ── Reviewed, left unchanged, reason recorded. ─────────────────────────
+      // RLS-internal predicate helper: returns ONE boolean for an explicitly
+      // supplied (profile_id, key). It has no facility dimension by construction
+      // and every RLS policy in the schema depends on it, so it is not narrowed
+      // here. Reaching another profile's bit requires that profile's UUID, and
+      // 9e-3 closed profiles enumeration to the caller's own row. Recorded for
+      // fresh U-C rather than redesigned inside this corrective patch.
+      phoenix_profile_has_permission: 'HISTORICAL_ORG_LEVEL_BY_EXPLICIT_CONTRACT',
+    };
+
+    const sensitiveReaders = async () => {
+      const rows = (await asAdmin(`
+        SELECT p.proname, pg_get_functiondef(p.oid) AS def
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname='public'
+          AND p.prosecdef
+          AND pg_get_functiondef(p.oid) NOT LIKE '%RETURNS trigger%'
+          AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+               OR has_function_privilege('anon', p.oid, 'EXECUTE'))
+        ORDER BY p.proname`)).rows as any[];
+      return rows.filter(r => SENSITIVE_TABLES.some(t => String(r.def).includes(t)));
+    };
+
+    it('every reachable SECURITY DEFINER reader of a sector table is explicitly classified', async () => {
+      const found = [...new Set((await sensitiveReaders()).map(r => r.proname))].sort();
+      // Set equality in BOTH directions: an unclassified new reader fails, and a
+      // stale entry for a function that no longer exists fails too.
+      expect(found).toEqual(Object.keys(CLASSIFIED).sort());
+    });
+
+    it('every DENIED_FOR_HEALTH_CENTER_MANAGER reader actually carries the denial', async () => {
+      const rows = await sensitiveReaders();
+      const missing = rows
+        .filter(r => CLASSIFIED[r.proname] === 'DENIED_FOR_HEALTH_CENTER_MANAGER')
+        .filter(r => !/health_center_manager/.test(String(r.def)))
+        .map(r => r.proname);
+      expect(missing).toEqual([]);
+    });
+
+    it('every NOT_REACHABLE_WITH_ROLE_PERMISSIONS reader demands something this role lacks', async () => {
+      const granted = new Set(((await asAdmin(`
+        SELECT permission_key FROM role_permission_defaults
+        WHERE role='health_center_manager' AND allowed`)).rows as any[]).map(r => r.permission_key));
+
+      const rows = await sensitiveReaders();
+      const bad: string[] = [];
+      for (const r of rows.filter(x => CLASSIFIED[x.proname] === 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS')) {
+        const def = String(r.def);
+        // Any dotted permission key the body names must NOT be one this role holds.
+        const keys = [...def.matchAll(/'([a-z_]+\.[a-z_]+)'/g)].map(m => m[1]);
+        const reachableKey = keys.find(k => granted.has(k));
+        // A function naming no key at all must instead carry a role whitelist
+        // that cannot match health_center_manager.
+        const roleGated = /phoenix_status_center_authorized|'super_admin'|'institution_admin'/.test(def);
+        if (reachableKey || (keys.length === 0 && !roleGated)) {
+          bad.push(`${r.proname}${reachableKey ? ` (reachable via ${reachableKey})` : ' (no key, no role gate)'}`);
+        }
+      }
+      expect(bad).toEqual([]);
+    });
+
+    it('no reader is classified FACILITY_SAFE_PROJECTION without an executable proof', async () => {
+      // 9f rejected the "filter the sector aggregate" shape outright, so this
+      // class is currently empty. Should a future reader claim it, the claim must
+      // be discharged by a real adversarial probe (the Manager A / Centre B case
+      // in the C8 suite), never by inspection. Keeping the assertion here makes
+      // an unproved claim fail rather than pass silently.
+      const claimed = Object.entries(CLASSIFIED)
+        .filter(([, c]) => c === 'FACILITY_SAFE_PROJECTION')
+        .map(([n]) => n);
+      expect(claimed).toEqual([]);
     });
 
     it('every phoenix_notifications* reader reachable by a client carries the denial', async () => {

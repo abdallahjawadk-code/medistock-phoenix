@@ -688,6 +688,56 @@ describe('182 NON-GOALS', () => {
   });
 });
 
+describe('182/9f status-contribution closure', () => {
+  /** The 9f forward replacement, isolated from the rest of the migration. */
+  const fn = () => {
+    const start = sql.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_status_get_outlet_contribution');
+    expect(start, 'the 9f forward replacement is missing').toBeGreaterThan(-1);
+    return sql.slice(start, sql.indexOf('$function$;', start));
+  };
+
+  it('forward-replaces the reader instead of editing migration 092', () => {
+    const body = fn();
+    expect(body).toContain('SECURITY DEFINER');
+    expect(body).toMatch(/SET search_path TO 'public', 'pg_temp'/);
+    // Signature preserved, so 092/113/121's existing grants keep applying.
+    expect(body).toContain('(p_report_id uuid, p_distribution_point_id uuid)');
+    // That 092 itself is untouched is proved by byte-identity against master,
+    // not by anything readable from inside this file.
+  });
+
+  it('denies the role BEFORE the report row is read, closing the existence oracle', () => {
+    const body = fn();
+    const denial = body.indexOf("phoenix_my_role() = 'health_center_manager'");
+    const lookup = body.indexOf('FROM public.inventory_status_reports');
+    expect(denial, 'the facility-scoped denial is absent').toBeGreaterThan(-1);
+    expect(lookup).toBeGreaterThan(-1);
+    // Position is the whole point: after the lookup, report_not_found leaks.
+    expect(denial).toBeLessThan(lookup);
+  });
+
+  it('keeps every historical branch of the original gate intact', () => {
+    const body = fn();
+    for (const branch of [
+      "phoenix_my_role() = 'super_admin'",
+      "phoenix_my_role() IN ('institution_admin', 'central_warehouse_manager')",
+      'phoenix_profile_has_point_assignment(v_actor, p_distribution_point_id)',
+      'report_not_found',
+    ]) expect(body, branch).toContain(branch);
+  });
+
+  it('denies outright rather than serving a filtered sector aggregate', () => {
+    // The projection is deliberately UNCHANGED — the role is refused, not handed
+    // a narrowed slice of sector-derived classification/expiry values.
+    expect(fn()).toContain('l.classification, l.nearest_expiry_date');
+  });
+
+  it('VERIFY asserts both the denial position and the systemic family rule', () => {
+    expect(sql).toContain('VERIFY FAILED (182/9f)');
+    expect(sql).toContain("permission_key LIKE 'status_center.%'");
+  });
+});
+
 describe('182 manual rollback documentation', () => {
   it('lists every object the migration creates', () => {
     const rollback = sql.slice(sql.indexOf('-- ROLLBACK (manual):'));
