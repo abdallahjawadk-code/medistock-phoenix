@@ -39,6 +39,7 @@ const PH_A = randomUUID(), PH_B = randomUUID(), PH_C = randomUUID();
 const MGR_A = randomUUID(), MGR_B = randomUUID(), MGR_AB = randomUUID();
 const MGR_SEC_B = randomUUID(), ADMIN_A = randomUUID(), OFF_B = randomUUID();
 const CI = randomUUID(), ISR = randomUUID(), BROADCAST = randomUUID();
+const SUPER_U = randomUUID();
 const SUPER = '00000000-0000-0000-0000-0000000000a1';
 
 run('182 U-B corrective · closure of the surfaces U-C found', () => {
@@ -142,6 +143,22 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
         (organization_id,distribution_point_id,scientific_name,port_name,condition,quantity,source_kind) VALUES
         ('${SEC_A}','${PH_A}','DrugA','PhA','available',5,'manual'),
         ('${SEC_A}','${PH_B}','DrugB','PhB','available',7,'manual');
+
+      -- C9: an approved correction on MANAGER A's OWN outlet, decided by the
+      -- sector administrator. 098 forbids proposer = decider, so decided_by is
+      -- ALWAYS a foreign profile — this is how the manager comes by a uuid it
+      -- was never shown directly. Kept as a fixture to document WHY hiding the
+      -- uuid is not the fix (C9.7): authorization must hold regardless.
+      INSERT INTO phoenix_stock_correction_requests
+        (organization_id,outlet_stock_id,on_hand_before,counted_quantity,variance,
+         reason,status,proposed_by,underlying_request_id,decided_by,decided_at)
+        SELECT '${SEC_A}', os.id, 10, 8, -2, 'count', 'approved', '${OFF_B}',
+               '${randomUUID()}', '${ADMIN_A}', now()
+        FROM outlet_stock os WHERE os.distribution_point_id = '${PH_A}' LIMIT 1;
+
+      INSERT INTO auth.users (id,email) VALUES ('${SUPER_U}','c-super@rig.local') ON CONFLICT DO NOTHING;
+      UPDATE profiles SET role='super_admin', status='active', organization_id='${SEC_A}',
+        full_name='SUPER' WHERE id='${SUPER_U}';
 
       INSERT INTO platform_broadcast_messages (id,title,body,severity,target_scope,created_by)
         VALUES ('${BROADCAST}','T','B','info','all','${SUPER}');
@@ -434,6 +451,124 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     it('historical roles keep the original diagnostics they rely on', async () => {
       // 9f deliberately did NOT flatten report_not_found for anyone else.
       expect(await fails(ADMIN_A, CONTRIB(randomUUID(), PH_A))).toMatch(/report_not_found/);
+    });
+  });
+
+  // ══ C9 — a self-only API over a global primitive ═══════════════════════════
+  /**
+   * 9e-3 made get_effective_permissions self-only and that held. But it is only
+   * an aggregation of phoenix_profile_has_permission over permission_keys, and
+   * that primitive performed NO caller authorization whatsoever — no auth.uid(),
+   * no organization check, no role check. Measured before 9g, with no crafted
+   * input:
+   *
+   *   correction request on the manager's OWN outlet -> decided_by = ADMIN_A
+   *   get_effective_permissions(ADMIN_A)             -> OUT_OF_SCOPE   (closed)
+   *   count(phoenix_profile_has_permission(ADMIN_A, k)) over permission_keys
+   *                                                  -> 69 of 135     (open)
+   *
+   * The uuid is deliberately NOT treated as the secret: actor and decider ids
+   * belong in ledger data, and the fixture keeps that path alive on purpose.
+   */
+  describe('C9 · cross-profile permission introspection', () => {
+    const bits = (target: string) =>
+      `SELECT count(*) FILTER (WHERE phoenix_profile_has_permission('${target}', k.key))::text
+       FROM permission_keys k`;
+
+    it('the foreign uuid is still obtainable — hiding it was never the fix', async () => {
+      // If this ever returns 0 rows the exploit's premise changed, and the
+      // assertions below would start passing for the wrong reason.
+      expect(await one(MGR_A,
+        `SELECT count(*)::text FROM phoenix_stock_correction_requests WHERE decided_by = '${ADMIN_A}'`))
+        .toBe('1');
+    });
+
+    it('a manager can no longer reconstruct a foreign permission map (was 69/135)', async () => {
+      expect(await one(MGR_A, bits(ADMIN_A))).toBe('0');
+    });
+
+    it('no individual foreign key leaks, in either polarity', async () => {
+      for (const key of ['users.manage_permissions', 'users.view', 'reports.view',
+        'warehouses.view', 'outlet_stock.view', 'availability.create']) {
+        expect(await one(MGR_A,
+          `SELECT phoenix_profile_has_permission('${ADMIN_A}','${key}')::text`), key).toBe('false');
+      }
+    });
+
+    it('the scoped sibling is closed too, including its super_admin role oracle', async () => {
+      // Closing only the primitive would leave these: the sibling answers from
+      // three branches that all run BEFORE it consults the primitive.
+      expect(await one(MGR_A,
+        `SELECT phoenix_profile_has_scoped_permission('${ADMIN_A}','reports.view','${SEC_A}',NULL,NULL)::text`)).toBe('false');
+      // With a NULL organization this returned TRUE iff the target was a
+      // super_admin — a bare role oracle on any uuid.
+      expect(await one(MGR_A,
+        `SELECT phoenix_profile_has_scoped_permission('${SUPER_U}','anything',NULL,NULL,NULL)::text`)).toBe('false');
+    });
+
+    it('every transitive path to a caller-supplied profile is closed (parity)', async () => {
+      // The high-level API and every lower-level primitive that can reconstruct
+      // it must agree. A denial upstairs with an open primitive downstairs is
+      // the exact shape C9 exists to remove.
+      expect(await one(MGR_A, `SELECT (get_effective_permissions('${ADMIN_A}')->>'error')`)).toBe('OUT_OF_SCOPE');
+      expect(await one(MGR_A,
+        `SELECT phoenix_procurement_org_authority('${ADMIN_A}','local_procurement.manage','${SEC_A}')::text`)).toBe('false');
+    });
+
+    it('the manager\'s OWN self-checks are untouched', async () => {
+      // The whole app authorizes through this primitive; breaking self-checks
+      // would disable the role rather than scope it.
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_permission('${MGR_A}','outlet_stock.view')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_permission('${MGR_A}','warehouses.view')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_permission('${MGR_A}','users.view')::text`)).toBe('false');
+      expect(await one(MGR_A,
+        `SELECT phoenix_profile_has_scoped_permission('${MGR_A}','outlet_stock.view','${SEC_A}',NULL,'${PH_A}')::text`)).toBe('true');
+      expect(await one(MGR_A,
+        `SELECT phoenix_profile_has_scoped_permission('${MGR_A}','outlet_stock.view','${SEC_A}',NULL,'${PH_B}')::text`)).toBe('false');
+      expect(await one(MGR_A, `SELECT (get_effective_permissions('${MGR_A}')->>'ok')`)).toBe('true');
+    });
+
+    it('the RLS surfaces that authorize through this primitive still resolve', async () => {
+      // 16 policies and 28 functions call it with auth.uid(); if the guard were
+      // mis-shaped they would all silently deny and the role would read nothing.
+      expect(await one(MGR_A, 'SELECT count(*)::text FROM organization_facilities')).toBe('1');
+      expect(await one(MGR_A, 'SELECT count(*)::text FROM distribution_points')).toBe('1');
+      expect(Number(await one(MGR_A, 'SELECT count(*)::text FROM warehouses'))).toBeGreaterThan(0);
+    });
+
+    it('historical roles keep 017\'s exact cross-profile semantics', async () => {
+      const legacy = await one(ADMIN_A, bits(ADMIN_A));
+      expect(Number(legacy)).toBeGreaterThan(0);
+      for (const [who, uid] of [['institution_admin', ADMIN_A], ['outlet_officer', OFF_B],
+        ['super_admin', SUPER_U]] as const) {
+        expect(await one(uid, bits(ADMIN_A)), who).toBe(legacy);
+      }
+    });
+
+    it('a manager in another sector is equally refused, and still sees itself', async () => {
+      expect(await one(MGR_SEC_B, bits(ADMIN_A))).toBe('0');
+      expect(Number(await one(MGR_SEC_B, bits(MGR_SEC_B)))).toBeGreaterThan(0);
+    });
+
+    it('the service/internal path is untouched — auth.uid() is NULL there', async () => {
+      // Provisioning and lifecycle legitimately evaluate another profile from a
+      // trusted context; the guard must not be taken when there is no caller.
+      const svc = await asAdmin(
+        `SELECT count(*) FILTER (WHERE phoenix_profile_has_permission('${ADMIN_A}', k.key))::text n
+         FROM permission_keys k`);
+      expect(Number((svc.rows[0] as any).n)).toBeGreaterThan(0);
+    });
+
+    it('no caller-controlled bypass parameter exists on either primitive', async () => {
+      const rows = (await asAdmin(`
+        SELECT p.proname, pg_get_function_arguments(p.oid) args
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname='public' AND p.proname IN
+          ('phoenix_profile_has_permission','phoenix_profile_has_scoped_permission')`)).rows as any[];
+      expect(rows).toHaveLength(2);
+      for (const r of rows) {
+        expect(r.args, r.proname).not.toMatch(/allow_cross_profile|bypass|as_profile|override_scope/i);
+      }
     });
   });
 

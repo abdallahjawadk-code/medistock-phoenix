@@ -289,11 +289,53 @@ describe('182 read-time helpers are the third cross-sector layer', () => {
     expect(derived).toContain("d.status = 'active'");
   });
 
-  it('the scoped-permission resolver is UNCHANGED and the role is NOT organization-wide', () => {
-    expect(bare).not.toMatch(/CREATE OR REPLACE FUNCTION public\.phoenix_profile_has_scoped_permission/);
+  it('the scoped-permission resolver keeps its REACH contract; 9g adds only a denial', () => {
+    // Until 9g this asserted the resolver was not redefined at all, which was
+    // correct while the new role had no business in it: any redefinition would
+    // have meant reach was being special-cased instead of derived from the
+    // assignment helpers. 9g redefines it for ONE reason — a self-only
+    // confidentiality denial that strictly narrows — so the guard is narrowed to
+    // the reach contract rather than dropped.
+    const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_profile_has_scoped_permission');
+    expect(start, '9g must forward-replace the resolver').toBeGreaterThan(-1);
+    const fn = bare.slice(start, bare.indexOf('$function$;', start));
+
+    // Reach is unchanged: same org-wide set, same delegation to both helpers.
+    expect(fn).toContain("v_org_wide_roles text[] := ARRAY['institution_admin']");
+    expect(fn).toContain('phoenix_profile_has_warehouse_assignment(p_profile_id, p_warehouse_id)');
+    expect(fn).toContain('phoenix_profile_has_point_assignment(p_profile_id, p_distribution_point_id)');
+
+    // The role appears exactly once, and only as the denial.
+    expect(fn.split('health_center_manager').length - 1).toBe(1);
+    expect(fn).toMatch(/phoenix_my_role\(\) = 'health_center_manager'\s*\n?\s*AND p_profile_id IS DISTINCT FROM auth\.uid\(\) THEN\s*\n?\s*RETURN false/);
+
+    // And it precedes the super_admin branch, which is otherwise a role oracle.
+    expect(fn.indexOf('health_center_manager')).toBeLessThan(fn.indexOf("v_role = 'super_admin'"));
+
     expect(code).toContain('health_center_manager leaked into the scoped-permission resolver');
     // The VERIFY block quotes this inside a SQL literal, so the quotes are doubled.
     expect(code).toContain("v_org_wide_roles text[] := ARRAY[''institution_admin'']");
+  });
+
+  it('9g takes the subject from auth.uid(), never from the caller argument', () => {
+    const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_profile_has_permission(');
+    expect(start, '9g must forward-replace the primitive').toBeGreaterThan(-1);
+    const fn = bare.slice(start, bare.indexOf('$function$;', start));
+    expect(fn).toContain("phoenix_my_role() = 'health_center_manager'");
+    expect(fn).toContain('p_profile_id is distinct from auth.uid()');
+    // Hardening preserved from 017.
+    expect(fn).toContain('SECURITY DEFINER');
+    expect(fn).toMatch(/SET search_path TO 'public', 'pg_temp'/);
+    // No caller-controlled escape hatch on either primitive. Scoped to the two
+    // bodies deliberately: the VERIFY block names these same tokens in the
+    // assertion that forbids them, so a whole-file scan matches itself.
+    const sibStart = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_profile_has_scoped_permission');
+    const sib = bare.slice(sibStart, bare.indexOf('$function$;', sibStart));
+    for (const body of [fn, sib]) {
+      expect(body).not.toMatch(/allow_cross_profile|p_bypass|p_as_profile|p_override_scope/i);
+    }
+    // VERIFY covers both primitives as a set.
+    expect(code).toContain('VERIFY FAILED (182/9g)');
   });
 });
 
@@ -418,11 +460,26 @@ describe('182 forward-replaces the 146 provisioning contract without editing 146
   });
 
   it('does not touch the other historical migrations it depends on', () => {
+    // phoenix_profile_has_permission was on this list until 9g. It is now
+    // forward-replaced ON PURPOSE — 017 shipped it with no caller authorization
+    // at all, which let this role reconstruct any profile's permission map — so
+    // the guard moves from "never redefined" to "redefined only to ADD the
+    // denial, with 017's resolution logic preserved verbatim". The other two
+    // remain untouchable.
     for (const forbidden of [
-      'phoenix_profile_has_permission',
       'phoenix_my_role',
       'phoenix_my_org',
     ]) expect(bare, forbidden).not.toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${forbidden}\\b`));
+
+    const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_profile_has_permission(');
+    const fn = bare.slice(start, bare.indexOf('$function$;', start));
+    // 017's two-tier resolution — override first, then role default — survives
+    // byte-for-byte inside the else branch; only the guard is new.
+    expect(fn).toContain('from profile_permission_overrides o');
+    expect(fn).toContain('where o.profile_id = p_profile_id and o.permission_key = p_key');
+    expect(fn).toContain('from role_permission_defaults d');
+    expect(fn).toContain('join profiles pr on pr.id = p_profile_id');
+    expect(fn).toContain('where d.role = pr.role and d.permission_key = p_key');
   });
 });
 

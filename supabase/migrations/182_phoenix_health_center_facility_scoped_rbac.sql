@@ -3206,6 +3206,201 @@ END;
 $function$;
 
 -- ============================================================================
+-- 9g. CROSS-PROFILE PERMISSION-INTROSPECTION CLOSURE
+--     A SELF-ONLY API OVER A GLOBAL PRIMITIVE
+-- ============================================================================
+-- 9e-3 made get_effective_permissions self-only for this role, and that holds:
+-- get_effective_permissions(<another profile>) returns OUT_OF_SCOPE. But that
+-- RPC is a thin aggregation, and the primitive underneath it answers for
+-- ANYONE:
+--
+--   public.phoenix_profile_has_permission(p_profile_id uuid, p_key text)
+--
+-- Audited live on the replayed 001->182 chain: SECURITY DEFINER, STABLE,
+-- search_path pinned, owner postgres, ACL {postgres, authenticated,
+-- service_role} — and a body containing NO auth.uid(), NO organization check
+-- and NO role check of any kind. It is not organization-scoped; it is global.
+-- get_effective_permissions is literally jsonb_object_agg of it over
+-- permission_keys, and permission_keys is readable by every authenticated user,
+-- so the denied answer is reconstructible one key at a time.
+--
+-- Measured, with no crafted input: a manager reads a correction request on its
+-- OWN outlet — 9d deliberately admits it there — takes decided_by (098
+-- guarantees the decider is never the proposer, so it is a foreign profile),
+-- and enumerates 69 of 135 permission keys BY NAME for the sector
+-- administrator.
+--
+-- UUID knowledge is NOT the defect and is not treated as one. Actor and decider
+-- ids legitimately appear throughout audit and ledger data; hiding them would
+-- be obscurity, not authorization. The boundary belongs at the primitive, and
+-- must hold even when the caller already knows the target's uuid.
+--
+-- THE BOUNDARY. A health_center_manager may ask "do I have permission X?" and
+-- may not ask "does profile Y have permission X?". The subject is taken from
+-- auth.uid(), never from the caller-supplied p_profile_id, so a caller cannot
+-- nominate its own identity. No p_allow_cross_profile escape hatch, no magic
+-- key: there is exactly one predicate and it is not caller-controllable.
+--
+-- WHY NOT GLOBALLY SELF-ONLY. The live caller graph was enumerated from the
+-- schema rather than assumed: 16 RLS policies and 28 functions pass auth.uid()
+-- (or v_actor, itself proved to be assigned only from auth.uid() in every one
+-- of the 22 plpgsql callers); 3 privileged provisioning functions pass
+-- p_actor_id and are NOT executable by authenticated (service_role only); and
+-- exactly 2 pass a caller-supplied profile through — get_effective_permissions,
+-- already closed by 9e-3, and phoenix_profile_has_scoped_permission. Making the
+-- primitive self-only for EVERY role would therefore break the privileged
+-- provisioning path, which legitimately evaluates another profile inside a
+-- trusted service_role context. The restriction is scoped to the role 182
+-- introduces; every historical role keeps 017's exact semantics.
+--
+-- Under a service_role or internal context auth.uid() is NULL, so
+-- phoenix_my_role() is NULL, the guard is not taken, and 017's behaviour is
+-- preserved unchanged — the provisioning and lifecycle paths are untouched.
+CREATE OR REPLACE FUNCTION public.phoenix_profile_has_permission(p_profile_id uuid, p_key text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select case
+    -- The subject is auth.uid(); p_profile_id is the QUESTION, never the
+    -- identity. NULL auth.uid() (service_role / internal) leaves this NULL, so
+    -- the branch is not taken and 017's semantics survive intact.
+    when public.phoenix_my_role() = 'health_center_manager'
+     and p_profile_id is distinct from auth.uid()
+    then false
+    else coalesce(
+      (select o.allowed
+         from profile_permission_overrides o
+        where o.profile_id = p_profile_id and o.permission_key = p_key
+          and o.allowed is not null),
+      (select d.allowed
+         from role_permission_defaults d
+         join profiles pr on pr.id = p_profile_id
+        where d.role = pr.role and d.permission_key = p_key),
+      false
+    )
+  end;
+$function$;
+
+-- The scoped sibling needs its OWN guard, not merely the primitive's. It calls
+-- phoenix_profile_has_permission, but only AFTER three earlier branches that
+-- each disclose something about the target: whether the row exists (NOT FOUND),
+-- whether it is active, and — before any permission or organization check at
+-- all — `IF v_role = 'super_admin' THEN RETURN true`. That last one is a bare
+-- role oracle: with p_organization_id left NULL it answers "is this profile a
+-- super_admin?" for any uuid. Closing only the primitive would leave it open,
+-- which is precisely the "closed the family by member" error 9e and 9f exist to
+-- correct. The guard therefore sits ahead of every branch.
+--
+-- Closing these two closes the family transitively: phoenix_procurement_org_authority
+-- and _phoenix_authorize_transfer_request_write both reach a caller-supplied
+-- profile only through this function, and get_effective_permissions only through
+-- the primitive. 11m asserts that as a live set rather than trusting it.
+CREATE OR REPLACE FUNCTION public.phoenix_profile_has_scoped_permission(
+  p_profile_id uuid,
+  p_permission_key text,
+  p_organization_id uuid DEFAULT NULL::uuid,
+  p_warehouse_id uuid DEFAULT NULL::uuid,
+  p_distribution_point_id uuid DEFAULT NULL::uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_role   text;
+  v_status text;
+  v_org    uuid;
+  -- Roles that legitimately answer organization-wide rather than per-resource.
+  -- FIVE-ROLE-CUTOVER-091: hospital_admin/monthly_status_officer/viewer
+  -- removed — they can no longer exist in profiles. warehouse_officer,
+  -- port_officer and their legacy twins remain deliberately absent: they are
+  -- operational roles and MUST name the resource they are acting on.
+  v_org_wide_roles text[] := ARRAY['institution_admin'];
+BEGIN
+  -- R1.1-U (U-B corrective 9g): FIRST, ahead of the existence, status and
+  -- super_admin branches, each of which is otherwise an oracle on the target.
+  IF public.phoenix_my_role() = 'health_center_manager'
+     AND p_profile_id IS DISTINCT FROM auth.uid() THEN
+    RETURN false;
+  END IF;
+
+  IF p_profile_id IS NULL OR p_permission_key IS NULL OR btrim(p_permission_key) = '' THEN
+    RETURN false;
+  END IF;
+
+  SELECT p.role, p.status, p.organization_id
+    INTO v_role, v_status, v_org
+  FROM public.profiles p
+  WHERE p.id = p_profile_id;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  IF v_status IS DISTINCT FROM 'active' THEN
+    RETURN false;
+  END IF;
+
+  IF v_role = 'super_admin' THEN
+    RETURN true;
+  END IF;
+
+  IF p_warehouse_id IS NOT NULL AND p_distribution_point_id IS NOT NULL THEN
+    RETURN false;
+  END IF;
+
+  IF v_org IS NULL THEN
+    RETURN false;
+  END IF;
+  IF p_organization_id IS NULL OR p_organization_id IS DISTINCT FROM v_org THEN
+    RETURN false;
+  END IF;
+
+  IF NOT phoenix_profile_has_permission(p_profile_id, p_permission_key) THEN
+    RETURN false;
+  END IF;
+
+  IF p_warehouse_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.warehouses w
+      WHERE w.id = p_warehouse_id
+        AND w.organization_id = p_organization_id
+        AND w.status = 'active'
+    ) THEN
+      RETURN false;
+    END IF;
+
+    IF v_role = ANY (v_org_wide_roles) THEN
+      RETURN true;
+    END IF;
+
+    RETURN phoenix_profile_has_warehouse_assignment(p_profile_id, p_warehouse_id);
+  END IF;
+
+  IF p_distribution_point_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.distribution_points d
+      WHERE d.id = p_distribution_point_id
+        AND d.organization_id = p_organization_id
+        AND d.status = 'active'
+    ) THEN
+      RETURN false;
+    END IF;
+
+    IF v_role = ANY (v_org_wide_roles) THEN
+      RETURN true;
+    END IF;
+
+    RETURN phoenix_profile_has_point_assignment(p_profile_id, p_distribution_point_id);
+  END IF;
+
+  RETURN v_role = ANY (v_org_wide_roles);
+END;
+$function$;
+
+-- ============================================================================
 -- 10. COMMENTS
 -- ============================================================================
 COMMENT ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) IS
@@ -3222,6 +3417,12 @@ COMMENT ON FUNCTION public.phoenix_admin_assign_facility_scopes(uuid, uuid, uuid
 
 COMMENT ON FUNCTION public._phoenix_profile_role_organization_guard_v1() IS
   'R1.1-U: an ACTIVE health_center_manager must belong to an ACTIVE care_institution organization with institution_class=health_sector. Deliberately does NOT require a facility assignment — provisioning creates the profile before inserting its assignment set in the same transaction — which is safe because an unscoped manager can reach no resource at all. It ALSO refuses to move a profile OUT of the role while active facility assignments remain, so a recycle round-trip cannot silently restore centres nobody re-authorized; the operator must revoke them through phoenix_revoke_profile_scope, with a reason, and the revoked rows are retained as history. Recycling INTO the role is already refused by phoenix_recycle_apply''s own role whitelist, which R1.1-U deliberately does not widen — lifecycle support for this role is deferred rather than half-implemented.';
+
+COMMENT ON FUNCTION public.phoenix_profile_has_permission(uuid, text) IS
+  'R1.1-U (U-B corrective 9g): forward replacement of 017''s primitive. Its body performed no caller authorization at all — no auth.uid(), no organization check, no role check — so it answered for ANY profile in ANY organization, and get_effective_permissions is only an aggregation of it over permission_keys. A health_center_manager holding a foreign uuid (decided_by on a correction request it may legitimately read) could therefore reconstruct that profile''s effective permission map one key at a time, defeating 9e-3''s self-only closure. A health_center_manager may now ask only about ITSELF; the subject is taken from auth.uid() and never from the caller-supplied p_profile_id. Historical roles keep 017''s exact semantics, and under service_role/internal contexts auth.uid() is NULL so the guard is not taken and provisioning is unaffected.';
+
+COMMENT ON FUNCTION public.phoenix_profile_has_scoped_permission(uuid, text, uuid, uuid, uuid) IS
+  'R1.1-U (U-B corrective 9g): carries the same self-only guard as the primitive it delegates to, placed ahead of every other branch. Closing only the primitive would have left this open, because it discloses target existence, target status and — before any permission or organization check — whether the target is a super_admin, which with a NULL organization argument is a bare role oracle on any supplied uuid.';
 
 COMMENT ON FUNCTION public.phoenix_status_get_outlet_contribution(uuid, uuid) IS
   'R1.1-U (U-B corrective 9f): forward replacement of 092''s reader. Its gate was already facility-aware, but its projection returned inventory_status_report_lines.classification and .nearest_expiry_date — values computed across the whole sector — so a manager assigned to one centre could read another centre''s nearest expiry through an outlet it legitimately owned. Four of the six columns are facility-resolvable; these two are not, and no existing canonical facility-level source carries them, so health_center_manager is denied outright rather than served a filtered aggregate. The denial is raised BEFORE the report row is fetched so report existence stays unobservable — report_not_found and not_authorized are indistinguishable for this role. Every historical role keeps 092''s exact behaviour, ordering and diagnostics.';
@@ -3306,11 +3507,26 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (182): anon can reach the facility helper';
   END IF;
 
-  -- 11e. The scoped-permission contract is untouched, and the new role is NOT
-  --      organization-wide.
+  -- 11e. The scoped-permission RESOLVER contract is untouched, and the new role
+  --      is NOT organization-wide.
+  --
+  --      Until 9g this was a blanket "the resolver must not mention the role at
+  --      all", which was exactly right while the role had no business in this
+  --      function: any mention would have meant reach was being special-cased
+  --      instead of derived from the assignment helpers. 9g gives it ONE
+  --      legitimate mention — a self-only confidentiality DENIAL that strictly
+  --      narrows. The guard is therefore narrowed to that precise shape rather
+  --      than relaxed: the role may appear exactly once, only as the 9g denial,
+  --      and the reach contract below is unchanged.
   v_def := pg_get_functiondef('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'::regprocedure);
-  IF v_def LIKE '%health_center_manager%' THEN
-    RAISE EXCEPTION 'VERIFY FAILED (182): health_center_manager leaked into the scoped-permission resolver';
+  IF (length(v_def) - length(replace(v_def, 'health_center_manager', '')))
+     / length('health_center_manager') <> 1 THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182): health_center_manager leaked into the scoped-permission resolver — expected exactly one mention, the 9g self-only denial';
+  END IF;
+  IF v_def NOT LIKE '%phoenix_my_role() = ''health_center_manager''%'
+     OR v_def NOT LIKE '%p_profile_id IS DISTINCT FROM auth.uid()%'
+     OR v_def NOT LIKE '%RETURN false%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182): the resolver mentions health_center_manager as something other than the 9g self-only denial';
   END IF;
   IF v_def NOT LIKE '%v_org_wide_roles text[] := ARRAY[''institution_admin'']%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (182): the organization-wide role set changed';
@@ -3472,6 +3688,67 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'VERIFY FAILED (182/9f): health_center_manager was granted a status_center key, which reopens the monthly-status family';
   END IF;
+
+  -- ── 11m. CROSS-PROFILE INTROSPECTION CLOSURE (9g) ────────────────────────
+  -- Both primitives must carry the self-only guard. Asserted as a SET, because
+  -- closing one and not the other is exactly the failure mode 9e/9f corrected.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('phoenix_profile_has_permission(uuid,text)'),
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+    ) AS t(sig)
+    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%health_center_manager%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive lost its cross-profile denial';
+  END LOOP;
+
+  -- The subject must come from auth.uid(), never from the caller's argument.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('phoenix_profile_has_permission(uuid,text)'),
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+    ) AS t(sig)
+    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%p_profile_id is distinct from auth.uid()%'
+      AND pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%p_profile_id IS DISTINCT FROM auth.uid()%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive no longer derives the subject from auth.uid()';
+  END LOOP;
+
+  -- In the scoped sibling the guard must precede the super_admin early-return,
+  -- which is otherwise a bare role oracle on any supplied uuid.
+  -- Matched against the BRANCH text, not the bare word: 'super_admin' also
+  -- occurs in prose above the guard, which would make a naive comparison fail.
+  v_def := pg_get_functiondef('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'::regprocedure);
+  IF position('health_center_manager' in v_def) = 0
+     OR position('health_center_manager' in v_def)
+        > position('v_role = ''super_admin''' in v_def) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): the cross-profile denial no longer precedes the super_admin branch — role remains observable';
+  END IF;
+
+  -- No caller-controlled escape hatch may be introduced alongside the guard.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('phoenix_profile_has_permission(uuid,text)'),
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+    ) AS t(sig)
+    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) ~* '(allow_cross_profile|p_bypass|p_override_scope|p_as_profile)'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive gained a caller-controlled cross-profile bypass';
+  END LOOP;
+
+  -- The primitives stay SECURITY DEFINER with a pinned search_path and must not
+  -- become reachable by anon.
+  FOR v_bad IN
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('phoenix_profile_has_permission', 'phoenix_profile_has_scoped_permission')
+      AND (NOT p.prosecdef
+           OR p.proconfig IS NULL
+           OR NOT (p.proconfig::text LIKE '%search_path=public, pg_temp%')
+           OR has_function_privilege('anon', p.oid, 'EXECUTE'))
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive lost SECURITY DEFINER, its pinned search_path, or became anon-reachable';
+  END LOOP;
 
   -- C3: administrative suspension is not self-reversible for this role.
   IF pg_get_functiondef('public._phoenix_profile_role_organization_guard_v1()'::regprocedure)
