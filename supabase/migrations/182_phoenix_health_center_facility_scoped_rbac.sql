@@ -3437,8 +3437,13 @@ BEGIN
   -- still separate a real report UUID from a random one by report_not_found
   -- alone. Position, not mere presence, is what closes the oracle.
   v_def := pg_get_functiondef('public.phoenix_status_get_outlet_contribution(uuid,uuid)'::regprocedure);
-  IF position('health_center_manager' in v_def) > position('FROM public.inventory_status_reports' in v_def) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (182/9f): the facility-scoped denial no longer precedes the report lookup — report existence is observable again';
+  -- The absence check is NOT redundant with 11k: position() returns 0 for a
+  -- missing needle, so a body that lost the denial entirely would satisfy
+  -- `0 > n` as FALSE and slip through a bare ordering comparison.
+  IF position('health_center_manager' in v_def) = 0
+     OR position('health_center_manager' in v_def)
+        > position('FROM public.inventory_status_reports' in v_def) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182/9f): the facility-scoped denial is absent or no longer precedes the report lookup — report existence is observable again';
   END IF;
 
   -- Every OTHER authenticated-reachable status/report reader that projects

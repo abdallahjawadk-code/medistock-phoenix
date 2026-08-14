@@ -503,6 +503,30 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
      * classification is a hand-maintained map and the test asserts SET EQUALITY:
      * a new function touching one of these tables fails until a human labels it.
      */
+    /**
+     * KNOWN AND DELIBERATE LIMIT OF THIS CENSUS — read before trusting it.
+     *
+     * These are the tables whose SECURITY DEFINER readers C8 audited. They are
+     * NOT every table 182 treats as facility-sensitive. Sections 9c/9d also
+     * narrow item_availability, qr_targets, qr_tokens, outlet_replenishment_routes,
+     * warehouse_supply_routes, stocktakes, stocktake_count_lines,
+     * phoenix_movement_events, phoenix_stock_correction_requests,
+     * phoenix_warehouse_correction_requests, phoenix_dispatch_line_requests,
+     * phoenix_outlet_return_line_requests,
+     * phoenix_outlet_return_exception_resolutions and
+     * platform_broadcast_acknowledgements; and neither stock truth
+     * (warehouse_stock / outlet_stock), neither movement ledger, nor
+     * warehouses / distribution_points / organization_facilities is watched by
+     * any census at all.
+     *
+     * Adding them pulls ~36 further SECURITY DEFINER functions into scope, each
+     * needing an individual classification. That is a full re-audit, which this
+     * corrective patch is explicitly not authorized to perform, so the gap is
+     * recorded here rather than papered over: a future reader that projects, say,
+     * outlet_stock.expiry_date across the sector — structurally identical to the
+     * C8 leak with a different column — would NOT be caught by this test today.
+     * Widening this list is the first task of the next audit pass.
+     */
     const SENSITIVE_TABLES = [
       'inventory_status_reports',
       'inventory_status_report_lines',
@@ -520,7 +544,15 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
       /** Gated on a permission key or role whitelist this role does not hold. */
       | 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS'
       /** Reviewed, deliberately org-level, reason recorded, deferred by contract. */
-      | 'HISTORICAL_ORG_LEVEL_BY_EXPLICIT_CONTRACT';
+      | 'HISTORICAL_ORG_LEVEL_BY_EXPLICIT_CONTRACT'
+      /**
+       * Reachable, ungated, and NOT facility- or organization-bounded. A known
+       * defect that predates this migration and is deferred to its own patch.
+       * Distinct from HISTORICAL_ORG_LEVEL_*: that label claims an organization
+       * boundary exists. This one claims none, so nothing here may be read as
+       * evidence of safety.
+       */
+      | 'PREEXISTING_UNGATED_DEFERRED_TO_U_C';
 
     const CLASSIFIED: Record<string, Classification> = {
       // ── Forward-replaced in 9e/9f; the denial is in the body. ──────────────
@@ -550,14 +582,30 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
       phoenix_set_paper_reference: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
       phoenix_clean_availability_data: 'NOT_REACHABLE_WITH_ROLE_PERMISSIONS',
 
-      // ── Reviewed, left unchanged, reason recorded. ─────────────────────────
-      // RLS-internal predicate helper: returns ONE boolean for an explicitly
-      // supplied (profile_id, key). It has no facility dimension by construction
-      // and every RLS policy in the schema depends on it, so it is not narrowed
-      // here. Reaching another profile's bit requires that profile's UUID, and
-      // 9e-3 closed profiles enumeration to the caller's own row. Recorded for
-      // fresh U-C rather than redesigned inside this corrective patch.
-      phoenix_profile_has_permission: 'HISTORICAL_ORG_LEVEL_BY_EXPLICIT_CONTRACT',
+      // ── Known defect, deferred with its blast radius stated honestly. ──────
+      // Defined in 017 and granted to authenticated. Its body performs NO
+      // authorization at all: no auth.uid(), no organization check, no role
+      // check. It answers for ANY profile id in ANY organization, so it is
+      // global rather than organization-level, and get_effective_permissions is
+      // literally an aggregation of it over permission_keys — meaning C4's
+      // self-only narrowing of that RPC is reconstructible key-by-key by anyone
+      // holding a target UUID.
+      //
+      // An earlier revision of this map labelled it HISTORICAL_ORG_LEVEL_* and
+      // justified it as "reaching another profile's bit requires that profile's
+      // UUID, and 9e-3 closed profiles enumeration". That justification is
+      // WRONG and is recorded here so it is not repeated: 9e-3 closed the
+      // profiles TABLE, not the actor columns of ledgers this role is
+      // deliberately allowed to read. 9d admits a manager to
+      // phoenix_stock_correction_requests rows on its OWN outlet, and those
+      // rows carry decided_by — an approver who by construction (098) is never
+      // the proposer. The movement ledgers' actor_id columns are a second
+      // source.
+      //
+      // It predates 182 and 182 does not widen it. Closing it means changing a
+      // predicate every RLS policy in the schema calls, which needs its own
+      // migration and its own proof — deliberately NOT bolted onto this patch.
+      phoenix_profile_has_permission: 'PREEXISTING_UNGATED_DEFERRED_TO_U_C',
     };
 
     const sensitiveReaders = async () => {
@@ -609,6 +657,17 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
         }
       }
       expect(bad).toEqual([]);
+    });
+
+    it('the deferred-defect class is exactly the one known member', () => {
+      // PREEXISTING_UNGATED_DEFERRED_TO_U_C is an admission of a hole, not a
+      // clearance. Pinning the set means a second one cannot be added quietly:
+      // any new entry has to be written here deliberately, in a diff a reviewer
+      // reads, rather than inherited by a function happening to match a regex.
+      const deferred = Object.entries(CLASSIFIED)
+        .filter(([, c]) => c === 'PREEXISTING_UNGATED_DEFERRED_TO_U_C')
+        .map(([n]) => n).sort();
+      expect(deferred).toEqual(['phoenix_profile_has_permission']);
     });
 
     it('no reader is classified FACILITY_SAFE_PROJECTION without an executable proof', async () => {
