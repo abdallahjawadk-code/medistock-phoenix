@@ -226,17 +226,23 @@ run('166 · initial-provisioning invariant (dynamic)', () => {
       // outlets used only for ORDINARY dispatch are pharmacies. No outlet is
       // used for both any more: that overlap is exactly what 180 removed, and
       // a fixture that still relied on it would encode the old contract.
+      //
+      // R1.2C / Migration 183: the crash cabinets carry an explicit
+      // non_emergency clinical context. ORG_INST is a HOSPITAL, where the crash
+      // cabinet is a ward location — 183 refuses an active one whose context is
+      // anything else, NULL included, so the fixture now states what it always
+      // meant instead of leaving it unset.
       const ORDINARY_DISPATCH_OUTLETS = new Set(['D_ORD', 'REPLAY', 'EV_ORD']);
       const values = Object.entries(DP)
-        .map(
-          ([k, id]) =>
-            `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','${
-              ORDINARY_DISPATCH_OUTLETS.has(k) ? 'pharmacy' : 'crash_cabinet'
-            }','active')`,
-        )
+        .map(([k, id]) => {
+          const ordinary = ORDINARY_DISPATCH_OUTLETS.has(k);
+          return `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','${
+            ordinary ? 'pharmacy' : 'crash_cabinet'
+          }','active',${ordinary ? 'NULL' : `'non_emergency'`})`;
+        })
         .join(',');
       await c.query(`INSERT INTO distribution_points
-        (id,warehouse_id,organization_id,name,name_ar,point_type,status)
+        (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
         VALUES ${values} ON CONFLICT (id) DO NOTHING;`);
 
       await c.query(`INSERT INTO warehouse_supply_routes

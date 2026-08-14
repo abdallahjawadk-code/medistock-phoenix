@@ -18,30 +18,52 @@ const SRC = join(__dirname, '../../..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
 
 const screen = read('features/institutions/InstitutionScreen.tsx');
+/**
+ * R1.2C moved the narrowing rules out of this screen and into ONE shared,
+ * exhaustively-tested affordance helper, so create and edit cannot develop two
+ * opinions. Every R1.1 property below is preserved — it is simply asserted
+ * against the module that now owns it. See
+ * src/shared/lib/__tests__/outlet-affordances.test.ts for the matrix itself.
+ */
+const affordances = read('shared/lib/outlet-affordances.ts');
 const networkService = read('features/network/network.service.ts');
 const networkScreen = read('features/network/NetworkManagementScreen.tsx');
 const depotPanel = read('features/institutions/WarehouseFacilityAssignmentPanel.tsx');
 const preapply = read('../docs/phoenix/r1-1-181-production-preapply-readonly.sql');
 
 describe('the outlet surface is narrowed inside a health sector', () => {
-  it('the section receives the organization class rather than re-deriving it', () => {
-    expect(screen).toMatch(/<PortSection[\s\S]{0,1200}isHealthSector=\{isHealthSector\}/);
-    expect(screen).toMatch(/isHealthSector: boolean;/);
-    // The existing derivation is reused, not duplicated.
+  it('the section receives the organization classification rather than re-deriving it', () => {
+    // R1.2C passes the KIND/CLASS pair instead of a derived boolean, because a
+    // boolean cannot tell a specialized centre from a hospital, nor a pharmacy
+    // department authority from an organization that is still loading.
+    expect(screen).toMatch(/<PortSection[\s\S]{0,1600}owner=\{outletOwner\}/);
+    expect(screen).toMatch(
+      /const outletOwner: OutletOwner = useMemo\([\s\S]{0,200}organizationKind: o\?\.organizationKind, institutionClass: o\?\.institutionClass/,
+    );
+    expect(screen).toMatch(/owner: OutletOwner;/);
+    // The health-sector derivation this screen already had is still reused for
+    // the facilities panel, not duplicated.
     expect(screen).toMatch(
       /const isHealthSector = o\?\.organizationKind === 'care_institution' && o\?\.institutionClass === 'health_sector'/,
     );
   });
 
   it('only facility-bound centre depots may own an outlet', () => {
+    // The screen delegates; the rule itself lives once, in the helper.
     expect(screen).toMatch(
-      /const selectableWarehouses = useMemo\(\s*\n\s*\(\) => \(isHealthSector \? warehouses\.filter\(w => w\.facilityId !== null\) : warehouses\)/,
+      /const selectableWarehouses = useMemo\(\s*\n\s*\(\) => selectableOutletWarehouses\(owner, warehouses\)/,
+    );
+    expect(affordances).toMatch(
+      /classify\(owner\) === 'health_sector'\) return warehouse\.facilityId !== null;/,
     );
   });
 
   it('a rescue cart is not offered inside a health sector', () => {
-    expect(screen).toMatch(
-      /const selectablePointTypes = useMemo\(\s*\n\s*\(\) => \(isHealthSector\s*\n?\s*\? APPROVED_POINT_TYPES\.filter\(type => type\.value !== 'rescue_cart'\)/,
+    expect(screen).toMatch(/const allowed = selectableOutletPointTypes\(owner\);/);
+    expect(screen).toMatch(/APPROVED_POINT_TYPES\.filter\(type => allowed\.includes\(type\.value\)\)/);
+    // health_sector offers pharmacy and crash_cabinet — never a rescue cart.
+    expect(affordances).toMatch(
+      /case 'health_sector':\s*return Object\.freeze\(\['pharmacy', 'crash_cabinet'\] as const\);/,
     );
   });
 
@@ -63,7 +85,11 @@ describe('the outlet surface is narrowed inside a health sector', () => {
 
   it('the narrowing is documented as UX, not authority', () => {
     expect(screen).toMatch(/Migration 181/);
-    expect(screen).toMatch(/sector main is a supply root, not a dispensing location/);
+    expect(screen).toMatch(/Migration 183/);
+    expect(affordances).toMatch(/sector main is a supply root, not a dispensing location/);
+    // The helper must say outright that it is a mirror, never the boundary.
+    expect(affordances).toMatch(/That validator is the AUTHORITY\. Nothing here\s*\n \* is\./);
+    expect(affordances).toMatch(/IT IS PURE\./);
   });
 });
 

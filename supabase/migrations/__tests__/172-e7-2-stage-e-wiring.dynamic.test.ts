@@ -25,7 +25,13 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
-vi.setConfig({ testTimeout: 60000 });
+// PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
+// This suite REPLAYS THE MIGRATION CHAIN inside a beforeAll. vitest applies a
+// separate 10s budget to HOOKS that testTimeout does not cover, so as the chain
+// has grown the hook has crept toward that ceiling; past it, the hook is killed
+// mid-replay and surfaces as ECONNRESET rather than as any assertion. An explicit
+// hook budget removes that false signal. No assertion is changed or relaxed.
+vi.setConfig({ testTimeout: 60000, hookTimeout: 240000 });
 
 const run = rigAvailable() ? describe : describe.skip;
 
@@ -110,6 +116,15 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // assertion above is unaffected. Listed here so this guard stays
       // exhaustive and still fails closed on any unlisted new file.
       '182_phoenix_health_center_facility_scoped_rbac.sql',
+      // R1.2C (183): states the active-outlet topology matrix once, in one
+      // validator, and calls it from the distribution_points write boundary and
+      // Migration 180's initial-provisioning entry point. It is a WRITE-TIME
+      // BOUNDARY only: Stage E's corridors, routes and supply semantics are
+      // untouched — 168's replenishment RPC is deliberately not rewritten — so
+      // the "Stage E still ends at 171" assertion above is unaffected. Listed
+      // here so this guard stays exhaustive and still fails closed on any
+      // unlisted new file.
+      '183_phoenix_emergency_outlet_integrity.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

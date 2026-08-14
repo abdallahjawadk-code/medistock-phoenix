@@ -14,6 +14,17 @@ import {
   type OrganizationKind,
 } from '@/shared/lib/institution-hierarchy';
 import {
+  canCreateOutlets,
+  isClinicalContextRequired,
+  isOutletShapeSubmittable,
+  isStoredOutletShapeLegal,
+  legalClinicalContexts,
+  normalizeClinicalContext,
+  selectableOutletPointTypes,
+  selectableOutletWarehouses,
+  type OutletOwner,
+} from '@/shared/lib/outlet-affordances';
+import {
   getOrganizations,
   getOrganization,
   createOrganization,
@@ -505,6 +516,16 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
   // 171) can never match it either. Gated here so the panel is never even
   // mounted for an organization the database will always refuse.
   const isHealthSector = o?.organizationKind === 'care_institution' && o?.institutionClass === 'health_sector';
+
+  // R1.2C / Migration 183 — the outlet matrix's owner classification, memoized
+  // on the two PRIMITIVES rather than rebuilt inline at the call site: the
+  // section memoizes its warehouse and type lists on this object, and a fresh
+  // literal every render would recompute both on every keystroke elsewhere in
+  // the screen.
+  const outletOwner: OutletOwner = useMemo(
+    () => ({ organizationKind: o?.organizationKind, institutionClass: o?.institutionClass }),
+    [o?.organizationKind, o?.institutionClass],
+  );
   const canManageFacilities = actorPermissions.has('organization_facilities.manage');
   const canManageRoutes = actorPermissions.has('replenishment_routes.manage');
   const facilities = useAsync(
@@ -650,11 +671,12 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
-          // R1.1 / Migration 181: inside a health sector an outlet may only
-          // hang off a facility-bound CENTRE depot, and a rescue cart has no
-          // health-centre counterpart. The section needs the class to stop
-          // offering shapes the database now refuses.
-          isHealthSector={isHealthSector}
+          // R1.2C / Migration 183: the whole active-outlet matrix keys on the
+          // organization's KIND and CLASS together, so the section is handed
+          // the pair rather than a single derived boolean — a boolean cannot
+          // distinguish a specialized centre from a hospital, nor a pharmacy
+          // department authority from an organization that is merely loading.
+          owner={outletOwner}
           warehouses={operationalWarehouses}
           warehousesLoading={warehouses.loading}
           warehousesError={warehouses.error}
@@ -906,7 +928,7 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 };
 
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, isHealthSector, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, owner, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
@@ -921,8 +943,12 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   points: DistributionPoint[];
   pointsLoading: boolean;
   pointsError: string | null;
-  /** R1.1 / Migration 181 — see the two derivations immediately below. */
-  isHealthSector: boolean;
+  /**
+   * R1.2C / Migration 183 — the owning organization's classification pair. The
+   * section needs BOTH: organization_kind decides whether an outlet may exist
+   * at all, and institution_class decides which shapes are operable.
+   */
+  owner: OutletOwner;
   warehouses: Warehouse[];
   warehousesLoading: boolean;
   warehousesError: string | null;
@@ -931,33 +957,36 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 }) {
   const [showAdd, setShowAdd] = useState(false);
 
-  // R1.1 / Migration 181 — UX parity with the database topology.
+  // R1.2C / Migration 183 — UX parity with the database topology, mirrored from
+  // the ONE shared helper that create and edit both consult. Offering a shape
+  // the database will always refuse is what this replaces; a second copy of the
+  // rules inside either dialog is the drift it exists to prevent.
   //
-  // Inside a health sector an ACTIVE outlet must hang off a facility-bound
-  // CENTRE depot: the sector main is a supply root, not a dispensing location,
-  // and the database refuses an outlet on it with
-  // health_sector_outlet_requires_health_center_depot. Offering it here would
-  // offer an action that always fails.
+  // This SUPERSEDES the R1.1 / Migration 181 narrowing that used to live here
+  // inline. 181's health-sector rules are unchanged and still enforced — an
+  // outlet must hang off a facility-bound centre depot, never the sector main —
+  // they are simply now stated once, alongside the hospital, specialized-centre
+  // and pharmacy-department-authority rules 181 never covered.
   const selectableWarehouses = useMemo(
-    () => (isHealthSector ? warehouses.filter(w => w.facilityId !== null) : warehouses),
-    [isHealthSector, warehouses],
+    () => selectableOutletWarehouses(owner, warehouses),
+    [owner, warehouses],
   );
 
-  // A rescue cart is a hospital emergency-department concept with no
-  // health-centre counterpart — Migration 168 already refuses to replenish one
-  // here, and Migration 181 refuses to create one at all.
-  const selectablePointTypes = useMemo(
-    () => (isHealthSector
-      ? APPROVED_POINT_TYPES.filter(type => type.value !== 'rescue_cart')
-      : APPROVED_POINT_TYPES),
-    [isHealthSector],
-  );
+  const selectablePointTypes = useMemo(() => {
+    const allowed = selectableOutletPointTypes(owner);
+    return APPROVED_POINT_TYPES.filter(type => allowed.includes(type.value));
+  }, [owner]);
+
+  // A pharmacy department authority holds no dispensing outlets, with or
+  // without an owning warehouse (183 §A). An owner whose class is unknown —
+  // still loading, or added after this matrix — offers nothing either.
+  const canOfferCreate = canCreatePorts && canCreateOutlets(owner);
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <h3 className="nexus-io-section-title" style={{ fontSize: '14px', fontWeight: 700 }}>{t('inst_points', lang)}</h3>
-        {canCreatePorts && (
+        {canOfferCreate && (
           <PhoenixButton variant="primary" size="sm" onClick={() => setShowAdd(true)}>
             + {t('port_add', lang)}
           </PhoenixButton>
@@ -971,11 +1000,12 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
         <span><PhoenixIcon name="warning" size={13} inline /> {t('port_archive_deps', lang)}</span>
       </div>
 
-      {showAdd && (
+      {showAdd && canOfferCreate && (
         <AddPortForm
           lang={lang}
           orgId={orgId}
-          canCreate={canCreatePorts}
+          canCreate={canOfferCreate}
+          owner={owner}
           warehouses={selectableWarehouses}
           pointTypes={selectablePointTypes}
           warehousesLoading={warehousesLoading}
@@ -999,6 +1029,7 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
               key={pt.id}
               point={pt}
               lang={lang}
+              owner={owner}
               warehouses={warehouses}
               assignableWarehouses={selectableWarehouses}
               pointTypes={selectablePointTypes}
@@ -1021,14 +1052,16 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
 /* ── Add Port Form ── */
 
-function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehousesLoading, warehousesError, onCreated, onCancel, onToast }: {
+function AddPortForm({ lang, orgId, canCreate, owner, warehouses, pointTypes, warehousesLoading, warehousesError, onCreated, onCancel, onToast }: {
   lang: 'ar' | 'en';
   orgId: string;
   canCreate: boolean;
+  /** R1.2C/183: the owner classification the shared affordance helper reads. */
+  owner: OutletOwner;
   /** Already narrowed by the caller — inside a health sector this is the
    *  facility-bound centre depots only, never the sector main (R1.1/181). */
   warehouses: Warehouse[];
-  /** Already narrowed by the caller — no rescue cart inside a health sector. */
+  /** Already narrowed by the caller — no rescue cart outside a hospital. */
   pointTypes: { value: ApprovedPointType; labelKey: string }[];
   warehousesLoading: boolean;
   warehousesError: string | null;
@@ -1044,15 +1077,40 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehouse
    * replenishment refuses a destination whose context is null
    * (`destination_clinical_location_kind_required`), so it is collected at
    * creation rather than discovered as a failure later.
+   *
+   * R1.2C: seeded from the shared helper rather than blank, because every legal
+   * emergency combination has exactly ONE legal context — there is nothing for
+   * the operator to choose, and a blank field was previously submittable.
    */
-  const [clinicalKind, setClinicalKind] = useState<ClinicalLocationKind | ''>('');
+  const [clinicalKind, setClinicalKind] = useState<ClinicalLocationKind | ''>(
+    () => normalizeClinicalContext(owner, 'pharmacy', ''),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** The contexts this owner/type combination permits — never a fixed list. */
+  const clinicalOptions = legalClinicalContexts(owner, pointType);
+  const clinicalRequired = isClinicalContextRequired(pointType);
+
+  /**
+   * R1.2C: changing the point type must never leave a stale, now-illegal
+   * context behind — switching a rescue cart to a crash cabinet used to keep
+   * 'emergency' in the field, which the database then refused.
+   */
+  function onPointTypeChange(next: ApprovedPointType) {
+    setPointType(next);
+    setClinicalKind(normalizeClinicalContext(owner, next, clinicalKind));
+    setError(null);
+  }
 
   const canSubmit = portName.trim().length > 0
     && warehouseId.length > 0
     && !warehousesLoading
-    && !warehousesError;
+    && !warehousesError
+    // R1.2C: the form's own validity now agrees with the "*" it renders. The
+    // database remains the final fail-closed boundary; this only stops the UI
+    // offering a submission that is already known to be refused.
+    && isOutletShapeSubmittable(owner, pointType, clinicalKind, warehouseId);
 
   async function onSubmit() {
     if (!canSubmit) return;
@@ -1145,7 +1203,7 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehouse
           </label>
           <select
             value={pointType}
-            onChange={e => setPointType(e.target.value as ApprovedPointType)}
+            onChange={e => onPointTypeChange(e.target.value as ApprovedPointType)}
             style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
           >
             {pointTypes.map(type => (
@@ -1153,12 +1211,13 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehouse
             ))}
           </select>
         </div>
-        {/* STAGE-E-E7-2: clinical context. Offered for every outlet type, but
-            called out as required for the emergency ones, because Migration
-            168 refuses a replenishment whose destination context is null. */}
+        {/* STAGE-E-E7-2 / R1.2C: clinical context. The options offered are the
+            ones the matrix permits for THIS owner and type — for an emergency
+            outlet that is exactly one, so the field is pre-resolved and the
+            blank option is not offered at all. */}
         <div>
           <label htmlFor="port-clinical-kind" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
-            {t('port_clinical_kind', lang)}{pointType !== 'pharmacy' ? ' *' : ''}
+            {t('port_clinical_kind', lang)}{clinicalRequired ? ' *' : ''}
           </label>
           <select
             id="port-clinical-kind"
@@ -1167,9 +1226,12 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehouse
             style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
             dir="auto"
           >
-            <option value="">—</option>
-            <option value="emergency">{t('port_clinical_emergency', lang)}</option>
-            <option value="non_emergency">{t('port_clinical_non_emergency', lang)}</option>
+            {!clinicalRequired && <option value="">—</option>}
+            {clinicalOptions.map(kind => (
+              <option key={kind} value={kind}>
+                {t(kind === 'emergency' ? 'port_clinical_emergency' : 'port_clinical_non_emergency', lang)}
+              </option>
+            ))}
           </select>
           <p style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '5px', lineHeight: 1.5 }}>
             {t('port_clinical_hint', lang)}
@@ -1189,9 +1251,12 @@ function AddPortForm({ lang, orgId, canCreate, warehouses, pointTypes, warehouse
 
 /* ── Port Card with QR Actions ── */
 
-function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
+function PortCard({ point, lang, owner, warehouses, assignableWarehouses, pointTypes, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, onReload, onToast }: {
   point: DistributionPoint;
   lang: 'ar' | 'en';
+  /** R1.2C/183: the SAME owner classification AddPortForm consults, so the edit
+   *  dialog cannot develop a second opinion about what is legal. */
+  owner: OutletOwner;
   /** Full list — used to resolve the CURRENT owner's display name, including a
    *  legacy owner the edit form would no longer offer. */
   warehouses: Warehouse[];
@@ -1243,6 +1308,11 @@ function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, c
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  /**
+   * R1.2C: opening the dialog NEVER mutates a historical row. A legacy outlet
+   * whose combination is no longer legal is loaded and displayed exactly as it
+   * is stored; only an explicit save is constrained.
+   */
   function openEdit() {
     setEditName(point.name);
     setEditNameAr(point.name_ar);
@@ -1253,6 +1323,22 @@ function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, c
     setConfirmAction('edit');
   }
 
+  /** The same normalisation AddPortForm applies — one authority, two dialogs. */
+  function onEditPointTypeChange(next: ApprovedPointType) {
+    setEditPointType(next);
+    setEditClinicalKind(normalizeClinicalContext(owner, next, editClinicalKind));
+    setEditError(null);
+  }
+
+  const editClinicalOptions = legalClinicalContexts(owner, editPointType);
+  const editClinicalRequired = isClinicalContextRequired(editPointType);
+  /** True while the dialog still holds a combination the database would refuse. */
+  const editShapeLegal = isOutletShapeSubmittable(owner, editPointType, editClinicalKind, editWarehouseId);
+  /** True when the STORED row is already illegal — shown honestly, not repaired. */
+  const storedShapeLegal = isStoredOutletShapeLegal(
+    owner, point.pointType, point.clinicalLocationKind ?? '', point.warehouseId,
+  );
+
   async function onSaveEdit() {
     if (!editName.trim() || !editNameAr.trim()) {
       setEditError(t('port_name_required', lang));
@@ -1260,6 +1346,13 @@ function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, c
     }
     if (!editWarehouseId) {
       setEditError(t('inv_th_scope_required', lang));
+      return;
+    }
+    // R1.2C: the UI refuses to submit a combination the matrix forbids. The
+    // database remains the final, fail-closed boundary — this only stops the
+    // operator being sent into a guaranteed failure.
+    if (!editShapeLegal) {
+      setEditError(t('port_shape_illegal', lang));
       return;
     }
     setEditBusy(true);
@@ -1595,15 +1688,18 @@ function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, c
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
               {t('port_type', lang)} *
             </label>
-            <select value={editPointType} onChange={e => setEditPointType(e.target.value as ApprovedPointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
+            <select value={editPointType} onChange={e => onEditPointTypeChange(e.target.value as ApprovedPointType)} style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}>
               {pointTypes.map(pt => <option key={pt.value} value={pt.value}>{t(pt.labelKey, lang)}</option>)}
             </select>
           </div>
-          {/* STAGE-E-E7-2: outlets created before E7-2 carry a null clinical
-              context and are ineligible for replenishment until it is set. */}
+          {/* STAGE-E-E7-2 / R1.2C: outlets created before E7-2 carry a null
+              clinical context and are ineligible for replenishment until it is
+              set. The REPLACEMENTS offered are constrained by the same matrix
+              the create form uses; the stored value itself is never rewritten
+              merely by opening this dialog. */}
           <div>
             <label htmlFor={`port-clinical-${point.id}`} style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>
-              {t('port_clinical_kind', lang)}
+              {t('port_clinical_kind', lang)}{editClinicalRequired ? ' *' : ''}
             </label>
             <select
               id={`port-clinical-${point.id}`}
@@ -1612,16 +1708,31 @@ function PortCard({ point, lang, warehouses, assignableWarehouses, pointTypes, c
               style={{ ...fieldStyle, appearance: 'none', cursor: 'pointer' }}
               dir="auto"
             >
-              <option value="">—</option>
-              <option value="emergency">{t('port_clinical_emergency', lang)}</option>
-              <option value="non_emergency">{t('port_clinical_non_emergency', lang)}</option>
+              {(!editClinicalRequired || editClinicalKind === '') && <option value="">—</option>}
+              {editClinicalOptions.map(kind => (
+                <option key={kind} value={kind}>
+                  {t(kind === 'emergency' ? 'port_clinical_emergency' : 'port_clinical_non_emergency', lang)}
+                </option>
+              ))}
+              {/* A legacy value outside the legal set stays visible so history
+                  reads honestly — it simply cannot be saved back. */}
+              {editClinicalKind !== '' && !editClinicalOptions.includes(editClinicalKind) && (
+                <option value={editClinicalKind}>
+                  {t(editClinicalKind === 'emergency' ? 'port_clinical_emergency' : 'port_clinical_non_emergency', lang)}
+                </option>
+              )}
             </select>
           </div>
+          {!storedShapeLegal && (
+            <p style={{ fontSize: '11px', color: 'var(--warn)', lineHeight: 1.5 }}>
+              <PhoenixIcon name="warning" size={12} inline /> {t('port_shape_legacy', lang)}
+            </p>
+          )}
         </div>
         {editError && <p style={{ fontSize: '12px', color: 'var(--err)', marginBottom: '12px' }}>{editError}</p>}
         <div style={{ display: 'flex', gap: '10px' }}>
           <PhoenixButton variant="ghost" size="md" style={{ flex: 1 }} disabled={editBusy} onClick={() => setConfirmAction(null)}>{t('cancel', lang)}</PhoenixButton>
-          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} onClick={onSaveEdit}><PhoenixIcon name="save" size={13} inline /> {t('port_save_action', lang)}</PhoenixButton>
+          <PhoenixButton variant="primary" size="md" style={{ flex: 2 }} loading={editBusy} disabled={!editShapeLegal} onClick={onSaveEdit}><PhoenixIcon name="save" size={13} inline /> {t('port_save_action', lang)}</PhoenixButton>
         </div>
       </PhoenixDialog>
 

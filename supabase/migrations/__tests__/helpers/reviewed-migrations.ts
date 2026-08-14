@@ -188,6 +188,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '180_phoenix_emergency_initial_provisioning_boundary.sql',
   '181_phoenix_health_sector_topology_reconciliation.sql',
   '182_phoenix_health_center_facility_scoped_rbac.sql',
+  '183_phoenix_emergency_outlet_integrity.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

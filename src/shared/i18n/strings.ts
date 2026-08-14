@@ -587,6 +587,16 @@ export const T: Dict = {
     en: 'Required for emergency outlets: marks the location as emergency or not — a precondition for rescue-cart and crash-cabinet replenishment.',
   },
 
+  /* ── R1.2C / Migration 183: the active-outlet topology matrix in the UI ── */
+  port_shape_illegal:       {
+    ar: 'هذا التركيب غير مسموح لهذه المؤسسة — اختر نوع منفذ وسياقاً سريرياً مسموحين قبل الحفظ.',
+    en: 'This combination is not permitted for this institution — choose a permitted outlet type and clinical context before saving.',
+  },
+  port_shape_legacy:        {
+    ar: 'هذا المنفذ محفوظ بتركيب لم يعد مسموحاً. يُعرض كما هو للسجل، ولا يمكن حفظه إلا بعد تصحيحه.',
+    en: 'This outlet is stored with a combination that is no longer permitted. It is shown as recorded, and can only be saved once corrected.',
+  },
+
   /* ── STAGE-E-E7-2: replenishment routes (Migration 164) ── */
   route_section:            { ar: 'مسارات التعويض',                en: 'Replenishment Routes' },
   route_add:                { ar: 'إضافة مسار',                    en: 'Add Route' },

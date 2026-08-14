@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179/180/181/182 introduce no numbering and no 183+ migration exists',()=>{
+  it('179/180/181/182/183 introduce no numbering and no 184+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -87,10 +87,17 @@ describe('no client-side document-number sequence exists',()=>{
     // It creates no table, sequence, counter, max()+1 or generated numeric
     // identity, and no document number of any kind; its only generated value is
     // an assignment UUID from the column default.
-    // Boundary moves to 183 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182)_/.test(f));
+    // R1.2C: 183 states the active-outlet topology matrix once, in one
+    // validator, and calls it from the distribution_points write boundary and
+    // Migration 180's initial-provisioning entry point. It creates no table,
+    // sequence, counter, max()+1 or generated numeric identity, and no document
+    // number of any kind — the dispatch number it passes through stays exactly
+    // what 180 made it, a caller-supplied text.
+    // Boundary moves to 184 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '183_phoenix_emergency_outlet_integrity.sql',
       '182_phoenix_health_center_facility_scoped_rbac.sql',
       '181_phoenix_health_sector_topology_reconciliation.sql',
       '180_phoenix_emergency_initial_provisioning_boundary.sql',
