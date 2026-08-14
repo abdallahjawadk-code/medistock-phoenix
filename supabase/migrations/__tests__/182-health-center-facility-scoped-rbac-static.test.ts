@@ -252,9 +252,14 @@ describe('182 read-time helpers are the third cross-sector layer', () => {
     expect(f).toContain("o.institution_class = 'health_sector'");
   });
 
+  // The slice starts at the branch's own SELECT, not at the top of the body:
+  // 9g's subject-confidentiality guard now precedes it. The claim these two
+  // assertions make is about the direct branch's PREDICATE being 062/076
+  // verbatim — that the new role gets no bespoke reach here — and that claim is
+  // unchanged. The guard itself is asserted separately, above.
   it('DIRECT warehouse assignment keeps its exact 062/076 semantics', () => {
     const w = warehouse();
-    const direct = w.slice(0, w.indexOf('OR EXISTS'));
+    const direct = w.slice(w.indexOf('SELECT 1'), w.indexOf('OR EXISTS'));
     expect(direct).toContain("a.scope_type   = 'warehouse'");
     expect(direct).toContain('a.organization_id = w.organization_id');
     expect(direct).not.toContain('health_center_manager');
@@ -262,7 +267,7 @@ describe('182 read-time helpers are the third cross-sector layer', () => {
 
   it('DIRECT point assignment keeps its exact 062/076 semantics', () => {
     const p = point();
-    const direct = p.slice(0, p.indexOf('OR EXISTS'));
+    const direct = p.slice(p.indexOf('SELECT 1'), p.indexOf('OR EXISTS'));
     expect(direct).toContain("a.scope_type            = 'distribution_point'");
     expect(direct).not.toContain('health_center_manager');
   });
@@ -315,6 +320,33 @@ describe('182 read-time helpers are the third cross-sector layer', () => {
     expect(code).toContain('health_center_manager leaked into the scoped-permission resolver');
     // The VERIFY block quotes this inside a SQL literal, so the quotes are doubled.
     expect(code).toContain("v_org_wide_roles text[] := ARRAY[''institution_admin'']");
+  });
+
+  it('9g guards the resolver\'s DELEGATES, not only the resolver', () => {
+    // The resolver's last two statements delegate to these, and all three are
+    // SECURITY DEFINER + granted to authenticated + take a caller-supplied
+    // p_profile_id, so they are independently reachable. Guarding the wrapper
+    // alone left the subject's scope, status and role answerable directly.
+    for (const helper of [
+      'phoenix_profile_has_facility_assignment',
+      'phoenix_profile_has_warehouse_assignment',
+      'phoenix_profile_has_point_assignment',
+    ]) {
+      const start = bare.indexOf(`FUNCTION public.${helper}(`);
+      expect(start, helper).toBeGreaterThan(-1);
+      const fn = bare.slice(start, bare.indexOf('$$;', start));
+      expect(fn, helper).toContain("phoenix_my_role() = 'health_center_manager'");
+      expect(fn, helper).toContain('p_profile_id IS DISTINCT FROM auth.uid()');
+      // The guard must DENY, and must come before the body it protects.
+      expect(fn.indexOf('THEN false'), helper).toBeGreaterThan(-1);
+      expect(fn.indexOf("phoenix_my_role() = 'health_center_manager'"), helper)
+        .toBeLessThan(fn.indexOf('SELECT 1'));
+      // The sector-main exclusion the helpers already carried is untouched.
+      if (helper !== 'phoenix_profile_has_facility_assignment') {
+        expect(fn, helper).toContain('w.facility_id IS NOT NULL');
+      }
+    }
+    expect(code).toContain('a subject-taking primitive lost its cross-profile denial');
   });
 
   it('9g takes the subject from auth.uid(), never from the caller argument', () => {

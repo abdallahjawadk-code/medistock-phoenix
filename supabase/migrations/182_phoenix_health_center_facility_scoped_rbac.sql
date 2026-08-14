@@ -508,7 +508,18 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT EXISTS (
+  -- R1.1-U (U-B corrective 9g): SUBJECT CONFIDENTIALITY. This helper is
+  -- SECURITY DEFINER, granted to authenticated, and takes a caller-supplied
+  -- p_profile_id, so without this guard it answers "is THAT profile a
+  -- health_center_manager assigned to this facility?" for any uuid — a positive
+  -- role oracle, and exactly the row psa_select_scoped (062) denies this role
+  -- with "never anyone else's row". Guarding the scoped resolver alone was not
+  -- enough: this is one of its delegates and is independently callable.
+  SELECT CASE
+    WHEN public.phoenix_my_role() = 'health_center_manager'
+     AND p_profile_id IS DISTINCT FROM auth.uid()
+    THEN false
+    ELSE EXISTS (
     SELECT 1
     FROM public.profile_scope_assignments a
     JOIN public.profiles                p ON p.id = a.profile_id
@@ -528,7 +539,7 @@ AS $$
       AND o.status            = 'active'
       AND o.organization_kind = 'care_institution'
       AND o.institution_class = 'health_sector'
-  );
+  ) END;
 $$;
 
 REVOKE ALL ON FUNCTION public.phoenix_profile_has_facility_assignment(uuid, uuid) FROM PUBLIC, anon;
@@ -547,7 +558,15 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT EXISTS (
+  -- R1.1-U (U-B corrective 9g): SUBJECT CONFIDENTIALITY — see 5a. Independently
+  -- callable delegate of the scoped resolver, so it needs the guard in its own
+  -- right; a bare `true` here reveals another profile's active warehouse scope,
+  -- its active status and (via the second EXISTS) its role.
+  SELECT CASE
+    WHEN public.phoenix_my_role() = 'health_center_manager'
+     AND p_profile_id IS DISTINCT FROM auth.uid()
+    THEN false
+    ELSE EXISTS (
     SELECT 1
     FROM public.profile_scope_assignments a
     JOIN public.profiles   p ON p.id = a.profile_id
@@ -594,7 +613,7 @@ AS $$
       AND o.status            = 'active'
       AND o.organization_kind = 'care_institution'
       AND o.institution_class = 'health_sector'
-  );
+  ) END;
 $$;
 
 -- ── 5c. POINT ASSIGNMENT — direct, OR derived through the owning center depot ─
@@ -607,7 +626,12 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT EXISTS (
+  -- R1.1-U (U-B corrective 9g): SUBJECT CONFIDENTIALITY — see 5a/5b.
+  SELECT CASE
+    WHEN public.phoenix_my_role() = 'health_center_manager'
+     AND p_profile_id IS DISTINCT FROM auth.uid()
+    THEN false
+    ELSE EXISTS (
     SELECT 1
     FROM public.profile_scope_assignments a
     JOIN public.profiles            p ON p.id = a.profile_id
@@ -653,7 +677,7 @@ AS $$
       AND o.status            = 'active'
       AND o.organization_kind = 'care_institution'
       AND o.institution_class = 'health_sector'
-  );
+  ) END;
 $$;
 
 -- ============================================================================
@@ -3692,44 +3716,69 @@ BEGIN
   -- ── 11m. CROSS-PROFILE INTROSPECTION CLOSURE (9g) ────────────────────────
   -- Both primitives must carry the self-only guard. Asserted as a SET, because
   -- closing one and not the other is exactly the failure mode 9e/9f corrected.
+  -- The SET is all FIVE reachable subject-taking primitives, not just the two
+  -- the exploit went through. Guarding the scoped resolver while leaving its
+  -- own delegates callable is the same "closed the family by member" error 9e
+  -- and 9f exist to correct: phoenix_profile_has_*_assignment are SECURITY
+  -- DEFINER, granted to authenticated, take a caller-supplied p_profile_id, and
+  -- answer the scope/status/role half of the same question directly.
   FOR v_bad IN
     SELECT 1 FROM (VALUES
       ('phoenix_profile_has_permission(uuid,text)'),
-      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'),
+      ('phoenix_profile_has_facility_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_warehouse_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_point_assignment(uuid,uuid)')
     ) AS t(sig)
     WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%health_center_manager%'
   LOOP
-    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive lost its cross-profile denial';
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a subject-taking primitive lost its cross-profile denial';
   END LOOP;
 
-  -- The subject must come from auth.uid(), never from the caller's argument.
+  -- The subject must come from auth.uid(), never from the caller's argument,
+  -- and the guard must DENY. Asserting the deny polarity matters: a flip from
+  -- `then false` to `then true` is otherwise invisible to every other check
+  -- here, since these bodies contain many unrelated false-returning branches.
   FOR v_bad IN
     SELECT 1 FROM (VALUES
       ('phoenix_profile_has_permission(uuid,text)'),
-      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'),
+      ('phoenix_profile_has_facility_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_warehouse_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_point_assignment(uuid,uuid)')
     ) AS t(sig)
-    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%p_profile_id is distinct from auth.uid()%'
-      AND pg_get_functiondef(('public.' || t.sig)::regprocedure) NOT LIKE '%p_profile_id IS DISTINCT FROM auth.uid()%'
+    WHERE lower(pg_get_functiondef(('public.' || t.sig)::regprocedure))
+          NOT LIKE '%p_profile_id is distinct from auth.uid()%'
+       OR lower(pg_get_functiondef(('public.' || t.sig)::regprocedure))
+          NOT SIMILAR TO '%p_profile_id is distinct from auth.uid()%(then|)%false%'
   LOOP
-    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive no longer derives the subject from auth.uid()';
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a subject-taking primitive no longer derives the subject from auth.uid(), or its guard no longer denies';
   END LOOP;
 
-  -- In the scoped sibling the guard must precede the super_admin early-return,
-  -- which is otherwise a bare role oracle on any supplied uuid.
-  -- Matched against the BRANCH text, not the bare word: 'super_admin' also
-  -- occurs in prose above the guard, which would make a naive comparison fail.
+  -- In the scoped sibling the guard must precede EVERY disclosing branch, not
+  -- merely the super_admin early-return: the existence probe (SELECT ... INTO /
+  -- IF NOT FOUND) and the status branch both run before it and each answer
+  -- something about the target on their own. Anchoring on the earliest of them
+  -- is what makes this assertion bite.
+  -- Matched against BRANCH text, not bare words: 'super_admin' and 'profiles'
+  -- also occur in prose above the guard, which a naive comparison would match.
   v_def := pg_get_functiondef('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'::regprocedure);
   IF position('health_center_manager' in v_def) = 0
      OR position('health_center_manager' in v_def)
+        > position('FROM public.profiles p' in v_def)
+     OR position('health_center_manager' in v_def)
         > position('v_role = ''super_admin''' in v_def) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (182/9g): the cross-profile denial no longer precedes the super_admin branch — role remains observable';
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): the cross-profile denial no longer precedes the target lookup and the super_admin branch — existence, status and role remain observable';
   END IF;
 
   -- No caller-controlled escape hatch may be introduced alongside the guard.
   FOR v_bad IN
     SELECT 1 FROM (VALUES
       ('phoenix_profile_has_permission(uuid,text)'),
-      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)')
+      ('phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)'),
+      ('phoenix_profile_has_facility_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_warehouse_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_point_assignment(uuid,uuid)')
     ) AS t(sig)
     WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure) ~* '(allow_cross_profile|p_bypass|p_override_scope|p_as_profile)'
   LOOP
@@ -3741,13 +3790,16 @@ BEGIN
   FOR v_bad IN
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
-      AND p.proname IN ('phoenix_profile_has_permission', 'phoenix_profile_has_scoped_permission')
+      AND p.proname IN ('phoenix_profile_has_permission', 'phoenix_profile_has_scoped_permission',
+                        'phoenix_profile_has_facility_assignment',
+                        'phoenix_profile_has_warehouse_assignment',
+                        'phoenix_profile_has_point_assignment')
       AND (NOT p.prosecdef
            OR p.proconfig IS NULL
            OR NOT (p.proconfig::text LIKE '%search_path=public, pg_temp%')
            OR has_function_privilege('anon', p.oid, 'EXECUTE'))
   LOOP
-    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a permission primitive lost SECURITY DEFINER, its pinned search_path, or became anon-reachable';
+    RAISE EXCEPTION 'VERIFY FAILED (182/9g): a subject-taking primitive lost SECURITY DEFINER, its pinned search_path, or became anon-reachable';
   END LOOP;
 
   -- C3: administrative suspension is not self-reversible for this role.

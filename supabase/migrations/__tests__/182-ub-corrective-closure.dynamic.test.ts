@@ -559,13 +559,74 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
       expect(Number((svc.rows[0] as any).n)).toBeGreaterThan(0);
     });
 
+    /**
+     * The resolver's own DELEGATES. 9g first guarded the two permission
+     * primitives and reasoned UPWARD about their callers; it did not reason
+     * DOWNWARD. phoenix_profile_has_*_assignment are SECURITY DEFINER, granted
+     * to authenticated, and take a caller-supplied p_profile_id — so a manager
+     * skipped the guarded resolver and asked them directly:
+     *
+     *   scoped_permission(ADMIN_A,...,MY_DEPOT,...)      -> false  (guarded)
+     *   has_warehouse_assignment(ADMIN_A, MY_DEPOT)      -> answered
+     *
+     * A `true` disclosed the subject's active status, organization and scope
+     * assignment, and — via the facility branch, which requires
+     * p.role='health_center_manager' — its ROLE. That is the same row
+     * psa_select_scoped (062) denies this role with "never anyone else's row".
+     */
+    it('the resolver\'s delegates are guarded too — not just the resolver', async () => {
+      for (const [what, sql] of [
+        ['facility(MGR_B, FAC_B) — a positive role oracle',
+          `SELECT phoenix_profile_has_facility_assignment('${MGR_B}','${FAC_B}')::text`],
+        ['facility(MGR_B, FAC_A)',
+          `SELECT phoenix_profile_has_facility_assignment('${MGR_B}','${FAC_A}')::text`],
+        ['warehouse(MGR_B, DEP_B)',
+          `SELECT phoenix_profile_has_warehouse_assignment('${MGR_B}','${DEP_B}')::text`],
+        ['point(MGR_B, PH_B)',
+          `SELECT phoenix_profile_has_point_assignment('${MGR_B}','${PH_B}')::text`],
+        ['facility(ADMIN_A, FAC_A)',
+          `SELECT phoenix_profile_has_facility_assignment('${ADMIN_A}','${FAC_A}')::text`],
+      ] as const) {
+        expect(await one(MGR_A, sql), what).toBe('false');
+      }
+    });
+
+    it('but the manager\'s OWN reach through those delegates is intact', async () => {
+      // If the guard were mis-shaped these would all go false and the role
+      // would silently lose every facility-derived surface it legitimately has.
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_facility_assignment('${MGR_A}','${FAC_A}')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_warehouse_assignment('${MGR_A}','${DEP_A}')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_point_assignment('${MGR_A}','${PH_A}')::text`)).toBe('true');
+      // Still scoped: a centre it does not hold, and the sector main.
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_facility_assignment('${MGR_A}','${FAC_B}')::text`)).toBe('false');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_warehouse_assignment('${MGR_A}','${MAIN_A}')::text`)).toBe('false');
+    });
+
+    it('the delegate guard did not change historical roles or the service path', async () => {
+      expect(await one(ADMIN_A, `SELECT phoenix_profile_has_facility_assignment('${MGR_B}','${FAC_B}')::text`)).toBe('true');
+      expect(await one(OFF_B, `SELECT phoenix_profile_has_facility_assignment('${MGR_B}','${FAC_B}')::text`)).toBe('true');
+      const svc = await asAdmin(`SELECT phoenix_profile_has_facility_assignment('${MGR_B}','${FAC_B}')::text t`);
+      expect((svc.rows[0] as any).t).toBe('true');
+    });
+
+    it('the oracle disclosed nothing RLS does not already deny', async () => {
+      // Documents WHY the delegates mattered: these rows are denied, so a
+      // boolean answering the same question was a genuine bypass.
+      expect(await one(MGR_A,
+        `SELECT count(*)::text FROM profile_scope_assignments WHERE profile_id = '${MGR_B}'`)).toBe('0');
+      expect(await one(MGR_A, `SELECT count(*)::text FROM profiles WHERE id = '${MGR_B}'`)).toBe('0');
+    });
+
     it('no caller-controlled bypass parameter exists on either primitive', async () => {
       const rows = (await asAdmin(`
         SELECT p.proname, pg_get_function_arguments(p.oid) args
         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname='public' AND p.proname IN
-          ('phoenix_profile_has_permission','phoenix_profile_has_scoped_permission')`)).rows as any[];
-      expect(rows).toHaveLength(2);
+          ('phoenix_profile_has_permission','phoenix_profile_has_scoped_permission',
+           'phoenix_profile_has_facility_assignment',
+           'phoenix_profile_has_warehouse_assignment',
+           'phoenix_profile_has_point_assignment')`)).rows as any[];
+      expect(rows).toHaveLength(5);
       for (const r of rows) {
         expect(r.args, r.proname).not.toMatch(/allow_cross_profile|bypass|as_profile|override_scope/i);
       }
