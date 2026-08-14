@@ -19,7 +19,13 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { buildRig, rigAvailable, MIGRATIONS_DIR } from '../../../tools/pg-rig/rig.mjs';
 
-vi.setConfig({ testTimeout: 180000 });
+// PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
+// This suite REPLAYS THE MIGRATION CHAIN inside a beforeAll. vitest applies a
+// separate 10s budget to HOOKS that testTimeout does not cover, so as the chain
+// has grown the hook has crept toward that ceiling; past it, the hook is killed
+// mid-replay and surfaces as ECONNRESET rather than as any assertion. An explicit
+// hook budget removes that false signal. No assertion is changed or relaxed.
+vi.setConfig({ testTimeout: 180000, hookTimeout: 240000 });
 
 const run = rigAvailable() ? describe : describe.skip;
 

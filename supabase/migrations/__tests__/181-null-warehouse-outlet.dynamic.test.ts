@@ -30,7 +30,13 @@ import { join } from 'path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildRig, rigAvailable, MIGRATIONS_DIR } from '../../../tools/pg-rig/rig.mjs';
 
-vi.setConfig({ testTimeout: 180000 });
+// PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
+// This suite REPLAYS THE MIGRATION CHAIN inside a beforeAll. vitest applies a
+// separate 10s budget to HOOKS that testTimeout does not cover, so as the chain
+// has grown the hook has crept toward that ceiling; past it, the hook is killed
+// mid-replay and surfaces as ECONNRESET rather than as any assertion. An explicit
+// hook budget removes that false signal. No assertion is changed or relaxed.
+vi.setConfig({ testTimeout: 180000, hookTimeout: 240000 });
 const run = rigAvailable() ? describe : describe.skip;
 
 /** 181's body with its own transaction control removed, so a test can run it
@@ -202,8 +208,33 @@ run('181 · unassigned-outlet boundary (001->181 rig)', () => {
       expect(await insertOutlet(HOSP, null, 'pharmacy')).toBeNull();
     });
 
-    it('a hospital may still own an unassigned rescue cart', async () => {
-      expect(await insertOutlet(HOSP, null, 'rescue_cart', 'emergency')).toBeNull();
+    /**
+     * R1.2C / Migration 183 SUPERSEDES this one case, deliberately and in
+     * exactly one direction.
+     *
+     * R1.1 proved that 181 did not GLOBALLY forbid an unassigned outlet, and
+     * used a hospital rescue cart to show it. That property still holds — the
+     * pharmacy case above is unchanged and warehouse_id is still nullable
+     * (asserted below) — but 183 narrows the freedom for the two EMERGENCY
+     * point types only: a crash cabinet or rescue cart cannot become
+     * operational without initial provisioning, and provisioning dispatches
+     * FROM a warehouse, so an ACTIVE one that names no warehouse is a row the
+     * rest of the system can never serve.
+     *
+     * The R1.1 claim is therefore re-expressed on the shape that still carries
+     * it, and the narrowing is asserted outright so it can never regress
+     * silently in either direction.
+     */
+    it('a hospital emergency outlet must now name a warehouse (183 narrows this)', async () => {
+      expect(await insertOutlet(HOSP, null, 'rescue_cart', 'emergency'))
+        .toMatch(/emergency_outlet_requires_owning_warehouse/);
+      expect(await insertOutlet(HOSP, null, 'crash_cabinet', 'non_emergency'))
+        .toMatch(/emergency_outlet_requires_owning_warehouse/);
+    });
+
+    it('…and the SAME rescue cart is legal the moment it names an active warehouse', async () => {
+      // Proof the refusal is about the missing owner, not about the shape.
+      expect(await insertOutlet(HOSP, HOSP_WH, 'rescue_cart', 'emergency')).toBeNull();
     });
 
     it('a health sector may still keep INACTIVE unassigned history', async () => {

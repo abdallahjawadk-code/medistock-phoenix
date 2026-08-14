@@ -131,11 +131,12 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
         ('${CAB_INACTIVE_FAC}','${WH_FAC_INACTIVE}','${ORG_SECTOR}','X Cabinet168','X Cabinet168','crash_cabinet','active','emergency'),
         ('${PH_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Pharmacy168','H Pharmacy168','pharmacy','active','non_emergency'),
         ('${CART_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart168','H Cart168','rescue_cart','active','emergency'),
-        ('${CART_HOSP_NON}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart NE168','H Cart NE168','rescue_cart','active','non_emergency'),
         ('${CAB_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet168','H Cabinet168','crash_cabinet','active','non_emergency'),
-        ('${CAB_HOSP_EM}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet EM168','H Cabinet EM168','crash_cabinet','active','emergency'),
+        -- R1.2C/183: CART_HOSP_NON, CAB_HOSP_EM and CART_SPECIAL are likewise
+        -- NOT seeded — 183 refuses to create all three. Each is proved at both
+        -- ends below: the outlet cannot exist, and 168's runtime refusal is
+        -- still installed beneath it.
         ('${PH_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Pharmacy168','C Pharmacy168','pharmacy','active','non_emergency'),
-        ('${CART_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cart168','C Cart168','rescue_cart','active','emergency'),
         ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet168','C Cabinet168','crash_cabinet','active','non_emergency');
 
       -- Now retire Centre X, leaving its depot attached to an inactive facility.
@@ -200,6 +201,18 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
   const decommission = (dp: string) => rig.asAdmin((c: any) => c.query(
     `DELETE FROM warehouse_dispatches
       WHERE destination_distribution_point_id = $1 AND is_initial_provisioning`, [dp]));
+
+  /**
+   * R1.2C/183 — the live body of the replenishment RPC. Some shapes it refuses
+   * can no longer be created or drifted into at all, so its refusal is proved
+   * to be still installed rather than exercised against an impossible outlet.
+   */
+  const replenishRpcDef = async (): Promise<string> => {
+    const { rows } = await rig.asAdmin((c: any) => c.query(
+      `SELECT pg_get_functiondef(
+         'public.phoenix_replenish_emergency_outlet(uuid,uuid,uuid,integer,text,text)'::regprocedure) AS def`));
+    return rows[0].def as string;
+  };
 
   async function upsertRoute(src: string, dst: string, active = true): Promise<string> {
     // Prefer updating an existing pair when present — the active-pair unique
@@ -592,25 +605,43 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
       expect(rows[0].def).toContain('health_center_rescue_cart_forbidden');
     });
 
+    /**
+     * R1.2C/183 — proved at BOTH ends, exactly as the health-centre rescue cart
+     * above and the sector-level outlet below already are: the illegal outlet
+     * cannot be created at all, and 168's runtime refusal for it is still
+     * installed. Before 183 only the second half was reachable.
+     */
+    const routeRpcDef = async (): Promise<string> => {
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+      return rows[0].def as string;
+    };
+
+    const refusedOutlet = (id: string, warehouse: string, org: string, type: string, kind: string) =>
+      rejects(() => rig.asAdmin((c: any) => c.query(
+        `INSERT INTO distribution_points
+           (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+         VALUES ($1,$2,$3,'Illegal168','Illegal168',$4,'active',$5)`,
+        [id, warehouse, org, type, kind])));
+
     it('specialized-center rescue_cart destination is rejected', async () => {
-      const msg = await rejects(() =>
-        rig.asUser(rig.superAdminId, (c: any) =>
-          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_SPECIAL, CART_SPECIAL, true, null])));
-      expect(msg).toMatch(/rescue_cart_requires_hospital/);
+      expect(await refusedOutlet(CART_SPECIAL, WH_SPECIAL, ORG_SPECIAL, 'rescue_cart', 'emergency'))
+        .toMatch(/specialized_center_rescue_cart_not_permitted/);
+      expect(await routeRpcDef()).toContain('rescue_cart_requires_hospital');
     });
 
     it('hospital rescue_cart with wrong clinical kind is rejected', async () => {
-      const msg = await rejects(() =>
-        rig.asUser(rig.superAdminId, (c: any) =>
-          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_HOSP, CART_HOSP_NON, true, null])));
-      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await refusedOutlet(CART_HOSP_NON, WH_HOSPITAL, ORG_HOSPITAL, 'rescue_cart', 'non_emergency'))
+        .toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await routeRpcDef()).toContain('rescue_cart_requires_emergency_context');
     });
 
     it('hospital crash_cabinet with wrong clinical kind is rejected', async () => {
-      const msg = await rejects(() =>
-        rig.asUser(rig.superAdminId, (c: any) =>
-          call(c, 'phoenix_upsert_outlet_replenishment_route', [null, PH_HOSP, CAB_HOSP_EM, true, null])));
-      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await refusedOutlet(CAB_HOSP_EM, WH_HOSPITAL, ORG_HOSPITAL, 'crash_cabinet', 'emergency'))
+        .toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await routeRpcDef()).toContain('crash_cabinet_requires_non_emergency_context');
     });
 
     it('Shape-H cross-facility is rejected', async () => {
@@ -716,39 +747,65 @@ run('168 · atomic emergency outlet replenishment (dynamic)', () => {
 
   // ══ Movement-time revalidation ════════════════════════════════════════════
   describe('movement-time route revalidation', () => {
-    it('rejects when clinical_location_kind changes after a valid route was created', async () => {
+    /**
+     * R1.2C/183 — these two cases manufactured their drift by mutating a LIVE
+     * outlet's clinical context into an illegal one. 183 refuses exactly that
+     * write, so the drift can no longer be injected there — the same situation
+     * the Shape-H case below already handles by injecting drift where it can
+     * still legitimately occur.
+     *
+     * Both are therefore proved at both ends: the illegal mutation is refused
+     * outright (the stronger guarantee — an ACTIVE outlet can never hold an
+     * illegal context at all), and 168's movement-time refusal for it is still
+     * installed. The movement path's re-derivation from LIVE topology stays
+     * exercised for real by the two tests that follow.
+     */
+    it('a routed crash cabinet can no longer DRIFT into an emergency context', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CAB_HOSP, true);
+      expect(routeId).toBeTruthy();
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='emergency' WHERE id=$1`, [CAB_HOSP])));
+      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      // The row is untouched, so the route it carries stays valid.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT clinical_location_kind FROM distribution_points WHERE id=$1`, [CAB_HOSP]));
+      expect(rows[0].clinical_location_kind).toBe('non_emergency');
+      expect(await replenishRpcDef()).toContain('crash_cabinet_requires_non_emergency_context');
+    });
+
+    it('a routed rescue cart can no longer DRIFT out of its emergency context', async () => {
+      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
+      expect(routeId).toBeTruthy();
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`,
+        [CART_HOSP])));
+      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT clinical_location_kind FROM distribution_points WHERE id=$1`, [CART_HOSP]));
+      expect(rows[0].clinical_location_kind).toBe('emergency');
+      expect(await replenishRpcDef()).toContain('rescue_cart_requires_emergency_context');
+    });
+
+    it('movement-time revalidation is still LIVE — a destination deactivated after routing is refused', async () => {
+      // The property the two cases above used to carry: the corridor re-reads
+      // the destination at MOVEMENT time and does not trust the stored route.
+      // Proved with a drift 183 permits — deactivation is always legal — so the
+      // revalidation itself remains exercised against a real mutation.
       const routeId = await upsertRoute(PH_HOSP, CAB_HOSP, true);
       const srcId = await seedPharmacyStock({
         org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-CLK'), qty: 10,
       });
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind='emergency' WHERE id=$1`, [CAB_HOSP]));
       const before = await onHand(srcId);
-      const msg = await rejects(() => replenish(routeId, srcId, 1));
-      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
-      expect(await onHand(srcId)).toBe(before);
       await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`, [CAB_HOSP]));
-    });
-
-    it('rejects when destination clinical context drifts after a valid route was created', async () => {
-      // Composite FK pins destination point_type on the route row, so type drift
-      // is structurally impossible. Clinical-location drift is the movement-time
-      // mutation the corridor must still catch.
-      const routeId = await upsertRoute(PH_HOSP, CART_HOSP, true);
-      const srcId = await seedPharmacyStock({
-        org: ORG_HOSPITAL, pharmacy: PH_HOSP, sci: uniq('SCI-TYPE'), qty: 10,
-      });
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`,
-        [CART_HOSP]));
-      const before = await onHand(srcId);
-      const msg = await rejects(() => replenish(routeId, srcId, 1));
-      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
-      expect(await onHand(srcId)).toBe(before);
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind='emergency' WHERE id=$1`,
-        [CART_HOSP]));
+        `UPDATE distribution_points SET status='inactive' WHERE id=$1`, [CAB_HOSP]));
+      try {
+        const msg = await rejects(() => replenish(routeId, srcId, 1));
+        expect(msg).toMatch(/destination_outlet_inactive/);
+        expect(await onHand(srcId)).toBe(before);   // fail-closed: nothing moved
+      } finally {
+        await rig.asAdmin((c: any) => c.query(
+          `UPDATE distribution_points SET status='active' WHERE id=$1`, [CAB_HOSP]));
+      }
     });
 
     it('rejects Shape-H when the stored route no longer matches the live facts', async () => {

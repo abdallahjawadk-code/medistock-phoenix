@@ -27,8 +27,22 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freshRigDb, migrationFiles, shimSql, MIGRATIONS_DIR, rigAvailable, SEED_SUPER_ADMIN_ID } from '../../../tools/pg-rig/rig.mjs';
+
+// PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
+//
+// Every behavioural test below calls buildTo161(), which REPLAYS 161 MIGRATIONS
+// into a fresh database. This suite was running on vitest's DEFAULT 5s budget,
+// so on any machine where that replay takes longer than five seconds each test
+// is killed mid-query; the abandoned client then surfaces as ECONNRESET /
+// "Connection terminated unexpectedly" rather than as anything about CRLF. The
+// failure mode is pure wall-clock — it reports no assertion, and it says
+// nothing about the contract under test.
+//
+// The sibling *.dynamic.test.ts suites all set an explicit budget for exactly
+// this reason. Not one assertion here is changed or relaxed.
+vi.setConfig({ testTimeout: 180000, hookTimeout: 180000 });
 
 const run = rigAvailable() ? describe : describe.skip;
 

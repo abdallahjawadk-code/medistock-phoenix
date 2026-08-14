@@ -235,15 +235,23 @@ run('167 · dispatch-line full-rejection reconciliation (dynamic)', () => {
       // below reads point_type — but the fixture must still be legal on both
       // corridors. The refusals themselves are proved in
       // 180-emergency-initial-provisioning-boundary.dynamic.test.ts.
+      //
+      // R1.2C / Migration 183: the crash cabinets carry an explicit
+      // non_emergency clinical context. ORG_INST is a HOSPITAL, where the crash
+      // cabinet is a ward location — 183 refuses an active one whose context is
+      // anything else, NULL included. Still incidental to what 167 proves; the
+      // fixture simply has to remain legal, which is what the note above says.
       const INITIAL_PROVISIONING_OUTLETS = new Set(['INIT_REJECT', 'INIT_RECEIPT']);
       const values = Object.entries(DP)
-        .map(([k, id]) =>
-          `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','${
-            INITIAL_PROVISIONING_OUTLETS.has(k) ? 'crash_cabinet' : 'pharmacy'
-          }','active')`)
+        .map(([k, id]) => {
+          const emergency = INITIAL_PROVISIONING_OUTLETS.has(k);
+          return `('${id}','${WH_INST}','${ORG_INST}','Outlet ${k}','منفذ','${
+            emergency ? 'crash_cabinet' : 'pharmacy'
+          }','active',${emergency ? `'non_emergency'` : 'NULL'})`;
+        })
         .join(',');
       await c.query(`INSERT INTO distribution_points
-        (id,warehouse_id,organization_id,name,name_ar,point_type,status)
+        (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
         VALUES ${values} ON CONFLICT (id) DO NOTHING;`);
 
       await c.query(`INSERT INTO warehouse_supply_routes

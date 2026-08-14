@@ -1228,20 +1228,24 @@ describe('Port management uses permission-based gating, not role-based', () => {
   });
 
   it('AddPortForm exposes only the approved operational outlet types', () => {
-    // R1.1 / Migration 181: the option list is still derived from
+    // R1.2C / Migration 183: the option list is still derived from
     // APPROVED_POINT_TYPES and from nothing else, but it is now narrowed by the
-    // OWNING SECTION before it reaches this form — inside a health sector a
-    // rescue cart has no counterpart and the database refuses one outright. The
-    // form renders the list it is handed, so the derivation is asserted one
-    // level up, where the narrowing decision actually lives.
+    // OWNING SECTION before it reaches this form — a rescue cart exists only in
+    // a hospital, and the database refuses one anywhere else outright. The form
+    // renders the list it is handed, so the derivation is asserted one level up,
+    // where the narrowing decision actually lives (and the narrowing RULE is
+    // asserted in src/shared/lib/__tests__/outlet-affordances.test.ts).
     const addFormStart = instScreen.indexOf('function AddPortForm');
     const addFormEnd   = instScreen.indexOf('function PortCard');
     const addFormBody  = instScreen.slice(addFormStart, addFormEnd);
     expect(addFormBody).toContain("t('port_type', lang)");
     expect(addFormBody).toContain('pointTypes.map(type =>');
-    // Whatever is handed down can only ever be a subset of the approved three.
+    // Whatever is handed down can only ever be a subset of the approved three:
+    // the section INTERSECTS the helper's answer with APPROVED_POINT_TYPES, so
+    // no owner classification can widen the list beyond it.
+    expect(instScreen).toMatch(/const allowed = selectableOutletPointTypes\(owner\);/);
     expect(instScreen).toMatch(
-      /const selectablePointTypes = useMemo\(\s*\n\s*\(\) => \(isHealthSector\s*\n?\s*\? APPROVED_POINT_TYPES\.filter\(type => type\.value !== 'rescue_cart'\)\s*\n?\s*: APPROVED_POINT_TYPES\)/,
+      /return APPROVED_POINT_TYPES\.filter\(type => allowed\.includes\(type\.value\)\);/,
     );
     expect(instScreen).toContain("value: 'pharmacy'");
     expect(instScreen).toContain("value: 'crash_cabinet'");

@@ -12,7 +12,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
-vi.setConfig({ testTimeout: 60000 });
+// R1.2C/183: hookTimeout is set explicitly alongside testTimeout. vitest's
+// default 10s hook budget was always marginal for a beforeAll that REPLAYS THE
+// WHOLE MIGRATION CHAIN, and every migration added since has narrowed it
+// further — a suite that fails on chain length rather than on a contract is a
+// false signal. The sibling dynamic suites already pass an explicit hook
+// timeout per hook; this file sets it once, for the same reason.
+vi.setConfig({ testTimeout: 60000, hookTimeout: 240000 });
 
 const run = rigAvailable() ? describe : describe.skip;
 
@@ -118,11 +124,15 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
         -- is proved impossible in the rejection matrix below instead.
         ('${PH_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Pharmacy','H Pharmacy','pharmacy','active','non_emergency'),
         ('${CART_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart','H Cart','rescue_cart','active','emergency'),
-        ('${CART_HOSP_NON}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cart NE','H Cart NE','rescue_cart','active','non_emergency'),
         ('${CAB_HOSP}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet','H Cabinet','crash_cabinet','active','non_emergency'),
-        ('${CAB_HOSP_EM}','${WH_HOSPITAL}','${ORG_HOSPITAL}','H Cabinet EM','H Cabinet EM','crash_cabinet','active','emergency'),
+        -- R1.2C/183: CART_HOSP_NON, CAB_HOSP_EM and CART_SPECIAL are
+        -- deliberately NOT seeded, for exactly the reason CART_A above is not.
+        -- All three are shapes 183 now refuses to create at all, and each is
+        -- proved impossible in the rejection matrix below instead — the
+        -- stronger statement, since an uncreatable shape needs no runtime
+        -- refusal. 164's own routing refusals remain installed and are still
+        -- asserted alongside each one.
         ('${PH_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Pharmacy','C Pharmacy','pharmacy','active','non_emergency'),
-        ('${CART_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cart','C Cart','rescue_cart','active','emergency'),
         ('${CAB_SPECIAL}','${WH_SPECIAL}','${ORG_SPECIAL}','C Cabinet','C Cabinet','crash_cabinet','active','non_emergency');
     `));
   });
@@ -132,6 +142,19 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
   const route = (src: string, dst: string) =>
     rig.asUser(rig.superAdminId, (c: any) =>
       call(c, 'phoenix_upsert_outlet_replenishment_route', [null, src, dst, true, null]));
+
+  /**
+   * R1.2C/183 — the live body of 164's route writer. Several shapes below can
+   * no longer be CREATED, so their routing refusal is proved to be still
+   * installed rather than exercised against an outlet that cannot exist.
+   */
+  const routeRpcBody = async (): Promise<string> => {
+    const { rows } = await rig.asAdmin((c: any) => c.query(
+      `SELECT pg_get_functiondef(p.oid) AS def
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname='public' AND p.proname='phoenix_upsert_outlet_replenishment_route'`));
+    return rows[0].def as string;
+  };
 
   // ══ 1. institution_class vocabulary ════════════════════════════════════════
   describe('institution_class holds exactly the three top-level classes', () => {
@@ -358,19 +381,36 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(rows[0].def).toContain('health_center_rescue_cart_forbidden');
     });
 
+    /**
+     * R1.2C/183 — the three cases below were proved by routing INTO an
+     * illegally-shaped outlet and watching the route be refused. 183 removes
+     * the shape entirely, so each is now proved at BOTH ends: the outlet cannot
+     * be created, and 164's routing refusal is still installed beneath it. Same
+     * pattern as the health-centre rescue cart immediately above.
+     */
+    const refusedOutlet = (id: string, warehouse: string, org: string, type: string, kind: string) =>
+      rejects(() => rig.asAdmin((c: any) => c.query(
+        `INSERT INTO distribution_points
+           (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+         VALUES ($1,$2,$3,'Illegal164','Illegal164',$4,'active',$5)`,
+        [id, warehouse, org, type, kind])));
+
     it('a specialized centre may NOT have a rescue cart', async () => {
-      const msg = await rejects(() => route(PH_SPECIAL, CART_SPECIAL));
-      expect(msg).toMatch(/rescue_cart_requires_hospital/);
+      expect(await refusedOutlet(CART_SPECIAL, WH_SPECIAL, ORG_SPECIAL, 'rescue_cart', 'emergency'))
+        .toMatch(/specialized_center_rescue_cart_not_permitted/);
+      expect(await routeRpcBody()).toContain('rescue_cart_requires_hospital');
     });
 
     it('a hospital rescue cart in a NON-emergency context is rejected', async () => {
-      const msg = await rejects(() => route(PH_HOSP, CART_HOSP_NON));
-      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await refusedOutlet(CART_HOSP_NON, WH_HOSPITAL, ORG_HOSPITAL, 'rescue_cart', 'non_emergency'))
+        .toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await routeRpcBody()).toContain('rescue_cart_requires_emergency_context');
     });
 
     it('a hospital crash cabinet in an EMERGENCY context is rejected', async () => {
-      const msg = await rejects(() => route(PH_HOSP, CAB_HOSP_EM));
-      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await refusedOutlet(CAB_HOSP_EM, WH_HOSPITAL, ORG_HOSPITAL, 'crash_cabinet', 'emergency'))
+        .toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await routeRpcBody()).toContain('crash_cabinet_requires_non_emergency_context');
     });
 
     it('a sector-level outlet does NOT inherit the health-centre emergency exception', async () => {
@@ -395,13 +435,28 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
     // organization can no longer exist in the database — this scenario is
     // now structurally unreachable, not merely untested.
 
-    it('rejects a route when the destination clinical context is unclassified', async () => {
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind=NULL WHERE id=$1`, [CAB_SPECIAL]));
-      const msg = await rejects(() => route(PH_SPECIAL, CAB_SPECIAL));
-      expect(msg).toMatch(/destination_clinical_location_kind_required/);
-      await rig.asAdmin((c: any) => c.query(
-        `UPDATE distribution_points SET clinical_location_kind='non_emergency' WHERE id=$1`, [CAB_SPECIAL]));
+    /**
+     * R1.2C/183 — same treatment as the unclassified-ORGANIZATION case removed
+     * above, and for the same reason.
+     *
+     * 164's rule was proved by nulling an active emergency outlet's clinical
+     * context and watching the route be refused. 183 refuses that UPDATE, and
+     * every other way in is closed: the route writer requires an ACTIVE
+     * destination (so an inactive NULL-context row cannot be used) and requires
+     * an EMERGENCY destination type (so a pharmacy, the one type that may
+     * legally carry NULL, is rejected earlier). The scenario is therefore
+     * structurally unreachable rather than merely untested — which is the
+     * stronger outcome — so both ends are asserted instead.
+     */
+    it('an active emergency outlet can no longer BE unclassified, and 164s rule stands', async () => {
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
+        `UPDATE distribution_points SET clinical_location_kind=NULL WHERE id=$1`, [CAB_SPECIAL])));
+      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      // …and the row is untouched, so no later case inherits a NULL context.
+      const { rows } = await rig.asAdmin((c: any) => c.query(
+        `SELECT clinical_location_kind FROM distribution_points WHERE id=$1`, [CAB_SPECIAL]));
+      expect(rows[0].clinical_location_kind).toBe('non_emergency');
+      expect(await routeRpcBody()).toContain('destination_clinical_location_kind_required');
     });
 
     it('cannot make a routed centre facility inactive underneath its depot', async () => {
@@ -474,11 +529,22 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
   // ══ 6. no name inference ═══════════════════════════════════════════════════
   describe('classification is never inferred from a name', () => {
     it('renaming an outlet to look like an emergency ward changes nothing', async () => {
+      // R1.2C/183: previously shown on an illegally-shaped cart that 183 no
+      // longer permits to exist. The property is unchanged and is now shown on
+      // a LEGAL hospital crash cabinet, which is the sharper demonstration: it
+      // is named exactly like an emergency rescue cart and is STILL classified
+      // by its point_type and clinical context alone, so the route is accepted.
       await rig.asAdmin((c: any) => c.query(
         `UPDATE distribution_points SET name='Emergency Ward Rescue Cart', name_ar='طوارئ'
-         WHERE id=$1`, [CART_HOSP_NON]));
-      const msg = await rejects(() => route(PH_HOSP, CART_HOSP_NON));
-      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+         WHERE id=$1`, [CAB_HOSP]));
+      try {
+        // Rolls back with the transaction, like every other route test here.
+        const created = await route(PH_HOSP, CAB_HOSP);
+        expect(created.route_id).toBeTruthy();
+      } finally {
+        await rig.asAdmin((c: any) => c.query(
+          `UPDATE distribution_points SET name='H Cabinet', name_ar='H Cabinet' WHERE id=$1`, [CAB_HOSP]));
+      }
     });
 
     it('the route RPC body never reads a name column', async () => {

@@ -756,7 +756,44 @@ run('182 · facility-scoped RBAC (001->182 rig)', () => {
         const executable = PREAPPLY.replace(/^\s*--.*$/gm, '');
         expect(executable).not.toMatch(/supabase_migrations\.schema_migrations/);
         expect(Number(row.ceiling_181_objects)).toBe(1);
-        expect(Number(row.ceiling_181_closed)).toBe(1);
+
+        /**
+         * ceiling_181_closed probes the BODY of
+         * _phoenix_health_sector_outlet_topology_guard_v1 for 181's
+         * NULL-warehouse closure sentence. R1.2C / Migration 183 forward-
+         * replaces that function with a THIN DELEGATE, so on a chain that also
+         * has 183 the sentence lives in the canonical validator instead and the
+         * probe reads 0.
+         *
+         * The artifact is NOT wrong and is not edited: it gates an apply of 182
+         * onto a chain whose ceiling is 181, where 183 cannot yet exist —
+         * Migration 183's own preflight refuses to apply without 182's helper,
+         * so 183 can never precede 182. And a 0 here only ever routes to
+         * CEILING_NOT_181_STOP, which is fail-closed.
+         *
+         * What must hold on EITHER chain is the underlying property: 181's
+         * NULL-warehouse closure is present in the database. So that is what is
+         * asserted, against whichever object owns it.
+         */
+        const has183 = Number((await client.query(
+          `SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname='public' AND p.proname='phoenix_assert_active_outlet_topology_v1'`,
+        )).rows[0].n) === 1;
+
+        if (!has183) {
+          expect(Number(row.ceiling_181_closed)).toBe(1);
+        } else {
+          expect(Number(row.ceiling_181_closed)).toBe(0);
+          const owner = (await client.query(
+            `SELECT
+               pg_get_functiondef('public.phoenix_assert_active_outlet_topology_v1(uuid,uuid,text,text)'::regprocedure)
+                 LIKE '%warehouse_id IS NULL leaves it owned by no health centre%' AS closure_in_validator,
+               pg_get_functiondef('public._phoenix_health_sector_outlet_topology_guard_v1()'::regprocedure)
+                 LIKE '%phoenix_assert_active_outlet_topology_v1%' AS guard_delegates`,
+          )).rows[0];
+          expect(owner.closure_in_validator, '181 NULL-warehouse closure must survive 183').toBe(true);
+          expect(owner.guard_delegates, '181 trigger must delegate to the canonical validator').toBe(true);
+        }
         await client.query('ROLLBACK');
       } finally {
         await client.query('ROLLBACK').catch(() => {});

@@ -50,9 +50,15 @@ describe('182 registration and shape', () => {
       .toBe('181_phoenix_health_sector_topology_reconciliation.sql');
   });
 
-  it('is the LAST registered migration — no 183 exists', () => {
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[3-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+  // R1.2C added 183, so 182 is no longer last. The guard is extended by EXACT
+  // filename rather than relaxed: 183 is named outright and anything beyond it
+  // still fails closed.
+  it('is followed by exactly 183 and nothing beyond it', () => {
+    const NEXT = '183_phoenix_emergency_outlet_integrity.sql';
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[4-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {

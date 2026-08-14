@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
+
+// PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
+// This suite REPLAYS THE MIGRATION CHAIN inside a beforeAll. vitest applies a
+// separate 10s budget to HOOKS, which no testTimeout covers, so as the chain has
+// grown the hook has crept toward that ceiling; past it, the hook is killed
+// mid-replay and surfaces as ECONNRESET rather than as any assertion. An explicit
+// hook budget removes that false signal. No assertion is changed or relaxed.
+vi.setConfig({ hookTimeout: 240000 });
 
 const run = rigAvailable() ? describe : describe.skip;
 const reconciliationSql = readFileSync(

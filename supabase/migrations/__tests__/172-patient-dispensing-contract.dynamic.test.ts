@@ -171,9 +171,13 @@ run('172 · patient dispensing contract (dynamic)', () => {
         ('${PH_SECTOR}','${WH_CENTRE}','${ORG_SECTOR}','HC Pharm172','HC Pharm172','pharmacy','active','non_emergency'),
         ('${CAB_SECTOR}','${WH_CENTRE}','${ORG_SECTOR}','HC Cab172','HC Cab172','crash_cabinet','active','emergency'),
         ('${PH_OTHER}','${WH_OTHER}','${ORG_OTHER}','Other Pharm172','Other Pharm172','pharmacy','active','non_emergency'),
-        ('${PH_INACTIVE}','${WH_HOSP}','${ORG_HOSP}','Dead Pharm172','Dead Pharm172','pharmacy','archived','non_emergency'),
-        ('${CART_SPEC}','${WH_SPEC}','${ORG_SPEC}','Spec Cart172','Spec Cart172','rescue_cart','active','emergency'),
-        ('${CART_HOSP_WARD}','${WH_HOSP}','${ORG_HOSP}','Ward Cart172','Ward Cart172','rescue_cart','active','non_emergency');
+        ('${PH_INACTIVE}','${WH_HOSP}','${ORG_HOSP}','Dead Pharm172','Dead Pharm172','pharmacy','archived','non_emergency');
+      -- R1.2C/183: CART_SPEC (a specialized-centre rescue cart) and
+      -- CART_HOSP_WARD (a hospital rescue cart outside the ER) are deliberately
+      -- NOT seeded, for exactly the reason CART_SECTOR above is not: 183 now
+      -- refuses to CREATE all three. Each is proved at both ends in the refusal
+      -- matrix below — the outlet cannot exist, and 172's dispensing rule for
+      -- it is still installed and unweakened.
 
       INSERT INTO auth.users (id,email) VALUES
         ('${OFFICER}','officer172@rig.test'),
@@ -277,34 +281,53 @@ run('172 · patient dispensing contract (dynamic)', () => {
       expect(msg).toMatch(/health_center_rescue_cart_not_permitted/);
     });
 
-    it('I2. the non-hospital rescue-cart dispensing rule itself is unweakened', async () => {
-      // Proved where the shape is still legal: a specialized centre is not a
-      // hospital, so 172's rule fires exactly as it did for the health centre.
-      const s = await seedOutletStock({ org: ORG_SPEC, point: CART_SPEC, pointType: 'rescue_cart' });
-      const before = await onHand(s);
-      const msg = await rejects(() => dispense({ stockId: s, refType: 'card' }));
-      expect(msg).toMatch(/rescue_cart_patient_dispense_requires_hospital/);
-      expect(await onHand(s)).toBe(before);      // fail-closed: nothing moved
+    /**
+     * The body of 172's reference-type resolver — the single function that
+     * owns every clinical-context dispensing rule asserted below — so a rule
+     * can be shown STILL INSTALLED even where 183 now makes the shape that
+     * would trigger it impossible to create.
+     */
+    const dispenseRpcDef = async (): Promise<string> => {
+      const r = await rig.asAdmin((c: any) => c.query(
+        `SELECT string_agg(pg_get_functiondef(p.oid), E'\n') AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname='public'
+            AND p.proname = '_phoenix_patient_dispense_reference_types_v1'`));
+      return r.rows[0].def as string;
+    };
+
+    it('I2. a specialized-centre rescue cart cannot exist after 183, and the rule is unweakened', async () => {
+      // Was proved by dispensing from a specialized-centre cart. 183 refuses to
+      // CREATE that shape, so — exactly as for the health centre in I above —
+      // the refusal moves one step earlier and both ends are asserted.
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+        VALUES ('${CART_SPEC}','${WH_SPEC}','${ORG_SPEC}','Spec Cart172','Spec Cart172','rescue_cart','active','emergency')`)));
+      expect(msg).toMatch(/specialized_center_rescue_cart_not_permitted/);
+      expect(await dispenseRpcDef()).toContain('rescue_cart_patient_dispense_requires_hospital');
     });
 
-    it('J. rescue cart outside the ER is refused', async () => {
-      const s = await seedOutletStock({ org: ORG_HOSP, point: CART_HOSP_WARD, pointType: 'rescue_cart' });
-      const msg = await rejects(() => dispense({ stockId: s, refType: 'card' }));
-      expect(msg).toMatch(/rescue_cart_patient_dispense_requires_emergency_context/);
+    it('J. a rescue cart outside the ER cannot exist after 183, and the rule is unweakened', async () => {
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(`
+        INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+        VALUES ('${CART_HOSP_WARD}','${WH_HOSP}','${ORG_HOSP}','Ward Cart172','Ward Cart172','rescue_cart','active','non_emergency')`)));
+      expect(msg).toMatch(/rescue_cart_requires_emergency_context/);
+      expect(await dispenseRpcDef()).toContain('rescue_cart_patient_dispense_requires_emergency_context');
     });
 
-    it('K. a cabinet in an illegal clinical context is refused', async () => {
-      // A hospital cabinet must sit in a ward; move it to the ER and it is no
-      // longer a legal Stage-E shape.
+    it('K. a cabinet in an illegal clinical context cannot exist after 183, and the rule is unweakened', async () => {
+      // A hospital cabinet must sit in a ward. 172 refused to DISPENSE from one
+      // moved to the ER; 183 refuses to CREATE it, so — as with I, I2 and J —
+      // the refusal moves one step earlier and both ends are asserted.
       const bad = randomUUID();
-      await rig.asAdmin((c: any) => c.query(
+      const msg = await rejects(() => rig.asAdmin((c: any) => c.query(
         `INSERT INTO distribution_points
            (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
          VALUES ($1,'${WH_HOSP}','${ORG_HOSP}','Bad Cab172','Bad Cab172','crash_cabinet','active','emergency')`,
-        [bad]));
-      const s = await seedOutletStock({ org: ORG_HOSP, point: bad, pointType: 'crash_cabinet' });
-      const msg = await rejects(() => dispense({ stockId: s, refType: 'chart' }));
-      expect(msg).toMatch(/crash_cabinet_patient_dispense_requires_non_emergency_context/);
+        [bad])));
+      expect(msg).toMatch(/crash_cabinet_requires_non_emergency_context/);
+      expect(await dispenseRpcDef())
+        .toContain('crash_cabinet_patient_dispense_requires_non_emergency_context');
     });
 
     it('L. chart where only card is legal (hospital ER pharmacy) is refused', async () => {
