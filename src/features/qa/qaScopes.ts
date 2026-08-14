@@ -56,6 +56,7 @@ export const QA_SCOPE_ASSIGNMENTS: Readonly<Record<string, readonly ScopeAssignm
       organizationId: ORG_A,
       warehouseId: 'qa-wh-inst-a',
       distributionPointId: null,
+      facilityId: null,
     },
   ],
   'qa-outlet_officer_assigned': [
@@ -65,6 +66,7 @@ export const QA_SCOPE_ASSIGNMENTS: Readonly<Record<string, readonly ScopeAssignm
       organizationId: ORG_A,
       warehouseId: null,
       distributionPointId: 'qa-outlet-1',
+      facilityId: null,
     },
   ],
 };

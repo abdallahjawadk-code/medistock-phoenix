@@ -82,6 +82,7 @@ const ROLE_LABEL_KEY: Record<Role, string> = {
   central_warehouse_manager: roleLabelKey('central_warehouse_manager'),
   warehouse_officer: roleLabelKey('warehouse_officer'),
   outlet_officer: roleLabelKey('outlet_officer'),
+  health_center_manager: roleLabelKey('health_center_manager'),
   hospital_admin: roleLabelKey('hospital_admin'),
   warehouse_manager: roleLabelKey('warehouse_manager'),
   port_officer: roleLabelKey('port_officer'),

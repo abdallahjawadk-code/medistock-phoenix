@@ -264,14 +264,19 @@ describe('B8. migration 066 legacy operational roles remain explicit and fail cl
     'utf8',
   );
 
-  it('offers exactly the five canonical roles (PHOENIX-FIVE-ROLE-CUTOVER-091)', () => {
+  // R1.1-U (Migration 182) adds ONE role. The five 091 canonical roles are still
+  // asserted in their original order and every retired value is still excluded:
+  // the list is extended explicitly, never relaxed.
+  it('offers the five canonical roles (091) plus the R1.1-U facility-scoped role', () => {
     expect(OFFICIAL_ROLES).toEqual([
       'super_admin', 'institution_admin', 'central_warehouse_manager',
-      'warehouse_officer', 'outlet_officer',
+      'warehouse_officer', 'outlet_officer', 'health_center_manager',
     ]);
     expect(OFFICIAL_ROLES).not.toContain('port_officer');
     expect(OFFICIAL_ROLES).not.toContain('monthly_status_officer');
     expect(OFFICIAL_ROLES).not.toContain('viewer');
+    // The new role keeps its own authorization identity — never an alias.
+    expect(normalizeRole('health_center_manager')).toBe('health_center_manager');
   });
 
   it('new roles have bilingual labels and literal authorization identity', () => {

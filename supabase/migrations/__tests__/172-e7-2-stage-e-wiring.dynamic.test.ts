@@ -102,6 +102,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // the "Stage E still ends at 171" assertion above is unaffected. Listed
       // here so this guard stays exhaustive and still fails closed.
       '181_phoenix_health_sector_topology_reconciliation.sql',
+      // R1.1-U (182): adds the facility-scoped RBAC surface — a nullable
+      // facility_id on profile_scope_assignments with its constraints and index,
+      // the facility-derived authorization helpers, and two narrowed RLS
+      // predicates. It is AUTHORIZATION only: Stage E's corridors, routes and
+      // supply semantics are untouched, so the "Stage E still ends at 171"
+      // assertion above is unaffected. Listed here so this guard stays
+      // exhaustive and still fails closed on any unlisted new file.
+      '182_phoenix_health_center_facility_scoped_rbac.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

@@ -1,7 +1,7 @@
 import { FunctionsHttpError, FunctionsFetchError, FunctionsRelayError } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from '../client';
 import type { OverrideMap } from '@/shared/lib/permissions';
-import type { OfficialRole } from '@/shared/lib/roles';
+import { isFacilityScopedRole, type OfficialRole } from '@/shared/lib/roles';
 
 export interface ManagedUser {
   id: string;
@@ -480,6 +480,19 @@ export interface CreateUserInput {
    *  Mode 2: absent/empty → invite email attempted. Min 8 chars when provided.
    *  Only relevant when loginMode === 'email'. */
   password?: string;
+  /**
+   * R1.1-U — the health-centre facilities a FACILITY-SCOPED role is assigned to.
+   *
+   * Required, and non-empty, when `role` is facility-scoped
+   * (see FACILITY_SCOPED_ROLES); rejected outright for every other role, so a
+   * caller cannot smuggle assignments onto a role that does not use them.
+   *
+   * These ids are a REQUEST, never an authorization. The Edge function validates
+   * only their shape; phoenix_admin_assign_facility_scopes re-validates every id
+   * against the new profile's own organization and writes the whole set or none
+   * of it, rolling the Auth user back if it cannot.
+   */
+  facilityIds?: string[];
 }
 
 export interface CreateUserResult extends EdgeResultMeta {
@@ -504,12 +517,20 @@ export async function createUserViaEdge(input: CreateUserInput): Promise<CreateU
   if (!supabaseConfigured) return { ok: false, error: 'NOT_CONFIGURED', correlationId };
 
   try {
-    const body: Record<string, string> = {
+    const body: Record<string, string | string[]> = {
       full_name:       input.fullName,
       organization_id: input.organizationId,
       role:            input.role,
       login_mode:      input.loginMode,
     };
+    // R1.1-U: send facility ids ONLY for a facility-scoped role, and only when
+    // there are some. The Edge function rejects the field outright on any other
+    // role, so this must not be sent speculatively.
+    if (isFacilityScopedRole(input.role)) {
+      const ids = [...new Set(input.facilityIds ?? [])].filter(Boolean);
+      if (ids.length === 0) return { ok: false, error: 'FACILITY_SCOPE_REQUIRED', correlationId };
+      body.facility_ids = ids;
+    }
     if (input.loginMode === 'local') {
       if (input.username) body.username = input.username;
       if (input.temporaryPassword) body.temporary_password = input.temporaryPassword;

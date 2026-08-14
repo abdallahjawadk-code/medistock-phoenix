@@ -38,6 +38,15 @@ export interface InventoryScopeOption {
    * does not offer a destination the server will always refuse.
    */
   pointType: string | null;
+  /**
+   * R1.1-U: `warehouses.facility_id` for a warehouse-kind option; null for an
+   * outlet. Load-bearing for facility scope — the SECTOR MAIN is the health
+   * sector's only active warehouse with facility_id IS NULL (Migration 181), so
+   * requiring a NON-NULL facility here is exactly what stops a facility-scoped
+   * manager inheriting it, mirroring
+   * phoenix_profile_has_warehouse_assignment server-side.
+   */
+  facilityId: string | null;
 }
 
 export interface InventoryScopeCatalog {
@@ -54,11 +63,11 @@ export interface InventoryScopeCatalog {
 }
 
 function toWhOption(w: Warehouse): InventoryScopeOption {
-  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind, pointType: null };
+  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind, pointType: null, facilityId: w.facilityId };
 }
 
 function toOutletOption(p: DistributionPoint): InventoryScopeOption {
-  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null, pointType: p.pointType };
+  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null, pointType: p.pointType, facilityId: null };
 }
 
 export function useInventoryScopes(
@@ -98,13 +107,48 @@ export function useInventoryScopes(
     const assignedPoints = new Set(
       relevantAssignments.map(a => a.distributionPointId).filter((id): id is string => Boolean(id)),
     );
+    /**
+     * R1.1-U — FACILITY SCOPE.
+     *
+     * A health-centre manager holds no warehouse or outlet row at all; it holds
+     * facilities, and its resources are DERIVED from them. Without this the two
+     * sets above are empty and the manager gets a working login with nothing it
+     * can operate — valid database scope, unusable UI.
+     *
+     * The derivation deliberately mirrors Migration 182's helpers rather than
+     * inventing a second rule:
+     *   warehouse → manageable when it is facility-bound AND its facility is
+     *               assigned. `facilityId !== null` is the SECTOR-MAIN
+     *               EXCLUSION: the sector main is the only active health-sector
+     *               warehouse with facility_id IS NULL (181), so it can never
+     *               match, exactly as the server refuses it.
+     *   outlet    → manageable when its OWNING warehouse is, so a centre's
+     *               pharmacy and crash cabinets follow their depot.
+     *
+     * Facility identity is preserved: a manager holding A and B derives A's and
+     * B's resources and nothing else. Two facilities never widen to the sector.
+     */
+    const assignedFacilities = new Set(
+      relevantAssignments
+        .filter(a => a.scopeType === 'facility')
+        .map(a => a.facilityId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const facilityDerivedWarehouses = new Set(
+      warehouses
+        .filter(w => w.facilityId !== null && assignedFacilities.has(w.facilityId))
+        .map(w => w.id),
+    );
+
+    const reachableWarehouse = (id: string) =>
+      assignedWarehouses.has(id) || facilityDerivedWarehouses.has(id);
 
     const manageableWarehouses = managesWholeOrganization
       ? warehouses
-      : warehouses.filter(w => assignedWarehouses.has(w.id));
+      : warehouses.filter(w => reachableWarehouse(w.id));
     const manageableOutlets = managesWholeOrganization
       ? outlets
-      : outlets.filter(o => assignedPoints.has(o.id) || (o.warehouseId !== null && assignedWarehouses.has(o.warehouseId)));
+      : outlets.filter(o => assignedPoints.has(o.id) || (o.warehouseId !== null && reachableWarehouse(o.warehouseId)));
 
     const manageable = new Set<string>();
     for (const o of [...manageableWarehouses, ...manageableOutlets]) manageable.add(`${o.kind}:${o.id}`);

@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   OFFICIAL_ROLES, OFFICIAL_ROLE_LABEL_KEY, normalizeRole, isOfficialRole,
-  canTargetRole, roleLabelKey,
+  canTargetRole, roleLabelKey, isFacilityScopedRole,
 } from '@/shared/lib/roles';
 import {
   PERMISSION_KEYS, PERMISSION_KEY_SET, isValidPermissionKey, isDangerousPermission,
@@ -21,11 +21,54 @@ const readPhoenix = (rel: string) => readFileSync(join(PHOENIX, rel), 'utf8');
 // 1. Official role model
 // ============================================================================
 describe('Official role model', () => {
-  it('has exactly the five PHOENIX-FIVE-ROLE-CUTOVER-091 canonical roles', () => {
+  // R1.1-U (Migration 182) adds exactly ONE official role. The list stays
+  // EXHAUSTIVE rather than being relaxed: the five PHOENIX-FIVE-ROLE-CUTOVER-091
+  // roles are still asserted in their original order and the new value is
+  // registered explicitly at the end. health_center_manager is NOT an alias for
+  // any of them — it is a FACILITY-SCOPED operational role that the database
+  // refuses to let exist outside an active care_institution health sector, and
+  // whose reach comes from profile_scope_assignments rows of scope_type='facility'.
+  it('has exactly the five 091 canonical roles plus the R1.1-U facility-scoped role', () => {
     expect([...OFFICIAL_ROLES]).toEqual([
       'super_admin', 'institution_admin', 'central_warehouse_manager',
-      'warehouse_officer', 'outlet_officer',
+      'warehouse_officer', 'outlet_officer', 'health_center_manager',
     ]);
+  });
+
+  it('the new role normalizes to itself and is the ONLY facility-scoped one', () => {
+    expect(normalizeRole('health_center_manager')).toBe('health_center_manager');
+    expect(isOfficialRole('health_center_manager')).toBe(true);
+    expect(isFacilityScopedRole('health_center_manager')).toBe(true);
+    for (const r of ['super_admin', 'institution_admin', 'central_warehouse_manager',
+                     'warehouse_officer', 'outlet_officer', 'hospital_admin']) {
+      expect(isFacilityScopedRole(r), r).toBe(false);
+    }
+  });
+
+  it('the new role carries no user-lifecycle or organization-wide default', () => {
+    const defaults = roleDefaults('health_center_manager');
+    for (const forbidden of [
+      'users.create', 'users.assign_role', 'users.edit_scope', 'users.view',
+      'users.disable', 'users.reset_permissions', 'warehouses.manage',
+      'central_warehouse.manage', 'inventory.purge', 'reports.view',
+    ]) expect(defaults.has(forbidden), forbidden).toBe(false);
+    // Migration 182 grants SIX audited scope-aware read keys. This client-side
+    // fallback lists only the CATALOG-VALID subset, because PERMISSION_KEYS is
+    // deliberately narrower than the database's permission_keys table — the same
+    // policy that keeps the 062 keys out of it (rbac-fallback-parity D2). The
+    // database remains the authority for all six.
+    expect([...defaults].sort()).toEqual(['ports.view', 'warehouses.view']);
+    // And every key listed really is in the catalog, so nothing here is dead.
+    for (const k of defaults) expect(isValidPermissionKey(k), k).toBe(true);
+  });
+
+  it('only super_admin and institution_admin may target the new role', () => {
+    expect(canTargetRole('super_admin', 'health_center_manager')).toBe(true);
+    expect(canTargetRole('institution_admin', 'health_center_manager')).toBe(true);
+    for (const actor of ['warehouse_officer', 'outlet_officer',
+                         'central_warehouse_manager', 'health_center_manager']) {
+      expect(canTargetRole(actor, 'health_center_manager'), actor).toBe(false);
+    }
   });
 
   it('keeps every legacy role authorization-distinct', () => {

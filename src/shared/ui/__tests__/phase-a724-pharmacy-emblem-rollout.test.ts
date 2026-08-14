@@ -75,6 +75,37 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
       'supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts','supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts','supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts','supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts','supabase/migrations/__tests__/helpers/reviewed-migrations.ts','supabase/migrations/__tests__/reviewed-migration-manifest.test.ts','supabase/migrations/__tests__/helpers/reviewed-movement-writers.ts','supabase/migrations/__tests__/movement-writer-completeness.test.ts','package.json','package-lock.json',
+      // R1.1-U (182): the facility-scoped RBAC substage, registered by EXACT
+      // filename like every entry before it. Two non-migration files are named
+      // here rather than covered by any directory rule:
+      //   * the admin-create-user Edge function, which gains facility_ids SHAPE
+      //     validation and the all-or-nothing facility-scope call with its Auth
+      //     rollback — the authority itself stays in the database;
+      //   * the typecheck script-contract test, which locks out the no-op
+      //     `tsc --noEmit` form that silently passed while three exhaustive role
+      //     maps were broken.
+      'supabase/functions/admin-create-user/index.ts',
+      'src/app/__tests__/typecheck-script-contract.test.ts',
+      // ...plus the two client-side halves of the same substage: the create-user
+      // service, which forwards facility ids as a REQUEST the database
+      // re-validates, and that Edge function's own secure-contract test, whose
+      // credential-logging guarantee now covers BOTH rollback logs by name.
+      'src/shared/supabase/services/users.service.ts',
+      'src/shared/supabase/__tests__/admin-create-user-secure-contract.test.ts',
+      // R1.1-U / U-B SAFE ACTIVATION — the four watched files the activation
+      // boundary touches, each by EXACT filename:
+      //   * screen-access.ts   — the facility-scoped role must not land on the
+      //     reports surface, whose tabs are RLS-only and therefore not
+      //     facility-safe;
+      //   * rbac.service.ts    — the scope reader now SELECTs facility_id;
+      //     without it a facility assignment arrived with no target and was
+      //     silently dropped, giving valid DB scope and an unusable UI;
+      //   * the two U-B proof suites — the frontend activation contract and the
+      //     adversarial database confidentiality matrix.
+      'src/shared/authz/screen-access.ts',
+      'src/shared/authz/rbac.service.ts',
+      'src/shared/authz/__tests__/ub-facility-scope-activation.test.ts',
+      'supabase/migrations/__tests__/182-ub-facility-confidentiality.dynamic.test.ts',
       // STAGE-G-G2: 177 registered by EXACT filename, same as every entry
       // before it — the public-QR read cutover plus its own static/dynamic
       // proofs. No wildcard, no directory exclusion; any OTHER unlisted file
@@ -90,10 +121,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // initial-provisioning authority boundary, its static proof, its dynamic
       // A-O proof matrix, and the 001->179 rig that reproduces the bypass it
       // closes. Exact filenames only; any OTHER unlisted file still fails.
-      ...[154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181].flatMap(n=>{
-        const exact:Record<number,string>={154:'154_phoenix_transfer_corridor_privilege_lockdown.sql',155:'155_phoenix_transfer_send_receive_lifecycle_notifications.sql',156:'156_phoenix_outlet_return_line_idempotency.sql',157:'157_phoenix_outlet_return_exception_resolution.sql',158:'158_phoenix_transactional_outbox_foundation.sql',159:'159_phoenix_lifecycle_outbox_producer.sql',160:'160_phoenix_demo_purge_outbox_compatibility.sql',161:'161_phoenix_movement_outbox_producer.sql',162:'162_phoenix_stocktake_and_exception_outbox_producers.sql',163:'163_phoenix_outbox_consumer_foundation.sql',164:'164_phoenix_facility_identity_and_routing_foundation.sql',165:'165_phoenix_sector_health_center_supply_and_return.sql',166:'166_phoenix_initial_provisioning_invariant.sql',167:'167_phoenix_dispatch_line_full_rejection_reconciliation.sql',168:'168_phoenix_atomic_emergency_outlet_replenishment.sql',169:'169_phoenix_outlet_replenishment_reversal.sql',170:'170_phoenix_organization_class_and_warehouse_facility_assignment.sql',171:'171_phoenix_organization_kind_pharmacy_department_authority.sql',172:'172_phoenix_patient_dispensing_contract.sql',173:'173_phoenix_database_security_surface_hardening.sql',174:'174_phoenix_authenticated_rpc_surface_hardening.sql',175:'175_phoenix_read_helper_anonymous_surface_hardening.sql',176:'176_phoenix_canonical_outlet_availability_read_model.sql',177:'177_phoenix_canonical_public_qr.sql',178:'178_phoenix_distribution_point_owner_guard_privilege_fix.sql',179:'179_phoenix_canonical_authenticated_availability_hardening.sql',180:'180_phoenix_emergency_initial_provisioning_boundary.sql',181:'181_phoenix_health_sector_topology_reconciliation.sql'};
+      ...[154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182].flatMap(n=>{
+        const exact:Record<number,string>={154:'154_phoenix_transfer_corridor_privilege_lockdown.sql',155:'155_phoenix_transfer_send_receive_lifecycle_notifications.sql',156:'156_phoenix_outlet_return_line_idempotency.sql',157:'157_phoenix_outlet_return_exception_resolution.sql',158:'158_phoenix_transactional_outbox_foundation.sql',159:'159_phoenix_lifecycle_outbox_producer.sql',160:'160_phoenix_demo_purge_outbox_compatibility.sql',161:'161_phoenix_movement_outbox_producer.sql',162:'162_phoenix_stocktake_and_exception_outbox_producers.sql',163:'163_phoenix_outbox_consumer_foundation.sql',164:'164_phoenix_facility_identity_and_routing_foundation.sql',165:'165_phoenix_sector_health_center_supply_and_return.sql',166:'166_phoenix_initial_provisioning_invariant.sql',167:'167_phoenix_dispatch_line_full_rejection_reconciliation.sql',168:'168_phoenix_atomic_emergency_outlet_replenishment.sql',169:'169_phoenix_outlet_replenishment_reversal.sql',170:'170_phoenix_organization_class_and_warehouse_facility_assignment.sql',171:'171_phoenix_organization_kind_pharmacy_department_authority.sql',172:'172_phoenix_patient_dispensing_contract.sql',173:'173_phoenix_database_security_surface_hardening.sql',174:'174_phoenix_authenticated_rpc_surface_hardening.sql',175:'175_phoenix_read_helper_anonymous_surface_hardening.sql',176:'176_phoenix_canonical_outlet_availability_read_model.sql',177:'177_phoenix_canonical_public_qr.sql',178:'178_phoenix_distribution_point_owner_guard_privilege_fix.sql',179:'179_phoenix_canonical_authenticated_availability_hardening.sql',180:'180_phoenix_emergency_initial_provisioning_boundary.sql',181:'181_phoenix_health_sector_topology_reconciliation.sql',182:'182_phoenix_health_center_facility_scoped_rbac.sql'};
         const sql='supabase/migrations/'+exact[n];
-        const tests=n===181
+        const tests=n===182
+          // R1.1-U / U-B corrective adds the closure suite for the surfaces an
+          // independent U-C audit found — the notification badge/mark-read
+          // family, cross-centre metadata, sector aggregates — plus the two
+          // systemic guards that close those CLASSES rather than instances.
+          // Registered by EXACT filename, like every entry before it.
+          ? ['supabase/migrations/__tests__/182-health-center-facility-scoped-rbac-static.test.ts','supabase/migrations/__tests__/182-health-center-facility-scoped-rbac.dynamic.test.ts','supabase/migrations/__tests__/182-ub-facility-confidentiality.dynamic.test.ts','supabase/migrations/__tests__/182-ub-corrective-closure.dynamic.test.ts']
+          : n===181
           ? ['supabase/migrations/__tests__/181-health-sector-topology-static.test.ts','supabase/migrations/__tests__/181-health-sector-topology.dynamic.test.ts','supabase/migrations/__tests__/181-closure-round1.dynamic.test.ts','supabase/migrations/__tests__/181-null-warehouse-outlet.dynamic.test.ts']
           : n===180
           ? ['supabase/migrations/__tests__/180-emergency-initial-provisioning-boundary-static.test.ts','supabase/migrations/__tests__/180-emergency-initial-provisioning-boundary.dynamic.test.ts','supabase/migrations/__tests__/180-pre180-emergency-dispatch-bypass.dynamic.test.ts']

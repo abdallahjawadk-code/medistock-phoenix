@@ -1,4 +1,4 @@
-import { institutionsScreenAccess, roleLandingScreen } from '@/shared/authz/screen-access';
+import { isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
 
 const STORAGE_PREFIX = 'medistock-phoenix-screen:';
 const EPOCH_PREFIX = 'medistock-phoenix-continuity-epoch:';
@@ -9,17 +9,26 @@ interface ScreenHistoryState {
   [HISTORY_KEY]: { profileId: string; epoch: string; screen: number };
 }
 
-/** Restoration allow-list only; this does not change any direct screen gate. */
+/**
+ * Restoration allow-list, intersected with the canonical screen authorization.
+ *
+ * R1.1-U (U-B corrective, C2): the per-screen gates that used to be duplicated
+ * here now live in ONE place, isScreenAuthorized, so restoration can no longer
+ * drift from the route guard. That drift was the defect: a facility-scoped role
+ * was steered away from screen 21 by roleLandingScreen, yet a persisted session,
+ * a refresh or a Back button restored it anyway — an authorization decision
+ * being made by "the page happens to render empty" rather than by a gate.
+ *
+ * The first line remains a genuine restoration allow-list: a screen may be
+ * authorized and still not be worth restoring into.
+ */
 export function isScreenRestorable(
   screen: number,
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
 ): boolean {
   if (![3, 6, 11, 13, 14, 15, 17, 18, 19, 21].includes(screen)) return false;
-  if (screen === 11) return institutionsScreenAccess(role) !== false;
-  if (screen === 14) return role === 'super_admin' || permissions.has('users.view');
-  if (screen === 17) return role === 'super_admin' || permissions.has('users.edit_scope');
-  return true;
+  return isScreenAuthorized(screen, role, permissions);
 }
 
 function storageKey(profileId: string): string {

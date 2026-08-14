@@ -69,16 +69,25 @@ describe('Role hierarchy helpers', () => {
     expect(canManageOrg('warehouse_manager')).toBe(false);
   });
 
+  // R1.1-U: an institution_admin additionally targets the facility-scoped
+  // health_center_manager. The legacy hospital_admin deliberately does NOT, and
+  // even for institution_admin this table cannot see the organization — the
+  // HEALTH-SECTOR requirement is proved by Migration 182 and admin-create-user,
+  // never here.
   it('ASSIGNABLE_ROLES_BY_ACTOR keeps admin assignment on the official lower roles', () => {
-    const expected = ['warehouse_officer', 'outlet_officer'];
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.institution_admin).toEqual(expected);
-    expect(ASSIGNABLE_ROLES_BY_ACTOR.hospital_admin).toEqual(expected);
+    expect(ASSIGNABLE_ROLES_BY_ACTOR.institution_admin)
+      .toEqual(['warehouse_officer', 'outlet_officer', 'health_center_manager']);
+    expect(ASSIGNABLE_ROLES_BY_ACTOR.hospital_admin)
+      .toEqual(['warehouse_officer', 'outlet_officer']);
   });
 
   it('ASSIGNABLE_ROLES_BY_ACTOR: non-admin roles have empty assignable list', () => {
     const roles: Role[] = [
       'central_warehouse_manager', 'warehouse_officer', 'warehouse_manager',
       'outlet_officer', 'port_officer', 'point_operator', 'transfer_manager',
+      // The facility-scoped role holds no user-lifecycle permission by default
+      // and therefore assigns nothing at all.
+      'health_center_manager',
     ];
     roles.forEach(r => expect(ASSIGNABLE_ROLES_BY_ACTOR[r]).toHaveLength(0));
   });

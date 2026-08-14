@@ -119,10 +119,22 @@ export const supabaseRbacTransport: RbacTransport = {
 
 export interface ScopeAssignment {
   id: string;
-  scopeType: 'warehouse' | 'distribution_point';
+  /**
+   * R1.1-U: 'facility' scopes a health_center_manager to health-centre
+   * facilities (Migration 182).
+   *
+   * It MUST be read here, not only in network.service.ts. This is the reader
+   * behind currentScopes(), which every scope consumer sees, and a facility row
+   * arriving with both target ids null is silently dropped by anyone filtering
+   * on Boolean(warehouseId) / Boolean(distributionPointId). That produced a
+   * manager holding valid DATABASE scope and an entirely empty usable UI.
+   */
+  scopeType: 'warehouse' | 'distribution_point' | 'facility';
   organizationId: string;
   warehouseId: string | null;
   distributionPointId: string | null;
+  /** Non-null exactly when scopeType === 'facility' (psa_target_matches_scope_chk). */
+  facilityId: string | null;
 }
 
 export type ScopeAssignmentsResult =
@@ -134,7 +146,7 @@ export async function fetchMyScopeAssignments(profileId: string): Promise<ScopeA
   try {
     const { data, error } = await supabase
       .from('profile_scope_assignments')
-      .select('id, scope_type, organization_id, warehouse_id, distribution_point_id')
+      .select('id, scope_type, organization_id, warehouse_id, distribution_point_id, facility_id')
       .eq('profile_id', profileId)
       .eq('is_active', true);
 
@@ -152,6 +164,7 @@ export async function fetchMyScopeAssignments(profileId: string): Promise<ScopeA
         organizationId:      r.organization_id as string,
         warehouseId:         (r.warehouse_id ?? null) as string | null,
         distributionPointId: (r.distribution_point_id ?? null) as string | null,
+        facilityId:          (r.facility_id ?? null) as string | null,
       })),
     };
   } catch {

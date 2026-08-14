@@ -4,8 +4,12 @@ import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import {
   OFFICIAL_ROLES, OFFICIAL_ROLE_LABEL_KEY, roleLabelKey, canTargetRole, normalizeRole,
+  isFacilityScopedRole,
   type OfficialRole,
 } from '@/shared/lib/roles';
+import {
+  listOrganizationFacilities, type OrganizationFacility,
+} from '@/features/institutions/facilities.service';
 import { normalizeUsername, validateUsername } from '@/shared/lib/username';
 import {
   PERMISSION_KEYS, permissionsByModule, roleDefaults,
@@ -772,7 +776,13 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
   onToast: (m: string) => void;
   onCreated: () => void;
 }) {
-  const orgs = useAsync(() => isSuper ? getOrganizations() : Promise.resolve([]), [isSuper]);
+  // R1.1-U: fetched for EVERY actor, not just super_admin. A non-super caller
+  // needs its OWN organization record to know whether it is a health sector and
+  // may therefore offer the facility-scoped role; the organization <select>
+  // below is still rendered only for super_admin, so nothing else changes. The
+  // read is RLS-scoped and memoised in the service, so a non-super sees exactly
+  // the organization it already sees everywhere else.
+  const orgs = useAsync(() => getOrganizations(), []);
 
   // Local username + temporary password is the only normal create path
   // (LOCAL-UX-PERMISSION-PERSISTENCE-FIX-A). Email/invite mode still exists
@@ -788,12 +798,56 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
   const [selRole,     setSelRole]     = useState<OfficialRole>('outlet_officer');
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  const [pickedFacilityIds, setPickedFacilityIds] = useState<string[]>([]);
 
   const isInstitutionAdmin = normalizeRole(actorRole) === 'institution_admin';
-  const roleOptions   = OFFICIAL_ROLES.filter(r => canTargetRole(actorRole, r));
   const effectiveOrg  = isSuper ? orgId : (actorOrgId ?? '');
+
+  // ── R1.1-U: the health-centre picker ──────────────────────────────────────
+  // A facility-scoped role is meaningful only inside an ACTIVE health sector, so
+  // it is not offered elsewhere. Convenience only: Migration 182 and
+  // admin-create-user both refuse the role outside a health sector whatever this
+  // form allows, and a hospital admin is rejected by the server, not by the UI.
+  const allOrgs = orgs.data ?? [];
+  const selectedOrg = allOrgs.find(o => o.id === effectiveOrg) ?? null;
+  const orgIsHealthSector = Boolean(
+    selectedOrg
+    && selectedOrg.status === 'active'
+    && selectedOrg.organizationKind === 'care_institution'
+    && selectedOrg.institutionClass === 'health_sector',
+  );
+
+  const roleOptions = OFFICIAL_ROLES.filter(
+    r => canTargetRole(actorRole, r) && (!isFacilityScopedRole(r) || orgIsHealthSector),
+  );
+
+  const needsFacilityScope = isFacilityScopedRole(selRole);
+  // Only ACTIVE health centres of THIS sector. The picker names FACILITIES —
+  // never the sector main depot, a warehouse, or an outlet.
+  const facilities = useAsync(
+    () => (needsFacilityScope && effectiveOrg)
+      ? listOrganizationFacilities(effectiveOrg)
+      : Promise.resolve([] as OrganizationFacility[]),
+    [needsFacilityScope, effectiveOrg],
+  );
+  const selectableFacilities = (facilities.data ?? []).filter(
+    f => f.status === 'active'
+      && (f.facilityClass === 'primary_health_center' || f.facilityClass === 'subordinate_health_center'),
+  );
+  // Derived, so a centre that stops being selectable cannot stay submitted.
+  const facilityIds = pickedFacilityIds.filter(id => selectableFacilities.some(f => f.id === id));
+
   const localValid    = validateUsername(username) && tempPassword.length >= 8 && tempPassword === tempConfirm;
-  const canSubmit     = Boolean(fullName.trim() && username.trim() && effectiveOrg && localValid);
+  const canSubmit     = Boolean(
+    fullName.trim() && username.trim() && effectiveOrg && localValid
+    && (!needsFacilityScope || facilityIds.length > 0),
+  );
+
+  // A role that stops being offered (the organization changed) must not remain
+  // selected — otherwise the form would submit a role the server will refuse.
+  useEffect(() => {
+    if (roleOptions.length > 0 && !roleOptions.includes(selRole)) setSelRole(roleOptions[0]);
+  }, [roleOptions, selRole]);
 
   async function onSubmit() {
     setError(null);
@@ -804,6 +858,11 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
     if (!validateUsername(username)) { setError(t('um_username_invalid', lang)); return; }
     if (tempPassword.length < 8) { setError(t('um_password_too_short', lang)); return; }
     if (tempPassword !== tempConfirm) { setError(t('um_passwords_no_match', lang)); return; }
+    // R1.1-U: a facility-scoped role without a centre would create an identity
+    // that can reach nothing. Refuse here too, so the operator sees why.
+    if (needsFacilityScope && facilityIds.length === 0) {
+      setError(t('u_health_center_required', lang)); return;
+    }
 
     setBusy(true);
     try {
@@ -815,6 +874,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         username: normalizeUsername(username),
         temporaryPassword: tempPassword,
         ...(contactEmail.trim() ? { contactEmail: contactEmail.trim() } : {}),
+        ...(needsFacilityScope ? { facilityIds } : {}),
       });
 
       // Unreachable / not deployed → the honest "not enabled" message.
@@ -909,6 +969,51 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
             </select>
           </div>
         </div>
+
+        {/* R1.1-U — assigned health centres. Shown ONLY for a facility-scoped
+            role, so every other role's form is untouched. Checkboxes rather
+            than a multiple <select>: they are reliably operable on touch and
+            legible in RTL, where a ctrl-click multi-select is neither. */}
+        {needsFacilityScope && (
+          <div style={{ padding: '12px 14px', background: 'var(--chip)', border: '1px solid var(--line)', borderRadius: 'var(--r2)' }}>
+            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: 'var(--t2)', marginBottom: '3px' }}>
+              {t('u_assigned_health_centers', lang)} *
+            </label>
+            <p style={{ fontSize: '11px', color: 'var(--t3)', margin: '0 0 9px 0' }} dir="auto">
+              {t('u_assigned_health_centers_hint', lang)}
+            </p>
+            {facilities.loading && <p style={{ fontSize: '11.5px', color: 'var(--t3)' }}>…</p>}
+            {!facilities.loading && selectableFacilities.length === 0 && (
+              <p style={{ fontSize: '11.5px', color: 'var(--warn)' }} dir="auto">
+                {t('u_no_active_health_centers', lang)}
+              </p>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+              {selectableFacilities.map(f => {
+                const checked = facilityIds.includes(f.id);
+                return (
+                  <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => setPickedFacilityIds(prev => (
+                        e.target.checked ? [...new Set([...prev, f.id])] : prev.filter(id => id !== f.id)
+                      ))}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    {/* The CENTRE's name — never the depot's. */}
+                    <span dir="auto">{lang === 'ar' ? f.nameAr : f.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {selectableFacilities.length > 0 && facilityIds.length === 0 && (
+              <p style={{ fontSize: '11px', color: 'var(--warn)', margin: '9px 0 0 0' }} dir="auto">
+                {t('u_health_center_required', lang)}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Temporary password */}
         <div style={{ padding: '12px 14px', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)' }}>

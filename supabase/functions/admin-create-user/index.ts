@@ -38,7 +38,13 @@ const OFFICIAL_ROLES = [
   'central_warehouse_manager',
   'warehouse_officer',
   'outlet_officer',
+  'health_center_manager',
 ];
+
+// R1.1-U: roles that are meaningless without at least one facility assignment.
+const FACILITY_SCOPED_ROLES = ['health_center_manager'];
+// A defensive upper bound only; the database applies the same limit.
+const MAX_FACILITY_IDS = 64;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -91,7 +97,7 @@ Deno.serve(async (req: Request) => {
   let body: {
     full_name?: string; organization_id?: string; role?: string; login_mode?: string;
     username?: string; temporary_password?: string; contact_email?: string;
-    email?: string; password?: string;
+    email?: string; password?: string; facility_ids?: unknown;
   };
   try { body = await req.json(); } catch { return json({ ok: false, error: 'BAD_REQUEST', correlation_id: correlationId }, 400); }
 
@@ -102,6 +108,30 @@ Deno.serve(async (req: Request) => {
 
   if (!fullName || !orgId) return json({ ok: false, error: 'MISSING_FIELDS', correlation_id: correlationId }, 400);
   if (!OFFICIAL_ROLES.includes(role)) return json({ ok: false, error: 'INVALID_ROLE', correlation_id: correlationId }, 400);
+
+  // ── R1.1-U facility scope: SHAPE validation only ────────────────────────────
+  // The browser's facility ids are never trusted as authorization. Every id is
+  // re-validated inside phoenix_admin_assign_facility_scopes against the target
+  // profile's own organization, and the whole set is written or none of it is.
+  const requiresFacilityScope = FACILITY_SCOPED_ROLES.includes(role);
+  let facilityIds: string[] = [];
+  if (requiresFacilityScope) {
+    const raw = body.facility_ids;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return json({ ok: false, error: 'FACILITY_SCOPE_REQUIRED', correlation_id: correlationId }, 400);
+    }
+    if (raw.length > MAX_FACILITY_IDS) {
+      return json({ ok: false, error: 'FACILITY_SCOPE_TOO_LARGE', correlation_id: correlationId }, 400);
+    }
+    if (!raw.every(id => typeof id === 'string' && UUID_PATTERN.test(id))) {
+      return json({ ok: false, error: 'FACILITY_SCOPE_INVALID', correlation_id: correlationId }, 400);
+    }
+    // Deterministic de-duplication, so a repeated id is not an error.
+    facilityIds = [...new Set(raw as string[])];
+  } else if (body.facility_ids !== undefined) {
+    // A role that does not use facility scope must not smuggle assignments in.
+    return json({ ok: false, error: 'FACILITY_SCOPE_NOT_APPLICABLE', correlation_id: correlationId }, 400);
+  }
 
   // ── Resolve identity fields per mode (input validation only) ────────────────
   let username = '';
@@ -218,6 +248,39 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: code, correlation_id: prov?.correlation_id ?? correlationId }, status);
   }
 
+  // ── R1.1-U: facility scope, all-or-nothing, with the SAME rollback contract ──
+  // Auth Admin createUser cannot join this PostgreSQL transaction, so a
+  // facility-scoped identity is only safe if the assignment set either lands
+  // completely or the Auth user is removed. phoenix_admin_assign_facility_scopes
+  // validates every id before writing any row, so there is no partial DB state
+  // to unwind — only the Auth user, exactly as the provisioning failure path
+  // above already does.
+  if (requiresFacilityScope) {
+    const { data: scopes, error: scopeErr } = await admin.rpc('phoenix_admin_assign_facility_scopes', {
+      p_actor_id: userData.user.id,
+      p_profile_id: newId,
+      p_facility_ids: facilityIds,
+    });
+    if (scopeErr || !scopes?.ok) {
+      const { error: rollbackErr } = await admin.auth.admin.deleteUser(newId);
+      if (rollbackErr) {
+        console.error(JSON.stringify({
+          event: 'admin-create-user.facility-scope-rollback-failed',
+          correlation_id: correlationId,
+        }));
+        return json({ ok: false, error: 'ROLLBACK_FAILED', correlation_id: correlationId }, 500);
+      }
+      // The DB message is not echoed verbatim: it can name facilities the caller
+      // may not be allowed to learn about. The correlation id ties this to the
+      // audit trail.
+      return json({
+        ok: false,
+        error: 'FACILITY_SCOPE_ASSIGNMENT_FAILED',
+        correlation_id: correlationId,
+      }, 400);
+    }
+  }
+
   // Invite email only in email-mode Mode 2 (no password).
   let invited = false;
   if (loginMode === 'email' && !passwordMode) {
@@ -230,5 +293,6 @@ Deno.serve(async (req: Request) => {
   return json({
     ok: true, user_id: newId, role, invited, password_mode: passwordMode,
     login_mode: loginMode, correlation_id: correlationId,
+    facility_scope_count: requiresFacilityScope ? facilityIds.length : 0,
   });
 });

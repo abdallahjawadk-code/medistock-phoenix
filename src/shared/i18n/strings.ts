@@ -1353,12 +1353,19 @@ export const T: Dict = {
   um_recycle_link_failed:     { ar: 'تم تدوير الحساب بنجاح، لكن لم يتم إنشاء رابط كلمة المرور. أرسل رابط إعادة تعيين من إعدادات المصادقة.', en: 'Account recycled successfully, but password link generation failed. Send a password reset link from authentication settings.' },
   um_recycle_failed:          { ar: 'فشل تدوير الحساب. حاول مجدداً.',                    en: 'Account recycling failed. Please try again.' },
 
+  /* R1.1-U — the health-centre picker, shown only for facility-scoped roles */
+  u_assigned_health_centers:      { ar: 'المراكز الصحية المسندة',   en: 'Assigned Health Centers' },
+  u_assigned_health_centers_hint: { ar: 'اختر مركزاً صحياً واحداً أو أكثر ضمن هذا القطاع الصحي', en: 'Select one or more health centers within this health sector' },
+  u_health_center_required:       { ar: 'يجب اختيار مركز صحي واحد على الأقل', en: 'At least one health center is required' },
+  u_no_active_health_centers:     { ar: 'لا توجد مراكز صحية فعالة في هذا القطاع', en: 'This sector has no active health centers' },
+
   /* Official role labels (the ONLY labels shown in the role dropdown) */
   orole_super_admin:            { ar: 'مدير المنصة',             en: 'Platform Administrator' },
   orole_institution_admin:      { ar: 'مسؤول المؤسسة',           en: 'Institution Administrator' },
   orole_central_warehouse_manager: { ar: 'مسؤول مخازن قسم الصيدلة', en: 'Pharmacy Department Warehouse Manager' },
   orole_warehouse_officer:      { ar: 'مسؤول المذخر',           en: 'Store Officer' },
   orole_outlet_officer:         { ar: 'مسؤول المنفذ',           en: 'Outlet Officer' },
+  orole_health_center_manager:  { ar: 'مسؤول المركز الصحي',      en: 'Health Center Manager' },
   orole_port_officer:           { ar: 'مسؤول المنفذ',           en: 'Port Officer' },
   orole_legacy_admin:           { ar: 'مدير مؤسسة (إرث)',        en: 'Institution Admin (legacy)' },
   orole_legacy_warehouse_manager: { ar: 'مدير مذخر (إرث)',       en: 'Warehouse Manager (legacy)' },

@@ -232,12 +232,46 @@ const POINT_OPERATOR_LEGACY_DEFAULTS = [
   'inter_institution_alerts.acknowledge',
 ];
 
+/**
+ * R1.1-U — health_center_manager.
+ *
+ * Deliberately NOT a copy of any other manager role's set: an organization-wide
+ * default would defeat Facility Scope entirely.
+ *
+ * Migration 182 grants this role SIX keys in role_permission_defaults, each one
+ * audited against the policy that consumes it:
+ *
+ *   warehouses.view                -> warehouses.wh_select_scoped
+ *   warehouse_stock.view           -> warehouse_stock_select_scoped
+ *   warehouse_stock.movements_view -> warehouse_stock_mov_select_scoped
+ *   warehouse_dispatch.view        -> warehouse_dispatches / _lines
+ *      ...all four resolve through phoenix_profile_has_warehouse_assignment
+ *   outlet_stock.view              -> phoenix_can_read_outlet_stock ->
+ *                                     phoenix_profile_has_point_assignment
+ *   ports.view                     -> dp_read_perm, narrowed for this role in 182
+ *
+ * ONLY TWO of those appear here, and that is deliberate. PERMISSION_KEYS is the
+ * user-management catalog, which is narrower than the database's permission_keys
+ * table on purpose — the same policy that keeps the migration-062 keys out of it
+ * (see rbac-fallback-parity D2). A fallback default naming a key the catalog does
+ * not define would be unrenderable and unverifiable, so this mirror lists exactly
+ * the catalog-valid subset. The DATABASE remains the authority and grants all
+ * six; nothing here narrows what the server enforces.
+ *
+ * No user-lifecycle key, no *.manage key, no organization-wide read.
+ */
+const HEALTH_CENTER_MANAGER_DEFAULTS = [
+  'warehouses.view',
+  'ports.view',
+];
+
 const OFFICIAL_DEFAULTS: Record<OfficialRole, readonly string[]> = {
   super_admin:            ALL_KEYS,
   institution_admin:      INSTITUTION_ADMIN_DEFAULTS,
   central_warehouse_manager: CENTRAL_WAREHOUSE_MANAGER_DEFAULTS,
   warehouse_officer:      WAREHOUSE_OFFICER_DEFAULTS,
   outlet_officer:         OUTLET_OFFICER_DEFAULTS,
+  health_center_manager:  HEALTH_CENTER_MANAGER_DEFAULTS,
 };
 
 /** Default permission set for any role string (legacy-aware). */
