@@ -577,6 +577,14 @@ AS $$
       AND a.is_active    = true
       -- The assignment authorizes nothing once the person is disabled...
       AND p.status = 'active'
+      -- R1.1-U (U-C corrective) — THE DIRECT-SCOPE INVARIANT, read side.
+      -- This role's warehouse authority is DERIVED by the second EXISTS below,
+      -- never granted directly. The writer now refuses to create such a row at
+      -- all; refusing to HONOUR one here makes the invariant structural rather
+      -- than procedural, so a row arriving by any other route — a service_role
+      -- writer, a restore, future tooling — still cannot become sector-main
+      -- authority. `<>` is fail-closed: a NULL role yields NULL, not a match.
+      AND p.role <> 'health_center_manager'
       -- ...nor once the warehouse is archived/inactive (re-proved at read time,
       -- so archiving a warehouse takes effect immediately, with no backfill).
       AND w.status = 'active'
@@ -641,6 +649,10 @@ AS $$
       AND a.scope_type            = 'distribution_point'
       AND a.is_active             = true
       AND p.status = 'active'
+      -- R1.1-U (U-C corrective) — THE DIRECT-SCOPE INVARIANT, read side. See 5b:
+      -- this role's outlet authority is DERIVED through its centre's depot by the
+      -- second EXISTS, never granted directly. `<>` is fail-closed under NULL.
+      AND p.role <> 'health_center_manager'
       AND d.status = 'active'
       AND a.organization_id = p.organization_id
       AND a.organization_id = d.organization_id
@@ -730,6 +742,36 @@ BEGIN
   -- your own organization. super_admin is exempt (platform role).
   IF NOT v_is_super AND public.phoenix_my_org() IS DISTINCT FROM v_profile_org THEN
     RAISE EXCEPTION 'NOT_AUTHORIZED_SCOPE_ASSIGN_CROSS_ORG: caller may only assign within its own organization' USING ERRCODE = '42501';
+  END IF;
+
+  -- R1.1-U (U-C corrective) — THE DIRECT-SCOPE INVARIANT, the inverse of the
+  -- check below and the reason it is not sufficient on its own.
+  --
+  -- The facility branch already refuses a facility scope to any role but this
+  -- one. Nothing refused the OPPOSITE, so an institution_admin holding
+  -- users.edit_scope could hand a health_center_manager a DIRECT warehouse
+  -- scope — including on the SECTOR MAIN, whose whole exclusion is that no
+  -- facility assignment can ever reach it. Reproduced end to end: the grant
+  -- succeeded and the manager then read sector-main stock.
+  --
+  -- The manager cannot do this to itself (it holds no users.* key), so this is
+  -- an over-grant by an otherwise authorized administrator rather than a
+  -- privilege escalation. That is exactly why it must be closed here: a
+  -- facility-scoped role's isolation cannot depend on every administrator
+  -- remembering not to create a scope row the model never intended.
+  --
+  -- The invariant is stated positively and structurally, not as a blocklist of
+  -- the sector main's id: for this role the ONLY assignable operational scope
+  -- is 'facility'. Its depot, pharmacy and crash cabinets are DERIVED from that
+  -- assignment by 5b/5c, never granted directly, so a direct warehouse or point
+  -- row is not a stronger grant — it is a row the model has no meaning for.
+  --
+  -- Legacy roles are untouched: the guard keys on the TARGET's role, and no
+  -- pre-182 profile can hold this one.
+  IF v_profile_role = 'health_center_manager' AND p_scope_type <> 'facility' THEN
+    RAISE EXCEPTION
+      'SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE: health_center_manager may hold facility scope only; % authority is derived from its assigned health centres', p_scope_type
+      USING ERRCODE = '23514';
   END IF;
 
   -- R1.1-U: a FACILITY assignment carries additional authority requirements.
@@ -3555,6 +3597,37 @@ BEGIN
   IF v_def NOT LIKE '%v_org_wide_roles text[] := ARRAY[''institution_admin'']%' THEN
     RAISE EXCEPTION 'VERIFY FAILED (182): the organization-wide role set changed';
   END IF;
+
+  -- ── 11e-2. THE DIRECT-SCOPE INVARIANT (U-C corrective) ───────────────────
+  -- The header claims the sector-main exclusion is STRUCTURAL. That was true of
+  -- the read path only: nothing stopped an authorized institution_admin writing
+  -- a DIRECT warehouse scope for this role, which then granted exactly the
+  -- authority the facility model exists to withhold. Both paths are asserted
+  -- here so the claim is true of the writer and the reader together.
+  v_def := pg_get_functiondef('public.phoenix_assign_profile_scope(uuid,text,uuid)'::regprocedure);
+  IF v_def NOT LIKE '%SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE%' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182): the assignment writer no longer refuses a direct warehouse/point scope for health_center_manager';
+  END IF;
+  -- The refusal must precede the per-scope-type branches, so it cannot be
+  -- reached only on the facility path it does not govern.
+  IF position('SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE' in v_def) = 0
+     OR position('SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE' in v_def)
+        > position('IF p_scope_type = ''facility'' THEN' in v_def) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (182): the direct-scope refusal no longer precedes the scope-type branches';
+  END IF;
+
+  -- Read side: neither helper may honour a DIRECT row for this role, so an
+  -- illegal row arriving by any other route still grants nothing.
+  FOR v_bad IN
+    SELECT 1 FROM (VALUES
+      ('phoenix_profile_has_warehouse_assignment(uuid,uuid)'),
+      ('phoenix_profile_has_point_assignment(uuid,uuid)')
+    ) AS t(sig)
+    WHERE pg_get_functiondef(('public.' || t.sig)::regprocedure)
+          NOT LIKE '%p.role <> ''health_center_manager''%'
+  LOOP
+    RAISE EXCEPTION 'VERIFY FAILED (182): an assignment helper would honour a DIRECT warehouse/point row for health_center_manager';
+  END LOOP;
 
   -- 11f. The sector main can never be facility-derived: both helpers demand a
   --      non-null warehouse facility.

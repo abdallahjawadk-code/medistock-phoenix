@@ -257,19 +257,58 @@ describe('182 read-time helpers are the third cross-sector layer', () => {
   // assertions make is about the direct branch's PREDICATE being 062/076
   // verbatim — that the new role gets no bespoke reach here — and that claim is
   // unchanged. The guard itself is asserted separately, above.
+  /**
+   * The direct branch now carries exactly ONE mention of the new role, and it is
+   * an EXCLUSION (`<>`), never a grant.
+   *
+   * U-C corrective — THE DIRECT-SCOPE INVARIANT. This role's warehouse and
+   * outlet authority is DERIVED from its facility assignments by the second
+   * EXISTS. The writer refuses to create a direct row for it at all; refusing to
+   * HONOUR one here is what makes the invariant structural instead of
+   * procedural, so a row arriving by any other route (a service_role writer, a
+   * restore) still grants nothing. Proven on the rig: with an illegal direct
+   * sector-main row present, has_warehouse_assignment stays false.
+   *
+   * The original claim — 062/076's predicate is otherwise verbatim, and the new
+   * role gains no bespoke REACH here — is asserted below unchanged.
+   */
   it('DIRECT warehouse assignment keeps its exact 062/076 semantics', () => {
     const w = warehouse();
     const direct = w.slice(w.indexOf('SELECT 1'), w.indexOf('OR EXISTS'));
     expect(direct).toContain("a.scope_type   = 'warehouse'");
     expect(direct).toContain('a.organization_id = w.organization_id');
-    expect(direct).not.toContain('health_center_manager');
+    expect(direct).toContain("p.role <> 'health_center_manager'");
+    // An exclusion only — never a grant, and never a second mention.
+    expect(direct).not.toMatch(/p\.role\s*=\s*'health_center_manager'/);
+    expect(direct.split('health_center_manager').length - 1).toBe(1);
   });
 
   it('DIRECT point assignment keeps its exact 062/076 semantics', () => {
     const p = point();
     const direct = p.slice(p.indexOf('SELECT 1'), p.indexOf('OR EXISTS'));
     expect(direct).toContain("a.scope_type            = 'distribution_point'");
-    expect(direct).not.toContain('health_center_manager');
+    expect(direct).toContain("p.role <> 'health_center_manager'");
+    expect(direct).not.toMatch(/p\.role\s*=\s*'health_center_manager'/);
+    expect(direct.split('health_center_manager').length - 1).toBe(1);
+  });
+
+  it('the assignment WRITER refuses any direct warehouse/point scope for the role', () => {
+    // The read-side exclusion above is defence in depth; this is the primary
+    // control. Before it, an institution_admin holding users.edit_scope could
+    // grant a direct sector-main warehouse scope and the manager then read
+    // sector-main stock — reproduced end to end.
+    const start = bare.indexOf('CREATE OR REPLACE FUNCTION public.phoenix_assign_profile_scope');
+    expect(start).toBeGreaterThan(-1);
+    const fn = bare.slice(start, bare.indexOf('$function$;', start));
+    expect(fn).toContain('SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE');
+    expect(fn).toMatch(/v_profile_role = 'health_center_manager'\s*AND p_scope_type <> 'facility'/);
+    // It must precede the per-scope-type branches, or it governs only the path
+    // it was never needed on.
+    expect(fn.indexOf('SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE'))
+      .toBeLessThan(fn.indexOf("IF p_scope_type = 'facility' THEN"));
+    // Keyed on the ROLE, never on the sector main's id — a blocklist would let
+    // any other direct warehouse through.
+    expect(fn).not.toMatch(/is_main/);
   });
 
   it('the facility-derived branch is reachable ONLY by health_center_manager', () => {

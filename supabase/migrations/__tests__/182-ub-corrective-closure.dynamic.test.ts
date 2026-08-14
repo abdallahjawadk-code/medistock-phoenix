@@ -633,6 +633,106 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     });
   });
 
+  // ══ U-C — the DIRECT-SCOPE invariant ═══════════════════════════════════════
+  /**
+   * An independent U-C audit reproduced this end to end:
+   *
+   *   institution_admin (holds users.edit_scope)
+   *     -> phoenix_assign_profile_scope(MGR_A, 'warehouse', <SECTOR MAIN>)  -> ok
+   *   MGR_A then reads SECTOR_MAIN_SECRET.
+   *
+   * The facility branch already refused a facility scope to every OTHER role;
+   * nothing refused the opposite. The manager cannot do this to itself (it holds
+   * no users.* key), so it is an over-grant by an authorized administrator — and
+   * that is exactly why it had to close: a facility-scoped role's isolation
+   * cannot rest on every administrator remembering not to create a scope row the
+   * model has no meaning for.
+   *
+   * The invariant is positive and structural, not a blocklist of the main's id:
+   * for this role the ONLY assignable operational scope is 'facility'.
+   */
+  describe('U-C · direct warehouse/point scope is refused for this role', () => {
+    const assign = (target: string, type: string, id: string) =>
+      `SELECT phoenix_assign_profile_scope('${target}','${type}','${id}')::text`;
+    const err = async (uid: string, sql: string) => {
+      try { await asUser(uid, sql); return 'NO_ERROR'; } catch (e: any) { return String(e.message); }
+    };
+
+    it('refuses a direct SECTOR MAIN warehouse scope — the reproduced escape', async () => {
+      expect(await err(ADMIN_A, assign(MGR_A, 'warehouse', MAIN_A)))
+        .toMatch(/SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE/);
+    });
+
+    it('refuses EVERY direct warehouse/point scope, not only the sector main', async () => {
+      // A blocklist of the main's id would let the centre's own depot through,
+      // creating a direct row the derived model has no meaning for.
+      for (const [what, type, id] of [
+        ['own centre depot', 'warehouse', DEP_A],
+        ['other centre depot', 'warehouse', DEP_B],
+        ['own centre pharmacy', 'distribution_point', PH_A],
+        ['other centre pharmacy', 'distribution_point', PH_B],
+      ] as const) {
+        expect(await err(ADMIN_A, assign(MGR_A, type, id)), what)
+          .toMatch(/SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE/);
+      }
+    });
+
+    it('super_admin is not exempt', async () => {
+      expect(await err(SUPER_U, assign(MGR_A, 'warehouse', MAIN_A)))
+        .toMatch(/SCOPE_ASSIGN_ROLE_REQUIRES_FACILITY_SCOPE/);
+    });
+
+    it('the manager still cannot self-assign anything', async () => {
+      expect(await err(MGR_A, assign(MGR_A, 'facility', FAC_B))).toMatch(/NOT_AUTHORIZED_SCOPE_ASSIGN/);
+      expect(await err(MGR_A, assign(MGR_A, 'warehouse', MAIN_A))).toMatch(/NOT_AUTHORIZED_SCOPE_ASSIGN/);
+    });
+
+    it('legacy roles keep their historical warehouse and point scopes', async () => {
+      // The guard keys on the TARGET's role, so nothing pre-182 moves.
+      expect(await err(ADMIN_A, assign(OFF_B, 'distribution_point', PH_B))).toBe('NO_ERROR');
+    });
+
+    it('an illegal direct row, however it arrived, still grants nothing', async () => {
+      // Defence in depth: the writer refuses to create one, and the read helper
+      // refuses to honour one. Inserted here from the service/superuser context,
+      // which legitimately holds table INSERT.
+      await asAdmin(`INSERT INTO profile_scope_assignments
+        (profile_id,organization_id,scope_type,warehouse_id,is_active)
+        VALUES ('${MGR_A}','${SEC_A}','warehouse','${MAIN_A}',true)`);
+      try {
+        expect(await one(MGR_A,
+          `SELECT phoenix_profile_has_warehouse_assignment('${MGR_A}','${MAIN_A}')::text`)).toBe('false');
+        // And the sector main's stock stays invisible.
+        expect(await seen(MGR_A,
+          `SELECT scientific_name FROM warehouse_stock WHERE warehouse_id = '${MAIN_A}'`)).toEqual([]);
+      } finally {
+        await asAdmin(`DELETE FROM profile_scope_assignments
+          WHERE profile_id='${MGR_A}' AND scope_type='warehouse'`);
+      }
+    });
+
+    it('a legacy role\'s DIRECT row is still honoured', async () => {
+      // The read-side exclusion must not have broken the branch it shares.
+      await asAdmin(`INSERT INTO profile_scope_assignments
+        (profile_id,organization_id,scope_type,warehouse_id,is_active)
+        VALUES ('${OFF_B}','${SEC_A}','warehouse','${MAIN_A}',true)`);
+      try {
+        expect(await one(OFF_B,
+          `SELECT phoenix_profile_has_warehouse_assignment('${OFF_B}','${MAIN_A}')::text`)).toBe('true');
+      } finally {
+        await asAdmin(`DELETE FROM profile_scope_assignments
+          WHERE profile_id='${OFF_B}' AND scope_type='warehouse'`);
+      }
+    });
+
+    it('derived facility access is untouched by the refusal', async () => {
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_facility_assignment('${MGR_A}','${FAC_A}')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_warehouse_assignment('${MGR_A}','${DEP_A}')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_point_assignment('${MGR_A}','${PH_A}')::text`)).toBe('true');
+      expect(await one(MGR_A, `SELECT phoenix_profile_has_warehouse_assignment('${MGR_A}','${MAIN_A}')::text`)).toBe('false');
+    });
+  });
+
   // ══ C6 — the systemic guard: close the CLASS, not the instances ════════════
   describe('C6 · no organization-only SECURITY DEFINER reader stays unnoticed', () => {
     /**
