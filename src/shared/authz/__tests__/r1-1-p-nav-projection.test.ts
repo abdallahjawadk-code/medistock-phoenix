@@ -156,7 +156,20 @@ describe('C) historical roles keep their exact previous menus', () => {
       return role === 'super_admin' || role === 'institution_admin' || role === 'hospital_admin';
     }
     if (screen === 14) return role === 'super_admin' || perms.has('users.view');
-    if (screen === 17) return role === 'super_admin' || perms.has('users.edit_scope');
+    /**
+     * R1.3 restated screen 17: it is now CAPABILITY-gated, admitting
+     * `warehouse_transfer.send` as well, because gating the Supply surface on
+     * `users.edit_scope` refused it to central_warehouse_manager — the role
+     * that holds the send capability and is granted users.edit_scope by no
+     * migration at all. The oracle is updated to the current rule rather than
+     * left stale, and PERM_SETS below now exercises the new permission, so this
+     * parity check cannot pass merely by never testing it.
+     */
+    if (screen === 17) {
+      return role === 'super_admin'
+        || perms.has('users.edit_scope')
+        || perms.has('warehouse_transfer.send');
+    }
     return true;
   };
 
@@ -170,6 +183,12 @@ describe('C) historical roles keep their exact previous menus', () => {
     new Set(['users.view']),
     new Set(['users.edit_scope']),
     new Set(['users.view', 'users.edit_scope']),
+    // R1.3 — the supply capability, alone and combined. Without these the
+    // screen-17 branch above would never be exercised for the very role
+    // (central_warehouse_manager) whose menu the change affects.
+    new Set(['warehouse_transfer.send']),
+    new Set(['warehouse_transfer.send', 'users.edit_scope']),
+    new Set(['warehouse_transfer.send', 'users.view']),
   ];
 
   it.each(HISTORICAL)('%s: identical to the pre-R1.1-P gates on every surface and permission set', (role) => {

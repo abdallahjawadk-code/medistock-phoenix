@@ -125,6 +125,16 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // here so this guard stays exhaustive and still fails closed on any
       // unlisted new file.
       '183_phoenix_emergency_outlet_integrity.sql',
+      // R1.3 (184): unlike every entry above, this one DOES change Stage E's
+      // supply semantics, and deliberately — it NARROWS Migration 165's Branch A
+      // on both the direct-supply and direct-return validators so a facility-
+      // bound Health Center depot is no longer a legal external-corridor
+      // endpoint. Branch B (sector main -> own centre depot) is preserved
+      // exactly as Stage E shipped it. What this guard actually asserts is
+      // unaffected either way: 184 adds NO migration numbered <= 171, so
+      // "Stage E still ends at 171" remains true. Listed here so the guard stays
+      // exhaustive and still fails closed on any unlisted new file.
+      '184_phoenix_canonical_supply_cycle.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

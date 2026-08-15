@@ -59,6 +59,14 @@ const ERROR_KEY: Record<string, string> = {
   insufficient_unreserved_stock: 'lp_err_insufficient_stock',
   destination_must_be_active_institution_warehouse: 'lp_err_warehouse',
   warehouse_not_found: 'lp_err_warehouse',
+  /**
+   * R1.3 (184) — a health sector may open a local procurement order ONLY at its
+   * Sector Main; a facility-bound Health Center depot is never an entry root.
+   * Mapped to the same "this warehouse cannot be used" message as 087's own
+   * warehouse refusals, so the operator sees a real explanation instead of
+   * lp_err_unknown's "unexpected error".
+   */
+  local_procurement_root_must_be_sector_main: 'lp_err_warehouse',
   supplier_not_found: 'lp_err_supplier_missing',
   order_not_found: 'lp_err_missing',
   order_line_not_found: 'lp_err_missing',

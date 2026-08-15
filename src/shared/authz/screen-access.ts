@@ -98,10 +98,14 @@ const FACILITY_SAFE_SCREENS: readonly number[] = [3, 6, 15, 18];
  * decision — an unsafe organization-level screen must be REFUSED to a
  * facility-scoped role, not merely rendered empty.
  *
- * Historical roles keep their exact previous behaviour: for them this returns
- * the same answer the individual gates already gave (screen 11 through
- * institutionsScreenAccess, 14 and 17 through their permission keys, everything
- * else open), so no pre-182 role's navigation moves.
+ * Historical roles keep their previous behaviour for screens 11 and 14 (through
+ * institutionsScreenAccess and `users.view`), and everything else stays open.
+ *
+ * Screen 17 is the ONE deliberate widening, made by R1.3: it now also admits
+ * `warehouse_transfer.send`, because gating it on `users.edit_scope` alone
+ * refused the supply surface to the role whose whole purpose is to use it. See
+ * the inline note on that branch for why this grants no scope-admin authority
+ * and cannot reach a facility-scoped role.
  */
 export function isScreenAuthorized(
   screen: number,
@@ -116,6 +120,32 @@ export function isScreenAuthorized(
 
   if (screen === 11) return institutionsScreenAccess(n) !== false;
   if (screen === 14) return n === 'super_admin' || permissions.has('users.view');
-  if (screen === 17) return n === 'super_admin' || permissions.has('users.edit_scope');
+
+  /**
+   * R1.3 - screen 17 is CAPABILITY-gated, not scope-admin-gated.
+   *
+   * Screen 17 hosts two unrelated sub-surfaces: warehouse/network structural
+   * administration and scope assignment (`users.edit_scope`), and the SUPPLY
+   * authoring surface (`warehouse_transfer.send`). Gating the whole screen on
+   * `users.edit_scope` refused the screen to the very role that exists to use
+   * its supply tab: `central_warehouse_manager` holds
+   * `warehouse_transfer.send = true` (068) and is granted `users.edit_scope` by
+   * no migration at all. It could therefore satisfy every server-side check the
+   * supply RPC makes and still be bounced to its landing screen on the way in.
+   *
+   * The fix is to admit the supply capability here, NOT to hand scope-admin
+   * rights to warehouse senders. Reaching the screen is not authority over it:
+   * NetworkManagementScreen still computes `canEditScope` from
+   * `users.edit_scope` independently, so a send-only actor sees the Supply tab
+   * and never the scope-assignment tab.
+   *
+   * This cannot widen a facility-scoped role: `isFacilityScopedRole` returns
+   * above, and 17 is deliberately absent from FACILITY_SAFE_SCREENS.
+   */
+  if (screen === 17) {
+    return n === 'super_admin'
+      || permissions.has('users.edit_scope')
+      || permissions.has('warehouse_transfer.send');
+  }
   return true;
 }

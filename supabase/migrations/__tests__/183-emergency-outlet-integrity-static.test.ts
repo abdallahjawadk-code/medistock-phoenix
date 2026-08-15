@@ -65,9 +65,16 @@ describe('183 registration and shape', () => {
       .toBe('182_phoenix_health_center_facility_scoped_rbac.sql');
   });
 
-  it('is the LAST registered migration — no 184 exists', () => {
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[4-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+  it('is followed by exactly 184, which is now the LAST registered migration', () => {
+    // R1.3: 183 is no longer the ceiling. The successor is named EXACTLY and the
+    // nothing-beyond regex is narrowed by exactly one number (184 -> 185), so
+    // this guard still fails closed on any unreviewed migration — in particular
+    // there is deliberately no 185.
+    const NEXT = '184_phoenix_canonical_supply_cycle.sql';
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[5-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {

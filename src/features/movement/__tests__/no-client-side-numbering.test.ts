@@ -93,10 +93,17 @@ describe('no client-side document-number sequence exists',()=>{
     // sequence, counter, max()+1 or generated numeric identity, and no document
     // number of any kind — the dispatch number it passes through stays exactly
     // what 180 made it, a caller-supplied text.
-    // Boundary moves to 184 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183)_/.test(f));
+    // R1.3: 184 narrows the two direct-corridor endpoint validators and the
+    // local-procurement root, and re-asserts 153's revoke on the retired
+    // exchange writer. It creates no table, sequence, counter, max()+1 or
+    // generated numeric identity, and no document number of any kind — the
+    // transfer and order numbers it passes through stay exactly what 077 and
+    // 087 made them, caller-supplied text.
+    // Boundary moves to 185 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '184_phoenix_canonical_supply_cycle.sql',
       '183_phoenix_emergency_outlet_integrity.sql',
       '182_phoenix_health_center_facility_scoped_rbac.sql',
       '181_phoenix_health_sector_topology_reconciliation.sql',

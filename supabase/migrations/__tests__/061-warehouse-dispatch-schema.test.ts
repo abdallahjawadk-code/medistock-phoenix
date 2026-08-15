@@ -1175,6 +1175,14 @@ describe('15. isolation from out-of-scope domains', () => {
         // name; every other product path stays watched.
         '":(exclude)src/shared/supabase/services/organizations.service.ts" ' +
         '":(exclude)src/shared/supabase/services/warehouses.service.ts" ":(exclude)src/features/outlet/EmergencyReplenishmentTab.tsx" ":(exclude)src/features/outlet/InitialProvisioningLauncher.tsx" ":(exclude)src/features/institutions/FacilityManagementPanel.tsx" ":(exclude)src/features/institutions/ReplenishmentRouteManagementPanel.tsx" ":(exclude)src/features/institutions/WarehouseFacilityAssignmentPanel.tsx" ' +
+        // R1.3: a still later, separately-reviewed stage (canonical supply
+        // cycle) makes screen 17's navigation gate capability-correct so a
+        // warehouse_transfer.send holder can reach the Supply surface without
+        // users.edit_scope. ONE predicate in the canonical screen-authorization
+        // module — no schema, RLS, RPC or workflow change, and scope management
+        // stays gated on users.edit_scope — excluded here BY EXACT NAME; every
+        // other product path stays watched.
+        '":(exclude)src/shared/authz/screen-access.ts" ' +
         '":(exclude)src/shared/i18n/strings.ts"', {
         cwd: ROOT, encoding: 'utf8',
       });
