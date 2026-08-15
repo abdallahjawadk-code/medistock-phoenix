@@ -46,8 +46,16 @@ describe('184 · Production service-role ACL compatibility · static contract', 
       join(MIGRATIONS_DIR, '085_phoenix_revoke_manual_availability_writers.sql'),
       'utf8',
     );
+    // 085's sentence is WRAPPED across two comment lines ("(trusted\n-- server
+    // identity"), so matching it against the raw file can only ever fail. The
+    // prose is the contract, not its line breaks: unwrap the comment
+    // continuations and collapse whitespace, then assert the same sentence.
+    const unwrapComments = (sql: string): string =>
+      sql.replace(/^\s*--\s?/gm, ' ').replace(/\s+/g, ' ');
+
     expect(migration109).toMatch(/GRANT EXECUTE ON FUNCTIONS TO service_role/);
-    expect(migration085).toMatch(/service_role retains EXECUTE \(trusted server identity/);
+    expect(unwrapComments(migration085))
+      .toMatch(/service_role retains EXECUTE \(trusted server identity/);
   });
 });
 

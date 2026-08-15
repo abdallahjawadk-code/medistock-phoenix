@@ -570,9 +570,46 @@ describe('184 · the preflight fails closed', () => {
       'an external principal can call the external-corridor capsule',
       'an external principal can call the procurement capsule',
       'an external principal still reaches the retired exchange completion writer',
-      'the externally reachable item_availability.quantity writers changed',
+      'the client-reachable item_availability.quantity writers changed',
     ]) {
       expect(bare, `VERIFY must assert: ${claim}`).toContain(claim);
     }
+  });
+
+  it('scopes Verify-K to CLIENT principals while Verify-J stays strict about service_role', () => {
+    // R1.3 corrective. The first Production apply aborted at Verify-K: real
+    // Supabase grants service_role EXECUTE on a preserved owner/internal legacy
+    // helper (109 keeps broad service_role function access on purpose, and the
+    // prepared-only 085 deliberately preserves service_role on the manual
+    // availability writers), which the disposable rig does not model. Verify-K
+    // is a REGRESSION PIN on the projection's write surface, and the surface it
+    // was always about is the browser/PostgREST one.
+    //
+    // The two checks are asserted TOGETHER and by POLARITY, so this can only
+    // pass if the relaxation is confined to the pin: narrowing Verify-J to
+    // client principals, or re-adding service_role to Verify-K, fails here.
+    const section = (from: string, to: string): string => {
+      const start = bare.indexOf(from);
+      const end = bare.indexOf(to, start + from.length);
+      expect(start, `${from} must exist`).toBeGreaterThanOrEqual(0);
+      expect(end, `${to} must exist after ${from}`).toBeGreaterThan(start);
+      return bare.slice(start, end);
+    };
+    // Anchored on statements that occur ONCE each, in source order:
+    //   J starts where the exchange writer's oid is resolved;
+    //   K starts at its own census SELECT (the preflight's vocabulary
+    //   derivation uses array_agg(DISTINCT captures[1]), never p.proname);
+    //   L starts at the route endpoint validator check.
+    const verifyJ = section('v_exchange_oid := to_regprocedure', 'SELECT array_agg(DISTINCT p.proname');
+    const verifyK = section('SELECT array_agg(DISTINCT p.proname', 'the route endpoint validator is missing');
+
+    // Verify-K: client principals only.
+    expect(verifyK).toMatch(/r\.rolname IN \('anon', 'authenticated'\)/);
+    expect(verifyK).not.toMatch(/r\.rolname IN \([^)]*service_role[^)]*\)/);
+    expect(verifyK).toContain("ARRAY['clear_port_availability']::text[]");
+
+    // Verify-J: the retired exchange completion writer stays closed to
+    // service_role too. This is a real BOUNDARY, not a pin, and is untouched.
+    expect(verifyJ).toMatch(/r\.rolname IN \('anon', 'authenticated', 'service_role'\)/);
   });
 });
