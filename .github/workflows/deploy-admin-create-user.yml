@@ -1,27 +1,37 @@
-name: Deploy secure admin user provisioning
+name: '[DEPRECATED — APPLIES MIGRATIONS] Deploy secure admin user provisioning'
 
-# Manually deploys exactly the account-provisioning fix:
-#   1. read-only Production preflight;
-#   2. migration preview;
-#   3. accepted migrations through 146;
-#   4. migration-history verification;
-#   5. admin-create-user Edge Function only.
+# ############################################################################
+# DEPRECATED. Do NOT use this to deploy the admin-create-user Edge Function.
 #
-# It cannot purge data, seed data, accept arbitrary SQL/project refs, or deploy
-# any other Edge Function. GitHub's Production environment remains the final
-# approval boundary.
+# Use instead: deploy-admin-create-user-function-only.yml
+#
+# WHY
+#   This workflow runs `supabase db push` against Production BEFORE it deploys
+#   the function. That push is UNBOUNDED — the ACCEPTED_MIGRATION_CEILING value
+#   declared below is never passed to the command, so it applies whatever
+#   migrations are pending at the moment it runs, not "migrations through 146".
+#
+#   Deploying one Edge Function must never carry the authority to apply an
+#   unrelated migration. At the time of writing nothing is pending (master and
+#   the Production ceiling are both 184), but the hazard goes live the instant a
+#   reviewed-but-unapplied migration lands on master — which is exactly what the
+#   open R1.5 stage will do.
+#
+#   This workflow is therefore PERMANENTLY DISABLED. Its first step always
+#   fails, unconditionally. There is no input, no confirmation phrase and no
+#   acknowledgement that can reach the steps below it — an escape hatch that
+#   can be typed is an escape hatch that will be typed.
+#
+#   The historical steps are RETAINED BELOW, unreachable, so the audit trail of
+#   what this workflow used to do stays readable in one place.
+# ############################################################################
 
+# workflow_dispatch is retained so the workflow stays visible in the Actions
+# list and an operator who reaches for it receives the explicit redirect below
+# rather than silence. It takes NO inputs: there is nothing to fill in, because
+# nothing can proceed.
 on:
   workflow_dispatch:
-    inputs:
-      confirm_sha:
-        description: 'Exact master commit SHA to deploy'
-        required: true
-        type: string
-      confirmation:
-        description: 'Type DEPLOY_SECURE_USER_PROVISIONING exactly'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -36,10 +46,20 @@ env:
 
 jobs:
   deploy:
-    name: Apply migration 146 and deploy admin-create-user
+    name: PERMANENTLY DISABLED — use the function-only workflow
     runs-on: ubuntu-latest
     environment: production
     steps:
+      # UNCONDITIONAL. No `if`, no input, no phrase, no override. Every run of
+      # this workflow ends here. Every step after it is unreachable and is kept
+      # only so the audit trail of the historical procedure stays readable.
+      - name: Refuse — this workflow is permanently deprecated
+        run: |
+          echo "::error::This workflow is permanently deprecated. Use deploy-admin-create-user-function-only.yml."
+          echo "::error::It ran an unbounded 'supabase db push' before deploying, so it could apply unrelated pending migrations to Production."
+          echo "::error::Deploying one Edge Function must never carry authority to apply a migration."
+          exit 1
+
       - name: Verify explicit Production authorization
         run: |
           if [ "${{ github.ref_name }}" != "master" ]; then
