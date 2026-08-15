@@ -1427,18 +1427,24 @@ BEGIN
       'VERIFY FAILED (184): a non-owner EXECUTE ACL remains on the retired exchange completion writer';
   END IF;
 
-  -- K. The item_availability.quantity write surface must not GROW.
+  -- K. The CLIENT-REACHABLE item_availability.quantity write surface must not GROW.
   --
   --    item_availability is a PROJECTION, not one of the two stock truths
-  --    (warehouse_stock, outlet_stock). Three legacy functions predate those
-  --    ledgers. Of those, the earlier hardening migrations already revoked
-  --    external EXECUTE from phoenix_upsert_availability and
-  --    phoenix_apply_availability_movement, so exactly ONE externally
-  --    reachable writer remains: the legacy port-clearing RPC. R1.3 does not
-  --    retire it - that is neither this stage's scope nor safe to do inside
-  --    it - so this is a REGRESSION guard pinned to the exact observed set. A
-  --    SECOND externally reachable writer appearing, in particular the retired
-  --    exchange completion writer regaining EXECUTE, fails the migration.
+  --    (warehouse_stock, outlet_stock). This regression pin deliberately models
+  --    browser/PostgREST principals only: anon and authenticated. service_role
+  --    is a trusted server identity, not a client principal; Migration 109
+  --    deliberately preserves broad service_role function access, and the
+  --    prepared-only Migration 085 explicitly preserves service_role access to
+  --    the legacy manual availability writers. Real Supabase Production can
+  --    therefore expose an owner/internal legacy helper to service_role even
+  --    when the disposable rig does not.
+  --
+  --    Exactly ONE CLIENT-reachable regex-matching quantity writer remains:
+  --    clear_port_availability. R1.3 does not retire that legacy projection
+  --    writer - doing so belongs to the separately-attested availability
+  --    cutover. Verify J above is intentionally different: the retired inter-org
+  --    exchange completion writer must remain owner-only, including service_role.
+  --    A second ANON/AUTHENTICATED writer appearing fails this migration.
   SELECT array_agg(DISTINCT p.proname ORDER BY p.proname)
     INTO v_availability_writers
   FROM pg_proc p
@@ -1448,14 +1454,14 @@ BEGIN
     AND p.prosrc ~* 'UPDATE\s+(public\.)?item_availability\s+SET\s+quantity'
     AND EXISTS (
       SELECT 1 FROM pg_roles r
-      WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+      WHERE r.rolname IN ('anon', 'authenticated')
         AND has_function_privilege(r.oid, p.oid, 'EXECUTE')
     );
 
   IF COALESCE(v_availability_writers, ARRAY[]::text[])
      IS DISTINCT FROM ARRAY['clear_port_availability']::text[] THEN
     RAISE EXCEPTION
-      'VERIFY FAILED (184): the externally reachable item_availability.quantity writers changed; expected %, found %',
+      'VERIFY FAILED (184): the client-reachable item_availability.quantity writers changed; expected %, found %',
       ARRAY['clear_port_availability']::text[],
       COALESCE(v_availability_writers, ARRAY[]::text[]);
   END IF;
