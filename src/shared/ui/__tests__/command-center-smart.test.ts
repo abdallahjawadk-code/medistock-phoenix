@@ -99,7 +99,12 @@ describe('6. User-management function invocations remain unchanged', () => {
   it('CommandPalette never calls a users.*/auth.admin RPC directly — it only gates visibility using myPermissions/role already in AppContext', () => {
     expect(palette).not.toContain('supabase.rpc');
     expect(palette).not.toContain('.functions.invoke');
-    expect(palette).toContain("myPermissions.has('users.view')");
+    // R1.1-P (P1): the users.view gate still decides this surface's visibility,
+    // but it is applied through the shared projection instead of being spelled
+    // out here. The claim being guarded — visibility comes from the permissions
+    // already in AppContext, never from a fresh privileged call — is unchanged.
+    expect(palette).toContain('projectNavigation(');
+    expect(palette).toContain('permissions: myPermissions');
   });
 });
 

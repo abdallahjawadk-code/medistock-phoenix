@@ -201,9 +201,15 @@ describe('one keyboard search controller — never two competing surfaces', () =
     expect(palette).toContain('setTimeout(() => setDebouncedQuery(query), 150)');
   });
 
-  it('search reads only the RLS-scoped institution list, lazily, on open', () => {
+  it('search reads only the RLS-scoped institution list, lazily, on open, and only for a caller who may reach it', () => {
     expect(palette).toContain('getOrganizations()');
-    expect(palette).toContain('if (!open || orgs !== null) return;');
+    // R1.1-P (P1-B): the lazy-on-open condition additionally requires
+    // authorization for screen 11. RLS scoping alone was the wrong boundary —
+    // a facility-scoped manager can read its own health-SECTOR organization
+    // row, so the palette used to fetch and list it as a navigable
+    // institution hit into a screen the route guard refuses.
+    expect(palette).toContain('if (!open || orgs !== null || !maySearchInstitutions) return;');
+    expect(palette).toContain('canSearchInstitutions(');
     // No direct table reads and no other service imports.
     expect(palette).not.toContain('supabase.');
     expect(palette).not.toMatch(/\.from\(['"]/);

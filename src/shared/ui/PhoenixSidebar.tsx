@@ -1,6 +1,7 @@
 import { useApp } from '@/app/AppContext';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
+import { roleLabelKey } from '@/shared/lib/roles';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
 
@@ -10,14 +11,6 @@ interface NavItem {
   labelKey: string;
   frozen?: boolean;
   superAdminOnly?: boolean;
-  /** NAV-USERS-PARITY-A: shown only to super_admin or holders of users.view,
-   *  matching the CommandPalette gate so every nav surface agrees. */
-  requiresUsersView?: boolean;
-  /** PHASE-B-NETWORK-UI-A: super_admin (structure) or users.edit_scope (scope tab). */
-  requiresNetwork?: boolean;
-  /** ROLE-REORG-§5: screen 11 — platform admin (directory) or institution
-   *  admin ("My Organization"); hidden for everyone else. */
-  institutionsGate?: boolean;
 }
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_status_editor, nav_reg, and nav_qr_audit are
@@ -40,11 +33,14 @@ interface NavItem {
 // single entry; the old screen numbers still work (App.tsx redirects each
 // to the matching tab) for anything that still deep-links to them by
 // number, but there is exactly one menu entry point.
+// R1.1-P (P1): these are CANDIDATES, not the rendered menu. Every entry is
+// intersected with isScreenAuthorized through projectNavigation below, so this
+// list can never offer a screen the route guard would refuse.
 const NAV_ITEMS: NavItem[] = [
-  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions', institutionsGate: true },
+  { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
-  { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
+  { screen: 14, icon: 'users', labelKey: 'nav_users' },
+  { screen: 17, icon: 'network', labelKey: 'nav_network' },
   { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
   // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by the
   // profile's 062 outlet assignments (manageableOutlets), and every action is
@@ -83,13 +79,13 @@ interface Props {
 export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   const { lang, role, profile, myPermissions } = useApp();
   const ri = ROLE_MAP[role] ?? ROLE_MAP.viewer;
-  // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx.
-  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
-  // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
-  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
-  // ROLE-REORG-§5: institutions management is platform-admin only; an
-  // institution admin sees the same entry relabelled "My Organization".
-  const instAccess = institutionsScreenAccess(role);
+  /* R1.1-P (P1): ONE projection, shared with the drawer, the bottom bar and the
+     command palette. It replaces the hand-copied users.view / users.edit_scope /
+     institutions gates that used to live here — those predicates are reproduced
+     exactly inside isScreenAuthorized, so no historical role's menu moves, while
+     a facility-scoped role no longer sees a screen the guard would refuse. */
+  const primaryItems = projectNavigation(NAV_ITEMS, { role, permissions: myPermissions });
+  const secondaryItems = projectNavigation(SECONDARY_ITEMS, { role, permissions: myPermissions });
 
   /* PHASE-A7-VISUAL-CONVERGENCE: active/inactive fill and colour now live in
      phase-a-visual-convergence.css, keyed off the data-active attribute
@@ -129,14 +125,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
-        {NAV_ITEMS
-          .filter(item => !item.superAdminOnly || role === 'super_admin')
-          .filter(item => !item.requiresUsersView || canSeeUsers)
-          .filter(item => !item.requiresNetwork || canSeeNetwork)
-          .filter(item => !item.institutionsGate || instAccess !== false)
-          .map(item => item.institutionsGate && instAccess === 'own'
-            ? { ...item, labelKey: 'nav_my_organization' } : item)
-          .map(item => {
+        {primaryItems.map(item => {
           const s = ns(item.screen);
           return (
             <button
@@ -165,7 +154,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
 
         <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
 
-        {SECONDARY_ITEMS.map(item => {
+        {secondaryItems.map(item => {
           const s = ns(item.screen);
           return (
             <button
@@ -211,8 +200,14 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
             <PhoenixIcon name={ri.icon} size={17} />
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--phoenix-sidebar-text-strong)' }}>{profile?.full_name ?? role}</div>
-            <div style={{ fontSize: '10px', color: 'var(--phoenix-sidebar-text)' }}>{role}</div>
+            {/* R1.1-P (P1-D): the user row is a user-facing surface, so it shows
+                the canonical translated role label. It used to print the raw DB
+                value, which reads as "health_center_manager" to an operator and
+                leaks the authorization identity as if it were a job title.
+                roleLabelKey also marks a retained legacy role AS legacy, which a
+                raw value silently hid. Authorization identity is unchanged. */}
+            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--phoenix-sidebar-text-strong)' }}>{profile?.full_name ?? t(roleLabelKey(role), lang)}</div>
+            <div style={{ fontSize: '10px', color: 'var(--phoenix-sidebar-text)' }}>{t(roleLabelKey(role), lang)}</div>
           </div>
           <button
             onClick={onLogout}

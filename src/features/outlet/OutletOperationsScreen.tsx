@@ -179,6 +179,12 @@ export function OutletOperationsScreen({
           // whether to offer that action at all. Already resolved here by
           // useInventoryScopes — no extra fetch and no new boundary.
           outletPointType={activeOutlet.pointType}
+          // R1.1-P (P3-A): the outlet's ONE owning warehouse, already resolved
+          // here by useInventoryScopes. Initial provisioning must dispatch from
+          // THIS depot — for a health-centre crash cabinet that is the centre's
+          // own depot, never the sector main and never a sibling centre — so the
+          // launcher is handed the pairing instead of an org-wide picker.
+          owningWarehouseId={activeOutlet.warehouseId}
           lang={lang}
         />
       )}

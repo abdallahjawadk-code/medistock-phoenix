@@ -50,7 +50,11 @@ import {
   getQrForPoint,
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
-import { listOrganizationFacilities } from './facilities.service';
+import {
+  groupHealthSectorResources,
+  type ResourceGroup,
+} from '@/shared/lib/health-sector-grouping';
+import { listOrganizationFacilities, type OrganizationFacility } from './facilities.service';
 import { FacilityManagementPanel } from './FacilityManagementPanel';
 import { WarehouseFacilityAssignmentPanel } from './WarehouseFacilityAssignmentPanel';
 import { ReplenishmentRouteManagementPanel } from './ReplenishmentRouteManagementPanel';
@@ -671,6 +675,9 @@ function OrgDetailView({ lang, isMobile, orgId, actorRole, actorPermissions, onT
           points={points.data ?? []}
           pointsLoading={points.loading}
           pointsError={points.error}
+          // R1.1-P (P2-A): already loaded above for the facility panel; the
+          // grouped health-sector view reuses it rather than reading again.
+          facilities={facilities.data ?? []}
           // R1.2C / Migration 183: the whole active-outlet matrix keys on the
           // organization's KIND and CLASS together, so the section is handed
           // the pair rather than a single derived boolean — a boolean cannot
@@ -928,7 +935,7 @@ const CONDITION_VARIANT: Record<string, 'ok' | 'warn' | 'err' | 'neutral'> = {
 };
 
 
-function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, owner, warehouses, warehousesLoading, warehousesError, onReload, onToast }: {
+function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canArchivePorts, canArchivePortsEffective, canRemoveOutletMaterial, canGenerateQr, canRevokeQr, orgName, points, pointsLoading, pointsError, owner, warehouses, warehousesLoading, warehousesError, facilities, onReload, onToast }: {
   lang: 'ar' | 'en';
   isMobile: boolean;
   orgId: string;
@@ -952,6 +959,13 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   warehouses: Warehouse[];
   warehousesLoading: boolean;
   warehousesError: string | null;
+  /**
+   * R1.1-P (P2-A): the sector's organization_facilities, already loaded by the
+   * screen for the facility-management panel. Passed in rather than re-fetched
+   * so grouping introduces no new read. Empty for every non-health-sector
+   * owner, which is also exactly when grouping does not apply.
+   */
+  facilities: OrganizationFacility[];
   onReload: () => void;
   onToast: (msg: string) => void;
 }) {
@@ -981,6 +995,45 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
   // without an owning warehouse (183 §A). An owner whose class is unknown —
   // still loading, or added after this matrix — offers nothing either.
   const canOfferCreate = canCreatePorts && canCreateOutlets(owner);
+
+  /**
+   * R1.1-P (P2-A): the canonical health-sector hierarchy, or null for every
+   * other class — a hospital and a specialized centre keep the flat view that
+   * suits them. Grouping is presentation only; membership comes from
+   * facility_id / warehouse_id identity, never from names, and no row is moved
+   * or hidden to make the picture tidy.
+   */
+  const sectorGroups = useMemo(
+    () => groupHealthSectorResources(owner, warehouses, points, facilities),
+    [owner, warehouses, points, facilities],
+  );
+
+  const renderPortCard = (pt: DistributionPoint) => (
+    <PortCard
+      key={pt.id}
+      point={pt}
+      lang={lang}
+      owner={owner}
+      warehouses={warehouses}
+      assignableWarehouses={selectableWarehouses}
+      pointTypes={selectablePointTypes}
+      canEditPorts={canEditPorts}
+      canArchivePorts={canArchivePorts}
+      canArchivePortsEffective={canArchivePortsEffective}
+      canRemoveOutletMaterial={canRemoveOutletMaterial}
+      canGenerateQr={canGenerateQr}
+      canRevokeQr={canRevokeQr}
+      orgName={orgName}
+      onReload={onReload}
+      onToast={onToast}
+    />
+  );
+
+  const cardGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))',
+    gap: '10px',
+  } as const;
 
   return (
     <div>
@@ -1018,35 +1071,126 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
 
       {pointsLoading && <PhoenixLoadingState label={t('loading', lang)} />}
       {!pointsLoading && pointsError && <PhoenixErrorState title={t('load_error', lang)} message={pointsError} onRetry={onReload} />}
-      {!pointsLoading && !pointsError && points.length === 0 && !showAdd && (
+      {/* R1.1-P (P2-A): for a health sector the hierarchy IS the answer — a
+          sector with a depot but no outlets yet must show its sector main and
+          its centres, not a generic "nothing here". The blanket empty state is
+          therefore keyed on the grouped view being empty, not on the point
+          count, so the two never render together. */}
+      {!pointsLoading && !pointsError && !showAdd
+        && (sectorGroups === null ? points.length === 0 : sectorGroups.length === 0) && (
         <PhoenixEmptyState icon="pin" title={t('empty_avail', lang)} description={t('empty_hint', lang)} />
       )}
 
-      {!pointsLoading && !pointsError && points.length > 0 && (
-        <div className="nexus-io-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '10px' }}>
-          {points.map(pt => (
-            <PortCard
-              key={pt.id}
-              point={pt}
+      {/* Hospitals and specialized centres keep the established flat grid. */}
+      {!pointsLoading && !pointsError && points.length > 0 && sectorGroups === null && (
+        <div className="nexus-io-grid" style={cardGridStyle}>
+          {points.map(renderPortCard)}
+        </div>
+      )}
+
+      {/* A health sector renders its canonical hierarchy instead. */}
+      {!pointsLoading && !pointsError && sectorGroups !== null && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {sectorGroups.map(group => (
+            <SectorResourceGroup
+              key={`${group.kind}:${group.key}`}
+              group={group}
               lang={lang}
-              owner={owner}
-              warehouses={warehouses}
-              assignableWarehouses={selectableWarehouses}
-              pointTypes={selectablePointTypes}
-              canEditPorts={canEditPorts}
-              canArchivePorts={canArchivePorts}
-              canArchivePortsEffective={canArchivePortsEffective}
-              canRemoveOutletMaterial={canRemoveOutletMaterial}
-              canGenerateQr={canGenerateQr}
-              canRevokeQr={canRevokeQr}
-              orgName={orgName}
-              onReload={onReload}
-              onToast={onToast}
+              cardGridStyle={cardGridStyle}
+              renderPortCard={renderPortCard}
             />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/* ── R1.1-P (P2-A): one node of the health-sector hierarchy ── */
+
+function SectorResourceGroup({ group, lang, cardGridStyle, renderPortCard }: {
+  group: ResourceGroup<Warehouse, DistributionPoint>;
+  lang: 'ar' | 'en';
+  cardGridStyle: React.CSSProperties;
+  renderPortCard: (pt: DistributionPoint) => React.ReactNode;
+}) {
+  const title = group.kind === 'sector_main'
+    ? t('hsg_sector_main', lang)
+    : group.kind === 'unassigned'
+      ? t('hsg_unassigned', lang)
+      : group.facility
+        ? (lang === 'ar' ? (group.facility.nameAr || group.facility.name) : (group.facility.name || group.facility.nameAr))
+        : t('hsg_center_unlisted', lang);
+
+  /**
+   * A group that structurally forbids outlets yet holds some is a pre-181
+   * legacy shape. It is LABELLED, never relocated and never hidden — the view
+   * must report what the database contains, and repair is a server-side act.
+   */
+  const showsLegacyShapes = !group.allowsOutlets && group.outlets.length > 0;
+
+  return (
+    <PhoenixCard
+      padding="14px"
+      data-testid={`sector-group-${group.kind}`}
+      style={group.kind === 'sector_main'
+        // The supply root is visually distinct from the centres beneath it.
+        ? { borderInlineStart: '3px solid var(--p)' }
+        : undefined}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <PhoenixIcon name={group.kind === 'sector_main' ? 'warehouse' : group.kind === 'unassigned' ? 'warning' : 'hospital'} size={15} />
+        <h4 dir="auto" style={{ fontSize: '13.5px', fontWeight: 700 }}>{title}</h4>
+        {showsLegacyShapes && (
+          <span style={{
+            padding: '2px 8px', borderRadius: 'var(--rpill)', background: 'var(--chipW)',
+            color: 'var(--warn)', border: '1px solid color-mix(in srgb, var(--warn) 40%, transparent)',
+            fontSize: '10px', fontWeight: 700,
+          }}>
+            {t('hsg_legacy_shape', lang)}
+          </span>
+        )}
+      </div>
+
+      {group.kind === 'sector_main' && (
+        <p style={{ fontSize: '11.5px', color: 'var(--t3)', marginBottom: '8px', lineHeight: 1.5 }}>
+          {t('hsg_sector_main_no_outlets', lang)}
+        </p>
+      )}
+      {group.kind === 'unassigned' && (
+        <p style={{ fontSize: '11.5px', color: 'var(--t3)', marginBottom: '8px', lineHeight: 1.5 }}>
+          {t('hsg_unassigned_hint', lang)}
+        </p>
+      )}
+
+      {group.warehouses.length > 0 && (
+        <ul style={{ listStyle: 'none', display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: group.outlets.length > 0 ? '10px' : 0 }}>
+          {group.warehouses.map(w => (
+            <li
+              key={w.id}
+              dir="auto"
+              style={{
+                padding: '3px 9px', borderRadius: 'var(--rpill)', background: 'var(--field)',
+                border: '1px solid var(--line)', fontSize: '11px', fontWeight: 600, color: 'var(--t2)',
+              }}
+            >
+              {lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {group.kind === 'health_center' && group.warehouses.length === 0 && (
+        <p style={{ fontSize: '11.5px', color: 'var(--warn)', marginBottom: '8px' }}>{t('hsg_depot_none', lang)}</p>
+      )}
+
+      {group.outlets.length > 0 ? (
+        <div className="nexus-io-grid" style={cardGridStyle}>
+          {group.outlets.map(renderPortCard)}
+        </div>
+      ) : group.kind === 'health_center' ? (
+        <p style={{ fontSize: '11.5px', color: 'var(--t3)' }}>{t('hsg_outlets_none', lang)}</p>
+      ) : null}
+    </PhoenixCard>
   );
 }
 

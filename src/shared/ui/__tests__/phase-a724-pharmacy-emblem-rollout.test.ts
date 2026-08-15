@@ -106,6 +106,20 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'src/shared/authz/rbac.service.ts',
       'src/shared/authz/__tests__/ub-facility-scope-activation.test.ts',
       'supabase/migrations/__tests__/182-ub-facility-confidentiality.dynamic.test.ts',
+      // R1.1-P — the facility-parity substage adds exactly TWO files under the
+      // watched src/shared/authz directory, each registered by EXACT filename
+      // like every entry above:
+      //   * nav-projection.ts — the ONE navigation projection the sidebar,
+      //     drawer, bottom bar and command palette now share, so a visible menu
+      //     can no longer offer a screen isScreenAuthorized would refuse. It
+      //     reuses that predicate and defines no authorization of its own.
+      //   * its proof suite, which pins the projection against every historical
+      //     role and permission combination.
+      // R1.1-P creates NO migration and edits no Supabase service, so
+      // supabase/migrations, supabase/functions, src/shared/supabase and
+      // src/app all remain fully watched here — any unlisted file still fails.
+      'src/shared/authz/nav-projection.ts',
+      'src/shared/authz/__tests__/r1-1-p-nav-projection.test.ts',
       // STAGE-G-G2: 177 registered by EXACT filename, same as every entry
       // before it — the public-QR read cutover plus its own static/dynamic
       // proofs. No wildcard, no directory exclusion; any OTHER unlisted file

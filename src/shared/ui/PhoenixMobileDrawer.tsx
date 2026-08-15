@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useApp } from '@/app/AppContext';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
@@ -20,21 +20,20 @@ import { PhoenixMark } from './PhoenixMark';
 // now one entry. Screen 21 preserves per-tab parity: legacy authenticated
 // reads remain RLS-authoritative, while Movements, Audit, and Global Search
 // retain their explicit permission/role gates.
+// R1.1-P (P1): CANDIDATES only — projectNavigation intersects them with
+// isScreenAuthorized so this surface agrees with the sidebar, the bottom bar,
+// the palette and the route guard by construction.
 const ALL_NAV: {
   screen: number;
   icon: PhoenixIconName;
   labelKey: string;
   frozen?: boolean;
   superAdminOnly?: boolean;
-  /** NAV-USERS-PARITY-A: gated by users.view, matching the sidebar and palette. */
-  requiresUsersView?: boolean;
-  /** PHASE-B-NETWORK-UI-A: super_admin or users.edit_scope. */
-  requiresNetwork?: boolean;
 }[] = [
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
-  { screen: 14, icon: 'users', labelKey: 'nav_users', requiresUsersView: true },
-  { screen: 17, icon: 'network', labelKey: 'nav_network', requiresNetwork: true },
+  { screen: 14, icon: 'users', labelKey: 'nav_users' },
+  { screen: 17, icon: 'network', labelKey: 'nav_network' },
   { screen: 3,  icon: 'editor', labelKey: 'nav_editor' },
   // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by the
   // profile's 062 outlet assignments; every action is re-checked server-side.
@@ -66,10 +65,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
-  // NAV-USERS-PARITY-A: identical predicate to CommandPalette.tsx / PhoenixSidebar.tsx.
-  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
-  // PHASE-B-NETWORK-UI-A: network structure (super_admin) or scope assignment (users.edit_scope).
-  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
+  // R1.1-P (P1): the same projection the desktop rail uses — see nav-projection.ts.
+  const primaryItems = projectNavigation(ALL_NAV, { role, permissions: myPermissions });
+  const secondaryItems = projectNavigation(SECONDARY_NAV, { role, permissions: myPermissions });
 
   /* PHASE-A7-VISUAL-CONVERGENCE: same data-active contract as PhoenixSidebar —
      fill/colour live in phase-a-visual-convergence.css so the drawer and the
@@ -196,14 +194,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         </div>
 
         <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
-          {ALL_NAV
-            .filter(item => item.screen !== 11 || institutionsScreenAccess(role) !== false)
-            .map(item => item.screen === 11 && institutionsScreenAccess(role) === 'own'
-              ? { ...item, labelKey: 'nav_my_organization' } : item)
-            .filter(item => !item.superAdminOnly || role === 'super_admin')
-            .filter(item => !item.requiresUsersView || canSeeUsers)
-            .filter(item => !item.requiresNetwork || canSeeNetwork)
-            .map(item => {
+          {primaryItems.map(item => {
             const s = ns(item.screen);
             return (
               <button
@@ -232,7 +223,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
 
           <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
 
-          {SECONDARY_NAV.map(item => {
+          {secondaryItems.map(item => {
             const s = ns(item.screen);
             return (
               <button

@@ -1,5 +1,5 @@
 import { useApp } from '@/app/AppContext';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 
@@ -23,12 +23,22 @@ interface Props {
 }
 
 export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
-  const { lang, role } = useApp();
-  const instAccess = institutionsScreenAccess(role);
-  const visibleItems = BOTTOM_NAV
-    .filter(item => item.screen !== 11 || instAccess !== false)
-    .map(item => item.screen === 11 && instAccess === 'own'
-      ? { ...item, labelKey: 'nav_my_organization' } : item);
+  const { lang, role, myPermissions } = useApp();
+  /**
+   * R1.1-P (P1-C): the same projection every other nav surface uses.
+   *
+   * Unauthorized entries are REMOVED, never re-pointed. Substituting a safe
+   * destination behind an unauthorized label would keep advertising a surface
+   * this operator cannot occupy, and would land them somewhere the label did
+   * not promise — the shortcut bar must not lie about where it goes.
+   *
+   * This bar is a four-slot shortcut strip, not the full menu, so a narrowed
+   * role legitimately sees fewer slots; the drawer still carries everything it
+   * may reach. With nothing left to show the bar removes itself rather than
+   * reserving empty chrome above the home indicator.
+   */
+  const visibleItems = projectNavigation(BOTTOM_NAV, { role, permissions: myPermissions });
+  if (visibleItems.length === 0) return null;
 
   const bns = (n: number) => ({
     color: currentScreen === n ? 'var(--phoenix-gold)' : 'var(--muted)',
@@ -63,7 +73,13 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
             data-active={currentScreen === item.screen}
             aria-current={currentScreen === item.screen ? 'page' : undefined}
             style={{
-              flex: 1,
+              /* R1.1-P (P1-C): capped at one quarter so a narrowed projection
+                 degrades gracefully. With the full four slots this resolves to
+                 exactly the previous full-width row; with one or two authorized
+                 slots the buttons keep their natural size and centre under
+                 space-evenly instead of each stretching to half the screen. */
+              flex: '1 1 0',
+              maxWidth: '25%',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',

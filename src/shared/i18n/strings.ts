@@ -578,6 +578,52 @@ export const T: Dict = {
   fac_warehouse_create:     { ar: 'إنشاء مذخر المركز الصحي',       en: 'Create Health Center Depot' },
   fac_warehouse_created:    { ar: 'تم إنشاء مذخر المركز الصحي',    en: 'Health center depot created' },
 
+  /* ── R1.1-P (P2-A): health-sector resource grouping (presentation only) ── */
+  hsg_sector_main:          { ar: 'المذخر الرئيسي للقطاع',          en: 'Sector Main Depot' },
+  hsg_sector_main_no_outlets: {
+    ar: 'المذخر الرئيسي جذر تجهيز، وليس موقع صرف — لا منافذ صرف تُنشأ عليه.',
+    en: 'The sector main is a supply root, not a dispensing location — no outlets are created on it.',
+  },
+  hsg_center_unlisted:      { ar: 'مركز صحي غير مدرَج',             en: 'Health center (not listed)' },
+  hsg_depot_none:           { ar: 'لا يوجد مذخر لهذا المركز',       en: 'This center has no depot' },
+  hsg_outlets_none:         { ar: 'لا توجد منافذ صرف',              en: 'No dispensing outlets' },
+  /**
+   * Deliberately says "not shown above" rather than "not linked to a depot".
+   * An outlet reaches this group either because its warehouse_id is NULL or
+   * because its owning depot is absent from the list this screen received —
+   * a DEACTIVATED depot, for instance. Claiming it has no depot would assert
+   * something the data does not support, in the one view whose whole contract
+   * is to report exactly what the database contains.
+   */
+  hsg_unassigned:           { ar: 'منافذ لم تظهر ضمن المجموعات أعلاه',  en: 'Outlets not shown under any group above' },
+  hsg_unassigned_hint:      {
+    ar: 'إمّا بلا مذخر مالك، أو أن مذخرها غير مُدرَج في هذه القائمة (مثلاً مذخر مُعطَّل). سجلات تاريخية تُعرض كما هي في قاعدة البيانات؛ لم يُجرَ عليها أي تعديل هنا.',
+    en: 'Either they have no owning depot, or their depot is not in this list (a deactivated depot, for example). Historical records shown exactly as stored; nothing is modified here.',
+  },
+  hsg_legacy_shape:         { ar: 'شكل تاريخي غير مطابق',           en: 'Legacy non-conforming shape' },
+
+  /* ── R1.1-P (P2-B): direct-supply corridors (Migration 165, both branches) ── */
+  ds_corridor:              { ar: 'ممر التجهيز المباشر',            en: 'Direct Supply Corridor' },
+  ds_corridor_central:      { ar: 'المركزي ← مؤسسة',                en: 'Central → Institution' },
+  ds_corridor_sector:       { ar: 'مذخر القطاع ← مركز صحي',         en: 'Sector Main → Health Center' },
+  ds_corridor_central_hint: {
+    ar: 'من مستودع مركزي فعّال إلى مستشفى أو مركز تخصصي أو المذخر الرئيسي لقطاع صحي. مذاخر المراكز الصحية تُجهَّز من مذخر قطاعها.',
+    en: 'From an active central warehouse to a hospital, a specialized center, or a health sector’s main depot. Health-center depots are supplied by their own sector main.',
+  },
+  ds_corridor_sector_hint:  {
+    ar: 'من المذخر الرئيسي للقطاع إلى مذخر مركز صحي فعّال داخل القطاع نفسه فقط.',
+    en: 'From a sector main depot to an active health-center depot inside the same sector only.',
+  },
+  ds_sector_source:         { ar: 'المذخر الرئيسي المُجهِّز',        en: 'Supplying Sector Main' },
+  ds_no_sector_main:        {
+    ar: 'لا يوجد مذخر رئيسي فعّال لأي قطاع صحي ضمن نطاقك.',
+    en: 'No active sector main depot is within your scope.',
+  },
+  ds_no_center_depot:       {
+    ar: 'لا توجد مذاخر مراكز صحية فعّالة قابلة للتجهيز في هذا القطاع.',
+    en: 'This sector has no active, supplyable health-center depots.',
+  },
+
   /* ── STAGE-E-E7-2: clinical context of an outlet (Migration 164) ── */
   port_clinical_kind:       { ar: 'السياق السريري',                en: 'Clinical Context' },
   port_clinical_emergency:  { ar: 'طوارئ',                         en: 'Emergency' },

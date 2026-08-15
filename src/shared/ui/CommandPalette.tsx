@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { institutionsScreenAccess } from '@/shared/authz/screen-access';
+import { canSearchInstitutions, projectNavigation } from '@/shared/authz/nav-projection';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
@@ -21,6 +21,14 @@ import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
  *   2. the RLS-scoped institution list (getOrganizations() — the exact rows
  *      the Institutions screen itself shows this operator; nothing hidden is
  *      ever revealed, and nothing is fetched until the palette opens).
+ *
+ * R1.1-P (P1-B): (2) additionally requires that the caller may reach screen 11
+ * at all. RLS scoping alone was the wrong boundary here: a facility-scoped
+ * health_center_manager belongs to a health SECTOR organization and can read
+ * that organization's row, so the palette used to fetch it, list it as an
+ * institution hit, and offer a jump into a screen the route guard refuses.
+ * Searching a directory you cannot open is an organization-level surface, so
+ * the read itself is now gated, not merely its results.
  * Arabic matches are normalized (hamza seats, ة/ه, ى/ي, harakat, tatweel) and
  * English matches case-insensitively; hits are highlighted in place.
  *
@@ -113,40 +121,30 @@ export function CommandPalette({ onNavigate }: Props) {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // R1.1-P (P1): ONE projection, shared with the sidebar, drawer and bottom bar.
+  // It reproduces the users.view / users.edit_scope / institutions predicates
+  // this component used to spell out by hand, so no historical role's palette
+  // moves, and additionally refuses every screen outside a facility-scoped
+  // role's safe set.
+  const items = useMemo(
+    () => projectNavigation(PALETTE_ITEMS, { role, permissions: myPermissions }),
+    [role, myPermissions],
+  );
+  const maySearchInstitutions = canSearchInstitutions({ role, permissions: myPermissions });
+
   // Institutions are fetched lazily on first open — an RLS-scoped read of the
   // same rows the Institutions screen shows this operator. A failed read just
-  // leaves the section absent; navigation search still works.
+  // leaves the section absent; navigation search still works. The read is
+  // skipped entirely for a caller who may not reach screen 11 (see the note in
+  // the file header), so no organization directory is assembled for them.
   useEffect(() => {
-    if (!open || orgs !== null) return;
+    if (!open || orgs !== null || !maySearchInstitutions) return;
     let cancelled = false;
     getOrganizations()
       .then(rows => { if (!cancelled) setOrgs(rows); })
       .catch(() => { if (!cancelled) setOrgs([]); });
     return () => { cancelled = true; };
-  }, [open, orgs]);
-
-  // Keep the command palette consistent with every visible navigation surface:
-  // User Management follows users.view, while Reports is deliberately exposed
-  // only to super_admin because it contains the cross-organization global stock
-  // search. Hidden legacy QR remains an intentional quick jump.
-  const canSeeUsers = role === 'super_admin' || myPermissions.has('users.view');
-  // PHASE-B-NETWORK-UI-A: identical predicate to PhoenixSidebar.tsx /
-  // PhoenixMobileDrawer.tsx — network structure (super_admin) or scope
-  // assignment (users.edit_scope).
-  const canSeeNetwork = role === 'super_admin' || myPermissions.has('users.edit_scope');
-
-  const instAccess = institutionsScreenAccess(role);
-  const items = useMemo(
-    () => PALETTE_ITEMS
-      .filter(i => i.screen !== 11 || instAccess !== false)
-      .map(i => i.screen === 11 && instAccess === 'own' ? { ...i, labelKey: 'nav_my_organization' } : i)
-      .filter(i =>
-      (!i.superAdminOnly || role === 'super_admin') &&
-      (i.screen !== 14 || canSeeUsers) &&
-      (i.screen !== 17 || canSeeNetwork),
-    ),
-    [canSeeUsers, canSeeNetwork, role, instAccess],
-  );
+  }, [open, orgs, maySearchInstitutions]);
 
   const filtered = useMemo(() => {
     const q = debouncedQuery.trim();
@@ -158,7 +156,11 @@ export function CommandPalette({ onNavigate }: Props) {
   // Institution record hits — Arabic/English name, code and city, normalized.
   const orgHits: OrgHit[] = useMemo(() => {
     const q = debouncedQuery.trim();
-    if (!q || !orgs || orgs.length === 0) return [];
+    // The gate is asserted here as well as at the fetch: a role change inside a
+    // live session must drop rows already held in state, not merely stop the
+    // next read. Every institution hit navigates to screen 11, so a hit that
+    // survived here would be an unreachable result by construction.
+    if (!q || !orgs || orgs.length === 0 || !maySearchInstitutions) return [];
     const hits: OrgHit[] = [];
     for (const org of orgs) {
       const primary = lang === 'ar' ? (org.name_ar || org.name) : (org.name || org.name_ar);
@@ -182,7 +184,7 @@ export function CommandPalette({ onNavigate }: Props) {
       if (hits.length >= 12) break;
     }
     return hits;
-  }, [orgs, debouncedQuery, lang]);
+  }, [orgs, debouncedQuery, lang, maySearchInstitutions]);
 
   const hasQuery = debouncedQuery.trim() !== '';
   const totalResults = filtered.length + (hasQuery ? orgHits.length : 0);

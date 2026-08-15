@@ -328,10 +328,16 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
       // previously omitted) and warehouses.service.ts (distribution points now
       // carry Migration 164's clinical_location_kind). All other service and
       // authz paths remain watched, and the migration check below is untouched.
+      // R1.1-P: adds ONE shared navigation projection (nav-projection.ts) and
+      // updates its own guard test, both under src/shared/authz. Excluded BY
+      // EXACT NAME; every other service and authz path stays watched, and the
+      // migration check below is untouched — R1.1-P creates no migration.
       svcDiff = execSync(
         'git diff --name-only HEAD -- src/shared/supabase src/shared/authz '
         + '":!src/shared/supabase/services/organizations.service.ts" '
-        + '":!src/shared/supabase/services/warehouses.service.ts"',
+        + '":!src/shared/supabase/services/warehouses.service.ts" '
+        + '":!src/shared/authz/nav-projection.ts" '
+        + '":!src/shared/authz/__tests__/screen-access.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

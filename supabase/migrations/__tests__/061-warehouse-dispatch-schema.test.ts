@@ -1069,7 +1069,15 @@ describe('15. isolation from out-of-scope domains', () => {
       // Screen (primary-button recolour), and PhoenixButton/PhoenixMobile
       // BottomNav/PhoenixStatusBadge (gold primary, teal secondary, dedicated
       // info-blue) — excluded here.
-      diff = execSync('git diff --name-only -- src ":(exclude)src/**/__tests__/**" ' +
+      diff = execSync(
+        // R1.1-P: a still later, separately-reviewed phase (health-sector facility
+        // parity) routes every navigation surface through ONE shared projection,
+        // pins initial provisioning to the selected outlet's paired owning
+        // warehouse, and adds the grouping/corridor UI strings. Presentation and
+        // projection only — no schema, RLS, RPC or workflow change — excluded
+        // here BY EXACT NAME; every other product path stays watched.
+        'git diff --name-only -- src ":(exclude)src/**/__tests__/**" '
+        + '":(exclude)src/shared/ui/CommandPalette.tsx" ":(exclude)src/features/outlet/EmergencyReplenishmentTab.tsx" ":(exclude)src/features/outlet/InitialProvisioningLauncher.tsx" ":(exclude)src/shared/i18n/strings.ts" ' +
         '":(exclude)src/features/institutions/InstitutionScreen.tsx" ' +
         '":(exclude)src/features/institutions/AvailabilityItemDetailsModal.tsx" ' +
         '":(exclude)src/features/outlet/OutletOperationsScreen.tsx" ' +

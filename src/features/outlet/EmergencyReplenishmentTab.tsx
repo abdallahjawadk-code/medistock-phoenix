@@ -47,6 +47,7 @@ export function EmergencyReplenishmentTab({
   distributionPointId,
   outletName,
   outletPointType,
+  owningWarehouseId,
   lang,
 }: {
   orgId: string;
@@ -62,6 +63,16 @@ export function EmergencyReplenishmentTab({
    * emergency outlet", i.e. fail closed.
    */
   outletPointType?: string | null;
+  /**
+   * R1.1-P (P3-A): the selected outlet's ONE owning warehouse
+   * (`distribution_points.warehouse_id`), resolved upstream by
+   * useInventoryScopes and passed straight through to the initial-provisioning
+   * launcher. Carried rather than re-derived so the launcher never has to look
+   * at an organization-wide warehouse list to find its source. Optional and
+   * defaulting to null so the frozen presentation fixtures need no change —
+   * absent means "no pairing", which offers nothing.
+   */
+  owningWarehouseId?: string | null;
   lang: 'ar' | 'en';
 }) {
   const perms = useEmergencyReplenishmentPermission(orgId, distributionPointId);
@@ -106,6 +117,7 @@ export function EmergencyReplenishmentTab({
           orgId={orgId}
           distributionPointId={distributionPointId}
           outletName={outletName}
+          owningWarehouseId={owningWarehouseId ?? null}
           lang={lang}
         />
       )}

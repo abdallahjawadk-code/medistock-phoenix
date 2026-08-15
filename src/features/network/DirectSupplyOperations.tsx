@@ -9,6 +9,13 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
+import { listOrganizationFacilities } from '@/features/institutions/facilities.service';
+import {
+  DIRECT_SUPPLY_BRANCHES,
+  directSupplyDestinations,
+  directSupplySources,
+  type DirectSupplyBranch,
+} from '@/shared/lib/direct-supply-corridors';
 import { supabase } from '@/shared/supabase/client';
 import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
 import type { ResolvedMaterial } from '@/shared/materials/material-resolver.service';
@@ -237,25 +244,107 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
     () => new Map((orgs.data ?? []).map(o => [o.id, lang === 'ar' ? o.name_ar : o.name] as const)),
     [orgs.data, lang],
   );
+  /**
+   * R1.1-P (P2-B) — the operator picks a CORRIDOR first.
+   *
+   * Migration 165 has had two legal direct-supply branches since Stage E, but
+   * the frontend only ever constructed Branch A, so a health sector could not
+   * supply its own centres from the interface. Both now exist, and they are
+   * presented as named corridors rather than as one undifferentiated warehouse
+   * list — "central → institution" and "sector main → health centre" have
+   * different sources, different destinations and different meanings, and a
+   * single flat list hid all three differences.
+   *
+   * No new RPC and no new migration: both corridors commit through the same
+   * createDirectTransferRequest, and the server re-validates the endpoints.
+   */
+  const [branch, setBranch] = useState<DirectSupplyBranch>('central_to_institution');
+  const [sectorSourceId, setSectorSourceId] = useState('');
+
+  const corridorSources = useMemo(
+    () => directSupplySources(branch, warehouses, orgs.data ?? []),
+    [branch, warehouses, orgs.data],
+  );
+
+  /**
+   * Branch B is scoped to ONE sector main, chosen here rather than inside the
+   * composer, because its legal destinations depend on which sector it is. The
+   * composer then receives an already-correlated pair-set, which is what makes
+   * a foreign sector's centre unselectable by construction instead of merely
+   * refused after submission.
+   */
+  const sectorSource = useMemo(
+    () => corridorSources.find(w => w.id === sectorSourceId) ?? corridorSources[0] ?? null,
+    [corridorSources, sectorSourceId],
+  );
+  const branchSource = branch === 'sector_to_health_center' ? sectorSource : null;
+
+  /**
+   * The source sector's ACTIVE health-centre facilities — read only for Branch
+   * B, and only once a source is chosen. 165 refuses an inactive or
+   * wrongly-classed facility, so an unresolved list must yield no destinations.
+   *
+   * The result is STAMPED with the organization it was fetched for. `useAsync`
+   * keeps the previous result for one render after its deps change, so
+   * switching from sector 1 to sector 2 briefly pairs sector 2's main with
+   * sector 1's facility ids. Rejecting a result whose stamp does not match the
+   * current source is the same guard useInventoryScopes applies to a fast
+   * organization switch, and it resolves the mismatch HERE rather than relying
+   * only on the same-organization conjunct downstream.
+   */
+  const sectorFacilities = useAsync(
+    async () => {
+      if (branch !== 'sector_to_health_center' || !branchSource) return null;
+      const organizationId = branchSource.organizationId;
+      return { organizationId, facilities: await listOrganizationFacilities(organizationId) };
+    },
+    [branch, branchSource?.organizationId],
+  );
+  const supplyableFacilityIds = useMemo(() => {
+    const loaded = sectorFacilities.data;
+    if (branch !== 'sector_to_health_center' || !branchSource) return null;
+    if (sectorFacilities.loading || sectorFacilities.error) return null;
+    // A result for a DIFFERENT sector is not an answer about this one.
+    if (!loaded || loaded.organizationId !== branchSource.organizationId) return null;
+    return new Set(
+      loaded.facilities
+        .filter(f => f.status === 'active'
+          && (f.facilityClass === 'primary_health_center' || f.facilityClass === 'subordinate_health_center'))
+        .map(f => f.id),
+    );
+  }, [branch, branchSource, sectorFacilities.data, sectorFacilities.loading, sectorFacilities.error]);
+
   const sourceWarehouses = useMemo(
-    () => warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active'),
-    [warehouses],
+    () => branch === 'sector_to_health_center'
+      ? (branchSource ? [branchSource] : [])
+      : corridorSources,
+    [branch, branchSource, corridorSources],
   );
+
+  const corridorDestinations = useMemo(
+    () => directSupplyDestinations(branch, warehouses, branchSource, supplyableFacilityIds),
+    [branch, warehouses, branchSource, supplyableFacilityIds],
+  );
+
   const destinationParties = useMemo<PartyOption[]>(
-    () => warehouses
-      .filter(w => w.warehouseKind === 'institution' && w.status === 'active')
-      .map(w => ({
-        id: w.id,
-        organizationId: w.organizationId,
-        organizationName: orgNameById.get(w.organizationId) ?? '—',
-        warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
-      })),
-    [warehouses, orgNameById, lang],
+    () => corridorDestinations.map(w => ({
+      id: w.id,
+      organizationId: w.organizationId,
+      organizationName: orgNameById.get(w.organizationId) ?? '—',
+      warehouseName: lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar),
+    })),
+    [corridorDestinations, orgNameById, lang],
   );
-  const organizationOptions = useMemo(
-    () => (orgs.data ?? []).map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name })),
-    [orgs.data, lang],
-  );
+
+  // Only organizations that actually own an eligible destination on this
+  // corridor. Offering one with no reachable warehouse produces an empty second
+  // dropdown and reads as a broken screen.
+  const organizationOptions = useMemo(() => {
+    const eligible = new Set(corridorDestinations.map(w => w.organizationId));
+    return (orgs.data ?? [])
+      .filter(o => eligible.has(o.id))
+      .map(o => ({ id: o.id, name: lang === 'ar' ? o.name_ar : o.name }));
+  }, [orgs.data, corridorDestinations, lang]);
 
   // Distinct institution warehouses that actually have incoming transfers. The
   // incoming-supplies surface is per-warehouse, so the operator selects which
@@ -311,6 +400,56 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
         <PhoenixButton onClick={() => setCreating(c => !c)}>{t('net_op_new', lang)}</PhoenixButton>
         <PhoenixButton variant="ghost" onClick={reload}>{t('net_op_refresh', lang)}</PhoenixButton>
       </div>
+
+      {/* R1.1-P (P2-B): the corridor is chosen before authoring, so the composer
+          opens with endpoints that already belong to one another. */}
+      <PhoenixCard padding="12px" style={{ marginBottom: '10px' }} data-testid="direct-supply-corridor">
+        <h4 style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '8px' }}>{t('ds_corridor', lang)}</h4>
+        <div role="radiogroup" aria-label={t('ds_corridor', lang)} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {DIRECT_SUPPLY_BRANCHES.map(b => (
+            <button
+              key={b}
+              type="button"
+              role="radio"
+              aria-checked={branch === b}
+              onClick={() => { setBranch(b); setSectorSourceId(''); }}
+              style={{
+                padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
+                border: '1px solid var(--brd)', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600,
+                background: branch === b ? 'var(--p2)' : 'var(--s)',
+                color: branch === b ? 'var(--pd)' : 'var(--t2)',
+              }}
+            >
+              {t(b === 'central_to_institution' ? 'ds_corridor_central' : 'ds_corridor_sector', lang)}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: '11px', color: 'var(--t3)', marginTop: '8px', lineHeight: 1.5 }}>
+          {t(branch === 'central_to_institution' ? 'ds_corridor_central_hint' : 'ds_corridor_sector_hint', lang)}
+        </p>
+
+        {/* Branch B needs its sector main named before any destination exists. */}
+        {branch === 'sector_to_health_center' && (
+          corridorSources.length === 0 ? (
+            <p style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '8px' }}>{t('ds_no_sector_main', lang)}</p>
+          ) : (
+            <div style={{ maxWidth: '360px', marginTop: '10px' }}>
+              <PhoenixSelect
+                label={t('ds_sector_source', lang)}
+                value={sectorSource?.id ?? ''}
+                onChange={e => setSectorSourceId(e.target.value)}
+                options={corridorSources.map(w => ({
+                  value: w.id,
+                  label: `${orgNameById.get(w.organizationId) ?? '—'} — ${lang === 'ar' ? (w.name_ar || w.name) : (w.name || w.name_ar)}`,
+                }))}
+              />
+              {supplyableFacilityIds !== null && corridorDestinations.length === 0 && (
+                <p style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '8px' }}>{t('ds_no_center_depot', lang)}</p>
+              )}
+            </div>
+          )
+        )}
+      </PhoenixCard>
 
       <StatusLine status={status} />
 
