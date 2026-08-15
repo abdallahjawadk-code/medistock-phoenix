@@ -199,7 +199,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // only change to each file is an explicit hook budget; not one assertion
       // is added, removed, weakened or reworded. Registered by EXACT filename,
       // like every entry before it — anything else still fails this guard.
-      'supabase/migrations/__tests__/093-lifecycle-regression.dynamic.test.ts','supabase/migrations/__tests__/146-secure-user-provisioning.dynamic.test.ts','supabase/migrations/__tests__/147-secure-user-delete-history-guard.dynamic.test.ts','supabase/migrations/__tests__/148-inventory-suggestion-policy-scope-fix.dynamic.test.ts','supabase/migrations/__tests__/148-transfer-suggestion-live-balance-fix.dynamic.test.ts','supabase/migrations/__tests__/151-real-operational-role-gates.dynamic.test.ts','supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts','supabase/migrations/__tests__/ops-full-purge-v147.dynamic.test.ts','supabase/migrations/__tests__/ops-pre-launch-reset.dynamic.test.ts','supabase/migrations/__tests__/ops-purge-v147-manifest-coverage.dynamic.test.ts','supabase/migrations/__tests__/phase9-invariant-reconciliation.dynamic.test.ts'
+      'supabase/migrations/__tests__/093-lifecycle-regression.dynamic.test.ts','supabase/migrations/__tests__/146-secure-user-provisioning.dynamic.test.ts','supabase/migrations/__tests__/147-secure-user-delete-history-guard.dynamic.test.ts','supabase/migrations/__tests__/148-inventory-suggestion-policy-scope-fix.dynamic.test.ts','supabase/migrations/__tests__/148-transfer-suggestion-live-balance-fix.dynamic.test.ts','supabase/migrations/__tests__/151-real-operational-role-gates.dynamic.test.ts','supabase/migrations/__tests__/162-crlf-portable-verification.dynamic.test.ts','supabase/migrations/__tests__/ops-full-purge-v147.dynamic.test.ts','supabase/migrations/__tests__/ops-pre-launch-reset.dynamic.test.ts','supabase/migrations/__tests__/ops-purge-v147-manifest-coverage.dynamic.test.ts','supabase/migrations/__tests__/phase9-invariant-reconciliation.dynamic.test.ts',
+      // Admin-create-user function-only deployment drift closure: focused
+      // Edge/deployment contract coverage only; no migration or runtime
+      // function-body change. supabase/functions/admin-create-user/index.ts is
+      // byte-identical to master (sha256 c84e8f66...5fe3) — the drift being
+      // closed is a DEPLOYMENT gap, not a code gap, so the reviewed artifact
+      // must stay untouched. Registered by EXACT filename, like every entry
+      // before it — anything else still fails this guard.
+      'src/shared/supabase/__tests__/admin-create-user-deployment-contract.test.ts','src/shared/supabase/__tests__/admin-create-user-facility-scope-contract.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
