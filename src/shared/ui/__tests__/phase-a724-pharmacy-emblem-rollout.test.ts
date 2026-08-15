@@ -120,6 +120,12 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // src/app all remain fully watched here — any unlisted file still fails.
       'src/shared/authz/nav-projection.ts',
       'src/shared/authz/__tests__/r1-1-p-nav-projection.test.ts',
+      // R1.3 — the canonical supply cycle. Its migration and the two proofs for
+      // it are registered in the numbered block below; this is the remainder:
+      // the screen-17 reachability proof, under the watched src/shared/authz
+      // directory (screen-access.ts itself is already listed above). No
+      // pre-existing dynamic fixture is touched by R1.3.
+      'src/shared/authz/__tests__/r1-3-supply-reachability.test.ts',
       // STAGE-G-G2: 177 registered by EXACT filename, same as every entry
       // before it — the public-QR read cutover plus its own static/dynamic
       // proofs. No wildcard, no directory exclusion; any OTHER unlisted file
@@ -141,10 +147,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // B1/B2 corrective suite (warehouse-side lifecycle boundary + the
       // canonical-validator preflight) an independent adversarial review
       // required. Exact filenames only; any OTHER unlisted file still fails.
-      ...[154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183].flatMap(n=>{
-        const exact:Record<number,string>={154:'154_phoenix_transfer_corridor_privilege_lockdown.sql',155:'155_phoenix_transfer_send_receive_lifecycle_notifications.sql',156:'156_phoenix_outlet_return_line_idempotency.sql',157:'157_phoenix_outlet_return_exception_resolution.sql',158:'158_phoenix_transactional_outbox_foundation.sql',159:'159_phoenix_lifecycle_outbox_producer.sql',160:'160_phoenix_demo_purge_outbox_compatibility.sql',161:'161_phoenix_movement_outbox_producer.sql',162:'162_phoenix_stocktake_and_exception_outbox_producers.sql',163:'163_phoenix_outbox_consumer_foundation.sql',164:'164_phoenix_facility_identity_and_routing_foundation.sql',165:'165_phoenix_sector_health_center_supply_and_return.sql',166:'166_phoenix_initial_provisioning_invariant.sql',167:'167_phoenix_dispatch_line_full_rejection_reconciliation.sql',168:'168_phoenix_atomic_emergency_outlet_replenishment.sql',169:'169_phoenix_outlet_replenishment_reversal.sql',170:'170_phoenix_organization_class_and_warehouse_facility_assignment.sql',171:'171_phoenix_organization_kind_pharmacy_department_authority.sql',172:'172_phoenix_patient_dispensing_contract.sql',173:'173_phoenix_database_security_surface_hardening.sql',174:'174_phoenix_authenticated_rpc_surface_hardening.sql',175:'175_phoenix_read_helper_anonymous_surface_hardening.sql',176:'176_phoenix_canonical_outlet_availability_read_model.sql',177:'177_phoenix_canonical_public_qr.sql',178:'178_phoenix_distribution_point_owner_guard_privilege_fix.sql',179:'179_phoenix_canonical_authenticated_availability_hardening.sql',180:'180_phoenix_emergency_initial_provisioning_boundary.sql',181:'181_phoenix_health_sector_topology_reconciliation.sql',182:'182_phoenix_health_center_facility_scoped_rbac.sql',183:'183_phoenix_emergency_outlet_integrity.sql'};
+      // R1.3 (184): registered the same way — the canonical supply-cycle
+      // migration plus its static proof and its dynamic A/B/C/D matrix. Exact
+      // filenames only; any OTHER unlisted file still fails.
+      ...[154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184].flatMap(n=>{
+        const exact:Record<number,string>={154:'154_phoenix_transfer_corridor_privilege_lockdown.sql',155:'155_phoenix_transfer_send_receive_lifecycle_notifications.sql',156:'156_phoenix_outlet_return_line_idempotency.sql',157:'157_phoenix_outlet_return_exception_resolution.sql',158:'158_phoenix_transactional_outbox_foundation.sql',159:'159_phoenix_lifecycle_outbox_producer.sql',160:'160_phoenix_demo_purge_outbox_compatibility.sql',161:'161_phoenix_movement_outbox_producer.sql',162:'162_phoenix_stocktake_and_exception_outbox_producers.sql',163:'163_phoenix_outbox_consumer_foundation.sql',164:'164_phoenix_facility_identity_and_routing_foundation.sql',165:'165_phoenix_sector_health_center_supply_and_return.sql',166:'166_phoenix_initial_provisioning_invariant.sql',167:'167_phoenix_dispatch_line_full_rejection_reconciliation.sql',168:'168_phoenix_atomic_emergency_outlet_replenishment.sql',169:'169_phoenix_outlet_replenishment_reversal.sql',170:'170_phoenix_organization_class_and_warehouse_facility_assignment.sql',171:'171_phoenix_organization_kind_pharmacy_department_authority.sql',172:'172_phoenix_patient_dispensing_contract.sql',173:'173_phoenix_database_security_surface_hardening.sql',174:'174_phoenix_authenticated_rpc_surface_hardening.sql',175:'175_phoenix_read_helper_anonymous_surface_hardening.sql',176:'176_phoenix_canonical_outlet_availability_read_model.sql',177:'177_phoenix_canonical_public_qr.sql',178:'178_phoenix_distribution_point_owner_guard_privilege_fix.sql',179:'179_phoenix_canonical_authenticated_availability_hardening.sql',180:'180_phoenix_emergency_initial_provisioning_boundary.sql',181:'181_phoenix_health_sector_topology_reconciliation.sql',182:'182_phoenix_health_center_facility_scoped_rbac.sql',183:'183_phoenix_emergency_outlet_integrity.sql',184:'184_phoenix_canonical_supply_cycle.sql'};
         const sql='supabase/migrations/'+exact[n];
-        const tests=n===183
+        const tests=n===184
+          ? ['supabase/migrations/__tests__/184-canonical-supply-cycle-static.test.ts','supabase/migrations/__tests__/184-canonical-supply-cycle.dynamic.test.ts']
+          : n===183
           ? ['supabase/migrations/__tests__/183-emergency-outlet-integrity-static.test.ts','supabase/migrations/__tests__/183-emergency-outlet-integrity.dynamic.test.ts','supabase/migrations/__tests__/183-emergency-outlet-matrix-parity.dynamic.test.ts','supabase/migrations/__tests__/183-warehouse-lifecycle-and-preflight.dynamic.test.ts']
           : n===182
           // R1.1-U / U-B corrective adds the closure suite for the surfaces an

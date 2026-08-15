@@ -337,7 +337,15 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
         + '":!src/shared/supabase/services/organizations.service.ts" '
         + '":!src/shared/supabase/services/warehouses.service.ts" '
         + '":!src/shared/authz/nav-projection.ts" '
-        + '":!src/shared/authz/__tests__/screen-access.test.ts"',
+        + '":!src/shared/authz/__tests__/screen-access.test.ts" '
+        // R1.3: the canonical supply cycle makes screen 17's navigation gate
+        // capability-correct (a warehouse_transfer.send holder reaches the
+        // Supply surface without users.edit_scope) and adds its own guard test.
+        // Both under src/shared/authz, excluded BY EXACT NAME; every other
+        // service and authz path stays watched, and the migration check below
+        // is untouched.
+        + '":!src/shared/authz/screen-access.ts" '
+        + '":!src/shared/authz/__tests__/r1-3-supply-reachability.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
