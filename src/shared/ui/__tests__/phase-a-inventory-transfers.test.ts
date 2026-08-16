@@ -12,6 +12,7 @@ describe('Phase A inventory + network/transfer workspaces (A4) presentation cont
   const inventoryCenter = read('features/inventory/InventoryCenterScreen.tsx');
   const networkManagement = read('features/network/NetworkManagementScreen.tsx');
   const directSupplyOperations = read('features/network/DirectSupplyOperations.tsx');
+  const directReturnComposer = read('features/movement/DirectReturnComposer.tsx');
   const authenticatedApp = read('app/AuthenticatedApp.tsx');
 
   it('loads the inventory-transfers layer after every prior Phase A layer', () => {
@@ -170,11 +171,13 @@ describe('Phase A inventory + network/transfer workspaces (A4) presentation cont
     expect(networkManagement).toMatch(/<div dir=\{dir\} className="nexus-inventory-transfers nexus-inventory-transfers--network">/);
   });
 
-  it('keeps DirectSupplyOperations on its existing direct-supply/return RPCs, never a new query', () => {
+  it('keeps direct supply and provenance-anchored return on their existing service boundary', () => {
     expect(directSupplyOperations).toContain('createDirectTransferRequest(');
     expect(directSupplyOperations).toContain('sendDirectTransferLine(');
     expect(directSupplyOperations).toContain('receiveTransferLine(');
-    expect(directSupplyOperations).toContain('requestDirectReturn(');
+    expect(directReturnComposer).toContain('requestDirectReturn(');
+    expect(directReturnComposer).toContain('recallDirectTransfer({');
+    expect(directReturnComposer).toContain('originalTransferLineId: line.originalTransferLineId');
   });
 
   // ── A4.1: no fabricated production data ─────────────────────────────────

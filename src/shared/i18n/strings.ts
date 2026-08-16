@@ -2683,6 +2683,14 @@ export const T: Dict = {
   mv_return_mode:         { ar: 'نوع الإرجاع',                                    en: 'Return type' },
   mv_return_mode_request: { ar: 'طلب إرجاع من المؤسسة',                           en: 'Institution return request' },
   mv_return_mode_recall:  { ar: 'استرجاع مركزي',                                  en: 'Central recall' },
+  outlet_recall_title: { ar: 'استدعاء مادة مستلمة من المنفذ', en: 'Recall received outlet stock' },
+  outlet_recall_hint: { ar: 'اختر حركة الاستلام الأصلية الفعلية؛ يحدد النظام المادة والكمية ومسار الإرجاع من سجل العهدة.', en: 'Select the genuine original receipt; the system derives the material, quantity, and return corridor from custody records.' },
+  outlet_recall_source: { ar: 'حركة الاستلام الأصلية', en: 'Original receipt movement' },
+  outlet_recall_select_placeholder: { ar: 'اختر حركة استلام…', en: 'Select a receipt movement…' },
+  outlet_recall_empty: { ar: 'لا توجد حركات استلام متاحة للاستدعاء في هذا المنفذ.', en: 'No received movements are available for recall at this outlet.' },
+  outlet_recall_number: { ar: 'رقم كتاب الاستدعاء', en: 'Recall document number' },
+  outlet_recall_submit: { ar: 'إنشاء التزام الاستدعاء', en: 'Create recall obligation' },
+  outlet_recall_created: { ar: 'تم إنشاء التزام الاستدعاء أو إعادة استخدامه بأمان.', en: 'The recall obligation was safely created or reused.' },
 
   // XLSX export sheets.
   mv_sheet_summary:       { ar: 'الملخّص',                                        en: 'Summary' },

@@ -1603,6 +1603,9 @@ describe('16. isolation: untouched domains', () => {
         '":(exclude)src/features/reports/DecisionIntelligenceReportsScreen.tsx" ' +
         '":(exclude)src/features/outlet/dispatch.service.ts" ' +
         '":(exclude)src/features/outlet/outlet-return.service.ts" ' +
+        '":(exclude)src/features/movement/DirectReturnComposer.tsx" ' +
+        '":(exclude)src/features/network/network.service.ts" ' +
+        '":(exclude)src/features/movement/movement-timeline.service.ts" ' +
         // PHASE-C1-REPORT-INTEGRITY: a still later, separately-reviewed phase
         // fixes Monthly Position's error-swallowing and replaces
         // isDemoOrganization's lossy boolean with a real demo/official/

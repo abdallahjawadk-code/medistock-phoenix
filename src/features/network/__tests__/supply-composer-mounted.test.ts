@@ -79,16 +79,16 @@ describe('return composer is mounted as the return create entry (one writer)', (
     expect(operations).toMatch(/creating && RETURN_CREATE\.draftFirst/);
   });
 
-  it('the legacy ReturnCreateForm is only reachable when the switch is OFF', () => {
-    expect(operations).toMatch(/creating && !RETURN_CREATE\.draftFirst && \(\s*<ReturnCreateForm/);
-    expect(operations.match(/<ReturnCreateForm/g)?.length).toBe(1);
+  it('removes the legacy header-only recall form that cannot carry a provenance selector', () => {
+    expect(operations).not.toContain('ReturnCreateForm');
+    expect(operations).not.toContain('phoenix_recall_direct_warehouse_transfer');
   });
 
   it('hands the created return to the existing lifecycle container (setOpenId)', () => {
     expect(operations).toMatch(/onCreated=\{\(returnRequestId\) => \{/);
   });
 
-  it('persists only via the return lifecycle RPCs and keeps BOTH modes', () => {
+  it('persists request and recall through their distinct current lifecycle RPCs', () => {
     expect(returnComposer).toMatch(/requestDirectReturn\(/);
     expect(returnComposer).toMatch(/recallDirectTransfer\(/);
     expect(returnComposer).toMatch(/addDirectReturnLine\(/);

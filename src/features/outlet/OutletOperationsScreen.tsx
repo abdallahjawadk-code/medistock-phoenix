@@ -37,11 +37,14 @@ import { useOutletCountPermission } from '@/features/inventory/useOutletCountPer
 import { useMovementContextRecordPermission } from '@/features/inventory/useMovementContextRecordPermission';
 import { useOutletDispensePermission } from '@/features/inventory/useOutletDispensePermission';
 import { useOutletReceivePermission } from '@/features/inventory/useOutletReceivePermission';
+import { useOutletReturnRequestPermission } from '@/features/inventory/useOutletReturnRequestPermission';
+import { useOutletRecallPermission } from '@/features/inventory/useOutletRecallPermission';
 import { InventoryIntelligencePanel } from '@/features/inventory/InventoryIntelligencePanel';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { EmergencyReplenishmentTab } from './EmergencyReplenishmentTab';
 import { OutletIncomingSupplies } from './OutletIncomingSupplies';
 import { OutletReturnComposer } from './OutletReturnComposer';
+import { OutletRecallPanel } from './OutletRecallPanel';
 import { OutletStockCorrectionModal } from './OutletStockCorrectionModal';
 import { DispenseContextDialog } from './DispenseContextDialog';
 import { DispenseComposerDialog } from './DispenseComposerDialog';
@@ -83,6 +86,10 @@ export function OutletOperationsScreen({
 
   const receivePerm = useOutletReceivePermission(activeOrgId, activeOutlet?.id ?? null);
   const canReceiveIncoming = receivePerm.data === true;
+  const returnRequestPerm = useOutletReturnRequestPermission(activeOrgId, activeOutlet?.id ?? null);
+  const canRequestReturn = returnRequestPerm.data === true;
+  const recallPerm = useOutletRecallPermission(activeOrgId, activeOutlet?.warehouseId ?? null);
+  const canRecallOutletStock = recallPerm.data === true;
 
   const header = (
     <div className="nexus-io-header nexus-io-header__row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -194,6 +201,8 @@ export function OutletOperationsScreen({
           distributionPointId={activeOutlet.id}
           outletName={outletName}
           lang={lang}
+          canRequestReturn={canRequestReturn}
+          canRecallOutletStock={canRecallOutletStock}
           initialRequestId={
             opensReturn ? initialSuggestionDocument.documentId : undefined
           }
@@ -326,11 +335,15 @@ function OutletReturnsTab({
   distributionPointId,
   outletName,
   lang,
+  canRequestReturn,
+  canRecallOutletStock,
   initialRequestId,
 }: {
   distributionPointId: string;
   outletName: string;
   lang: 'ar' | 'en';
+  canRequestReturn: boolean;
+  canRecallOutletStock: boolean;
   initialRequestId?: string;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
@@ -357,7 +370,15 @@ function OutletReturnsTab({
   }, [created, distributionPointId]);
 
   return (
-    <div>
+    <div style={{ display: 'grid', gap: '16px' }}>
+      {canRecallOutletStock && (
+        <OutletRecallPanel
+          key={distributionPointId}
+          distributionPointId={distributionPointId}
+          lang={lang}
+          onRecalled={() => receipt.reload()}
+        />
+      )}
       {created && receipt.loading && <PhoenixLoadingState label={t('loading', lang)} />}
       {created && receipt.error && (
         <PhoenixErrorState
@@ -385,13 +406,15 @@ function OutletReturnsTab({
           <MovementDocumentActions document={receipt.data} lang={lang} />
         </div>
       )}
-      <OutletReturnComposer
-        key={instanceKey}
-        distributionPointId={distributionPointId}
-        distributionPointName={outletName}
-        onCancel={() => { setCreated(null); setInstanceKey(k => k + 1); }}
-        onCreated={id => { setCreated(id); setInstanceKey(k => k + 1); }}
-      />
+      {canRequestReturn && (
+        <OutletReturnComposer
+          key={instanceKey}
+          distributionPointId={distributionPointId}
+          distributionPointName={outletName}
+          onCancel={() => { setCreated(null); setInstanceKey(k => k + 1); }}
+          onCreated={id => { setCreated(id); setInstanceKey(k => k + 1); }}
+        />
+      )}
     </div>
   );
 }

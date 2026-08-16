@@ -144,6 +144,10 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // "Stage E still ends at 171" remains true. Listed here so the guard stays
       // exhaustive and still fails closed on any unlisted new file.
       '185_phoenix_return_quarantine_recall_parity.sql',
+      // R1.6 (186) forward-replaces two correction wrappers and adds no
+      // Stage-E SQL, so Stage E still ends at 171. Its exact filename is listed
+      // only to keep this exhaustive successor guard fail-closed.
+      '186_phoenix_correction_reason_code_wrapper_parity.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

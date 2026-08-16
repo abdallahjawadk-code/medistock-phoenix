@@ -47,19 +47,20 @@ describe('181 registration and shape', () => {
   // R1.1-U added 182 and R1.2C added 183, so 181 is no longer last. The guard
   // stays EXHAUSTIVE rather than being deleted: every successor is named by
   // EXACT filename, and anything beyond the last of them still fails closed.
-  it('is followed by exactly 182, 183, 184 then 185, and nothing beyond them', () => {
-    // R1.5: 185 appended. The successor list stays EXACT and the
-    // nothing-beyond regex is narrowed by exactly one number (185 -> 186), so
+  it('is followed by exactly 182 through 186, and nothing beyond them', () => {
+    // R1.6: 186 appended. The successor list stays EXACT and the
+    // nothing-beyond regex is narrowed by exactly one number (186 -> 187), so
     // this guard still fails closed on any unreviewed migration.
     const SUCCESSORS = [
       '182_phoenix_health_center_facility_scoped_rbac.sql',
       '183_phoenix_emergency_outlet_integrity.sql',
       '184_phoenix_canonical_supply_cycle.sql',
       '185_phoenix_return_quarantine_recall_parity.sql',
+      '186_phoenix_correction_reason_code_wrapper_parity.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[6-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[7-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

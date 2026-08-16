@@ -20,6 +20,7 @@ const read = (rel: string) => readFileSync(join(FEAT, rel), 'utf8');
 const screen = read('NetworkManagementScreen.tsx');
 const service = read('network.service.ts');
 const operations = read('DirectSupplyOperations.tsx');
+const returnComposer = read('../movement/DirectReturnComposer.tsx');
 
 describe('077 UI — the manual supply-routes tab is retired', () => {
   it('has no routes tab id and no SupplyRoutesPanel component', () => {
@@ -68,6 +69,8 @@ describe('077 UI — the operational surface drives the WHOLE lifecycle (not cre
   it('return: request / recall / add / submit / cancel / review / send / receive', () => {
     for (const rx of [
       /requestDirectReturn\(/, /recallDirectTransfer\(/, /addDirectReturnLine\(/,
+    ]) expect(returnComposer).toMatch(rx);
+    for (const rx of [
       /submitReturnRequest\(/, /cancelReturnRequest\(/, /reviewReturnRequest\(/,
       /sendDirectReturnLine\(/, /receiveReturnShipmentLine\(/,
     ]) expect(operations).toMatch(rx);

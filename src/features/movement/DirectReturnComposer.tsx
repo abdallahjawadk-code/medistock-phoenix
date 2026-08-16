@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
-import { t } from '@/shared/i18n/strings';
+import { t, tRpcError } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
@@ -50,10 +50,11 @@ interface Props {
   centralWarehouses: readonly NetworkWarehouse[];
   onCancel: () => void;
   onCreated: (returnRequestId: string) => void;
+  onRecalled: () => void;
 }
 
 export function DirectReturnComposer({
-  institutionWarehouses, organizations, centralWarehouses, onCancel, onCreated,
+  institutionWarehouses, organizations, centralWarehouses, onCancel, onCreated, onRecalled,
 }: Props) {
   const { lang, dir } = useApp();
 
@@ -139,6 +140,7 @@ export function DirectReturnComposer({
 
   const issues = useMemo(() => validateDraft(lines, 'return'), [lines]);
   const confirmable = useMemo(() => draftIsConfirmable(lines, 'return'), [lines]);
+  const canConfirm = confirmable && (mode !== 'recall' || lines.length === 1);
   const partiesComplete = Boolean(sourceOrgId && sourceWarehouseId && destinationWarehouseId);
 
   const source = institutionWarehouses.find(w => w.id === sourceWarehouseId) ?? null;
@@ -171,26 +173,41 @@ export function DirectReturnComposer({
   // ── the ONLY place this file persists anything ────────────────────────────
 
   const confirmAndCreate = async () => {
-    if (!confirmable || committing) return;
+    if (!canConfirm || committing) return;
     setCommitting(true);
     setError(null);
 
+    if (mode === 'recall') {
+      // Migration 185's selector materializes the complete current-custody
+      // obligation and intentionally returns counts only. It is not a header
+      // creator, so never fabricate a request id or append draft lines to it.
+      const line = lines.length === 1 ? lines[0] : null;
+      if (!line?.originalTransferLineId) {
+        setError(t('err_generic', lang));
+        setCommitting(false);
+        return;
+      }
+      const recalled = await recallDirectTransfer({
+        originalTransferLineId: line.originalTransferLineId,
+        returnNumber: externalReference.trim(),
+        notes: notes.trim() || null,
+      });
+      setCommitting(false);
+      if (!recalled.ok) {
+        setError(tRpcError(recalled.error, lang));
+        return;
+      }
+      onRecalled();
+      return;
+    }
+
     const outcome = await commitDraft(lines, {
-      createHeader: () => (mode === 'recall'
-        // Central recall and institution-initiated return are DIFFERENT
-        // authorizations against different RPCs. They are not merged.
-        ? recallDirectTransfer({
+      createHeader: () => requestDirectReturn({
           sourceWarehouseId,
           destinationWarehouseId,
           returnNumber: externalReference.trim(),
           notes: notes.trim() || null,
-        })
-        : requestDirectReturn({
-          sourceWarehouseId,
-          destinationWarehouseId,
-          returnNumber: externalReference.trim(),
-          notes: notes.trim() || null,
-        })),
+        }),
       addLine: (returnRequestId, line) => addDirectReturnLine({
         returnRequestId,
         // Provenance is mandatory and is what identifies the material.
@@ -265,7 +282,7 @@ export function DirectReturnComposer({
   const footer = step === 'review' && !result
     ? (
       <PhoenixButton
-        disabled={!confirmable || committing}
+        disabled={!canConfirm || committing}
         onClick={confirmAndCreate}
         data-testid="confirm-create-return-request"
       >

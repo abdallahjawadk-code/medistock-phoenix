@@ -8,6 +8,7 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useEmergencyReplenishmentPermission } from '@/features/inventory/useEmergencyReplenishmentPermission';
+import { useWarehouseDispatchCreatePermission } from '@/features/inventory/useWarehouseDispatchCreatePermission';
 import { isReplenishmentDestinationPointType } from '@/shared/lib/emergency-replenishment';
 import { InitialProvisioningLauncher } from './InitialProvisioningLauncher';
 import { getOutletStock } from './outlet-stock.service';
@@ -76,6 +77,8 @@ export function EmergencyReplenishmentTab({
   lang: 'ar' | 'en';
 }) {
   const perms = useEmergencyReplenishmentPermission(orgId, distributionPointId);
+  const initialProvisionPerm = useWarehouseDispatchCreatePermission(orgId, owningWarehouseId ?? null);
+  const canInitialProvision = initialProvisionPerm.data === true;
   const [reloadKey, setReloadKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -90,7 +93,7 @@ export function EmergencyReplenishmentTab({
     [routes.data, distributionPointId],
   );
 
-  if (routes.loading || perms.loading) return <PhoenixLoadingState />;
+  if (routes.loading || perms.loading || initialProvisionPerm.loading) return <PhoenixLoadingState />;
   if (routes.error) return <PhoenixErrorState message={String(routes.error)} />;
 
   return (
@@ -112,7 +115,7 @@ export function EmergencyReplenishmentTab({
         UX only. The database refuses a pharmacy destination regardless of what
         this screen renders.
       */}
-      {isReplenishmentDestinationPointType(outletPointType) && (
+      {canInitialProvision && isReplenishmentDestinationPointType(outletPointType) && (
         <InitialProvisioningLauncher
           orgId={orgId}
           distributionPointId={distributionPointId}

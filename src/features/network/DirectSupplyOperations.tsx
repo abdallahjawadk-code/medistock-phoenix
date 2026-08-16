@@ -26,7 +26,7 @@ import {
   reviewTransferRequest, sendDirectTransferLine, receiveTransferLine,
   getTransferRequests, getTransferRequestLines, getTransfers, getTransferLines,
   getTransferLinesForTransfers, getWarehouseStock,
-  requestDirectReturn, recallDirectTransfer, addDirectReturnLine, deleteReturnRequestLine,
+  addDirectReturnLine, deleteReturnRequestLine,
   submitReturnRequest, cancelReturnRequest, reviewReturnRequest, sendDirectReturnLine,
   receiveReturnShipmentLine, getReturnRequests, getReturnRequestLines,
   getReturnShipments, getReturnShipmentLines,
@@ -94,8 +94,8 @@ const writeReturnReceive: TokenedWriter<{
  * W077-COMPOSER — the return counterpart of FORWARD_CREATE. When `draftFirst` is
  * true the provenance-anchored DirectReturnComposer owns the "new return" action
  * (both institution-initiated request AND central recall modes preserved,
- * safeReturnable caps, nothing persisted before review). Flip to false to restore
- * the legacy header-first ReturnCreateForm. Same lifecycle RPCs, one writer.
+ * safeReturnable caps, nothing persisted before review). The retired header-only
+ * recall form cannot represent Migration 185's required provenance selector.
  */
 const RETURN_CREATE = { draftFirst: true };
 
@@ -984,6 +984,11 @@ function ReturnPanel({ lang, warehouses, whById }: {
           reload();
           setOpenId(returnRequestId);
         }}
+        onRecalled={() => {
+          setCreating(false);
+          setStatus({ msg: t('net_op_done', lang), error: false });
+          reload();
+        }}
       />
     );
   }
@@ -996,15 +1001,6 @@ function ReturnPanel({ lang, warehouses, whById }: {
       </div>
 
       <StatusLine status={status} />
-
-      {creating && !RETURN_CREATE.draftFirst && (
-        <ReturnCreateForm lang={lang} warehouses={warehouses}
-          onCancel={() => setCreating(false)}
-          onDone={(res) => {
-            if (res.ok) { setStatus({ msg: t('net_op_done', lang), error: false }); setCreating(false); reload(); }
-            else setStatus({ msg: opErrorMessage(res.error, lang), error: true });
-          }} />
-      )}
 
       <h4 style={{ fontSize: '12.5px', fontWeight: 700, margin: '14px 0 8px', color: 'var(--t2)' }}>{t('net_op_requests', lang)}</h4>
       {requests.loading && <PhoenixLoadingState />}
@@ -1030,47 +1026,6 @@ function ReturnPanel({ lang, warehouses, whById }: {
         ))}
       </div>
     </div>
-  );
-}
-
-function ReturnCreateForm({ lang, warehouses, onCancel, onDone }: {
-  lang: Lang; warehouses: NetworkWarehouse[]; onCancel: () => void; onDone: (r: RpcResult) => void;
-}) {
-  const [mode, setMode] = useState<'request' | 'recall'>('request');
-  const [sourceId, setSourceId] = useState('');
-  const [destId, setDestId] = useState('');
-  const [number, setNumber] = useState('');
-  const [busy, setBusy] = useState(false);
-  const institutions = warehouses.filter(w => w.warehouseKind === 'institution' && w.status === 'active');
-  const centrals = warehouses.filter(w => w.warehouseKind === 'central' && w.status === 'active');
-  const effSource = sourceId || (institutions[0]?.id ?? '');
-  const effDest = destId || (centrals[0]?.id ?? '');
-  const canSubmit = effSource !== '' && effDest !== '' && number.trim() !== '' && !busy;
-
-  return (
-    <PhoenixCard className="nexus-it-form-card" padding="16px" style={{ marginBottom: '10px', borderColor: 'var(--p)' }}>
-      <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
-        <PhoenixSelect label={t('net_op_status', lang)} value={mode} onChange={e => setMode(e.target.value as 'request' | 'recall')}
-          options={[
-            { value: 'request', label: t('net_op_return_request', lang) },
-            { value: 'recall', label: t('net_op_recall', lang) },
-          ]} />
-        <PhoenixSelect label={t('net_op_return_source', lang)} value={effSource} onChange={e => setSourceId(e.target.value)}
-          options={institutions.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-        <PhoenixSelect label={t('net_op_return_dest', lang)} value={effDest} onChange={e => setDestId(e.target.value)}
-          options={centrals.map(w => ({ value: w.id, label: nameOf(w, lang) }))} />
-        <PhoenixInput label={t('net_ds_number', lang)} value={number} onChange={e => setNumber(e.target.value)} />
-      </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-        <PhoenixButton loading={busy} disabled={!canSubmit} onClick={async () => {
-          setBusy(true);
-          const input = { sourceWarehouseId: effSource, destinationWarehouseId: effDest, returnNumber: number.trim() };
-          const res = mode === 'request' ? await requestDirectReturn(input) : await recallDirectTransfer(input);
-          setBusy(false); onDone(res);
-        }}>{mode === 'request' ? t('net_op_return_request', lang) : t('net_op_recall', lang)}</PhoenixButton>
-        <PhoenixButton variant="ghost" onClick={onCancel}>{t('net_cancel', lang)}</PhoenixButton>
-      </div>
-    </PhoenixCard>
   );
 }
 
