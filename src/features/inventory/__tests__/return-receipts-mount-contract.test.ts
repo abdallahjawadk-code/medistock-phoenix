@@ -29,7 +29,11 @@ describe('the return-receipt surface is mounted and reachable', () => {
   it('adds a returns tab that is selectable and routes to the component', () => {
     expect(code).toContain("id: 'returns'");
     expect(code).toContain("labelKey: 'inv_tab_return_receipts'");
-    expect(code).toContain("tab === 'returns' && canReceiveReturns");
+    // R1.5-E: VISIBILITY became its own decision. It used to be
+    // `canReceiveReturns`, i.e. the receive permission was hiding readable
+    // history. The receive CONTROLS are still gated on that scoped key — see
+    // the `canReceive={canReceiveReturns}` assertion below, which is unchanged.
+    expect(code).toContain("tab === 'returns' && canViewReturns");
   });
 
   it('passes the active warehouse as the receive destination', () => {
@@ -43,8 +47,19 @@ describe('the gate is the exact scoped permission, never a role name', () => {
   it('resolves visibility via useReturnReceivePermission', () => {
     expect(code).toContain('useReturnReceivePermission(activeOrgId, activeWarehouseId');
     expect(code).toContain('const canReceiveReturns = returnReceive.data ?? false');
-    // The returns tab appears only when the scoped decision allows it.
-    expect(code).toContain("...(canReceiveReturns ? [{ id: 'returns'");
+    // R1.5-E: the tab now appears when the rows are READABLE. The scoped
+    // decision still drives it — canViewReturns is derived FROM it — but a
+    // read-only actor is no longer denied the history by an operation key.
+    expect(code).toContain("...(canViewReturns ? [{ id: 'returns'");
+    expect(code).toContain('const canViewReturns = canReceiveReturns || hasInventoryReadAffordance');
+  });
+
+  it('the read affordance grants VISIBILITY only, never the receive capability', () => {
+    // canReceiveReturns must stay the untouched scoped-permission answer: if the
+    // affordance were OR-ed into it, a read-only role would gain receive controls.
+    expect(code).toContain('const canReceiveReturns = returnReceive.data ?? false');
+    expect(code).not.toMatch(/canReceiveReturns\s*=\s*[^;]*hasInventoryReadAffordance/);
+    expect(code).toContain('canReceive={canReceiveReturns}');
   });
 
   it('asks the exact key the 071 receive RPC checks, scoped to the warehouse', () => {

@@ -23,6 +23,7 @@ import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { useOutletReturnExceptionResolvePermission } from './useOutletReturnExceptionResolvePermission';
 import { useQuarantinePermission } from './useQuarantinePermission';
+import { useInventoryReadAffordance } from './useInventoryReadAffordance';
 import { QuarantinePanel } from './QuarantinePanel';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
@@ -118,6 +119,33 @@ export function InventoryCenterScreen({
   const canApproveOutletCorrection = useApproveCorrectionPermission(activeOrgId, 'outlet_stock.approve_correction').data ?? false;
   const canApproveWarehouseCorrection = useApproveCorrectionPermission(activeOrgId, 'warehouse_stock.approve_correction').data ?? false;
   const canApproveAnyCorrection = canApproveOutletCorrection || canApproveWarehouseCorrection;
+
+  /**
+   * R1.5-E — READ AUTHORITY, SPLIT FROM MUTATION AUTHORITY.
+   *
+   * Every history tab above was gated on a MUTATION key, so an actor who may
+   * READ those rows but not act on them saw no tab at all. Section D of
+   * Migration 185 gives health_center_manager facility-safe RLS SELECT parity on
+   * exactly these surfaces, which is unreachable while the operation key also
+   * decides visibility.
+   *
+   * The `can*` mutation values above are UNCHANGED and keep flowing to the
+   * panels' action props, so no historical role gains or loses a capability:
+   * for any role without the read affordance `canView === canMutate` exactly as
+   * before. The affordance is UI discoverability only — RLS remains the boundary
+   * and every RPC re-checks server-side.
+   */
+  const hasInventoryReadAffordance = useInventoryReadAffordance();
+  const canViewReturns = canReceiveReturns || hasInventoryReadAffordance;
+  const canViewQuarantine = canDisposeQuarantine || hasInventoryReadAffordance;
+  // E5 scopes the affordance to WAREHOUSE corrections — the ones reachable
+  // through an assigned centre depot. Outlet-correction visibility is untouched.
+  const canViewOutletCorrections = canApproveOutletCorrection;
+  const canViewWarehouseCorrections = canApproveWarehouseCorrection || hasInventoryReadAffordance;
+  // Identical to (canViewOutletCorrections || canViewWarehouseCorrections), and
+  // written this way so the historical org-wide approval expression stays the
+  // visible basis of the tab.
+  const canViewCorrections = canApproveAnyCorrection || hasInventoryReadAffordance;
 
   const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
   const [toast, setToast] = useState<string | null>(null);
@@ -253,19 +281,22 @@ export function InventoryCenterScreen({
           ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
           // §2 — institution-warehouse → outlet dispatch, for dispatch authorizers.
           ...(canDispatch ? [{ id: 'dispatch' as const, labelKey: 'inv_tab_dispatch' }] : []),
-          // §071 — receiving outlet returns into this warehouse, for holders of
-          // the scoped outlet_stock.return_receive permission on it.
-          ...(canReceiveReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
+          // §071 — outlet-return receipts into this warehouse. VISIBLE to anyone
+          // who may read the rows (RLS decides); the receive CONTROLS inside stay
+          // gated on the scoped outlet_stock.return_receive key.
+          ...(canViewReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
           // OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolving stuck
           // exception_pending lines, for holders of the scoped
           // outlet_stock.resolve_return_exception permission on it.
           ...(canResolveExceptions ? [{ id: 'return_exceptions' as const, labelKey: 'inv_tab_return_exceptions' }] : []),
-          // QUARANTINE-DISPOSITION — for holders of the scoped
-          // warehouse_transfer.return_request permission on it (099/105).
-          ...(canDisposeQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
-          // SECOND-PERSON-CORRECTION-APPROVAL — org-wide, for holders of
-          // outlet_stock.approve_correction and/or warehouse_stock.approve_correction (098/101).
-          ...(canApproveAnyCorrection ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
+          // QUARANTINE-DISPOSITION — VISIBLE to anyone who may read the rows;
+          // release/destroy stay gated on the scoped
+          // warehouse_transfer.return_request key (099/105).
+          ...(canViewQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
+          // SECOND-PERSON-CORRECTION-APPROVAL — VISIBLE to anyone who may read
+          // either scope's history; approve/reject stay gated per scope on
+          // outlet_stock.approve_correction / warehouse_stock.approve_correction (098/101).
+          ...(canViewCorrections ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -343,10 +374,12 @@ export function InventoryCenterScreen({
             opensDispatch ? initialSuggestionDocument.documentId : undefined
           }
         />
-      ) : tab === 'returns' && canReceiveReturns ? (
+      ) : tab === 'returns' && canViewReturns ? (
         <InstitutionReturnReceipts
           destinationWarehouseId={activeWarehouseId}
           warehouseName={activeWarehouseName}
+          /* Mutation stays on the scoped key — a viewer gets the history with
+             every receive control disabled. */
           canReceive={canReceiveReturns}
           lang={lang}
         />
@@ -357,10 +390,14 @@ export function InventoryCenterScreen({
           canResolve={canResolveExceptions}
           lang={lang}
         />
-      ) : tab === 'quarantine' && canDisposeQuarantine ? (
+      ) : tab === 'quarantine' && canViewQuarantine ? (
+        /* Mutation stays on the scoped key — a viewer sees the held lots with
+           no release/destroy controls. */
         <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
-      ) : tab === 'corrections' && canApproveAnyCorrection ? (
+      ) : tab === 'corrections' && canViewCorrections ? (
         <PendingCorrectionsPanel
+          canViewOutlet={canViewOutletCorrections}
+          canViewWarehouse={canViewWarehouseCorrections}
           canApproveOutlet={canApproveOutletCorrection}
           canApproveWarehouse={canApproveWarehouseCorrection}
         />

@@ -135,6 +135,15 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // "Stage E still ends at 171" remains true. Listed here so the guard stays
       // exhaustive and still fails closed on any unlisted new file.
       '184_phoenix_canonical_supply_cycle.sql',
+      // R1.5 (185): return/quarantine/recall parity. It forward-replaces the
+      // return-review caps, the quarantine release path and the recall entry
+      // points (071/095/150 lineage) and adds the provenance-anchored recall
+      // selectors for warehouse transfer lines and outlet inbound receipts.
+      // Stage E's corridors and routes are untouched, and — the only thing this
+      // guard actually asserts — 185 adds NO migration numbered <= 171, so
+      // "Stage E still ends at 171" remains true. Listed here so the guard stays
+      // exhaustive and still fails closed on any unlisted new file.
+      '185_phoenix_return_quarantine_recall_parity.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

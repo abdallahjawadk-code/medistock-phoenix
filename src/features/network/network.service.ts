@@ -418,24 +418,40 @@ export function deleteTransferRequestLine(transferRequestLineId: string): Promis
   });
 }
 
-/** Batches physically present in a warehouse (RLS-scoped) — the send picker. */
+/**
+ * Batches physically present in a warehouse (RLS-scoped) — the send picker.
+ *
+ * R1.5-E: carries the CANONICAL lot-identity dimensions alongside the display
+ * fields. `materialIdentityKey` is migration 150's GENERATED ALWAYS STORED
+ * column, read as data and never recomputed here; the other three complete the
+ * identity that `warehouse_stock_identity_uniq` (088) actually enforces. See
+ * `stock-identity.ts` for why name/batch/expiry alone is not a lot.
+ */
 export interface WarehouseStockBatch {
   id: string; warehouseId: string; scientificName: string;
   batchNumber: string | null; expiryDate: string | null;
   onHandQuantity: number; reservedQuantity: number; availableQuantity: number;
   nationalCode: string | null;
+  materialIdentityKey: string | null;
+  internalBatchReference: string | null;
+  supplyType: string | null;
+  purchaseOrigin: string | null;
 }
 interface WarehouseStockRow {
   id: string; warehouse_id: string; scientific_name: string;
   batch_number: string | null; expiry_date: string | null;
   on_hand_quantity: number; reserved_quantity: number; available_quantity: number;
   national_code: string | null;
+  material_identity_key: string | null;
+  internal_batch_reference: string | null;
+  supply_type: string | null;
+  purchase_origin: string | null;
 }
 export async function getWarehouseStock(warehouseId: string): Promise<WarehouseStockBatch[]> {
   if (!supabaseConfigured) return [];
   const { data, error } = await supabase
     .from('warehouse_stock')
-    .select('id, warehouse_id, scientific_name, batch_number, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, national_code')
+    .select('id, warehouse_id, scientific_name, batch_number, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, national_code, material_identity_key, internal_batch_reference, supply_type, purchase_origin')
     .eq('warehouse_id', warehouseId)
     .gt('on_hand_quantity', 0)
     .order('expiry_date', { ascending: true, nullsFirst: false });
@@ -445,6 +461,13 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
     batchNumber: r.batch_number, expiryDate: r.expiry_date,
     onHandQuantity: r.on_hand_quantity, reservedQuantity: r.reserved_quantity,
     availableQuantity: r.available_quantity, nationalCode: r.national_code,
+    // Mapped straight through. A row that somehow arrives without the canonical
+    // key stays null and is refused by isExactReleaseCandidate — never
+    // reconstructed from the partial material fields above.
+    materialIdentityKey: r.material_identity_key,
+    internalBatchReference: r.internal_batch_reference,
+    supplyType: r.supply_type,
+    purchaseOrigin: r.purchase_origin,
   }));
 }
 

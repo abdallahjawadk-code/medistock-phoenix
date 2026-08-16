@@ -99,10 +99,16 @@ describe('no client-side document-number sequence exists',()=>{
     // generated numeric identity, and no document number of any kind — the
     // transfer and order numbers it passes through stay exactly what 077 and
     // 087 made them, caller-supplied text.
-    // Boundary moves to 185 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184)_/.test(f));
+    // R1.5: 185 forward-replaces the return-review caps, the quarantine release
+    // path and the recall entry points, and adds the provenance-anchored recall
+    // selectors. It creates no table, sequence, counter, max()+1 or generated
+    // numeric identity, and no document number of any kind — every return number
+    // it handles is caller-supplied text it only btrim()s and matches on.
+    // Boundary moves to 186 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '185_phoenix_return_quarantine_recall_parity.sql',
       '184_phoenix_canonical_supply_cycle.sql',
       '183_phoenix_emergency_outlet_integrity.sql',
       '182_phoenix_health_center_facility_scoped_rbac.sql',

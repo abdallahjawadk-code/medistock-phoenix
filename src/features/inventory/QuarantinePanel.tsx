@@ -13,6 +13,7 @@ import {
   getQuarantineStock, releaseQuarantineStock, destroyQuarantineStock,
   type QuarantineStockRow,
 } from './quarantine.service';
+import { isExactReleaseCandidate } from './stock-identity';
 
 const newRequestId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -115,13 +116,18 @@ function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, 
   const [reason, setReason] = useState('');
   const [destinationId, setDestinationId] = useState('');
 
-  // Release must credit the SAME material/batch/expiry identity — the server
-  // refuses any other lot outright, so only exact matches are ever offered.
+  // Release must credit the EXACT canonical lot identity — the server refuses
+  // any other destination outright, so only exact matches are ever offered.
+  //
+  // R1.5-E: this previously compared lower-cased scientific name + batch +
+  // expiry. That triple is not a lot: 088's warehouse_stock_identity_uniq also
+  // carries internal_batch_reference, supply_type and purchase_origin, so two
+  // rows matching on the old triple can be genuinely different physical stock
+  // from different provenance. Offering one as the destination for the other
+  // proposed crediting the wrong lot. Identity now comes from the database's
+  // own material_identity_key plus the remaining lot dimensions.
   const matchingLots = useMemo(
-    () => stock.filter(s =>
-      s.scientificName.toLowerCase() === row.scientificName.toLowerCase()
-      && (s.batchNumber ?? '') === (row.batchNumber ?? '')
-      && (s.expiryDate ?? '') === (row.expiryDate ?? '')),
+    () => stock.filter(s => isExactReleaseCandidate(s, row)),
     [stock, row],
   );
 
