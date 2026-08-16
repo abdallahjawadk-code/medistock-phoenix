@@ -207,7 +207,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // closed is a DEPLOYMENT gap, not a code gap, so the reviewed artifact
       // must stay untouched. Registered by EXACT filename, like every entry
       // before it — anything else still fails this guard.
-      'src/shared/supabase/__tests__/admin-create-user-deployment-contract.test.ts','src/shared/supabase/__tests__/admin-create-user-facility-scope-contract.test.ts'
+      'src/shared/supabase/__tests__/admin-create-user-deployment-contract.test.ts','src/shared/supabase/__tests__/admin-create-user-facility-scope-contract.test.ts',
+      // R1.5 (185): the return/quarantine/recall parity stage. ONE migration and
+      // its nine dynamic suites. It adds no table, column, permission key or RLS
+      // widening, and touches no auth, RBAC, environment or dependency surface —
+      // the only WATCHED prefix it enters is supabase/migrations. Registered by
+      // EXACT filename, like every entry before it, so any unlisted file under a
+      // watched prefix still fails this guard closed. Appended to the entry set
+      // above rather than replacing it: both stages' registrations stand.
+      'supabase/migrations/185_phoenix_return_quarantine_recall_parity.sql','supabase/migrations/__tests__/185-canonical-lot-identity.dynamic.test.ts','supabase/migrations/__tests__/185-exception-corrected-receipt-cap.dynamic.test.ts','supabase/migrations/__tests__/185-exception-facility-visibility.dynamic.test.ts','supabase/migrations/__tests__/185-f1-recall-selector.dynamic.test.ts','supabase/migrations/__tests__/185-f2-downstream-warehouse-recall.dynamic.test.ts','supabase/migrations/__tests__/185-f3-outlet-recall.dynamic.test.ts','supabase/migrations/__tests__/185-health-center-return-read-parity.dynamic.test.ts','supabase/migrations/__tests__/185-m1-corridor-return-reference.dynamic.test.ts','supabase/migrations/__tests__/185-warehouse-return-review-caps.dynamic.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

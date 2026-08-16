@@ -164,11 +164,29 @@ describe('F) Permission gating is org-wide (098/101 check phoenix_status_center_
     expect(screen).toContain("useApproveCorrectionPermission(activeOrgId, 'outlet_stock.approve_correction')");
     expect(screen).toContain("useApproveCorrectionPermission(activeOrgId, 'warehouse_stock.approve_correction')");
     expect(screen).toContain('canApproveOutletCorrection || canApproveWarehouseCorrection');
-    expect(screen).toContain("tab === 'corrections' && canApproveAnyCorrection");
+    // R1.5-E: VISIBILITY became its own decision — the approve key no longer
+    // hides readable correction history. Approval itself is unchanged and is
+    // still resolved from the two org-wide keys above.
+    expect(screen).toContain("tab === 'corrections' && canViewCorrections");
   });
 
   it('the panel receives BOTH scoped booleans, not a single collapsed flag', () => {
-    expect(screen).toMatch(/<PendingCorrectionsPanel\s+canApproveOutlet=\{canApproveOutletCorrection\}\s+canApproveWarehouse=\{canApproveWarehouseCorrection\}\s*\/>/);
+    expect(screen).toMatch(
+      /<PendingCorrectionsPanel\s+canViewOutlet=\{canViewOutletCorrections\}\s+canViewWarehouse=\{canViewWarehouseCorrections\}\s+canApproveOutlet=\{canApproveOutletCorrection\}\s+canApproveWarehouse=\{canApproveWarehouseCorrection\}\s*\/>/,
+    );
+  });
+
+  it('R1.5-E: reading is split from approving, and the affordance grants no approval', () => {
+    // The panel LOADS on the view flags and DECIDES on the approve flags.
+    expect(panel).toContain('canViewOutlet ? listPendingOutletCorrections() : Promise.resolve([])');
+    expect(panel).toContain('canViewWarehouse ? listPendingWarehouseCorrections() : Promise.resolve([])');
+    expect(panel).toContain("const canDecide = row.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse");
+    // Neither approve flag may absorb the read affordance.
+    expect(screen).not.toMatch(/canApproveOutletCorrection\s*=\s*[^;]*hasInventoryReadAffordance/);
+    expect(screen).not.toMatch(/canApproveWarehouseCorrection\s*=\s*[^;]*hasInventoryReadAffordance/);
+    // E5 scopes the affordance to WAREHOUSE corrections only.
+    expect(screen).toContain('const canViewOutletCorrections = canApproveOutletCorrection;');
+    expect(screen).toContain('const canViewWarehouseCorrections = canApproveWarehouseCorrection || hasInventoryReadAffordance');
   });
 });
 

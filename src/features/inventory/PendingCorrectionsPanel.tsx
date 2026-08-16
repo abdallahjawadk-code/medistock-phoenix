@@ -37,9 +37,21 @@ interface NormalizedCorrection {
 }
 
 interface Props {
-  /** Which scope(s) this profile may approve. Both are checked independently
-   *  server-side regardless of what's shown — this only controls what the
-   *  panel bothers to load and render. */
+  /**
+   * R1.5-E — READ authority, split from mutation authority.
+   *
+   * These control what the panel LOADS. Previously the approve permission did
+   * both jobs, so an actor who could read correction history but not approve it
+   * saw an empty panel: an operation key was hiding readable rows. RLS decides
+   * what actually comes back; if it returns nothing the empty state renders and
+   * nothing leaks.
+   */
+  canViewOutlet: boolean;
+  canViewWarehouse: boolean;
+  /**
+   * MUTATION authority, per scope. Gates the approve/reject controls only.
+   * Both approval RPCs re-check server-side regardless of what is rendered.
+   */
   canApproveOutlet: boolean;
   canApproveWarehouse: boolean;
 }
@@ -52,7 +64,9 @@ interface Props {
  * central_warehouse_manager (the sole default holder of both keys) already
  * works.
  */
-export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse }: Props) {
+export function PendingCorrectionsPanel({
+  canViewOutlet, canViewWarehouse, canApproveOutlet, canApproveWarehouse,
+}: Props) {
   const { lang, dir, profile } = useApp();
   const [rows, setRows] = useState<NormalizedCorrection[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,8 +81,8 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
     setError(null);
     try {
       const [outlet, warehouse] = await Promise.all([
-        canApproveOutlet ? listPendingOutletCorrections() : Promise.resolve([]),
-        canApproveWarehouse ? listPendingWarehouseCorrections() : Promise.resolve([]),
+        canViewOutlet ? listPendingOutletCorrections() : Promise.resolve([]),
+        canViewWarehouse ? listPendingWarehouseCorrections() : Promise.resolve([]),
       ]);
       const normalized: NormalizedCorrection[] = [
         ...outlet.map((r): NormalizedCorrection => ({
@@ -91,7 +105,7 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
     } finally {
       setLoading(false);
     }
-  }, [canApproveOutlet, canApproveWarehouse, lang]);
+  }, [canViewOutlet, canViewWarehouse, lang]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -162,6 +176,11 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
       {rows.map(row => {
         const isOwnRequest = profile?.id === row.proposedBy;
         const busy = busyId === row.id;
+        // R1.5-E: mutation is decided PER SCOPE, not by "this panel loaded a
+        // row". Now that reading is possible without approval authority, a
+        // viewer must reach the history and no control — and an actor holding
+        // only one scope's key must not be offered the other scope's buttons.
+        const canDecide = row.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse;
         return (
           <PhoenixCard key={`${row.scope}:${row.id}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -199,7 +218,7 @@ export function PendingCorrectionsPanel({ canApproveOutlet, canApproveWarehouse 
                 window for this document type. */}
             {row.scope === 'outlet' && <OutletCorrectionPaperRef lang={lang} correctionRequestId={row.id} />}
 
-            {isOwnRequest ? (
+            {!canDecide ? null : isOwnRequest ? (
               <p style={{ fontSize: '11.5px', color: 'var(--warn)', marginTop: '10px' }}>{t('cor_own_request_notice', lang)}</p>
             ) : rejectingId === row.id ? (
               <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
