@@ -18,6 +18,7 @@ export interface MovementTimelineEvent {
   batchLabel: string | null;
   quantityDelta: number | null;
   referenceLabel: string | null;
+  correlationId: string | null;
   provenance: string;
 }
 
@@ -47,11 +48,12 @@ export async function getMovementTimeline(traceId: string): Promise<MovementTime
       occurredAt: String(e.occurred_at ?? ''),
       actorName: (e.actor_name as string | null) ?? null,
       actorRole: (e.actor_role as string | null) ?? null,
-      statusAfter: (e.status_after as string | null) ?? null,
-      materialLabel: (e.material_label as string | null) ?? null,
-      batchLabel: (e.batch_label as string | null) ?? null,
+      statusAfter: (e.status as string | null) ?? null,
+      materialLabel: (e.material as string | null) ?? null,
+      batchLabel: (e.batch as string | null) ?? null,
       quantityDelta: typeof e.quantity_delta === 'number' ? e.quantity_delta : null,
-      referenceLabel: (e.reference_label as string | null) ?? null,
+      referenceLabel: (e.reference as string | null) ?? null,
+      correlationId: (e.correlation_id as string | null) ?? null,
       provenance: String(e.provenance ?? ''),
     })),
     complete: Boolean(payload.complete),

@@ -65,20 +65,19 @@ describe('183 registration and shape', () => {
       .toBe('182_phoenix_health_center_facility_scoped_rbac.sql');
   });
 
-  it('is followed by exactly 184 then 185, and nothing beyond them', () => {
-    // R1.5: 185 appended. The successor list stays EXACT and the nothing-beyond
-    // regex is narrowed by exactly one number (185 -> 186), so this guard still
-    // fails closed on any unreviewed migration — in particular there is
-    // deliberately no 186.
+  it('is followed by exactly 184 through 186, and nothing beyond them', () => {
+    // R1.6: 186 appended. The successor list stays EXACT and the nothing-beyond
+    // regex is narrowed by exactly one number (186 -> 187).
     const SUCCESSORS = [
       '184_phoenix_canonical_supply_cycle.sql',
       '185_phoenix_return_quarantine_recall_parity.sql',
+      '186_phoenix_correction_reason_code_wrapper_parity.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[6-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^18[7-9]_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {

@@ -52,7 +52,7 @@ describe('070 dispatch service maps to the exact 070 RPCs', () => {
 describe('071 return service maps to the exact 071 RPCs', () => {
   const pairs: Array<[string, string]> = [
     ['requestOutletReturn', 'phoenix_request_outlet_return'],
-    ['recallOutletStock', 'phoenix_recall_outlet_stock'],
+    ['recallOutletStock', 'phoenix_recall_outlet_inbound_movement'],
     ['addOutletReturnLine', 'phoenix_add_outlet_return_request_line'],
     ['deleteOutletReturnLine', 'phoenix_delete_outlet_return_request_line'],
     ['submitOutletReturnRequest', 'phoenix_submit_outlet_return_request'],

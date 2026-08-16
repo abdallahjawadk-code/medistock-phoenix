@@ -42,7 +42,8 @@ describe('nothing is persisted before confirmation', () => {
   });
 
   it('confirmAndCreate refuses unless the draft is confirmable', () => {
-    expect(bodyOf(composer, 'const confirmAndCreate')).toMatch(/if \(!confirmable \|\| committing\) return;/);
+    expect(bodyOf(composer, 'const confirmAndCreate')).toMatch(/if \(!canConfirm \|\| committing\) return;/);
+    expect(composer).toContain("const canConfirm = confirmable && (mode !== 'recall' || lines.length === 1)");
   });
 
   it('the provenance picker performs no writes at all', () => {

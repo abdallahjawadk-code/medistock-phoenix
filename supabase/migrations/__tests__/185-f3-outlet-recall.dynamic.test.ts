@@ -258,7 +258,7 @@ run('185 · R1.5-F3 outlet recall (001->185 rig)', () => {
       const mv = (await c.query(
         `SELECT id, outlet_stock_id FROM outlet_stock_movements
           WHERE dispatch_line_id=$1 AND movement_type='dispatch_receive'`, [dlId])).rows[0];
-      return { dlId: dlId as string, moveId: mv.id as string, outletStock: mv.outlet_stock_id as string };
+      return { dispatchId: did as string, dlId: dlId as string, moveId: mv.id as string, outletStock: mv.outlet_stock_id as string };
     });
   }
 
@@ -525,6 +525,51 @@ run('185 · R1.5-F3 outlet recall (001->185 rig)', () => {
       // MINIMAL RESPONSE: counts and the caller's own reference only.
       expect(Object.keys(res).sort()).toEqual(
         ['obligations_created', 'obligations_reused', 'ok', 'return_number']);
+    });
+
+    it('lets the warehouse-scoped recall actor resolve the real receipt id through the existing timeline read contract', async () => {
+      const m = uniq('f3-ui-read');
+      const root = await hop(W0, ORG_SEC, W1, 60, m, null);
+      const down = await hop(W1, ORG_SEC, W2, 40, m, root.stock);
+      const d = await dispatch(W2, DP1, down.stock, 18);
+
+      const visible: any = await asUser(WO2, async (c: any) => {
+        const headers = await c.query(
+          `SELECT id FROM warehouse_dispatches WHERE id=$1`, [d.dispatchId]);
+        const lines = await c.query(
+          `SELECT id FROM warehouse_dispatch_lines WHERE id=$1`, [d.dlId]);
+        // Point-scoped ledger RLS remains closed to this warehouse-only actor.
+        const direct = await c.query(
+          `SELECT id FROM outlet_stock_movements WHERE id=$1`, [d.moveId]);
+        const timeline = await c.query(
+          `SELECT public.phoenix_movement_timeline($1::uuid,100,NULL,NULL) AS r`, [d.dlId]);
+        const correlationId = timeline.rows[0].r.events.find(
+          (event: any) => event.event_type === 'warehouse_stock_movement'
+            && event.status === 'dispatch_send')?.correlation_id;
+        const receipts = await c.query(
+          `SELECT reference_id, status_after, reference_type, correlation_id
+             FROM phoenix_movement_events
+            WHERE correlation_id=$1 AND reference_type='outlet_stock_movements'
+              AND status_after='dispatch_receive'`, [correlationId]);
+        return {
+          headers: headers.rowCount,
+          lines: lines.rowCount,
+          direct: direct.rowCount,
+          correlationId,
+          receipts: receipts.rows,
+        };
+      });
+
+      expect(visible.headers).toBe(1);
+      expect(visible.lines).toBe(1);
+      expect(visible.direct).toBe(0);
+      expect(visible.correlationId).toBeTruthy();
+      expect(visible.receipts).toEqual([expect.objectContaining({
+        reference_id: d.moveId,
+        reference_type: 'outlet_stock_movements',
+        status_after: 'dispatch_receive',
+        correlation_id: visible.correlationId,
+      })]);
     });
 
     it('makes a foreign REAL selector indistinguishable from a nonexistent one', async () => {

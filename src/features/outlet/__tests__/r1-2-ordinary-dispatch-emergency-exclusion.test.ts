@@ -118,7 +118,7 @@ describe('the Initial Provisioning launcher is offered for EMERGENCY outlets onl
       /import \{ isReplenishmentDestinationPointType \} from '@\/shared\/lib\/emergency-replenishment'/,
     );
     expect(replenishmentTab).toMatch(
-      /\{isReplenishmentDestinationPointType\(outletPointType\) && \(\s*<InitialProvisioningLauncher/,
+      /\{canInitialProvision && isReplenishmentDestinationPointType\(outletPointType\) && \(\s*<InitialProvisioningLauncher/,
     );
     // The GATE itself must contain no hand-rolled type vocabulary. Scoped to the
     // gate: the route-label rendering further down legitimately names

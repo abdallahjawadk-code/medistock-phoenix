@@ -1,5 +1,7 @@
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 import type { RpcResult } from './dispatch.service';
+import { getOutletDispatches, getDispatchLinesForDispatches } from './dispatch.service';
+import { getMovementTimeline } from '@/features/movement/movement-timeline.service';
 
 /**
  * OUTLET-CORRIDOR-071 — thin client over the migration 071 outlet → institution
@@ -288,12 +290,96 @@ export function requestOutletReturn(input: {
   });
 }
 
-/** Institution-initiated recall of stock held at an outlet. */
+export interface RecallableOutletInboundMovement {
+  id: string;
+  occurredAt: string;
+  scientificName: string;
+  batchNumber: string | null;
+  dispatchNumber: string | null;
+}
+
+export interface RecallableOutletInboundMovementDeps {
+  getDispatches?: typeof getOutletDispatches;
+  getLines?: typeof getDispatchLinesForDispatches;
+  getTimeline?: typeof getMovementTimeline;
+  getReceiptEvents?: (correlationIds: string[]) => Promise<OutletReceiptEvent[]>;
+}
+
+interface OutletReceiptEvent {
+  movementId: string;
+  correlationId: string;
+  occurredAt: string;
+}
+
+async function getOutletReceiptEvents(correlationIds: string[]): Promise<OutletReceiptEvent[]> {
+  if (!supabaseConfigured || correlationIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('phoenix_movement_events')
+    .select('reference_id, correlation_id, occurred_at')
+    .eq('reference_type', 'outlet_stock_movements')
+    .eq('status_after', 'dispatch_receive')
+    .in('correlation_id', correlationIds);
+  if (error) throw error;
+  return (data ?? []).flatMap(event =>
+    event.reference_id && event.correlation_id
+      ? [{
+          movementId: event.reference_id as string,
+          correlationId: event.correlation_id as string,
+          occurredAt: event.occurred_at as string,
+        }]
+      : []);
+}
+
+/**
+ * Genuine receipt selectors reached through existing warehouse-readable
+ * dispatch rows and Migration 081's organization-scoped timeline RPC.
+ *
+ * A warehouse officer deliberately cannot SELECT outlet_stock_movements through
+ * its point-scoped RLS policy. The timeline is the existing read contract that
+ * returns the immutable movement event id without widening that table policy.
+ */
+export async function getRecallableOutletInboundMovements(
+  distributionPointId: string,
+  deps: RecallableOutletInboundMovementDeps = {},
+): Promise<RecallableOutletInboundMovement[]> {
+  if (!distributionPointId) return [];
+  const readDispatches = deps.getDispatches ?? getOutletDispatches;
+  const readLines = deps.getLines ?? getDispatchLinesForDispatches;
+  const readTimeline = deps.getTimeline ?? getMovementTimeline;
+  const readReceiptEvents = deps.getReceiptEvents ?? getOutletReceiptEvents;
+  const dispatches = await readDispatches(distributionPointId);
+  if (dispatches.length === 0) return [];
+  const dispatchById = new Map(dispatches.map(dispatch => [dispatch.id, dispatch]));
+  const lines = (await readLines(dispatches.map(dispatch => dispatch.id)))
+    .filter(line => (line.receivedQuantity ?? 0) > 0);
+  const timelines = await Promise.all(lines.map(line => readTimeline(line.id)));
+  const lineByCorrelation = new Map<string, typeof lines[number]>();
+  timelines.forEach((timeline, index) => {
+    const line = lines[index];
+    const sent = timeline.events.find(event => event.eventType === 'warehouse_stock_movement'
+      && event.statusAfter === 'dispatch_send' && event.correlationId);
+    if (line && sent?.correlationId) lineByCorrelation.set(sent.correlationId, line);
+  });
+  const receiptEvents = await readReceiptEvents([...lineByCorrelation.keys()]);
+  return receiptEvents.flatMap(event => {
+    const line = lineByCorrelation.get(event.correlationId);
+    const dispatch = line ? dispatchById.get(line.dispatchId) : undefined;
+    return line ? [{
+      id: event.movementId,
+      occurredAt: event.occurredAt,
+      scientificName: line.scientificName,
+      batchNumber: line.batchNumber,
+      dispatchNumber: dispatch?.dispatchNumber ?? null,
+    }] : [];
+  }).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+}
+
+/** Institution-initiated recall selected by a genuine outlet receipt movement. */
 export function recallOutletStock(input: {
-  distributionPointId: string; returnNumber: string; notes?: string | null;
+  originalInboundMovementId: string; returnNumber: string; notes?: string | null;
 }): Promise<RpcResult> {
-  return callRpc('phoenix_recall_outlet_stock', {
-    p_distribution_point_id: input.distributionPointId,
+  return callRpc('phoenix_recall_outlet_inbound_movement', {
+    p_original_inbound_movement_id: input.originalInboundMovementId,
     p_return_number: input.returnNumber,
     p_notes: input.notes ?? null,
   });

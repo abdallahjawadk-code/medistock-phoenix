@@ -674,11 +674,10 @@ export function requestDirectReturn(input: {
 }
 
 export function recallDirectTransfer(input: {
-  sourceWarehouseId: string; destinationWarehouseId: string; returnNumber: string; notes?: string | null;
+  originalTransferLineId: string; returnNumber: string; notes?: string | null;
 }): Promise<RpcResult> {
-  return callRpc('phoenix_recall_direct_warehouse_transfer', {
-    p_source_warehouse_id: input.sourceWarehouseId,
-    p_destination_warehouse_id: input.destinationWarehouseId,
+  return callRpc('phoenix_recall_warehouse_transfer_line', {
+    p_original_transfer_line_id: input.originalTransferLineId,
     p_return_number: input.returnNumber,
     p_notes: input.notes ?? null,
   });
