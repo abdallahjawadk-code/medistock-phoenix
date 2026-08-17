@@ -4,7 +4,7 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixPharmacyEmblem } from '@/shared/ui/PhoenixPharmacyEmblem';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
-import { getPublicQrPayload } from '@/shared/supabase/services/qr.service';
+import { getPublicQrPayload, type PublicQrPayload } from '@/shared/supabase/services/qr.service';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
@@ -112,6 +112,34 @@ function getExpBucketBadge(bucket: string | undefined, lang: 'ar' | 'en'): { lab
   return { label, color: style.color, bg: style.bg };
 }
 
+/**
+ * QR-FACILITY-CONTEXT-188
+ *
+ * Language-aware structural Health Center label for the public QR header:
+ *   Arabic:  facility_name_ar ?? facility_name
+ *   English: facility_name ?? facility_name_ar
+ *
+ * Returns null — so the caller renders NO facility line at all — unless the
+ * payload carries a server-derived facility identity (facility_id) AND a real
+ * non-empty name. Hospital, specialized-center, sector-main, central and
+ * degraded-ancestry payloads all carry null facility fields, so they can never
+ * grow a fabricated Health Center row here. Purely presentational: no name
+ * matching, no inference — the structural decision was made server-side.
+ *
+ * Exported for direct unit testing (same convention as buildQrItemMetaLine).
+ */
+export function publicQrFacilityLabel(
+  payload: Pick<PublicQrPayload, 'facility_id' | 'facility_name' | 'facility_name_ar'> | null,
+  lang: 'ar' | 'en',
+): string | null {
+  if (!payload || typeof payload.facility_id !== 'string' || payload.facility_id.length === 0) return null;
+  const trimmed = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const label = lang === 'ar'
+    ? (trimmed(payload.facility_name_ar) || trimmed(payload.facility_name))
+    : (trimmed(payload.facility_name) || trimmed(payload.facility_name_ar));
+  return label.length > 0 ? label : null;
+}
+
 function itemLabel(item: PublicItem, lang: 'ar' | 'en'): string {
   if (lang === 'ar') return item.name_ar ?? item.name ?? item.point_name_ar ?? item.point_name ?? '—';
   return item.name ?? item.name_ar ?? item.point_name ?? item.point_name_ar ?? '—';
@@ -152,7 +180,7 @@ export function PublicQrScreen({ publicId }: Props) {
     [publicId],
   );
 
-  const payload = (data ?? null) as Record<string, unknown> | null;
+  const payload = (data ?? null) as PublicQrPayload | null;
   const ok = payload?.ok === true;
   // STAGE-G-G2: which of the three historical QR targets this payload is for
   // (distribution_point | warehouse | local_item).
@@ -249,6 +277,17 @@ export function PublicQrScreen({ publicId }: Props) {
             {orgName && (
               <div className="nexus-qr-org-card" style={{ background: 'var(--p2)', borderRadius: 'var(--r3)', padding: '14px 16px', marginBottom: '16px', boxShadow: 'var(--sh-sm)' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--pd)' }}>{orgName}</div>
+                {/* QR-FACILITY-CONTEXT-188: structural Health Center line —
+                    Health Sector → Health Center → Point. Rendered between the
+                    organization and the point/warehouse label, only when the
+                    server derived a real facility (null fields hide it, so
+                    hospital/specialized/sector-main payloads never grow a
+                    fabricated Health Center row). */}
+                {publicQrFacilityLabel(payload, lang) && (
+                  <div dir="auto" style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--pd)', marginTop: '2px' }}>
+                    {publicQrFacilityLabel(payload, lang)}
+                  </div>
+                )}
                 {typeof payload?.point_label === 'string' && (
                   <div style={{ fontSize: '12px', color: 'var(--pd)', marginTop: '2px' }}>{payload.point_label as string}</div>
                 )}

@@ -169,10 +169,14 @@ describe('C. QR request + behavior preserved', () => {
     expect(rpc.length).toBe(1);
   });
 
-  it('qr.service.ts is untouched by this phase (no explicit response type to extend)', () => {
+  it('qr.service.ts publishes a narrow typed PublicQrPayload (188 additive facility fields)', () => {
     expect(qrService).toContain("supabase.rpc('get_public_qr_payload', {");
     expect(qrService).toContain('p_public_id: publicId,');
-    expect(qrService).toContain('return data as Record<string, unknown>;');
+    expect(qrService).toContain('export interface PublicQrPayload');
+    expect(qrService).toContain("facility_id?: string | null");
+    expect(qrService).toContain("facility_name?: string | null");
+    expect(qrService).toContain("facility_name_ar?: string | null");
+    expect(qrService).toContain('return data as PublicQrPayload;');
   });
 
   it('14. invalid/disabled QR behavior remains', () => {

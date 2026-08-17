@@ -193,6 +193,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '185_phoenix_return_quarantine_recall_parity.sql',
   '186_phoenix_correction_reason_code_wrapper_parity.sql',
   '187_phoenix_delegated_operational_access.sql',
+  '188_phoenix_public_qr_facility_context.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

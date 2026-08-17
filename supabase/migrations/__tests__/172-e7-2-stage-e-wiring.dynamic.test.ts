@@ -149,6 +149,11 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // only to keep this exhaustive successor guard fail-closed.
       '186_phoenix_correction_reason_code_wrapper_parity.sql',
       '187_phoenix_delegated_operational_access.sql',
+      // M188 (public QR facility context) replaces 177's public QR resolver to
+      // add structural facility ancestry. It adds no Stage-E SQL, so the
+      // "Stage E still ends at 171" assertion remains true. Listed by exact
+      // filename so the guard stays exhaustive and still fails closed.
+      '188_phoenix_public_qr_facility_context.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
