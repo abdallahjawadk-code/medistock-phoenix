@@ -10,6 +10,7 @@ import {
   type DistributionPoint,
 } from '@/shared/supabase/services/warehouses.service';
 import type { InventoryScopeKind } from './inventory-intelligence.service';
+import { getMyOperationalResourceCatalog } from '@/shared/supabase/services/delegated-access.service';
 
 /**
  * One named warehouse/outlet in the active organization.
@@ -77,12 +78,27 @@ export function useInventoryScopes(
 ): AsyncState<InventoryScopeCatalog> {
   const { authz, profile } = useApp();
   const assigned = useCurrentScopes(authz);
+  const delegatedOrganization = Boolean(orgId && profile?.organization_id && orgId !== profile.organization_id);
 
   const visible = useAsync(async () => {
     if (!orgId) return { organizationId: null, warehouses: [], outlets: [] };
+    if (delegatedOrganization) {
+      const rows = (await getMyOperationalResourceCatalog()).filter(row => row.organizationId === orgId);
+      const warehouses = [...new Map(rows.filter(row => row.warehouseId && !row.distributionPointId).map(row => [row.warehouseId!, {
+        kind: 'warehouse' as const, id: row.warehouseId!, name: row.warehouseName ?? '',
+        nameAr: row.warehouseNameAr ?? '', warehouseId: null,
+        warehouseKind: row.warehouseKind, pointType: null, facilityId: row.warehouseFacilityId,
+      }])).values()];
+      const outlets = [...new Map(rows.filter(row => row.distributionPointId).map(row => [row.distributionPointId!, {
+        kind: 'outlet' as const, id: row.distributionPointId!, name: row.distributionPointName ?? '',
+        nameAr: row.distributionPointNameAr ?? '', warehouseId: row.warehouseId,
+        warehouseKind: null, pointType: row.distributionPointType, facilityId: null,
+      }])).values()];
+      return { organizationId: orgId, warehouses, outlets };
+    }
     const [whs, pts] = await Promise.all([getWarehouses(orgId), getPointsByOrg(orgId)]);
     return { organizationId: orgId, warehouses: whs.map(toWhOption), outlets: pts.map(toOutletOption) };
-  }, [orgId]);
+  }, [orgId, delegatedOrganization]);
 
   const data = useMemo<InventoryScopeCatalog | null>(() => {
     // useAsync may retain the previous result for one render while a new
@@ -99,7 +115,7 @@ export function useInventoryScopes(
     // that organization even when the profile has no individual assignment
     // rows (for example an institution administrator). The selected scope is
     // still re-checked by migration 062 immediately before the write.
-    const managesWholeOrganization = superAdmin || canManageOrganization;
+    const managesWholeOrganization = superAdmin || canManageOrganization || delegatedOrganization;
     const relevantAssignments = assigned.scopes.filter(a => a.organizationId === orgId);
     const assignedWarehouses = new Set(
       relevantAssignments.map(a => a.warehouseId).filter((id): id is string => Boolean(id)),
@@ -162,7 +178,7 @@ export function useInventoryScopes(
       resolve: (kind, id) => (id ? readable.get(`${kind}:${id}`) ?? null : null),
       canManage: (kind, id) => Boolean(id && manageable.has(`${kind}:${id}`)),
     };
-  }, [visible.data, assigned.scopes, orgId, profile?.role, canManageOrganization]);
+  }, [visible.data, assigned.scopes, orgId, profile?.role, canManageOrganization, delegatedOrganization]);
 
   return {
     ...visible,
@@ -171,7 +187,7 @@ export function useInventoryScopes(
     // assignment rows and may use the readable catalog immediately.
     loading: visible.loading
       || (Boolean(orgId) && data === null)
-      || (!canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
+      || (!delegatedOrganization && !canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
   };
 }
 

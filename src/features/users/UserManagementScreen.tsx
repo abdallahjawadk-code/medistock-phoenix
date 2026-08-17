@@ -35,6 +35,7 @@ import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
+import { DelegatedAccessPanel } from './DelegatedAccessPanel';
 /**
  * AUTHENTICATED-SCREEN-SPLIT-B: lazy-load these two Super Admin-only panels
  * (same convention as AvailabilityCleanupWizard above — each already
@@ -317,6 +318,7 @@ export function UserManagementScreen() {
               canManage={canManagePerms} onToast={showToast}
             />
           )}
+          {selectedUser && isSuper && <DelegatedAccessPanel actorRole={role} target={selectedUser} lang={lang} onToast={showToast} />}
         </div>
       </div>
 

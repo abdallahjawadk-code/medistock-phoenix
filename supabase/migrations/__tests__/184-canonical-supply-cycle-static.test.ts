@@ -70,20 +70,22 @@ describe('184 · registration and file hygiene', () => {
   // weakened — it is re-pointed by EXACT filename at the new single highest
   // reviewed migration, and 186 takes over the fail-closed role 185 used to
   // play.
-  it('is followed by exactly 185 and 186, with 186 highest reviewed', () => {
+  it('is followed by exactly 185, 186 and 187, with 187 highest reviewed', () => {
     const NEXT = '185_phoenix_return_quarantine_recall_parity.sql';
     const NEXT_2 = '186_phoenix_correction_reason_code_wrapper_parity.sql';
+    const NEXT_3 = '187_phoenix_delegated_operational_access.sql';
     const numbers = REVIEWED_MIGRATION_FILES
       .map(f => Number(f.slice(0, 3)))
       .filter(n => Number.isFinite(n));
-    expect(Math.max(...numbers)).toBe(186);
+    expect(Math.max(...numbers)).toBe(187);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('184_'))).toHaveLength(1);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('185_'))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('186_'))).toEqual([NEXT_2]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('187_'))).toEqual([NEXT_3]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_2);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^18[7-9]_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_3);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^18[8-9]_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

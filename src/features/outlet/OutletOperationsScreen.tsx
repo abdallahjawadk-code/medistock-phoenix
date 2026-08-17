@@ -88,7 +88,11 @@ export function OutletOperationsScreen({
   const canReceiveIncoming = receivePerm.data === true;
   const returnRequestPerm = useOutletReturnRequestPermission(activeOrgId, activeOutlet?.id ?? null);
   const canRequestReturn = returnRequestPerm.data === true;
-  const recallPerm = useOutletRecallPermission(activeOrgId, activeOutlet?.warehouseId ?? null);
+  const recallPerm = useOutletRecallPermission(
+    activeOrgId,
+    activeOutlet?.warehouseId ?? null,
+    activeOutlet?.id ?? null,
+  );
   const canRecallOutletStock = recallPerm.data === true;
 
   const header = (

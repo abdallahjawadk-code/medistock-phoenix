@@ -633,7 +633,19 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
-    expect(diff.trim()).toBe('');
+    // M187 authorizes exactly these three delegated-access integration files.
+    // This is a SUBSET assertion, not an equality one, because the command
+    // above diffs the WORKING TREE: uncommitted it lists the three authorized
+    // files; once committed — and on every CI checkout — it is empty. Both
+    // states pass, and any file outside the list still fails closed exactly as
+    // the pre-187 `toBe('')` assertion did.
+    const DELEGATED_AUTHORIZED = [
+      'src/features/inventory/useInventoryScopes.ts',
+      'src/features/inventory/useOutletRecallPermission.ts',
+      'src/shared/ui/PhoenixOrgScope.tsx',
+    ];
+    const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
+    expect(delegatedFiles.filter(f => !DELEGATED_AUTHORIZED.includes(f))).toEqual([]);
   });
 
   // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately
