@@ -104,10 +104,11 @@ describe('no client-side document-number sequence exists',()=>{
     // selectors. It creates no table, sequence, counter, max()+1 or generated
     // numeric identity, and no document number of any kind — every return number
     // it handles is caller-supplied text it only btrim()s and matches on.
-    // Boundary moves to 186 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186)_/.test(f));
+    // Boundary moves to 187 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '187_phoenix_delegated_operational_access.sql',
       '186_phoenix_correction_reason_code_wrapper_parity.sql',
       '185_phoenix_return_quarantine_recall_parity.sql',
       '184_phoenix_canonical_supply_cycle.sql',

@@ -82,12 +82,14 @@ describe('R1.6 HCM view-vs-act control parity', () => {
     expect(outletScreen).toMatch(/canRequestReturn\s*&&\s*\([\s\S]*<OutletReturnComposer/);
   });
 
-  it('gates outlet recall on exact owning-warehouse scoped outlet_stock.recall', () => {
+  it('preserves same-org warehouse recall but uses exact point scope cross-org', () => {
     expect(outletScreen).toContain('useOutletRecallPermission');
+    expect(outletScreen).toMatch(/useOutletRecallPermission\([\s\S]*activeOutlet\?\.warehouseId[\s\S]*activeOutlet\?\.id/);
     expect(outletScreen).toMatch(/canRecallOutletStock\s*&&\s*\([\s\S]*<OutletRecallPanel/);
     expect(outletRecallPermission).toContain("permissionKey: 'outlet_stock.recall'");
-    expect(outletRecallPermission).toMatch(/warehouseId,/);
-    expect(outletRecallPermission).toContain('distributionPointId: null');
+    expect(outletRecallPermission).toContain('profile.organization_id !== orgId');
+    expect(outletRecallPermission).toContain('warehouseId: isDelegatedOrganization ? null : warehouseId');
+    expect(outletRecallPermission).toContain('distributionPointId: isDelegatedOrganization ? distributionPointId : null');
   });
 
   it('gates initial provisioning on exact warehouse-scoped warehouse_dispatch.create', () => {

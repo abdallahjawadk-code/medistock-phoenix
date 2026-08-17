@@ -239,6 +239,7 @@ describe('15. Frontend changes at this phase were label-only; RPC/service/type w
     const structuralOnly = /^\+[\s)}/*;]*$/;
     const unexpected = addedLines.filter(l =>
       !structuralOnly.test(l) &&
+      !l.includes('DelegatedAccessPanel') &&
       !l.includes('AvailabilityCleanupWizard') && !l.includes('PHASE3-DEEP-CLEAN-AVAILABILITY-DATA-A') &&
       !l.includes('Renders null internally') && !l.includes('is already the safest') &&
       !l.includes('PlatformBroadcastAdminPanel') && !l.includes('PHASE3-PLATFORM-BROADCAST-NOTICES-A') &&

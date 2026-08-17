@@ -1642,7 +1642,17 @@ describe('16. isolation: untouched domains', () => {
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    // M187 authorizes exactly these three delegated-access integration files.
+    // SUBSET, not equality: this diffs the WORKING TREE, which is empty once
+    // committed and on every CI checkout. Anything outside the list still
+    // fails closed exactly as the pre-187 `toBe('')` assertion did.
+    const DELEGATED_AUTHORIZED = [
+      'src/features/inventory/useInventoryScopes.ts',
+      'src/features/inventory/useOutletRecallPermission.ts',
+      'src/shared/ui/PhoenixOrgScope.tsx',
+    ];
+    const changed = diff.trim().split('\n').filter(Boolean).sort();
+    expect(changed.filter(f => !DELEGATED_AUTHORIZED.includes(f))).toEqual([]);
   });
 
   it('public QR is untouched', () => {

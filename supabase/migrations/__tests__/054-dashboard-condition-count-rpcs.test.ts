@@ -564,7 +564,17 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
-    expect(diff.trim()).toBe('');
+    // M187 authorizes exactly these three delegated-access integration files.
+    // SUBSET, not equality: the command above diffs the WORKING TREE, which is
+    // empty once committed and on every CI checkout. Anything outside the list
+    // still fails closed exactly as the pre-187 `toBe('')` assertion did.
+    const DELEGATED_AUTHORIZED = [
+      'src/features/inventory/useInventoryScopes.ts',
+      'src/features/inventory/useOutletRecallPermission.ts',
+      'src/shared/ui/PhoenixOrgScope.tsx',
+    ];
+    const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
+    expect(delegatedFiles.filter(f => !DELEGATED_AUTHORIZED.includes(f))).toEqual([]);
   });
 
   it('no working-tree diff on qr.service.ts, alert/exchange lifecycle files, or navigation/auth files', () => {

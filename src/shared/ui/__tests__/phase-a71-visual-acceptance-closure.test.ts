@@ -170,11 +170,25 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff --name-only HEAD -- src/features/users/UserManagementScreen.tsx',
+        'git diff --unified=0 HEAD -- src/features/users/UserManagementScreen.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+    // M187 registers exactly these two ADDED lines. This is a SUBSET assertion,
+    // not an equality one, because the command above diffs the WORKING TREE:
+    // uncommitted it emits both lines; once committed — and on every CI
+    // checkout — it emits nothing. Both states pass. Deletions stay forbidden
+    // outright, so together these are as fail-closed as the pre-187 assertion
+    // that the whole file was untouched: any modified, moved or extra line
+    // produces either an unlisted `+` or a `-`, and both fail.
+    const AUTHORIZED_ADDED = [
+      "+import { DelegatedAccessPanel } from './DelegatedAccessPanel';",
+      '+          {selectedUser && isSuper && <DelegatedAccessPanel actorRole={role} target={selectedUser} lang={lang} onToast={showToast} />}',
+    ];
+    const added = diff.split('\n').filter(line => line.startsWith('+') && !line.startsWith('+++'));
+    expect(added.filter(line => !AUTHORIZED_ADDED.includes(line))).toEqual([]);
+    const removed = diff.split('\n').filter(line => line.startsWith('-') && !line.startsWith('---'));
+    expect(removed).toEqual([]);
     expect(userMgmt).toContain("const canViewUsers = isSuper || actorEff.has('users.view');");
     expect(userMgmt).toContain("const canRecycle   = isSuper || actorEff.has('users.recycle');");
   });
