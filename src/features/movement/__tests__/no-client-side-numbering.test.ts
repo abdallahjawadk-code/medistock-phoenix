@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179/180/181/182/183 introduce no numbering and no 184+ migration exists',()=>{
+  it('179–188 introduce no numbering and no 189+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -104,8 +104,14 @@ describe('no client-side document-number sequence exists',()=>{
     // selectors. It creates no table, sequence, counter, max()+1 or generated
     // numeric identity, and no document number of any kind — every return number
     // it handles is caller-supplied text it only btrim()s and matches on.
-    // Boundary moves to 187 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187)_/.test(f));
+    // R1.6: 186 forward-replaces two correction wrappers. It creates no table,
+    // sequence, counter, max()+1 or generated numeric identity.
+    // 187: delegated operational access creates no numbering.
+    // M188: public QR facility context is a security-hardening READ cutover of
+    // 177's public resolver. It creates no table, sequence, counter, max()+1 or
+    // generated numeric identity, and no document number of any kind. Boundary
+    // moves to 188 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '187_phoenix_delegated_operational_access.sql',
