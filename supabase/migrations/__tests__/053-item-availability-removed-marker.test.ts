@@ -644,8 +644,41 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
       'src/features/inventory/useOutletRecallPermission.ts',
       'src/shared/ui/PhoenixOrgScope.tsx',
     ];
+    // G3.2 — CANONICAL SEARCH & MATERIAL SELECTION CONVERGENCE authorizes
+    // exactly these six files: the canonical search contract's consumers, the
+    // one human-search normalizer change, and the OCR catalog adapter. Same
+    // SUBSET mechanism M187 established, and deliberately the same EXACT-PATH
+    // form — never a directory, glob or pattern. A seventh file added under any
+    // of these folders still fails this guard closed, which is the whole point
+    // of listing names instead of widening the pathspec above.
+    //
+    // src/features/procurement/DirectEntryPanel.tsx is NOT listed here: it is
+    // already excluded by name in the pathspec, so adding it would be a
+    // redundant second exemption.
+    //
+    // src/shared/materials/search-contract.ts IS listed, as of G3.2 Revision 5.
+    // It was deliberately withheld while the file was untracked: `git diff`
+    // never reports untracked paths, so naming it then would have pre-authorized
+    // a future tracked change to it sight unseen. That future is now the
+    // present. The file is about to be committed, its content has been through
+    // an independent review, and a guard that passes only because a production
+    // file is INVISIBLE to it is not a guard at all. Listing the exact path is
+    // what brings the file under this assertion rather than outside it — and it
+    // is the exact path, never the directory: a sibling such as
+    // search-contract-v2.ts, searchContract.ts or search-contract.ts.bak still
+    // fails this guard closed.
+    const G3_2_AUTHORIZED = [
+      'src/shared/materials/material-resolver.service.ts',
+      'src/shared/materials/PhoenixMaterialResolver.tsx',
+      'src/shared/materials/search-contract.ts',
+      'src/features/movement/composer-model.ts',
+      'src/features/reports/global-material-search.service.ts',
+      'src/features/reports/GlobalMaterialSearchPanel.tsx',
+      'src/features/inventory/ocr/catalog-adapter.ts',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED];
     const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
-    expect(delegatedFiles.filter(f => !DELEGATED_AUTHORIZED.includes(f))).toEqual([]);
+    expect(delegatedFiles.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });
 
   // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx is legitimately

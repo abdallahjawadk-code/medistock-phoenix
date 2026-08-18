@@ -181,6 +181,29 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
                         <PhoenixButton
                           variant="ghost" size="sm"
                           onClick={() => {
+                            // G3.2 — this button is rendered ONLY for
+                            // `d.source === 'catalog'`, so the row it adopts is a
+                            // `central_items` hit and nothing more. Its canonical
+                            // block therefore says exactly that and no more:
+                            //
+                            //  - scope.kind = 'catalog' (DECISION E). The panel
+                            //    does have a `warehouseId` in scope, but this row
+                            //    is NOT stock in that warehouse — it is a catalog
+                            //    entry the operator is about to purchase INTO it.
+                            //    Attaching the warehouse here would assert a
+                            //    structural position the row does not occupy.
+                            //  - materialIdentityKey = null. 150's key is a
+                            //    GENERATED column on the stock tables;
+                            //    `phoenix_subpurchase_duplicate_candidates` does
+                            //    not return one, and it must never be rebuilt
+                            //    from name / national code / concentration.
+                            //  - nationalCode is the catalog-level semantic,
+                            //    which for a catalog row IS `barcode` (DECISION A)
+                            //    — matching what this code already assigned to
+                            //    both fields before G3.2.
+                            //
+                            // Contract adaptation only: the duplicate-handling
+                            // workflow below is untouched.
                             setMaterial({
                               source: 'catalog',
                               centralItemId: d.sourceId,
@@ -200,6 +223,36 @@ export function DirectEntryPanel({ lang, warehouseId, onDone }: Props) {
                               supplyType: null,
                               grade: 'confirmed',
                               reasonKey: 'sp_duplicate_use_this',
+                              canonical: {
+                                identity: {
+                                  centralItemId: d.sourceId,
+                                  materialIdentityKey: null,
+                                  warehouseStockId: null,
+                                  outletStockId: null,
+                                },
+                                scope: { kind: 'catalog' },
+                                display: {
+                                  scientificName: d.scientificName,
+                                  tradeName: d.tradeName,
+                                  concentration: d.concentration,
+                                  dosageForm: d.dosageForm,
+                                  unit: null,
+                                  nationalCode: d.nationalCode,
+                                  batchNumber: null,
+                                  expiryDate: null,
+                                },
+                                eligibility: {
+                                  // The 117 duplicate lookup is advisory and
+                                  // already returns only usable catalog rows;
+                                  // the RPC behind the entry itself remains the
+                                  // authority on whether the purchase is legal.
+                                  selectable: true,
+                                  active: true,
+                                  availableQuantity: null,
+                                  expired: null,
+                                  blockedReasonKey: null,
+                                },
+                              },
                             } satisfies ResolvedMaterial);
                             setNewIdentity(false);
                             touch();

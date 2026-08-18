@@ -133,8 +133,12 @@ export function PhoenixMaterialResolver({ lang, warehouseId, audience, onSelect,
                 </span>
               </div>
               <div style={{ color: 'var(--t2)', marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11px' }}>
-                {r.concentration && <span dir="auto">{r.concentration}</span>}
-                {r.dosageForm && <span dir="auto">{r.dosageForm}</span>}
+                {/* G3.2 — the discriminators that make two strengths of one
+                    molecule tellable apart. They render whenever the row
+                    actually carries them; before G3.2 the service hard-coded
+                    them to null and these lines could never fire. */}
+                {r.concentration && <span data-testid="mr-concentration" dir="auto">{r.concentration}</span>}
+                {r.dosageForm && <span data-testid="mr-dosage-form" dir="auto">{r.dosageForm}</span>}
                 {r.unit && <span dir="auto">{r.unit}</span>}
                 {r.nationalCode && <span dir="ltr">{t('inv_national_code', lang)}: {r.nationalCode}</span>}
                 {r.barcode && <span dir="ltr">{t('mr_barcode', lang)}: {r.barcode}</span>}
@@ -142,6 +146,14 @@ export function PhoenixMaterialResolver({ lang, warehouseId, audience, onSelect,
                 {r.expiryDate && <span dir="ltr">{t('mv_f_expiry_date', lang)}: {r.expiryDate}</span>}
               </div>
               <div style={{ color: 'var(--t3)', marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '10.5px' }}>
+                {/* G3.2 / DECISION D — "Sector Main" is shown ONLY when the
+                    structural chain proved it (health-sector organization +
+                    main institution warehouse with no facility, Migration 181).
+                    A null facility_id on its own is NOT this label, so nothing
+                    here reads the null; it reads the classified role. */}
+                {r.canonical.scope.kind === 'warehouse' && r.canonical.scope.sectorRole === 'sector_main' && (
+                  <span data-testid="mr-sector-main">{t('hsg_sector_main', lang)}</span>
+                )}
                 {r.available != null && <span>{t('inv_available', lang)}: {r.available} · {t('inv_reserved', lang)}: {r.reserved}</span>}
                 {r.supplyType && <span>{t(supplyTypeLabelKey(r.supplyType), lang)}</span>}
                 <span><PhoenixIcon name="check" size={10} inline /> {t(r.reasonKey, lang)}</span>

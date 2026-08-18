@@ -551,3 +551,65 @@ describe('Preprocessing is non-destructive', () => {
     expect(DEFAULT_PREPROCESS.deskewDegrees).toBeNull();
   });
 });
+
+/**
+ * G3.2 / U6 — EXTENSION, not replacement.
+ *
+ * Nothing above this point was altered. G3.2 gave the OCR matcher real identity
+ * discriminators from Migration 114 plus the catalog national-code semantic
+ * (owner DECISION A). Feeding a matcher better DATA is the honest way to reduce
+ * ambiguity. The dishonest way is to relax what counts as a confident match, so
+ * the governing rules are re-pinned here at their source, where a future change
+ * cannot quietly slip past.
+ */
+describe('G3.2 — OCR remains discovery assistance, never canonical identity', () => {
+  const adapter = readOcr('catalog-adapter.ts');
+  const matcher = readOcr('match/catalog-match.ts');
+
+  it('the adapter still cannot create a material — it only maps existing rows', () => {
+    const executable = codeOnly(adapter);
+    for (const write of ['.insert(', '.update(', '.upsert(', '.delete(', '.rpc(']) {
+      expect(executable).not.toContain(write);
+    }
+    // It holds no transport at all. Its ONLY import from the supabase tree is
+    // the CentralItem TYPE, which carries no runtime capability whatsoever.
+    expect(executable).not.toContain("from '@/shared/supabase/client'");
+    expect(adapter).toContain("import type { CentralItem }");
+  });
+
+  it('a reading that matches nothing is still no_match, which creates nothing', () => {
+    expect(matcher).toContain("{ kind: 'no_match' }");
+    expect(codeOnly(matcher)).not.toContain('.insert(');
+  });
+
+  it('the certainty thresholds are unchanged by G3.2', () => {
+    // These three decide when the matcher is allowed to say "unique". G3.2
+    // must not have moved any of them.
+    expect(matcher).toContain('export const FUZZY_FLOOR = 0.72;');
+    expect(matcher).toContain('export const FUZZY_UNIQUE_FLOOR = 0.88;');
+    expect(matcher).toContain('export const AMBIGUITY_MARGIN = 0.06;');
+  });
+
+  it('a duplicated national code is still surfaced rather than silently resolved', () => {
+    expect(matcher).toContain("kind: 'ambiguous'");
+    expect(matcher).toContain('hits.length > 1');
+  });
+
+  it('even a clear fuzzy winner still requires downstream operator confirmation', () => {
+    expect(matcher).toContain('REQUIRED_CONFIRMATION_FIELDS');
+  });
+
+  it('the adapter no longer claims 114 columns are missing', () => {
+    // The stale comment asserted a migration was needed for data that already
+    // existed, and that claim kept tier 3 inert for the whole of its life.
+    expect(adapter).not.toContain('has NO concentration');
+    expect(adapter).not.toContain('needs new catalog columns');
+  });
+
+  it('the adapter documents the barcode -> national-code mapping explicitly', () => {
+    // Owner DECISION A. Recorded in the source so a future reader cannot
+    // reinterpret the column silently in either direction.
+    expect(adapter).toContain('DECISION A');
+    expect(adapter).toContain('national-code');
+  });
+});

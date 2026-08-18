@@ -11,7 +11,16 @@
  * abandoned headers behind on every cancel and made scientific_name the material
  * identity. Both are fixed here: identity is a stable id, and nothing is
  * persisted before the review step.
+ *
+ * G3.2 — `searchStock` matched with a bare `.toLowerCase()`. That is adequate
+ * for English and wrong for Arabic: an operator who typed "أموكسيسيلين" found
+ * nothing when the row read "اموكسيسيلين", while the SAME query typed into
+ * PhoenixMaterialResolver found it, because the resolver had always used the
+ * canonical bilingual normalizer. One search box behaving differently from
+ * another is not a cosmetic inconsistency — it teaches operators that a
+ * material "is not in stock" when it is. Both now use `normalizeSearchText`.
  */
+import { normalizeSearchText } from '@/shared/lib/search-normalize';
 
 export type MovementDirection = 'supply' | 'return';
 
@@ -182,16 +191,28 @@ export function recommendFefo(
   })[0];
 }
 
-/** Free-text search across every field the operator might recall. */
+/**
+ * Free-text search across every field the operator might recall.
+ *
+ * G3.2: normalization is `normalizeSearchText` — the SAME function the material
+ * resolver uses — so Arabic hamza seats, taa marbuta, final yaa, harakat and
+ * tatweel fold identically in both places, and English stays case-insensitive.
+ * Every term must match (AND), unchanged from before.
+ *
+ * This is a FILTER over rows already fetched under the caller's RLS scope. It
+ * grants nothing and hides nothing for safety; identity remains
+ * `warehouseStockId` on the row, never the text typed here.
+ */
 export function searchStock(candidates: readonly StockCandidate[], query: string): StockCandidate[] {
-  const q = query.trim().toLowerCase();
+  const q = normalizeSearchText(query);
   if (!q) return [...candidates];
-  const terms = q.split(/\s+/);
+  const terms = q.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [...candidates];
   return candidates.filter(c => {
-    const haystack = [
+    const haystack = normalizeSearchText([
       c.scientificName, c.tradeName, c.concentration, c.dosageForm, c.unit,
       c.nationalCode, c.batchNumber, c.internalBatchReference, c.expiryDate,
-    ].filter(Boolean).join(' ').toLowerCase();
+    ].filter(Boolean).join(' '));
     return terms.every(term => haystack.includes(term));
   });
 }
