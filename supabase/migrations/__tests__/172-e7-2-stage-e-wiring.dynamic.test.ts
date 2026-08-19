@@ -154,6 +154,7 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // "Stage E still ends at 171" assertion remains true. Listed by exact
       // filename so the guard stays exhaustive and still fails closed.
       '188_phoenix_public_qr_facility_context.sql',
+      '189_phoenix_inter_org_alert_canonical_identity.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

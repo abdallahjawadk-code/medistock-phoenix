@@ -65,23 +65,24 @@ describe('183 registration and shape', () => {
       .toBe('182_phoenix_health_center_facility_scoped_rbac.sql');
   });
 
-  it('is followed by exactly 184 through 188, and nothing beyond them', () => {
-    // M188 (public QR facility context) is the next reviewed migration. The
+  it('is followed by exactly 184 through 189, and nothing beyond them', () => {
+    // M189 (inter-org alert canonical identity) is the next reviewed migration. The
     // successor list stays EXACT and the nothing-beyond regex is narrowed by
     // exactly one number, so this guard still fails closed on any unreviewed
-    // migration beyond 188.
+    // migration beyond 189.
     const SUCCESSORS = [
       '184_phoenix_canonical_supply_cycle.sql',
       '185_phoenix_return_quarantine_recall_parity.sql',
       '186_phoenix_correction_reason_code_wrapper_parity.sql',
       '187_phoenix_delegated_operational_access.sql',
       '188_phoenix_public_qr_facility_context.sql',
+      '189_phoenix_inter_org_alert_canonical_identity.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^189_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^190_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {
