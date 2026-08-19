@@ -52,6 +52,7 @@ const COPY = {
     warehouse: 'مذخر',
     outlet: 'منفذ',
     truncated: 'تم الوصول إلى حد العرض الآمن؛ ضيّق عبارة البحث أو المؤسسات.',
+    sourceTruncated: 'بلغ أحد استعلامات المصدر حدّه الأقصى، لذا البيانات غير مكتملة والمجاميع أدناه حدّ أدنى وليست الإجمالي الحقيقي. ضيّق عبارة البحث أو المؤسسات للحصول على صورة كاملة.',
     exportReady: 'تم إنشاء ملف Excel من النتائج الحالية.',
     exportFailed: 'تعذر إنشاء ملف Excel.',
     loadOrganizations: 'تعذر تحميل المؤسسات.',
@@ -91,6 +92,7 @@ const COPY = {
     warehouse: 'Warehouse',
     outlet: 'Outlet',
     truncated: 'The safe display limit was reached; narrow the query or institution selection.',
+    sourceTruncated: 'A source query hit its cap, so the underlying data is incomplete and the totals below are a LOWER BOUND, not the real total. Narrow the query or institution selection for a complete picture.',
     exportReady: 'Excel was generated from the current result set.',
     exportFailed: 'Could not generate the Excel workbook.',
     loadOrganizations: 'Could not load institutions.',
@@ -431,6 +433,21 @@ export function GlobalMaterialSearchPanel() {
               </PhoenixCard>
             ))}
           </div>
+
+          {/* G3.2 — SOURCE truncation is reported before display truncation and
+              is a different, more serious statement. `truncated` says the list
+              shown was cut; `sourceTruncated` says the underlying QUERY was cut,
+              so every total above is a lower bound. Presenting capped data as a
+              complete total is the failure this removes. */}
+          {result.sourceTruncated && (
+            <div
+              role="status"
+              data-testid="global-search-source-truncated"
+              style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: 'var(--r2)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '11px', fontWeight: 700 }}
+            >
+              <PhoenixIcon name="warning" size={13} inline /> {c.sourceTruncated}
+            </div>
+          )}
 
           {result.truncated && (
             <div role="status" style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: 'var(--r2)', background: 'var(--warn2)', color: 'var(--warn)', fontSize: '11px' }}>

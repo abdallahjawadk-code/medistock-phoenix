@@ -573,8 +573,33 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
       'src/features/inventory/useOutletRecallPermission.ts',
       'src/shared/ui/PhoenixOrgScope.tsx',
     ];
+    // G3.2 — CANONICAL SEARCH & MATERIAL SELECTION CONVERGENCE authorizes
+    // exactly these seven files. Same SUBSET mechanism M187 established, and
+    // deliberately the same EXACT-PATH form — never a directory, glob or
+    // pattern. A seventh file added under any of these folders still fails this
+    // guard closed, which is the whole point of listing names instead of
+    // widening the pathspec above.
+    //
+    // DirectEntryPanel.tsx is already excluded by name in the pathspec, so it is
+    // not repeated here. search-contract.ts IS listed as of G3.2 Revision 5: it
+    // was withheld while untracked, because `git diff` never reports untracked
+    // paths and naming it then would have pre-authorized an unreviewed future
+    // change. It is now a reviewed production file about to be committed, and a
+    // guard that passes only because a production file is invisible to it is no
+    // guard. The entry is the EXACT path — a sibling like search-contract-v2.ts
+    // or search-contract.ts.bak still fails this guard closed.
+    const G3_2_AUTHORIZED = [
+      'src/shared/materials/material-resolver.service.ts',
+      'src/shared/materials/PhoenixMaterialResolver.tsx',
+      'src/shared/materials/search-contract.ts',
+      'src/features/movement/composer-model.ts',
+      'src/features/reports/global-material-search.service.ts',
+      'src/features/reports/GlobalMaterialSearchPanel.tsx',
+      'src/features/inventory/ocr/catalog-adapter.ts',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED];
     const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
-    expect(delegatedFiles.filter(f => !DELEGATED_AUTHORIZED.includes(f))).toEqual([]);
+    expect(delegatedFiles.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });
 
   it('no working-tree diff on qr.service.ts, alert/exchange lifecycle files, or navigation/auth files', () => {
