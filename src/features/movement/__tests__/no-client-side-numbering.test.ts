@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–188 introduce no numbering and no 189+ migration exists',()=>{
+  it('179–189 introduce no numbering and no 190+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -109,11 +109,21 @@ describe('no client-side document-number sequence exists',()=>{
     // 187: delegated operational access creates no numbering.
     // M188: public QR facility context is a security-hardening READ cutover of
     // 177's public resolver. It creates no table, sequence, counter, max()+1 or
-    // generated numeric identity, and no document number of any kind. Boundary
-    // moves to 188 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188)_/.test(f));
+    // generated numeric identity, and no document number of any kind.
+    // G3.3 / M189: inter-org alert canonical identity forward-replaces the two
+    // live inter-institution alert RPCs and adds one shared read bridge that
+    // resolves item_availability rows to Migration 150's canonical
+    // material_identity_key. Every value it produces is a pure function of
+    // already-persisted data — no table, sequence, counter, max()+1 or generated
+    // numeric identity, and no document number of any kind. The alert_key it
+    // still composes is the pre-existing 039 shape, a concatenation of two row
+    // UUIDs and the alert type, never a counted or issued number. Boundary moves
+    // to 189 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '189_phoenix_inter_org_alert_canonical_identity.sql',
+      '188_phoenix_public_qr_facility_context.sql',
       '187_phoenix_delegated_operational_access.sql',
       '186_phoenix_correction_reason_code_wrapper_parity.sql',
       '185_phoenix_return_quarantine_recall_parity.sql',

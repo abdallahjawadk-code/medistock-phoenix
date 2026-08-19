@@ -228,6 +228,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // plus its static/dynamic proofs and the QR service that types the new
       // payload. No watched-prefix wildcard is introduced.
       'supabase/migrations/188_phoenix_public_qr_facility_context.sql','supabase/migrations/__tests__/188-public-qr-facility-context-static.test.ts','supabase/migrations/__tests__/188-public-qr-facility-context.dynamic.test.ts','src/shared/supabase/services/qr.service.ts',
+      // G3.3 / M189 (inter-org alert canonical identity): ONE reviewed migration
+      // that forward-replaces both independently-callable live inter-institution
+      // alert RPCs and adds one shared read bridge, plus its static suite and
+      // its directly-scoped dynamic suite. It adds no table, column, permission
+      // key or RLS widening and touches no auth, RBAC, environment or dependency
+      // surface — the only WATCHED prefix it enters is supabase/migrations.
+      // Registered by EXACT filename, like every entry before it, so any
+      // unlisted file under a watched prefix still fails this guard closed.
+      'supabase/migrations/189_phoenix_inter_org_alert_canonical_identity.sql','supabase/migrations/__tests__/189-inter-org-alert-canonical-identity-static.test.ts','supabase/migrations/__tests__/189-inter-org-alert-canonical-identity.dynamic.test.ts',
       'supabase/migrations/__tests__/048-live-alerts-expiry-risk-tiers.test.ts','supabase/migrations/__tests__/049-add-national-code-to-item-availability.test.ts','supabase/migrations/__tests__/050-phoenix-upsert-availability-national-code.test.ts','supabase/migrations/__tests__/051-material-batch-identity-option-a.test.ts','supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts','supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts','supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts','supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts','src/features/account/__tests__/bugfix-my-account-clear-whatsapp-disables-official-contact.test.ts','src/features/account/__tests__/my-account-whatsapp-save.test.ts','src/features/alerts/__tests__/bugfix-inter-alerts-freeze.test.ts','src/features/institutions/__tests__/ui-hide-port-add-item.test.ts','src/shared/ui/__tests__/phase-a71-visual-acceptance-closure.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
