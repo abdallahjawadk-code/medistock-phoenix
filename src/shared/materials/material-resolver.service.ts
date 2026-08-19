@@ -344,7 +344,12 @@ export async function resolveMaterials(rawQuery: string, opts: ResolveOptions = 
     const unit = textOrNull(row.unit);
     // The query already restricts to active rows; this reflects the row rather
     // than assuming the filter, so a contract change cannot silently pass.
-    const active = (row.status ?? 'active') === 'active';
+    // G3.2 FAIL-CLOSED: `status` is OPTIONAL on CatalogRow, so it can arrive
+    // undefined as well as null. Neither is promoted to active. A missing
+    // status is not evidence of an active material, and defaulting it to
+    // active is precisely the permissive reading that would let an inactive
+    // or unfiltered catalog row become operationally selectable.
+    const active = row.status === 'active';
 
     results.push({
       source: 'catalog', centralItemId: row.id, warehouseStockId: null,

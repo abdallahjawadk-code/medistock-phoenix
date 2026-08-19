@@ -1652,7 +1652,7 @@ describe('16. isolation: untouched domains', () => {
       'src/shared/ui/PhoenixOrgScope.tsx',
     ];
     // G3.2 — CANONICAL SEARCH & MATERIAL SELECTION CONVERGENCE authorizes
-    // exactly these six files. Same SUBSET mechanism M187 established, and
+    // exactly these seven files. Same SUBSET mechanism M187 established, and
     // deliberately the same EXACT-PATH form — never a directory, glob or
     // pattern. A seventh file added under any of these folders still fails this
     // guard closed, which is the whole point of listing names instead of

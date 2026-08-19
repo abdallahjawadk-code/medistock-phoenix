@@ -171,6 +171,44 @@ describe('U2 — inactive catalog material exclusion (owner DECISION B)', () => 
     expect(rows[0].canonical.eligibility.active).toBe(false);
     expect(rows[0].canonical.eligibility.selectable).toBe(false);
   });
+
+  // FAIL-CLOSED — `status` is OPTIONAL on CatalogRow, so it can arrive as null
+  // or be absent entirely. An earlier reading defaulted both to 'active', which
+  // is the one direction this rule must never fail in: a row whose status is
+  // UNKNOWN is not thereby a row that is KNOWN ACTIVE. These two cases are the
+  // difference between "the server filter is the only thing standing between an
+  // inactive material and an operator" and a genuine second line of defence.
+  it('NEGATIVE — a null status is NOT promoted to active', async () => {
+    const rows = await withClient({
+      central_items: [catalogRow({ status: null })],
+    }, () => resolveMaterials('amoxicillin', {}));
+
+    expect(rows[0].canonical.eligibility.active).toBe(false);
+    expect(rows[0].canonical.eligibility.selectable).toBe(false);
+  });
+
+  it('NEGATIVE — an absent status field is NOT promoted to active', async () => {
+    const row = catalogRow();
+    delete (row as { status?: unknown }).status;
+    const rows = await withClient({
+      central_items: [row],
+    }, () => resolveMaterials('amoxicillin', {}));
+
+    expect(rows[0].canonical.eligibility.active).toBe(false);
+    expect(rows[0].canonical.eligibility.selectable).toBe(false);
+  });
+
+  // The positive polarity, asserted explicitly: a fail-closed rule that also
+  // refused genuinely active rows would pass every negative test above and
+  // still be wrong.
+  it('POSITIVE — an explicitly active row remains selectable', async () => {
+    const rows = await withClient({
+      central_items: [catalogRow({ status: 'active' })],
+    }, () => resolveMaterials('amoxicillin', {}));
+
+    expect(rows[0].canonical.eligibility.active).toBe(true);
+    expect(rows[0].canonical.eligibility.selectable).toBe(true);
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

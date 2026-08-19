@@ -645,7 +645,7 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
       'src/shared/ui/PhoenixOrgScope.tsx',
     ];
     // G3.2 — CANONICAL SEARCH & MATERIAL SELECTION CONVERGENCE authorizes
-    // exactly these six files: the canonical search contract's consumers, the
+    // exactly these seven files: the canonical search contract's consumers, the
     // one human-search normalizer change, and the OCR catalog adapter. Same
     // SUBSET mechanism M187 established, and deliberately the same EXACT-PATH
     // form — never a directory, glob or pattern. A seventh file added under any
