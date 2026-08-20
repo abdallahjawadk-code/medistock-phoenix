@@ -7,8 +7,13 @@ const screen = readFileSync(join(SRC, 'features/alerts/InterInstitutionAlertsScr
 const strings = readFileSync(join(SRC, 'shared/i18n/strings.ts'), 'utf8');
 
 describe('InterInstitutionAlertsScreen lifecycle wiring', () => {
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the screen no longer reads through the
+  // write-capable hybrid wrapper. Its load is an explicit refresh COMMAND
+  // followed by a PURE page query; the lifecycle transition and history
+  // wrappers are unchanged.
   it('uses only the lifecycle service as its primary alert source', () => {
-    expect(screen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(screen).toContain('refreshInterOrgAlertLifecycle');
+    expect(screen).toContain('queryLiveInterOrgAlertsPage');
     expect(screen).not.toContain("from './live-inter-institution-alerts.service'");
     expect(screen).toContain('updateInterOrgAlertState');
     expect(screen).toContain('reopenInterOrgAlert');

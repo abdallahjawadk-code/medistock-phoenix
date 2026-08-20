@@ -9,7 +9,7 @@ import {
 } from '@/shared/supabase/services/dashboard.service';
 import { getStatusReports } from '@/shared/supabase/services/status-reports.service';
 import { computeMaterialAlerts, getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
-import { getLiveInterInstitutionAlertsWithState } from '@/features/alerts/inter-org-alert-lifecycle.service';
+import { queryLiveInterOrgAlertSummary } from '@/features/alerts/inter-org-alert-lifecycle.service';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -68,25 +68,34 @@ export function DashboardScreen({ onNavigate }: Props) {
   );
 
   // LIVE-ALERTS-DASHBOARD-SUMMARY-A: live, item_availability-based
-  // inter-institution alert summary (migration 036's
-  // phoenix_get_live_inter_institution_alerts RPC). Replaces the former
+  // inter-institution alert summary. Replaces the former
   // "Exchange alerts summary" widget, which was computed client-side over
   // the manual status-report layer's cross-institution matching helper.
   // computeMaterialAlerts() below is a SEPARATE, single-institution
   // local/material alert path (expiry + missing status per institution) —
   // it is NOT inter-institution matching and is left untouched.
-  const liveAlerts = useAsync(() => getLiveInterInstitutionAlertsWithState(200), []);
+  //
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): this widget used to call the write-capable
+  // with_state hybrid at limit 200 and then reduce 200 alert objects in the
+  // browser, which meant OPENING THE DASHBOARD WROTE TO THE DATABASE (a
+  // lifecycle upsert per live alert, plus an 'opened' event per new one). It
+  // now calls a PURE summary query that returns exactly these four numbers,
+  // server-computed. Rendering this screen causes ZERO inter-org alert writes,
+  // and the Dashboard deliberately never issues the refresh COMMAND — only the
+  // Internal Alerts screen does.
+  //
+  // The counting semantics are unchanged: still only ACTIVE lifecycle states
+  // (open/acknowledged/in_progress), still within the same 200-row window.
+  // That parity is server-side now instead of client-side.
+  const liveAlerts = useAsync(() => queryLiveInterOrgAlertSummary(200), []);
   const liveResult = liveAlerts.data;
   const liveOk = liveResult?.ok ?? false;
   const liveRpcError = liveResult?.error;
   const liveForbidden = liveRpcError === 'FORBIDDEN';
-  const liveList = liveOk
-    ? (liveResult?.alerts ?? []).filter(a => ['open', 'acknowledged', 'in_progress'].includes(a.lifecycleStatus))
-    : [];
-  const liveTotal = liveList.length;
-  const liveHigh = liveList.filter(a => a.severity === 'high').length;
-  const liveSurplus = liveList.filter(a => a.alertType === 'surplus_to_shortage').length;
-  const liveNearExpiry = liveList.filter(a => a.alertType === 'near_expiry_to_shortage').length;
+  const liveTotal = liveOk ? (liveResult?.total ?? 0) : 0;
+  const liveHigh = liveOk ? (liveResult?.high ?? 0) : 0;
+  const liveSurplus = liveOk ? (liveResult?.surplusToShortage ?? 0) : 0;
+  const liveNearExpiry = liveOk ? (liveResult?.nearExpiryToShortage ?? 0) : 0;
 
   const m = metrics.data;
   const sr = srCounts.data;

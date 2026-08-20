@@ -237,6 +237,28 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Registered by EXACT filename, like every entry before it, so any
       // unlisted file under a watched prefix still fails this guard closed.
       'supabase/migrations/189_phoenix_inter_org_alert_canonical_identity.sql','supabase/migrations/__tests__/189-inter-org-alert-canonical-identity-static.test.ts','supabase/migrations/__tests__/189-inter-org-alert-canonical-identity.dynamic.test.ts',
+      // G4.1 / M190 (inter-org alert CQRS boundary): ONE reviewed migration that
+      // ADDS an explicit lifecycle-refresh COMMAND and two PURE query RPCs beside
+      // the existing hybrid, which it leaves byte-identical, plus its static and
+      // dynamic suites. It adds no table, column, permission key or RLS widening,
+      // grants nothing to anon, opens no lifecycle table to a client role, and
+      // touches no auth, RBAC, environment or dependency surface — the only
+      // WATCHED prefix it enters is supabase/migrations. Its frontend half
+      // (features/alerts, features/dashboard) is outside every watched prefix and
+      // is therefore deliberately NOT listed here. Registered by EXACT filename,
+      // like every entry before it, so any unlisted file under a watched prefix
+      // still fails this guard closed.
+      'supabase/migrations/190_phoenix_inter_org_alert_cqrs_boundary.sql','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary-static.test.ts','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary.dynamic.test.ts',
+      // …plus the one guard test under the watched src/shared/supabase prefix
+      // whose alert-lifecycle zero-diff clause G4.1 supersedes. Registered by
+      // EXACT filename; frontend-live-removed-at-filters.test.ts is already
+      // listed above, and no production service is added here.
+      'src/shared/supabase/services/__tests__/dashboard-service-rpc-switch.test.ts',
+      // …and the three historical alert-lineage guards whose UI-wiring and
+      // service-wrapper assertions G4.1 re-points by EXACT name (036's read
+      // wrapper, 037's UI compatibility, 039's service wrapper). Registered by
+      // EXACT filename; every other file under supabase/ still fails closed.
+      'supabase/migrations/__tests__/036-live-inter-institution-alerts-rpc.test.ts','supabase/migrations/__tests__/037-live-alert-identifiers.test.ts','supabase/migrations/__tests__/039-inter-org-alert-lifecycle-rpcs.test.ts',
       'supabase/migrations/__tests__/048-live-alerts-expiry-risk-tiers.test.ts','supabase/migrations/__tests__/049-add-national-code-to-item-availability.test.ts','supabase/migrations/__tests__/050-phoenix-upsert-availability-national-code.test.ts','supabase/migrations/__tests__/051-material-batch-identity-option-a.test.ts','supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts','supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts','supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts','supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts','src/features/account/__tests__/bugfix-my-account-clear-whatsapp-disables-official-contact.test.ts','src/features/account/__tests__/my-account-whatsapp-save.test.ts','src/features/alerts/__tests__/bugfix-inter-alerts-freeze.test.ts','src/features/institutions/__tests__/ui-hide-port-add-item.test.ts','src/shared/ui/__tests__/phase-a71-visual-acceptance-closure.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);

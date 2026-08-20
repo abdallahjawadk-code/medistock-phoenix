@@ -3,9 +3,13 @@
  * Run: npm test -- --run
  *
  * Static source-code tests for the Dashboard's rebuilt inter-institution
- * alert summary widget, now backed by getLiveInterInstitutionAlertsWithState()
- * (migration 036) instead of generateExchangeAlerts() over the manual
+ * alert summary widget, instead of generateExchangeAlerts() over the manual
  * status-report layer.
+ *
+ * ALERT-CQRS-BOUNDARY-190 (G4.1): the widget is now backed by the PURE
+ * queryLiveInterOrgAlertSummary() rather than the write-capable with_state
+ * hybrid. The counters and their meaning are unchanged — they are simply
+ * computed server-side now, and rendering the Dashboard no longer writes.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -20,11 +24,31 @@ const strings = readSrc('shared/i18n/strings.ts');
 describe('DashboardScreen: uses the live inter-institution alerts service', () => {
   it('imports the lifecycle-aware alert service', () => {
     expect(dashboard).toContain("from '@/features/alerts/inter-org-alert-lifecycle.service'");
-    expect(dashboard).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(dashboard).toContain('queryLiveInterOrgAlertSummary');
   });
 
-  it('loads live alerts with a safe limit via useAsync', () => {
-    expect(dashboard).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsWithState\(200\), \[\]\)/);
+  it('loads the live alert summary with a safe limit via useAsync', () => {
+    expect(dashboard).toMatch(/useAsync\(\(\) => queryLiveInterOrgAlertSummary\(200\), \[\]\)/);
+  });
+
+  // The hard G4.1 invariant: DASHBOARD_ALERT_READ_CAUSES_WRITE = FALSE.
+  it('opening the Dashboard causes ZERO inter-org alert writes', () => {
+    // Not the write-capable hybrid, not its paged wrapper, and NOT the refresh
+    // COMMAND — the Dashboard must never issue one.
+    expect(dashboard).not.toContain('getLiveInterInstitutionAlertsWithState');
+    expect(dashboard).not.toContain('getLiveInterInstitutionAlertsPage');
+    expect(dashboard).not.toContain('refreshInterOrgAlertLifecycle');
+    expect(dashboard).not.toContain('phoenix_get_live_inter_institution_alerts_with_state');
+    // …and it no longer ships 200 alert objects to reduce them in the browser.
+    expect(dashboard).not.toContain('lifecycleStatus');
+    expect(dashboard).not.toMatch(/liveResult\?\.alerts/);
+  });
+
+  it('reads the four counters straight off the server-computed summary', () => {
+    expect(dashboard).toContain('liveResult?.total');
+    expect(dashboard).toContain('liveResult?.high');
+    expect(dashboard).toContain('liveResult?.surplusToShortage');
+    expect(dashboard).toContain('liveResult?.nearExpiryToShortage');
   });
 });
 
@@ -61,12 +85,21 @@ describe('DashboardScreen: legacy local/material alert engine intentionally reta
 });
 
 describe('DashboardScreen: live summary counts', () => {
-  it('computes total, high severity, surplus_to_shortage, and near_expiry_to_shortage counts', () => {
-    expect(dashboard).toMatch(/filter\(a => \['open', 'acknowledged', 'in_progress'\]\.includes\(a\.lifecycleStatus\)\)/);
-    expect(dashboard).toMatch(/const liveTotal = liveList\.length/);
-    expect(dashboard).toMatch(/const liveHigh = liveList\.filter\(a => a\.severity === 'high'\)\.length/);
-    expect(dashboard).toMatch(/const liveSurplus = liveList\.filter\(a => a\.alertType === 'surplus_to_shortage'\)\.length/);
-    expect(dashboard).toMatch(/const liveNearExpiry = liveList\.filter\(a => a\.alertType === 'near_expiry_to_shortage'\)\.length/);
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the four counters are identical in meaning
+  // but are now COMPUTED SERVER-SIDE by the pure summary query instead of being
+  // reduced in the browser over 200 fetched alert objects. The active-lifecycle
+  // rule (open/acknowledged/in_progress) moved into the RPC and is proved there
+  // by 190's dynamic suite; what this test guards on the client is that each
+  // rendered counter comes straight off the server payload and is not
+  // re-derived here.
+  it('reads total, high severity, surplus_to_shortage and near_expiry_to_shortage from the server', () => {
+    expect(dashboard).toMatch(/const liveTotal = liveOk \? \(liveResult\?\.total \?\? 0\) : 0/);
+    expect(dashboard).toMatch(/const liveHigh = liveOk \? \(liveResult\?\.high \?\? 0\) : 0/);
+    expect(dashboard).toMatch(/const liveSurplus = liveOk \? \(liveResult\?\.surplusToShortage \?\? 0\) : 0/);
+    expect(dashboard).toMatch(/const liveNearExpiry = liveOk \? \(liveResult\?\.nearExpiryToShortage \?\? 0\) : 0/);
+    // No client-side reduction of an alert list survives the cutover.
+    expect(dashboard).not.toMatch(/liveList/);
+    expect(dashboard).not.toMatch(/\.filter\(a => a\.severity === 'high'\)/);
   });
 
   it('renders all 4 counts using PhoenixMetricCard with the shared lia_summary_* labels', () => {

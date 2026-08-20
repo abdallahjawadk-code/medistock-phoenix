@@ -1223,7 +1223,17 @@ describe('15. isolation from out-of-scope domains', () => {
       'src/features/reports/GlobalMaterialSearchPanel.tsx',
       'src/features/inventory/ocr/catalog-adapter.ts',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED];
+    // ALERT-CQRS-BOUNDARY-190 (G4.1): the inter-org alert read/write split.
+    // Three production files change, and each is listed by its EXACT path so a
+    // sibling or a renamed copy still fails this guard closed. None of them is
+    // a DB, RLS, RBAC, auth or migration surface: the split itself lives in
+    // migration 190 and is reviewed by its own static and dynamic suites.
+    const G4_1_AUTHORIZED = [
+      'src/features/alerts/inter-org-alert-lifecycle.service.ts',
+      'src/features/alerts/InterInstitutionAlertsScreen.tsx',
+      'src/features/dashboard/DashboardScreen.tsx',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED];
     const changed = diff.trim().split('\n').filter(Boolean).sort();
     expect(changed.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });

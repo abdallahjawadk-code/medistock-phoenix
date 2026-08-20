@@ -392,7 +392,11 @@ describe('18/19. Does not modify frontend production files or package/lockfiles'
     if (diff.trim()) {
       expect(diff).not.toMatch(/service_role|auth\.admin/);
       expect(diff).not.toMatch(/graph\.facebook\.com|access_token=|api\.whatsapp\.com|Bearer |sendMessage/i);
-      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\('phoenix_(?!get_live_inter_institution_alerts_with_state|update_inter_org_alert_state|reopen_inter_org_alert|get_inter_org_alert_events)/);
+      // ALERT-CQRS-BOUNDARY-190 (G4.1): the three RPCs that phase introduces are
+      // added to this allowlist BY EXACT NAME. The guard is not loosened — any
+      // other phoenix_* RPC appearing in this diff still fails it closed, and
+      // the CREATE FUNCTION half is untouched.
+      expect(diff).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|supabase\.rpc\('phoenix_(?!get_live_inter_institution_alerts_with_state|update_inter_org_alert_state|reopen_inter_org_alert|get_inter_org_alert_events|refresh_inter_org_alert_lifecycle|query_live_inter_org_alerts_with_state_page|query_live_inter_org_alert_summary)/);
     }
   });
 

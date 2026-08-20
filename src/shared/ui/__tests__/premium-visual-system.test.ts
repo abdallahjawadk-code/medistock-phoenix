@@ -35,7 +35,12 @@ describe('premium visual system', () => {
     // Phase D replaced the flat premium-command-hero text header with the
     // design-source Dashboard hero band (reported-availability ring + live readouts).
     expect(dashboard).toContain('nexus-dash-hero');
-    expect(dashboard).toContain("['open', 'acknowledged', 'in_progress']");
+    // ALERT-CQRS-BOUNDARY-190 (G4.1): the active-lifecycle filter this line used
+    // to pin moved SERVER-side — the Dashboard no longer fetches 200 alert
+    // objects to reduce them in the browser. The point of this assertion is
+    // that the hero band still has a live inter-org alert readout and gained no
+    // NEW data source, so it is re-pointed at the pure summary query.
+    expect(dashboard).toContain('queryLiveInterOrgAlertSummary');
     expect(read('shared/ui/PhoenixMetricCard.tsx')).toContain('premium-kpi-footer');
     expect(institutions).toContain('premium-page-header');
     expect(institutions).toContain('premium-org-toolbar');

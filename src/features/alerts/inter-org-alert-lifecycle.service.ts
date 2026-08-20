@@ -3,15 +3,35 @@ import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 /**
  * ALERT-LIFECYCLE-RPC-A
  *
- * Read/write wrapper around the four inter-org alert lifecycle RPCs
- * (migration 039): phoenix_get_live_inter_institution_alerts_with_state,
- * phoenix_update_inter_org_alert_state, phoenix_reopen_inter_org_alert, and
- * phoenix_get_inter_org_alert_events. All reads/writes go through
- * supabase.rpc only — there is no direct table access anywhere in this file
- * (inter_org_alert_states/inter_org_alert_events have no client-writable
- * grants at all, and inter_org_alert_events has no direct SELECT grant
- * either, per migration 038). Not imported by any UI screen yet — that is a
- * later phase.
+ * Wrapper around the inter-org alert lifecycle RPCs. All reads/writes go
+ * through supabase.rpc only — there is no direct table access anywhere in
+ * this file (inter_org_alert_states/inter_org_alert_events have no
+ * client-writable grants at all, and inter_org_alert_events has no direct
+ * SELECT grant either, per migration 038).
+ *
+ * ALERT-CQRS-BOUNDARY-190 (G4.1)
+ *
+ * This module is now split along the command/query boundary migration 190
+ * draws in the database, and the split is the whole point:
+ *
+ *   COMMANDS (may write server-side)
+ *     refreshInterOrgAlertLifecycle  -> phoenix_refresh_inter_org_alert_lifecycle
+ *     updateInterOrgAlertState       -> phoenix_update_inter_org_alert_state
+ *     reopenInterOrgAlert            -> phoenix_reopen_inter_org_alert
+ *
+ *   QUERIES (pure — reading one can never write)
+ *     queryLiveInterOrgAlertsPage    -> phoenix_query_live_inter_org_alerts_with_state_page
+ *     queryLiveInterOrgAlertSummary  -> phoenix_query_live_inter_org_alert_summary
+ *     getInterOrgAlertEvents         -> phoenix_get_inter_org_alert_events
+ *
+ * Before 190 the only way to read this feed was migration 039's
+ * with_state hybrid (or its 148 paged wrapper), which upserts
+ * inter_org_alert_states and emits an 'opened' lifecycle event as a side
+ * effect of being read. Rendering the Dashboard therefore wrote to the
+ * database. Those hybrid RPCs still exist server-side for the
+ * currently-deployed application, but this module no longer calls either of
+ * them: a screen that wants lifecycle state refreshed must now ask for it
+ * explicitly, and every ordinary read is pure.
  */
 
 export type LiveAlertType = 'surplus_to_shortage' | 'near_expiry_to_shortage';
@@ -89,6 +109,37 @@ export interface LiveInterInstitutionAlertsWithStateResult {
   ok: boolean;
   alerts: LiveInterInstitutionAlertWithState[];
   computedAt: string | null;
+  /** Populated only when ok is false (e.g. 'FORBIDDEN', 'NOT_AUTHENTICATED'). */
+  error?: string;
+}
+
+/**
+ * ALERT-CQRS-BOUNDARY-190: the refresh COMMAND's result. Deliberately carries
+ * NO alert rows — a command that also answered the read would keep inviting
+ * callers to read through the writer, which is the habit 190 retires.
+ */
+export interface RefreshInterOrgAlertLifecycleResult {
+  ok: boolean;
+  /** How many live alerts had their lifecycle state created or refreshed. */
+  refreshedCount?: number;
+  computedAt?: string | null;
+  /** Populated only when ok is false (e.g. 'FORBIDDEN', 'NOT_AUTHENTICATED'). */
+  error?: string;
+}
+
+/**
+ * ALERT-CQRS-BOUNDARY-190: server-computed Dashboard counters. Every number is
+ * derived server-side from the same pure projection the alerts page reads, so
+ * the widget and the screen it links to can never disagree.
+ */
+export interface LiveInterOrgAlertSummaryResult {
+  ok: boolean;
+  /** Active (open/acknowledged/in_progress) alerts in the summary window. */
+  total?: number;
+  high?: number;
+  surplusToShortage?: number;
+  nearExpiryToShortage?: number;
+  computedAt?: string | null;
   /** Populated only when ok is false (e.g. 'FORBIDDEN', 'NOT_AUTHENTICATED'). */
   error?: string;
 }
@@ -245,35 +296,46 @@ function mapEvent(r: RawAlertEventRow): AlertLifecycleEvent {
 }
 
 /**
- * Fetch live inter-institution alerts merged with persisted lifecycle state
- * (migration 039's phoenix_get_live_inter_institution_alerts_with_state
- * RPC). Note: this call has a controlled write side effect server-side (it
- * creates/refreshes lifecycle rows for currently computed alerts) — see the
- * RPC's own migration comments for the full rationale.
+ * ALERT-CQRS-BOUNDARY-190 — the COMMAND.
+ *
+ * Explicitly refresh/synchronize lifecycle state for the currently live
+ * inter-organization alerts (migration 190's
+ * phoenix_refresh_inter_org_alert_lifecycle). This is the only function in
+ * this module whose PURPOSE is to cause alert lifecycle writes, and the only
+ * one a screen may call for that purpose.
+ *
+ * Server-side it delegates to migration 039's with_state hybrid, so the
+ * lifecycle upsert and the 'opened' event keep exactly one implementation —
+ * the already-reviewed one — and then discards the read payload. It returns
+ * no alert rows on purpose: rows come from the pure queries below, so a
+ * caller cannot drift back into reading through the writer.
  */
-export async function getLiveInterInstitutionAlertsWithState(
-  limit = 200,
-): Promise<LiveInterInstitutionAlertsWithStateResult> {
+export async function refreshInterOrgAlertLifecycle(
+  limit = 500,
+): Promise<RefreshInterOrgAlertLifecycleResult> {
   if (!supabaseConfigured) {
-    return { ok: false, alerts: [], computedAt: null, error: 'not_configured' };
+    return { ok: false, error: 'not_configured' };
   }
 
-  const { data, error } = await supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state', {
+  const { data, error } = await supabase.rpc('phoenix_refresh_inter_org_alert_lifecycle', {
     p_limit: limit,
   });
 
   if (error) {
-    return { ok: false, alerts: [], computedAt: null, error: error.message };
+    return { ok: false, error: error.message };
   }
 
-  const result = data as { ok: boolean; error?: string; alerts?: RawLiveAlertWithStateRow[]; computed_at?: string };
+  const result = data as { ok: boolean; error?: string; refreshed_count?: number; computed_at?: string };
 
   if (!result.ok) {
-    return { ok: false, alerts: [], computedAt: null, error: result.error };
+    return { ok: false, error: result.error };
   }
 
-  const alerts = (result.alerts ?? []).map(mapRow);
-  return { ok: true, alerts, computedAt: result.computed_at ?? null };
+  return {
+    ok: true,
+    refreshedCount: result.refreshed_count ?? 0,
+    computedAt: result.computed_at ?? null,
+  };
 }
 
 export interface LiveInterInstitutionAlertsPageResult extends LiveInterInstitutionAlertsWithStateResult {
@@ -283,21 +345,28 @@ export interface LiveInterInstitutionAlertsPageResult extends LiveInterInstituti
 }
 
 /**
- * REVIEWER FIX (Phase 2): real server-side pagination over the SAME
- * discovery query (migration 147's phoenix_get_live_inter_institution_
- * alerts_with_state_page), instead of silently summarizing only the first
- * 200 rows. Every alert this returns is permanently non-executable — this
- * screen's own domain (peer-institution discovery) has no execution
- * corridor; see the screen's disclaimer copy.
+ * ALERT-CQRS-BOUNDARY-190 — the PURE paged QUERY.
+ *
+ * Real server-side pagination over the canonical alert set, merged with
+ * persisted lifecycle state (migration 190's
+ * phoenix_query_live_inter_org_alerts_with_state_page). Payload-compatible
+ * with the 148 paged wrapper it replaces — same envelope, same 500-row
+ * universe, same permanently-non-executable stamp — but it writes NOTHING:
+ * no lifecycle upsert, no lifecycle event. Turning a page can therefore never
+ * mutate the database.
+ *
+ * Every alert this returns is permanently non-executable — this screen's own
+ * domain (peer-institution discovery) has no execution corridor; see the
+ * screen's disclaimer copy.
  */
-export async function getLiveInterInstitutionAlertsPage(
+export async function queryLiveInterOrgAlertsPage(
   limit = 50, offset = 0,
 ): Promise<LiveInterInstitutionAlertsPageResult> {
   if (!supabaseConfigured) {
     return { ok: false, alerts: [], computedAt: null, totalCount: 0, limit, offset, error: 'not_configured' };
   }
 
-  const { data, error } = await supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state_page', {
+  const { data, error } = await supabase.rpc('phoenix_query_live_inter_org_alerts_with_state_page', {
     p_limit: limit, p_offset: offset,
   });
 
@@ -319,6 +388,52 @@ export async function getLiveInterInstitutionAlertsPage(
     ok: true, alerts, computedAt: result.computed_at ?? null,
     totalCount: result.total_count ?? alerts.length,
     limit: result.limit ?? limit, offset: result.offset ?? offset,
+  };
+}
+
+/**
+ * ALERT-CQRS-BOUNDARY-190 — the PURE summary QUERY.
+ *
+ * Server-computed counters for the Dashboard widget (migration 190's
+ * phoenix_query_live_inter_org_alert_summary). The Dashboard used to fetch
+ * 200 whole alert objects through the write-capable hybrid and reduce them in
+ * the browser; it now asks for four numbers and writes nothing at all.
+ *
+ * Counting semantics are preserved exactly: only ACTIVE lifecycle states
+ * (open / acknowledged / in_progress) are counted, within the same 200-row
+ * window the hybrid call already used.
+ */
+export async function queryLiveInterOrgAlertSummary(
+  limit = 200,
+): Promise<LiveInterOrgAlertSummaryResult> {
+  if (!supabaseConfigured) {
+    return { ok: false, error: 'not_configured' };
+  }
+
+  const { data, error } = await supabase.rpc('phoenix_query_live_inter_org_alert_summary', {
+    p_limit: limit,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  const result = data as {
+    ok: boolean; error?: string; total?: number; high?: number;
+    surplus_to_shortage?: number; near_expiry_to_shortage?: number; computed_at?: string;
+  };
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return {
+    ok: true,
+    total: result.total ?? 0,
+    high: result.high ?? 0,
+    surplusToShortage: result.surplus_to_shortage ?? 0,
+    nearExpiryToShortage: result.near_expiry_to_shortage ?? 0,
+    computedAt: result.computed_at ?? null,
   };
 }
 

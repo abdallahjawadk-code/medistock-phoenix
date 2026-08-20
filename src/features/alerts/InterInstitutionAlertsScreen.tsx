@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -13,11 +13,13 @@ import { WhatsAppContactButton } from '@/shared/ui/WhatsAppContactButton';
 import { buildMaterialContactMessage } from '@/shared/lib/whatsapp';
 import { getExpiryRiskLabel, getExpiryRiskTone, type ExpiryRiskTier } from '@/shared/lib/expiry-risk';
 import {
-  getLiveInterInstitutionAlertsPage,
+  refreshInterOrgAlertLifecycle,
+  queryLiveInterOrgAlertsPage,
   updateInterOrgAlertState,
   reopenInterOrgAlert,
   getInterOrgAlertEvents,
   type LiveInterInstitutionAlertWithState,
+  type LiveInterInstitutionAlertsPageResult,
   type LiveAlertType,
   type LiveAlertSeverity,
   type AlertLifecycleStatus,
@@ -28,14 +30,26 @@ import {
 /**
  * LIVE-INTER-INSTITUTION-ALERTS-UI-A
  *
- * Reads exclusively through getLiveInterInstitutionAlertsWithState(), which
- * merges the live computation with persisted lifecycle state. This screen has no dependency on the
- * manual report layer's data path anywhere in its imports or types.
+ * Reads the live computation merged with persisted lifecycle state. This
+ * screen has no dependency on the manual report layer's data path anywhere in
+ * its imports or types.
  * Permission enforcement (the inter-institution-alerts view permission or
  * its legacy backward-compatible equivalent, super_admin bypass, org-scoped
  * visibility) happens entirely server-side inside the RPC; this screen only
  * renders whatever it is given and surfaces a FORBIDDEN response as a
  * permission-denied state.
+ *
+ * ALERT-CQRS-BOUNDARY-190 (G4.1): the read used to go through migration 148's
+ * paged wrapper, which delegates to the write-capable with_state hybrid — so
+ * merely opening this screen, or turning a page on it, upserted lifecycle rows
+ * and could emit lifecycle events. The load is now an explicit COMMAND
+ * followed by a PURE QUERY:
+ *   1. refreshInterOrgAlertLifecycle() — the only sanctioned lifecycle write
+ *      on load, issued ONCE per mount (retried only while it fails);
+ *   2. queryLiveInterOrgAlertsPage()   — pure, and the only thing a page
+ *      change or a post-transition reload re-issues.
+ * Lifecycle transitions (acknowledge/start/resolve/dismiss/reopen) remain
+ * commands and their semantics are untouched.
  *
  * INTER-INSTITUTION-ALERTS-SMART-VIEW-A: adds two more summary chips
  * (missing/low_stock, both derived from the already-fetched targetStatus
@@ -254,7 +268,30 @@ export function InterInstitutionAlertsScreen() {
   // server-computed set (up to the feed's own 500-row safety ceiling).
   const PAGE_SIZE = 50;
   const [page, setPage] = useState(0);
-  const result = useAsync(() => getLiveInterInstitutionAlertsPage(PAGE_SIZE, page * PAGE_SIZE), [page]);
+
+  // ALERT-CQRS-BOUNDARY-190: COMMAND-then-QUERY. The lifecycle refresh is the
+  // only write this screen's load may cause, and it is issued once per mount.
+  // The ref is set ONLY on command success, so:
+  //   * a page change re-runs the loader but skips the command — paging is a
+  //     pure read and can never mutate the database;
+  //   * a post-transition reload likewise re-queries only (the transition RPC
+  //     already did the writing);
+  //   * a retry after a FAILED refresh does re-issue the command, because the
+  //     ref was never set.
+  const lifecycleRefreshed = useRef(false);
+  const result = useAsync(async (): Promise<LiveInterInstitutionAlertsPageResult> => {
+    if (!lifecycleRefreshed.current) {
+      const command = await refreshInterOrgAlertLifecycle();
+      if (!command.ok) {
+        return {
+          ok: false, alerts: [], computedAt: null, totalCount: 0,
+          limit: PAGE_SIZE, offset: page * PAGE_SIZE, error: command.error,
+        };
+      }
+      lifecycleRefreshed.current = true;
+    }
+    return queryLiveInterOrgAlertsPage(PAGE_SIZE, page * PAGE_SIZE);
+  }, [page]);
   const [action, setAction] = useState<{ alert: LiveInterInstitutionAlertWithState; to: AlertLifecycleStatus } | null>(null);
   const [historyAlert, setHistoryAlert] = useState<LiveInterInstitutionAlertWithState | null>(null);
 

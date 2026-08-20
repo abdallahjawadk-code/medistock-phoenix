@@ -607,8 +607,14 @@ describe('Central Dashboard integration', () => {
     expect(dashService).toContain('catch');
   });
 
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the Dashboard still uses the live
+  // inter-institution alert service, but through its PURE summary query — the
+  // old getLiveInterInstitutionAlerts* wrappers read through a write-capable
+  // hybrid, so opening the Dashboard wrote to the database. Re-pointed by exact
+  // name; the generateExchangeAlerts half of this assertion is unchanged.
   it('dashboard screen uses the live inter-institution alerts service (LIVE-ALERTS-DASHBOARD-SUMMARY-A; generateExchangeAlerts summary widget replaced)', () => {
-    expect(dashboard).toContain('getLiveInterInstitutionAlerts');
+    expect(dashboard).toContain('queryLiveInterOrgAlertSummary');
+    expect(dashboard).toContain('inter-org-alert-lifecycle.service');
     expect(dashboard).not.toContain('generateExchangeAlerts');
   });
 

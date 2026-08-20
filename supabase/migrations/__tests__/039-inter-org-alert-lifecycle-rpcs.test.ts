@@ -527,15 +527,26 @@ describe('Service wrapper: inter-org-alert-lifecycle.service.ts', () => {
     expect(existsSync(servicePath)).toBe(true);
   });
 
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): this migration created FOUR RPCs. Three of
+  // them — the two lifecycle transitions and the event-history read — are
+  // unchanged and are still called from here, asserted below exactly as before.
+  // The fourth, the with_state HYBRID, upserts lifecycle state as a side effect
+  // of being read; the client now reaches it only through 190's explicit
+  // refresh COMMAND, and reads through 190's PURE queries. The assertion is
+  // re-pointed by EXACT name and gains a negative: the hybrid must no longer be
+  // called directly from the client at all.
   it('calls the correct RPC names via supabase.rpc only', () => {
-    expect(service).toContain("supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state'");
     expect(service).toContain("supabase.rpc('phoenix_update_inter_org_alert_state'");
     expect(service).toContain("supabase.rpc('phoenix_reopen_inter_org_alert'");
     expect(service).toContain("supabase.rpc('phoenix_get_inter_org_alert_events'");
+    // 190: the hybrid is reached through the COMMAND, never read directly.
+    expect(service).toContain("supabase.rpc('phoenix_refresh_inter_org_alert_lifecycle'");
+    expect(service).not.toContain("supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state'");
+    expect(service).not.toContain("supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state_page'");
   });
 
   it('exports the four suggested functions', () => {
-    expect(service).toContain('export async function getLiveInterInstitutionAlertsWithState');
+    expect(service).toContain('export async function refreshInterOrgAlertLifecycle');
     expect(service).toContain('export async function updateInterOrgAlertState');
     expect(service).toContain('export async function reopenInterOrgAlert');
     expect(service).toContain('export async function getInterOrgAlertEvents');

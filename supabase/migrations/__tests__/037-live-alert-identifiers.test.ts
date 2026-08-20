@@ -331,12 +331,19 @@ describe('UI compatibility: InterInstitutionAlertsScreen and DashboardScreen rem
   const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
   const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
 
-  it('InterInstitutionAlertsScreen still uses getLiveInterInstitutionAlerts (no changes required by the new optional fields)', () => {
-    expect(alertsScreen).toContain('getLiveInterInstitutionAlerts');
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): both screens still read the live alert feed
+  // through the lifecycle service and still need no change for this migration's
+  // optional identifier fields — but the read wrapper is now the PURE query,
+  // because the old one wrote lifecycle rows as a side effect of being read.
+  // Re-pointed by EXACT name.
+  it('InterInstitutionAlertsScreen still reads the live alert feed (no changes required by the new optional fields)', () => {
+    expect(alertsScreen).toContain('queryLiveInterOrgAlertsPage');
+    expect(alertsScreen).toContain('inter-org-alert-lifecycle.service');
   });
 
-  it('DashboardScreen still uses getLiveInterInstitutionAlerts (no changes required by the new optional fields)', () => {
-    expect(dashboardScreen).toContain('getLiveInterInstitutionAlerts');
+  it('DashboardScreen still reads the live alert feed (no changes required by the new optional fields)', () => {
+    expect(dashboardScreen).toContain('queryLiveInterOrgAlertSummary');
+    expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
   });
 
   it('neither screen references a lifecycle table/RPC (no lifecycle UI added in this phase)', () => {

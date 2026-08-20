@@ -154,7 +154,15 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
         // watched path — all of src/shared/supabase, AuthenticatedApp.tsx,
         // App.tsx and the rest of src/shared/authz — stays covered.
         + '":!src/shared/authz/screen-access.ts" '
-        + '":!src/shared/authz/__tests__/r1-3-supply-reachability.test.ts"',
+        + '":!src/shared/authz/__tests__/r1-3-supply-reachability.test.ts" '
+        // ALERT-CQRS-BOUNDARY-190 (G4.1): two GUARD TESTS under the watched
+        // src/shared/supabase prefix are re-pointed by that later,
+        // separately-reviewed phase — their alert-lifecycle zero-diff clauses
+        // are superseded by the inter-org alert read/write split. Excluded BY
+        // EXACT NAME. No production service under src/shared/supabase is
+        // excluded, and every other watched path stays fully covered.
+        + '":!src/shared/supabase/services/__tests__/dashboard-service-rpc-switch.test.ts" '
+        + '":!src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }
