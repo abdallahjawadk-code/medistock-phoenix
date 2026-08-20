@@ -249,6 +249,16 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // like every entry before it, so any unlisted file under a watched prefix
       // still fails this guard closed.
       'supabase/migrations/191_phoenix_canonical_scope_topology_read_contract.sql','supabase/migrations/__tests__/191-canonical-scope-topology-static.test.ts','supabase/migrations/__tests__/191-canonical-scope-topology.dynamic.test.ts','supabase/migrations/190_phoenix_inter_org_alert_cqrs_boundary.sql','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary-static.test.ts','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary.dynamic.test.ts',
+      // …and G4.2's ONE new production read service under the watched
+      // src/shared/supabase prefix: a thin client for Migration 191's pure
+      // query, carrying no topology rule of its own. It was registered in every
+      // other G4.2 approved-diff surface but missed HERE, because this guard
+      // reads `git diff --name-only <BASE>`, which never lists an UNTRACKED
+      // file — so it stayed invisible until the payload was committed.
+      // Registered by EXACT filename: no directory entry, no glob, no prefix
+      // broadening, so every other file under src/shared/supabase still fails
+      // this guard closed.
+      'src/shared/supabase/services/scope-topology.service.ts',
       // …plus the one guard test under the watched src/shared/supabase prefix
       // whose alert-lifecycle zero-diff clause G4.1 supersedes. Registered by
       // EXACT filename; frontend-live-removed-at-filters.test.ts is already
