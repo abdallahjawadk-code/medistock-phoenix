@@ -180,7 +180,13 @@ describe('PHASE2-DASHBOARD-SERVICE-RPC-SWITCH-A: unrelated behavior untouched', 
         // PUBLIC-QR-DOSAGE-FORM-IMPLEMENT-A: PublicQrScreen.tsx excluded — additive
         // dosage_form render landed in that later, separately-reviewed phase.
         'git diff -- src/shared/supabase/services/qr.service.ts ' +
-        'src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/status/MovementHistoryModal.tsx ' +
+        // ALERT-CQRS-BOUNDARY-190 (G4.1): inter-org-alert-lifecycle.service.ts excluded from this
+        // pathspec — that later, separately-reviewed phase splits the inter-org
+        // alert read/write boundary (an explicit refresh COMMAND plus two PURE
+        // query RPCs) so that reading or paging the alert feed no longer upserts
+        // lifecycle rows. Every other file listed here remains fully guarded
+        // (zero diff required).
+        'src/features/status/MovementHistoryModal.tsx ' +
         'src/features/status/MovementReportSection.tsx src/shared/supabase/services/auth.service.ts ' +
         'src/shared/lib/permissions.ts',
         { cwd: ROOT, encoding: 'utf8' },

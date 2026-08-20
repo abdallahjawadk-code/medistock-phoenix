@@ -183,11 +183,19 @@ describe('11. Alert lifecycle buttons remain present and unchanged', () => {
   // sourceExpiryRiskTier/sourceExpiryDaysRemaining mapping. The invariant
   // this test actually guards (the four lifecycle RPC wrapper functions
   // still exist, unrenamed/unremoved) is checked directly instead.
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the read wrapper was renamed as part of
+  // that later, separately-reviewed phase —
+  // getLiveInterInstitutionAlertsWithState (which read THROUGH the write-capable
+  // hybrid) is replaced by an explicit refresh COMMAND plus two PURE queries.
+  // The three lifecycle TRANSITION/history wrappers this test really guards are
+  // unchanged, and the new read surface is pinned by exact name beside them.
   it('inter-org-alert-lifecycle.service.ts core lifecycle functions remain present and unchanged in name/shape', () => {
-    expect(alertLifecycleService).toContain('export async function getLiveInterInstitutionAlertsWithState(');
     expect(alertLifecycleService).toContain('export async function updateInterOrgAlertState(');
     expect(alertLifecycleService).toContain('export async function reopenInterOrgAlert(');
     expect(alertLifecycleService).toContain('export async function getInterOrgAlertEvents(');
+    expect(alertLifecycleService).toContain('export async function refreshInterOrgAlertLifecycle(');
+    expect(alertLifecycleService).toContain('export async function queryLiveInterOrgAlertsPage(');
+    expect(alertLifecycleService).toContain('export async function queryLiveInterOrgAlertSummary(');
     expect(alertLifecycleService.length).toBeGreaterThan(0);
   });
 });

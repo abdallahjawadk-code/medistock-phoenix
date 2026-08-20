@@ -236,7 +236,13 @@ describe('QR-HIDE-NONAVAILABLE-ITEMS-FROM-PUBLIC-LIST-A: safety guards', () => {
     let diff = '';
     try {
       diff = execSync(
-        'git diff -- src/features/alerts/InterInstitutionAlertsScreen.tsx src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
+        // ALERT-CQRS-BOUNDARY-190 (G4.1): inter-org-alert-lifecycle.service.ts and InterInstitutionAlertsScreen.tsx excluded from this
+        // pathspec — that later, separately-reviewed phase splits the inter-org
+        // alert read/write boundary (an explicit refresh COMMAND plus two PURE
+        // query RPCs) so that reading or paging the alert feed no longer upserts
+        // lifecycle rows. Every other file listed here remains fully guarded
+        // (zero diff required).
+        'git diff -- src/features/editor/EditorScreen.tsx src/features/status/AdjustQuantityModal.tsx',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

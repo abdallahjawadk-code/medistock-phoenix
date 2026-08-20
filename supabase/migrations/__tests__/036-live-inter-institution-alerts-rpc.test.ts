@@ -424,14 +424,24 @@ describe('Service layer: getLiveInterInstitutionAlerts wrapper', () => {
     expect(service).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): this migration's wrapper is now superseded
+  // one generation further on. The screens still read through the SAME
+  // lifecycle service, but through its PURE query functions — the
+  // getLiveInterInstitutionAlerts* wrappers read through a write-capable
+  // hybrid, so opening a screen wrote to the database. Re-pointed by EXACT
+  // name, never loosened: what this assertion protects is that neither screen
+  // reverted to this migration's own 036 wrapper, and that is still checked.
   it('is superseded in the alert and dashboard UI by the lifecycle-aware service; StatusCenter remains unchanged', () => {
     const alertsScreen = readFileSync(join(__dirname, '../../../src/features/alerts/InterInstitutionAlertsScreen.tsx'), 'utf8');
     const dashboardScreen = readFileSync(join(__dirname, '../../../src/features/dashboard/DashboardScreen.tsx'), 'utf8');
     const statusCenter = readFileSync(join(__dirname, '../../../src/features/status/StatusCenterScreen.tsx'), 'utf8');
     expect(alertsScreen).toContain('inter-org-alert-lifecycle.service');
-    expect(alertsScreen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(alertsScreen).toContain('queryLiveInterOrgAlertsPage');
     expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
-    expect(dashboardScreen).toContain('getLiveInterInstitutionAlertsWithState');
+    expect(dashboardScreen).toContain('queryLiveInterOrgAlertSummary');
+    // Neither screen fell back to this migration's own read wrapper.
+    expect(alertsScreen).not.toContain('getLiveInterInstitutionAlerts');
+    expect(dashboardScreen).not.toContain('getLiveInterInstitutionAlerts');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });
 

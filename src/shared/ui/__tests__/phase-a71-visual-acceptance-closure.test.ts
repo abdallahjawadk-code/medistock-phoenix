@@ -119,7 +119,15 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
         // excluded here — 184 is reviewed by its own static/dynamic suites, and
         // this guard is left free to fail on any OTHER stray SQL edit.
         + '":!src/shared/authz/screen-access.ts" '
-        + '":!src/shared/authz/__tests__/r1-3-supply-reachability.test.ts"',
+        + '":!src/shared/authz/__tests__/r1-3-supply-reachability.test.ts" '
+        // ALERT-CQRS-BOUNDARY-190 (G4.1): two GUARD TESTS under the watched
+        // src/shared/supabase prefix are re-pointed by that later,
+        // separately-reviewed phase — their alert-lifecycle zero-diff clauses
+        // are superseded by the inter-org alert read/write split. Excluded BY
+        // EXACT NAME. No production service under src/shared/supabase is
+        // excluded, and every other watched path stays fully covered.
+        + '":!src/shared/supabase/services/__tests__/dashboard-service-rpc-switch.test.ts" '
+        + '":!src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }
@@ -154,16 +162,19 @@ describe('Phase A7.1 Phoenix Daylight visual acceptance closure', () => {
     expect(authenticatedApp).toContain('case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;');
   });
 
-  it('Internal Alerts (screen 13) remain permanently non-executable, read-only discovery — unchanged', () => {
-    let diff = '';
-    try {
-      diff = execSync(
-        'git diff --name-only HEAD -- src/features/alerts/InterInstitutionAlertsScreen.tsx',
-        { cwd: ROOT, encoding: 'utf8' },
-      );
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the zero-diff form is superseded — that
+  // later, separately-reviewed phase rewrites this screen's LOAD (an explicit
+  // refresh COMMAND followed by a PURE query) so that opening or paging it no
+  // longer writes lifecycle rows. The invariant this test exists to protect —
+  // that the screen stays permanently non-executable, read-only discovery —
+  // is unaffected and is asserted directly.
+  it('Internal Alerts (screen 13) remain permanently non-executable, read-only discovery', () => {
     expect(alertsScreen).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
+    // No execution corridor: the screen offers no dispatch/transfer/supply action.
+    expect(alertsScreen).not.toMatch(/createTransfer|dispatch|supplyRequest/i);
+    // Its only writes are the lifecycle commands, which are not alert execution.
+    expect(alertsScreen).toContain('updateInterOrgAlertState');
+    expect(alertsScreen).toContain('reopenInterOrgAlert');
   });
 
   it('User Management lifecycle/permission gates are unchanged', () => {

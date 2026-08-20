@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–189 introduce no numbering and no 190+ migration exists',()=>{
+  it('179–190 introduce no numbering and no 191+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -119,9 +119,18 @@ describe('no client-side document-number sequence exists',()=>{
     // still composes is the pre-existing 039 shape, a concatenation of two row
     // UUIDs and the alert type, never a counted or issued number. Boundary moves
     // to 189 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189)_/.test(f));
+    // G4.1 / M190: the inter-org alert CQRS boundary ADDS one explicit refresh
+    // command and two PURE query RPCs beside 189's surface, and changes nothing
+    // that already existed. Its only derived value is 039's pre-existing
+    // alert_key — a concatenation of two row UUIDs and the alert type — plus
+    // 048's expiry-risk tier, both pure functions of already-persisted data. No
+    // table, sequence, counter, max()+1 or generated numeric identity, and no
+    // document number of any kind. Boundary moves to 190 so the next unknown
+    // migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '190_phoenix_inter_org_alert_cqrs_boundary.sql',
       '189_phoenix_inter_org_alert_canonical_identity.sql',
       '188_phoenix_public_qr_facility_context.sql',
       '187_phoenix_delegated_operational_access.sql',

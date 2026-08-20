@@ -224,8 +224,21 @@ describe('Safety: no DB/migration/package/protected-file side effects from this 
     }
   });
 
-  it('does not modify the RPC call site (still calls the unchanged phoenix_get_live_inter_institution_alerts_with_state RPC name)', () => {
-    expect(lifecycleService).toContain("supabase.rpc('phoenix_get_live_inter_institution_alerts_with_state'");
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the read RPC was replaced by that later,
+  // separately-reviewed phase — the with_state hybrid upserts lifecycle rows as
+  // a side effect of being read, so the client now calls a PURE query instead.
+  // What this test guards is that the expiry-risk badges keep coming from the
+  // SERVER on the same field names, never recomputed client-side, and that is
+  // asserted directly against the new call site.
+  it('reads the expiry-risk fields from a PURE server RPC, never recomputing them', () => {
+    expect(lifecycleService).toContain("supabase.rpc('phoenix_query_live_inter_org_alerts_with_state_page'");
+    expect(lifecycleService).toContain('sourceExpiryRiskTier: r.source_expiry_risk_tier ?? null');
+    expect(lifecycleService).toContain('sourceExpiryDaysRemaining: r.source_expiry_days_remaining ?? null');
+    // No client-side tier DERIVATION crept in with the cutover. The tier names
+    // do appear — in the TYPE union that documents the server's vocabulary —
+    // so what must be absent is a computation or branch that produces one.
+    expect(lifecycleService).not.toMatch(/Date\.now\(\)|new Date\(|monthsUntil|daysUntil/);
+    expect(lifecycleService).not.toMatch(/===\s*'(critical_3m|warning_6m|watch_9m)'/);
   });
 
   it('does not change alert_key derivation client-side (still a raw pass-through field, never recomputed)', () => {

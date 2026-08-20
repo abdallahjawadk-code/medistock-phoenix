@@ -193,16 +193,20 @@ describe('F) Public QR remains protected and unchanged (already DB/RPC-filtered)
 });
 
 describe('G) Inter-institution alerts remain DB-protected; no frontend alert lifecycle change', () => {
-  it('inter-org-alert-lifecycle.service.ts is untouched by this phase', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/alerts/inter-org-alert-lifecycle.service.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the zero-diff form of this guard is
+  // superseded — that later, separately-reviewed phase legitimately rewrites
+  // this service to split the alert read/write boundary. What this describe
+  // block actually exists to protect is that removed_at filtering stays
+  // SERVER-side for alerts, and that is asserted directly below instead.
+  it('still reads alerts only through a server-side RPC, never a client query', () => {
+    expect(interOrgAlertLifecycleService).toContain('supabase.rpc(');
+    expect(interOrgAlertLifecycleService).not.toContain("from('item_availability')");
+    expect(interOrgAlertLifecycleService).not.toMatch(/removed_at/);
   });
 
-  it('it still calls the phoenix_get_live_inter_institution_alerts_with_state RPC (DB-side removed_at filtering, unaffected)', () => {
-    expect(interOrgAlertLifecycleService).toContain('phoenix_get_live_inter_institution_alerts_with_state');
+  it('its alert read RPC still filters removed rows DB-side (190 pure query, same 189 eligibility)', () => {
+    expect(interOrgAlertLifecycleService).toContain('phoenix_query_live_inter_org_alerts_with_state_page');
+    expect(interOrgAlertLifecycleService).toContain('phoenix_query_live_inter_org_alert_summary');
   });
 
   it('no frontend item_availability query was added for alerts in this phase', () => {

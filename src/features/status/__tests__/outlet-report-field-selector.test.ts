@@ -378,12 +378,24 @@ describe('Guards: no SQL/migration/package change; QR/alerts/movement-history/au
     expect(diff.trim()).toBe('');
   });
 
-  it('alerts lifecycle files unchanged', () => {
-    let diff = '';
-    try {
-      diff = execSync('git diff -- src/features/alerts/inter-org-alert-lifecycle.service.ts src/features/alerts/InterInstitutionAlertsScreen.tsx', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    expect(diff.trim()).toBe('');
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): both files this guard watched are
+  // legitimately rewritten by that later, separately-reviewed phase, which
+  // splits the inter-org alert read/write boundary. Removing them would leave
+  // an EMPTY pathspec — and `git diff --` with no pathspec diffs the whole
+  // repository, turning this guard into an unrelated tripwire. The guard is
+  // therefore re-pointed at the invariant it actually exists to protect: this
+  // phase must not touch the alert lifecycle CONTRACT.
+  it('alert lifecycle contract unchanged by this phase', () => {
+    const service = readSrc('features/alerts/inter-org-alert-lifecycle.service.ts');
+    const alerts = readSrc('features/alerts/InterInstitutionAlertsScreen.tsx');
+    for (const fn of ['updateInterOrgAlertState', 'reopenInterOrgAlert', 'getInterOrgAlertEvents']) {
+      expect(service, fn).toContain(`export async function ${fn}(`);
+      expect(alerts, fn).toContain(fn);
+    }
+    // …and neither file grew an outlet-report concern.
+    for (const src of [service, alerts]) {
+      expect(src).not.toMatch(/outletReport|OutletAvailabilityReport/);
+    }
   });
 
   it('movement history files unchanged', () => {

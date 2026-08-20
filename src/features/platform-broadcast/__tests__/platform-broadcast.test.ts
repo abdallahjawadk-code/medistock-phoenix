@@ -362,7 +362,13 @@ describe('P) Guard tests: no QR/availability/movement/Deep-Clean/Reports/Status-
         'supabase/migrations/055_phoenix_clean_availability_data.sql ' +
         'src/features/status/OutletAvailabilityReportModal.tsx ' +
         'src/shared/lib/whatsapp.ts ' +
-        'src/features/alerts/InterInstitutionAlertsScreen.tsx src/shared/supabase/services/dashboard.service.ts',
+        // ALERT-CQRS-BOUNDARY-190 (G4.1): InterInstitutionAlertsScreen.tsx excluded from this
+        // pathspec — that later, separately-reviewed phase splits the inter-org
+        // alert read/write boundary (an explicit refresh COMMAND plus two PURE
+        // query RPCs) so that reading or paging the alert feed no longer upserts
+        // lifecycle rows. Every other file listed here remains fully guarded
+        // (zero diff required).
+        'src/shared/supabase/services/dashboard.service.ts',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* git not available in this sandbox — skip silently */ }

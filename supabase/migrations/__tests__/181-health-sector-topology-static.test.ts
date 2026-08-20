@@ -47,11 +47,11 @@ describe('181 registration and shape', () => {
   // R1.1-U added 182 and R1.2C added 183, so 181 is no longer last. The guard
   // stays EXHAUSTIVE rather than being deleted: every successor is named by
   // EXACT filename, and anything beyond the last of them still fails closed.
-  it('is followed by exactly 182 through 189, and nothing beyond them', () => {
-    // M189 (inter-org alert canonical identity) is the next reviewed migration. The
-    // successor list stays EXACT and the nothing-beyond regex is narrowed by
+  it('is followed by exactly 182 through 190, and nothing beyond them', () => {
+    // M190 (G4.1 inter-org alert CQRS boundary) is the next reviewed migration.
+    // The successor list stays EXACT and the nothing-beyond regex is narrowed by
     // exactly one number, so this guard still fails closed on any unreviewed
-    // migration beyond 189.
+    // migration beyond 190.
     const SUCCESSORS = [
       '182_phoenix_health_center_facility_scoped_rbac.sql',
       '183_phoenix_emergency_outlet_integrity.sql',
@@ -61,10 +61,11 @@ describe('181 registration and shape', () => {
       '187_phoenix_delegated_operational_access.sql',
       '188_phoenix_public_qr_facility_context.sql',
       '189_phoenix_inter_org_alert_canonical_identity.sql',
+      '190_phoenix_inter_org_alert_cqrs_boundary.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^190_|^19\d_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[1-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

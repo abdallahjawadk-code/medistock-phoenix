@@ -61,11 +61,19 @@ describe('189 · registration and file hygiene', () => {
     }
   });
 
-  it('is the highest reviewed migration and 190 stays absent', () => {
+  // G4.1 / M190 (inter-org alert CQRS boundary) is now the single highest
+  // reviewed migration. 189 is no longer the ceiling, so this guard is
+  // re-pointed by EXACT filename rather than weakened: 190 is required to be
+  // the immediate, only successor, and 191 takes over the fail-closed role.
+  it('is immediately followed by 190, the new ceiling, and 191 stays absent', () => {
+    const NEXT = '190_phoenix_inter_org_alert_cqrs_boundary.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(189);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^190_/.test(f))).toHaveLength(0);
+    expect(Math.max(...numbers)).toBe(190);
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^190_/.test(f))).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toHaveLength(0);
   });
 });
 

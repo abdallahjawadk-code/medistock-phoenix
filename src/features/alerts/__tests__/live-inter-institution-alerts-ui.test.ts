@@ -21,13 +21,32 @@ const statusCenter = readSrc('features/status/StatusCenterScreen.tsx');
 const UUID_LITERAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 describe('InterInstitutionAlertsScreen: uses the lifecycle RPC service', () => {
-  it('imports getLiveInterInstitutionAlertsPage from inter-org-alert-lifecycle.service', () => {
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): real server pagination is preserved, but it
+  // now runs over the PURE query RPC instead of 148's wrapper around the
+  // write-capable hybrid — turning a page must never write.
+  it('imports the CQRS command/query pair from inter-org-alert-lifecycle.service', () => {
     expect(screen).toContain("from './inter-org-alert-lifecycle.service'");
-    expect(screen).toContain('getLiveInterInstitutionAlertsPage');
+    expect(screen).toContain('refreshInterOrgAlertLifecycle');
+    expect(screen).toContain('queryLiveInterOrgAlertsPage');
   });
 
-  it('calls getLiveInterInstitutionAlertsPage inside the data-loading hook (147: real server pagination, not a fixed first-200)', () => {
-    expect(screen).toMatch(/useAsync\(\(\) => getLiveInterInstitutionAlertsPage\(/);
+  it('still paginates server-side, now through the PURE query (real pagination, not a fixed first-200)', () => {
+    expect(screen).toMatch(/return queryLiveInterOrgAlertsPage\(PAGE_SIZE, page \* PAGE_SIZE\);/);
+    expect(screen).toMatch(/\}, \[page\]\);/);
+  });
+
+  it('the load is COMMAND-then-QUERY, and the command is skipped on a page change', () => {
+    // The ref is set ONLY after a successful refresh, so paging re-runs the
+    // loader but reaches the pure query alone.
+    expect(screen).toContain('const lifecycleRefreshed = useRef(false);');
+    expect(screen).toContain('if (!lifecycleRefreshed.current) {');
+    expect(screen).toContain('const command = await refreshInterOrgAlertLifecycle();');
+    expect(screen).toContain('lifecycleRefreshed.current = true;');
+  });
+
+  it('never calls the write-capable hybrid read wrappers any more', () => {
+    expect(screen).not.toContain('getLiveInterInstitutionAlertsWithState');
+    expect(screen).not.toContain('getLiveInterInstitutionAlertsPage');
   });
 });
 
@@ -421,9 +440,13 @@ describe('InterInstitutionAlertsScreen: guardrails', () => {
     expect(screen).not.toMatch(/xlsx|exceljs|read-excel-file|sheetjs|papaparse/i);
   });
 
-  it('StatusCenter is left unchanged; Dashboard is now wired to the live summary (LIVE-ALERTS-DASHBOARD-SUMMARY-A)', () => {
-    expect(dashboardScreen).toContain('getLiveInterInstitutionAlertsWithState');
+  // ALERT-CQRS-BOUNDARY-190 (G4.1): the Dashboard widget is still backed by the
+  // lifecycle service, but by its PURE summary query — opening a dashboard must
+  // cause zero inter-org alert writes.
+  it('StatusCenter is left unchanged; Dashboard is wired to the PURE live summary', () => {
+    expect(dashboardScreen).toContain('queryLiveInterOrgAlertSummary');
     expect(dashboardScreen).toContain('inter-org-alert-lifecycle.service');
+    expect(dashboardScreen).not.toContain('getLiveInterInstitutionAlertsWithState');
     expect(statusCenter).not.toContain('getLiveInterInstitutionAlerts');
   });
 });
