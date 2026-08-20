@@ -1,25 +1,34 @@
 import { useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
 import { useAsync, type AsyncState } from '@/shared/lib/useAsync';
-import { useCurrentScopes } from '@/shared/authz/useAuthorization';
 import { supabaseRbacTransport } from '@/shared/authz/rbac.service';
-import {
-  getWarehouses,
-  getPointsByOrg,
-  type Warehouse,
-  type DistributionPoint,
-} from '@/shared/supabase/services/warehouses.service';
 import type { InventoryScopeKind } from './inventory-intelligence.service';
 import { getMyOperationalResourceCatalog } from '@/shared/supabase/services/delegated-access.service';
+import {
+  getOrganizationScopeTopology,
+  type WarehouseStructuralRole,
+} from '@/shared/supabase/services/scope-topology.service';
 
 /**
  * One named warehouse/outlet in the active organization.
  *
- * `warehouses` / `outlets` are the RLS-readable catalog used to resolve names.
- * `manageable*` is intentionally narrower: super_admin sees the whole catalog;
- * everyone else sees only ACTIVE scope assignments returned by migration 062.
- * The threshold RPC remains the final permission check, so a stale assignment
- * can never become a write grant.
+ * `warehouses` / `outlets` are the readable catalog used to resolve names.
+ * `manageable*` is intentionally narrower.
+ *
+ * G4.2 — WHERE THE NARROWING IS DECIDED CHANGED; THE ANSWER DID NOT.
+ * It used to be recomputed here, in the browser: a health-centre manager's
+ * effective warehouses were derived from `facilityId !== null` plus the
+ * assignment rows, and an outlet's reachability from its parent warehouse.
+ * That was a second implementation of Migration 182's helper, and it had to
+ * APPROXIMATE the sector-main exclusion because `warehouses.is_main` never
+ * reached the client. The database now answers it directly through
+ * `phoenix_query_organization_scope_topology`, which delegates verbatim to the
+ * canonical `phoenix_profile_has_warehouse_assignment` /
+ * `phoenix_profile_has_point_assignment` helpers — so parity is structural
+ * rather than merely tested, and there is no client rule left to drift.
+ *
+ * The threshold RPC remains the final permission check, so a stale scope can
+ * never become a write grant.
  */
 export interface InventoryScopeOption {
   kind: InventoryScopeKind;
@@ -40,14 +49,25 @@ export interface InventoryScopeOption {
    */
   pointType: string | null;
   /**
-   * R1.1-U: `warehouses.facility_id` for a warehouse-kind option; null for an
-   * outlet. Load-bearing for facility scope — the SECTOR MAIN is the health
-   * sector's only active warehouse with facility_id IS NULL (Migration 181), so
-   * requiring a NON-NULL facility here is exactly what stops a facility-scoped
-   * manager inheriting it, mirroring
-   * phoenix_profile_has_warehouse_assignment server-side.
+   * `warehouses.facility_id` for a warehouse-kind option. For an outlet this is
+   * its OWNING WAREHOUSE's facility — ancestry the database derived (G4.2),
+   * not something reconstructed here. The semantic is IDENTICAL on both paths:
+   * Migration 191 supplies it for the primary organization, Migration 187's
+   * catalog for a delegated one.
+   *
+   * PRESENTATION ONLY. It is no longer load-bearing for scope: the sector-main
+   * exclusion that used to be spelled `facilityId !== null` in this file now
+   * lives where it always belonged, in Migration 182's helper, and arrives here
+   * already applied as `inEffectiveScope`.
    */
   facilityId: string | null;
+  /**
+   * The DATABASE's structural role for this warehouse (G4.2 / Migration 191),
+   * projecting Migration 181's COMPLETE six-conjunct rule. Never derived here,
+   * and never inferred from `facilityId` alone. 'unclassified' for outlets and
+   * for any row whose role the caller cannot establish.
+   */
+  structuralRole: WarehouseStructuralRole;
 }
 
 export interface InventoryScopeCatalog {
@@ -63,41 +83,119 @@ export interface InventoryScopeCatalog {
   canManage: (kind: InventoryScopeKind, id: string | null) => boolean;
 }
 
-function toWhOption(w: Warehouse): InventoryScopeOption {
-  return { kind: 'warehouse', id: w.id, name: w.name, nameAr: w.name_ar, warehouseId: null, warehouseKind: w.warehouseKind, pointType: null, facilityId: w.facilityId };
+/** A scope option plus the server's WHERE answer, kept out of the public type. */
+interface ScopedOption extends InventoryScopeOption {
+  inEffectiveScope: boolean;
 }
 
-function toOutletOption(p: DistributionPoint): InventoryScopeOption {
-  return { kind: 'outlet', id: p.id, name: p.name, nameAr: p.name_ar, warehouseId: p.warehouseId, warehouseKind: null, pointType: p.pointType, facilityId: null };
-}
+/**
+ * PRESENTATION ORDERING ONLY.
+ *
+ * Both reads G4.2 replaced — `getWarehouses` and `getPointsByOrg` — ended in
+ * `.order('name_ar')`, so the pickers were alphabetical by Arabic name. Migration
+ * 191 deliberately has no ORDER BY: an ordering is not a topology fact, so the
+ * database does not assert one. Restoring it HERE, at the presentation boundary,
+ * is what keeps the pickers stable without letting order decide anything.
+ *
+ * It runs strictly AFTER the canonical structural role and effective scope have
+ * been supplied, and it only permutes: it can never add, drop, re-parent or
+ * re-scope a row, so visibility, ancestry, sector-main and permission are all
+ * untouched by it.
+ *
+ * `nameAr` mirrors exactly what the replaced reads sorted on — the Arabic name
+ * regardless of UI language — so both membership AND order match pre-G4.2
+ * behaviour. The id tiebreak makes equal names deterministic, which a bare
+ * `.order('name_ar')` never was.
+ */
+export const byArabicName = (
+  a: { nameAr: string; id: string },
+  b: { nameAr: string; id: string },
+): number => a.nameAr.localeCompare(b.nameAr) || a.id.localeCompare(b.id);
 
 export function useInventoryScopes(
   orgId: string | null,
   /** Exact organization-level inventory.manage_thresholds decision. */
   canManageOrganization = false,
 ): AsyncState<InventoryScopeCatalog> {
-  const { authz, profile } = useApp();
-  const assigned = useCurrentScopes(authz);
+  const { profile } = useApp();
   const delegatedOrganization = Boolean(orgId && profile?.organization_id && orgId !== profile.organization_id);
 
   const visible = useAsync(async () => {
-    if (!orgId) return { organizationId: null, warehouses: [], outlets: [] };
+    if (!orgId) return { organizationId: null, warehouses: [] as ScopedOption[], outlets: [] as ScopedOption[] };
+
     if (delegatedOrganization) {
+      // UNCHANGED BY G4.2. Cross-organization delegated topology has been
+      // DB-owned since Migration 187 and is deliberately not duplicated by
+      // 191: there was never a client-side delegated reconstruction to remove.
+      // Every row this catalog returns is already inside the caller's
+      // delegated scope, which is why `inEffectiveScope` is true for all of
+      // them — that is 187's answer being carried, not a new decision.
       const rows = (await getMyOperationalResourceCatalog()).filter(row => row.organizationId === orgId);
-      const warehouses = [...new Map(rows.filter(row => row.warehouseId && !row.distributionPointId).map(row => [row.warehouseId!, {
+      const warehouses: ScopedOption[] = [...new Map(rows.filter(row => row.warehouseId && !row.distributionPointId).map(row => [row.warehouseId!, {
         kind: 'warehouse' as const, id: row.warehouseId!, name: row.warehouseName ?? '',
         nameAr: row.warehouseNameAr ?? '', warehouseId: null,
         warehouseKind: row.warehouseKind, pointType: null, facilityId: row.warehouseFacilityId,
+        // 187's catalog carries no `is_main`, so no POSITIVE structural claim
+        // can be made about a delegated warehouse. Under-claiming is the
+        // deliberate choice — see scope-topology.service.ts.
+        structuralRole: 'unclassified' as WarehouseStructuralRole,
+        inEffectiveScope: true,
       }])).values()];
-      const outlets = [...new Map(rows.filter(row => row.distributionPointId).map(row => [row.distributionPointId!, {
+      const outlets: ScopedOption[] = [...new Map(rows.filter(row => row.distributionPointId).map(row => [row.distributionPointId!, {
         kind: 'outlet' as const, id: row.distributionPointId!, name: row.distributionPointName ?? '',
         nameAr: row.distributionPointNameAr ?? '', warehouseId: row.warehouseId,
-        warehouseKind: null, pointType: row.distributionPointType, facilityId: null,
+        warehouseKind: null, pointType: row.distributionPointType,
+        // CONTRACT PARITY with the primary path. Migration 187's catalog already
+        // LEFT JOINs the owning warehouse for every outlet branch and returns its
+        // `facility_id` as `warehouse_facility_id` — its own comment calls that
+        // join "the ancestry for the UI only". So this is the DATABASE's outlet
+        // ancestry being carried, exactly as `facilityId` means on the primary
+        // path; it is not a second client-side reconstruction, and it is never
+        // inferred from a name. Leaving it null here made one field mean two
+        // different things depending on which branch produced the row.
+        facilityId: row.warehouseFacilityId,
+        structuralRole: 'unclassified' as WarehouseStructuralRole,
+        inEffectiveScope: true,
       }])).values()];
-      return { organizationId: orgId, warehouses, outlets };
+      return {
+        organizationId: orgId,
+        warehouses: warehouses.sort(byArabicName),
+        outlets: outlets.sort(byArabicName),
+      };
     }
-    const [whs, pts] = await Promise.all([getWarehouses(orgId), getPointsByOrg(orgId)]);
-    return { organizationId: orgId, warehouses: whs.map(toWhOption), outlets: pts.map(toOutletOption) };
+
+    // PRIMARY ORGANIZATION — one canonical read. The RPC is SECURITY INVOKER,
+    // so it returns exactly the rows this caller's own RLS already allowed
+    // through `getWarehouses` / `getPointsByOrg`: identical visibility, plus
+    // the structural role and the scope answer the client used to compute.
+    const nodes = await getOrganizationScopeTopology(orgId);
+    const warehouses: ScopedOption[] = nodes
+      .filter(n => n.nodeKind === 'warehouse' && n.warehouseId !== null && n.warehouseStatus !== 'archived')
+      .map(n => ({
+        kind: 'warehouse' as const, id: n.warehouseId!,
+        name: n.warehouseName ?? '', nameAr: n.warehouseNameAr ?? '',
+        warehouseId: null, warehouseKind: n.warehouseKind, pointType: null,
+        facilityId: n.facilityId, structuralRole: n.structuralRole,
+        inEffectiveScope: n.inEffectiveScope,
+      }));
+    const outlets: ScopedOption[] = nodes
+      .filter(n => n.nodeKind === 'outlet' && n.distributionPointId !== null && n.distributionPointStatus !== 'archived')
+      .map(n => ({
+        kind: 'outlet' as const, id: n.distributionPointId!,
+        name: n.distributionPointName ?? '', nameAr: n.distributionPointNameAr ?? '',
+        warehouseId: n.warehouseId, warehouseKind: null,
+        pointType: n.distributionPointType, facilityId: n.facilityId,
+        // A structural role is a claim about a WAREHOUSE. An outlet never
+        // carries one, so it is never a route by which a role could be
+        // over-claimed.
+        structuralRole: 'unclassified' as WarehouseStructuralRole,
+        inEffectiveScope: n.inEffectiveScope,
+      }));
+    return {
+      organizationId: orgId,
+      warehouses: warehouses.sort(byArabicName),
+      outlets: outlets.sort(byArabicName),
+    };
   }, [orgId, delegatedOrganization]);
 
   const data = useMemo<InventoryScopeCatalog | null>(() => {
@@ -111,60 +209,22 @@ export function useInventoryScopes(
     for (const o of [...warehouses, ...outlets]) readable.set(`${o.kind}:${o.id}`, o);
 
     const superAdmin = profile?.role === 'super_admin';
-    // An exact organization-level grant intentionally covers every scope in
-    // that organization even when the profile has no individual assignment
-    // rows (for example an institution administrator). The selected scope is
-    // still re-checked by migration 062 immediately before the write.
+    // PERMISSION, not scope. An exact organization-level grant intentionally
+    // covers every scope in that organization even when the profile holds no
+    // individual assignment row (for example an institution administrator).
+    // G4.2 keeps this question exactly where it was — migration 062 — because
+    // it answers WHAT, while the topology query deliberately answers only
+    // WHERE. The selected scope is still re-checked by 062 before any write.
     const managesWholeOrganization = superAdmin || canManageOrganization || delegatedOrganization;
-    const relevantAssignments = assigned.scopes.filter(a => a.organizationId === orgId);
-    const assignedWarehouses = new Set(
-      relevantAssignments.map(a => a.warehouseId).filter((id): id is string => Boolean(id)),
-    );
-    const assignedPoints = new Set(
-      relevantAssignments.map(a => a.distributionPointId).filter((id): id is string => Boolean(id)),
-    );
-    /**
-     * R1.1-U — FACILITY SCOPE.
-     *
-     * A health-centre manager holds no warehouse or outlet row at all; it holds
-     * facilities, and its resources are DERIVED from them. Without this the two
-     * sets above are empty and the manager gets a working login with nothing it
-     * can operate — valid database scope, unusable UI.
-     *
-     * The derivation deliberately mirrors Migration 182's helpers rather than
-     * inventing a second rule:
-     *   warehouse → manageable when it is facility-bound AND its facility is
-     *               assigned. `facilityId !== null` is the SECTOR-MAIN
-     *               EXCLUSION: the sector main is the only active health-sector
-     *               warehouse with facility_id IS NULL (181), so it can never
-     *               match, exactly as the server refuses it.
-     *   outlet    → manageable when its OWNING warehouse is, so a centre's
-     *               pharmacy and crash cabinets follow their depot.
-     *
-     * Facility identity is preserved: a manager holding A and B derives A's and
-     * B's resources and nothing else. Two facilities never widen to the sector.
-     */
-    const assignedFacilities = new Set(
-      relevantAssignments
-        .filter(a => a.scopeType === 'facility')
-        .map(a => a.facilityId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const facilityDerivedWarehouses = new Set(
-      warehouses
-        .filter(w => w.facilityId !== null && assignedFacilities.has(w.facilityId))
-        .map(w => w.id),
-    );
 
-    const reachableWarehouse = (id: string) =>
-      assignedWarehouses.has(id) || facilityDerivedWarehouses.has(id);
-
+    // SCOPE. Server-decided. No facility derivation, no parent-outlet walk and
+    // no sector-main test remains in this file.
     const manageableWarehouses = managesWholeOrganization
       ? warehouses
-      : warehouses.filter(w => reachableWarehouse(w.id));
+      : warehouses.filter(w => w.inEffectiveScope);
     const manageableOutlets = managesWholeOrganization
       ? outlets
-      : outlets.filter(o => assignedPoints.has(o.id) || (o.warehouseId !== null && reachableWarehouse(o.warehouseId)));
+      : outlets.filter(o => o.inEffectiveScope);
 
     const manageable = new Set<string>();
     for (const o of [...manageableWarehouses, ...manageableOutlets]) manageable.add(`${o.kind}:${o.id}`);
@@ -178,16 +238,17 @@ export function useInventoryScopes(
       resolve: (kind, id) => (id ? readable.get(`${kind}:${id}`) ?? null : null),
       canManage: (kind, id) => Boolean(id && manageable.has(`${kind}:${id}`)),
     };
-  }, [visible.data, assigned.scopes, orgId, profile?.role, canManageOrganization, delegatedOrganization]);
+  }, [visible.data, orgId, profile?.role, canManageOrganization, delegatedOrganization]);
 
   return {
     ...visible,
     data,
-    // Fail closed while assignments are unresolved. super_admin needs no
-    // assignment rows and may use the readable catalog immediately.
-    loading: visible.loading
-      || (Boolean(orgId) && data === null)
-      || (!delegatedOrganization && !canManageOrganization && profile?.role !== 'super_admin' && assigned.pending),
+    // Fail closed while the catalog is unresolved. The separate RBAC
+    // assignment fetch is no longer part of this gate: scope now arrives with
+    // the catalog itself, in the same round trip, so there is no second
+    // pending source that could let a not-yet-loaded scope render as a real
+    // (empty) answer.
+    loading: visible.loading || (Boolean(orgId) && data === null),
   };
 }
 

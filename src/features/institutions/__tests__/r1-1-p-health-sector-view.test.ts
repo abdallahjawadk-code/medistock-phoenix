@@ -28,7 +28,13 @@ const HOSPITAL = { organizationKind: 'care_institution', institutionClass: 'hosp
 describe('the screen uses the ONE shared grouping helper', () => {
   it('imports and calls groupHealthSectorResources rather than grouping inline', () => {
     expect(screen).toContain("from '@/shared/lib/health-sector-grouping'");
-    expect(screen).toContain('groupHealthSectorResources(owner, warehouses, points, facilities)');
+    // G4.2: the call now feeds each warehouse the STRUCTURAL ROLE Migration 191
+    // assigned, so the arguments span several lines. The contract this guard
+    // protects is unchanged — ONE shared helper, called with the screen's own
+    // rows — and it gains a clause: the role must come from the database.
+    expect(screen).toContain('groupHealthSectorResources(');
+    expect(screen).toMatch(/groupHealthSectorResources\([\s\S]{0,600}structuralRole: warehouseRoles\.data\?\.get\(w\.id\)/);
+    expect(screen).toContain('getOrganizationWarehouseRoles');
   });
 
   it('reuses the facilities the screen already loaded — no new read for grouping', () => {

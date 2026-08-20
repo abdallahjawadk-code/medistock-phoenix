@@ -34,18 +34,18 @@ const EXPECTED:readonly string[]=Object.freeze([
 '151_phoenix_suggestion_route_policy_gates.sql','152_phoenix_suggestion_action_read_model.sql','153_phoenix_retire_inter_org_exchange_status_writer.sql','154_phoenix_transfer_corridor_privilege_lockdown.sql','155_phoenix_transfer_send_receive_lifecycle_notifications.sql','156_phoenix_outlet_return_line_idempotency.sql','157_phoenix_outlet_return_exception_resolution.sql','158_phoenix_transactional_outbox_foundation.sql','159_phoenix_lifecycle_outbox_producer.sql','160_phoenix_demo_purge_outbox_compatibility.sql',
 '161_phoenix_movement_outbox_producer.sql','162_phoenix_stocktake_and_exception_outbox_producers.sql','163_phoenix_outbox_consumer_foundation.sql','164_phoenix_facility_identity_and_routing_foundation.sql','165_phoenix_sector_health_center_supply_and_return.sql','166_phoenix_initial_provisioning_invariant.sql','167_phoenix_dispatch_line_full_rejection_reconciliation.sql','168_phoenix_atomic_emergency_outlet_replenishment.sql','169_phoenix_outlet_replenishment_reversal.sql','170_phoenix_organization_class_and_warehouse_facility_assignment.sql',
 '171_phoenix_organization_kind_pharmacy_department_authority.sql','172_phoenix_patient_dispensing_contract.sql','173_phoenix_database_security_surface_hardening.sql','174_phoenix_authenticated_rpc_surface_hardening.sql','175_phoenix_read_helper_anonymous_surface_hardening.sql','176_phoenix_canonical_outlet_availability_read_model.sql','177_phoenix_canonical_public_qr.sql','178_phoenix_distribution_point_owner_guard_privilege_fix.sql','179_phoenix_canonical_authenticated_availability_hardening.sql','180_phoenix_emergency_initial_provisioning_boundary.sql','181_phoenix_health_sector_topology_reconciliation.sql','182_phoenix_health_center_facility_scoped_rbac.sql','183_phoenix_emergency_outlet_integrity.sql','184_phoenix_canonical_supply_cycle.sql','185_phoenix_return_quarantine_recall_parity.sql','186_phoenix_correction_reason_code_wrapper_parity.sql','187_phoenix_delegated_operational_access.sql',
-'188_phoenix_public_qr_facility_context.sql','189_phoenix_inter_org_alert_canonical_identity.sql','190_phoenix_inter_org_alert_cqrs_boundary.sql',
+'188_phoenix_public_qr_facility_context.sql','189_phoenix_inter_org_alert_canonical_identity.sql','190_phoenix_inter_org_alert_cqrs_boundary.sql','191_phoenix_canonical_scope_topology_read_contract.sql',
 ]);
 
 // G4.1 / Inter-Org Alert CQRS Boundary: 190 is REAL; the unknown boundary
 // moves to 191. It must stay a name that is genuinely absent from the manifest,
 // otherwise the fail-closed assertions below would be asserting nothing.
-const SYNTH_NEXT='191_unreviewed_test_migration.sql';
+const SYNTH_NEXT='192_unreviewed_test_migration.sql';
 const SYNTH_ALT='187_phoenix_some_other_name.sql';
 
-describe('reviewed migration manifest through 190',()=>{
+describe('reviewed migration manifest through 191',()=>{
   it('counter-gates registry and disk by exact filename',()=>{
-    expect(EXPECTED).toHaveLength(190);
+    expect(EXPECTED).toHaveLength(191);
     expect([...REVIEWED_MIGRATION_FILES]).toEqual([...EXPECTED]);
     expect(sortMigrationFiles(actualSqlFiles())).toEqual([...EXPECTED]);
     expect(findMissingReviewedMigrationFiles(actualSqlFiles())).toEqual([]);
@@ -59,9 +59,9 @@ describe('reviewed migration manifest through 190',()=>{
     expect([...REVIEWED_MIGRATION_FILES]).toEqual(sortMigrationFiles(REVIEWED_MIGRATION_FILES));
     for(const f of EXPECTED) expect(isNumberedMigrationFile(f),f).toBe(true);
   });
-  it('pins maximum 190 and next unreviewed 191',()=>{
-    expect(getMaximumReviewedMigrationNumber()).toBe(190);
-    expect(getNextUnreviewedMigrationNumber()).toBe(191);
+  it('pins maximum 191 and next unreviewed 192',()=>{
+    expect(getMaximumReviewedMigrationNumber()).toBe(191);
+    expect(getNextUnreviewedMigrationNumber()).toBe(192);
     expect(isReviewedMigrationFile('178_phoenix_distribution_point_owner_guard_privilege_fix.sql')).toBe(true);
     expect(isReviewedMigrationFile('179_phoenix_canonical_authenticated_availability_hardening.sql')).toBe(true);
     expect(isReviewedMigrationFile('180_phoenix_emergency_initial_provisioning_boundary.sql')).toBe(true);
@@ -75,6 +75,7 @@ describe('reviewed migration manifest through 190',()=>{
     expect(isReviewedMigrationFile('188_phoenix_public_qr_facility_context.sql')).toBe(true);
     expect(isReviewedMigrationFile('189_phoenix_inter_org_alert_canonical_identity.sql')).toBe(true);
     expect(isReviewedMigrationFile('190_phoenix_inter_org_alert_cqrs_boundary.sql')).toBe(true);
+    expect(isReviewedMigrationFile('191_phoenix_canonical_scope_topology_read_contract.sql')).toBe(true);
     expect(isReviewedMigrationFile(SYNTH_ALT)).toBe(false);
     expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
   });

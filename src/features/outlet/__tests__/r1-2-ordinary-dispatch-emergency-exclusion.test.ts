@@ -55,11 +55,14 @@ describe('the canonical emergency-outlet vocabulary is reused, not re-declared',
 describe('the scope catalog publishes the outlet point type', () => {
   it('carries pointType on every scope option', () => {
     expect(scopes).toMatch(/pointType: string \| null;/);
-    expect(scopes).toMatch(/toOutletOption[\s\S]{0,300}pointType: p\.pointType/);
-    // A warehouse option has no point type — the field is explicitly null
-    // rather than absent, so a consumer cannot mistake "warehouse" for
-    // "unclassified outlet".
-    expect(scopes).toMatch(/toWhOption[\s\S]{0,300}pointType: null/);
+    // G4.2: the two named mappers (`toOutletOption` / `toWhOption`) went away when
+    // the primary path moved to Migration 191's canonical query — the mapping is
+    // now inline over the RPC rows. The CONTRACT is unchanged and still
+    // asserted: an outlet option carries the SERVER's point type, and a
+    // warehouse option carries an explicit null, so a consumer cannot mistake
+    // "warehouse" for "unclassified outlet".
+    expect(scopes).toMatch(/kind: 'outlet' as const[\s\S]{0,500}pointType: n\.distributionPointType/);
+    expect(scopes).toMatch(/kind: 'warehouse' as const[\s\S]{0,500}pointType: null/);
   });
 });
 

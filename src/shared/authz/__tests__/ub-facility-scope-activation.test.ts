@@ -51,27 +51,51 @@ describe('U-B · the scope reader transports facility assignments', () => {
   });
 });
 
-describe('U-B · the projection derives resources from facilities', () => {
+// G4.2 RE-POINTED — the guard is not weakened, it follows the decision.
+//
+// U-B's requirements are unchanged: a facility-scoped manager must reach its
+// centre depots, must NEVER reach the sector main, and an outlet must follow
+// its owning depot. What changed is WHERE that is decided. It used to be
+// recomputed in this hook from `facilityId !== null` plus the assignment rows
+// — an approximation, because `warehouses.is_main` never reached the browser.
+// Migration 191 moved it to `phoenix_query_organization_scope_topology`, which
+// delegates verbatim to `phoenix_profile_has_warehouse_assignment` (062 +
+// 182's facility branch) — the SAME authority the server enforces with.
+//
+// So the client-side assertions below become their exact inverse: the
+// reconstruction must be ABSENT, and the canonical query must be the source.
+// The behavioural proofs live in the 191 dynamic suite, against a real
+// database, which is strictly stronger than a source scan ever was.
+describe('U-B · the projection is DB-derived, and the client reconstructs nothing', () => {
   const hook = read('features/inventory/useInventoryScopes.ts');
 
-  it('derives warehouses from ASSIGNED FACILITIES', () => {
-    expect(hook).toContain("a.scopeType === 'facility'");
-    expect(hook).toContain('assignedFacilities');
-    expect(hook).toContain('facilityDerivedWarehouses');
+  it('no longer walks scope assignments to derive facility resources', () => {
+    expect(hook).not.toContain("a.scopeType === 'facility'");
+    expect(hook).not.toContain('assignedFacilities');
+    expect(hook).not.toContain('facilityDerivedWarehouses');
   });
 
-  it('SECTOR-MAIN EXCLUSION: a facility-less warehouse can never be derived', () => {
-    // The sector main is the health sector's only active facility_id IS NULL
-    // warehouse (181). Requiring non-null here is the same test the server makes.
-    expect(hook).toMatch(/w\.facilityId !== null && assignedFacilities\.has\(w\.facilityId\)/);
+  it('SECTOR-MAIN EXCLUSION: no facility-null test decides scope in the client', () => {
+    // The exclusion still holds — it is now 182's helper, reached through 191,
+    // and it uses the COMPLETE 181 rule rather than the NULL alone.
+    const code = hook.split('\n').filter(l => !l.trim().startsWith('*') && !l.trim().startsWith('//')).join('\n');
+    expect(code).not.toMatch(/facilityId\s*!==\s*null/);
+    expect(code).not.toMatch(/facilityId\s*===\s*null/);
   });
 
-  it('outlets follow their OWNING warehouse, so a centre pharmacy tracks its depot', () => {
-    expect(hook).toMatch(/reachableWarehouse\(o\.warehouseId\)/);
+  it('outlets follow their owning depot by the SERVER answer, not a client walk', () => {
+    expect(hook).not.toMatch(/reachableWarehouse\(o\.warehouseId\)/);
+    expect(hook).toContain('outlets.filter(o => o.inEffectiveScope)');
+  });
+
+  it('reads the canonical topology query for the primary organization', () => {
+    expect(hook).toContain('getOrganizationScopeTopology');
+    expect(hook).toContain("from '@/shared/supabase/services/scope-topology.service'");
   });
 
   it('preserves the organization-wide short-circuit for roles that legitimately have it', () => {
-    // The pinned line other suites assert on must survive verbatim.
+    // PERMISSION, not scope — deliberately still decided client-side from an
+    // exact 062 answer. The pinned line other suites assert on survives verbatim.
     expect(hook).toContain('const manageableWarehouses = managesWholeOrganization');
     expect(hook).toContain('const managesWholeOrganization = superAdmin || canManageOrganization');
   });

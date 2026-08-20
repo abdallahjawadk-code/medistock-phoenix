@@ -353,7 +353,19 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
         // EXACT NAME. No production service under src/shared/supabase is
         // excluded, and every other watched path stays fully covered.
         + '":!src/shared/supabase/services/__tests__/dashboard-service-rpc-switch.test.ts" '
-        + '":!src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts"',
+        + '":!src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts" '
+        // CANONICAL-SCOPE-TOPOLOGY-191 (G4.2): a later, separately-reviewed
+        // phase moves facility/scope TOPOLOGY out of the browser and into the
+        // database. Under the paths this guard watches it adds exactly ONE new
+        // read service — scope-topology.service.ts, a thin client for the new
+        // pure query, with no visual surface at all — and re-points ONE guard
+        // test under src/shared/authz whose clauses pinned the client-side
+        // scope reconstruction that 191 removes. Both excluded BY EXACT NAME.
+        // Every other watched path — the rest of src/shared/supabase,
+        // AuthenticatedApp.tsx, App.tsx and the rest of src/shared/authz —
+        // stays fully covered.
+        + '":!src/shared/supabase/services/scope-topology.service.ts" '
+        + '":!src/shared/authz/__tests__/ub-facility-scope-activation.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

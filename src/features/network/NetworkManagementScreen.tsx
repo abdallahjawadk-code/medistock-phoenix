@@ -3,6 +3,10 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
 import { useAsync } from '@/shared/lib/useAsync';
+import {
+  getOrganizationWarehouseRoles,
+  type WarehouseStructuralRole,
+} from '@/shared/supabase/services/scope-topology.service';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
@@ -198,8 +202,36 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
   const selectedOrg = (orgs.data ?? []).find(o => o.id === orgId);
   const isHealthSector = selectedOrg?.organizationKind === 'care_institution'
     && selectedOrg.institutionClass === 'health_sector';
+  /**
+   * G4.2 — the STRUCTURAL ROLE from Migration 191. The sector-main heading
+   * below is a claim about topology, so it must come from the database: the
+   * old `facilityId === null` test also matched a DEACTIVATED facility-less
+   * depot and presented it, under a heading, as the sector's supply root.
+   *
+   * Only asked for a health sector — no other class has a sector main — and a
+   * role that has not loaded leaves the warehouse unclaimed, so the heading is
+   * absent while loading rather than briefly wrong.
+   */
+  const warehouseRoles = useAsync(
+    async () => (orgId && isHealthSector
+      ? await getOrganizationWarehouseRoles(orgId)
+      : new Map<string, WarehouseStructuralRole>()),
+    [orgId, isHealthSector, reloadKey],
+  );
+  const roleOf = (id: string) => warehouseRoles.data?.get(id) ?? null;
+
   const central = inOrg.filter(w => w.warehouseKind === 'central');
   const institution = inOrg.filter(w => w.warehouseKind === 'institution');
+  const sectorMains = institution.filter(w => roleOf(w.id) === 'sector_main');
+  const centreDepots = institution.filter(w => roleOf(w.id) === 'health_center_depot');
+  /**
+   * Neither a canonical main nor a centre depot: a retired facility-less
+   * warehouse, or one whose role has not resolved. Shown under the plain
+   * institution heading — never under a heading that would misdescribe it.
+   */
+  const unclassifiedInstitution = institution.filter(
+    w => roleOf(w.id) !== 'sector_main' && roleOf(w.id) !== 'health_center_depot',
+  );
   const selectedWarehouseIds = new Set(inOrg.map(w => w.id));
   const relatedWarehouseIds = new Set(selectedWarehouseIds);
   (routes.data ?? []).forEach(route => {
@@ -255,8 +287,9 @@ function WarehousesPanel({ lang }: { lang: Lang }) {
       {orgId && inOrg.length === 0 && <PhoenixEmptyState icon="warehouse" title={t('net_wh_empty', lang)} />}
 
       {central.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_central', lang)} rows={central} isHealthSector={isHealthSector} onChanged={(r) => { setStatus(r); reload(); }} />}
-      {isHealthSector && institution.some(w => w.facilityId === null) && <WarehouseGroup lang={lang} title={t('net_wh_sector_main', lang)} rows={institution.filter(w => w.facilityId === null)} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
-      {isHealthSector && institution.some(w => w.facilityId !== null) && <WarehouseGroup lang={lang} title={t('net_wh_center_depots', lang)} rows={institution.filter(w => w.facilityId !== null)} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
+      {isHealthSector && sectorMains.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_sector_main', lang)} rows={sectorMains} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
+      {isHealthSector && centreDepots.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_center_depots', lang)} rows={centreDepots} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
+      {isHealthSector && unclassifiedInstitution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={unclassifiedInstitution} isHealthSector onChanged={(r) => { setStatus(r); reload(); }} />}
       {!isHealthSector && institution.length > 0 && <WarehouseGroup lang={lang} title={t('net_wh_institution', lang)} rows={institution} isHealthSector={false} onChanged={(r) => { setStatus(r); reload(); }} />}
     </div>
   );
