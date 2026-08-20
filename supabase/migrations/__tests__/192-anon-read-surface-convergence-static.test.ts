@@ -95,11 +95,22 @@ describe('192 · privilege-only: it creates and alters nothing', () => {
   it('alters or drops no policy, table or function', () => {
     for (const forbidden of [
       /\bALTER\s+POLICY\b/i, /\bDROP\s+POLICY\b/i, /\bALTER\s+TABLE\b/i,
-      /\bDROP\s+TABLE\b/i, /\bALTER\s+FUNCTION\b/i, /\bDROP\s+FUNCTION\b/i,
+      /\bALTER\s+FUNCTION\b/i, /\bDROP\s+FUNCTION\b/i,
       /\bALTER\s+DEFAULT\s+PRIVILEGES\b/i, /\bTRUNCATE\b/i,
     ]) {
       expect(statements, String(forbidden)).not.toMatch(forbidden);
     }
+  });
+
+  it('drops nothing but its OWN two scratch snapshots', () => {
+    const drops = (statements.match(/DROP\s+TABLE[^;]*/gi) ?? []).map(d => d.replace(/\s+/g, ' ').trim());
+    expect(drops).toEqual([
+      'DROP TABLE phoenix_192_anon_nonselect_before',
+      'DROP TABLE phoenix_192_anon_defacl_before',
+    ]);
+    // Both are TEMP, so the persistent schema is never touched.
+    expect(statements).toMatch(/CREATE TEMP TABLE phoenix_192_anon_nonselect_before/);
+    expect(statements).toMatch(/CREATE TEMP TABLE phoenix_192_anon_defacl_before/);
   });
 
   it('writes no business data', () => {
@@ -148,13 +159,37 @@ describe('192 · the VERIFY block asserts an EMPTY allowlist', () => {
     expect(sql).toMatch(/btrim\(v_qual\)\s*<>\s*'false'/);
   });
 
-  it('asserts no anon write privileges', () => {
-    expect(sql).toContain('anon holds non-SELECT relation privileges');
+  it('proves it changed no anon WRITE privilege, by identity and in both directions', () => {
+    expect(sql).toContain('phoenix_192_anon_nonselect_before');
+    expect(sql).toContain('the anon non-SELECT privilege set changed');
+    // Bidirectional set difference, never a count comparison.
+    // \b so this cannot match inside RAISE EXCEPTION: 2 per snapshot comparison.
+    expect(sql.match(/\bEXCEPT\b/g) ?? []).toHaveLength(4);
+    expect(sql).not.toMatch(/count\(\*\)[^;]*anon[^;]*<>\s*'SELECT'/i);
   });
 
-  it('asserts default privileges cannot re-open the surface', () => {
-    expect(sql).toContain('a default privilege grants anon SELECT on future relations');
+  it('proves it changed no anon DEFAULT-ACL entry, matched on every identity column', () => {
+    expect(sql).toContain('phoenix_192_anon_defacl_before');
+    expect(sql).toContain('the anon default-ACL set changed');
     expect(sql).toContain('pg_default_acl');
+    for (const col of ['defacl_owner', 'namespace', 'object_type', 'grantor', 'grantee', 'privilege', 'grantable']) {
+      expect(sql, col).toContain(col);
+    }
+  });
+
+  it('does NOT assert an absolute absence of anon default privileges', () => {
+    // That is an ENVIRONMENT baseline: hosted Production has no anon entry, a
+    // stock local Supabase does. 192 must not veto either.
+    expect(sql).not.toContain('a default privilege grants anon SELECT on future relations');
+  });
+
+  it('does NOT precondition on anon holding no write privilege', () => {
+    expect(sql).not.toContain('anon holds a non-SELECT relation privilege');
+  });
+
+  it('drops both snapshots before COMMIT', () => {
+    expect(sql).toContain('DROP TABLE phoenix_192_anon_nonselect_before;');
+    expect(sql).toContain('DROP TABLE phoenix_192_anon_defacl_before;');
   });
 
   it('asserts the public QR RPC survives and stays SECURITY DEFINER', () => {

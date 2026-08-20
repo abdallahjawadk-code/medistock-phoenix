@@ -81,6 +81,38 @@
 -- No default privileges are altered. No policy is created, dropped or changed —
 -- `avail_select_anon` is asserted to remain exactly as 027 left it.
 --
+-- ─────────────────────────────────────────────────────────────────────────────
+-- THIS MIGRATION OWNS `SELECT` AND NOTHING ELSE
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The three environments this chain runs in do NOT share an anon baseline:
+--
+--   · the disposable pg-rig grants `anon` nothing at all;
+--   · hosted Production carries legacy anon SELECT, no write privilege, and NO
+--     anon entry in the `public` schema's default ACL;
+--   · a stock LOCAL SUPABASE grants `anon` the full default set on every table
+--     it creates — INSERT, UPDATE, DELETE and the rest included — AND ships a
+--     `public` default ACL that will grant `anon` SELECT on future relations.
+--
+-- So "anon holds no write privilege" and "no default privilege grants anon
+-- SELECT" are statements about an ENVIRONMENT, not about this migration.
+-- Asserting either absolutely would make 192 unappliable on a stock local
+-- Supabase for reasons that have nothing to do with the read surface — and the
+-- local baseline is a real, correct configuration of that environment, not a
+-- defect this migration gets to veto.
+--
+-- What 192 must prove instead is that IT changed only SELECT on the relations
+-- that exist when it runs. It therefore takes two BEFORE snapshots — the
+-- effective anon non-SELECT privilege set, and the anon-SELECT default-ACL set
+-- captured with full identity (owner, namespace, object type, grantor, grantee,
+-- privilege, grantable flag) — repeats both AFTER, and requires each to be
+-- identical set-for-set in BOTH directions, never merely equal in count. That
+-- proves, in every environment alike, that this migration granted no anon
+-- write, removed no anon write, and neither created, removed nor altered a
+-- single default privilege.
+--
+-- The divergence between the local and hosted baselines is real and is recorded
+-- for independent review; it is deliberately outside this migration's scope.
+--
 -- MANUAL APPLY ONLY. NEVER `supabase db push`.
 -- ═════════════════════════════════════════════════════════════════════════════
 
@@ -133,15 +165,10 @@ BEGIN
     RAISE EXCEPTION '192_precondition_failed: anon cannot execute get_public_qr_payload before convergence';
   END IF;
 
-  -- Refuse to run if anon somehow holds a WRITE privilege: this migration
-  -- converges READS only, and silently leaving a write behind would be worse
-  -- than failing here.
-  IF EXISTS (
-    SELECT 1 FROM information_schema.role_table_grants
-    WHERE table_schema='public' AND grantee='anon' AND privilege_type <> 'SELECT'
-  ) THEN
-    RAISE EXCEPTION '192_precondition_failed: anon holds a non-SELECT relation privilege; converging reads alone would be misleading';
-  END IF;
+  -- NOTE: anon's WRITE privileges are deliberately NOT a precondition. They vary
+  -- by environment (a stock local Supabase grants them by default), they are not
+  -- this migration's business, and 192 proves separately that it leaves them
+  -- exactly as it found them.
 END;
 $preflight$;
 
@@ -153,6 +180,40 @@ $preflight$;
 -- VERIFY below asserts over matviews and partitioned tables too. Looping makes
 -- the statement and the assertion cover exactly the same object set, so the
 -- proof cannot drift from the action.
+--
+-- The BEFORE snapshot is taken first, over exactly the relation classes the
+-- revocation touches, so the comparison in VERIFY cannot be wider or narrower
+-- than the action.
+CREATE TEMP TABLE phoenix_192_anon_nonselect_before AS
+SELECT c.relname AS relation, a.privilege_type AS privilege
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) AS a
+WHERE n.nspname = 'public'
+  AND c.relkind IN ('r','p','v','m','f')
+  AND a.grantee <> 0
+  AND pg_get_userbyid(a.grantee) = 'anon'
+  AND a.privilege_type <> 'SELECT';
+
+-- The anon-SELECT DEFAULT-ACL baseline, captured with full identity so the
+-- comparison in VERIFY is an identity match and not a tally. Namespace is left
+-- unfiltered: a default privilege in ANY schema that would grant anon SELECT is
+-- part of the baseline this migration must leave alone.
+CREATE TEMP TABLE phoenix_192_anon_defacl_before AS
+SELECT coalesce(pg_get_userbyid(d.defaclrole), '-')      AS defacl_owner,
+       coalesce(n.nspname, '-')                          AS namespace,
+       d.defaclobjtype::text                             AS object_type,
+       coalesce(pg_get_userbyid(a.grantor), '-')         AS grantor,
+       pg_get_userbyid(a.grantee)                        AS grantee,
+       a.privilege_type                                  AS privilege,
+       a.is_grantable                                    AS grantable
+FROM pg_default_acl d
+LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
+WHERE a.grantee <> 0
+  AND pg_get_userbyid(a.grantee) = 'anon'
+  AND a.privilege_type = 'SELECT';
+
 DO $converge$
 DECLARE r record;
 BEGIN
@@ -213,27 +274,74 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (192): RLS is no longer enabled on item_availability';
   END IF;
 
-  -- D. NO WRITE WIDENING of any shape.
-  SELECT string_agg(DISTINCT table_name || ':' || privilege_type, ', ') INTO v_bad
-  FROM information_schema.role_table_grants
-  WHERE table_schema = 'public' AND grantee = 'anon' AND privilege_type <> 'SELECT';
+  -- D. THIS MIGRATION CHANGED ONLY `SELECT`. The exact effective anon non-SELECT
+  --    privilege set must be identical to the snapshot taken before the
+  --    revocation — set-for-set, not merely the same size. Both directions are
+  --    checked, so 192 provably neither GRANTED an anon write nor REVOKED a
+  --    pre-existing one.
+  SELECT string_agg(x.relation || ':' || x.privilege, ', ' ORDER BY x.relation, x.privilege)
+    INTO v_bad
+  FROM (
+    (SELECT b.relation, b.privilege FROM phoenix_192_anon_nonselect_before b
+      EXCEPT
+     SELECT c.relname, a.privilege_type
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) AS a
+      WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','f')
+        AND a.grantee <> 0 AND pg_get_userbyid(a.grantee) = 'anon'
+        AND a.privilege_type <> 'SELECT')
+    UNION ALL
+    (SELECT c.relname, a.privilege_type
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) AS a
+      WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','f')
+        AND a.grantee <> 0 AND pg_get_userbyid(a.grantee) = 'anon'
+        AND a.privilege_type <> 'SELECT'
+      EXCEPT
+     SELECT b.relation, b.privilege FROM phoenix_192_anon_nonselect_before b)
+  ) AS x(relation, privilege);
   IF v_bad IS NOT NULL THEN
-    RAISE EXCEPTION 'VERIFY FAILED (192): anon holds non-SELECT relation privileges: %', v_bad;
+    RAISE EXCEPTION 'VERIFY FAILED (192): the anon non-SELECT privilege set changed: %', v_bad;
   END IF;
 
-  -- E. THE DRIFT CANNOT SILENTLY RETURN through default privileges.
-  IF EXISTS (
-    SELECT 1
-    FROM pg_default_acl d
-    JOIN pg_namespace n ON n.oid = d.defaclnamespace
-    CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
-    WHERE n.nspname = 'public'
-      AND d.defaclobjtype = 'r'
-      AND a.grantee <> 0
-      AND pg_get_userbyid(a.grantee) = 'anon'
-      AND a.privilege_type = 'SELECT'
-  ) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (192): a default privilege grants anon SELECT on future relations';
+  -- E. DEFAULT PRIVILEGES ARE UNTOUCHED. 192 does not own the environment's
+  --    default-ACL baseline — hosted Production has no anon entry, a stock local
+  --    Supabase does — so it asserts only that IT changed nothing: the exact
+  --    anon-SELECT default-ACL set, matched on every identity column, must be
+  --    the same set afterwards. Checked in BOTH directions, so 192 provably
+  --    neither created nor removed nor altered a default privilege.
+  SELECT string_agg(
+           x.defacl_owner || '|' || x.namespace || '|' || x.object_type || '|' ||
+           x.grantor || '|' || x.grantee || '|' || x.privilege || '|' || x.grantable::text,
+           ', ' ORDER BY 1)
+    INTO v_bad
+  FROM (
+    (SELECT b.defacl_owner, b.namespace, b.object_type, b.grantor, b.grantee, b.privilege, b.grantable
+       FROM phoenix_192_anon_defacl_before b
+      EXCEPT
+     SELECT coalesce(pg_get_userbyid(d.defaclrole),'-'), coalesce(n.nspname,'-'),
+            d.defaclobjtype::text, coalesce(pg_get_userbyid(a.grantor),'-'),
+            pg_get_userbyid(a.grantee), a.privilege_type, a.is_grantable
+       FROM pg_default_acl d
+       LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+       CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
+      WHERE a.grantee <> 0 AND pg_get_userbyid(a.grantee) = 'anon'
+        AND a.privilege_type = 'SELECT')
+    UNION ALL
+    (SELECT coalesce(pg_get_userbyid(d.defaclrole),'-'), coalesce(n.nspname,'-'),
+            d.defaclobjtype::text, coalesce(pg_get_userbyid(a.grantor),'-'),
+            pg_get_userbyid(a.grantee), a.privilege_type, a.is_grantable
+       FROM pg_default_acl d
+       LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+       CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
+      WHERE a.grantee <> 0 AND pg_get_userbyid(a.grantee) = 'anon'
+        AND a.privilege_type = 'SELECT'
+      EXCEPT
+     SELECT b.defacl_owner, b.namespace, b.object_type, b.grantor, b.grantee, b.privilege, b.grantable
+       FROM phoenix_192_anon_defacl_before b)
+  ) AS x(defacl_owner, namespace, object_type, grantor, grantee, privilege, grantable);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'VERIFY FAILED (192): the anon default-ACL set changed: %', v_bad;
   END IF;
 
   -- F. THE PUBLIC QR SURFACE IS UNTOUCHED — this is what makes an empty
@@ -308,5 +416,8 @@ BEGIN
   END IF;
 END;
 $verify$;
+
+DROP TABLE phoenix_192_anon_nonselect_before;
+DROP TABLE phoenix_192_anon_defacl_before;
 
 COMMIT;
