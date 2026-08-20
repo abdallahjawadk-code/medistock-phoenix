@@ -248,7 +248,7 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // is therefore deliberately NOT listed here. Registered by EXACT filename,
       // like every entry before it, so any unlisted file under a watched prefix
       // still fails this guard closed.
-      'supabase/migrations/190_phoenix_inter_org_alert_cqrs_boundary.sql','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary-static.test.ts','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary.dynamic.test.ts',
+      'supabase/migrations/191_phoenix_canonical_scope_topology_read_contract.sql','supabase/migrations/__tests__/191-canonical-scope-topology-static.test.ts','supabase/migrations/__tests__/191-canonical-scope-topology.dynamic.test.ts','supabase/migrations/190_phoenix_inter_org_alert_cqrs_boundary.sql','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary-static.test.ts','supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary.dynamic.test.ts',
       // …plus the one guard test under the watched src/shared/supabase prefix
       // whose alert-lifecycle zero-diff clause G4.1 supersedes. Registered by
       // EXACT filename; frontend-live-removed-at-filters.test.ts is already

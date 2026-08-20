@@ -1685,7 +1685,20 @@ describe('16. isolation: untouched domains', () => {
       'src/features/alerts/InterInstitutionAlertsScreen.tsx',
       'src/features/dashboard/DashboardScreen.tsx',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED];
+    // G4.2 — canonical facility/scope topology read contract (Migration 191).
+    const G4_2_AUTHORIZED = [
+      'supabase/migrations/191_phoenix_canonical_scope_topology_read_contract.sql',
+      'supabase/migrations/__tests__/191-canonical-scope-topology-static.test.ts',
+      'supabase/migrations/__tests__/191-canonical-scope-topology.dynamic.test.ts',
+      'src/features/inventory/useInventoryScopes.ts',
+      'src/shared/lib/health-sector-grouping.ts',
+      'src/shared/lib/direct-supply-corridors.ts',
+      'src/shared/supabase/services/scope-topology.service.ts',
+      'src/features/institutions/InstitutionScreen.tsx',
+      'src/features/network/NetworkManagementScreen.tsx',
+      'src/features/network/DirectSupplyOperations.tsx',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED];
     const changed = diff.trim().split('\n').filter(Boolean).sort();
     expect(changed.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });

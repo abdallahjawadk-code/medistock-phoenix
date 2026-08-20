@@ -23,13 +23,27 @@ import {
 
 const wh = (
   id: string,
-  over: Partial<{ organizationId: string; warehouseKind: string; status: string; facilityId: string | null }> = {},
+  over: Partial<{ organizationId: string; warehouseKind: string; status: string;
+                  facilityId: string | null; structuralRole: string }> = {},
 ) => ({
   id,
   organizationId: over.organizationId ?? 'org-sector-1',
   warehouseKind: over.warehouseKind ?? 'institution',
   status: over.status ?? 'active',
   facilityId: over.facilityId ?? null,
+  /**
+   * G4.2 — the STRUCTURAL ROLE Migration 191 would return. The module no longer
+   * derives it, so the fixture must state it. The default reproduces 191's
+   * answer for the ordinary shapes; a case that needs a row the database
+   * REFUSED to call the sector main (deactivated, or carrying is_main=false)
+   * passes `structuralRole` explicitly.
+   */
+  structuralRole: (over.structuralRole ?? (
+    (over.warehouseKind ?? 'institution') === 'central' ? 'central_warehouse'
+      : (over.facilityId ?? null) !== null ? 'health_center_depot'
+        : (over.status ?? 'active') === 'active' ? 'sector_main'
+          : 'institution_warehouse'
+  )) as never,
 });
 
 const ORGS = [
@@ -206,9 +220,24 @@ describe('the frontend uses the existing RPC and adds no corridor machinery', ()
       expect(src).not.toContain('warehouse_supply_routes');
       expect(src).not.toMatch(/phoenix_create_direct_warehouse_transfer_request_v2|phoenix_create_sector_transfer/);
     }
-    // The corridor model is a pure projection: no database access at all.
-    expect(corridors).not.toContain('supabase');
+    // The corridor model is a pure projection: no database ACCESS at all.
+    //
+    // G4.2 narrows this from "the string 'supabase' never appears" to "no
+    // runtime database dependency exists". The module now imports the
+    // WarehouseStructuralRole TYPE from the topology service, because the
+    // structural role is Migration 191's answer rather than something this
+    // module derives. A `import type` is erased at compile time — it adds no
+    // client, no call and no bundle edge — so the invariant this guard protects
+    // is intact, and it is asserted more precisely below than a bare substring
+    // scan ever did.
+    const runtime = corridors
+      .split('\n')
+      .filter(l => !/^\s*import type\b/.test(l))
+      .join('\n');
+    expect(runtime).not.toContain('supabase');
     expect(corridors).not.toContain('rpc(');
+    expect(corridors).not.toMatch(/^\s*import\s+\{[^}]*\}\s+from\s+'@\/shared\/supabase/m);
+    expect(corridors).not.toContain('await ');
   });
 
   /**

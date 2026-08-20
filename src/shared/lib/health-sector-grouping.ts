@@ -41,12 +41,21 @@
  *      with an audit trail, never a rendering decision.
  */
 
+import type { WarehouseStructuralRole } from '@/shared/supabase/services/scope-topology.service';
+
 /** The subset of a warehouse this module reads. */
 export interface GroupableWarehouse {
   id: string;
   facilityId: string | null;
   warehouseKind: 'central' | 'institution' | string;
   status: string;
+  /**
+   * G4.2 — the structural role the DATABASE assigned (Migration 191), never
+   * one this module worked out. Optional so the many presentation fixtures
+   * that construct this shape stay valid; an absent role is treated exactly
+   * like 'unclassified', i.e. it never produces a sector-main claim.
+   */
+  structuralRole?: WarehouseStructuralRole | null;
 }
 
 /** The subset of a distribution point this module reads. */
@@ -136,27 +145,27 @@ export function groupHealthSectorResources<
   const groups: ResourceGroup<W, P>[] = [];
 
   /**
-   * SECTOR MAIN — every institution warehouse with facility_id IS NULL.
+   * SECTOR MAIN — G4.2: whatever the DATABASE calls the sector main.
    *
-   * Migration 181 makes the sector main the health sector's only ACTIVE
-   * facility-less warehouse. Note what that does and does not license here:
-   * `facilityId === null` alone also matches a DEACTIVATED facility-less
-   * warehouse, so this grouping does not by itself prove "the sector main".
+   * This used to be `facilityId === null`, and the comment here used to admit,
+   * at length, that the test was insufficient: it also matches a DEACTIVATED
+   * facility-less warehouse, so the group was really "facility-less institution
+   * warehouses" wearing a structural name. Migration 181's actual rule needs
+   * six conjuncts — care_institution, health_sector, institution kind, ACTIVE,
+   * facility_id IS NULL, and is_main — and the last one never reached the
+   * browser at all, because `warehouses.service.ts` did not select it.
    *
-   * That is deliberate — this module must not filter by status, because
-   * hiding a deactivated depot would contradict the rule that historical rows
-   * stay inspectable. The group is "facility-less institution warehouses",
-   * which for an active catalog IS the sector main, and for a mixed catalog
-   * honestly shows a retired one alongside it. Callers that need only the
-   * operational picture pass an already-active list; the sector-main
-   * EXCLUSION that carries authorization weight lives in
-   * useInventoryScopes and outlet-affordances, never here.
+   * Migration 191 now states that rule once, in the database, and this module
+   * merely READS the answer. A retired facility-less depot is no longer
+   * labelled the supply root; it is still SHOWN (see `unplacedWarehouses`
+   * below), because hiding a historical row would misreport the database — the
+   * one thing a topology view must never do.
    *
    * The group is emitted even when it owns nothing, because its ABSENCE from
    * the view would read as "this sector has no supply root" — a structural
    * claim, not a blank.
    */
-  const sectorMainWarehouses = institutionWarehouses.filter(w => w.facilityId === null);
+  const sectorMainWarehouses = institutionWarehouses.filter(w => w.structuralRole === 'sector_main');
   if (sectorMainWarehouses.length > 0) {
     groups.push({
       kind: 'sector_main',
@@ -211,19 +220,30 @@ export function groupHealthSectorResources<
   }
 
   /**
-   * UNPLACEABLE — an outlet with no owning warehouse (Migration 181 round 2's
-   * NULL warehouse_id case) or one owned by a warehouse outside this catalog.
+   * UNPLACEABLE — three honest exceptions, never a hiding place.
+   *
+   *   · an outlet with no owning warehouse (Migration 181 round 2's NULL
+   *     warehouse_id case), or one owned by a warehouse outside this catalog;
+   *   · G4.2: a facility-less institution warehouse the database did NOT
+   *     classify as the sector main — a deactivated former main, or a row
+   *     whose role this caller cannot establish. Before G4.2 such a row was
+   *     silently absorbed into the sector-main group and thereby MIS-LABELLED
+   *     as the supply root. It is shown here instead, under an exception
+   *     heading, which is what it actually is.
+   *
    * Emitted only when non-empty: an exception section that is always present
    * stops reading as an exception.
    */
+  const unplacedWarehouses = institutionWarehouses.filter(w => !placedWarehouses.has(w.id));
   const placedOutlets = new Set(groups.flatMap(g => g.outlets).map(o => o.id));
-  const unplaced = outlets.filter(o => !placedOutlets.has(o.id));
-  if (unplaced.length > 0) {
+  const unplaced = [...outletsFor(unplacedWarehouses), ...outlets.filter(o => !placedOutlets.has(o.id))]
+    .filter((o, i, all) => all.findIndex(x => x.id === o.id) === i);
+  if (unplaced.length > 0 || unplacedWarehouses.length > 0) {
     groups.push({
       kind: 'unassigned',
       key: 'unassigned',
       facility: null,
-      warehouses: [],
+      warehouses: unplacedWarehouses,
       outlets: unplaced,
       allowsOutlets: false,
     });

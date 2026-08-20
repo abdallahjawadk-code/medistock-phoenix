@@ -19,15 +19,36 @@ import {
 
 const SECTOR = { organizationKind: 'care_institution', institutionClass: 'health_sector' };
 
+/**
+ * G4.2 — the fixture now supplies the STRUCTURAL ROLE, because the module no
+ * longer works it out. The default reproduces exactly what Migration 191
+ * returns for the ordinary shapes, so existing cases keep their meaning; a test
+ * that needs a row the database REFUSED to call the sector main (a deactivated
+ * former main, or one with is_main=false) states that by passing
+ * `structuralRole` explicitly. That is the whole point of G4.2: the role is an
+ * input to this module, never an output of it.
+ */
 const wh = (
   id: string, facilityId: string | null,
-  over: Partial<{ organizationId: string; warehouseKind: string; status: string }> = {},
-) => ({
-  id, facilityId,
-  organizationId: over.organizationId ?? 'org-sector',
-  warehouseKind: over.warehouseKind ?? 'institution',
-  status: over.status ?? 'active',
-});
+  over: Partial<{ organizationId: string; warehouseKind: string; status: string;
+                  structuralRole: string }> = {},
+) => {
+  const kind = over.warehouseKind ?? 'institution';
+  const status = over.status ?? 'active';
+  const role = over.structuralRole ?? (
+    kind === 'central' ? 'central_warehouse'
+      : facilityId !== null ? 'health_center_depot'
+        : status === 'active' ? 'sector_main'
+          : 'institution_warehouse'
+  );
+  return {
+    id, facilityId,
+    organizationId: over.organizationId ?? 'org-sector',
+    warehouseKind: kind,
+    status,
+    structuralRole: role as never,
+  };
+};
 
 const outlet = (id: string, warehouseId: string | null) => ({ id, warehouseId });
 

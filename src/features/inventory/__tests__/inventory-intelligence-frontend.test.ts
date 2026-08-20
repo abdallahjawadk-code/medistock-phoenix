@@ -15,6 +15,7 @@
  *   • loading / empty / error / denied / stale states all exist;
  *   • no migration file is touched by this frontend PR.
  */
+import { byArabicName } from '../useInventoryScopes';
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -302,30 +303,42 @@ describe('round 2: real scope selector (not always org-default)', () => {
 
 // ── ROUND 3: stale-scope safety + manageable catalog + true editing ─────────
 describe('round 3: exact manageable scopes and stale-id safety', () => {
-  it('filters the readable catalog through active scope assignments with explicit broad-grant bypasses', () => {
-    expect(scopesHook).toMatch(/useCurrentScopes\(authz\)/);
+  it('filters the readable catalog through the SERVER scope answer, with explicit broad-grant bypasses', () => {
+    // G4.2: the contract is unchanged — a manageable warehouse must be inside
+    // the actor's active scope — but the predicate is no longer re-implemented
+    // here. `inEffectiveScope` is Migration 191's projection of the canonical
+    // 062/182 helpers, i.e. the same authority the server writes with.
+    expect(scopesHook).toMatch(/getOrganizationScopeTopology\(orgId\)/);
     expect(scopesHook).toMatch(/profile\?\.role === 'super_admin'/);
-    // R1.1-U: the DIRECT warehouse-assignment test is unchanged in meaning but
-    // now lives inside `reachableWarehouse`, which ORs it with the facility-
-    // derived set. Asserting the predicate rather than its former call site
-    // keeps this guard about the CONTRACT — a manageable warehouse must be
-    // assigned — instead of about one line's spelling.
-    expect(scopesHook).toMatch(/assignedWarehouses\.has\(id\)/);
-    expect(scopesHook).toMatch(/reachableWarehouse\(w\.id\)/);
-    expect(scopesHook).toMatch(/assignedPoints\.has\(o\.id\)/);
+    expect(scopesHook).toMatch(/warehouses\.filter\(w => w\.inEffectiveScope\)/);
+    expect(scopesHook).toMatch(/outlets\.filter\(o => o\.inEffectiveScope\)/);
     expect(scopesHook).toMatch(/manageableWarehouses/);
     expect(scopesHook).toMatch(/manageableOutlets/);
+    // The old client-side reconstruction must be gone, not merely bypassed.
+    expect(scopesHook).not.toMatch(/useCurrentScopes\(authz\)/);
+    expect(scopesHook).not.toMatch(/assignedWarehouses/);
+    expect(scopesHook).not.toMatch(/reachableWarehouse/);
+    expect(scopesHook).not.toMatch(/assignedPoints/);
   });
 
-  it('R1.1-U: facility assignments project into warehouses without reaching the sector main', () => {
-    // A facility-scoped manager holds no warehouse row at all, so without this
-    // branch its manageable catalog is empty — valid database scope, unusable
-    // UI. The non-null facility test IS the sector-main exclusion: the main is
-    // the sector's only active warehouse with facility_id IS NULL (181).
-    expect(scopesHook).toMatch(/a\.scopeType === 'facility'/);
-    expect(scopesHook).toMatch(/w\.facilityId !== null && assignedFacilities\.has\(w\.facilityId\)/);
-    expect(scopesHook).toMatch(/reachableWarehouse\(o\.warehouseId\)/);
-    // The projection follows ASSIGNMENTS; no role name is hard-coded into it.
+  it('R1.1-U: facility projection and the sector-main exclusion are DB-owned, not client-derived', () => {
+    // The requirement is unchanged: a facility-scoped manager must reach its
+    // centre depots and must NEVER reach the sector main. G4.2 moved the answer
+    // to Migration 191, which delegates to 182's helper — and that helper uses
+    // the COMPLETE 181 rule, where this hook could only test facility_id for
+    // NULL because `is_main` never reached the browser.
+    //
+    // Behaviour is proven in 191's dynamic suite against a real database
+    // (cases E/F), which is strictly stronger than this source scan was.
+    expect(scopesHook).not.toMatch(/a\.scopeType === 'facility'/);
+    expect(scopesHook).not.toMatch(/assignedFacilities/);
+    expect(scopesHook).not.toMatch(/reachableWarehouse/);
+    // No structural claim is ever made from the NULL alone in this file.
+    const code = scopesHook.split('\n')
+      .filter(l => !l.trim().startsWith('*') && !l.trim().startsWith('//'))
+      .join('\n');
+    expect(code).not.toMatch(/facilityId\s*!==\s*null/);
+    // The projection follows the SERVER; no role name is hard-coded into it.
     expect(scopesHook).not.toMatch(/health_center_manager/);
   });
 
@@ -368,7 +381,7 @@ describe('round 3: exact manageable scopes and stale-id safety', () => {
   });
 
   it('rejects a retained catalog from the previous organization before rendering or saving', () => {
-    expect(scopesHook).toMatch(/organizationId: orgId, warehouses:/);
+    expect(scopesHook).toMatch(/organizationId: orgId,\s*\n\s*warehouses:/);
     expect(scopesHook).toMatch(/visible\.data\.organizationId !== orgId/);
     expect(scopesHook).toMatch(/Boolean\(orgId\) && data === null/);
   });
@@ -428,5 +441,89 @@ describe('round 2: threshold band rules + availability semantics', () => {
     expect(panel).toMatch(/scopes\.data\?\.resolve\(th\.scopeKind, th\.scopeId\)/);
     expect(panel).toMatch(/inv_th_scope_specific/);
     expect(panel).toMatch(/inv_th_org_default/);
+  });
+});
+
+// ============================================================================
+// G4.2 CORRECTION — deterministic picker ordering, and one facilityId semantic
+// ============================================================================
+describe('G4.2 correction: the pickers are deterministically ordered again', () => {
+  // Both reads G4.2 replaced ended in `.order('name_ar')`. Migration 191 has no
+  // ORDER BY by design, so the ordering was restored at the presentation
+  // boundary. These prove it is deterministic AND that it only permutes.
+  const opt = (id: string, nameAr: string) => ({ id, nameAr });
+
+  it('orders by the Arabic name', () => {
+    const out = [opt('w3', 'مذخر جيم'), opt('w1', 'مذخر ألف'), opt('w2', 'مذخر باء')]
+      .sort(byArabicName).map(o => o.id);
+    expect(out).toEqual(['w1', 'w2', 'w3']);
+  });
+
+  it('is total: equal Arabic names still order deterministically by id', () => {
+    // A bare `.order('name_ar')` was never stable for ties; this is stricter.
+    const a = [opt('b', 'مذخر'), opt('a', 'مذخر'), opt('c', 'مذخر')].sort(byArabicName).map(o => o.id);
+    const b = [opt('c', 'مذخر'), opt('b', 'مذخر'), opt('a', 'مذخر')].sort(byArabicName).map(o => o.id);
+    expect(a).toEqual(['a', 'b', 'c']);
+    expect(b).toEqual(a);
+  });
+
+  it('SOURCE INPUT ORDER cannot change picker order', () => {
+    const rows = [opt('w1', 'ألف'), opt('w2', 'باء'), opt('w3', 'تاء'), opt('w4', 'ثاء')];
+    const shuffles = [
+      [3, 1, 0, 2], [2, 0, 3, 1], [1, 3, 2, 0], [0, 1, 2, 3], [3, 2, 1, 0],
+    ].map(ix => ix.map(i => rows[i]).sort(byArabicName).map(o => o.id));
+    for (const s of shuffles) expect(s).toEqual(['w1', 'w2', 'w3', 'w4']);
+  });
+
+  it('MEMBERSHIP is unchanged — ordering only permutes', () => {
+    const rows = [opt('w2', 'باء'), opt('w1', 'ألف'), opt('w3', 'تاء')];
+    const sorted = [...rows].sort(byArabicName);
+    expect(sorted).toHaveLength(rows.length);
+    expect([...sorted].map(o => o.id).sort()).toEqual([...rows].map(o => o.id).sort());
+  });
+
+  it('is applied to warehouses AND outlets on BOTH the primary and delegated paths', () => {
+    // Two return sites, each sorting both collections: four applications.
+    expect(scopesHook.match(/warehouses: warehouses\.sort\(byArabicName\)/g) ?? []).toHaveLength(2);
+    expect(scopesHook.match(/outlets: outlets\.sort\(byArabicName\)/g) ?? []).toHaveLength(2);
+  });
+
+  it('ordering decides nothing structural — the comparator reads only name and id', () => {
+    const body = scopesHook.slice(
+      scopesHook.indexOf('export const byArabicName'),
+      scopesHook.indexOf(';', scopesHook.indexOf('export const byArabicName')) + 1,
+    );
+    for (const forbidden of ['facilityId', 'structuralRole', 'inEffectiveScope', 'warehouseKind', 'pointType']) {
+      expect(body, forbidden).not.toContain(forbidden);
+    }
+  });
+});
+
+describe('G4.2 correction: facilityId means the same thing on both paths', () => {
+  /** Judge CODE, never prose: comments would otherwise count as distance. */
+  const scopesCode = scopesHook.split('\n')
+    .filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*') && !l.trim().startsWith('/*'))
+    .join('\n');
+
+  it('the DELEGATED outlet carries the canonical parent-warehouse facility', () => {
+    // Migration 187's catalog already LEFT JOINs the owning warehouse for every
+    // outlet branch and returns its facility_id as warehouse_facility_id, so
+    // this is the DATABASE's ancestry — not a second client reconstruction.
+    expect(scopesCode).toMatch(/kind: 'outlet' as const[\s\S]{0,400}facilityId: row\.warehouseFacilityId/);
+  });
+
+  it('the PRIMARY outlet carries the same semantic from Migration 191', () => {
+    expect(scopesCode).toMatch(/kind: 'outlet' as const[\s\S]{0,400}facilityId: n\.facilityId/);
+  });
+
+  it('no outlet option hard-codes facilityId to null any more', () => {
+    const code = scopesHook.split('\n')
+      .filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+      .join('\n');
+    expect(code).not.toMatch(/pointType: row\.distributionPointType, facilityId: null/);
+  });
+
+  it('ancestry is never inferred from a name', () => {
+    expect(scopesHook).not.toMatch(/facilityId:\s*[^,\n]*name/i);
   });
 });

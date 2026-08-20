@@ -16,6 +16,10 @@ import {
   directSupplySources,
   type DirectSupplyBranch,
 } from '@/shared/lib/direct-supply-corridors';
+import {
+  getOrganizationWarehouseRoles,
+  type WarehouseStructuralRole,
+} from '@/shared/supabase/services/scope-topology.service';
 import { supabase } from '@/shared/supabase/client';
 import { PhoenixMaterialResolver } from '@/shared/materials/PhoenixMaterialResolver';
 import type { ResolvedMaterial } from '@/shared/materials/material-resolver.service';
@@ -261,9 +265,43 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
   const [branch, setBranch] = useState<DirectSupplyBranch>('central_to_institution');
   const [sectorSourceId, setSectorSourceId] = useState('');
 
+  /**
+   * G4.2 — the STRUCTURAL ROLE of every warehouse that could be a Branch-B
+   * source, from Migration 191.
+   *
+   * Scoped to HEALTH SECTORS only, deliberately. A Branch-B source is by
+   * definition a sector main, so no other organization class can contribute
+   * one; asking 191 about a hospital would be a query whose answer this screen
+   * cannot use. Sectors are few, and the alternative — one round trip per
+   * organization in the whole network — is an N+1 over data the corridor does
+   * not need.
+   *
+   * A role that has not loaded leaves the warehouse with NO role, and
+   * `directSupplySources` treats an absent role as "not the sector main". The
+   * picker is therefore EMPTY while loading rather than briefly offering a
+   * source the server would refuse — the fail-closed direction.
+   */
+  const sectorRoles = useAsync(async () => {
+    const sectorOrgIds = [...new Set(
+      (orgs.data ?? [])
+        .filter(o => o.institutionClass === 'health_sector')
+        .map(o => o.id),
+    )];
+    const merged = new Map<string, WarehouseStructuralRole>();
+    for (const id of sectorOrgIds) {
+      for (const [whId, role] of await getOrganizationWarehouseRoles(id)) merged.set(whId, role);
+    }
+    return merged;
+  }, [orgs.data]);
+
+  const warehousesWithRole = useMemo(
+    () => warehouses.map(w => ({ ...w, structuralRole: sectorRoles.data?.get(w.id) ?? null })),
+    [warehouses, sectorRoles.data],
+  );
+
   const corridorSources = useMemo(
-    () => directSupplySources(branch, warehouses, orgs.data ?? []),
-    [branch, warehouses, orgs.data],
+    () => directSupplySources(branch, warehousesWithRole, orgs.data ?? []),
+    [branch, warehousesWithRole, orgs.data],
   );
 
   /**

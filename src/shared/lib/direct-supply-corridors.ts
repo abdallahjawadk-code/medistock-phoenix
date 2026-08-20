@@ -49,6 +49,8 @@
  *   · R1.1-P creates no Migration 184.
  */
 
+import type { WarehouseStructuralRole } from '@/shared/supabase/services/scope-topology.service';
+
 /** The subset of a warehouse this module reads. */
 export interface CorridorWarehouse {
   id: string;
@@ -56,6 +58,12 @@ export interface CorridorWarehouse {
   warehouseKind: 'central' | 'institution' | string;
   status: string;
   facilityId: string | null;
+  /**
+   * G4.2 — the structural role Migration 191 assigned. Optional so frozen
+   * presentation fixtures stay valid; an ABSENT role never yields a Branch-B
+   * source, which is the fail-closed direction.
+   */
+  structuralRole?: WarehouseStructuralRole | null;
 }
 
 /** The subset of an organization this module reads. */
@@ -89,13 +97,24 @@ export function directSupplySources<W extends CorridorWarehouse>(
   if (branch === 'central_to_institution') {
     return warehouses.filter(w => w.warehouseKind === 'central' && isActive(w));
   }
+  // G4.2 — the Branch-B source is whatever the DATABASE calls the sector main.
+  //
+  // This used to be reconstructed here as "institution + active + facility_id
+  // IS NULL + the org is a health sector". That is four of Migration 181's six
+  // conjuncts: it omits `is_main`, which never reached the browser, so a
+  // facility-less warehouse carrying is_main=false would have been offered as a
+  // supply root the server would then refuse. Migration 191 states the whole
+  // rule once, and this module reads it.
+  //
+  // The organization filter is retained as defence in depth: 191 answers for
+  // ONE organization, and a caller that merged two organizations' rows must
+  // still not cross them.
   const healthSectorOrgs = new Set(
     organizations.filter(o => o.institutionClass === 'health_sector').map(o => o.id),
   );
   return warehouses.filter(w =>
-    w.warehouseKind === 'institution'
+    w.structuralRole === 'sector_main'
     && isActive(w)
-    && w.facilityId === null
     && healthSectorOrgs.has(w.organizationId));
 }
 

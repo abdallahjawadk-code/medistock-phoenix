@@ -50,6 +50,7 @@ import {
   getQrForPoint,
   regenerateQrForPoint,
 } from '@/shared/supabase/services/qr.service';
+import { getOrganizationWarehouseRoles } from '@/shared/supabase/services/scope-topology.service';
 import {
   groupHealthSectorResources,
   type ResourceGroup,
@@ -1003,9 +1004,26 @@ function PortSection({ lang, isMobile, orgId, canCreatePorts, canEditPorts, canA
    * facility_id / warehouse_id identity, never from names, and no row is moved
    * or hidden to make the picture tidy.
    */
+  /**
+   * G4.2 — the STRUCTURAL ROLE of each warehouse, from Migration 191. This
+   * section no longer decides which warehouse is the sector main; it reads the
+   * database's answer. A separate read, so `getWarehouses` keeps its existing
+   * contract for every other consumer.
+   */
+  const warehouseRoles = useAsync(() => getOrganizationWarehouseRoles(orgId), [orgId]);
+
   const sectorGroups = useMemo(
-    () => groupHealthSectorResources(owner, warehouses, points, facilities),
-    [owner, warehouses, points, facilities],
+    () => groupHealthSectorResources(
+      owner,
+      // A warehouse whose role has not loaded, or which the query did not
+      // return, carries NO role — and an absent role can never be read as
+      // 'sector_main'. The hierarchy therefore fails CLOSED while loading
+      // rather than briefly labelling a depot the supply root.
+      warehouses.map(w => ({ ...w, structuralRole: warehouseRoles.data?.get(w.id) ?? null })),
+      points,
+      facilities,
+    ),
+    [owner, warehouses, warehouseRoles.data, points, facilities],
   );
 
   const renderPortCard = (pt: DistributionPoint) => (

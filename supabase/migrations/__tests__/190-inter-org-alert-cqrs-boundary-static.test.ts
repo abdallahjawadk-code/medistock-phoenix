@@ -106,11 +106,15 @@ describe('190 · registration and file hygiene', () => {
     expect(code(refreshBody)).not.toMatch(/\bROLLBACK\b/);
   });
 
-  it('is the highest reviewed migration and 191 stays absent', () => {
+  it('is immediately followed by 191, the new ceiling, and 192 stays absent', () => {
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(190);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toHaveLength(0);
+    const NEXT = '191_phoenix_canonical_scope_topology_read_contract.sql';
+    expect(Math.max(...numbers)).toBe(191);
+    const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toHaveLength(0);
   });
 });
 
