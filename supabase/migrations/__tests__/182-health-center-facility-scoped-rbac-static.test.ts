@@ -53,7 +53,7 @@ describe('182 registration and shape', () => {
   // R1.2C added 183, so 182 is no longer last. The guard is extended by EXACT
   // filename rather than relaxed: 183 is named outright and anything beyond it
   // still fails closed.
-  it('is followed by exactly 183 through 191, and nothing beyond them', () => {
+  it('is followed by exactly 183 through 192, and nothing beyond them', () => {
     // M191 (G4.2 canonical facility/scope topology read contract) is the new
     // ceiling.
     // The successor list stays EXACT and the nothing-beyond regex is narrowed by
@@ -69,12 +69,13 @@ describe('182 registration and shape', () => {
       '189_phoenix_inter_org_alert_canonical_identity.sql',
       '190_phoenix_inter_org_alert_cqrs_boundary.sql',
       '191_phoenix_canonical_scope_topology_read_contract.sql',
+      '192_phoenix_anonymous_read_surface_convergence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[2-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[3-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {

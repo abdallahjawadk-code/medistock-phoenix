@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–190 introduce no numbering and no 191+ migration exists',()=>{
+  it('179–192 introduce no numbering and no 193+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -125,12 +125,13 @@ describe('no client-side document-number sequence exists',()=>{
     // alert_key — a concatenation of two row UUIDs and the alert type — plus
     // 048's expiry-risk tier, both pure functions of already-persisted data. No
     // table, sequence, counter, max()+1 or generated numeric identity, and no
-    // document number of any kind. Boundary moves to 191 so the next unknown
+    // document number of any kind. Boundary moves to 192 so the next unknown
     // migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '191_phoenix_canonical_scope_topology_read_contract.sql',
+      '192_phoenix_anonymous_read_surface_convergence.sql',
       '190_phoenix_inter_org_alert_cqrs_boundary.sql',
       '189_phoenix_inter_org_alert_canonical_identity.sql',
       '188_phoenix_public_qr_facility_context.sql',
