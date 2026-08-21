@@ -197,6 +197,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '189_phoenix_inter_org_alert_canonical_identity.sql',
   '190_phoenix_inter_org_alert_cqrs_boundary.sql',
   '191_phoenix_canonical_scope_topology_read_contract.sql',
+  '192_phoenix_anonymous_read_surface_convergence.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

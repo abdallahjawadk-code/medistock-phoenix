@@ -165,6 +165,10 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // so the "Stage E still ends at 171" assertion remains true. Listed by
       // exact filename so the guard stays exhaustive and still fails closed.
       '191_phoenix_canonical_scope_topology_read_contract.sql',
+      // G5 (192) converges the anonymous read surface. It adds no Stage-E SQL
+      // and no object at all, so "Stage E still ends at 171" remains true.
+      // Listed by exact filename so the guard stays exhaustive and fails closed.
+      '192_phoenix_anonymous_read_surface_convergence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

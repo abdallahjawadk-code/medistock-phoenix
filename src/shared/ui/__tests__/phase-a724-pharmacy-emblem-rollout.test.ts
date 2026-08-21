@@ -259,6 +259,14 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // broadening, so every other file under src/shared/supabase still fails
       // this guard closed.
       'src/shared/supabase/services/scope-topology.service.ts',
+      // …and G5's anonymous read-surface convergence (Migration 192) with its
+      // two suites. It grants nothing, creates nothing and alters no policy —
+      // it only removes direct anon SELECT — and the sole WATCHED prefix it
+      // enters is supabase/migrations. Registered by EXACT filename; every
+      // other file under supabase/ still fails this guard closed.
+      'supabase/migrations/192_phoenix_anonymous_read_surface_convergence.sql',
+      'supabase/migrations/__tests__/192-anon-read-surface-convergence-static.test.ts',
+      'supabase/migrations/__tests__/192-anon-read-surface-convergence.dynamic.test.ts',
       // …plus the one guard test under the watched src/shared/supabase prefix
       // whose alert-lifecycle zero-diff clause G4.1 supersedes. Registered by
       // EXACT filename; frontend-live-removed-at-filters.test.ts is already

@@ -1698,7 +1698,19 @@ describe('16. isolation: untouched domains', () => {
       'src/features/network/NetworkManagementScreen.tsx',
       'src/features/network/DirectSupplyOperations.tsx',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED];
+    // G5 — anonymous read-surface convergence (Migration 192). ONE reviewed
+    // migration that grants nothing and creates nothing: it revokes every
+    // direct anon SELECT in schema public and proves the allowlist is EMPTY.
+    // It adds no table, column, policy, function or permission key, and the
+    // only WATCHED prefix it enters is supabase/migrations. Registered by
+    // EXACT filename, so any unlisted file under a watched prefix still fails
+    // this guard closed.
+    const G5_AUTHORIZED = [
+      'supabase/migrations/192_phoenix_anonymous_read_surface_convergence.sql',
+      'supabase/migrations/__tests__/192-anon-read-surface-convergence-static.test.ts',
+      'supabase/migrations/__tests__/192-anon-read-surface-convergence.dynamic.test.ts',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED];
     const changed = diff.trim().split('\n').filter(Boolean).sort();
     expect(changed.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });

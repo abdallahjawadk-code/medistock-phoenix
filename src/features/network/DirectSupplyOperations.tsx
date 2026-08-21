@@ -8,6 +8,7 @@ import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { listOrganizationFacilities } from '@/features/institutions/facilities.service';
 import {
@@ -277,9 +278,16 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
    * not need.
    *
    * A role that has not loaded leaves the warehouse with NO role, and
-   * `directSupplySources` treats an absent role as "not the sector main". The
-   * picker is therefore EMPTY while loading rather than briefly offering a
-   * source the server would refuse — the fail-closed direction.
+   * `directSupplySources` treats an absent role as "not the sector main", so the
+   * picker never briefly offers a source the server would refuse.
+   *
+   * G5 — THAT FAIL-CLOSED EMPTINESS MUST NOT BE REPORTED AS A FACT. An empty
+   * source list means "no sector main" ONLY after this read and the organization
+   * read have both SUCCEEDED. While either is loading the UI says so, and if
+   * either FAILED it says that and offers a retry. Rendering
+   * `ds_no_sector_main` in those states told an operator the sector has no
+   * supply root when the truth was "not known yet" — and on a failed read it
+   * said so permanently, because nothing re-fetched.
    */
   const sectorRoles = useAsync(async () => {
     const sectorOrgIds = [...new Set(
@@ -466,9 +474,25 @@ function ForwardPanel({ lang, warehouses, whById, initialTransferRequestId }: {
           {t(branch === 'central_to_institution' ? 'ds_corridor_central_hint' : 'ds_corridor_sector_hint', lang)}
         </p>
 
-        {/* Branch B needs its sector main named before any destination exists. */}
+        {/* Branch B needs its sector main named before any destination exists.
+            G5: "no sector main" is a CLAIM ABOUT THE DATABASE, so it is made only
+            after both reads it depends on have succeeded — the organization list
+            (which selects the health sectors) and the Migration 191 role read.
+            Loading and error are reported as themselves, and an error is
+            retryable rather than permanent. */}
         {branch === 'sector_to_health_center' && (
-          corridorSources.length === 0 ? (
+          (orgs.loading || sectorRoles.loading) ? (
+            <div style={{ marginTop: '8px' }} data-testid="ds-sector-source-loading">
+              <PhoenixLoadingState label={t('ds_sector_source', lang)} />
+            </div>
+          ) : (orgs.error || sectorRoles.error) ? (
+            <div style={{ marginTop: '8px' }} data-testid="ds-sector-source-error">
+              <PhoenixErrorState
+                message={orgs.error ?? sectorRoles.error ?? ''}
+                onRetry={() => { if (orgs.error) orgs.reload(); if (sectorRoles.error) sectorRoles.reload(); }}
+              />
+            </div>
+          ) : corridorSources.length === 0 ? (
             <p style={{ fontSize: '12px', color: 'var(--warn)', marginTop: '8px' }}>{t('ds_no_sector_main', lang)}</p>
           ) : (
             <div style={{ maxWidth: '360px', marginTop: '10px' }}>
