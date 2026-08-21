@@ -59,14 +59,16 @@ describe('191 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES).toContain(NAME);
   });
 
-  it('is immediately followed by 192, the new ceiling, and 193 stays absent', () => {
+  it('is immediately followed by 192 then 193, the new ceiling, and 194 stays absent', () => {
     const NEXT = '192_phoenix_anonymous_read_surface_convergence.sql';
+    const NEXT_2 = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(192);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(Math.max(...numbers)).toBe(193);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_2);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT]);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT_2]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

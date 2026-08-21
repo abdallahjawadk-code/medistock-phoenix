@@ -127,9 +127,15 @@ describe('no client-side document-number sequence exists',()=>{
     // table, sequence, counter, max()+1 or generated numeric identity, and no
     // document number of any kind. Boundary moves to 192 so the next unknown
     // migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192)_/.test(f));
+    // H UNIT 1 / M193: the alert command-surface hardening performs exactly
+    // one ALTER FUNCTION (a SECURITY DEFINER flip) and two REVOKEs. It creates
+    // no table, sequence, counter, max()+1 or generated numeric identity, and
+    // no document number of any kind — it introduces no SQL object at all.
+    // Boundary moves to 193 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '193_phoenix_inter_org_alert_command_surface_hardening.sql',
       '191_phoenix_canonical_scope_topology_read_contract.sql',
       '192_phoenix_anonymous_read_surface_convergence.sql',
       '190_phoenix_inter_org_alert_cqrs_boundary.sql',
