@@ -277,7 +277,19 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // wrapper, 037's UI compatibility, 039's service wrapper). Registered by
       // EXACT filename; every other file under supabase/ still fails closed.
       'supabase/migrations/__tests__/036-live-inter-institution-alerts-rpc.test.ts','supabase/migrations/__tests__/037-live-alert-identifiers.test.ts','supabase/migrations/__tests__/039-inter-org-alert-lifecycle-rpcs.test.ts',
-      'supabase/migrations/__tests__/048-live-alerts-expiry-risk-tiers.test.ts','supabase/migrations/__tests__/049-add-national-code-to-item-availability.test.ts','supabase/migrations/__tests__/050-phoenix-upsert-availability-national-code.test.ts','supabase/migrations/__tests__/051-material-batch-identity-option-a.test.ts','supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts','supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts','supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts','supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts','src/features/account/__tests__/bugfix-my-account-clear-whatsapp-disables-official-contact.test.ts','src/features/account/__tests__/my-account-whatsapp-save.test.ts','src/features/alerts/__tests__/bugfix-inter-alerts-freeze.test.ts','src/features/institutions/__tests__/ui-hide-port-add-item.test.ts','src/shared/ui/__tests__/phase-a71-visual-acceptance-closure.test.ts'
+      'supabase/migrations/__tests__/048-live-alerts-expiry-risk-tiers.test.ts','supabase/migrations/__tests__/049-add-national-code-to-item-availability.test.ts','supabase/migrations/__tests__/050-phoenix-upsert-availability-national-code.test.ts','supabase/migrations/__tests__/051-material-batch-identity-option-a.test.ts','supabase/migrations/__tests__/053-item-availability-removed-marker.test.ts','supabase/migrations/__tests__/054-dashboard-condition-count-rpcs.test.ts','supabase/migrations/__tests__/061-warehouse-dispatch-schema.test.ts','supabase/migrations/__tests__/062-user-rbac-scope-foundation.test.ts','src/features/account/__tests__/bugfix-my-account-clear-whatsapp-disables-official-contact.test.ts','src/features/account/__tests__/my-account-whatsapp-save.test.ts','src/features/alerts/__tests__/bugfix-inter-alerts-freeze.test.ts','src/features/institutions/__tests__/ui-hide-port-add-item.test.ts','src/shared/ui/__tests__/phase-a71-visual-acceptance-closure.test.ts',
+      // …and H Unit 1's alert command-surface hardening (Migration 193) with
+      // its two suites. It grants nothing, creates nothing, alters no policy
+      // and touches no table ACL — one ALTER FUNCTION (a SECURITY DEFINER
+      // flip) plus two REVOKEs of `authenticated` EXECUTE — and the sole
+      // WATCHED prefix it enters is supabase/migrations. Registered by EXACT
+      // filename; every other file under supabase/ still fails this guard
+      // closed. These three were invisible to every pre-commit check because
+      // this guard reads `git diff --name-only <BASE>`, which never lists an
+      // UNTRACKED file — exactly the trap documented for G4.2 above.
+      'supabase/migrations/193_phoenix_inter_org_alert_command_surface_hardening.sql',
+      'supabase/migrations/__tests__/193-alert-command-surface-static.test.ts',
+      'supabase/migrations/__tests__/193-alert-command-surface.dynamic.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

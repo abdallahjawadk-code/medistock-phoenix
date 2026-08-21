@@ -56,12 +56,15 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('192_'))).toEqual([NAME]);
   });
 
-  it('is the highest reviewed migration, and 193 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(192);
-    expect(getNextUnreviewedMigrationNumber()).toBe(193);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NAME);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[3-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
-    expect(isReviewedMigrationFile('193_unreviewed_test_migration.sql')).toBe(false);
+  it('is immediately followed by 193, the new ceiling, and 194 stays absent', () => {
+    const NEXT = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
+    expect(getMaximumReviewedMigrationNumber()).toBe(193);
+    expect(getNextUnreviewedMigrationNumber()).toBe(194);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[4-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(isReviewedMigrationFile('194_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -76,8 +79,10 @@ describe('192 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
+    // 193 (H Unit 1, alert command-surface hardening) is the newest chain
+    // member; it edits nothing here, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(191);
+    expect(others).toHaveLength(192);
   });
 });
 

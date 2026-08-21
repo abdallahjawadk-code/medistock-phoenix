@@ -169,6 +169,11 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // and no object at all, so "Stage E still ends at 171" remains true.
       // Listed by exact filename so the guard stays exhaustive and fails closed.
       '192_phoenix_anonymous_read_surface_convergence.sql',
+      // H UNIT 1 (193) hardens the inter-org alert COMMAND surface: one
+      // ALTER FUNCTION and two REVOKEs. It adds no Stage-E SQL and no
+      // object at all, so Stage E still ending at 171 remains true. Listed
+      // by exact filename so the guard stays exhaustive and fails closed.
+      '193_phoenix_inter_org_alert_command_surface_hardening.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
