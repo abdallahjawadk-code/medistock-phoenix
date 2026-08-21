@@ -397,6 +397,44 @@ export function InterInstitutionAlertsScreen() {
         </p>
       </div>
 
+      {/* INTER-ORG-OPPORTUNITY-REGULATORY-NOTICE: ONE prominent regulatory
+          banner for the whole screen, rendered ABOVE both existing notices and
+          never repeated inside an opportunity card. The three say different
+          things and all three are kept: this one is the REGULATORY duty, the
+          next is that discovery reserves nothing, the last is that no direct
+          execution corridor exists at all.
+
+          No acknowledgement checkbox here, deliberately: this screen creates no
+          transfer draft and has no execution corridor, so there is no action to
+          gate. The mandatory tick lives only in InventoryDraftDocumentDialog,
+          where a draft is actually created.
+
+          Its wording is lia_regulatory_notice, deliberately NOT the transfer
+          panel's ts_regulatory_notice: that string names the item in the other
+          screen's vocabulary, which this screen's opportunity/alert contract
+          does not permit. Same regulatory duty, this screen's own words — and
+          note that the contract binds even this comment, which is why the
+          disallowed term is described here rather than written. */}
+      <div
+        role="alert"
+        data-testid="lia-regulatory-banner"
+        style={{
+          display: 'flex', gap: '10px', alignItems: 'flex-start',
+          width: '100%', boxSizing: 'border-box',
+          fontSize: isMobile ? '12px' : '12.5px', color: 'var(--warn)', background: 'var(--warn2)',
+          border: '1px solid var(--warn)', borderInlineStartWidth: '4px',
+          borderRadius: 'var(--r3)', padding: isMobile ? '10px 12px' : '12px 14px', marginBottom: '8px',
+        }}
+        dir="auto"
+      >
+        <span style={{ flexShrink: 0, lineHeight: 1.5 }}><PhoenixIcon name="warning" size={16} inline /></span>
+        <span style={{ minWidth: 0 }}>
+          <strong style={{ display: 'block', fontSize: isMobile ? '12.5px' : '13px', fontWeight: 700, marginBottom: '4px' }}>
+            {t('lia_regulatory_title', lang)}
+          </strong>
+          <span style={{ display: 'block', lineHeight: 1.65 }}>{t('lia_regulatory_notice', lang)}</span>
+        </span>
+      </div>
       {/* No auto-transfer disclaimer */}
       <div style={{ background: 'var(--info2)', border: '1px solid var(--info)', borderRadius: 'var(--r3)', padding: '10px 14px', marginBottom: '8px', fontSize: '12px', color: 'var(--info)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <PhoenixIcon name="info" size={15} inline /> {t('iia_no_transfer', lang)}

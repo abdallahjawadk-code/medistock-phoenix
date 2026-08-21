@@ -1209,6 +1209,23 @@ export const T: Dict = {
   lia_sub:                 { ar: 'اكتشاف فرص بين مؤسستين نظيرتين من التوفر الحالي المباشر — طبقة اكتشاف وتنسيق فقط، غير قابلة للتنفيذ من هنا', en: 'Discovery of opportunities between two peer institutions from current live availability — a discovery/coordination layer only, not executable from here' },
   lia_not_executable_badge: { ar: 'غير قابل للتنفيذ',                                 en: 'Not executable' },
   lia_not_executable_note:  { ar: 'لا يوجد مسار تنفيذ مباشر بين مؤسستين نظيرتين اليوم — هذا اكتشاف وتنسيق فقط (تواصل يدوي عبر واتساب)، وليس كمية مناقلة جاهزة.', en: 'No direct execution corridor exists between two peer institutions today — this is discovery and coordination only (manual WhatsApp contact), not a ready transfer quantity.' },
+  /* INTER-ORG-OPPORTUNITY-REGULATORY-NOTICE: the alerts screen's OWN
+     regulatory wording. Deliberately NOT ts_regulatory_notice, which names the
+     item in the transfer panel's vocabulary; this screen is a discovery layer
+     whose contract allows only opportunity/alert. Same regulatory duty in this
+     screen's own words.
+
+     Two families of term are avoided here on purpose, and both bans are
+     enforced by tests rather than by convention: the transfer-panel noun for
+     the item, and either language's word for granting permission. The first is
+     guarded across this screen's whole source; the second is guarded across
+     every lia_* string in Arabic, and pinned in English by this stage's own
+     focused test. The copy therefore denies AUTHORISATION in both languages —
+     this screen has no permission-granting workflow to name in the first
+     place. Those terms are described rather than written even here, because
+     the guards read comments too. */
+  lia_regulatory_title:     { ar: 'تنبيه مهم قبل التعامل مع فرص المناقلة', en: 'Important notice before acting on transfer opportunities' },
+  lia_regulatory_notice:    { ar: 'يجب الرجوع إلى الضوابط والتعليمات النافذة والتحقق من إمكانية إجراء أي مناقلة قبل اتخاذ أي إجراء بناءً على هذه الفرصة. هذه الفرصة إرشادية ولا تُعد إذناً قانونياً أو إدارياً بإجراء المناقلة.', en: 'Applicable rules and instructions must be reviewed, and the permissibility of any transfer must be verified before taking action based on this opportunity. This opportunity is advisory and does not constitute legal or administrative authorization to perform the transfer.' },
   lia_summary_total:       { ar: 'مجموع التنبيهات',                                   en: 'Total alerts' },
   lia_summary_high:        { ar: 'عالية الأولوية',                                    en: 'High severity' },
   lia_summary_surplus:     { ar: 'فائض مقابل نقص',                                   en: 'Surplus to shortage' },
