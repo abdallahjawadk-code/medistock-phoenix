@@ -1710,7 +1710,27 @@ describe('16. isolation: untouched domains', () => {
       'supabase/migrations/__tests__/192-anon-read-surface-convergence-static.test.ts',
       'supabase/migrations/__tests__/192-anon-read-surface-convergence.dynamic.test.ts',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED];
+    // TRANSFER-SUGGESTION-REGULATORY-NOTICE-UX: a still later, separately-
+    // reviewed frontend stage. It raises ONE regulatory banner above the
+    // transfer-suggestion list and makes the draft dialog require an explicit
+    // regulatory acknowledgement alongside the document number before it will
+    // confirm. Presentation and local component state only — no schema, RLS,
+    // RPC, migration, stock semantics or authorization change — and it records
+    // NOTHING: no phoenix_record_regulatory_ack call is added here, the formal
+    // audited acknowledgement staying exactly where it already lives on the
+    // request-level submit/review path.
+    //
+    // Only these TWO production files are registered. The one i18n key the
+    // stage adds lands in src/shared/i18n/strings.ts and its focused test lands
+    // under src/**/__tests__/**, both already excluded by the pathspec above,
+    // so neither is repeated here. Registered by EXACT path, never a directory
+    // or glob: a sibling such as InventoryIntelligencePanel-v2.tsx, or any
+    // other file under src/features/inventory, still fails this guard closed.
+    const TS_REGULATORY_UX_AUTHORIZED = [
+      'src/features/inventory/InventoryIntelligencePanel.tsx',
+      'src/features/inventory/InventoryDraftDocumentDialog.tsx',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED, ...TS_REGULATORY_UX_AUTHORIZED];
     const changed = diff.trim().split('\n').filter(Boolean).sort();
     expect(changed.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });
