@@ -12,6 +12,9 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
  * warning that this never moves stock is always shown, not just implied.
  * The RPC itself rejects an empty document number server-side
  * (document_number_required).
+ *
+ * Confirming also requires an explicit regulatory acknowledgement. That tick
+ * is a LOCAL gate on this button only — see the comment on `regulatoryAck`.
  */
 interface Props {
   open: boolean;
@@ -23,10 +26,21 @@ interface Props {
 export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onConfirm }: Props) {
   const { lang } = useApp();
   const [value, setValue] = useState('');
+  // DRAFT-REGULATORY-ACK: a LOCAL, mandatory acknowledgement — it gates this
+  // dialog's own confirm button and nothing else. It is deliberately NOT sent
+  // to phoenix_record_regulatory_ack: the formal, audited acknowledgement is
+  // recorded once, later, when the resulting transfer request is submitted or
+  // reviewed. Creating a draft must not manufacture a second audit event.
+  const [regulatoryAck, setRegulatoryAck] = useState(false);
   const trimmed = value.trim();
+  // BOTH conditions, always. A document number alone is not enough, and a
+  // ticked box alone is not enough.
+  const canConfirm = trimmed !== '' && regulatoryAck;
 
+  // Every open starts from zero, so a previous open's acknowledgement can
+  // never carry into the next suggestion.
   useEffect(() => {
-    if (open) setValue('');
+    if (open) { setValue(''); setRegulatoryAck(false); }
   }, [open]);
 
   return (
@@ -62,6 +76,23 @@ export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onC
       {trimmed === '' && (
         <div id="inventory-draft-document-number-hint" style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '6px' }}>{t('inv_draft_document_number_required', lang)}</div>
       )}
+      <div style={{ marginTop: '14px', padding: '10px 12px', borderRadius: 'var(--r2)', background: 'var(--warn2)', border: '1px solid var(--warn)' }}>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            data-testid="inv-draft-reg-ack"
+            aria-describedby={regulatoryAck ? undefined : 'inventory-draft-regulatory-ack-hint'}
+            checked={regulatoryAck}
+            onChange={e => setRegulatoryAck(e.target.checked)}
+          />
+          <span dir="auto">{t('ts_ack_checkbox', lang)}</span>
+        </label>
+        {!regulatoryAck && (
+          <p id="inventory-draft-regulatory-ack-hint" style={{ fontSize: '10.5px', color: 'var(--t2)', marginTop: '5px' }} dir="auto">
+            {t('ts_ack_required', lang)}
+          </p>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '18px' }}>
         <PhoenixButton variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           {t('inv_cancel', lang)}
@@ -70,8 +101,8 @@ export function InventoryDraftDocumentDialog({ open, busy = false, onCancel, onC
           variant="primary"
           size="sm"
           loading={busy}
-          disabled={trimmed === '' || busy}
-          onClick={() => { if (trimmed !== '') onConfirm(trimmed); }}
+          disabled={!canConfirm || busy}
+          onClick={() => { if (canConfirm) onConfirm(trimmed); }}
         >
           {t('inv_draft_create_action', lang)}
         </PhoenixButton>

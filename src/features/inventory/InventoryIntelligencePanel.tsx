@@ -232,7 +232,45 @@ export function InventoryIntelligencePanel({
 
       {/* ── Transfer recommendations (no generic accept — one draft per suggestion) ── */}
       <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>{t('inv_suggestions_title', lang)}</h4>
-      <div role="note" style={{ fontSize: '11.5px', color: 'var(--warn)', background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r2)', padding: '8px 10px', marginBottom: '10px' }} dir="auto">
+      {/* TRANSFER-SUGGESTION-REGULATORY-BANNER: ONE banner for the WHOLE list,
+          rendered before any suggestion card and deliberately NOT repeated
+          inside each card — a warning shown twenty times is a warning nobody
+          reads. It carries ts_regulatory_notice, the same wording the transfer
+          submit/review path shows, so the operator never meets two different
+          statements of the same rule.
+
+          It records NOTHING. phoenix_record_regulatory_ack stays where it has
+          always been — the request-level submit/review acknowledgement in
+          DirectSupplyOperations — so this page adds no second audit event.
+
+          It sits ABOVE the recommendation note because the two say different
+          things: this one is "check the rules before you act", the one below
+          is "this software suggestion is not an approval or an execution". */}
+      <div
+        role="alert"
+        data-testid="inv-suggestions-regulatory-banner"
+        style={{
+          display: 'flex', gap: '10px', alignItems: 'flex-start',
+          width: '100%', boxSizing: 'border-box',
+          fontSize: '12.5px', color: 'var(--warn)', background: 'var(--warn2)',
+          border: '1px solid var(--warn)', borderInlineStartWidth: '4px',
+          borderRadius: 'var(--r2)', padding: '12px 14px', marginBottom: '8px',
+        }}
+        dir="auto"
+      >
+        <span style={{ flexShrink: 0, lineHeight: 1.5 }}><PhoenixIcon name="warning" size={16} inline /></span>
+        <span style={{ minWidth: 0 }}>
+          <strong style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>
+            {t('inv_regulatory_banner_title', lang)}
+          </strong>
+          <span style={{ display: 'block', lineHeight: 1.65 }}>{t('ts_regulatory_notice', lang)}</span>
+        </span>
+      </div>
+      {/* The ordinary informational note. Its wording, role and icon are
+          unchanged; only its container is neutral rather than filled, so the
+          regulatory banner above reads as the stronger of the two instead of
+          the pair reading as one duplicated warning. */}
+      <div role="note" style={{ fontSize: '11.5px', color: 'var(--warn)', background: 'var(--s)', border: '1px solid var(--brd)', borderRadius: 'var(--r2)', padding: '8px 10px', marginBottom: '10px' }} dir="auto">
         <PhoenixIcon name="warning" size={12} inline /> {t('inv_recommendation_note', lang)}
       </div>
       {suggestions.loading && <PhoenixLoadingState label={t('loading', lang)} />}

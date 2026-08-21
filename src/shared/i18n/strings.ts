@@ -1876,6 +1876,10 @@ export const T: Dict = {
   inv_subtitle:             { ar: 'إشارات وتنبيهات وتوصيات تحويل — قراءة وتحليل فقط', en: 'Signals, alerts and transfer recommendations — read & advise only' },
   inv_recommendation_only:  { ar: 'توصية فقط',                                  en: 'Recommendation only' },
   inv_recommendation_note:  { ar: 'توصية فقط — لا تحجز مخزونًا ولا تنفذ مناقلة تلقائية ولا حركة مخزون تلقائية. إنشاء مسودة يعيد التحقق من التوفر الحي، ثم تدخل ضمن دورة الإرسال والاستلام العادية.', en: 'Recommendation only — no acceptance, no stock movement, no automatic transfer. Creating a draft re-verifies live availability, then follows the normal send/receive cycle.' },
+  // Heading for the ONE regulatory banner above the suggestion list. The body
+  // it introduces is ts_regulatory_notice — the same wording the transfer
+  // submit/review path already shows — never a weaker restatement of it.
+  inv_regulatory_banner_title: { ar: 'تنبيه مهم قبل العمل باقتراحات المناقلات', en: 'Important notice before acting on transfer suggestions' },
   inv_stale_note:           { ar: 'هذه التوصية قديمة ولا يمكن إنشاء مسودة منها حتى يعيد مستخدم مخول تحديثها.', en: 'This recommendation is stale and cannot create a draft until an authorized user refreshes it.' },
   inv_last_validated:       { ar: 'آخر تحقق',                                   en: 'Last validated' },
 
