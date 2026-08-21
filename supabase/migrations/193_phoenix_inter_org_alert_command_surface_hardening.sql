@@ -460,20 +460,24 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (193): relation privileges were ADDED: %', v_bad;
   END IF;
 
-  -- G. ANON GAINED NOTHING ANYWHERE. 192's closed surface must still be closed.
-  SELECT string_agg(c.relname || ':' || p.priv, ', ') INTO v_bad
-  FROM pg_class c
-  JOIN pg_namespace n ON n.oid = c.relnamespace
-  CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),
-                     ('TRUNCATE'),('REFERENCES'),('TRIGGER')) AS p(priv)
-  WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','f')
-    AND c.relname NOT LIKE 'phoenix_193_%'
-    AND has_table_privilege('anon', c.oid, p.priv);
-  IF v_bad IS NOT NULL THEN
-    RAISE EXCEPTION 'VERIFY FAILED (193): anon holds direct relation privileges: %', v_bad;
-  END IF;
+  -- (An earlier draft asserted here that `anon` holds NO relation privilege of
+  --  any kind. That is a PRODUCTION fact, not a portable one, and it does not
+  --  belong in a migration: 192 converged Production's anon SELECT surface to
+  --  empty, and the disposable rig never grants anon anything, but a standard
+  --  local Supabase project still carries the platform's own anon
+  --  TRUNCATE/REFERENCES/TRIGGER baseline on tables it provisioned. Asserting
+  --  the Production shape as a universal postcondition made this migration
+  --  refuse to install on a stock local stack, which is how CI caught it.
+  --
+  --  192 already settled the correct contract: it revokes anon SELECT and then
+  --  asserts the anon NON-SELECT set is UNCHANGED — preservation, never
+  --  universal equality. F above is that same contract, applied to everything
+  --  193 touches: it compares the full anon AND authenticated privilege surface
+  --  before and after in BOTH directions, so 193 still cannot add or remove a
+  --  single tuple for either role. Re-adding an absolute assertion here would
+  --  only re-encode one environment's baseline into the chain.)
 
-  -- H. NO M194+. Where migration bookkeeping exists (Production; the disposable
+  -- G. NO M194+. Where migration bookkeeping exists (Production; the disposable
   --    rig has no such schema), no migration beyond this one may be recorded.
   IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL THEN
     EXECUTE $q$SELECT string_agg(name, ', ') FROM supabase_migrations.schema_migrations

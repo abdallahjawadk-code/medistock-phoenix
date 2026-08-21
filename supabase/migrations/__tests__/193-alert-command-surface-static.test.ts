@@ -289,10 +289,22 @@ describe('193 · the VERIFY block proves the whole contract', () => {
     expect(statements).not.toMatch(/service_role lost EXECUTE on the hybrid/);
   });
 
-  it('asserts no relation privilege moved in either direction, and anon gained nothing', () => {
+  it('asserts no relation privilege moved in either direction, for BOTH client roles', () => {
     expect(statements).toMatch(/relation privileges were REMOVED/);
     expect(statements).toMatch(/relation privileges were ADDED/);
-    expect(statements).toMatch(/anon holds direct relation privileges/);
+    // Both directions must be compared, and both client roles must be in the
+    // comparison — that pair is what proves "no table GRANT" as a fact.
+    expect(statements).toContain("CROSS JOIN (VALUES ('anon'), ('authenticated')) AS g(grantee)");
+  });
+
+  it('states the anon contract as PRESERVATION, never as universal equality', () => {
+    // An absolute "anon holds nothing" postcondition is a PRODUCTION fact, not
+    // a portable one: a stock local Supabase project still carries the
+    // platform's own anon TRUNCATE/REFERENCES/TRIGGER baseline. 192 settled the
+    // correct contract — revoke SELECT, then assert the non-SELECT set is
+    // UNCHANGED — and 193 must not re-encode one environment's shape.
+    expect(statements).not.toMatch(/anon holds direct relation privileges/);
+    expect(statements).not.toMatch(/has_table_privilege\('anon'/);
   });
 
   it('refuses to install under an already-recorded M194+', () => {
