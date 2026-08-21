@@ -702,14 +702,40 @@ async function main() {
     record('Phase 8 outlet_officer is offered server-authorized Create draft without the broad queue key', offered);
     if (offered) {
       await create.click();
+      const draftDialog = page.getByRole('dialog');
       await page.getByLabel('Document number').fill('E2E-PHASE8-DRAFT');
+      // TS-REGULATORY: creating a draft is gated on BOTH a non-empty document
+      // number and an explicit regulatory acknowledgement (see `canConfirm` in
+      // src/features/inventory/InventoryDraftDocumentDialog.tsx). Prove that
+      // gate here rather than stepping around it: with the number already
+      // filled, confirm must STILL be refused, and only the tick may release
+      // it. Because releasing requires BOTH conditions, the pair of assertions
+      // below also proves the document number itself landed.
+      const confirmDraft = draftDialog.getByRole('button', { name: 'Create draft', exact: true });
+      const regulatoryAck = draftDialog.getByTestId('inv-draft-reg-ack');
+      await regulatoryAck.waitFor({ state: 'visible', timeout: 15000 });
+      const refusedBeforeAck = await confirmDraft.isDisabled().catch(() => null);
+      record(
+        'Phase 8 Create draft stays refused until the regulatory acknowledgement is ticked',
+        refusedBeforeAck === true,
+        `disabled=${refusedBeforeAck}`,
+      );
+      await regulatoryAck.check();
+      // Bounded poll: the release is a React re-render, not an immediate DOM
+      // mutation, so read the state until it settles instead of once.
+      let releasedAfterAck = false;
+      for (let attempt = 0; attempt < 20 && !releasedAfterAck; attempt += 1) {
+        releasedAfterAck = await confirmDraft.isEnabled().catch(() => false);
+        if (!releasedAfterAck) await settle(100);
+      }
+      record('Phase 8 ticking the regulatory acknowledgement releases Create draft', releasedAfterAck);
       const writerResponsePromise = page.waitForResponse(
         res =>
           res.url().includes('/rpc/phoenix_create_transfer_draft_from_suggestion')
           && res.request().method() === 'POST',
         { timeout: 30000 },
       );
-      await page.getByRole('dialog').getByRole('button', { name: 'Create draft', exact: true }).click();
+      await confirmDraft.click();
       const writerResponse = await writerResponsePromise.catch(() => null);
       const writerPayload = writerResponse
         ? await writerResponse.json().catch(() => null)
