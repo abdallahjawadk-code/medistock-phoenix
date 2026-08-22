@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–194 introduce no numbering and no 195+ migration exists',()=>{
+  it('179–195 introduce no numbering and no 196+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -137,9 +137,16 @@ describe('no client-side document-number sequence exists',()=>{
     // generated numeric identity, and no document number of any kind — it
     // introduces no SQL object at all. Boundary moves to 194 so the next
     // unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194)_/.test(f));
+    // H UNIT 4 / M195: schema-qualifies `profiles` to `public.profiles` inside
+    // the two existing SECURITY DEFINER identity helpers (phoenix_my_role,
+    // phoenix_my_org) and changes nothing else. It creates no sequence, no
+    // counter, no max()+1 logic, no generated numeric identity and no document
+    // number — it introduces no SQL object at all. Boundary moves to 195 so the
+    // next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '195_phoenix_auth_helper_profile_schema_qualification.sql',
       '194_phoenix_authorization_surface_reproducibility_convergence.sql',
       '193_phoenix_inter_org_alert_command_surface_hardening.sql',
       '191_phoenix_canonical_scope_topology_read_contract.sql',

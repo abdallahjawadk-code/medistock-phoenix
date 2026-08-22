@@ -68,15 +68,17 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('193_'))).toEqual([NAME]);
   });
 
-  it('is immediately followed by 194, the new ceiling, and 195 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(194);
-    expect(getNextUnreviewedMigrationNumber()).toBe(195);
+  it('is immediately followed by 194 then 195, the new ceiling, and 196 stays absent', () => {
+    expect(getMaximumReviewedMigrationNumber()).toBe(195);
+    expect(getNextUnreviewedMigrationNumber()).toBe(196);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
+    const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1]).toBe(NEXT);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[5-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
-    expect(readdirSync(MIGRATIONS_DIR).some(f => /^(19[5-9]|[2-9]\d\d)_.*\.sql$/.test(f))).toBe(false);
-    expect(isReviewedMigrationFile('195_unreviewed_test_migration.sql')).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 2]).toBe(NEXT_2);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_2);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[6-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(readdirSync(MIGRATIONS_DIR).some(f => /^(19[6-9]|[2-9]\d\d)_.*\.sql$/.test(f))).toBe(false);
+    expect(isReviewedMigrationFile('196_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -93,11 +95,10 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 194 (H Unit 2A, authorization-surface reproducibility convergence) is
-    // the newest chain member; it edits nothing here, so this count moves by
-    // exactly one.
+    // 195 (H Unit 4, auth-helper profile schema qualification) is the newest
+    // chain member; it edits nothing here, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(193);
+    expect(others).toHaveLength(194);
   });
 });
 
