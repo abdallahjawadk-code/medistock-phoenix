@@ -30,14 +30,19 @@ import {
   isExcludedWriter,
   writersInGroup,
 } from './helpers/reviewed-movement-writers';
-import { PREPARED_ONLY_SKIP } from '../../../tools/pg-rig/rig.mjs';
-
 const MIGRATIONS = join(__dirname, '..');
 
-/** Migration files in applied order, excluding prepared-only cutover files. */
+/**
+ * Migration files in applied order — ALL of them.
+ *
+ * This used to exclude `PREPARED_ONLY_SKIP`, on the belief that migration 085
+ * had never been applied anywhere. Live Production verification disproved that
+ * (`supabase_migrations.schema_migrations` records version 085, count 1), so
+ * the rig no longer skips it and there is nothing left to exclude here: the
+ * canonical chain and Production history are the same list.
+ */
 const migrationFiles = readdirSync(MIGRATIONS)
   .filter(f => /^\d{3}_.*\.sql$/.test(f))
-  .filter(f => !(PREPARED_ONLY_SKIP as Set<string>).has(f))
   .sort();
 
 const sourceOf = new Map<string, string>(

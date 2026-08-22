@@ -289,7 +289,38 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // UNTRACKED file — exactly the trap documented for G4.2 above.
       'supabase/migrations/193_phoenix_inter_org_alert_command_surface_hardening.sql',
       'supabase/migrations/__tests__/193-alert-command-surface-static.test.ts',
-      'supabase/migrations/__tests__/193-alert-command-surface.dynamic.test.ts'
+      'supabase/migrations/__tests__/193-alert-command-surface.dynamic.test.ts',
+      // …and H Unit 2A's authorization-surface reproducibility convergence
+      // (Migration 194) with its suites. It creates nothing, drops nothing,
+      // alters no policy, no function body, no owner and no search_path — it
+      // REVOKEs the six direct-write privileges from `authenticated` across
+      // schema public, re-GRANTs the two contracted relations
+      // (distribution_points, organizations INSERT/UPDATE) and REVOKEs
+      // `authenticated` EXECUTE from the two manual availability writers. It
+      // is an authorization NO-OP against current Production; its whole
+      // purpose is to make a clean rebuild reproduce Production instead of
+      // coming up MORE permissive. The sole WATCHED prefix it enters is
+      // supabase/migrations. Registered by EXACT filename; every other file
+      // under supabase/ still fails this guard closed.
+      //
+      // All five 194 files are listed even though `git diff --name-only
+      // <BASE>` cannot see them yet — they are UNTRACKED until this unit is
+      // committed, which is precisely the trap documented for G4.2 and 193
+      // above. Registering them now means the guard stays honest the moment
+      // they become tracked, instead of failing on the commit that lands them.
+      'supabase/migrations/194_phoenix_authorization_surface_reproducibility_convergence.sql',
+      'supabase/migrations/__tests__/194-authorization-surface-reproducibility-convergence-static.test.ts',
+      'supabase/migrations/__tests__/194-authorization-surface-reproducibility-convergence.dynamic.test.ts',
+      'supabase/migrations/__tests__/pg-rig-production-authorization-baseline.dynamic.test.ts',
+      'supabase/migrations/__tests__/helpers/authorization-surface.ts',
+      // …plus the 085 suites. Live Production verification showed migration
+      // 085 WAS applied (schema_migrations version 085, count 1), so H Unit 2A
+      // corrects the 085 status contract and retires the rig's 085 skip. The
+      // migration file itself is NOT edited — only its tests change, and one
+      // new dynamic suite is added to prove the attested replay and the
+      // still-fail-closed raw apply.
+      'supabase/migrations/__tests__/085-revoke-manual-availability-writers.test.ts',
+      'supabase/migrations/__tests__/085-canonical-replay-attested.dynamic.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

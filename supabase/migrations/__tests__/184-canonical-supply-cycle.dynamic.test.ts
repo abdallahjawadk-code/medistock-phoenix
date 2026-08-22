@@ -703,14 +703,33 @@ run('184 · canonical supply cycle (001->184 rig)', () => {
         .toMatch(/destination_must_be_active_institution_warehouse/);
     });
 
-    it('the item_availability.quantity write surface has not grown', async () => {
-      // The two stock truths are warehouse_stock and outlet_stock;
-      // item_availability is a PROJECTION with its own legacy maintainers.
-      // Earlier hardening already revoked external EXECUTE from
-      // phoenix_upsert_availability and phoenix_apply_availability_movement,
-      // leaving exactly one legacy port-clearing RPC reachable. R1.3 pins that
-      // set: a second writer appearing is a regression, and the retired
-      // exchange completion writer must never be among them.
+    // The two stock truths are warehouse_stock and outlet_stock;
+    // item_availability is a PROJECTION with its own legacy maintainers.
+    // Earlier hardening already revoked external EXECUTE from
+    // phoenix_upsert_availability and phoenix_apply_availability_movement,
+    // leaving exactly one legacy port-clearing RPC client-reachable. R1.3 pins
+    // that set: a second writer appearing is a regression, and the retired
+    // exchange completion writer must never be among them.
+    //
+    // M194 (H Unit 2A) NOTE — this assertion is now split by principal, which
+    // is what migration 184's own Verify-K always meant. Verify-K pins
+    // BROWSER/PostgREST principals only (`r.rolname IN ('anon','authenticated')`)
+    // and its static contract test asserts service_role is deliberately NOT in
+    // that list — service_role is a trusted server identity that bypasses RLS
+    // by design.
+    //
+    // Lumping service_role in with the client principals used to pass only
+    // because the rig was INFIDELITOUS: it never modelled the platform-initial
+    // service_role FUNCTION default, so every function created before
+    // migration 109 — including the preserved internal helper
+    // phoenix_apply_manual_availability_movement_internal — silently lacked
+    // service_role EXECUTE in a clean replay while Production granted it.
+    // (184-production-service-role-acl-compat.dynamic.test.ts had to GRANT it
+    // by hand to reproduce Production at all.) The H-23 bootstrap correction
+    // fixed that infidelity, so the rig now reports what Production reports.
+    // Splitting the assertion keeps the real security boundary exact AND pins
+    // the service_role surface explicitly instead of leaving it implicit.
+    const quantityWriters = async (roles: string[]): Promise<string[]> => {
       const r: any = await asAdmin(`
         SELECT p.proname
         FROM pg_proc p
@@ -720,11 +739,28 @@ run('184 · canonical supply cycle (001->184 rig)', () => {
           AND p.prosrc ~* 'UPDATE\\s+(public\\.)?item_availability\\s+SET\\s+quantity'
           AND EXISTS (
             SELECT 1 FROM pg_roles r
-            WHERE r.rolname IN ('anon','authenticated','service_role')
+            WHERE r.rolname = ANY($1::text[])
               AND has_function_privilege(r.oid, p.oid, 'EXECUTE'))
-        ORDER BY p.proname`);
-      const names = r.rows.map((x: any) => x.proname);
+        ORDER BY p.proname`, [roles]);
+      return r.rows.map((x: any) => x.proname);
+    };
+
+    it('the CLIENT-reachable item_availability.quantity write surface has not grown', async () => {
+      const names = await quantityWriters(['anon', 'authenticated']);
       expect(names).toEqual(['clear_port_availability']);
+      expect(names).not.toContain('phoenix_update_inter_org_exchange_status');
+      expect(names).not.toContain('phoenix_upsert_availability');
+      expect(names).not.toContain('phoenix_apply_availability_movement');
+    });
+
+    it('the service_role quantity-writer surface is exactly the Production-faithful set', async () => {
+      const names = await quantityWriters(['service_role']);
+      expect(names).toEqual([
+        'clear_port_availability',
+        'phoenix_apply_manual_availability_movement_internal',
+      ]);
+      // The retired exchange completion writer is owner-only — closed even to
+      // the trusted server identity (184 Verify-J).
       expect(names).not.toContain('phoenix_update_inter_org_exchange_status');
     });
 

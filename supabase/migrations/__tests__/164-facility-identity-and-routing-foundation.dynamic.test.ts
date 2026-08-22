@@ -274,17 +274,45 @@ run('164 · facility identity + routing foundation (dynamic)', () => {
       expect(msg).toMatch(/warehouses_facility_org_fk|violates foreign key/i);
     });
 
-    it('rejects a warehouse linked to a facility in ANOTHER organization', async () => {
-      // Routed through an authenticated super_admin, not rig.asAdmin: 170's
-      // warehouse-facility guard trigger (BEFORE UPDATE OF facility_id) now
-      // requires authentication for ANY facility_id change and runs before
-      // the FK, so an unauthenticated raw UPDATE would fail on that boundary
-      // instead of proving the cross-organization rejection this test is
-      // actually about. The guard's own validation independently rejects the
-      // cross-org target (target_facility_organization_mismatch) before ever
-      // reaching the FK — both are the same invariant, just enforced earlier.
+    it('no authenticated session may write public.warehouses at all (M194 outer boundary)', async () => {
+      // M194 (H Unit 2A) converged the rig onto the verified Production
+      // authorization surface: `authenticated` holds direct writes on exactly
+      // distribution_points and organizations. `warehouses` is not among them
+      // and never was in Production — every warehouse mutation the product
+      // performs goes through a SECURITY DEFINER RPC that runs as the function
+      // owner. So a raw authenticated UPDATE is refused before RLS or any
+      // trigger is consulted.
       const msg = await rejects(() => rig.asUser(rig.superAdminId, (c: any) => c.query(
         `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_OTHER_SECTOR, WH_FAC_B])));
+      expect(msg).toMatch(/permission denied for table warehouses/i);
+    });
+
+    it('rejects a warehouse linked to a facility in ANOTHER organization', async () => {
+      // 170's warehouse-facility guard is a BEFORE UPDATE OF facility_id
+      // TRIGGER, and it requires authentication for ANY facility_id change: an
+      // unauthenticated raw UPDATE fails on that boundary instead of proving
+      // the cross-organization rejection this test is actually about.
+      //
+      // Before M194 that was arranged by driving the UPDATE through an
+      // authenticated super_admin session — which only worked because the rig
+      // over-granted `authenticated` table-level UPDATE on `warehouses`,
+      // something Production never did (see the boundary test above). The
+      // trigger fires for the table OWNER too, so the guard is still exercised
+      // exactly as before by running as the owner with request.jwt.claim.sub
+      // set — auth.uid() resolves, the guard runs, and it independently
+      // rejects the cross-org target (target_facility_organization_mismatch)
+      // before ever reaching the FK. Both are the same invariant, just
+      // enforced earlier. No privilege is re-granted to reach it.
+      const msg = await rejects(() => rig.asAdmin(async (c: any) => {
+        await c.query('BEGIN');
+        try {
+          await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [rig.superAdminId]);
+          return await c.query(
+            `UPDATE warehouses SET facility_id=$1 WHERE id=$2`, [FAC_OTHER_SECTOR, WH_FAC_B]);
+        } finally {
+          await c.query('ROLLBACK').catch(() => undefined);
+        }
+      }));
       expect(msg).toMatch(/target_facility_organization_mismatch|warehouses_facility_org_fk|violates foreign key/i);
     });
   });

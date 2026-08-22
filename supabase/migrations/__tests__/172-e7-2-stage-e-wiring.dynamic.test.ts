@@ -174,6 +174,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // object at all, so Stage E still ending at 171 remains true. Listed
       // by exact filename so the guard stays exhaustive and fails closed.
       '193_phoenix_inter_org_alert_command_surface_hardening.sql',
+      // H UNIT 2A (194) converges the authorization surface so a clean rebuild
+      // reproduces Production: REVOKEs the six direct-write privileges from
+      // `authenticated` across schema public, re-GRANTs the two contracted
+      // relations, and REVOKEs `authenticated` EXECUTE from the two manual
+      // availability writers. It adds no Stage-E SQL and no object at all, so
+      // "Stage E still ends at 171" remains true. Listed by exact filename so
+      // the guard stays exhaustive and fails closed.
+      '194_phoenix_authorization_surface_reproducibility_convergence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

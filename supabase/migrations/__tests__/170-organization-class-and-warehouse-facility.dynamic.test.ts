@@ -31,7 +31,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   buildRig, rigAvailable, MIGRATIONS_DIR,
-  freshRigDb, migrationFiles, shimSql,
+  freshRigDb, migrationFiles, shimSql, applyMigrationSql,
 } from '../../../tools/pg-rig/rig.mjs';
 
 vi.setConfig({ testTimeout: 900_000, hookTimeout: 900_000 });
@@ -63,7 +63,10 @@ async function buildTo169() {
   const c = await freshRigDb();
   for (const f of migrationFiles(169)) {
     const raw = readFileSync(join(MIGRATIONS_DIR, f), 'utf8');
-    await c.query(shimSql(f, raw));
+    // applyMigrationSql, not a bare query: migration 085 is a fail-closed
+    // cutover file that Production APPLIED, so the canonical chain includes it
+    // and it needs its session-scoped attestation supplied around the apply.
+    await applyMigrationSql(c, f, shimSql(f, raw));
     if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
   }
   return c;

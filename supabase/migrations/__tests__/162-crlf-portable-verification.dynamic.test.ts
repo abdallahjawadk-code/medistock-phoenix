@@ -28,7 +28,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { freshRigDb, migrationFiles, shimSql, MIGRATIONS_DIR, rigAvailable, SEED_SUPER_ADMIN_ID } from '../../../tools/pg-rig/rig.mjs';
+import { freshRigDb, migrationFiles, shimSql, applyMigrationSql, MIGRATIONS_DIR, rigAvailable, SEED_SUPER_ADMIN_ID } from '../../../tools/pg-rig/rig.mjs';
 
 // PRE-EXISTING INFRASTRUCTURE FIX (surfaced by the R1.2C run, not caused by it).
 //
@@ -90,7 +90,10 @@ async function buildTo161() {
   const c = await freshRigDb();
   for (const f of migrationFiles(161)) {
     const raw = readFileSync(join(MIGRATIONS_DIR, f), 'utf8');
-    await c.query(shimSql(f, raw));
+    // applyMigrationSql, not a bare query: migration 085 is a fail-closed
+    // cutover file that Production APPLIED, so the canonical chain includes it
+    // and it needs its session-scoped attestation supplied around the apply.
+    await applyMigrationSql(c, f, shimSql(f, raw));
     if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
   }
   return c;
