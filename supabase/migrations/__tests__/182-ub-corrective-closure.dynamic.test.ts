@@ -224,12 +224,65 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
   });
 
   // ══ C3 — administrative suspension is not self-reversible ══════════════════
+  //
+  // M194 (H Unit 2A) NOTE — why these tests no longer drive `UPDATE profiles`
+  // through an `authenticated` session.
+  //
+  // These cases were written against a rig that granted `authenticated`
+  // table-level INSERT/UPDATE/DELETE on `profiles`. Production never did: its
+  // authenticated direct-write surface is exactly distribution_points and
+  // organizations (INSERT/UPDATE), and every profile mutation the product
+  // performs goes through a SECURITY DEFINER RPC (assign_profile_role,
+  // assign_profile_permissions, reset_profile_permissions,
+  // phoenix_admin_provision_profile) which runs as the function owner. There
+  // is no `.from('profiles').update(...)` anywhere in the product source.
+  // Migration 194 converged the rig onto that verified Production posture, so
+  // a raw authenticated UPDATE is now refused at the TABLE level — before RLS
+  // or any trigger is consulted.
+  //
+  // The C3 invariant is NOT weakened here, it is proven twice over:
+  //   * the new outer boundary — no authenticated session reaches the table at
+  //     all (asserted first, below); and
+  //   * the original guard — `health_center_manager_self_reactivation_forbidden`
+  //     is raised by a BEFORE UPDATE TRIGGER
+  //     (profiles_health_center_manager_org_guard_trg → 182's
+  //     _phoenix_profile_role_organization_guard_v1). Triggers fire for the
+  //     table owner too, so the guard is still exercised by running the write
+  //     as the owner with `request.jwt.claim.sub` set, which is what makes
+  //     auth.uid() resolve to the suspended profile. That is the ONLY way to
+  //     reach the trigger now, and it does not re-grant any privilege.
   describe('C3 · suspension is an administrative state, not a self-service one', () => {
+    /** Owner session carrying a JWT subject, so auth.uid() resolves and the
+     *  BEFORE UPDATE trigger is genuinely evaluated. Grants nothing. */
+    const asOwnerActingAs = (uid: string, sql: string, commit = false) =>
+      rig.asAdmin(async (c: any) => {
+        await c.query('BEGIN');
+        try {
+          await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [uid]);
+          const out = await c.query(sql);
+          await c.query(commit ? 'COMMIT' : 'ROLLBACK');
+          return out;
+        } catch (e) {
+          await c.query('ROLLBACK').catch(() => undefined);
+          throw e;
+        }
+      });
+
+    it('no authenticated session may write public.profiles at all (M194 outer boundary)', async () => {
+      for (const uid of [MGR_B, SUPER, OFF_B]) {
+        await expect(
+          asUser(uid, `UPDATE profiles SET status='active' WHERE id='${uid}'`, false),
+          `profiles must be table-denied for ${uid}`,
+        ).rejects.toThrow(/permission denied for table profiles/i);
+      }
+    });
+
     it('an administratively suspended manager cannot reactivate itself', async () => {
       await asAdmin(`UPDATE profiles SET status='suspended', disabled_at=now(), disabled_by='${SUPER}'
                      WHERE id='${MGR_B}'`);
+      // Reaches the trigger, and the trigger still refuses.
       await expect(
-        asUser(MGR_B, `UPDATE profiles SET status='active' WHERE id='${MGR_B}'`, true),
+        asOwnerActingAs(MGR_B, `UPDATE profiles SET status='active' WHERE id='${MGR_B}'`, true),
       ).rejects.toThrow(/health_center_manager_self_reactivation_forbidden/);
     });
 
@@ -238,18 +291,24 @@ run('182 U-B corrective · closure of the surfaces U-C found', () => {
     });
 
     it('an authorized administrator can still reactivate the same profile', async () => {
-      await asUser(SUPER, `UPDATE profiles SET status='active', disabled_at=NULL, disabled_by=NULL
-                           WHERE id='${MGR_B}'`, true);
+      // A DIFFERENT auth.uid() than the row being rewritten, so the guard's
+      // self-reactivation branch does not apply — 093's commit/compensate
+      // contract and the authorized reactivation route stay open.
+      await asOwnerActingAs(SUPER, `UPDATE profiles SET status='active', disabled_at=NULL, disabled_by=NULL
+                                    WHERE id='${MGR_B}'`, true);
       expect((await asAdmin(`SELECT status FROM profiles WHERE id='${MGR_B}'`)).rows[0].status)
         .toBe('active');
       expect(await seen(MGR_B, 'SELECT name FROM warehouses')).toEqual(['DEP_B']);
     });
 
-    it('a historical role is untouched by the guard — it may still self-update', async () => {
+    it('a historical role is untouched by the guard — the trigger lets it through', async () => {
       await asAdmin(`UPDATE profiles SET status='suspended' WHERE id='${OFF_B}'`);
-      // Pre-existing 002 behaviour, deliberately NOT changed by this substage.
+      // Pre-existing 002 behaviour, deliberately NOT changed by this substage:
+      // the guard judges health_center_manager rows only, so the trigger raises
+      // nothing here. (The table-level boundary above is what actually stops a
+      // real authenticated session; this asserts the guard's own scope.)
       await expect(
-        asUser(OFF_B, `UPDATE profiles SET status='active' WHERE id='${OFF_B}'`, true),
+        asOwnerActingAs(OFF_B, `UPDATE profiles SET status='active' WHERE id='${OFF_B}'`, true),
       ).resolves.toBeTruthy();
       await asAdmin(`UPDATE profiles SET status='active' WHERE id='${OFF_B}'`);
     });

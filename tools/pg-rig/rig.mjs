@@ -11,6 +11,12 @@
 // IN MEMORY ONLY — the repository file 023 is never modified (repo policy), and
 // this documents precisely the DR gap that Phase 3 must close in a baseline.
 //
+// The one session-scoped attestation: migration 085 is a fail-closed CUTOVER
+// file that Production HAS applied (verified live). The rig supplies its
+// attestation GUC around that single apply and resets it immediately — see
+// ATTESTED_CUTOVER_MIGRATIONS below. The file itself is never modified or
+// weakened.
+//
 // Usage:
 //   import { buildRig } from './rig.mjs'
 //   const rig = await buildRig({ upTo: 82 })   // apply through migration 082
@@ -43,28 +49,71 @@ function rigUrl() {
   return u.toString();
 }
 
-// PREPARED-ONLY cutover migrations that are NOT part of the standard applied
-// chain: they are fail-closed and applied LAST, by hand, only at a production
-// parity/cutover (they RAISE unless an operator sets an explicit attestation).
-// The disposable rig models the chain that IS applied now (001-084 + 086...),
-// so it skips these — otherwise the fail-closed 085 aborts the whole replay and
-// no later migration could ever be exercised. Their own static tests + a
-// dedicated abort proof cover them; they stay on disk and in the registry.
-const PREPARED_ONLY_SKIP = new Set([
-  '085_phoenix_revoke_manual_availability_writers.sql',
+// ---------------------------------------------------------------------------
+// ATTESTED CUTOVER MIGRATIONS
+//
+// These are historical migrations whose own SOURCE is fail-closed behind an
+// explicit in-session attestation GUC: run the file as-is and it RAISES rather
+// than applying. Their headers still read "PREPARED / DO NOT APPLY", and that
+// text is historical source state which is NOT rewritten.
+//
+// This rig USED to skip 085 entirely, on the belief that it had never been
+// applied anywhere. A live read-only inspection of Production's
+// `supabase_migrations.schema_migrations` disproved that:
+//
+//     version 085, name phoenix_revoke_manual_availability_writers, count 1
+//
+// Production applied it, its stored payload carries both writer REVOKEs, and
+// the live functions carry 085's comments with authenticated EXECUTE = NO and
+// service_role EXECUTE = YES. Skipping it therefore made the canonical replay
+// diverge from ACTUAL Production history — the rig reintroduced two
+// `authenticated` EXECUTE grants that Production does not have. That is a rig
+// REPLAY-POLICY FIDELITY defect, not Production drift.
+//
+// So the canonical chain now includes them, and the attestation is supplied
+// HERE — in the same session, immediately around the apply, and RESET straight
+// afterwards, so it never leaks to any later migration or to the test pool.
+// Migration 085 itself is never weakened: applied without this it still aborts,
+// which `085_RAW_FAIL_CLOSED` proves on every run.
+//
+// Map: migration filename -> the GUC its own precondition reads.
+export const ATTESTED_CUTOVER_MIGRATIONS = new Map([
+  ['085_phoenix_revoke_manual_availability_writers.sql', 'phoenix.availability_cutover_attested'],
 ]);
 
-// Migration files 001..NNN in filename order. Skips non-.sql, the __tests__ dir,
-// and prepared-only cutover migrations (see PREPARED_ONLY_SKIP).
-export function migrationFiles(upTo = Infinity) {
+// Migration files 001..NNN in filename order. Skips non-.sql and the __tests__
+// dir. Attested cutover migrations ARE included, because Production applied
+// them — pass `excludeCutover: true` for the explicit, opt-in PRE-cutover
+// replay a DR/parity rehearsal may want. Canonical builds must not pass it.
+/** @param {number} [upTo] @param {{ excludeCutover?: boolean }} [opts] */
+export function migrationFiles(upTo = Infinity, { excludeCutover = false } = {}) {
   return readdirSync(MIGRATIONS_DIR)
     .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-    .filter((f) => !PREPARED_ONLY_SKIP.has(f))
+    .filter((f) => !excludeCutover || !ATTESTED_CUTOVER_MIGRATIONS.has(f))
     .sort()
     .filter((f) => parseInt(f.slice(0, 3), 10) <= upTo);
 }
 
-export { PREPARED_ONLY_SKIP };
+// Apply ONE migration, supplying the historical cutover attestation only for
+// the exact file that requires it and only for the duration of that apply.
+// The GUC name comes from the hard-coded map above, never from caller input.
+async function applyMigrationSql(client, file, sql) {
+  const guc = ATTESTED_CUTOVER_MIGRATIONS.get(file);
+  if (!guc) {
+    await client.query(sql);
+    return;
+  }
+  await client.query(`SET ${guc} = 'true'`);
+  try {
+    await client.query(sql);
+  } finally {
+    // RESET even if the migration threw, so a failed cutover apply cannot
+    // leave a live attestation behind for anything that runs next.
+    await client.query(`RESET ${guc}`);
+  }
+}
+
+export { applyMigrationSql };
 
 // The 023 in-memory shim, applied ONLY to that one file's text at load time.
 // Exported so the DR acceptance test can compare shimmed vs raw behaviour.
@@ -80,7 +129,16 @@ export { MIGRATIONS_DIR };
 // Drop + recreate the throwaway db and apply only the Supabase bootstrap.
 // Returns a connected pg.Client the caller drives directly (used by buildRig
 // and by the DR acceptance test, which needs migration-by-migration control).
-export async function freshRigDb() {
+//
+// `bootstrapSql` overrides the platform baseline for ONE build. It exists so a
+// negative control can prove the authorization baseline contract is
+// non-vacuous — e.g. building a deliberately deficient platform (one missing
+// the initial service_role FUNCTION default) and requiring the contract test
+// to FAIL with the affected signatures in MISSING_FROM_RIG. It defaults to the
+// real tools/pg-rig/bootstrap.sql, so every existing caller is unaffected.
+// Canonical builds must never pass it.
+/** @param {{ bootstrapSql?: string }} [opts] */
+export async function freshRigDb({ bootstrapSql } = {}) {
   const admin = new pg.Client({ connectionString: maintenanceUrl() });
   await admin.connect();
   await admin.query(`DROP DATABASE IF EXISTS ${RIG_DB} WITH (FORCE)`);
@@ -88,8 +146,13 @@ export async function freshRigDb() {
   await admin.end();
   const c = new pg.Client({ connectionString: rigUrl() });
   await c.connect();
-  await c.query(readFileSync(join(HERE, 'bootstrap.sql'), 'utf8'));
+  await c.query(bootstrapSql ?? readFileSync(join(HERE, 'bootstrap.sql'), 'utf8'));
   return c;
+}
+
+/** The canonical platform baseline text, for tests that derive a variant. */
+export function bootstrapSource() {
+  return readFileSync(join(HERE, 'bootstrap.sql'), 'utf8');
 }
 
 export const SEED_SUPER_ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
@@ -105,15 +168,23 @@ const SEED_AFTER_001 = `
    WHERE id='${SEED_SUPER_ADMIN_ID}';
 `;
 
-export async function buildRig({ upTo = Infinity, log = () => {} } = {}) {
+/**
+ * @param {{ upTo?: number, log?: (m: string) => void, bootstrapSql?: string,
+ *           excludeCutover?: boolean }} [opts]
+ */
+export async function buildRig({
+  upTo = Infinity, log = () => {}, bootstrapSql, excludeCutover = false,
+} = {}) {
   // 1-2. Fresh db + Supabase bootstrap, then migrations.
-  const c = await freshRigDb();
+  // `bootstrapSql` is the negative-control override documented on freshRigDb().
+  // `excludeCutover` is the opt-in PRE-cutover replay; canonical builds omit it.
+  const c = await freshRigDb({ bootstrapSql });
 
-  const files = migrationFiles(upTo);
+  const files = migrationFiles(upTo, { excludeCutover });
   for (const f of files) {
     const raw = readFileSync(join(MIGRATIONS_DIR, f), 'utf8');
     try {
-      await c.query(shimSql(f, raw));
+      await applyMigrationSql(c, f, shimSql(f, raw));
     } catch (e) {
       await c.end();
       throw new Error(`migration ${f} failed: ${e.message}`);
